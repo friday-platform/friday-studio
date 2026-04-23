@@ -15,5 +15,6 @@ export { Page } from "./page/index.js";
 export { SegmentedControl } from "./segmented-control/index.js";
 export { default as Separator } from "./separator.svelte";
 export { default as StatusBadge } from "./status-badge.svelte";
+export { Table } from "./table/index.js";
 export { default as Tooltip } from "./tooltip.svelte";
 export { getTreeContext, Tree } from "./tree/index.js";

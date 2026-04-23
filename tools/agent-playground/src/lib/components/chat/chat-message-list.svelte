@@ -528,6 +528,20 @@
             {/if}
           {/if}
 
+          {#if message.errorText}
+            <!-- Session failure bubble: the turn errored before producing any
+                 text or tool output. Without this, the thinking indicator
+                 vanishes silently on failures like "no such column: job_name"
+                 and the user has no way to tell the request failed. -->
+            <div class="message-error" role="alert" aria-live="assertive">
+              <span class="message-error-icon" aria-hidden="true">⚠</span>
+              <div class="message-error-body">
+                <div class="message-error-title">Something went wrong.</div>
+                <div class="message-error-detail">{message.errorText}</div>
+              </div>
+            </div>
+          {/if}
+
           <!-- Per-message overflow menu. Holds the timestamp today; later
                actions (branch, read aloud, copy, etc.) hang off the same
                Content. User/assistant only — system messages stay quiet. -->
@@ -689,6 +703,39 @@
     font-weight: var(--font-weight-5);
     letter-spacing: 0.04em;
     text-transform: uppercase;
+  }
+
+  .message-error {
+    align-items: flex-start;
+    background-color: light-dark(#fef2f2, color-mix(in srgb, #dc2626, black 70%));
+    border: 1px solid light-dark(#fecaca, color-mix(in srgb, #dc2626, black 40%));
+    border-radius: var(--radius-3);
+    color: light-dark(#991b1b, #fecaca);
+    display: flex;
+    font-size: var(--font-size-2);
+    gap: var(--size-2);
+    line-height: 1.5;
+    padding: var(--size-2-5) var(--size-3);
+  }
+  .message-error-icon {
+    flex-shrink: 0;
+    font-size: 1.1em;
+  }
+  .message-error-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+  }
+  .message-error-title {
+    font-weight: var(--font-weight-6);
+  }
+  .message-error-detail {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-1);
+    opacity: 0.85;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 
   .message-content {

@@ -89,6 +89,13 @@ export interface ChatMessage {
   /** Image attachments from the user (data URLs from drag-drop / paste). */
   images?: ImageDisplay[];
   /**
+   * Error text surfaced for this turn — sourced from `data-error` /
+   * `data-agent-error` / `data-agent-timeout` chunks. Rendered as a visible
+   * red bubble so session failures that produced no text content don't
+   * leave the thinking indicator as the only feedback.
+   */
+  errorText?: string;
+  /**
    * Provider/model/agent metadata stamped by workspace-chat on the
    * outgoing stream. Powers the chat-inspector Context tab's "Active
    * agent + model" section. All fields are optional because legacy

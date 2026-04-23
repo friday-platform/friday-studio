@@ -12,6 +12,8 @@ export type { IntegrationPreflight, IntegrationStatus } from "./integration-quer
 export { sessionQueries } from "./session-queries.ts";
 export { skillQueries } from "./skill-queries.ts";
 export { memoryQueries } from "./memory-queries.ts";
+export { mcpQueries } from "./mcp-queries.ts";
+export type { SearchResult } from "./mcp-queries.ts";
 export { AGENT_TYPE_LABELS, useDeleteWorkspace, WorkspaceAgentDefsResponseSchema, workspaceQueries } from "./workspace-queries.ts";
 export type {
   JobSummary,

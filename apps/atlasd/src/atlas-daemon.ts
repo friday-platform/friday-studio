@@ -1348,7 +1348,10 @@ export class AtlasDaemon {
     streamId?: string,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
-  ): Promise<{ sessionId: string }> {
+  ): Promise<{
+    sessionId: string;
+    output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+  }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
     // Check if there are already active sessions for this signal
@@ -1398,7 +1401,13 @@ export class AtlasDaemon {
       throw new SessionFailedError(signalId, session.status, session.error);
     }
 
-    return { sessionId: session.id };
+    // Surface the FSM's final output documents so synchronous callers
+    // (workspace-chat job tool) can return the agent's actual answer to
+    // whatever invoked the job. Without this, calls like "search the KB"
+    // complete but workspace-chat has no content to render.
+    const output = runtime.getSessionFsmDocuments(session.id);
+
+    return { sessionId: session.id, output };
   }
 
   /**
@@ -1810,9 +1819,11 @@ export class AtlasDaemon {
     await service.start();
   }
 
-  private async resolveDiscordGatewayCredentials(): Promise<
-    { botToken: string; publicKey: string; applicationId: string } | null
-  > {
+  private async resolveDiscordGatewayCredentials(): Promise<{
+    botToken: string;
+    publicKey: string;
+    applicationId: string;
+  } | null> {
     const manager = this.workspaceManager;
     const workspaceResolved: {
       workspaceId: string;

@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import process from "node:process";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   exportAll,
@@ -28,6 +29,10 @@ import {
 } from "@atlas/core";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import {
+  type ValidationContext,
+  validateWorkspaceConfig,
+} from "@atlas/core/mcp-registry/config-validator";
+import {
   CredentialNotFoundError,
   deleteSlackApp,
   fetchLinkCredential,
@@ -37,6 +42,7 @@ import {
   resolveCredentialsByProvider,
   resolveSlackAppByWorkspace,
 } from "@atlas/core/mcp-registry/credential-resolver";
+import { createDefaultResolvers } from "@atlas/core/mcp-registry/resolvers";
 import type { ResourceMetadata, ResourceVersion } from "@atlas/ledger";
 import { createLogger, logger } from "@atlas/logger";
 import { createLedgerClient } from "@atlas/resources";
@@ -47,6 +53,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { stringify } from "@std/yaml";
 import { z } from "zod";
+import type { AppContext } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
   createLinkUnwiredClient,
@@ -75,6 +82,59 @@ import {
 } from "./schemas.ts";
 
 const analytics = createAnalyticsClient();
+
+/**
+ * Daemon-backed validation context for `validateWorkspaceConfig`.
+ *
+ * Skill existence is checked via `SkillStorage.get` (Result-typed; treat any
+ * failure as "exists" so a broken skill DB reader doesn't block import).
+ * Workspace existence is checked via the workspace manager.
+ *
+ * Model catalog is intentionally permissive in v1. The real catalog fetch
+ * is async and expensive (~3s for a cross-provider sweep) — validating
+ * every agent's model on every workspace import would add unacceptable
+ * latency to what's otherwise a fast path. `createPlatformModels` validates
+ * model IDs when the daemon loads friday.yml, and invalid models fail at
+ * first inference, so this is a deferred check rather than a missing one.
+ */
+/**
+ * Network-backed resolvers are disabled in test runs. Tests supply fixture
+ * package names that aren't real npm packages (e.g. `some-server`), and
+ * hitting the real registry would flake on CI + fail locally with 404. The
+ * cross-ref / skill / workspace passes still run — only external package
+ * resolution is suppressed. Real tests for the resolvers live beside them
+ * and use injected fetch stubs.
+ */
+function isTestMode(): boolean {
+  return process.env.DENO_TESTING === "true" || process.env.VITEST === "true";
+}
+
+function buildValidationContext(app: AppContext): ValidationContext {
+  return {
+    resolvers: isTestMode() ? [] : createDefaultResolvers(),
+    skillDb: {
+      has: async (namespace, name) => {
+        try {
+          const result = await SkillStorage.get(namespace, name);
+          return result.ok && result.data != null;
+        } catch {
+          return true;
+        }
+      },
+    },
+    modelCatalog: { has: () => true },
+    workspaceList: {
+      has: async (workspaceId) => {
+        try {
+          const manager = app.getWorkspaceManager();
+          return (await manager.find({ id: workspaceId })) != null;
+        } catch {
+          return true;
+        }
+      },
+    },
+  };
+}
 
 /** Shared schemas for the signal endpoint (SSE + JSON handlers). */
 const signalParamSchema = z.object({ workspaceId: z.string(), signalId: z.string() });
@@ -525,6 +585,27 @@ const workspacesRoutes = daemonFactory
       // bot install via setup flow, regardless of existing credentials.
       if (hasSlackApp) {
         unresolvedProviders.push("slack-app");
+      }
+
+      // Reference validator — catches LLM hallucinations (bad npm packages,
+      // typoed agent ids, unknown skills, etc.) before they land on disk.
+      // Registry-confirmed 404 and cross-ref typos are hard-fail; registry
+      // network errors and private-scope auth are soft-fail and persist
+      // with validationWarnings metadata on the workspace.
+      const validationReport = await validateWorkspaceConfig(
+        validatedConfig,
+        buildValidationContext(c.get("app")),
+      );
+      if (validationReport.status === "hard_fail") {
+        logger.warn("workspace_validation_failed", {
+          workspaceName: workspaceName ?? validatedConfig.workspace.name,
+          issueCount: validationReport.issues.length,
+          codes: validationReport.issues.map((i) => i.code),
+        });
+        return c.json(
+          { success: false, error: "validation_failed", report: validationReport },
+          422,
+        );
       }
 
       const yamlConfig = stringify(validatedConfig, { indent: 2, lineWidth: 100 });
@@ -1207,6 +1288,29 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: errorMessage }, 404);
       }
       return c.json({ error: `Failed to get workspace config: ${errorMessage}` }, 500);
+    }
+  })
+  // Lint a persisted workspace's config. Read-only — never mutates.
+  // Exists so existing broken workspaces (e.g. created before validation
+  // was added, or by an older hallucinating LLM turn) can be audited
+  // without forcing the user to recreate them.
+  .post("/:workspaceId/lint", async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    try {
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      if (!config) {
+        return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
+      }
+      const report = await validateWorkspaceConfig(config.workspace, buildValidationContext(ctx));
+      return c.json({ report });
+    } catch (error) {
+      return c.json({ error: `Failed to lint workspace: ${stringifyError(error)}` }, 500);
     }
   })
   // Update workspace configuration
@@ -1915,7 +2019,12 @@ const workspacesRoutes = daemonFactory
                 encoder.encode(
                   `data: ${JSON.stringify({
                     type: "job-complete",
-                    data: { success: true, sessionId: result.sessionId, status: "completed" },
+                    data: {
+                      success: true,
+                      sessionId: result.sessionId,
+                      status: "completed",
+                      output: result.output,
+                    },
                   })}\n\n`,
                 ),
               );
@@ -1995,6 +2104,11 @@ const workspacesRoutes = daemonFactory
           workspaceId,
           signalId,
           sessionId: result.sessionId,
+          // Surface the FSM's final output documents (agent outputTo results,
+          // user-declared document types). Callers like the workspace-chat
+          // job tool need this to render the agent's actual answer — without
+          // it, the caller only sees a success flag with no content.
+          output: result.output,
         });
       } catch (error) {
         const errorMessage = stringifyError(error);

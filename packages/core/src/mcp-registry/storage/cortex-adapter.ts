@@ -1,7 +1,7 @@
 import { createLogger } from "@atlas/logger";
 import { z } from "zod";
 import { type MCPServerMetadata, MCPServerMetadataSchema } from "../schemas.ts";
-import type { MCPRegistryStorageAdapter } from "./adapter.ts";
+import type { MCPRegistryStorageAdapter, UpdatableMCPServerMetadata } from "./adapter.ts";
 
 const CortexListResponseSchema = z.array(z.object({ id: z.string() }));
 const CortexCreateResponseSchema = z.object({ id: z.string() });
@@ -149,5 +149,69 @@ export class CortexMCPRegistryAdapter implements MCPRegistryStorageAdapter {
       signal: AbortSignal.timeout(10_000),
     });
     return deleteRes.ok;
+  }
+
+  async update(
+    id: string,
+    changes: Partial<UpdatableMCPServerMetadata>,
+  ): Promise<MCPServerMetadata | null> {
+    const objectId = await this.findObjectByRegistryId(id);
+    if (!objectId) return null;
+
+    // Fetch current content
+    const contentRes = await fetch(`${this.baseUrl}/objects/${objectId}`, {
+      headers: this.headers(),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!contentRes.ok) return null;
+
+    const currentData = MCPServerMetadataSchema.safeParse(await contentRes.json());
+    if (!currentData.success) {
+      logger.warn("Corrupt MCP registry object in Cortex - cannot update", {
+        objectId,
+        error: currentData.error,
+      });
+      return null;
+    }
+
+    // Merge changes into current entry
+    const updated: MCPServerMetadata = { ...currentData.data, ...changes };
+
+    // Update object content
+    const updateRes = await fetch(`${this.baseUrl}/objects/${objectId}`, {
+      method: "PUT",
+      headers: this.headers(),
+      body: JSON.stringify(updated),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!updateRes.ok) {
+      throw new Error(`Failed to update object: ${updateRes.status}`);
+    }
+
+    // Update metadata if relevant fields changed
+    const metadataUpdates: Record<string, unknown> = {
+      entity_type: "mcp_registry",
+      registry_id: id,
+    };
+    if (changes.name !== undefined) {
+      metadataUpdates.server_name = changes.name;
+    }
+    metadataUpdates.updated_at = new Date().toISOString();
+
+    const metadataRes = await fetch(`${this.baseUrl}/objects/${objectId}/metadata`, {
+      method: "PUT",
+      headers: this.headers(),
+      signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify(metadataUpdates),
+    });
+    if (!metadataRes.ok) {
+      logger.warn("Failed to update metadata after content update", {
+        objectId,
+        status: metadataRes.status,
+      });
+      // Don't fail the whole operation if metadata update fails
+    }
+
+    return updated;
   }
 }

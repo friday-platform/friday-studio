@@ -37,6 +37,7 @@
     { label: "Improvements", href: "/improvements", icon: IconLarge.Target },
     { label: "Agent Tester", href: "/agents/built-in", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
+    { label: "MCP Servers", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
     { label: "Settings", href: "/settings", icon: IconLarge.Gear },
   ];
@@ -225,6 +226,7 @@
 <style>
   .sidebar {
     background-color: var(--surface-dark);
+    border-inline-end: 1px solid var(--surface);
     display: flex;
     flex-direction: column;
     overflow-y: auto;

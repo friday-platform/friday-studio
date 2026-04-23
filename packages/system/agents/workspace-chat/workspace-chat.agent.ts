@@ -57,6 +57,7 @@ import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
+import { createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
 
 const ROLE_SYSTEM = "system" as const;
@@ -246,9 +247,63 @@ export async function fetchWorkspaceDetails(
 }
 
 /**
- * Format workspace capabilities as a system prompt section.
+ * Describe a signal trigger so Friday can answer "how do I run this?" without
+ * guessing. Falls back to the provider name when the config shape doesn't
+ * carry a user-facing identifier.
  */
-export function formatWorkspaceSection(workspaceId: string, details: WorkspaceDetails): string {
+function describeSignalTrigger(sig: unknown): string {
+  if (typeof sig !== "object" || sig === null) return "";
+  const s = sig as { provider?: unknown; config?: unknown };
+  const provider = typeof s.provider === "string" ? s.provider : undefined;
+  const cfg =
+    typeof s.config === "object" && s.config !== null
+      ? (s.config as Record<string, unknown>)
+      : undefined;
+
+  if (provider === "http" && cfg && typeof cfg.path === "string") {
+    return `POST ${cfg.path}`;
+  }
+  if (provider === "schedule" && cfg) {
+    const cron = typeof cfg.cron === "string" ? cfg.cron : undefined;
+    const interval = typeof cfg.interval === "string" ? cfg.interval : undefined;
+    return cron ? `cron ${cron}` : interval ? `every ${interval}` : "schedule";
+  }
+  if (provider === "fs-watch" && cfg && typeof cfg.path === "string") {
+    return `watch ${cfg.path}`;
+  }
+  if (provider === "slack") return "slack message";
+  if (provider === "telegram") return "telegram message";
+  if (provider === "whatsapp") return "whatsapp message";
+  if (provider === "discord") return "discord message";
+  if (provider === "system") return "system";
+  return provider ?? "";
+}
+
+/** Pull MCP server names from the workspace config when present. */
+function mcpServerNames(config: WorkspaceConfig | undefined): string[] {
+  if (!config) return [];
+  const tools = (config.workspace as { tools?: unknown }).tools;
+  if (typeof tools !== "object" || tools === null) return [];
+  const mcp = (tools as { mcp?: unknown }).mcp;
+  if (typeof mcp !== "object" || mcp === null) return [];
+  const servers = (mcp as { servers?: unknown }).servers;
+  if (typeof servers !== "object" || servers === null) return [];
+  return Object.keys(servers as Record<string, unknown>);
+}
+
+/**
+ * Format workspace capabilities as a system prompt section.
+ *
+ * When the full `wsConfig` is available, signal triggers (HTTP paths, cron
+ * schedules, platform providers) and MCP tool names are inlined so Friday can
+ * answer workspace-specific "how do I run this?" / "where's my data?" without
+ * guessing. Without a config, falls back to a summary of names only.
+ */
+export function formatWorkspaceSection(
+  workspaceId: string,
+  details: WorkspaceDetails,
+  config?: WorkspaceConfig,
+): string {
   let section = `<workspace id="${workspaceId}" name="${details.name}">`;
 
   if (details.description) {
@@ -268,7 +323,17 @@ export function formatWorkspaceSection(workspaceId: string, details: WorkspaceDe
   }
 
   if (details.signals.length > 0) {
-    section += `\n<signals>${details.signals.map((s) => s.name).join(", ")}</signals>`;
+    const signalConfigs = (config?.workspace as { signals?: Record<string, unknown> })?.signals;
+    const signalEntries = details.signals.map((s) => {
+      const trigger = signalConfigs ? describeSignalTrigger(signalConfigs[s.name]) : "";
+      return trigger ? `${s.name} (${trigger})` : s.name;
+    });
+    section += `\n<signals>\n${signalEntries.join("\n")}\n</signals>`;
+  }
+
+  const mcpServers = mcpServerNames(config);
+  if (mcpServers.length > 0) {
+    section += `\n<mcp_servers>${mcpServers.join(", ")}</mcp_servers>`;
   }
 
   section += "\n</workspace>";
@@ -500,8 +565,15 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           });
         }
 
-        // Format sections — compose with foreground workspaces
-        const primaryWorkspaceSection = formatWorkspaceSection(workspaceId, workspaceDetails);
+        // Format sections — compose with foreground workspaces. wsConfig
+        // carries the workspace.yml details (signal triggers, MCP server names)
+        // so Friday can answer "how do I run this?" / "where's my data stored?"
+        // without falling back to docker/infra speculation.
+        const primaryWorkspaceSection = formatWorkspaceSection(
+          workspaceId,
+          workspaceDetails,
+          wsConfig,
+        );
         const workspaceSection = composeWorkspaceSections(primaryWorkspaceSection, foregrounds);
         const integrationsSection = linkSummary
           ? formatIntegrationsSection(linkSummary)
@@ -640,6 +712,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...webSearchTool,
           ...runCodeTool,
           ...fileIOTools,
+          ...createWorkspaceOpsTools(logger),
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };

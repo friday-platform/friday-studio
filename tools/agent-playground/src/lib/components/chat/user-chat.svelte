@@ -18,7 +18,8 @@
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
   import { extractToolCalls } from "./extract-tool-calls.ts";
-  import type { ChatMessage, ImageDisplay, ScheduleProposal } from "./types";
+  import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
+  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
@@ -427,11 +428,17 @@
     }
   });
 
-  // Propagate transport / Chat errors into the playground error banner.
+  // Propagate transport / Chat errors into the playground error banner, but
+  // only when there's no in-message error bubble for this turn. Session
+  // failures (e.g. invalid model) arrive via BOTH a `data-error` chunk and
+  // a rejected transport promise — rendering both is noisy duplication.
   $effect(() => {
-    if (chat?.error) {
-      error = chat.error.message;
+    if (!chat?.error) return;
+    const last = chat.messages.at(-1);
+    if (last && last.role === "assistant" && hasErrorPart(last as AtlasUIMessage)) {
+      return;
     }
+    error = chat.error.message;
   });
 
   const streaming = $derived(chat?.status === "streaming" || chat?.status === "submitted");
@@ -471,7 +478,9 @@
           typeof (p as { type: string }).type === "string" &&
           (p as { type: string }).type.startsWith("tool-"),
       );
-    return !hasText && !hasToolCall;
+    // Error chunks also terminate the thinking state — the turn produced
+    // visible feedback (a red error bubble), just not text.
+    return !hasText && !hasToolCall && !hasErrorPart(last as AtlasUIMessage);
   });
 
   /**
@@ -733,21 +742,6 @@
     return imgs;
   }
 
-  function hasRenderableContent(msg: AtlasUIMessage): boolean {
-    if (!Array.isArray(msg.parts)) return false;
-    return msg.parts.some((p) => {
-      if (typeof p !== "object" || p === null || !("type" in p)) return false;
-      const t = (p as { type: unknown }).type;
-      if (typeof t !== "string") return false;
-      return (
-        t === "text" ||
-        t === "file" ||
-        t === "reasoning" ||
-        t === "dynamic-tool" ||
-        t.startsWith("tool-")
-      );
-    });
-  }
 
   // Stable per-message first-seen fallback for messages whose metadata
   // carries no timestamp (legacy user messages written before we started
@@ -847,6 +841,7 @@
         timestamp: timestamps.get(msg.id) ?? Date.now(),
         toolCalls: extractToolCalls(msg),
         images: extractImages(msg),
+        errorText: extractErrorText(msg),
         metadata: {
           agentId: typeof m.agentId === "string" ? m.agentId : undefined,
           jobName: typeof m.jobName === "string" ? m.jobName : undefined,

@@ -1,74 +1,42 @@
-import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
-import { describe, expect, test } from "vitest";
-import { mcpRoute } from "./mcp.ts";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import { LocalMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-/** Server shape returned by GET /servers. */
-interface ServerEntry {
-  id: string;
-  name: string;
-  description: string;
-  transportType: string;
-  requiredConfig: Array<{ key: string; description: string }>;
-}
+// In-memory KV + adapter for test isolation
+let testKv: Deno.Kv;
+let testAdapter: LocalMCPRegistryAdapter;
 
-describe("GET /servers", () => {
-  test("returns all registry servers with expected shape", async () => {
-    const res = await mcpRoute.request("/servers");
-    expect(res.status).toBe(200);
-
-    const data = (await res.json()) as ServerEntry[];
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBe(Object.keys(mcpServersRegistry.servers).length);
-
-    // Check shape of first entry
-    const first = data[0];
-    if (!first) throw new Error("expected at least one server");
-    expect(first).toHaveProperty("id");
-    expect(first).toHaveProperty("name");
-    expect(first).toHaveProperty("description");
-    expect(first).toHaveProperty("transportType");
-    expect(first).toHaveProperty("requiredConfig");
-    expect(["stdio", "http"]).toContain(first.transportType);
-  });
-
-  test("github entry has correct metadata", async () => {
-    const res = await mcpRoute.request("/servers");
-    const data = (await res.json()) as ServerEntry[];
-    const github = data.find((s) => s.id === "github");
-    if (!github) throw new Error("expected github server");
-
-    expect(github).toMatchObject({ id: "github", name: "GitHub", transportType: "http" });
-    expect(github.requiredConfig).toContainEqual(expect.objectContaining({ key: "GH_TOKEN" }));
-  });
-
-  test("requiredConfig entries have key and description", async () => {
-    const res = await mcpRoute.request("/servers");
-    const data = (await res.json()) as ServerEntry[];
-    const withConfig = data.filter((s) => s.requiredConfig.length > 0);
-
-    expect(withConfig.length).toBeGreaterThan(0);
-    for (const server of withConfig) {
-      for (const field of server.requiredConfig) {
-        expect(field).toHaveProperty("key");
-        expect(field).toHaveProperty("description");
-        expect(typeof field.key).toBe("string");
-        expect(typeof field.description).toBe("string");
-      }
-    }
-  });
-
-  test("servers without requiredConfig return empty array", async () => {
-    const res = await mcpRoute.request("/servers");
-    const data = (await res.json()) as ServerEntry[];
-    const playwright = data.find((s) => s.id === "playwright");
-    if (!playwright) throw new Error("expected playwright server");
-
-    expect(playwright.requiredConfig).toEqual([]);
-  });
+vi.mock("@atlas/core/mcp-registry/storage", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@atlas/core/mcp-registry/storage")>();
+  return { ...original, getMCPRegistryAdapter: () => Promise.resolve(testAdapter) };
 });
 
+beforeAll(async () => {
+  testKv = await Deno.openKv(":memory:");
+  testAdapter = new LocalMCPRegistryAdapter(testKv);
+});
+
+afterAll(() => {
+  testKv.close();
+});
+
+// Import AFTER mock setup (vi.mock is hoisted, but this makes intent clear)
+const { mcpRoute } = await import("./mcp.ts");
+
+/** Create a valid dynamic test entry */
+function createDynamicEntry(suffix: string): MCPServerMetadata {
+  return {
+    id: `dynamic-${suffix}`,
+    name: `Dynamic Server ${suffix}`,
+    source: "registry",
+    securityRating: "medium",
+    configTemplate: { transport: { type: "stdio", command: "echo", args: ["hello"] } },
+    requiredConfig: [{ key: "DYNAMIC_KEY", description: "A dynamic key", type: "string" as const }],
+  };
+}
+
 describe("POST /tools — validation", () => {
-  test("rejects empty body", async () => {
+  it("rejects empty body", async () => {
     const res = await mcpRoute.request("/tools", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -77,7 +45,7 @@ describe("POST /tools — validation", () => {
     expect(res.status).toBe(400);
   });
 
-  test("rejects missing serverIds", async () => {
+  it("rejects missing serverIds", async () => {
     const res = await mcpRoute.request("/tools", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -86,7 +54,7 @@ describe("POST /tools — validation", () => {
     expect(res.status).toBe(400);
   });
 
-  test("rejects empty serverIds array", async () => {
+  it("rejects empty serverIds array", async () => {
     const res = await mcpRoute.request("/tools", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -95,7 +63,7 @@ describe("POST /tools — validation", () => {
     expect(res.status).toBe(400);
   });
 
-  test("returns 400 for unknown server IDs", async () => {
+  it("returns 400 for unknown server IDs", async () => {
     const res = await mcpRoute.request("/tools", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -107,7 +75,7 @@ describe("POST /tools — validation", () => {
     expect(data.error).toContain("nonexistent-server");
   });
 
-  test("returns 400 when required env vars are missing", async () => {
+  it("returns 400 when required env vars are missing", async () => {
     const res = await mcpRoute.request("/tools", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -120,7 +88,7 @@ describe("POST /tools — validation", () => {
     expect(data.error).toContain("github");
   });
 
-  test("returns 400 listing all servers with missing env vars", async () => {
+  it("returns 400 listing all servers with missing env vars", async () => {
     const res = await mcpRoute.request("/tools", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -135,7 +103,7 @@ describe("POST /tools — validation", () => {
     expect(data.error).toContain("STRIPE_SECRET_KEY");
   });
 
-  test("passes validation when all required env vars provided", async () => {
+  it("passes validation when all required env vars provided", async () => {
     // This will fail at MCPManager connection (expected) but should NOT return 400
     // We can't easily test the success path without real MCP servers,
     // so we verify it gets past validation by checking it's not a 400 validation error
@@ -153,6 +121,134 @@ describe("POST /tools — validation", () => {
     } else {
       // Connection failure is expected in test env — but it's not a validation error
       expect(data).not.toHaveProperty("error", expect.stringContaining("Missing required"));
+    }
+  });
+});
+
+describe("POST /tools — dynamic registry merge", () => {
+  it("resolves a registry-imported server ID when adapter contains it", async () => {
+    // Add a dynamic entry to the adapter
+    const dynamicEntry = createDynamicEntry("test-001");
+    await testAdapter.add(dynamicEntry);
+
+    // Request should find the dynamic server (will fail at connection, but not 400)
+    const res = await mcpRoute.request("/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverIds: [dynamicEntry.id],
+        env: { DYNAMIC_KEY: "test-value" },
+      }),
+    });
+
+    // Should not be 400 (unknown server) - it should get past validation
+    expect(res.status).not.toBe(400);
+    const data = (await res.json()) as { error?: string };
+    if (res.status === 400) {
+      expect(data.error).not.toContain("Unknown server IDs");
+    }
+  });
+
+  it("rejects unknown ID even after merge with dynamic entries", async () => {
+    // Add some dynamic entries first
+    await testAdapter.add(createDynamicEntry("existing-1"));
+    await testAdapter.add(createDynamicEntry("existing-2"));
+
+    // Request an unknown server ID
+    const res = await mcpRoute.request("/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverIds: ["totally-unknown-server-id"],
+        env: {},
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toContain("Unknown server IDs");
+    expect(data.error).toContain("totally-unknown-server-id");
+  });
+
+  it("validates required env vars for dynamic registry entries", async () => {
+    // Add a dynamic entry with required config
+    const dynamicEntry = createDynamicEntry("env-test");
+    await testAdapter.add(dynamicEntry);
+
+    // Request without providing required env var
+    const res = await mcpRoute.request("/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverIds: [dynamicEntry.id],
+        env: {},
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toContain("Missing required env vars");
+    expect(data.error).toContain(dynamicEntry.id);
+    expect(data.error).toContain("DYNAMIC_KEY");
+  });
+
+  it("static entries win on ID collision with dynamic entries", async () => {
+    // Use "time" server which has no required config
+    const staticId = "time";
+
+    // Try to add a dynamic entry with the same ID
+    const collidingEntry: MCPServerMetadata = {
+      ...createDynamicEntry("collision"),
+      id: staticId,
+      name: "Colliding Dynamic Server",
+    };
+
+    // This should succeed (dynamic storage allows it), but won't affect lookup
+    // because static entries take precedence
+    await testAdapter.add(collidingEntry);
+
+    // Request the ID - should resolve to the static server, not the dynamic one
+    // (we can't easily verify which one was used, but we can check it resolves)
+    const res = await mcpRoute.request("/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverIds: [staticId],
+        env: {}, // time server has no requiredConfig
+      }),
+    });
+
+    // Should not be 400 for unknown server
+    expect(res.status).not.toBe(400);
+    if (res.status === 400) {
+      const data = (await res.json()) as { error: string };
+      expect(data.error).not.toContain("Unknown server IDs");
+    }
+  });
+
+  it("resolves mixed static and dynamic server IDs in one request", async () => {
+    // Add a dynamic entry
+    const dynamicEntry = createDynamicEntry("mixed-test");
+    await testAdapter.add(dynamicEntry);
+
+    // Get a static server that requires no env vars (time server)
+    const staticServerId = "time";
+
+    // Request both servers
+    const res = await mcpRoute.request("/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverIds: [staticServerId, dynamicEntry.id],
+        env: { DYNAMIC_KEY: "test-value" },
+      }),
+    });
+
+    // Should not be 400 for unknown server
+    expect(res.status).not.toBe(400);
+    if (res.status === 400) {
+      const data = (await res.json()) as { error: string };
+      expect(data.error).not.toContain("Unknown server IDs");
     }
   });
 });

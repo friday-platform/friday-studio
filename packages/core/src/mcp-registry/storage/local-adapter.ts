@@ -1,5 +1,5 @@
 import type { MCPServerMetadata } from "../schemas.ts";
-import type { MCPRegistryStorageAdapter } from "./adapter.ts";
+import type { MCPRegistryStorageAdapter, UpdatableMCPServerMetadata } from "./adapter.ts";
 
 const KV_PREFIX = ["mcp_registry"] as const;
 
@@ -39,5 +39,30 @@ export class LocalMCPRegistryAdapter implements MCPRegistryStorageAdapter {
     if (existing.value === null) return false;
     const result = await this.kv.atomic().check(existing).delete(key).commit();
     return result.ok;
+  }
+
+  async update(
+    id: string,
+    changes: Partial<UpdatableMCPServerMetadata>,
+  ): Promise<MCPServerMetadata | null> {
+    const key = [...KV_PREFIX, id];
+
+    // Read current entry with versionstamp for atomic check
+    const existing = await this.kv.get<MCPServerMetadata>(key);
+    if (existing.value === null) {
+      return null;
+    }
+
+    // Merge changes into existing entry
+    const updated: MCPServerMetadata = { ...existing.value, ...changes };
+
+    // Atomic update: check versionstamp hasn't changed, then set new value
+    const result = await this.kv.atomic().check(existing).set(key, updated).commit();
+
+    if (!result.ok) {
+      throw new Error(`Concurrent modification detected for entry: ${id}`);
+    }
+
+    return updated;
   }
 }

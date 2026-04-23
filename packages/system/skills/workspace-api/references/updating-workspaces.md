@@ -128,7 +128,7 @@ For any of those, go to Path 2.
 
 The daemon watches `workspace.yml` for every registered workspace
 (`packages/workspace/src/watchers/config-file-watcher.ts`). Edits on disk
-trigger `handleWorkspaceConfigChange` (`manager.ts:859`): hash-check,
+trigger `handleWorkspaceConfigChange` in the workspace manager: hash-check,
 validate, destroy runtime if active, ready for next signal. Active sessions
 defer the reload via `pendingWatcherChanges` until they complete.
 

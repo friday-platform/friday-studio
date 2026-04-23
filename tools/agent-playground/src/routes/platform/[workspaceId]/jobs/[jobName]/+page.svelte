@@ -73,6 +73,23 @@
   });
 
   /**
+   * Skills that exist in BOTH layers (workspace-inherited AND job-pinned)
+   * at the same time. The runtime union still makes the skill visible
+   * exactly once — but we flag the row so the user can see that detaching
+   * the job pin won't hide the skill (workspace scope will keep it visible).
+   */
+  const dualAssignIds = $derived.by((): Set<string> => {
+    const data = jobSkillsQuery.data;
+    if (!data) return new Set();
+    const workspaceIds = new Set(data.workspaceInherited.map((s) => s.skillId));
+    const dual = new Set<string>();
+    for (const s of data.jobSpecific) {
+      if (workspaceIds.has(s.skillId)) dual.add(s.skillId);
+    }
+    return dual;
+  });
+
+  /**
    * Flatten the three visible buckets into a single priority-ordered list,
    * deduplicating by skillId so a dual-assigned skill renders once with the
    * most specific source wins (job > workspace > friday).
@@ -414,6 +431,12 @@
               <span class="pill pill-{skill.source}">{sourceLabel(skill.source)}</span>
               {#if isYaml}
                 <span class="pill pill-yaml" title="Declared in workspace.yml for this job">yaml</span>
+              {/if}
+              {#if skill.source === "job" && dualAssignIds.has(skill.skillId)}
+                <span
+                  class="pill pill-dual"
+                  title="This skill is also assigned at the workspace level. Detaching the job pin will NOT hide it — the workspace assignment will keep it visible."
+                >also at workspace</span>
               {/if}
               <span class="desc">{skill.description}</span>
               <span class="version">v{skill.latestVersion}</span>
@@ -931,6 +954,16 @@
     color: var(--color-warning);
     font-family: var(--font-family-monospace);
     letter-spacing: 0.02em;
+  }
+
+  /* Surfaced when a skill is pinned here AND also assigned at the workspace
+     level — the runtime union will still show it once, but detaching the
+     job pin won't hide it. The hover title carries the full explanation. */
+  .pill-dual {
+    background: color-mix(in srgb, var(--color-warning), transparent 82%);
+    border-color: color-mix(in srgb, var(--color-warning), transparent 55%);
+    color: var(--color-warning);
+    cursor: help;
   }
 
 

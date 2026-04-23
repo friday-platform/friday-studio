@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "@db/sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LocalSkillAdapter } from "../src/local-adapter.ts";
 import { toSlug } from "../src/slug.ts";
@@ -671,6 +672,79 @@ describe("LocalSkillAdapter", () => {
       expect(ws.ok && ws.data.some((s) => s.skillId === skillId)).toBe(false);
       const job = await adapter.listAssignmentsForJob("ws-1", "job-a");
       expect(job.ok && job.data.some((s) => s.skillId === skillId)).toBe(false);
+    });
+  });
+
+  describe("migration: pre-job-scoping skill_assignments", () => {
+    let legacyDbPath: string;
+
+    beforeEach(() => {
+      legacyDbPath = join(tmpdir(), `skills-legacy-${Date.now()}-${Math.random()}.db`);
+      const db = new Database(legacyDbPath);
+      db.exec(`
+        CREATE TABLE skills (
+          id TEXT PRIMARY KEY,
+          skill_id TEXT NOT NULL,
+          namespace TEXT NOT NULL,
+          name TEXT,
+          version INTEGER NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          description_manual INTEGER NOT NULL DEFAULT 0,
+          disabled INTEGER NOT NULL DEFAULT 0,
+          frontmatter TEXT NOT NULL DEFAULT '{}',
+          instructions TEXT NOT NULL DEFAULT '',
+          title TEXT,
+          archive BLOB,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(skill_id, version)
+        );
+        CREATE TABLE skill_assignments (
+          skill_id TEXT NOT NULL,
+          workspace_id TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (skill_id, workspace_id)
+        );
+        CREATE INDEX idx_skill_assignments_workspace ON skill_assignments(workspace_id);
+        INSERT INTO skills VALUES (
+          'sk_legacy', 'sk_legacy', 'ns', 'legacy-skill', 1, 'legacy', 0, 0,
+          '{}', 'do stuff', 'Legacy', NULL, 'user_1', '2026-04-01T00:00:00Z'
+        );
+        INSERT INTO skill_assignments (skill_id, workspace_id, created_at)
+          VALUES ('sk_legacy', 'ws_1', '2026-04-01T00:00:00Z');
+      `);
+      db.close();
+    });
+
+    afterEach(() => {
+      try {
+        rmSync(legacyDbPath);
+      } catch {
+        // file may already be gone
+      }
+    });
+
+    it("migrates pre-job-scoping DB without throwing on listAssigned", async () => {
+      // Regression: CEO-reported bug where SCHEMA's partial index
+      // `WHERE job_name IS NULL` ran before the job_name column migration,
+      // breaking any daemon started against an older skills.db.
+      const legacy = new LocalSkillAdapter(legacyDbPath);
+      const result = await legacy.listAssigned("ws_1");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.skillId).toBe("sk_legacy");
+    });
+
+    it("migrated DB accepts job-level assignments", async () => {
+      const legacy = new LocalSkillAdapter(legacyDbPath);
+      const assigned = await legacy.assignToJob("sk_legacy", "ws_1", "job-a");
+      expect(assigned.ok).toBe(true);
+
+      const jobRows = await legacy.listAssignmentsForJob("ws_1", "job-a");
+      expect(jobRows.ok).toBe(true);
+      if (!jobRows.ok) return;
+      expect(jobRows.data.some((s) => s.skillId === "sk_legacy")).toBe(true);
     });
   });
 });

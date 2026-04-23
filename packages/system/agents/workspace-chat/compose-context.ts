@@ -69,7 +69,7 @@ export function composeWorkspaceSections(
 
   const sections = [primarySection];
   for (const fg of foregrounds) {
-    sections.push(formatWorkspaceSection(fg.workspaceId, fg.details));
+    sections.push(formatWorkspaceSection(fg.workspaceId, fg.details, fg.config));
   }
   return sections.join("\n\n");
 }

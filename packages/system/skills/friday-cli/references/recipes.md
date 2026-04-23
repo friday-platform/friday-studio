@@ -2,6 +2,27 @@
 
 End-to-end patterns for driving Friday via CLI + HTTP. Copy + adapt.
 
+## Contents
+
+- Create workspace from yaml → fire smoke signal
+- Register existing workspace dir
+- Update signal cron schedule without rewriting workspace.yml
+- Update agent prompt
+- Swap credential for an agent env var
+- Fire signal + watch session end-to-end
+- Read narrative memory (autopilot backlog pattern)
+- Cancel stuck session
+- Publish updated skill
+- Assign skill to workspace (scoping)
+- Build + register Python WASM agent
+- Update env vars in daemon config
+- Send a prompt + follow up
+- Delete workspace (hard)
+- Export workspace as tarball (backup)
+- Check daemon before automating
+- SSE event shapes (for parsers)
+- Autopilot flywheel pattern (putting it together)
+
 ## Create workspace from yaml → fire smoke signal
 
 ```bash

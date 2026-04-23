@@ -5,7 +5,7 @@ import type { MCPRegistryStorageAdapter } from "./adapter.ts";
 import { CortexMCPRegistryAdapter } from "./cortex-adapter.ts";
 import { LocalMCPRegistryAdapter } from "./local-adapter.ts";
 
-export type { MCPRegistryStorageAdapter } from "./adapter.ts";
+export type { MCPRegistryStorageAdapter, UpdatableMCPServerMetadata } from "./adapter.ts";
 export { CortexMCPRegistryAdapter } from "./cortex-adapter.ts";
 export { LocalMCPRegistryAdapter } from "./local-adapter.ts";
 

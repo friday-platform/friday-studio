@@ -23,8 +23,19 @@ export type RequiredConfigField = z.infer<typeof RequiredConfigFieldSchema>;
 /**
  * MCP Source - where the server was discovered
  */
-export const MCPSourceSchema = z.enum(["agents", "static", "web"]);
+export const MCPSourceSchema = z.enum(["agents", "static", "web", "registry"]);
 export type MCPSource = z.infer<typeof MCPSourceSchema>;
+
+/**
+ * Upstream provenance for registry-imported entries
+ * Tracks origin for update checking and audit trails
+ */
+export const MCPUpstreamProvenanceSchema = z.object({
+  canonicalName: z.string(),
+  version: z.string(),
+  updatedAt: z.string(),
+});
+export type MCPUpstreamProvenance = z.infer<typeof MCPUpstreamProvenanceSchema>;
 
 /**
  * Enhanced MCP server metadata with required config
@@ -47,9 +58,15 @@ export const MCPServerMetadataSchema = z.object({
   securityRating: SecurityRatingSchema,
   source: MCPSourceSchema,
 
+  // Upstream provenance (only for registry-imported entries)
+  upstream: MCPUpstreamProvenanceSchema.optional(),
+
   // Configuration - uses official schema from @atlas/agent-sdk
   configTemplate: MCPServerConfigSchema,
   requiredConfig: z.array(RequiredConfigFieldSchema).optional(),
+
+  // README content fetched from the upstream repository (stored at install time)
+  readme: z.string().optional(),
 });
 
 export type MCPServerMetadata = z.infer<typeof MCPServerMetadataSchema>;
