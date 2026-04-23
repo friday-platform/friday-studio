@@ -58,15 +58,24 @@ typed call, structured errors on 422, fix-and-retry in the same conversation.
 ### Start from a template — the default path
 
 **Read `assets/example-kb-workspace.yml` and adapt it.** It's a
-SQLite-backed workspace with a single conversational agent that handles
-save + retrieve via direct MCP tool calls — no signals, no jobs, no FSM.
-Most "let me store and search X" requests (knowledge base, URL saver,
-notes app, expense tracker, reading list) fit this shape exactly. Change
-the agent's prompt, the SQLite schema section in that prompt, and the
-tool list — leave the scaffolding alone.
+narrative-memory-backed workspace with a single conversational agent that
+saves via `memory_narrative_append` and reads from the auto-injected
+prompt — no SQLite, no jobs, no FSM. Most "let me store and search X"
+requests (knowledge base, URL saver, notes app, reading list, journaling)
+fit this shape exactly. Change the workspace name and the agent prompt's
+domain guidance; leave the scaffolding alone.
 
-Submit it via `workspace_create` after substituting `{{DB_PATH}}` (absolute)
-and `{{USER_NAME}}`. This is the fastest path and avoids FSM entirely.
+Submit it via `workspace_create`. This is the fastest path and avoids
+both FSM and MCP setup.
+
+**Do NOT reach for SQLite (or any user-authored storage) for plain
+save-and-recall use cases.** Every workspace already gets a `notes`
+narrative corpus that the runtime auto-injects into the agent's prompt
+on every turn — it's strictly better than user-SQL for unstructured
+notes/URLs/quotes/articles (zero setup, zero MCP dependency, zero DB
+path to hallucinate, zero bootstrap schema). Reserve SQLite for
+genuinely relational data the user explicitly asked for (structured
+logs, joined tables, reporting dashboards).
 
 ### Build a custom one from scratch — only if the template doesn't fit
 

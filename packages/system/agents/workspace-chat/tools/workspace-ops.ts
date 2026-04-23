@@ -53,13 +53,21 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
         "Do NOT use `type: action, action: {...}, next: ...` — that's the legacy " +
         "shape and it fails with fsm_structural_error. Agent states typically end " +
         "with `- type: emit, event: ADVANCE` and route via `on.ADVANCE.target`.\n\n" +
-        "MCP stdio paths: use `${ATLAS_HOME}` (expanded at spawn time) for any " +
-        "path that needs to live under the user's Atlas home. NEVER author a " +
-        "literal `/Users/<name>/...` path — you don't know the real username " +
-        "and guessing fails silently (the sqlite server can't open the file, " +
-        "its tools vanish from the agent, and 'saving' produces apologetic " +
-        "text while nothing persists). Example: " +
-        '`args: [mcp-server-sqlite, --db-path, "${ATLAS_HOME}/workspaces/<ws-name>/kb.sqlite"]`.',
+        "Storage choice — read before adding any MCP server for data: every " +
+        "workspace already gets a `notes` narrative memory corpus that the " +
+        "runtime auto-injects into the agent's prompt and exposes via " +
+        "`memory_narrative_append` / `memory_narrative_read`. For plain " +
+        "save-and-recall use cases (URLs, notes, quotes, articles, reading " +
+        "list, journaling, 'what did I save about X'), USE NARRATIVE MEMORY. " +
+        "Do not add SQLite. SQLite adds an MCP dependency, a DB path you will " +
+        "hallucinate, schema-bootstrap SQL, and removes the auto-inject that " +
+        "makes narrative memory usable at zero cost. Only reach for SQLite " +
+        "when the user explicitly needs relational queries (joins, aggregates, " +
+        "reporting) over structured records.\n\n" +
+        "MCP stdio paths (when you do need one): use `${ATLAS_HOME}` (expanded " +
+        "at spawn time). NEVER author a literal `/Users/<name>/...` path — " +
+        "guessing usernames fails silently. Example: " +
+        '`args: [mcp-server-sqlite, --db-path, "${ATLAS_HOME}/workspaces/<ws-name>/data.sqlite"]`.',
       inputSchema: jsonSchema(WORKSPACE_CREATE_INPUT_SCHEMA),
       execute: async (input: Record<string, unknown>) => {
         const config = input.config as Record<string, unknown>;
