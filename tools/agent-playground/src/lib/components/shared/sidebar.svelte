@@ -134,6 +134,11 @@
                     href: `${base}/sessions`,
                     isActive: pathname.startsWith(`${base}/sessions`),
                   },
+                  {
+                    label: "Memory",
+                    href: `/memory/${ws.id}`,
+                    isActive: pathname.startsWith(`/memory/${ws.id}`),
+                  },
                 ]}
                 <ul class="sub-nav">
                   {#each subPages as sub (sub.label)}
