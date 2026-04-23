@@ -50,39 +50,69 @@ If that fails, see `friday-cli` for daemon lifecycle.
 
 ---
 
+## How chat reaches your workspace — the contract
+
+**Chat interacts with your workspace through `jobs`. Nothing else.** Agents
+and MCP servers are internals of the jobs that wrap them. This is the single
+most important mental model to get right:
+
+```
+user message → workspace-chat (platform meta-agent)
+                      │
+                      ├─ calls memory_narrative_append / read (built-in)
+                      │
+                      └─ calls <job-name> tool → fires signal → FSM runs
+                                                     │
+                                                     └─ invokes agents, uses MCP tools
+                                                        (all internal to this job)
+```
+
+**What this means for authoring:**
+
+- **Declaring an agent without a job that invokes it makes the agent
+  unreachable from chat.** Chat can't call agents directly, only jobs. A
+  lone `agents.kb-agent` with MCP tools attached will sit idle while the
+  user's save/retrieve requests get handled by chat's defaults. The
+  validator rejects this shape with `unreachable_agent`.
+- **For trivial save-and-recall** (notes, URLs, quotes, reading list),
+  **skip jobs and agents entirely.** Declare only a `memory.own.notes`
+  corpus — chat will use `memory_narrative_append` to save and auto-read
+  the entries out of its prompt. Zero agents, zero MCP, zero FSM. See
+  `assets/example-kb-workspace.yml`.
+- **For anything non-trivial** (structured data, signal-triggered
+  automation, multi-step work), **express it as one or more jobs.** Each
+  job declares a signal, an FSM, and agents internal to that FSM. Chat
+  sees the jobs as tools (via `createJobTools`) and calls them with
+  typed input. See `assets/example-jobs-pipeline.yml`.
+
+There is no third path. "Standalone conversation agent with MCP tools, no
+jobs" is a dead-end shape.
+
+---
+
 ## Quick start — create a workspace
 
 **Always call the `workspace_create` tool. Never shell out to curl.** One
 typed call, structured errors on 422, fix-and-retry in the same conversation.
 
-### Start from a template — the default path
+### Pick a template — match to the use case
 
-**Read `assets/example-kb-workspace.yml` and adapt it.** It's a
-narrative-memory-backed workspace with a single conversational agent that
-saves via `memory_narrative_append` and reads from the auto-injected
-prompt — no SQLite, no jobs, no FSM. Most "let me store and search X"
-requests (knowledge base, URL saver, notes app, reading list, journaling)
-fit this shape exactly. Change the workspace name and the agent prompt's
-domain guidance; leave the scaffolding alone.
+**Trivial save-and-recall → `assets/example-kb-workspace.yml`.** No jobs,
+no agents, no MCP. Just a `memory.own.notes` corpus. Chat uses
+`memory_narrative_append` to save; recent entries auto-inject into
+chat's prompt on every turn for retrieval. Use for notes, URLs, quotes,
+reading list, journaling, "second brain" — anything unstructured.
 
-Submit it via `workspace_create`. This is the fastest path and avoids
-both FSM and MCP setup.
+**Signal-triggered or multi-step work → `assets/example-jobs-pipeline.yml`.**
+One signal per user-invokable operation; each signal has a job with an
+FSM; agents live inside the FSM. Chat sees the jobs as tools. Use for
+anything structured (tag-filtered bookmarks, expense tracker, invoice
+processor), anything signal-driven (webhook / cron / fs-watch), or
+anything multi-step (triage → classify → respond pipelines).
 
-**Do NOT reach for SQLite (or any user-authored storage) for plain
-save-and-recall use cases.** Every workspace already gets a `notes`
-narrative corpus that the runtime auto-injects into the agent's prompt
-on every turn — it's strictly better than user-SQL for unstructured
-notes/URLs/quotes/articles (zero setup, zero MCP dependency, zero DB
-path to hallucinate, zero bootstrap schema). Reserve SQLite for
-genuinely relational data the user explicitly asked for (structured
-logs, joined tables, reporting dashboards).
-
-### Build a custom one from scratch — only if the template doesn't fit
-
-Skip to this path only when the workspace needs signals, jobs, or FSM
-pipelines (e.g. "when an email arrives, run a multi-step classification
-workflow"). For pure data capture, the template above is faster and more
-reliable.
+If neither template fits, read the schema below and build from scratch —
+but verify first: trivial save-and-recall almost always fits the first
+template, and anything beyond that almost always fits the second.
 
 ```
 workspace_create({
@@ -449,7 +479,10 @@ body has details; 422 includes `report.issues[]`.
 
 ## Go deeper
 
-All references are cited inline at the point of use. Dir map: `assets/` for
-copy-paste templates (`example-kb-workspace.yml`); `references/` for
-deep-dives on messaging signals, workspace editing, and the `friday.yml`
-platform superset.
+All references are cited inline at the point of use. Dir map:
+- `assets/example-kb-workspace.yml` — narrative-memory-only, for trivial
+  save-and-recall.
+- `assets/example-jobs-pipeline.yml` — signals + jobs + FSM + MCP, for
+  structured or signal-triggered work.
+- `references/` — messaging signals, workspace editing, `friday.yml`
+  platform superset.

@@ -53,21 +53,25 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
         "Do NOT use `type: action, action: {...}, next: ...` — that's the legacy " +
         "shape and it fails with fsm_structural_error. Agent states typically end " +
         "with `- type: emit, event: ADVANCE` and route via `on.ADVANCE.target`.\n\n" +
-        "Storage choice — read before adding any MCP server for data: every " +
-        "workspace already gets a `notes` narrative memory corpus that the " +
-        "runtime auto-injects into the agent's prompt and exposes via " +
-        "`memory_narrative_append` / `memory_narrative_read`. For plain " +
-        "save-and-recall use cases (URLs, notes, quotes, articles, reading " +
-        "list, journaling, 'what did I save about X'), USE NARRATIVE MEMORY. " +
-        "Do not add SQLite. SQLite adds an MCP dependency, a DB path you will " +
-        "hallucinate, schema-bootstrap SQL, and removes the auto-inject that " +
-        "makes narrative memory usable at zero cost. Only reach for SQLite " +
-        "when the user explicitly needs relational queries (joins, aggregates, " +
-        "reporting) over structured records.\n\n" +
-        "MCP stdio paths (when you do need one): use `${ATLAS_HOME}` (expanded " +
-        "at spawn time). NEVER author a literal `/Users/<name>/...` path — " +
-        "guessing usernames fails silently. Example: " +
-        '`args: [mcp-server-sqlite, --db-path, "${ATLAS_HOME}/workspaces/<ws-name>/data.sqlite"]`.',
+        "Chat ↔ jobs contract: chat reaches your workspace through `jobs` only. " +
+        "Agents and MCP servers are internals of the jobs that wrap them; chat " +
+        "CANNOT call them directly. A declared agent that no job invokes is " +
+        "unreachable and the validator will reject the config with " +
+        "`unreachable_agent`. Three valid shapes:\n" +
+        "  1. Trivial save-and-recall (notes, URLs, quotes, reading list): no " +
+        "     agents, no jobs, no MCP. Just declare `memory.own.notes` — chat " +
+        "     uses `memory_narrative_append` and auto-injects recent entries.\n" +
+        "  2. Signal-triggered or structured work: declare signals + jobs + " +
+        "     FSMs; agents live inside the FSM. Chat sees the jobs as tools.\n" +
+        "  3. No agents at all (e.g. pure webhook receiver into memory): jobs " +
+        "     can use `type: code` actions without invoking any agent.\n" +
+        "There is NO valid shape where a workspace has `agents.*` declared but " +
+        "no job references them — that produces a workspace where chat can't " +
+        "reach the agent and nothing works.\n\n" +
+        "MCP stdio paths: use `${ATLAS_HOME}` (expanded at spawn time). NEVER " +
+        "author a literal `/Users/<name>/...` path — guessing usernames fails " +
+        "silently. Example: `args: [mcp-server-sqlite, --db-path, " +
+        '"${ATLAS_HOME}/workspaces/<ws-name>/data.sqlite"]`.',
       inputSchema: jsonSchema(WORKSPACE_CREATE_INPUT_SCHEMA),
       execute: async (input: Record<string, unknown>) => {
         const config = input.config as Record<string, unknown>;

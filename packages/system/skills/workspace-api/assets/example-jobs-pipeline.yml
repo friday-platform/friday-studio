@@ -1,0 +1,165 @@
+# Jobs-first workspace example — bookmark tracker with tag filtering.
+#
+# Demonstrates the "chat ↔ jobs" contract. Chat sees `save_bookmark` and
+# `find_bookmarks` as tools. Each job has a signal, an FSM, and one agent.
+# The agent uses SQLite MCP tools — but those tools are INTERNAL to the
+# job. Chat never sees them, never calls them directly.
+#
+# Copy this shape for any workspace with:
+# - Structured storage (SQL, not narrative memory)
+# - Signal-triggered work (webhook, cron, fs-watch)
+# - Multi-step pipelines (triage → classify → respond)
+#
+# If you just want "save notes, recall by question," use
+# `example-kb-workspace.yml` instead — it's simpler.
+
+version: "1.0"
+workspace:
+  name: bookmarks
+  description: >-
+    Bookmark tracker. Save URLs with tags via chat ("save this X about Y");
+    retrieve by tag or keyword ("show me X-tagged bookmarks from last month").
+    SQLite-backed for tag filtering and structured queries.
+
+tools:
+  mcp:
+    client_config:
+      timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" }
+    servers:
+      sqlite:
+        transport:
+          type: stdio
+          command: uvx
+          args:
+            - mcp-server-sqlite
+            - "--db-path"
+            - "${ATLAS_HOME}/workspaces/bookmarks/bookmarks.sqlite"
+
+signals:
+  save-bookmark:
+    provider: http
+    description: "Save a bookmark with tags"
+    schema:
+      type: object
+      properties:
+        url: { type: string }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        note: { type: string }
+      required: [url]
+    config:
+      path: "/bookmarks/save"
+
+  find-bookmarks:
+    provider: http
+    description: "Find bookmarks by tag or keyword"
+    schema:
+      type: object
+      properties:
+        query: { type: string }
+        tag: { type: string }
+        limit: { type: integer, default: 20 }
+      required: [query]
+    config:
+      path: "/bookmarks/find"
+
+agents:
+  bookmark-writer:
+    type: llm
+    description: "Saves a bookmark to SQLite, bootstrapping schema on first write."
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      prompt: >-
+        You save bookmarks to SQLite. Schema:
+
+          CREATE TABLE IF NOT EXISTS bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            url TEXT NOT NULL,
+            title TEXT,
+            tags TEXT,
+            note TEXT,
+            saved_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+
+        On each invocation:
+
+        1. Call `create_table` with the CREATE TABLE IF NOT EXISTS above.
+        2. Call `write_query` to INSERT the incoming bookmark. Store tags
+           as a comma-separated string.
+        3. Return a 1-line confirmation with the inserted id and title.
+      tools: [read_query, write_query, create_table]
+
+  bookmark-searcher:
+    type: llm
+    description: "Queries bookmarks by tag or keyword and returns ranked matches."
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      prompt: >-
+        You search the bookmarks table. Schema is `id, url, title, tags,
+        note, saved_at`.
+
+        1. Parse the incoming `query` and optional `tag`.
+        2. Build a `read_query` that matches title, note, or tags, ordered
+           by saved_at DESC, limited to the requested count.
+        3. Return the results as a concise list: title, url, tags, date.
+      tools: [read_query]
+
+jobs:
+  save_bookmark:
+    title: "Save a bookmark"
+    description: "Saves a URL with tags and an optional note."
+    triggers: [{ signal: save-bookmark }]
+    fsm:
+      id: save-bookmark
+      initial: idle
+      states:
+        idle:
+          'on':
+            save-bookmark: { target: write }
+        write:
+          entry:
+            - type: agent
+              agentId: bookmark-writer
+              outputTo: save-result
+              outputType: bookmark-save-result
+              prompt: "Save the bookmark. Return the inserted id and title."
+            - type: emit
+              event: DONE
+          'on':
+            DONE: { target: done }
+        done: { type: final }
+    config: { timeout: "2m", max_steps: 5 }
+
+  find_bookmarks:
+    title: "Find bookmarks"
+    description: "Finds bookmarks by tag or keyword."
+    triggers: [{ signal: find-bookmarks }]
+    fsm:
+      id: find-bookmarks
+      initial: idle
+      states:
+        idle:
+          'on':
+            find-bookmarks: { target: search }
+        search:
+          entry:
+            - type: agent
+              agentId: bookmark-searcher
+              outputTo: search-result
+              outputType: bookmark-search-result
+              prompt: "Search bookmarks. Return matches ranked by recency."
+            - type: emit
+              event: DONE
+          'on':
+            DONE: { target: done }
+        done: { type: final }
+    config: { timeout: "1m", max_steps: 5 }
+
+memory:
+  own:
+    - name: notes
+      type: long_term
+      strategy: narrative
+  mounts: []

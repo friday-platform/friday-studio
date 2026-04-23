@@ -409,4 +409,98 @@ describe("validateWorkspaceConfig", () => {
     expect(report.issues.some((i) => i.severity === "warning")).toBe(true);
     expect(report.issues.some((i) => i.severity === "error")).toBe(true);
   });
+
+  describe("unreachable_agent (chat ↔ jobs contract)", () => {
+    // Yena's workspace regression: `agents.kb-agent` declared with SQLite
+    // tools, but no job wraps it. Chat can't reach agents directly, so the
+    // SQLite tools were silently ignored and the "save" fell back to
+    // memory_save. The user said "disaster." This rule catches it at
+    // create time rather than letting the author ship a broken workspace.
+    it("rejects an agent that no FSM or execution invokes", async () => {
+      const config = makeConfig({
+        agents: {
+          "kb-agent": {
+            type: "llm",
+            config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "..." },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.status).toBe("hard_fail");
+      const issue = report.issues.find((i) => i.code === "unreachable_agent");
+      expect(issue?.value).toBe("kb-agent");
+      expect(issue?.path).toBe("agents.kb-agent");
+    });
+
+    it("accepts an agent invoked by an FSM entry action", async () => {
+      const config = makeConfig({
+        agents: {
+          writer: {
+            type: "llm",
+            config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "..." },
+          },
+        },
+        signals: { save: { provider: "http", config: { path: "/save" } } },
+        jobs: {
+          save_entry: {
+            triggers: [{ signal: "save" }],
+            fsm: {
+              id: "save-entry",
+              initial: "idle",
+              states: {
+                idle: { on: { save: { target: "write" } } },
+                write: {
+                  entry: [
+                    {
+                      type: "agent",
+                      agentId: "writer",
+                      outputTo: "r",
+                      outputType: "x",
+                      prompt: "p",
+                    },
+                    { type: "emit", event: "DONE" },
+                  ],
+                  on: { DONE: { target: "done" } },
+                },
+                done: { type: "final" },
+              },
+            },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.issues.find((i) => i.code === "unreachable_agent")).toBeUndefined();
+    });
+
+    it("accepts an agent invoked by an execution-style job", async () => {
+      const config = makeConfig({
+        agents: {
+          writer: {
+            type: "llm",
+            config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "..." },
+          },
+        },
+        signals: { save: { provider: "http", config: { path: "/save" } } },
+        jobs: {
+          save_entry: {
+            triggers: [{ signal: "save" }],
+            execution: { strategy: "sequential", agents: ["writer"] },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.issues.find((i) => i.code === "unreachable_agent")).toBeUndefined();
+    });
+
+    it("accepts a workspace with no agents declared at all", async () => {
+      // Narrative-memory-only pattern — `memory.own.notes`, no agents, no
+      // jobs. This is the correct shape for trivial save-and-recall; the
+      // lint must not false-positive here.
+      const config = makeConfig({
+        memory: { own: [{ name: "notes", type: "long_term", strategy: "narrative" }] },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.issues.find((i) => i.code === "unreachable_agent")).toBeUndefined();
+    });
+  });
 });
