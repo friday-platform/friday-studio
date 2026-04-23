@@ -10,11 +10,30 @@
   const workspacesQuery = createQuery(() => memoryQueries.workspaces());
   const enrichedQuery = createQuery(() => workspaceQueries.enriched());
 
+  const COLORS: Record<string, string> = {
+    yellow: "var(--yellow-2, #facc15)",
+    purple: "var(--purple-2, #a78bfa)",
+    red: "var(--red-2, #f87171)",
+    blue: "var(--blue-2, #60a5fa)",
+    green: "var(--green-2, #4ade80)",
+    brown: "var(--brown-2, #a3824a)",
+  };
+
   /** Map workspace ID → display name (config name > daemon name > id). */
   const nameMap = $derived.by(() => {
     const map = new Map<string, string>();
     for (const ws of enrichedQuery.data ?? []) {
       map.set(ws.id, ws.displayName);
+    }
+    return map;
+  });
+
+  /** Map workspace ID → dot color matching the sidebar. */
+  const colorMap = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const ws of enrichedQuery.data ?? []) {
+      const key = ws.metadata?.color ?? "yellow";
+      map.set(ws.id, COLORS[key] ?? COLORS["yellow"] ?? "#facc15");
     }
     return map;
   });
@@ -73,9 +92,14 @@
       <ul class="workspace-list">
         {#each visible as wsId (wsId)}
           {@const displayName = nameMap.get(wsId) ?? wsId}
+          {@const dotColor = colorMap.get(wsId)}
           <li>
             <a href="/memory/{encodeURIComponent(wsId)}" class="workspace-card">
-              <span class="ws-dot" class:muted={activeTab === "unmounted"}></span>
+              <span
+                class="ws-dot"
+                class:muted={activeTab === "unmounted"}
+                style:--dot-color={dotColor}
+              ></span>
               <span class="ws-name">{displayName}</span>
               {#if activeTab === "unmounted"}
                 <span class="ws-id">{wsId}</span>
@@ -217,7 +241,7 @@
   }
 
   .ws-dot {
-    background: var(--blue-2, #60a5fa);
+    background: var(--dot-color, var(--yellow-2, #facc15));
     block-size: 8px;
     border-radius: 50%;
     flex-shrink: 0;
