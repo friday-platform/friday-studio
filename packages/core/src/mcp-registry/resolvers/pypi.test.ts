@@ -3,11 +3,10 @@ import { createPypiResolver } from "./pypi.ts";
 
 function stubFetch(map: Record<string, number>): { fetch: (url: string) => Promise<Response> } {
   return {
-    // deno-lint-ignore require-await
-    fetch: async (url: string) => {
+    fetch: (url: string) => {
       const status = map[url];
-      if (status === undefined) throw new Error(`unstubbed URL ${url}`);
-      return new Response("{}", { status });
+      if (status === undefined) return Promise.reject(new Error(`unstubbed URL ${url}`));
+      return Promise.resolve(new Response("{}", { status }));
     },
   };
 }
@@ -83,10 +82,9 @@ describe("pypi resolver", () => {
     it("caches results", async () => {
       let calls = 0;
       const resolver = createPypiResolver({
-        // deno-lint-ignore require-await
-        fetch: async () => {
+        fetch: () => {
           calls++;
-          return new Response("{}", { status: 200 });
+          return Promise.resolve(new Response("{}", { status: 200 }));
         },
       });
       await resolver.check("same-pkg");

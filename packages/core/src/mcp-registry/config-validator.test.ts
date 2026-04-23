@@ -43,12 +43,11 @@ function stubResolver(
       const ref = args.filter((a) => !a.startsWith("-"))[0];
       return ref ? { ref } : null;
     },
-    // deno-lint-ignore require-await
-    check: async (ref) => {
+    check: (ref) => {
       const outcome = mapping[ref];
-      if (outcome === "ok") return { ok: true };
-      if (!outcome) return { ok: true };
-      return { ok: false, reason: outcome };
+      if (outcome === "ok") return Promise.resolve({ ok: true });
+      if (!outcome) return Promise.resolve({ ok: true });
+      return Promise.resolve({ ok: false, reason: outcome });
     },
   };
 }
@@ -320,10 +319,9 @@ describe("validateWorkspaceConfig", () => {
     } as never);
     let dbCalls = 0;
     const skillDb = {
-      // deno-lint-ignore require-await
-      has: async () => {
+      has: () => {
         dbCalls++;
-        return false;
+        return Promise.resolve(false);
       },
     };
     const report = await validateWorkspaceConfig(config, makeCtx({ skillDb }));
@@ -377,10 +375,9 @@ describe("validateWorkspaceConfig", () => {
     } as never);
     let calls = 0;
     const workspaceList = {
-      // deno-lint-ignore require-await
-      has: async () => {
+      has: () => {
         calls++;
-        return false;
+        return Promise.resolve(false);
       },
     };
     const report = await validateWorkspaceConfig(config, makeCtx({ workspaceList }));

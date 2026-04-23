@@ -5,13 +5,14 @@ function stubFetch(map: Record<string, { status: number; body?: unknown }>): {
   fetch: (url: string) => Promise<Response>;
 } {
   return {
-    // deno-lint-ignore require-await
-    fetch: async (url: string) => {
+    fetch: (url: string) => {
       const entry = map[url];
       if (!entry) {
-        throw new Error(`Test bug: unstubbed URL ${url}`);
+        return Promise.reject(new Error(`Test bug: unstubbed URL ${url}`));
       }
-      return new Response(entry.body ? JSON.stringify(entry.body) : null, { status: entry.status });
+      return Promise.resolve(
+        new Response(entry.body ? JSON.stringify(entry.body) : null, { status: entry.status }),
+      );
     },
   };
 }
@@ -122,10 +123,9 @@ describe("npm resolver", () => {
     it("caches results — second check is a hit", async () => {
       let calls = 0;
       const resolver = createNpmResolver({
-        // deno-lint-ignore require-await
-        fetch: async () => {
+        fetch: () => {
           calls++;
-          return new Response("{}", { status: 200 });
+          return Promise.resolve(new Response("{}", { status: 200 }));
         },
       });
       await resolver.check("cached-pkg");
