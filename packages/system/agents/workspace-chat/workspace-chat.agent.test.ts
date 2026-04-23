@@ -100,12 +100,69 @@ describe("formatWorkspaceSection", () => {
     expect(result).toContain("<jobs>\ndeploy - Ship it\n</jobs>");
   });
 
-  it("renders signals section", () => {
+  it("renders signals section without config", () => {
     const result = formatWorkspaceSection(
       "ws-6",
       makeDetails({ signals: [{ name: "webhook" }, { name: "cron" }] }),
     );
-    expect(result).toContain("<signals>webhook, cron</signals>");
+    expect(result).toContain("<signals>\nwebhook\ncron\n</signals>");
+  });
+
+  it("inlines HTTP signal paths when config is provided", () => {
+    // Regression: knowledge-base workspace has signals save/retrieve with
+    // HTTP paths /webhook/kb-save / /webhook/kb-retrieve. Without this,
+    // Friday told users to check Docker envs instead of pointing at the
+    // actual webhook path.
+    const result = formatWorkspaceSection(
+      "kb",
+      makeDetails({ signals: [{ name: "save" }, { name: "retrieve" }] }),
+      {
+        version: "1.0",
+        workspace: {
+          name: "kb",
+          signals: {
+            save: { provider: "http", config: { path: "/webhook/kb-save" } },
+            retrieve: { provider: "http", config: { path: "/webhook/kb-retrieve" } },
+          },
+        },
+      } as never,
+    );
+    expect(result).toContain("save (POST /webhook/kb-save)");
+    expect(result).toContain("retrieve (POST /webhook/kb-retrieve)");
+  });
+
+  it("inlines cron schedule triggers when config is provided", () => {
+    const result = formatWorkspaceSection("cron-ws", makeDetails({ signals: [{ name: "tick" }] }), {
+      version: "1.0",
+      workspace: {
+        name: "cron-ws",
+        signals: { tick: { provider: "schedule", config: { cron: "*/5 * * * *" } } },
+      },
+    } as never);
+    expect(result).toContain("tick (cron */5 * * * *)");
+  });
+
+  it("lists MCP server names so Friday can cite tool sources", () => {
+    // Regression: knowledge-base workspace mounts sqlite MCP server with
+    // SQLITE_DB_PATH env. Without this in-context, Friday hallucinated
+    // generic DATABASE_URL / docker-compose advice.
+    const result = formatWorkspaceSection("ws-mcp", makeDetails(), {
+      version: "1.0",
+      workspace: {
+        name: "ws-mcp",
+        tools: {
+          mcp: {
+            servers: {
+              sqlite: {
+                transport: { type: "stdio", command: "npx", args: [] },
+                env: { SQLITE_DB_PATH: "/data/kb.db" },
+              },
+            },
+          },
+        },
+      },
+    } as never);
+    expect(result).toContain("<mcp_servers>sqlite</mcp_servers>");
   });
 
   it("does not render resources XML block (handled separately via guidance)", () => {
@@ -129,7 +186,7 @@ describe("formatWorkspaceSection", () => {
     expect(result).toContain("Everything included");
     expect(result).toContain("<agents>a1</agents>");
     expect(result).toContain("<jobs>\nbuild - Build all\n</jobs>");
-    expect(result).toContain("<signals>push</signals>");
+    expect(result).toContain("<signals>\npush\n</signals>");
     expect(result).not.toContain("<resources>");
     expect(result).toMatch(/<\/workspace>$/);
   });

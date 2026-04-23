@@ -112,6 +112,7 @@ import {
 import { createBashTool } from "./bash-tool.ts";
 import { CodeAgentExecutor } from "./code-agent-executor.ts";
 import type { MemoryMount } from "./config-schema.ts";
+import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
 import {
   type ImproverAgentInput,
@@ -581,9 +582,32 @@ export class WorkspaceRuntime {
     }
 
     for (const [jobName, jobSpec] of Object.entries(configJobs)) {
-      // Only process jobs with FSM definitions
-      if (!jobSpec.fsm) {
-        logger.debug("Skipping non-FSM job", { jobName });
+      // Resolve the FSM definition: hand-authored `fsm:` takes precedence;
+      // otherwise compile the simpler `execution.sequential` shape into an
+      // equivalent FSM at load time. Without this fallback the runtime used
+      // to silently skip non-FSM jobs, which caused signal dispatch to 404
+      // even though the chat agent saw the job via the config API.
+      let fsmDefinition = jobSpec.fsm;
+      if (!fsmDefinition && jobSpec.execution) {
+        try {
+          fsmDefinition = compileExecutionToFsm(jobName, jobSpec);
+          logger.info("Compiled execution.sequential to FSM", {
+            jobName,
+            agents: jobSpec.execution.agents.length,
+          });
+        } catch (error) {
+          if (error instanceof ExecutionCompileError) {
+            logger.warn("Could not compile execution block to FSM — skipping job", {
+              jobName,
+              reason: error.message,
+            });
+            continue;
+          }
+          throw error;
+        }
+      }
+      if (!fsmDefinition) {
+        logger.debug("Skipping job with neither fsm nor execution", { jobName });
         continue;
       }
 
@@ -593,7 +617,7 @@ export class WorkspaceRuntime {
         name: jobName,
         fsmPath: "", // Empty for inline FSM
         signals,
-        fsmDefinition: jobSpec.fsm,
+        fsmDefinition,
         description: jobSpec.description,
         maxSteps: jobSpec.config?.max_steps,
       });
@@ -2239,6 +2263,37 @@ export class WorkspaceRuntime {
 
   getSession(sessionId: string): IWorkspaceSession | undefined {
     return this.sessions.get(sessionId)?.session;
+  }
+
+  /**
+   * Return the FSM engine's final documents for a session, filtered to the
+   * ones a caller is likely to care about: agent / LLM action `outputTo`
+   * results and document-typed docs declared in the workspace. Excludes
+   * FSM bookkeeping documents (state transitions, chat-context, etc).
+   *
+   * Exists so synchronous callers of `triggerWorkspaceSignal` (notably the
+   * workspace-chat job tool) can surface the actual agent output to whoever
+   * invoked the job. Without this, the job tool returns `{success, sessionId,
+   * status}` and the agent output evaporates between the FSM and the caller.
+   */
+  getSessionFsmDocuments(
+    sessionId: string,
+  ): Array<{ id: string; type: string; data: Record<string, unknown> }> {
+    const active = this.sessions.get(sessionId);
+    if (!active) return [];
+    const job = this.jobs.get(active.jobName);
+    if (!job?.engine) return [];
+
+    // FSM plumbing documents that are noise for most callers. Everything
+    // else is passed through — the caller's job to pick fields it cares
+    // about. Keeps this method useful for multiple consumers.
+    const plumbingTypes = new Set([
+      "state-transition",
+      "fsm-state",
+      "ChatContext",
+      "signal-payload",
+    ]);
+    return job.engine.documents.filter((d) => !plumbingTypes.has(d.type));
   }
 
   /**

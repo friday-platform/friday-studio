@@ -73,11 +73,21 @@ export function createJobTools(
           return { success: false, error: `Failed to execute job: ${result.error}` };
         }
 
-        const { sessionId, status } = result.data;
+        const { sessionId, status, output } = result.data;
 
         if (status === "completed") {
-          logger.info("Job tool completed", { jobName, sessionId, status });
-          return { success: true, sessionId, status };
+          logger.info("Job tool completed", {
+            jobName,
+            sessionId,
+            status,
+            outputDocCount: Array.isArray(output) ? output.length : 0,
+          });
+          // Surface the FSM's output documents verbatim. Workspace-chat's
+          // LLM needs to see what the agent actually produced — without
+          // `output` the model has a success flag and nothing to render,
+          // so "what did I save?" returns an empty answer even when the
+          // underlying pipeline succeeded.
+          return { success: true, sessionId, status, output: output ?? [] };
         }
 
         logger.error("Job tool execution unexpected status", { jobName, sessionId, status });

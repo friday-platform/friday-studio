@@ -128,6 +128,15 @@ export const MCPServerConfigSchema = z.strictObject({
     .record(z.string(), EnvValueSchema)
     .optional()
     .describe("Environment variables for the server process"),
+  skipResolverCheck: z
+    .boolean()
+    .optional()
+    .describe(
+      "Opt out of config-validator's package existence check for this server. " +
+        "Use when referencing a private-scope package, a local binary the validator " +
+        "can't resolve, or a custom wrapper command. The runtime still tries to " +
+        "spawn the server normally — this flag only suppresses the pre-flight check.",
+    ),
 });
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
