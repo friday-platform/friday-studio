@@ -165,27 +165,54 @@ gate; free ones are just `git clone` + import.
 
 ## C. Workspace Creation Quality (extends 3.1)
 
-### C.1 ☐ Wire `workspace-planner` system agent into chat (P0)
-It exists (`packages/system/agents/workspace-planner/`) and produces a
-validated Blueprint JSON that the compiler deterministically expands
-into a working workspace. Today the conversation agent cannot invoke it
-— system agents aren't exposed as tools in the workspace chat. Wire
-this tool in so the chat can fall through to it for "create a workspace
-for X" prompts.
+### C.1 ✅ Create-workspace-from-chat works end-to-end (P0)
+Original ask was to wire `packages/system/agents/workspace-planner/` as
+a tool in workspace-chat so "create a workspace for X" could blueprint
+jobs/signals. Solved via a different path that meets the user-facing
+goal faster.
 
-**Performance gap:** the planner is slower than Ken's manual skill.
-Target: planner at or under the skill's wall-clock.
+**Status:** shipped via alternate path. `3ca55d8152` landed (1) a
+reference validator (`packages/core/src/mcp-registry/config-validator.ts`)
+that catches hallucinated npm/pypi packages, bad FSM shapes, unknown
+agent/signal/memory refs, etc.; (2) a `workspace_create` tool that
+submits a full config in one typed call with structured 422 retry;
+(3) an `execution-to-fsm` compiler so `execution.sequential` jobs
+compile to the FSM shape the runtime actually dispatches. Combined
+with the workspace-api skill rewrite (`2f43dfef13`) — which teaches
+the correct XState FSM shape and ships an `assets/example-kb-workspace.yml`
+template — Yena's "Create a workspace called knowledge-base…" prompt
+now completes in **~36s / 3-5 tool calls / first-try success** (vs
+~5 min / 40+ tool calls / 2+ validator retries previously).
 
-**Status:** not started. Agent exists (`packages/system/agents/
-workspace-planner/`) but `workspace-chat` doesn't import or expose it
-as a tool. Remains a P0 blocker for B.4.
+The literal `workspace-planner` agent stays unwired; Friday authors
+the config itself from the template. If a future prompt complex enough
+to need blueprint planning surfaces, the planner agent can be wired
+in at that time — but the P0 "chat creates workspaces" goal is met.
 
-### C.2 ☐ Full-config skill (extends 3.1) (P1)
-**Status:** not started on `declaw`.
-Reference in 3.1 should include: `packages/config/` schema, full
-`workspace.yml` example, Friday CLI reference, Friday REST API. Single
-skill with sub-references rather than three separate skills — easier to
-keep in sync.
+### C.2 ✖ Full-config skill (extends 3.1) (P1) — WON'T DO
+**Status:** closed 2026-04-22 after audit. The premise ("single skill
+with sub-references rather than three separate skills — easier to keep
+in sync") is not backed by the actual drift we see.
+
+**Why skip it:**
+- The concrete cross-skill duplication is 7 platform invariants
+  (runtime-ids-random, fsm-required, write_file→scratch, DELETE+CREATE
+  warning, partial-update endpoint table, ATLAS_HOME, daemon preflight
+  curl) totaling ~35-40 lines across 4 files. These are load-bearing
+  platform facts that don't meaningfully drift — changing them breaks
+  the product.
+- The actual drift hazard is model names (`claude-sonnet-4-6` pinned
+  in 20+ places across skills). A merged skill doesn't solve that;
+  a shared config constant does.
+- Per-topic skill routing measurably pays off. This session's 36s
+  workspace-creation result relied on Friday loading *exactly*
+  `workspace-api` for that task. A merged `friday-reference` skill
+  would have a blurrier description and would load for tasks that
+  only need a narrow slice, regressing cold-start cost.
+
+If drift becomes an observed problem later, the cheaper fix is a CI
+lint that greps the canonical sentences across files and fails if
+they disagree — no structural change, no new deploy concerns.
 
 ---
 
@@ -262,12 +289,17 @@ sourced from `friday.yml` via the newly-landed `PlatformModels`.
 
 ## G. Communicators
 
-### G.1 ☐ Discord adapter (P1)
+### G.1 ✅ Discord adapter (P1)
 Telegram and WhatsApp landed (`349a9f382d`). Discord is next — same
 adapter pattern, Sarah can own.
 
-**Status:** not started. Only placeholder at
-`docs/integrations/discord/README.md`; no adapter code.
+**Status:** shipped. `bedcd0c3b8` wired `@chat-adapter/discord` with
+env-only BYO credentials; `dc4a31f9ff` added per-workspace gateway
+supervision; `3c8af95f22` broadened auth-error detection to structured
+errors. Follow-ups landed gateway hoisting at daemon level
+(`5564f14ac8`), idle-reaper pinning (`0445a02c8c`, `56737f4ed8`),
+logger routing (`b9590bade9`), config-first credential resolution
+(`02e2ae6cfc`), and a BYO setup README + QA plan (`d94a515670`).
 
 ### G.2 ◐ Communicators UI — Sarah (P1)
 No UI for communicator config today, only env vars. Needs:
@@ -346,22 +378,43 @@ Two items moved since the morning sync:
   `@friday/workspace-api` skill + daemon HTTP API instead of a new tool).
 - **B.6** merged to `declaw` via PR #2899 + PR #2974.
 
-**Done:** A.4, B.2, B.4, B.5, B.6, D.1, H.1 (7).
+### Sync as of 2026-04-22
+
+Three items moved, one closed:
+- **G.1 Discord adapter** — shipped end-to-end (chat-sdk adapter,
+  gateway supervision, BYO credentials, auto-wire, docs). Sarah's
+  ownership claim from the call is fulfilled.
+- **C.1 create-workspace-from-chat** — shipped via alternate path
+  (`workspace_create` tool + reference validator + `execution-to-fsm`
+  compiler + skill rewrite in `3ca55d8152` / `2f43dfef13`). Yena's
+  prompt now completes first-try in ~36s. The literal
+  `workspace-planner` agent stays unwired; if a future prompt needs
+  blueprint planning it can be added then.
+- **B.6** follow-up UI landed (`fabd84f29f feat(playground): bundle
+  export/import UI #2976`).
+- **C.2 full-config skill** — **closed as won't-do.** Audit showed
+  the drift it would solve doesn't match the drift we actually see.
+  See C.2 entry for detail.
+
+**Done:** A.4, B.2, B.4, B.5, B.6, C.1, D.1, G.1, H.1 (9).
 **Partial:** A.3, B.3, G.2, H.3 (4).
-**Not started:** A.1, A.2, B.1, B.7, C.1, C.2, E.1, E.2, E.3, E.4,
-F.1, F.2, G.1, H.2 (14 — B.1 and C.1 are the outstanding P0s).
+**Closed / won't do:** C.2 (1).
+**Not started:** A.1, A.2, B.1, B.7, E.1, E.2, E.3, E.4, F.1, F.2,
+H.2 (11 — B.1 is the lone outstanding P0).
 
 **Revised picks for the next pickup:**
-1. **B.1** `.atlas/` → CWD (still the P0 blocker; nothing moved).
-2. **C.1** wire `workspace-planner` into chat (P0; richer than the
-   B.4 prompt path — needed for "create a workspace for X" where
-   the planner should blueprint jobs/signals, not just stub a
-   blank one).
-3. **A.3** upgrade the thinking bubble to a persistent "working on
+1. **B.1** `.atlas/` → CWD — the only P0 left; still zero movement
+   on `packages/utils/src/paths.ts::getAtlasHome()`.
+2. **A.3** upgrade the thinking bubble to a persistent "working on
    X" badge that survives long async dispatch after tool cards
    finish.
-4. **G.1** Discord adapter — ready for Sarah.
-5. **B.7** workspace/skill registry — B.6 is now unblocked.
+3. **B.7** workspace/skill registry — now that B.6 bundle export
+   and G.1 Discord are both landed, this is the natural next
+   distribution play.
+4. **G.2** per-workspace communicators UI form — backend is ready,
+   needs the add/edit/status UI.
+5. **E.1** background memory-commit during chat — cheap classifier
+   step at turn end; unblocks E.3 / E.4 later.
 
 ---
 
