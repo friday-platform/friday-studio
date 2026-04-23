@@ -2,6 +2,15 @@
 
 MCP (Model Context Protocol) reaches external systems — GitHub, Postgres, Notion, time, etc. Declare servers in the decorator; call tools through `ctx.tools`.
 
+## Contents
+
+- Declaring servers — decorator shape, env vars, credential refs
+- Discovering tools — `ctx.tools.list()` returns definitions
+- Calling a tool — `ctx.tools.call(name, input)`
+- LLM-driven tool use — loop pattern with `response.text` parsing
+- Errors — don't swallow; let the runtime surface them
+- Testing — mocking `ctx.tools` in unit tests
+
 ## Declaring servers
 
 ```python

@@ -4,6 +4,21 @@ Base: `http://localhost:8080`. No auth on localhost. JSON in/out unless noted.
 
 SSE: pass `Accept: text/event-stream`. Streams end with `data: [DONE]`.
 
+## Contents
+
+- Workspaces — list / create / add / inspect / export / config / delete
+- Workspace partial config — signals, agents, credentials
+- Workspace resources
+- Signal trigger — JSON blocking + SSE streaming
+- Platform webhooks — Signal Gateway → daemon
+- Sessions
+- Jobs
+- Chat (global) + Workspace chat + Chat storage RPC
+- Library — shared assets
+- Agents registry
+- Skills — list / install / publish
+- Activity
+
 ## Workspaces
 
 ### `GET /api/workspaces`
