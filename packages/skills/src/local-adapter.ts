@@ -76,10 +76,13 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
       const { Database: SqliteDatabase } = await import("@db/sqlite");
       this.db = new SqliteDatabase(this.dbPath);
       this.migrateIfNeeded(this.db);
-      this.db.exec(SCHEMA);
-      this.db.exec(DROP_LEGACY);
+      // Rebuild skill_assignments BEFORE SCHEMA runs. SCHEMA creates a partial
+      // unique index `WHERE job_name IS NULL`; on a pre-job-scoping DB the
+      // column doesn't exist and that index fails with "no such column".
       this.dropLegacyAssignmentColumn(this.db);
       this.addJobNameColumn(this.db);
+      this.db.exec(SCHEMA);
+      this.db.exec(DROP_LEGACY);
     }
     return this.db;
   }
@@ -96,6 +99,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
    */
   private addJobNameColumn(db: Database): void {
     const cols = db.prepare("PRAGMA table_info(skill_assignments)").all() as { name: string }[];
+    if (cols.length === 0) return; // fresh DB — SCHEMA will create the table with job_name
     if (cols.some((c) => c.name === "job_name")) return;
 
     db.exec(`
