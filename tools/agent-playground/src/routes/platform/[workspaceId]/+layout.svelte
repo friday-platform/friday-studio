@@ -69,7 +69,7 @@
   const isEdit = $derived(page.route.id === "/platform/[workspaceId]/edit");
 
   /** Chat page is full-width — no sidebar. */
-  const isChat = $derived(page.route.id === "/platform/[workspaceId]/chat");
+  const isChat = $derived(page.route.id?.startsWith("/platform/[workspaceId]/chat") ?? false);
 
   /** Agents page renders its own sidebar content (agent index). */
   const isAgents = $derived(page.route.id === "/platform/[workspaceId]/agents");

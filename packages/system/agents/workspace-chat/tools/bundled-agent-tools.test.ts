@@ -11,8 +11,8 @@ import { CallbackStreamEmitter } from "@atlas/core/streaming";
 import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
 import { describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
-import { type CreateAgentToolDeps, createAgentTool } from "./bundled-agent-tools.ts";
+import { z } from "zod";
+import { AGENT_TOOL_META, type CreateAgentToolDeps, createAgentTool, rebindAgentTool } from "./bundled-agent-tools.ts";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -162,7 +162,7 @@ describe("createAgentTool — env gating", () => {
 });
 
 describe("createAgentTool — execute (happy path)", () => {
-  it("calls agent.execute with (input, context) and returns payload.data on ok", async () => {
+  it("unwraps `input.prompt` for agents without an explicit object schema", async () => {
     const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
       Promise.resolve(ok({ response: "hello" })),
     );
@@ -178,14 +178,37 @@ describe("createAgentTool — execute (happy path)", () => {
     const call = executeMock.mock.calls[0];
     if (!call) throw new Error("executeMock was not called");
     const [input, context] = call;
-    expect(input).toEqual({ prompt: "hi" });
+    expect(input).toBe("hi");
     expect(context.stream).toBeInstanceOf(CallbackStreamEmitter);
     expect(context.session).toBe(deps.session);
     expect(context.platformModels).toBe(deps.platformModels);
     expect(context.env).toBe(deps.env);
   });
 
-  it("bridges context.stream.emit to deps.writer.write with no transformation", async () => {
+  it("passes the full `input` object for agents with an explicit object schema", async () => {
+    const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
+      Promise.resolve(ok({ response: "hello" })),
+    );
+    const agent = makeAgent({
+      id: "test",
+      inputSchema: z.object({ query: z.string(), limit: z.number() }),
+      execute: executeMock,
+    });
+    const deps = makeDeps();
+
+    const tools = createAgentTool(agent, deps);
+    const payload = { query: "hi", limit: 5 };
+    const result = await getExecute(tools.agent_test)(payload, callOpts);
+
+    expect(result).toEqual({ response: "hello" });
+
+    expect(executeMock).toHaveBeenCalledOnce();
+    const call = executeMock.mock.calls[0];
+    if (!call) throw new Error("executeMock was not called");
+    expect(call[0]).toEqual(payload);
+  });
+
+  it("bridges context.stream.emit to deps.writer.write with no transformation for non-tool chunks", async () => {
     const event: AtlasUIMessageChunk = {
       type: "data-tool-progress",
       data: { toolName: "Test", content: "working..." },
@@ -203,6 +226,34 @@ describe("createAgentTool — execute (happy path)", () => {
 
     expect(deps.writeFn).toHaveBeenCalledOnce();
     expect(deps.writeFn).toHaveBeenCalledWith(event);
+  });
+
+  it("namespaces inner tool-call toolCallId with the agent tool's toolCallId", async () => {
+    const innerChunk: AtlasUIMessageChunk = {
+      type: "tool-input-available",
+      toolCallId: "inner-fetch-1",
+      toolName: "fetch",
+      input: { url: "https://example.com" },
+    };
+
+    const executeMock = vi.fn<AtlasAgent["execute"]>((_input, ctx) => {
+      ctx.stream?.emit(innerChunk);
+      return Promise.resolve(ok({ response: "done" }));
+    });
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const deps = makeDeps();
+
+    const tools = createAgentTool(agent, deps);
+    await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
+
+    expect(deps.writeFn).toHaveBeenCalledOnce();
+    expect(deps.writeFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "tool-input-available",
+        toolCallId: "tc-1::inner-fetch-1",
+        toolName: "fetch",
+      }),
+    );
   });
 });
 
@@ -236,5 +287,146 @@ describe("createAgentTool — abort propagation", () => {
     const call = executeMock.mock.calls[0];
     if (!call) throw new Error("executeMock was not called");
     expect(call[1].abortSignal).toBe(controller.signal);
+  });
+});
+
+describe("createAgentTool — metadata & rebind", () => {
+  it("stores AGENT_TOOL_META on the tool object", () => {
+    const agent = makeAgent({ id: "test" });
+    const deps = makeDeps();
+
+    const tools = createAgentTool(agent, deps);
+    const t = tools.agent_test;
+    if (!t) throw new Error("tool missing");
+
+    const meta = (t as Record<symbol, unknown>)[AGENT_TOOL_META];
+    expect(meta).toBeDefined();
+    expect((meta as { atlasAgent: AtlasAgent }).atlasAgent).toBe(agent);
+    expect((meta as { toolName: string }).toolName).toBe("agent_test");
+  });
+
+  it("rebindAgentTool returns original tool when meta is absent", () => {
+    const fakeTool = { type: "tool", description: "fake" } as unknown as AtlasTool;
+    const newWriter = { write: vi.fn() } as unknown as UIMessageStreamWriter<AtlasUIMessage>;
+
+    const result = rebindAgentTool(fakeTool, newWriter);
+    expect(result).toBe(fakeTool);
+  });
+
+  it("rebindAgentTool routes events to the new writer", async () => {
+    const executeMock = vi.fn<AtlasAgent["execute"]>((_input, ctx) => {
+      ctx.stream?.emit({
+        type: "data-tool-progress",
+        data: { toolName: "Test", content: "rebound!" },
+      });
+      return Promise.resolve(ok({ response: "done" }));
+    });
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const originalDeps = makeDeps();
+
+    const tools = createAgentTool(agent, originalDeps);
+    const newWriteFn = vi.fn();
+    const newWriter = { write: newWriteFn } as unknown as UIMessageStreamWriter<AtlasUIMessage>;
+
+    const rebound = rebindAgentTool(tools.agent_test!, newWriter);
+    await getExecute(rebound)({ prompt: "hi" }, callOpts);
+
+    expect(originalDeps.writeFn).not.toHaveBeenCalled();
+    expect(newWriteFn).toHaveBeenCalledOnce();
+    expect(newWriteFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "data-tool-progress",
+        data: { toolName: "Test", content: "rebound!" },
+      }),
+    );
+  });
+
+  it("rebindAgentTool namespaces inner tool calls before routing to the new writer", async () => {
+    const innerChunk: AtlasUIMessageChunk = {
+      type: "tool-output-available",
+      toolCallId: "inner-1",
+      output: { ok: true },
+    };
+
+    const executeMock = vi.fn<AtlasAgent["execute"]>((_input, ctx) => {
+      ctx.stream?.emit(innerChunk);
+      return Promise.resolve(ok({ response: "done" }));
+    });
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const originalDeps = makeDeps();
+
+    const tools = createAgentTool(agent, originalDeps);
+    const newWriteFn = vi.fn();
+    const newWriter = { write: newWriteFn } as unknown as UIMessageStreamWriter<AtlasUIMessage>;
+
+    const rebound = rebindAgentTool(tools.agent_test!, newWriter);
+    await getExecute(rebound)({ prompt: "hi" }, callOpts);
+
+    expect(newWriteFn).toHaveBeenCalledOnce();
+    expect(newWriteFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "tool-output-available",
+        toolCallId: "tc-1::inner-1",
+        output: { ok: true },
+      }),
+    );
+  });
+
+  it("emits reasoning from AgentExtras as a data-tool-progress event after execute completes", async () => {
+    const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
+      Promise.resolve(ok({ response: "done" }, { reasoning: "I thought about it" })),
+    );
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const deps = makeDeps();
+
+    const tools = createAgentTool(agent, deps);
+    await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
+
+    const progressEvent = deps.writeFn.mock.calls.find(
+      (call) =>
+        typeof call[0] === "object" &&
+        call[0] !== null &&
+        "type" in call[0] &&
+        call[0].type === "data-tool-progress",
+    )?.[0];
+    expect(progressEvent).toEqual({
+      type: "data-tool-progress",
+      data: { toolName: "test", content: "I thought about it" },
+    });
+  });
+
+  it("emits AgentExtras.toolCalls as data-inner-tool-call events after execute completes", async () => {
+    const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
+      Promise.resolve(
+        ok(
+          { response: "done" },
+          {
+            toolCalls: [
+              { type: "tool-call", toolCallId: "tc-1", toolName: "fetch", input: { url: "x" } },
+            ],
+            toolResults: [
+              { type: "tool-result", toolCallId: "tc-1", toolName: "fetch", output: "y" },
+            ],
+          },
+        ),
+      ),
+    );
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const deps = makeDeps();
+
+    const tools = createAgentTool(agent, deps);
+    await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
+
+    const innerCallEvent = deps.writeFn.mock.calls.find(
+      (call) =>
+        typeof call[0] === "object" &&
+        call[0] !== null &&
+        "type" in call[0] &&
+        call[0].type === "data-inner-tool-call",
+    )?.[0];
+    expect(innerCallEvent).toEqual({
+      type: "data-inner-tool-call",
+      data: { toolName: "fetch", status: "completed", input: '{"url":"x"}', result: '"y"' },
+    });
   });
 });

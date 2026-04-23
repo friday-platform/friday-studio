@@ -64,6 +64,17 @@ export interface ToolCallDisplay {
    * `${delegateToolCallId}::${childToolCallId}`.
    */
   children?: ToolCallDisplay[];
+  /**
+   * Accumulated reasoning text from `reasoning-delta` chunks observed inside
+   * `data-delegate-chunk` envelopes. Only populated for delegate/agent tool
+   * entries that produced reasoning during their execution.
+   */
+  reasoning?: string;
+  /**
+   * Ephemeral progress lines from `data-tool-progress` events observed
+   * inside delegate envelopes (e.g. "Analyzing query..." from the web agent).
+   */
+  progress?: string[];
 }
 
 export interface ImageDisplay {

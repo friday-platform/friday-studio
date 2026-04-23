@@ -17,13 +17,14 @@
  * downstream can recover children stuck in `input-streaming`/`input-available`.
  */
 
-import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
+import { rebindAgentTool } from "../../../workspace-chat/tools/bundled-agent-tools.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
 
@@ -62,6 +63,14 @@ export interface DelegateDeps {
   abortSignal?: AbortSignal;
   /** Same repair function the parent uses, so the child handles malformed tool args identically. */
   repairToolCall: ToolCallRepairFunction<AtlasTools>;
+  /**
+   * Optional hook to rebind inherited agent tools so their inner stream events
+   * route through the delegate proxy instead of leaking to the parent writer.
+   */
+  rebindAgentTool?: (
+    inheritedTool: AtlasTool,
+    proxyWriter: UIMessageStreamWriter<AtlasUIMessage>,
+  ) => AtlasTool;
 }
 
 export type DelegateToolsUsedEntry = { name: string; outcome: "success" | "error" };
@@ -124,7 +133,13 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       try {
         const inheritedTools = toolSetThunk();
         const { [DELEGATE_TOOL_NAME]: _drop, ...withoutDelegate } = inheritedTools;
-        const childTools: AtlasTools = { ...withoutDelegate, [FINISH_TOOL_NAME]: finishTool };
+
+        const childTools: AtlasTools = { [FINISH_TOOL_NAME]: finishTool };
+        for (const [name, t] of Object.entries(withoutDelegate)) {
+          childTools[name] = deps.rebindAgentTool
+            ? deps.rebindAgentTool(t, proxy)
+            : rebindAgentTool(t, proxy);
+        }
 
         const datetimeMessage = buildTemporalFacts(session.datetime);
         const childSystemPrompt = [

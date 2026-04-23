@@ -498,4 +498,141 @@ describe("extractToolCalls", () => {
       expect(c1?.errorText).toBe("interrupted");
     });
   });
+
+  describe("nested delegate children — agent_web → fetch hierarchy", () => {
+    it("builds a two-level tree: delegate → agent_web → fetch", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "input-available", { goal: "research", handoff: "..." }),
+        // agent_web as a direct child of delegate
+        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go to craigslist" })),
+        // fetch nested under agent_web
+        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://..." })),
+        envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
+        // agent_web completes
+        envelope("d1", toolOutputAvailable("d1::aw1", { response: "found 3 items" })),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      expect(parent?.toolCallId).toBe("d1");
+      expect(parent?.toolName).toBe("delegate");
+      expect(parent?.children).toHaveLength(1);
+
+      const [aw1] = parent?.children ?? [];
+      expect(aw1?.toolCallId).toBe("d1::aw1");
+      expect(aw1?.toolName).toBe("agent_web");
+      expect(aw1?.state).toBe("output-available");
+      expect(aw1?.children).toHaveLength(1);
+
+      const [f1] = aw1?.children ?? [];
+      expect(f1?.toolCallId).toBe("d1::aw1::f1");
+      expect(f1?.toolName).toBe("fetch");
+      expect(f1?.state).toBe("output-available");
+      expect(f1?.children).toBeUndefined();
+    });
+
+    it("handles multiple fetches under the same agent_web", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "input-available"),
+        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "search" })),
+        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://a" })),
+        envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
+        envelope("d1", toolInputStart("d1::aw1::f2", "fetch")),
+        envelope("d1", toolInputAvailable("d1::aw1::f2", "fetch", { url: "https://b" })),
+        envelope("d1", toolOutputAvailable("d1::aw1::f2", { status: 200 })),
+        envelope("d1", toolOutputAvailable("d1::aw1", { response: "done" })),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      const [aw1] = parent?.children ?? [];
+      expect(aw1?.children).toHaveLength(2);
+      const [f1, f2] = aw1?.children ?? [];
+      expect(f1?.toolCallId).toBe("d1::aw1::f1");
+      expect(f2?.toolCallId).toBe("d1::aw1::f2");
+    });
+
+    it("interrupts the entire subtree when delegate-end lists a parent agent tool", () => {
+      // agent_web started but never completed; fetch also never got output.
+      // delegate-end lists d1::aw1 as pending. Both aw1 and its child f1
+      // should be marked output-error.
+      const msg = makeMessage([
+        delegatePart("d1", "input-available"),
+        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go" })),
+        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://..." })),
+        // No output for f1 or aw1 — still in-flight.
+        delegateEndEnvelope("d1", ["d1::aw1"]),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      const [aw1] = parent?.children ?? [];
+      expect(aw1?.state).toBe("output-error");
+      expect(aw1?.errorText).toBe("interrupted");
+
+      const [f1] = aw1?.children ?? [];
+      expect(f1?.state).toBe("output-error");
+      expect(f1?.errorText).toBe("interrupted");
+    });
+
+    it("parentDone fallback interrupts all nested non-terminal children", () => {
+      const msg = makeMessage(
+        [
+          delegatePart("d1", "input-available"),
+          envelope("d1", toolInputStart("d1::aw1", "agent_web")),
+          envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go" })),
+          envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
+          envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://..." })),
+          // fetch completed, agent_web did not
+          envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
+        ],
+        { state: "done" },
+      );
+
+      const [parent] = extractToolCalls(msg);
+      const [aw1] = parent?.children ?? [];
+      expect(aw1?.state).toBe("output-error");
+      expect(aw1?.errorText).toBe("interrupted");
+
+      const [f1] = aw1?.children ?? [];
+      // f1 was already terminal — should NOT be clobbered.
+      expect(f1?.state).toBe("output-available");
+      expect(f1?.errorText).toBeUndefined();
+    });
+
+    it("accumulates reasoning-delta chunks on the delegate entry", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "input-available"),
+        envelope("d1", { type: "reasoning-delta", id: "r1", delta: "Let me check " }),
+        envelope("d1", { type: "reasoning-delta", id: "r1", delta: "the weather..." }),
+        envelope("d1", toolInputStart("d1::c1", "web_search")),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      expect(parent?.reasoning).toBe("Let me check the weather...");
+      expect(parent?.children).toHaveLength(1);
+    });
+
+    it("collects data-tool-progress events as progress lines on the delegate entry", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "input-available"),
+        envelope("d1", {
+          type: "data-tool-progress",
+          data: { toolName: "agent_web", content: "Analyzing query..." },
+        }),
+        envelope("d1", {
+          type: "data-tool-progress",
+          data: { toolName: "agent_web", content: "Synthesizing..." },
+        }),
+        envelope("d1", toolInputStart("d1::c1", "fetch")),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      expect(parent?.progress).toEqual(["Analyzing query...", "Synthesizing..."]);
+      expect(parent?.children).toHaveLength(1);
+    });
+  });
 });

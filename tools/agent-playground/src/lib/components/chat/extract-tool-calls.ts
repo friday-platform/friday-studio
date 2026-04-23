@@ -107,6 +107,11 @@ type ChildAccumulator = Map<string, ToolCallDisplay>;
  * Unknown chunk types are ignored — only the state-transition chunks
  * touch the `ToolCallDisplay` shape. `finish` chunks are dropped upstream
  * by the proxy writer, so we don't need to filter them here.
+ *
+ * IDs may be multi-segment (`delegate::agent::fetch`) when bundled
+ * agents namespace their inner tool calls. The accumulator is flat
+ * (keyed by the full namespaced string); tree construction happens
+ * afterwards in {@link buildNestedChildren}.
  */
 function applyChunk(acc: ChildAccumulator, chunk: unknown): void {
   if (typeof chunk !== "object" || chunk === null || !("type" in chunk)) return;
@@ -193,6 +198,48 @@ function interruptChild(child: ToolCallDisplay): void {
 }
 
 /**
+ * Recursively interrupt a child and every descendant.
+ * Used when a parent is listed in `delegate-end.pendingToolCallIds`
+ * — its inner tools were also cut short.
+ */
+function interruptSubtree(child: ToolCallDisplay): void {
+  interruptChild(child);
+  if (child.children) {
+    for (const c of child.children) interruptSubtree(c);
+  }
+}
+
+/**
+ * Build a tree of `ToolCallDisplay` entries from a flat accumulator of
+ * namespaced `toolCallId`s.
+ *
+ * An entry `parentId::childId` is a direct child of `parentId`.
+ * An entry `parentId::childId::grandchildId` is a direct child of
+ * `parentId::childId`. This recurses so the UI can render arbitrary
+ * nesting depth (e.g. delegate → agent_web → fetch).
+ *
+ * Orphaned descendants whose intermediate parent is missing in the flat
+ * map are promoted to direct children so nothing is silently dropped.
+ */
+function buildNestedChildren(
+  flat: Map<string, ToolCallDisplay>,
+  parentId: string,
+): ToolCallDisplay[] {
+  const prefix = `${parentId}::`;
+  const children: ToolCallDisplay[] = [];
+
+  for (const [id, display] of flat) {
+    if (!id.startsWith(prefix)) continue;
+    const suffix = id.slice(prefix.length);
+    if (suffix.includes("::")) continue; // not a direct child — recurse below
+    const nested = buildNestedChildren(flat, id);
+    children.push(nested.length > 0 ? { ...display, children: nested } : display);
+  }
+
+  return children;
+}
+
+/**
  * Read the parent message's lifecycle state. AI SDK v6's `UIMessage` does
  * not type a top-level `state` field, but downstream layers (chat
  * persistence, hand-built crash-test fixtures) may stamp one — we read
@@ -233,6 +280,9 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   // rule operates on them, not the per-child accumulator).
   const grouped = new Map<string, ChildAccumulator>();
   const delegateEndPending = new Map<string, string[]>();
+  // Per-delegate ephemeral accumulators: reasoning text and progress lines.
+  const delegateReasoning = new Map<string, string>();
+  const delegateProgress = new Map<string, string[]>();
   for (const part of msg.parts) {
     if (typeof part !== "object" || part === null || !("type" in part)) continue;
     if (part.type !== "data-delegate-chunk") continue;
@@ -268,14 +318,49 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
       }
       continue;
     }
+    // Accumulate reasoning deltas and progress events alongside tool chunks.
+    if (
+      typeof chunk === "object" &&
+      chunk !== null &&
+      "type" in chunk &&
+      typeof chunk.type === "string"
+    ) {
+      if (chunk.type === "reasoning-delta" && "delta" in chunk && typeof chunk.delta === "string") {
+        const prev = delegateReasoning.get(delegateToolCallId) ?? "";
+        delegateReasoning.set(delegateToolCallId, prev + chunk.delta);
+        continue;
+      }
+      if (
+        chunk.type === "data-tool-progress" &&
+        "data" in chunk &&
+        typeof chunk.data === "object" &&
+        chunk.data !== null &&
+        "content" in chunk.data &&
+        typeof chunk.data.content === "string"
+      ) {
+        const list = delegateProgress.get(delegateToolCallId) ?? [];
+        list.push(chunk.data.content);
+        delegateProgress.set(delegateToolCallId, list);
+        continue;
+      }
+    }
     applyChunk(acc, chunk);
   }
 
-  // Attach reconstructed children to their parent delegate entries.
+  // Attach reconstructed children, reasoning, and progress to their parent
+  // delegate entries.
   for (const [delegateToolCallId, acc] of grouped) {
     const parent = byToolCallId.get(delegateToolCallId);
     if (!parent) continue;
-    parent.children = [...acc.values()];
+    parent.children = buildNestedChildren(acc, delegateToolCallId);
+    const reasoning = delegateReasoning.get(delegateToolCallId);
+    if (reasoning && reasoning.length > 0) {
+      parent.reasoning = reasoning;
+    }
+    const progress = delegateProgress.get(delegateToolCallId);
+    if (progress && progress.length > 0) {
+      parent.progress = progress;
+    }
   }
 
   // Reconciliation rules. `delegate-end` is checked first; the
@@ -290,12 +375,12 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
       const pending = delegateEndPending.get(delegateToolCallId) ?? [];
       const pendingSet = new Set(pending);
       for (const child of children) {
-        if (pendingSet.has(child.toolCallId)) interruptChild(child);
+        if (pendingSet.has(child.toolCallId)) interruptSubtree(child);
       }
       continue;
     }
     if (parentDone) {
-      for (const child of children) interruptChild(child);
+      for (const child of children) interruptSubtree(child);
     }
   }
 

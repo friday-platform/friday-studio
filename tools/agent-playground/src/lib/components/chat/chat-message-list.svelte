@@ -158,12 +158,15 @@
   }
 
   /**
-   * True iff any reconstructed delegate child is still mid-execution.
-   * Drives the auto-expand behavior on a delegate `<details>` — open
-   * while any child is running, collapse once they all settle.
+   * True iff any reconstructed delegate child (at any nesting depth) is
+   * still mid-execution. Drives the auto-expand behavior on a delegate
+   * `<details>` — open while any descendant is running, collapse once
+   * the entire subtree settles.
    */
   function childrenAnyRunning(children: ToolCallDisplay[]): boolean {
-    return children.some((c) => isInProgress(c.state));
+    return children.some(
+      (c) => isInProgress(c.state) || (c.children ? childrenAnyRunning(c.children) : false),
+    );
   }
 
   /**
@@ -386,16 +389,34 @@
 {/snippet}
 
 {#snippet toolCardOutputDrawer(call: ToolCallDisplay)}
-  {#if call.state === "output-available" && call.output !== undefined}
-    <details class="tool-card-details">
-      <summary>details</summary>
-      <pre>{@html formatRawOutput(call.output)}</pre>
-    </details>
-  {:else if call.state === "output-error" && call.input !== undefined}
-    <details class="tool-card-details">
-      <summary>input</summary>
-      <pre>{@html formatRawOutput(call.input)}</pre>
-    </details>
+  {@const hasInput =
+    call.input !== undefined &&
+    typeof call.input === "object" &&
+    call.input !== null &&
+    Object.keys(call.input).length > 0}
+  {@const hasOutput = call.output !== undefined}
+  {@const hasError = call.errorText !== undefined}
+  {#if hasInput || hasOutput || hasError}
+    <div class="tool-card-drawer">
+      {#if hasInput}
+        <details class="tool-card-details">
+          <summary>input</summary>
+          <pre>{@html formatRawOutput(call.input)}</pre>
+        </details>
+      {/if}
+      {#if hasOutput}
+        <details class="tool-card-details">
+          <summary>output</summary>
+          <pre>{@html formatRawOutput(call.output)}</pre>
+        </details>
+      {/if}
+      {#if hasError}
+        <details class="tool-card-details" open>
+          <summary>error</summary>
+          <pre class="error-text">{call.errorText}</pre>
+        </details>
+      {/if}
+    </div>
   {/if}
 {/snippet}
 
@@ -424,6 +445,23 @@
       >
         {@render toolCardHeaderContent(call)}
       </summary>
+      {#if call.reasoning || call.progress}
+        <div class="delegate-ephemeral">
+          {#if call.reasoning}
+            <div class="reasoning-block">
+              <span class="reasoning-label">Reasoning</span>
+              <pre>{call.reasoning}</pre>
+            </div>
+          {/if}
+          {#if call.progress}
+            <div class="progress-list">
+              {#each call.progress as line}
+                <span class="progress-line">{line}</span>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
       <div class="tool-call-children">
         {#each call.children as child (child.toolCallId || child.toolName)}
           {@render toolCard(child)}
@@ -1106,6 +1144,79 @@
     padding: var(--size-2);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  /* ─── Delegate ephemeral (reasoning + progress) ─────────────────────── */
+
+  .delegate-ephemeral {
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
+    padding: var(--size-2) var(--size-2-5);
+  }
+
+  .reasoning-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .reasoning-label {
+    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    font-weight: var(--font-weight-5);
+    text-transform: uppercase;
+  }
+
+  .reasoning-block pre {
+    background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 30%));
+    border-radius: var(--radius-1);
+    color: light-dark(hsl(220 10% 35%), color-mix(in srgb, var(--color-text), transparent 25%));
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-1);
+    line-height: 1.45;
+    margin: 0;
+    max-block-size: 200px;
+    overflow: auto;
+    padding: var(--size-1-5);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .progress-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-0-5);
+  }
+
+  .progress-line {
+    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    font-style: italic;
+  }
+
+  /* ─── Tool card drawer (input/output/error details) ──────────────────── */
+
+  .tool-card-drawer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    padding: 0 var(--size-2-5) var(--size-1-5);
+  }
+
+  .tool-card.with-children > .tool-card-drawer {
+    display: none;
+  }
+
+  .tool-card.with-children[open] > .tool-card-drawer {
+    display: flex;
+  }
+
+  .tool-card-drawer pre.error-text {
+    color: var(--color-error);
   }
 
   /* ─── Spinner ───────────────────────────────────────────────────────── */

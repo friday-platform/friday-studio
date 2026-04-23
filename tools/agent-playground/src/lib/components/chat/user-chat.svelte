@@ -2,6 +2,7 @@
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { createQuery } from "@tanstack/svelte-query";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { workspaceQueries } from "$lib/queries";
   import {
@@ -29,6 +30,11 @@
       | string
       | undefined) ?? wsId,
   );
+
+  interface Props {
+    chatId: string;
+  }
+  const { chatId }: Props = $props();
 
   let inspectorOpen = $state(false);
 
@@ -105,18 +111,8 @@
    * submitted to the FAST autopilot backlog) — that UX is playground-only
    * and never round-trips through the chat agent.
    *
-   * `CHAT_API` and `STORAGE_KEY` are both derived from `wsId` so the chat
-   * view is scoped per-workspace. Without this every workspace's chat page
-   * would read/write against the `user` workspace, and localStorage would
-   * cross-pollinate chatIds across workspaces.
    */
   const CHAT_API = $derived(`/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat`);
-  const STORAGE_KEY = $derived(`playground:lastChatId:${wsId}`);
-
-  // Chat identity. Initialized on mount: rehydrate from localStorage if a
-  // persisted chatId exists, otherwise generate a fresh UUID. `ChatImpl` is
-  // re-derived when chatId changes (e.g. "New Chat" button, rehydration).
-  let chatId: string = $state("");
   let initialMessages: AtlasUIMessage[] = $state([]);
   let rehydrationDone = $state(false);
   let rehydrating = $state(false);
@@ -139,29 +135,7 @@
   let localEvents: ChatMessage[] = $state([]);
   let error: string | null = $state(null);
 
-  function persistChatId(id: string) {
-    try {
-      localStorage.setItem(STORAGE_KEY, id);
-    } catch {
-      // localStorage may be unavailable (private mode, quota)
-    }
-  }
 
-  function clearPersistedChatId() {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Ignore
-    }
-  }
-
-  function getPersistedChatId(): string | null {
-    try {
-      return localStorage.getItem(STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  }
 
   /**
    * Cached geolocation — requested once on first chat message. The browser
@@ -251,13 +225,8 @@
       if (isStale()) return;
       if (!response.ok) {
         if (response.status === 404) {
-          // The persisted chat id points at a deleted chat. Clear the
-          // localStorage entry AND rotate `chatId` + kill `shouldResumeStream`
-          // so the resume effect doesn't fire against a tombstone (the
-          // registry would return 204 anyway, but there's no reason to
-          // advertise traffic for a chat we already know is gone).
-          clearPersistedChatId();
-          chatId = crypto.randomUUID();
+          // Chat doesn't exist yet (fresh URL) or was deleted. Proceed with
+          // empty state — the server will create the chat on first message.
           shouldResumeStream = false;
         }
         return;
@@ -266,8 +235,6 @@
       if (isStale()) return;
       const parsed = GetChatResponseSchema.safeParse(json);
       if (!parsed.success) {
-        clearPersistedChatId();
-        chatId = crypto.randomUUID();
         shouldResumeStream = false;
         return;
       }
@@ -303,7 +270,6 @@
       }
 
       if (isStale()) return;
-      chatId = parsed.data.chat.id;
       initialMessages = rehydrated;
       systemPromptContext = parsed.data.systemPromptContext ?? null;
     } catch {
@@ -317,13 +283,11 @@
     }
   }
 
-  // Re-run on wsId change so each workspace gets its own chat lineage.
-  // Without this, navigating between /platform/<a>/chat and /platform/<b>/chat
-  // would keep whatever chatId was already in memory, and because CHAT_API is
-  // now workspace-scoped, the chat would try to fetch an id that doesn't
-  // belong to the current workspace. The `wsId` read here is what ties the
-  // effect to workspace changes; the rest of the body cleans state and
-  // rehydrates the per-workspace persisted chatId.
+  // Re-run on chatId change so each chat gets its own state lineage.
+  // Navigating between /platform/<ws>/chat/<a> and /platform/<ws>/chat/<b>
+  // reuses the component instance (same route, different param), so both
+  // `chatId` and `wsId` are tracked here. The body cleans state and
+  // rehydrates from the server using the URL chatId.
   // Geolocation is requested on first message submit (handleSubmit), not
   // eagerly — avoids the browser permission prompt on page load.
   //
@@ -333,34 +297,24 @@
   // rehydrate would recreate the instance and discard any in-flight
   // `chat.resumeStream()` call.
   $effect(() => {
-    const _track = wsId; // explicit dependency on workspace route param
-    void _track;
+    const _trackWs = wsId; // explicit dependency on workspace route param
+    void _trackWs;
+    const _trackChat = chatId; // explicit dependency on chatId prop
+    void _trackChat;
 
     localEvents = [];
     initialMessages = [];
     error = null;
     rehydrationDone = false;
-    // Queued sends belong to the old workspace's Chat; don't cross-post them
-    // into the workspace we're switching to.
+    // Queued sends belong to the old chat's Chat; don't cross-post them
+    // into the chat we're switching to.
     queuedMessages = [];
 
-    const saved = getPersistedChatId();
-    if (saved) {
-      chatId = saved;
-      shouldResumeStream = true;
-      const token = ++rehydrateToken;
-      void rehydrateChat(saved, token).finally(() => {
-        if (token === rehydrateToken) rehydrationDone = true;
-      });
-    } else {
-      // No persisted id; still bump the token so any in-flight rehydrate
-      // kicked off by a previous wsId (or switchToChat) becomes stale and
-      // its `.finally` can't flip `rehydrationDone` behind our back.
-      rehydrateToken++;
-      chatId = crypto.randomUUID();
-      rehydrationDone = true;
-      shouldResumeStream = false;
-    }
+    shouldResumeStream = true;
+    const token = ++rehydrateToken;
+    void rehydrateChat(chatId, token).finally(() => {
+      if (token === rehydrateToken) rehydrationDone = true;
+    });
   });
 
   // Transport — re-derived when CHAT_API / prepareSendMessagesRequest would
@@ -391,14 +345,6 @@
       ? new ChatImpl<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport })
       : null,
   );
-
-  // Persist chatId once the Chat instance has any messages (first turn
-  // succeeded). Clears on "New Chat" which resets chatId.
-  $effect(() => {
-    if (chat && chat.messages.length > 0 && chatId.length > 0) {
-      persistChatId(chatId);
-    }
-  });
 
   // Resume an in-flight stream after rehydrate. Fires once per chatId that
   // came from localStorage: if the user navigated away mid-response the
@@ -945,31 +891,15 @@
     }
   }
 
-  /** Reset to a fresh chat — clears persistence and starts a new chatId. */
+  /** Navigate to a fresh chat. The loader generates the new chatId. */
   function startNewChat() {
-    clearPersistedChatId();
-    localEvents = [];
-    initialMessages = [];
-    chatId = crypto.randomUUID();
-    error = null;
+    goto(`/platform/${encodeURIComponent(wsId)}/chat`);
   }
 
-  /** Switch to an existing chat (from the chat list panel). */
+  /** Navigate to an existing chat (from the chat list panel). */
   function switchToChat(targetChatId: string): void {
     if (targetChatId === chatId) return;
-    localEvents = [];
-    initialMessages = [];
-    error = null;
-    // Queued sends belong to the chat we're leaving; don't cross-post them.
-    queuedMessages = [];
-    chatId = targetChatId;
-    rehydrationDone = false;
-    shouldResumeStream = true;
-    persistChatId(targetChatId);
-    const token = ++rehydrateToken;
-    void rehydrateChat(targetChatId, token).finally(() => {
-      if (token === rehydrateToken) rehydrationDone = true;
-    });
+    goto(`/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(targetChatId)}`);
   }
 
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {

@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import type { ArtifactRef, OutlineRef } from "@atlas/agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
+import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import { generateText, stepCountIs } from "ai";
+import { stepCountIs } from "ai";
 import { z } from "zod";
 
 import { getWebAgentPrompt } from "./prompts.ts";
@@ -63,31 +64,37 @@ export const webAgent = createAgent<string, WebAgentResult>({
     try {
       const hasSearchKey = Boolean(process.env.PARALLEL_API_KEY || process.env.FRIDAY_GATEWAY_URL);
 
-      const tools: Record<string, ReturnType<typeof createFetchTool>> = {
-        fetch: createFetchTool(logger),
-        browse: createBrowseTool(stream, sessionState, abortSignal, logger),
-      };
-
-      if (hasSearchKey) {
-        tools.search = createSearchTool(
+      const searchTool = hasSearchKey
+        ? createSearchTool(
           { session, stream, logger, config, abortSignal, platformModels },
           { artifactRefs, outlineRefs },
-        );
-      } else {
+        )
+        : null;
+
+      if (!hasSearchKey) {
         logger.info("[web] search tool disabled — no PARALLEL_API_KEY or FRIDAY_GATEWAY_URL");
       }
 
-      const result = await generateText({
-        model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
-        messages: [
-          { role: "system", content: getWebAgentPrompt({ hasSearch: hasSearchKey }) },
-          temporalGroundingMessage(),
-          { role: "user", content: prompt },
-        ],
-        tools,
-        stopWhen: stepCountIs(300),
-        maxRetries: 3,
-        abortSignal,
+      const tools = {
+        fetch: createFetchTool(logger),
+        browse: createBrowseTool(stream, sessionState, abortSignal, logger),
+        ...(searchTool ? { search: searchTool } : {}),
+      };
+
+      const result = await streamTextWithEvents({
+        params: {
+          model: traceModel(registry.languageModel("anthropic:claude-sonnet-4-6")),
+          messages: [
+            { role: "system", content: getWebAgentPrompt({ hasSearch: hasSearchKey }) },
+            temporalGroundingMessage(),
+            { role: "user", content: prompt },
+          ],
+          tools,
+          stopWhen: stepCountIs(300),
+          maxRetries: 3,
+          abortSignal,
+        },
+        stream,
       });
 
       const steps = result.steps?.length ?? 0;
@@ -96,7 +103,16 @@ export const webAgent = createAgent<string, WebAgentResult>({
 
       const response = result.text || "Web task completed but no summary generated.";
 
-      return ok({ response }, { artifactRefs, outlineRefs });
+      return ok(
+        { response },
+        {
+          artifactRefs,
+          outlineRefs,
+          reasoning: result.reasoning,
+          toolCalls: result.toolCalls,
+          toolResults: result.toolResults,
+        },
+      );
     } catch (error) {
       logger.error(`[web] failed: ${stringifyError(error).slice(0, 200)}`);
       return err(stringifyError(error));

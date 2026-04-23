@@ -13,6 +13,8 @@ export interface ResolvedStreamResult {
   steps: Array<StepResult<ToolSet>>;
   toolCalls: Awaited<ReturnType<typeof streamText>["toolCalls"]>;
   toolResults: Awaited<ReturnType<typeof streamText>["toolResults"]>;
+  /** Accumulated reasoning text from reasoning-delta chunks, if the model produced any. */
+  reasoning?: string;
 }
 
 /**
@@ -43,6 +45,8 @@ export async function streamTextWithEvents({
 }): Promise<ResolvedStreamResult> {
   const result = streamText(params);
 
+  let reasoningAccumulator = "";
+
   for await (const chunk of result.fullStream) {
     if (!stream) continue;
 
@@ -59,6 +63,14 @@ export async function streamTextWithEvents({
         toolCallId: chunk.toolCallId,
         output: chunk.output,
       });
+    } else if (chunk.type === "reasoning-start") {
+      reasoningAccumulator = "";
+      stream.emit({ type: "reasoning-start", id: chunk.id });
+    } else if (chunk.type === "reasoning-delta") {
+      reasoningAccumulator += chunk.text;
+      stream.emit({ type: "reasoning-delta", id: chunk.id, delta: chunk.text });
+    } else if (chunk.type === "reasoning-end") {
+      stream.emit({ type: "reasoning-end", id: chunk.id });
     }
   }
 
@@ -72,5 +84,5 @@ export async function streamTextWithEvents({
     result.toolResults,
   ]);
 
-  return { text, finishReason, usage, totalUsage, steps, toolCalls, toolResults };
+  return { text, finishReason, usage, totalUsage, steps, toolCalls, toolResults, reasoning: reasoningAccumulator };
 }

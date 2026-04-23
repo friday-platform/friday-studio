@@ -34,6 +34,7 @@ import type {
   AgentContext,
   AgentSessionData,
   AtlasAgent,
+  AtlasTool,
   AtlasTools,
   AtlasUIMessage,
 } from "@atlas/agent-sdk";
@@ -59,6 +60,40 @@ export interface CreateAgentToolDeps {
   logger: Logger;
   tools?: AgentContext["tools"];
   memory?: AgentContext["memory"];
+}
+
+/** Symbol key used to store agent-tool metadata for delegate re-binding. */
+export const AGENT_TOOL_META = Symbol.for("atlas.agent-tool-meta");
+
+/** JSON-stringify with a safe fallback for circular / non-serializable values. */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+interface AgentToolMeta {
+  atlasAgent: AtlasAgent;
+  deps: CreateAgentToolDeps;
+  toolName: string;
+  inputSchema: z.ZodSchema | undefined;
+}
+
+/**
+ * Rebinds an agent tool to a new writer. Used by the delegate tool so that
+ * nested agent calls stream through the delegate proxy instead of leaking
+ * to the parent conversation stream.
+ */
+export function rebindAgentTool(
+  tool: AtlasTool,
+  writer: UIMessageStreamWriter<AtlasUIMessage>,
+): AtlasTool {
+  const meta = (tool as Record<symbol, unknown>)[AGENT_TOOL_META] as AgentToolMeta | undefined;
+  if (!meta) return tool;
+
+  return createAgentTool(meta.atlasAgent, { ...meta.deps, writer })[meta.toolName] ?? tool;
 }
 
 const DefaultPromptInputSchema = z.object({
@@ -106,34 +141,87 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
   const inputSchema =
     declaredSchema && hasObjectRoot(declaredSchema) ? declaredSchema : DefaultPromptInputSchema;
 
-  return {
-    [toolName]: tool({
-      description: atlasAgent.metadata.description,
-      inputSchema,
-      execute: async (input) => {
-        const stream = new CallbackStreamEmitter(
-          (event) => deps.writer.write(event),
-          () => {},
-          (_err) => {},
-        );
+  const toolObj = tool({
+    description: atlasAgent.metadata.description,
+    inputSchema,
+    execute: async (input, { toolCallId }) => {
+      const stream = new CallbackStreamEmitter(
+        (event) => {
+          if (
+            typeof event === "object" &&
+            event !== null &&
+            "toolCallId" in event &&
+            typeof event.toolCallId === "string" &&
+            event.toolCallId.length > 0
+          ) {
+            event = { ...event, toolCallId: `${toolCallId}::${event.toolCallId}` };
+          }
+          deps.writer.write(event);
+        },
+        () => {},
+        (_err) => {},
+      );
 
-        const context: AgentContext = {
-          tools: deps.tools ?? {},
-          session: deps.session,
-          env: deps.env,
-          stream,
-          logger: deps.logger,
-          abortSignal: deps.abortSignal,
-          platformModels: deps.platformModels,
-          memory: deps.memory,
-        };
+      const context: AgentContext = {
+        tools: deps.tools ?? {},
+        session: deps.session,
+        env: deps.env,
+        stream,
+        logger: deps.logger,
+        abortSignal: deps.abortSignal,
+        platformModels: deps.platformModels,
+        memory: deps.memory,
+      };
 
-        const payload = await atlasAgent.execute(input, context);
-        if (payload.ok) {
-          return payload.data;
+      const payload = await atlasAgent.execute(
+        declaredSchema && hasObjectRoot(declaredSchema)
+          ? (input as never)
+          : (input as { prompt: string }).prompt,
+        context,
+      );
+      if (payload.ok) {
+        // Emit structured extras (reasoning, tool history) as data events so
+        // the chat UI can display them without depending on the compact result
+        // payload that the parent LLM sees.
+        if (payload.reasoning && payload.reasoning.length > 0) {
+          stream.emit({
+            type: "data-tool-progress",
+            data: { toolName: atlasAgent.metadata.id, content: payload.reasoning },
+          });
         }
-        throw new Error(payload.error.reason);
-      },
-    }),
-  };
+        if (payload.toolCalls && payload.toolCalls.length > 0) {
+          for (const tc of payload.toolCalls) {
+            const resultEntry = payload.toolResults?.find(
+              (tr: { toolCallId: string }) => tr.toolCallId === tc.toolCallId,
+            );
+            stream.emit({
+              type: "data-inner-tool-call",
+              data: {
+                toolName: tc.toolName,
+                status: resultEntry ? "completed" : "failed",
+                input: safeJson(tc.input),
+                result: resultEntry ? safeJson(resultEntry.output) : undefined,
+              },
+            });
+          }
+        }
+        return payload.data;
+      }
+      throw new Error(payload.error.reason);
+    },
+  });
+
+  Object.defineProperty(toolObj, AGENT_TOOL_META, {
+    value: {
+      atlasAgent,
+      deps,
+      toolName,
+      inputSchema: declaredSchema,
+    } satisfies AgentToolMeta,
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
+
+  return { [toolName]: toolObj };
 }
