@@ -1,6 +1,7 @@
 import type { MCPServerConfig } from "@atlas/config";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { logger } from "@atlas/logger/console";
 import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
@@ -42,40 +43,41 @@ const PostToolsSchema = z.object({
 });
 
 /**
+ * Build merged server registry from static and dynamic entries.
+ * Static entries win on ID collision; dynamic fill gaps.
+ */
+async function getMergedServers(): Promise<Record<string, MCPServerMetadata>> {
+  const adapter = await getMCPRegistryAdapter();
+  const dynamicServers = await adapter.list();
+  const staticServers = Object.values(mcpServersRegistry.servers);
+
+  const staticIds = new Set(staticServers.map((s) => s.id));
+  const uniqueDynamic = dynamicServers.filter((s) => !staticIds.has(s.id));
+
+  const merged: Record<string, MCPServerMetadata> = {};
+  for (const server of staticServers) {
+    merged[server.id] = server;
+  }
+  for (const server of uniqueDynamic) {
+    merged[server.id] = server;
+  }
+  return merged;
+}
+
+/**
  * MCP server routes for the agent playground.
  *
- * GET  / — list available MCP servers from the registry
  * POST /tools — start servers in-process, fetch tool definitions, dispose
  */
-export const mcpRoute = new Hono()
-  .get("/servers", (c) => {
-    try {
-      const servers = Object.values(mcpServersRegistry.servers).map((server) => ({
-        id: server.id,
-        name: server.name,
-        description: server.description ?? "",
-        transportType: server.configTemplate.transport.type,
-        requiredConfig: (server.requiredConfig ?? []).map((field) => ({
-          key: field.key,
-          description: field.description,
-        })),
-      }));
+export const mcpRoute = new Hono().post("/tools", zValidator("json", PostToolsSchema), async (c) => {
+  const { serverIds, env: userEnv } = c.req.valid("json");
+  const servers = await getMergedServers();
 
-      return c.json(servers);
-    } catch (error) {
-      logger.error("Failed to list MCP servers", { error });
-      return c.json({ error: "Failed to list MCP servers" }, 500);
-    }
-  })
-  .post("/tools", zValidator("json", PostToolsSchema), async (c) => {
-    const { serverIds, env: userEnv } = c.req.valid("json");
-    const { servers } = mcpServersRegistry;
-
-    // Validate all requested servers exist and have required env vars
-    const unknownIds = serverIds.filter((id) => !servers[id]);
-    if (unknownIds.length > 0) {
-      return c.json({ error: `Unknown server IDs: ${unknownIds.join(", ")}` }, 400);
-    }
+  // Validate all requested servers exist and have required env vars
+  const unknownIds = serverIds.filter((id) => !servers[id]);
+  if (unknownIds.length > 0) {
+    return c.json({ error: `Unknown server IDs: ${unknownIds.join(", ")}` }, 400);
+  }
 
     // Check for missing required env vars across all requested servers
     const missingByServer: Array<{ serverId: string; missing: string[] }> = [];

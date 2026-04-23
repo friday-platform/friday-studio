@@ -13,6 +13,7 @@
   import { createQuery, queryOptions, skipToken } from "@tanstack/svelte-query";
   import { toast } from "@atlas/ui";
   import { goto } from "$app/navigation";
+  import { z } from "zod";
   import { searchSkillsSh, useInstallSkill } from "$lib/queries/skills";
 
   interface Props {
@@ -31,7 +32,9 @@
   let searchDebounce: ReturnType<typeof setTimeout> | undefined;
 
   function handleInput(e: Event): void {
-    const v = (e.currentTarget as HTMLInputElement).value;
+    const target = e.currentTarget;
+    if (!(target instanceof HTMLInputElement)) return;
+    const v = target.value;
     source = v;
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => {
@@ -60,6 +63,16 @@
     focused = false;
   }
 
+  const PublishedSchema = z.object({
+    published: z
+      .object({
+        namespace: z.string(),
+        name: z.string(),
+        version: z.number(),
+      })
+      .optional(),
+  });
+
   async function doInstall(): Promise<void> {
     const src = source.trim();
     if (!src) return;
@@ -67,9 +80,8 @@
       const res = await installMut.mutateAsync(
         workspaceId ? { source: src, workspaceId } : { source: src },
       );
-      const published = res.published as
-        | { namespace: string; name: string; version: number }
-        | undefined;
+      const parsed = PublishedSchema.safeParse(res);
+      const published = parsed.success ? parsed.data.published : undefined;
       const ref = published ? `@${published.namespace}/${published.name}` : src;
       toast({
         title: "Skill imported",
@@ -82,8 +94,8 @@
         goto(`/skills/${published.namespace}/${published.name}`);
       }
     } catch (e) {
-      const err = e as Error;
-      toast({ title: "Import failed", description: err.message, error: true });
+      const message = e instanceof Error ? e.message : String(e);
+      toast({ title: "Import failed", description: message, error: true });
     }
   }
 </script>

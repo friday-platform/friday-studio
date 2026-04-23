@@ -6,6 +6,7 @@ import Gear from "./gear.svelte";
 import OpenSquare from "./open-square.svelte";
 import SpeechBubble from "./speech-bubble.svelte";
 import Target from "./target.svelte";
+import Wrench from './wrench.svelte';
 import Write from "./write.svelte";
 
 export const IconLarge: Record<string, Component> = {
@@ -16,5 +17,6 @@ export const IconLarge: Record<string, Component> = {
   OpenSquare,
   SpeechBubble,
   Target,
+  Wrench,
   Write,
 };
