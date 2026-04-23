@@ -484,7 +484,7 @@
               <IconLarge.Compass />
             </div>
             <div class="skeleton-card-body">
-              <div class="skeleton-card-title">Workspace Directory</div>
+              <div class="skeleton-card-title">Space Directory</div>
               <div class="skeleton-card-sub">Explore how others are using Friday, then build your own.</div>
               <div class="skeleton-lines">
                 <div class="skeleton-line" style="inline-size: 90%"></div>
