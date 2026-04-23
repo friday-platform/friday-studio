@@ -20,6 +20,44 @@
   let error = $state<string | null>(null);
   let loading = $state(false);
 
+  /**
+   * Turn `POST /api/workspaces/create` error responses into short, user-facing
+   * strings. Prefer the reference-validator's issue messages (with path for
+   * locator context) because those are already human-authored and specific;
+   * fall back to `error` / plain text only when the shape doesn't match.
+   */
+  const ValidationReportSchema = z.object({
+    error: z.literal("validation_failed").optional(),
+    report: z.object({
+      issues: z.array(
+        z.object({
+          path: z.string().optional(),
+          message: z.string(),
+        }),
+      ),
+    }),
+  });
+  const PlainErrorSchema = z.object({ error: z.string() });
+
+  async function formatCreateError(res: Response): Promise<string> {
+    const raw = await res.text();
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      const report = ValidationReportSchema.safeParse(parsed);
+      if (report.success) {
+        const lines = report.data.report.issues.map((i) =>
+          i.path ? `${i.path} — ${i.message}` : i.message,
+        );
+        return lines.join("\n");
+      }
+      const plain = PlainErrorSchema.safeParse(parsed);
+      if (plain.success) return plain.data.error;
+    } catch {
+      // Non-JSON body — fall through.
+    }
+    return raw;
+  }
+
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
     dragOver = true;
@@ -74,8 +112,7 @@
       });
 
       if (!res.ok) {
-        const body = await res.text();
-        error = `Failed to create workspace: ${body}`;
+        error = await formatCreateError(res);
         return;
       }
 
@@ -185,7 +222,8 @@
     font-size: var(--font-size-2);
     max-inline-size: 400px;
     padding: var(--size-2) var(--size-4);
-    text-align: center;
+    text-align: left;
+    white-space: pre-wrap;
   }
 
   .close-btn {
