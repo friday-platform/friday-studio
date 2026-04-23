@@ -1962,10 +1962,29 @@ export class FSMEngine {
     const effectiveConfigs: Record<string, MCPServerConfig> = {
       "atlas-platform": getAtlasPlatformServerConfig(),
     };
-    for (const id of mcpServerIds) {
-      const config = this.options.mcpServerConfigs?.[id];
-      if (config && id !== "atlas-platform") {
-        effectiveConfigs[id] = config;
+    // `action.tools` is historically ambiguous: workspace-authored LLM actions
+    // (including those expanded from `type: agent` via expandAgentActions)
+    // put **tool names** here (e.g. "write_query"), while FSM-in-workspaces
+    // authored directly put **server IDs** (e.g. "sqlite"). The ID-based
+    // lookup below handles the latter. For the former, we load every
+    // workspace-configured MCP server so the tool names resolve against
+    // whichever server exposes them — the post-load filter at line 1998
+    // already blocks non-allowlisted platform tools from leaking in. Without
+    // this, Friday-generated KB workspaces spawn the sqlite MCP server
+    // successfully but the LLM step sees zero sqlite tools because the
+    // filter above never matched a server ID to "write_query" and silently
+    // dropped sqlite from `effectiveConfigs`.
+    const hasLikelyToolNames = mcpServerIds.some((name) => !this.options.mcpServerConfigs?.[name]);
+    if (hasLikelyToolNames && this.options.mcpServerConfigs) {
+      for (const [id, config] of Object.entries(this.options.mcpServerConfigs)) {
+        if (id !== "atlas-platform") effectiveConfigs[id] = config;
+      }
+    } else {
+      for (const id of mcpServerIds) {
+        const config = this.options.mcpServerConfigs?.[id];
+        if (config && id !== "atlas-platform") {
+          effectiveConfigs[id] = config;
+        }
       }
     }
 
