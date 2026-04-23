@@ -51,6 +51,7 @@ export type ValidationIssueCode =
   | "unknown_mcp_server_ref"
   | "unknown_memory_corpus"
   | "unreachable_agent"
+  | "job_without_trigger"
   // Cross-system
   | "unknown_skill"
   | "unknown_model"
@@ -151,7 +152,29 @@ function checkInternalCrossRefs(config: WorkspaceConfig): ValidationIssue[] {
   const definedMemory = new Set([...ownMemory, ...mountMemory]);
 
   const jobs = config.jobs ?? {};
+  const handleChatJobs = new Set(["handle-chat"]);
   for (const [jobName, job] of Object.entries(jobs)) {
+    // Chat ↔ jobs contract: jobs without a trigger signal are unreachable
+    // from workspace-chat. `createJobTools` (which surfaces jobs as MCP
+    // tools) skips any job whose `triggers[0].signal` is missing, so the
+    // meta-agent silently can't see the job and falls back to hallucinating
+    // plausible-sounding tool names. Reject the shape so the author either
+    // adds a trigger + signal or removes the dead job.
+    // `handle-chat` is auto-injected by the runtime and doesn't need a
+    // trigger, so exempt it here.
+    if (!handleChatJobs.has(jobName) && (job.triggers ?? []).length === 0) {
+      issues.push({
+        severity: "error",
+        code: "job_without_trigger",
+        path: `jobs.${jobName}.triggers`,
+        value: jobName,
+        message:
+          `Job '${jobName}' has no triggers. Chat reaches a workspace through ` +
+          `signal-triggered jobs; a job with no 'triggers[]' entry is unreachable ` +
+          `and won't appear as a tool. Add a signal under signals.* and reference ` +
+          `it: triggers: [{ signal: '<signal-name>' }].`,
+      });
+    }
     // Every trigger's signal must be defined.
     for (const [i, trigger] of (job.triggers ?? []).entries()) {
       if (trigger.signal && !definedSignals.has(trigger.signal)) {
