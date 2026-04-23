@@ -1,5 +1,4 @@
 import process from "node:process";
-import type { ArtifactRef, OutlineRef } from "@atlas/agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -8,13 +7,10 @@ import { z } from "zod";
 // ---------------------------------------------------------------------------
 
 const mockGenerateText = vi.fn();
-const mockGenerateObject = vi.fn();
-const mockArtifactPost = vi.fn();
 const mockExecuteSearch = vi.fn();
 
 vi.mock("ai", () => ({
   generateText: mockGenerateText,
-  generateObject: mockGenerateObject,
   tool: vi.fn((opts: Record<string, unknown>) => opts),
 }));
 
@@ -26,13 +22,8 @@ vi.mock("@atlas/llm", () => ({
 
 vi.mock("@atlas/agent-sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@atlas/agent-sdk")>();
-  return { ...actual, repairJson: vi.fn(), repairToolCall: vi.fn() };
+  return { ...actual, repairToolCall: vi.fn() };
 });
-
-vi.mock("@atlas/client/v2", () => ({
-  client: { artifactsStorage: { index: { $post: mockArtifactPost } } },
-  parseResult: (p: Promise<unknown>) => p,
-}));
 
 vi.mock("parallel-web", () => ({
   Parallel: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
@@ -81,18 +72,13 @@ function makeCtx(overrides?: Record<string, unknown>) {
   };
 }
 
-function makeRefs(): { artifactRefs: ArtifactRef[]; outlineRefs: OutlineRef[] } {
-  return { artifactRefs: [], outlineRefs: [] };
-}
-
 /** Helper: extract the execute function with a type assertion to avoid AI SDK's optional execute type. */
 async function executeSearch(
   ctx: ReturnType<typeof makeCtx>,
-  refs: ReturnType<typeof makeRefs>,
   input: { objective: string },
 ): Promise<string> {
   const { createSearchTool } = await import("./search.ts");
-  const searchTool = createSearchTool(ctx, refs);
+  const searchTool = createSearchTool(ctx);
   const execute = (
     searchTool as unknown as { execute: (input: { objective: string }) => Promise<string> }
   ).execute;
@@ -100,18 +86,25 @@ async function executeSearch(
 }
 
 /**
- * Sets up the mocks for a successful full pipeline:
- * generateText (query analysis) → executeSearch → generateObject (synthesis) → artifact post
+ * Sets up the mocks for a successful pipeline:
+ * generateText (query analysis) → executeSearch → generateText (synthesis)
  */
 function setupSuccessPipeline() {
-  // Query analysis: generateText calls the analyzeQuery tool
+  let generateTextCallCount = 0;
+  // Query analysis: first generateText call has tools
+  // Synthesis: second generateText call has no tools
   mockGenerateText.mockImplementation(
-    async (opts: { tools: { analyzeQuery: { execute: (input: unknown) => unknown } } }) => {
-      await opts.tools.analyzeQuery.execute({
-        complexity: "simple",
-        searchQueries: ["test query 1", "test query 2"],
-      });
-      return { finishReason: "tool-calls", toolCalls: [] };
+    async (opts: { tools?: { analyzeQuery: { execute: (input: unknown) => unknown } } }) => {
+      generateTextCallCount++;
+      if (generateTextCallCount === 1 && opts.tools) {
+        await opts.tools.analyzeQuery.execute({
+          complexity: "simple",
+          searchQueries: ["test query 1", "test query 2"],
+        });
+        return { finishReason: "tool-calls", toolCalls: [], text: "" };
+      }
+      // Synthesis call
+      return { finishReason: "stop", text: "Synthesized answer", toolCalls: [] };
     },
   );
 
@@ -119,36 +112,12 @@ function setupSuccessPipeline() {
   mockExecuteSearch.mockResolvedValue({
     search_id: "search-1",
     results: [
-      { url: "https://example.com/a", title: "Result A", excerpts: ["Content A"] },
+      { url: "https://example.com/a", title: "Result A", excerpts: ["Content A"], publish_date: "2026-04-20" },
       { url: "https://example.com/b", title: "Result B", excerpts: ["Content B"] },
     ],
-  });
-
-  // Synthesis
-  mockGenerateObject.mockResolvedValue({
-    object: {
-      title: "Test Report",
-      response: "# Full Report\n\nDetailed analysis...",
-      sources: [
-        { siteName: "Example", pageTitle: "Result A", url: "https://example.com/a" },
-        { siteName: "Example", pageTitle: "Result B", url: "https://example.com/b" },
-      ],
-      summary: "Two results were found about the test topic.",
-    },
-  });
-
-  // Artifact creation
-  mockArtifactPost.mockResolvedValue({
-    ok: true,
-    data: { artifact: { id: "art-1", type: "web-search", summary: "Test Report summary" } },
+    usage: { totalTokens: 100 },
   });
 }
-
-/** Zod schema for parsing the tool's JSON output */
-const SearchOutputSchema = z.object({
-  summary: z.string(),
-  sources: z.array(z.object({ url: z.string(), title: z.string() })),
-});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -170,7 +139,7 @@ describe("createSearchTool", () => {
     delete process.env.PARALLEL_API_KEY;
     delete process.env.FRIDAY_GATEWAY_URL;
 
-    const result = await executeSearch(makeCtx(), makeRefs(), { objective: "test" });
+    const result = await executeSearch(makeCtx(), { objective: "test" });
 
     expect(result).toBe("Search unavailable: FRIDAY_GATEWAY_URL or PARALLEL_API_KEY is required");
   });
@@ -180,72 +149,56 @@ describe("createSearchTool", () => {
     process.env.FRIDAY_GATEWAY_URL = "https://gateway.test";
     delete process.env.ATLAS_KEY;
 
-    const result = await executeSearch(makeCtx(), makeRefs(), { objective: "test" });
+    const result = await executeSearch(makeCtx(), { objective: "test" });
 
     expect(result).toBe("Search unavailable: ATLAS_KEY is required when using FRIDAY_GATEWAY_URL");
   });
 
-  it("runs full pipeline and returns structured JSON with summary and sources", async () => {
+  it("runs full pipeline and returns summary + sources as JSON", async () => {
     setupSuccessPipeline();
 
-    const result = await executeSearch(makeCtx(), makeRefs(), { objective: "test topic" });
-    const parsed = SearchOutputSchema.parse(JSON.parse(result));
+    const result = await executeSearch(makeCtx(), { objective: "test topic" });
+    const parsed = JSON.parse(result);
 
-    expect(parsed.summary).toBe("Two results were found about the test topic.");
-    expect(parsed.sources).toEqual([
-      { url: "https://example.com/a", title: "Result A" },
-      { url: "https://example.com/b", title: "Result B" },
-    ]);
-  });
-
-  it("pushes artifact and outline refs on success", async () => {
-    setupSuccessPipeline();
-
-    const refs = makeRefs();
-    await executeSearch(makeCtx(), refs, { objective: "test topic" });
-
-    expect(refs.artifactRefs).toHaveLength(1);
-    expect(refs.artifactRefs[0]).toEqual({
-      id: "art-1",
-      type: "web-search",
-      summary: "Test Report summary",
+    expect(parsed.searchId).toBe("search-1");
+    expect(parsed.summary).toBe("Synthesized answer");
+    expect(parsed.sources).toHaveLength(2);
+    expect(parsed.sources[0]).toMatchObject({
+      title: "Result A",
+      url: "https://example.com/a",
+      publishDate: "2026-04-20",
     });
-
-    expect(refs.outlineRefs).toHaveLength(1);
-    expect(refs.outlineRefs[0]).toEqual({
-      service: "internal",
-      title: "Search Result",
-      content: "Test Report",
-      artifactId: "art-1",
-      artifactLabel: "View Report",
-      type: "web-search",
+    expect(parsed.sources[1]).toMatchObject({
+      title: "Result B",
+      url: "https://example.com/b",
     });
+    expect(parsed.usage).toEqual({ totalTokens: 100 });
   });
 
   it("returns error string when search returns no results", async () => {
     mockGenerateText.mockImplementation(
-      async (opts: { tools: { analyzeQuery: { execute: (input: unknown) => unknown } } }) => {
-        await opts.tools.analyzeQuery.execute({
-          complexity: "simple",
-          searchQueries: ["empty query", "another empty"],
-        });
-        return { finishReason: "tool-calls", toolCalls: [] };
+      async (opts: { tools?: { analyzeQuery: { execute: (input: unknown) => unknown } } }) => {
+        if (opts.tools) {
+          await opts.tools.analyzeQuery.execute({
+            complexity: "simple",
+            searchQueries: ["empty query", "another empty"],
+          });
+        }
+        return { finishReason: "tool-calls", text: "", toolCalls: [] };
       },
     );
     mockExecuteSearch.mockResolvedValue({ search_id: "s-empty", results: [] });
 
-    const refs = makeRefs();
-    const result = await executeSearch(makeCtx(), refs, { objective: "nothing exists" });
+    const result = await executeSearch(makeCtx(), { objective: "nothing exists" });
 
     expect(result).toBe("No relevant results found for your query");
-    expect(refs.artifactRefs).toHaveLength(0);
   });
 
-  it("emits progress events through all phases", async () => {
+  it("emits progress events through all phases including synthesis", async () => {
     setupSuccessPipeline();
 
     const ctx = makeCtx();
-    await executeSearch(ctx, makeRefs(), { objective: "test" });
+    await executeSearch(ctx, { objective: "test" });
 
     const emitCalls = (ctx.stream.emit as ReturnType<typeof vi.fn>).mock.calls.map(
       (c: Array<{ data: { content: string } }>) => {
@@ -258,20 +211,5 @@ describe("createSearchTool", () => {
     expect(emitCalls).toContain("Analyzing query...");
     expect(emitCalls).toContain("Searching 2 queries...");
     expect(emitCalls).toContain("Synthesizing results...");
-  });
-
-  it("returns synthesis even when artifact creation fails", async () => {
-    setupSuccessPipeline();
-    mockArtifactPost.mockResolvedValue({ ok: false, error: { message: "storage unavailable" } });
-
-    const refs = makeRefs();
-    const result = await executeSearch(makeCtx(), refs, { objective: "test" });
-
-    // Still returns structured output — artifact is a side effect
-    const parsed = SearchOutputSchema.parse(JSON.parse(result));
-    expect(parsed.summary).toBeDefined();
-    // No refs pushed
-    expect(refs.artifactRefs).toHaveLength(0);
-    expect(refs.outlineRefs).toHaveLength(0);
   });
 });

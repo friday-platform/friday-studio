@@ -78,6 +78,10 @@ export const AtlasDataEventSchemas = {
     stepIndex: z.number().optional(),
     totalSteps: z.number().optional(),
   }),
+  "tool-timing": z.object({
+    toolCallId: z.string(),
+    durationMs: z.number(),
+  }),
   "outline-update": z.object({
     id: z.string(),
     title: z.string(),
@@ -242,6 +246,7 @@ export type AtlasDataEvents = {
   error: z.infer<(typeof AtlasDataEventSchemas)["error"]>;
   "user-message": z.infer<(typeof AtlasDataEventSchemas)["user-message"]>;
   "tool-progress": z.infer<(typeof AtlasDataEventSchemas)["tool-progress"]>;
+  "tool-timing": z.infer<(typeof AtlasDataEventSchemas)["tool-timing"]>;
   "outline-update": z.infer<(typeof AtlasDataEventSchemas)["outline-update"]>;
   "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;

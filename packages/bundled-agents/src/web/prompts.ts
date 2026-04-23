@@ -40,7 +40,7 @@ export function getWebAgentPrompt({ hasSearch }: WebAgentPromptOptions): string 
   const toolCount = hasSearch ? "three" : "two";
 
   const searchHeuristic = hasSearch
-    ? `- **Need to find information? → \`search\`.** ONE call handles your entire research objective. It internally decomposes into 2-10 parallel queries, cross-references sources, and returns a synthesized report. Pass your full question as-is — e.g. "What are new titanium and carbon gravel bikes with >2 inch tire clearance?" — and let the tool handle query decomposition. Do NOT call \`search\` multiple times to cover different facets of the same topic. You can follow up with \`fetch\` or \`browse\` on specific source URLs from the results.\n`
+    ? `- **Need to find information? → \`search\`.** ONE call handles your entire research objective. It internally decomposes into 2-10 parallel queries, synthesizes the results, and returns a concise summary with all source URLs. Pass your full question as-is — e.g. "What are new titanium and carbon gravel bikes with >2 inch tire clearance?" — and let the tool handle query decomposition. Do NOT call \`search\` multiple times for different facets of the same topic. Follow up with \`fetch\` or \`browse\` on specific source URLs when you need deeper detail.\n`
     : "";
 
   const combineExample = hasSearch

@@ -75,6 +75,13 @@ export interface ToolCallDisplay {
    * inside delegate envelopes (e.g. "Analyzing query..." from the web agent).
    */
   progress?: string[];
+  /**
+   * Server-reported duration in milliseconds for this tool call. Populated
+   * from `data-delegate-ledger` entries when available. For nested agent
+   * calls (e.g., fetch under agent_web), duration may be absent — the UI
+   * falls back to client-side elapsed-time tracking.
+   */
+  durationMs?: number;
 }
 
 export interface ImageDisplay {

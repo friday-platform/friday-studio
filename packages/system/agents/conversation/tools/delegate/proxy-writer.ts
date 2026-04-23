@@ -77,6 +77,25 @@ export function createDelegateProxyWriter(deps: ProxyDeps): DelegateProxyWriter 
         toolCallId: `${delegateToolCallId}::${chunk.toolCallId}`,
       } as AtlasUIMessageChunk;
     }
+    // Data events (e.g. data-tool-timing) may carry the toolCallId inside
+    // `data` rather than at the chunk top level — namespace those too.
+    if (
+      typeof outChunk === "object" &&
+      outChunk !== null &&
+      "data" in outChunk &&
+      typeof outChunk.data === "object" &&
+      outChunk.data !== null &&
+      "toolCallId" in outChunk.data &&
+      typeof outChunk.data.toolCallId === "string"
+    ) {
+      outChunk = {
+        ...outChunk,
+        data: {
+          ...outChunk.data,
+          toolCallId: `${delegateToolCallId}::${outChunk.data.toolCallId}`,
+        },
+      } as AtlasUIMessageChunk;
+    }
     return { type: "data-delegate-chunk", data: { delegateToolCallId, chunk: outChunk } };
   };
 

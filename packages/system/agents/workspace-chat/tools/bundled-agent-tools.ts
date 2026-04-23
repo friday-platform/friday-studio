@@ -156,6 +156,24 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
           ) {
             event = { ...event, toolCallId: `${toolCallId}::${event.toolCallId}` };
           }
+          // Data events (e.g. data-tool-timing) carry toolCallId inside `data`
+          // rather than at the top level — namespace those too so downstream
+          // reducers can correlate timing with reconstructed tool calls.
+          if (
+            typeof event === "object" &&
+            event !== null &&
+            "data" in event &&
+            typeof event.data === "object" &&
+            event.data !== null &&
+            "toolCallId" in event.data &&
+            typeof event.data.toolCallId === "string" &&
+            event.data.toolCallId.length > 0
+          ) {
+            event = {
+              ...event,
+              data: { ...event.data, toolCallId: `${toolCallId}::${event.data.toolCallId}` },
+            };
+          }
           deps.writer.write(event);
         },
         () => {},

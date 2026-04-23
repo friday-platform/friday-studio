@@ -10,7 +10,7 @@ import { getWebAgentPrompt } from "./prompts.ts";
  * confirm the change is intended, then update the hash constants below.
  */
 const EXPECTED_HASH_WITH_SEARCH =
-  "7b04f51e18e03b9c72c2ba287038106750dc5c2ba2f971d643e3045afce870de";
+  "a0d40a02e29800accab405e22d90451ce82801299f95a09cc8f5b089e4385235";
 const EXPECTED_HASH_WITHOUT_SEARCH =
   "eb208a7e24a43cc3412e4285dc2c965fe8e18ee2debe39f37b4ca97911332f92";
 

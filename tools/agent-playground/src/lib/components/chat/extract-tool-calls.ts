@@ -318,7 +318,8 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
       }
       continue;
     }
-    // Accumulate reasoning deltas and progress events alongside tool chunks.
+    // Accumulate reasoning deltas, progress events, and tool timings
+    // alongside tool chunks.
     if (
       typeof chunk === "object" &&
       chunk !== null &&
@@ -343,6 +344,22 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
         delegateProgress.set(delegateToolCallId, list);
         continue;
       }
+      if (
+        chunk.type === "data-tool-timing" &&
+        "data" in chunk &&
+        typeof chunk.data === "object" &&
+        chunk.data !== null &&
+        "toolCallId" in chunk.data &&
+        typeof chunk.data.toolCallId === "string" &&
+        "durationMs" in chunk.data &&
+        typeof chunk.data.durationMs === "number"
+      ) {
+        const existing = acc.get(chunk.data.toolCallId);
+        if (existing) {
+          existing.durationMs = chunk.data.durationMs;
+        }
+        continue;
+      }
     }
     applyChunk(acc, chunk);
   }
@@ -362,6 +379,47 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
       parent.progress = progress;
     }
   }
+
+  // Collect `data-delegate-ledger` parts to attach server-reported
+  // `durationMs` to reconstructed tool-call entries.
+  // Keys are `${delegateToolCallId}::${originalToolCallId}` to match the
+  // namespaced ids stored in the accumulator.
+  const durationMap = new Map<string, number>();
+  for (const part of msg.parts) {
+    if (typeof part !== "object" || part === null || !("type" in part)) continue;
+    if (part.type !== "data-delegate-ledger") continue;
+    if (!("data" in part) || typeof part.data !== "object" || part.data === null) continue;
+    const delegateToolCallId =
+      "delegateToolCallId" in part.data && typeof part.data.delegateToolCallId === "string"
+        ? part.data.delegateToolCallId
+        : "";
+    const toolsUsed =
+      "toolsUsed" in part.data && Array.isArray(part.data.toolsUsed) ? part.data.toolsUsed : [];
+    for (const entry of toolsUsed) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const childId =
+        "toolCallId" in entry && typeof entry.toolCallId === "string" ? entry.toolCallId : "";
+      const dur =
+        "durationMs" in entry && typeof entry.durationMs === "number" ? entry.durationMs : undefined;
+      if (delegateToolCallId && childId && dur !== undefined && dur > 0) {
+        durationMap.set(`${delegateToolCallId}::${childId}`, dur);
+      }
+    }
+  }
+
+  // Walk every reconstructed tree (including nested) and stamp durationMs
+  // from the ledger where available. Tree ids are already namespaced.
+  function attachDurations(entries: ToolCallDisplay[]): void {
+    for (const entry of entries) {
+      if (!entry.durationMs && durationMap.has(entry.toolCallId)) {
+        entry.durationMs = durationMap.get(entry.toolCallId);
+      }
+      if (entry.children && entry.children.length > 0) {
+        attachDurations(entry.children);
+      }
+    }
+  }
+  attachDurations(calls);
 
   // Reconciliation rules. `delegate-end` is checked first; the
   // parent-state fallback only applies to delegates that did NOT receive

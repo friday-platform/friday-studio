@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import type { ArtifactRef, OutlineRef } from "@atlas/agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
@@ -54,8 +53,6 @@ export const webAgent = createAgent<string, WebAgentResult>({
   handler: async (prompt, { session, logger, stream, config, abortSignal, platformModels }) => {
     logger.info(`[web] start: ${prompt.slice(0, 120).replace(/\s+/g, " ")}`);
 
-    const artifactRefs: ArtifactRef[] = [];
-    const outlineRefs: OutlineRef[] = [];
     const sessionState: SessionState = {
       sessionName: `atlas-web-${randomUUID()}`,
       daemonStarted: false,
@@ -65,10 +62,7 @@ export const webAgent = createAgent<string, WebAgentResult>({
       const hasSearchKey = Boolean(process.env.PARALLEL_API_KEY || process.env.FRIDAY_GATEWAY_URL);
 
       const searchTool = hasSearchKey
-        ? createSearchTool(
-          { session, stream, logger, config, abortSignal, platformModels },
-          { artifactRefs, outlineRefs },
-        )
+        ? createSearchTool({ session, stream, logger, config, abortSignal, platformModels })
         : null;
 
       if (!hasSearchKey) {
@@ -93,6 +87,11 @@ export const webAgent = createAgent<string, WebAgentResult>({
           stopWhen: stepCountIs(300),
           maxRetries: 3,
           abortSignal,
+          providerOptions: {
+            anthropic: {
+              thinking: { type: "enabled", budgetTokens: 4000 },
+            },
+          },
         },
         stream,
       });
@@ -106,8 +105,6 @@ export const webAgent = createAgent<string, WebAgentResult>({
       return ok(
         { response },
         {
-          artifactRefs,
-          outlineRefs,
           reasoning: result.reasoning,
           toolCalls: result.toolCalls,
           toolResults: result.toolResults,

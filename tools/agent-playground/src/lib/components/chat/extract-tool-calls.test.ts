@@ -82,6 +82,9 @@ function toolOutputAvailable(toolCallId: string, output: unknown) {
 function toolOutputError(toolCallId: string, errorText: string) {
   return { type: "tool-output-error", toolCallId, errorText };
 }
+function toolTiming(toolCallId: string, durationMs: number) {
+  return { type: "data-tool-timing", data: { toolCallId, durationMs } };
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -633,6 +636,104 @@ describe("extractToolCalls", () => {
       const [parent] = extractToolCalls(msg);
       expect(parent?.progress).toEqual(["Analyzing query...", "Synthesizing..."]);
       expect(parent?.children).toHaveLength(1);
+    });
+
+    it("attaches durationMs from data-delegate-ledger to reconstructed entries", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "output-available"),
+        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "https://x" })),
+        envelope("d1", toolOutputAvailable("d1::c1", { status: 200 })),
+        {
+          type: "data-delegate-ledger",
+          data: {
+            delegateToolCallId: "d1",
+            toolsUsed: [
+              {
+                toolCallId: "c1",
+                name: "web_fetch",
+                input: {},
+                outcome: "success",
+                stepIndex: 0,
+                durationMs: 2340,
+              },
+            ],
+          },
+        },
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      const [child] = parent?.children ?? [];
+      expect(child?.durationMs).toBe(2340);
+    });
+
+    it("ignores ledger entries with zero or missing durationMs", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "output-available"),
+        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+        {
+          type: "data-delegate-ledger",
+          data: {
+            delegateToolCallId: "d1",
+            toolsUsed: [
+              {
+                toolCallId: "c1",
+                name: "web_fetch",
+                input: {},
+                outcome: "success",
+                stepIndex: 0,
+                durationMs: 0,
+              },
+            ],
+          },
+        },
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      const [child] = parent?.children ?? [];
+      expect(child?.durationMs).toBeUndefined();
+    });
+
+    it("attaches durationMs from data-tool-timing to reconstructed entries", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "output-available"),
+        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "https://x" })),
+        envelope("d1", toolTiming("d1::c1", 5230)),
+        envelope("d1", toolOutputAvailable("d1::c1", { status: 200 })),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      const [child] = parent?.children ?? [];
+      expect(child?.durationMs).toBe(5230);
+    });
+
+    it("attaches data-tool-timing durationMs to nested grandchildren", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "output-available"),
+        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go" })),
+        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://x" })),
+        envelope("d1", toolTiming("d1::aw1::f1", 1890)),
+        envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
+        envelope("d1", toolOutputAvailable("d1::aw1", { response: "done" })),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      const [aw1] = parent?.children ?? [];
+      const [f1] = aw1?.children ?? [];
+      expect(f1?.durationMs).toBe(1890);
+    });
+
+    it("ignores data-tool-timing when no matching accumulator entry exists", () => {
+      const msg = makeMessage([
+        delegatePart("d1", "output-available"),
+        envelope("d1", toolTiming("d1::missing", 1234)),
+      ]);
+
+      const [parent] = extractToolCalls(msg);
+      expect(parent?.children).toEqual([]);
     });
   });
 });

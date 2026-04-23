@@ -46,11 +46,13 @@ export async function streamTextWithEvents({
   const result = streamText(params);
 
   let reasoningAccumulator = "";
+  const toolStartTimes = new Map<string, number>();
 
   for await (const chunk of result.fullStream) {
     if (!stream) continue;
 
     if (chunk.type === "tool-call") {
+      toolStartTimes.set(chunk.toolCallId, Date.now());
       stream.emit({
         type: "tool-input-available",
         toolCallId: chunk.toolCallId,
@@ -58,6 +60,15 @@ export async function streamTextWithEvents({
         input: chunk.input,
       });
     } else if (chunk.type === "tool-result") {
+      const start = toolStartTimes.get(chunk.toolCallId);
+      if (start !== undefined) {
+        const durationMs = Math.max(0, Date.now() - start);
+        stream.emit({
+          type: "data-tool-timing",
+          data: { toolCallId: chunk.toolCallId, durationMs },
+        });
+        toolStartTimes.delete(chunk.toolCallId);
+      }
       stream.emit({
         type: "tool-output-available",
         toolCallId: chunk.toolCallId,

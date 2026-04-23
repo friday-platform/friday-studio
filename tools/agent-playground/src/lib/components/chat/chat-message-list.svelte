@@ -186,6 +186,84 @@
   }
 
   /**
+   * Format a millisecond duration as a human-readable string.
+   *   < 1s → "340ms"
+   *   ≥ 1s → "2.3s"
+   */
+  function formatDuration(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  /**
+   * Client-side elapsed-time tracking for in-progress tool calls.
+   * Keyed by toolCallId; stores the timestamp when the call entered an
+   * in-progress state. A reactive `tick` re-computes every 500ms so the
+   * UI shows "running… (3.2s)" live.
+   */
+  const callStartTimes = $state(new Map<string, number>());
+  let elapsedTick = $state(0);
+
+  $effect(() => {
+    const anyRunning = messages.some((m) =>
+      m.toolCalls?.some((c) => isInProgress(c.state)),
+    );
+    if (!anyRunning) return;
+    const interval = setInterval(() => {
+      elapsedTick++;
+    }, 500);
+    return () => clearInterval(interval);
+  });
+
+  function getElapsedMs(call: ToolCallDisplay): number | undefined {
+    // Touch elapsedTick so Svelte re-runs this when the interval fires.
+    void elapsedTick;
+    if (!isInProgress(call.state)) return undefined;
+    const existing = callStartTimes.get(call.toolCallId);
+    if (existing) return Date.now() - existing;
+    callStartTimes.set(call.toolCallId, Date.now());
+    return 0;
+  }
+
+  function getDurationStatus(call: ToolCallDisplay): string {
+    const elapsed = getElapsedMs(call);
+    if (elapsed !== undefined) {
+      return `running… (${formatDuration(elapsed)})`;
+    }
+    if (call.durationMs && call.durationMs > 0) {
+      return `${outputSummary(call.toolName, call.output)} · ${formatDuration(call.durationMs)}`;
+    }
+    return outputSummary(call.toolName, call.output);
+  }
+
+  /**
+   * Copy raw JSON/string content to the clipboard, showing a brief
+   * "Copied!" confirmation on the triggering button.
+   */
+  function copyToClipboard(
+    value: unknown,
+    btn: HTMLButtonElement,
+  ) {
+    let text: string;
+    if (typeof value === "string") {
+      text = value;
+    } else {
+      try {
+        text = JSON.stringify(value, null, 2);
+      } catch {
+        text = String(value);
+      }
+    }
+    void navigator.clipboard.writeText(text).then(() => {
+      const original = btn.textContent ?? "Copy";
+      btn.textContent = "Copied!";
+      setTimeout(() => {
+        btn.textContent = original;
+      }, 1500);
+    });
+  }
+
+  /**
    * Svelte action: inject a "Copy" button on every <pre> and <table> inside
    * a `.markdown-body` container. Runs after initial render and re-scans
    * when the DOM subtree changes (streaming content).
@@ -373,11 +451,14 @@
   <span class="tool-card-arg">{argPreview(call.toolName, call.input)}</span>
   <span class="tool-card-status">
     {#if isInProgress(call.state)}
-      running…
+      {getDurationStatus(call)}
     {:else if call.state === "output-available"}
-      {outputSummary(call.toolName, call.output)}
+      {getDurationStatus(call)}
     {:else if call.state === "output-error"}
       {call.errorText ?? "failed"}
+      {#if call.durationMs && call.durationMs > 0}
+        <span class="duration-badge">· {formatDuration(call.durationMs)}</span>
+      {/if}
     {:else if call.state === "output-denied"}
       denied
     {:else if call.state === "approval-requested"}
@@ -386,6 +467,19 @@
       {call.state}
     {/if}
   </span>
+{/snippet}
+
+{#snippet jsonCopyBlock(label: string, data: unknown)}
+  <div class="json-copy-wrapper">
+    <button
+      class="json-copy-btn"
+      aria-label={`Copy ${label}`}
+      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+    >
+      Copy
+    </button>
+    <pre>{@html formatRawOutput(data)}</pre>
+  </div>
 {/snippet}
 
 {#snippet toolCardOutputDrawer(call: ToolCallDisplay)}
@@ -401,19 +495,28 @@
       {#if hasInput}
         <details class="tool-card-details">
           <summary>input</summary>
-          <pre>{@html formatRawOutput(call.input)}</pre>
+          {@render jsonCopyBlock("input", call.input)}
         </details>
       {/if}
       {#if hasOutput}
         <details class="tool-card-details">
           <summary>output</summary>
-          <pre>{@html formatRawOutput(call.output)}</pre>
+          {@render jsonCopyBlock("output", call.output)}
         </details>
       {/if}
       {#if hasError}
         <details class="tool-card-details" open>
           <summary>error</summary>
-          <pre class="error-text">{call.errorText}</pre>
+          <div class="json-copy-wrapper">
+            <button
+              class="json-copy-btn"
+              aria-label="Copy error"
+              onclick={(e: MouseEvent) => copyToClipboard(call.errorText, e.currentTarget as HTMLButtonElement)}
+            >
+              Copy
+            </button>
+            <pre class="error-text">{call.errorText}</pre>
+          </div>
         </details>
       {/if}
     </div>
@@ -1068,18 +1171,6 @@
     display: flex;
   }
 
-  /* The output-drawer <details> inside a delegate card needs its own padding
-     since `.tool-card.with-children` zeros the parent padding. Hide the
-     drawer entirely when the delegate is collapsed (same shadow-DOM
-     bypass workaround as the children container above). */
-  .tool-card.with-children > .tool-card-details {
-    display: none;
-  }
-  .tool-card.with-children[open] > .tool-card-details {
-    display: block;
-    padding: 0 var(--size-2-5) var(--size-1-5);
-  }
-
   .tool-card-header {
     align-items: center;
     display: flex;
@@ -1133,7 +1224,13 @@
     user-select: none;
   }
 
-  .tool-card-details > pre {
+  /* ─── JSON copy button (tool-card drawer) ─────────────────────────── */
+
+  .json-copy-wrapper {
+    position: relative;
+  }
+
+  .json-copy-wrapper pre {
     background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 30%));
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono, ui-monospace, monospace);
@@ -1144,6 +1241,32 @@
     padding: var(--size-2);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .json-copy-btn {
+    background-color: light-dark(hsl(220 12% 88%), hsl(220 10% 22%));
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    inset-block-start: var(--size-1);
+    inset-inline-end: var(--size-1);
+    opacity: 0;
+    padding: 2px 8px;
+    position: absolute;
+    transition: opacity 100ms ease, color 100ms ease, background-color 100ms ease;
+    z-index: 1;
+  }
+
+  .json-copy-wrapper:hover .json-copy-btn {
+    opacity: 1;
+  }
+
+  .json-copy-btn:hover {
+    background-color: light-dark(hsl(220 12% 82%), hsl(220 10% 28%));
+    color: var(--color-text);
   }
 
   /* ─── Delegate ephemeral (reasoning + progress) ─────────────────────── */
@@ -1264,6 +1387,15 @@
     max-block-size: 300px;
     max-inline-size: 100%;
     object-fit: contain;
+  }
+
+  /* ─── Duration badge ────────────────────────────────────────────────── */
+
+  .duration-badge {
+    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
+    font-variant-numeric: tabular-nums;
+    margin-inline-start: var(--size-1);
+    opacity: 0.75;
   }
 
   /* ─── Empty state ───────────────────────────────────────────────────── */
