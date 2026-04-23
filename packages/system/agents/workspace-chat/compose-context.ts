@@ -151,44 +151,67 @@ export async function composeMemoryBlocks(
   const allIds = [primaryId, ...foregroundIds];
   const blocks: string[] = [];
 
+  // Track which source workspaces have already been emitted so that mounts
+  // and explicit foreground IDs pointing to the same workspace don't
+  // produce duplicate blocks.
+  const emittedSourceIds = new Set<string>();
+
   const results = await Promise.allSettled(
     allIds.map(async (workspaceId) => {
       const listRes = await fetch(`${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}`);
-      if (!listRes.ok) return null;
+      if (!listRes.ok) return [];
 
       const listData = MemoryListSchema.safeParse(await listRes.json());
-      if (!listData.success || listData.data.length === 0) return null;
+      if (!listData.success || listData.data.length === 0) return [];
 
       const narrativeCorpora = listData.data.filter((m) => m.kind === "narrative");
-      if (narrativeCorpora.length === 0) return null;
+      if (narrativeCorpora.length === 0) return [];
 
-      const entryResults = await Promise.allSettled(
-        narrativeCorpora.map(async (corpus) => {
-          const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(corpus.name)}?limit=20`;
-          const res = await fetch(url);
-          if (!res.ok) return [];
-          const data = z.array(NarrativeEntrySchema).safeParse(await res.json());
-          return data.success ? data.data : [];
-        }),
-      );
+      // Group corpora by their source workspace. Own corpora have
+      // corpus.workspaceId === workspaceId; mounted corpora point elsewhere.
+      const bySource = new Map<string, z.infer<typeof MemoryListSchema>[number][]>();
+      for (const corpus of narrativeCorpora) {
+        const src = corpus.workspaceId;
+        const existing = bySource.get(src) ?? [];
+        existing.push(corpus);
+        bySource.set(src, existing);
+      }
 
-      const entries = entryResults
-        .filter(
-          (r): r is PromiseFulfilledResult<z.infer<typeof NarrativeEntrySchema>[]> =>
-            r.status === "fulfilled",
-        )
-        .flatMap((r) => r.value);
+      const wsBlocks: string[] = [];
+      for (const [sourceId, corpora] of bySource) {
+        if (emittedSourceIds.has(sourceId)) continue;
+        emittedSourceIds.add(sourceId);
 
-      if (entries.length === 0) return null;
+        const entryResults = await Promise.allSettled(
+          corpora.map(async (corpus) => {
+            const url = `${daemonUrl}/api/memory/${encodeURIComponent(corpus.workspaceId)}/narrative/${encodeURIComponent(corpus.name)}?limit=20`;
+            const res = await fetch(url);
+            if (!res.ok) return [];
+            const data = z.array(NarrativeEntrySchema).safeParse(await res.json());
+            return data.success ? data.data : [];
+          }),
+        );
 
-      const lines = entries.map((e) => `- ${e.text}`);
-      return `<memory workspace="${workspaceId}">\n${lines.join("\n")}\n</memory>`;
+        const entries = entryResults
+          .filter(
+            (r): r is PromiseFulfilledResult<z.infer<typeof NarrativeEntrySchema>[]> =>
+              r.status === "fulfilled",
+          )
+          .flatMap((r) => r.value);
+
+        if (entries.length === 0) continue;
+
+        const lines = entries.map((e) => `- ${e.text}`);
+        wsBlocks.push(`<memory workspace="${sourceId}">\n${lines.join("\n")}\n</memory>`);
+      }
+
+      return wsBlocks;
     }),
   );
 
   for (const [i, result] of results.entries()) {
-    if (result.status === "fulfilled" && result.value) {
-      blocks.push(result.value);
+    if (result.status === "fulfilled") {
+      blocks.push(...result.value);
     } else if (result.status === "rejected") {
       logger.warn("Failed to fetch memory for workspace", {
         workspaceId: allIds[i],

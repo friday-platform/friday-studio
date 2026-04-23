@@ -126,11 +126,10 @@ For any of those, go to Path 2.
 
 ## 2. Disk edit via `run_code`
 
-The daemon watches `workspace.yml` for every registered workspace
-(`packages/workspace/src/watchers/config-file-watcher.ts`). Edits on disk
-trigger `handleWorkspaceConfigChange` in the workspace manager: hash-check,
-validate, destroy runtime if active, ready for next signal. Active sessions
-defer the reload via `pendingWatcherChanges` until they complete.
+The daemon watches `workspace.yml` for every registered workspace. Edits on
+disk trigger a hash-check, validate against the config schema, destroy the
+active runtime, and ready it for the next signal. Active sessions defer the
+reload until they complete.
 
 That means: if you can write to `workspace.yml`, the runtime picks it up.
 Runtime id, sessions, and memory are all preserved.
@@ -142,7 +141,7 @@ Runtime id, sessions, and memory are all preserved.
 import json, urllib.request
 
 WS = "grilled_xylem"
-WS_PATH = "/Users/kenneth/.atlas/workspaces/my-workspace/workspace.yml"
+WS_PATH = "/path/to/.atlas/workspaces/my-workspace/workspace.yml"
 
 # 1. Read current config (API gives parsed JSON — no YAML parsing needed)
 with urllib.request.urlopen(f"http://localhost:8080/api/workspaces/{WS}/config") as resp:
@@ -191,7 +190,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 const config = JSON.parse(readFileSync("/tmp/config.json", "utf8"));
 const yaml = stringify(config);
 
-const WS_PATH = "/Users/kenneth/.atlas/workspaces/my-workspace/workspace.yml";
+const WS_PATH = "/path/to/.atlas/workspaces/my-workspace/workspace.yml";
 writeFileSync(WS_PATH, yaml);
 console.log("wrote", yaml.length, "bytes");
 ```
@@ -202,7 +201,7 @@ Or skip YAML entirely and keep the file as JSON-flavored YAML — the daemon's
 ```python
 # run_code, language: python
 import json
-WS_PATH = "/Users/kenneth/.atlas/workspaces/my-workspace/workspace.yml"
+WS_PATH = "/path/to/.atlas/workspaces/my-workspace/workspace.yml"
 with open(WS_PATH, "w") as f:
     json.dump(config, f, indent=2)
 ```
@@ -240,19 +239,16 @@ place. Fix and re-write.
 
 ## Why `write_file` doesn't work
 
-The `write_file` tool in workspace chat is sandboxed to
-`{ATLAS_HOME}/scratch/{sessionId}/` —
-`packages/system/agents/workspace-chat/tools/file-io.ts`. Absolute paths are
-rejected, `..` escapes are rejected. It's for staging intermediate data
-between `run_code` calls in the same session.
+The `write_file` tool in workspace chat is sandboxed to a per-session scratch
+directory. Absolute paths and `..` escapes are rejected. It's for staging
+intermediate data between `run_code` calls in the same session.
 
-Writing what looks like `workspace.yml` via `write_file` just creates
-`scratch/<session>/workspace.yml` — invisible to the daemon. That's the
-bug that forces agents into unnecessary DELETE + CREATE loops.
+Writing what looks like `workspace.yml` via `write_file` just creates a file
+in the scratch directory — invisible to the daemon. That's the bug that forces
+agents into unnecessary DELETE + CREATE loops.
 
-`run_code`, in contrast, runs with `cwd: scratchDir` but inherits full
-`process.env`. It can read and write anywhere the user account can — which
-includes the workspace directory.
+`run_code`, in contrast, can read and write anywhere the user account can —
+which includes the workspace directory.
 
 ## 3. DELETE + CREATE (last resort)
 
@@ -303,17 +299,14 @@ the workspace has an active session that's blocking the reload (check
 (see the minimal example in `SKILL.md`). Jobs without an `fsm:` block are
 silently skipped by the runtime.
 
-**File edit doesn't reload.** Confirm the watcher sees the workspace:
-`tail ~/.atlas/logs/workspaces/<id>.log` should show `"Started watching
-workspace configuration"` on boot. Confirm the file content hash actually
-changed (the watcher skips no-op writes). Confirm the new YAML passes
-`WorkspaceConfigSchema.safeParse` — the watcher logs
-`"Invalid workspace configuration detected, skipping reload"` with Zod
-errors when it doesn't.
+**File edit doesn't reload.** Confirm the file content hash actually changed
+(the watcher skips no-op writes). Confirm the new YAML is valid — the watcher
+logs `"Invalid workspace configuration detected, skipping reload"` with
+validation errors when it isn't.
 
-**Deferred reload.** If `pendingWatcherChanges` has stashed your edit, it
-re-applies after the active session ends (see `processPendingWatcherChange`
-in `manager.ts`). Either wait, or cancel the session.
+**Deferred reload.** If a session is active when you write the file, the
+reload is deferred until the session completes. Either wait, or cancel the
+session.
 
 **404 on `POST /api/workspaces/:id/config`.** That route doesn't exist.
 There is no full-replace endpoint. Use the disk-edit path instead.

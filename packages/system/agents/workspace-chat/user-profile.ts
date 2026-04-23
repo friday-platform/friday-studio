@@ -48,17 +48,17 @@ export async function fetchUserProfileState(
   try {
     const res = await fetch(url);
     if (!res.ok) {
-      logger.warn("user-profile fetch failed", { workspaceId, status: res.status });
+      logger.warn("user-notes fetch failed", { workspaceId, status: res.status });
       return { status: "unknown" };
     }
     const parsed = z.array(NarrativeEntrySchema).safeParse(await res.json());
     if (!parsed.success) {
-      logger.warn("user-profile response invalid", { workspaceId });
+      logger.warn("user-notes response invalid", { workspaceId });
       return { status: "unknown" };
     }
     return parseUserProfileState(parsed.data);
   } catch (err) {
-    logger.warn("user-profile fetch error", { workspaceId, error: err });
+    logger.warn("user-notes fetch error", { workspaceId, error: err });
     return { status: "unknown" };
   }
 }

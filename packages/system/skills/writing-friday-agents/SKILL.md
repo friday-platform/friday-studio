@@ -1,6 +1,6 @@
 ---
 name: writing-friday-agents
-description: "Write, edit, or debug a Friday agent using the `friday_agent_sdk` Python SDK. Use when creating a new agent, adding LLM/HTTP/MCP capabilities, fixing `ctx.llm is None` errors, debugging componentize-py or WASM build failures, or any work mentioning `@agent`, `AgentContext`, `ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`, `ok()`/`err()`, `parse_input`/`parse_operation`, or the `_bridge` import. Use even when the user says \"write a Python function that does X\" inside `packages/python/examples/`, an `agents/` directory, or any Friday agent project. Friday agents compile to WebAssembly and run in a sandbox with no pip, no threads, no filesystem, and no direct network — authoring patterns are non-obvious. Consult this skill before writing code."
+description: "Write, edit, or debug a Friday agent using the `friday_agent_sdk` Python SDK. Use when creating a new agent, adding LLM/HTTP/MCP capabilities, fixing `ctx.llm is None` errors, debugging componentize-py or WASM build failures, or any work mentioning `@agent`, `AgentContext`, `ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`, `ok()`/`err()`, `parse_input`/`parse_operation`, or the `_bridge` import. Use even when the user says \"write a Python function that does X\" inside an `agents/` directory or any Friday agent project. Friday agents compile to WebAssembly and run in a sandbox with no pip, no threads, no filesystem, and no direct network — authoring patterns are non-obvious. Consult this skill before writing code."
 user-invocable: false
 ---
 
@@ -115,4 +115,7 @@ Load only when the task touches that area. SKILL.md alone covers the first-try p
 
 ## Unsure what shape the agent should take
 
-Check `packages/python/examples/` for representative patterns — echo, LLM-only, LLM+HTTP, MCP tools, operation dispatch. Matching an existing example is the right first move.
+Ask the user what the agent needs to do, then pick the simplest capability
+combination from the table above (LLM-only, LLM+HTTP, MCP tools, operation
+dispatch). Start from the boilerplate above and add only the capabilities
+needed.

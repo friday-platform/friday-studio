@@ -88,14 +88,7 @@ reliable.
 workspace_create({
   config: {
     version: "1.0",
-    workspace: { name: "my-space", description: "What it does" },
-    memory: {
-      own: [
-        { name: "user-profile", type: "long_term",  strategy: "narrative" },
-        { name: "notes",        type: "long_term",  strategy: "narrative" },
-        { name: "scratchpad",   type: "scratchpad", strategy: "narrative" }
-      ]
-    }
+    workspace: { name: "my-space", description: "What it does" }
   },
   workspaceName: "my-space"   // optional; kebab-case directory name
 })
@@ -288,9 +281,8 @@ agents:
 ```yaml
 memory:
   own:                          # corpora this workspace creates
-    - { name: "user-profile", type: "long_term",  strategy: "narrative" }
-    - { name: "notes",        type: "long_term",  strategy: "narrative" }
-    - { name: "scratchpad",   type: "scratchpad", strategy: "narrative" }
+    - { name: "notes",   type: "short_term", strategy: "narrative" }
+    - { name: "memory",  type: "long_term",  strategy: "narrative" }
 
   mounts:                       # read/write other workspaces' memory
     - name: "backlog"

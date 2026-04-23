@@ -76,7 +76,7 @@ export type MemoryScopeDescriptor =
 
 // ── Well-known corpus names ──────────────────────────────────────────────────
 
-export const USER_PROFILE_CORPUS = "user-profile" as const;
+export const USER_PROFILE_CORPUS = "notes" as const;
 
 export type UserProfileEntryType = "user-name" | "name-declined";
 

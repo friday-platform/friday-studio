@@ -67,6 +67,7 @@
     "typecheck": "deno check && deno task -r check",
     "lint": "deno lint --fix && deno run -A npm:@biomejs/biome check --write",
     "lint:check": "deno lint && deno run -A npm:@biomejs/biome check --max-diagnostics=200",
+    "migrate-memory": "deno run --allow-read --allow-write --allow-env --allow-sys --unstable-kv scripts/migrate-memory.ts",
     "clean": "deno run -A scripts/clean.ts",
     "compile": "./scripts/compile.sh",
     "evals": "deno run --allow-all tools/evals/run.ts",
