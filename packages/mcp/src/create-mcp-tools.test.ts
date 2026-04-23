@@ -718,4 +718,109 @@ describe("createMCPTools", () => {
     expect(closeResolved).toBe(true);
     expect(slowClose).toHaveBeenCalledTimes(1);
   });
+
+  describe("stdio arg placeholder expansion", () => {
+    // Regression: Friday kept hallucinating absolute paths like
+    // `/Users/yena/.atlas/...` when the real user was `yenaoh`. Expanding
+    // `${HOME}` / `${ATLAS_HOME}` at spawn time makes templates portable
+    // and removes the hallucinated-username failure mode.
+    it("expands ${HOME} and ${ATLAS_HOME} in stdio args before spawning", async () => {
+      const originalHome = process.env.HOME;
+      const originalAtlasHome = process.env.ATLAS_HOME;
+      process.env.HOME = "/Users/yenaoh";
+      process.env.ATLAS_HOME = "/Users/yenaoh/.atlas";
+
+      try {
+        mockTools.mockResolvedValue({ write_query: { description: "x", parameters: {} } });
+        mockClose.mockResolvedValue(undefined);
+        mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+        const configs: Record<string, MCPServerConfig> = {
+          sqlite: {
+            transport: {
+              type: "stdio",
+              command: "uvx",
+              args: [
+                "mcp-server-sqlite",
+                "--db-path",
+                "${ATLAS_HOME}/workspaces/knowledge-base/kb.sqlite",
+                "--fallback",
+                "${HOME}/Documents/kb.sqlite",
+              ],
+            },
+          },
+        };
+
+        await createMCPTools(configs, fakeLogger);
+
+        expect(MockStdioTransport).toHaveBeenCalledWith(
+          expect.objectContaining({
+            args: [
+              "mcp-server-sqlite",
+              "--db-path",
+              "/Users/yenaoh/.atlas/workspaces/knowledge-base/kb.sqlite",
+              "--fallback",
+              "/Users/yenaoh/Documents/kb.sqlite",
+            ],
+          }),
+        );
+      } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalAtlasHome === undefined) delete process.env.ATLAS_HOME;
+        else process.env.ATLAS_HOME = originalAtlasHome;
+      }
+    });
+
+    it("leaves args without placeholders untouched", async () => {
+      mockTools.mockResolvedValue({});
+      mockClose.mockResolvedValue(undefined);
+      mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+      const configs: Record<string, MCPServerConfig> = {
+        fetch: { transport: { type: "stdio", command: "uvx", args: ["mcp-server-fetch"] } },
+      };
+
+      await createMCPTools(configs, fakeLogger);
+
+      expect(MockStdioTransport).toHaveBeenCalledWith(
+        expect.objectContaining({ args: ["mcp-server-fetch"] }),
+      );
+    });
+
+    it("falls back to ${HOME}/.atlas when ATLAS_HOME is unset", async () => {
+      const originalHome = process.env.HOME;
+      const originalAtlasHome = process.env.ATLAS_HOME;
+      process.env.HOME = "/Users/test";
+      delete process.env.ATLAS_HOME;
+
+      try {
+        mockTools.mockResolvedValue({});
+        mockClose.mockResolvedValue(undefined);
+        mockCreateMCPClient.mockResolvedValue({ tools: mockTools, close: mockClose });
+
+        const configs: Record<string, MCPServerConfig> = {
+          sqlite: {
+            transport: {
+              type: "stdio",
+              command: "uvx",
+              args: ["mcp-server-sqlite", "--db-path", "${ATLAS_HOME}/kb.sqlite"],
+            },
+          },
+        };
+
+        await createMCPTools(configs, fakeLogger);
+
+        expect(MockStdioTransport).toHaveBeenCalledWith(
+          expect.objectContaining({
+            args: ["mcp-server-sqlite", "--db-path", "/Users/test/.atlas/kb.sqlite"],
+          }),
+        );
+      } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalAtlasHome !== undefined) process.env.ATLAS_HOME = originalAtlasHome;
+      }
+    });
+  });
 });

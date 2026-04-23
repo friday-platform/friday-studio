@@ -161,11 +161,31 @@ async function connectServer(
   }
 }
 
+/**
+ * Expand `${HOME}` / `${ATLAS_HOME}` inside a single stdio arg. Friday
+ * regularly hallucinates usernames when asked to write absolute paths in
+ * workspace.yml (e.g. `/Users/yena/...` when the real user is `yenaoh`),
+ * which 3-retries into "MCP server failed to start" and silently strips
+ * the sqlite/fs tools from the agent. Supporting portable placeholders
+ * in args lets templates stay stable across machines and sidesteps the
+ * guessed-username failure mode entirely.
+ *
+ * Only two placeholders are interpolated — both resolve from the
+ * daemon's own environment, so there's no way a workspace.yml can
+ * smuggle in a value that escapes the user's own scope.
+ */
+function interpolateArg(arg: string): string {
+  const home = process.env.HOME ?? "";
+  const atlasHome = process.env.ATLAS_HOME ?? (home ? `${home}/.atlas` : "");
+  return arg.replaceAll("${HOME}", home).replaceAll("${ATLAS_HOME}", atlasHome);
+}
+
 async function connectStdio(
   transport: Extract<MCPServerConfig["transport"], { type: "stdio" }>,
   resolvedEnv: Record<string, string>,
 ): Promise<ConnectedServer> {
   const { command, args } = transport;
+  const expandedArgs = (args ?? []).map(interpolateArg);
 
   // Merge resolved env with parent process env (subprocess needs PATH etc.)
   const parentEnv = Object.fromEntries(
@@ -177,7 +197,7 @@ async function connectStdio(
 
   return await retry(async () => {
     const client = await createMCPClient({
-      transport: new StdioMCPTransport({ command, args: args ?? [], env: mergedEnv }),
+      transport: new StdioMCPTransport({ command, args: expandedArgs, env: mergedEnv }),
     });
 
     // Verify the subprocess is actually responding AND capture tools in one call.

@@ -378,12 +378,21 @@ Tool names exposed by these servers are what you list in `agents.*.config.tools`
 
 | Need | Transport | Command | Args |
 |---|---|---|---|
-| SQLite | stdio | `uvx` | `mcp-server-sqlite`, `--db-path`, `<abs-path>` |
+| SQLite | stdio | `uvx` | `mcp-server-sqlite`, `--db-path`, `${ATLAS_HOME}/workspaces/<ws-name>/<db>.sqlite` |
 | Filesystem | stdio | `npx` | `-y`, `@modelcontextprotocol/server-filesystem`, `<root>` |
 | GitHub | stdio | `npx` | `-y`, `@modelcontextprotocol/server-github` |
 | Postgres | stdio | `npx` | `-y`, `@modelcontextprotocol/server-postgres`, `<conn-str>` |
 | Fetch | stdio | `uvx` | `mcp-server-fetch` |
 | Time | stdio | `uvx` | `mcp-server-time` |
+
+**Path placeholders in MCP args.** The daemon expands `${HOME}` and
+`${ATLAS_HOME}` in every `args` entry at MCP spawn time. **Always prefer
+these over hardcoded `/Users/<name>/...` paths** — guessing the username
+is the single most common silent-failure mode (the sqlite process can't
+open the file, the MCP server dies, the agent's SQL tools vanish, and
+"saving" produces apologetic text while nothing persists). There is no
+`${WORKSPACE_PATH}` placeholder today; build the path from `${ATLAS_HOME}`
+plus the workspace name.
 
 For other servers, search the MCP registry. Validator flags `npm_package_not_found`
 / `pypi_package_not_found` if a package doesn't exist — fix and retry.

@@ -4,10 +4,11 @@
 # Submit the object below as `config` to workspace_create.
 #
 # Before submitting:
-#   1. Replace {{DB_PATH}} with the absolute path the MCP server should use for
-#      the SQLite file. A safe default is
-#      "{ATLAS_HOME}/workspaces/{workspace-name}/kb.sqlite" — but write out the
-#      literal absolute path; args are not env-expanded.
+#   1. Optional: rename the workspace by changing `name:` and updating the
+#      matching segment in `--db-path`. The path below uses `${ATLAS_HOME}`
+#      which is expanded at MCP spawn time to the daemon's Atlas home
+#      (typically `~/.atlas`) — do NOT write literal `/Users/<name>/...`
+#      paths; guessed usernames fail silently on other machines.
 #   2. Replace {{USER_NAME}} in the agent prompt or remove the line.
 
 version: "1.0"
@@ -31,7 +32,7 @@ tools:
           args:
             - mcp-server-sqlite
             - "--db-path"
-            - "{{DB_PATH}}"
+            - "${ATLAS_HOME}/workspaces/knowledge-base/kb.sqlite"
 
 agents:
   kb-chat:

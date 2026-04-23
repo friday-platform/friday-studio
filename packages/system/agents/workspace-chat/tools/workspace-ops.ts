@@ -52,7 +52,14 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
         "`{type: code, function: 'fnName'}`, `{type: emit, event: EVENT_NAME}`. " +
         "Do NOT use `type: action, action: {...}, next: ...` — that's the legacy " +
         "shape and it fails with fsm_structural_error. Agent states typically end " +
-        "with `- type: emit, event: ADVANCE` and route via `on.ADVANCE.target`.",
+        "with `- type: emit, event: ADVANCE` and route via `on.ADVANCE.target`.\n\n" +
+        "MCP stdio paths: use `${ATLAS_HOME}` (expanded at spawn time) for any " +
+        "path that needs to live under the user's Atlas home. NEVER author a " +
+        "literal `/Users/<name>/...` path — you don't know the real username " +
+        "and guessing fails silently (the sqlite server can't open the file, " +
+        "its tools vanish from the agent, and 'saving' produces apologetic " +
+        "text while nothing persists). Example: " +
+        '`args: [mcp-server-sqlite, --db-path, "${ATLAS_HOME}/workspaces/<ws-name>/kb.sqlite"]`.',
       inputSchema: jsonSchema(WORKSPACE_CREATE_INPUT_SCHEMA),
       execute: async (input: Record<string, unknown>) => {
         const config = input.config as Record<string, unknown>;
