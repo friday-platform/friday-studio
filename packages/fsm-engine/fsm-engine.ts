@@ -112,6 +112,45 @@ const PrepareResultSchema = z
 type PrepareResult = z.infer<typeof PrepareResultSchema>;
 
 /**
+ * Resolve `{{inputs.x}}`, `{{config.x}}`, and `{{signal.payload.x}}` refs in
+ * an agent prompt against the prepare-result payload. LLM-authored workspaces
+ * routinely write these placeholders (it's the convention in every other agent
+ * framework) and the LLM refuses when they come through unrendered ("required
+ * input values are missing"). Dotted paths are supported for nested values;
+ * unresolved placeholders are kept verbatim so typos stay visible during
+ * authoring rather than silently rendering as empty strings.
+ *
+ * Uses only properties already exposed via `PrepareResult` (`task`, `config`,
+ * `artifactRefs`); does not reach into ambient FSM state, so there's no way
+ * an agent's prompt can smuggle context from outside its invocation payload.
+ */
+export function interpolatePromptPlaceholders(
+  prompt: string,
+  prepareResult: PrepareResult | undefined,
+): string {
+  if (!prepareResult) return prompt;
+  const config = prepareResult.config ?? {};
+  // Expose the same bag under multiple well-known roots — different agent
+  // frameworks use different names for this, and the cost of accepting all
+  // three is one line per alias. `inputs.*` is the most common.
+  const scopes: Record<string, unknown> = { inputs: config, config, signal: { payload: config } };
+  return prompt.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}/g, (original, path) => {
+    const segments = String(path).split(".");
+    let cursor: unknown = scopes;
+    for (const segment of segments) {
+      if (cursor === null || cursor === undefined || typeof cursor !== "object") {
+        return original;
+      }
+      cursor = (cursor as Record<string, unknown>)[segment];
+    }
+    if (cursor === undefined || cursor === null) return original;
+    if (typeof cursor === "string") return cursor;
+    if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
+    return JSON.stringify(cursor);
+  });
+}
+
+/**
  * Parse a code action return value into a PrepareResult.
  * Returns undefined for null, non-conforming, or empty (neither task nor config) results.
  */
@@ -965,6 +1004,26 @@ export class FSMEngine {
       let prepareResult: PrepareResult | undefined = storedPrepare
         ? parsePrepareResult(storedPrepare)
         : undefined;
+
+      // If there's no prior prepare result and the triggering signal carries a
+      // payload, auto-seed the config from it. Friday-authored FSMs routinely
+      // expect agent prompts to reference signal-payload fields (either via
+      // `{{inputs.x}}` substitution or the Input section), but most authors
+      // never add an explicit code-action to move the payload into
+      // prepareResult. Without this, signal payloads simply vanished — the
+      // job fired, the FSM ran, and the agent complained about missing
+      // inputs while the values sat in `sig.data` unread.
+      if (!prepareResult && sig.data && typeof sig.data === "object") {
+        const candidate = sig.data as Record<string, unknown>;
+        // `createJobTools` wraps tool args under `payload` when firing the
+        // signal; unwrap if present so the agent sees the user-supplied
+        // fields at the top level. Otherwise take the raw object.
+        const payload =
+          "payload" in candidate && typeof candidate.payload === "object" && candidate.payload
+            ? (candidate.payload as Record<string, unknown>)
+            : candidate;
+        prepareResult = { config: payload };
+      }
       for (const action of actions) {
         prepareResult = await this.executeAction(
           action,
@@ -1804,7 +1863,19 @@ export class FSMEngine {
     // Ground the LLM temporally at invocation time
     const factsSection = buildTemporalFacts();
 
-    let prompt = `${factsSection}\n\n${basePrompt}`;
+    // Resolve `{{inputs.x}}` / `{{config.x}}` references against the prepare
+    // result BEFORE composing the prompt. LLM-authored workspaces consistently
+    // emit Mustache-style placeholders in agent prompts (it's how CrewAI,
+    // LangChain, and every other agent framework do it); Atlas originally
+    // didn't substitute them, so the LLM saw literal `{{inputs.content}}`
+    // and refused with "required input values are missing" while the actual
+    // payload sat in the Input section below. Interpolating here makes the
+    // convention work without teaching every author a bespoke pattern. Keys
+    // that don't resolve are left intact so broken templates are visible
+    // rather than silently blanked to empty strings.
+    const resolvedBase = interpolatePromptPlaceholders(basePrompt, prepareResult);
+
+    let prompt = `${factsSection}\n\n${resolvedBase}`;
     const images: ImagePart[] = [];
 
     // Inject curated input from prepare function (replaces old Available Documents)

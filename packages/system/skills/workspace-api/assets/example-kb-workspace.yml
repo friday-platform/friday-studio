@@ -1,37 +1,27 @@
-# Complete working example — SQLite-backed personal knowledge base.
+# Complete working example — personal knowledge base, narrative-memory backed.
 #
-# Conversational agent with direct MCP tool access (no jobs / FSM needed).
-# Submit the object below as `config` to workspace_create.
+# Every workspace already has a `notes` narrative memory corpus that the chat
+# runtime auto-injects into the agent's system prompt on every turn and that
+# the platform exposes via `memory_narrative_{append,read,forget}`. Use that.
 #
-# Before submitting:
-#   1. Replace {{DB_PATH}} with the absolute path the MCP server should use for
-#      the SQLite file. A safe default is
-#      "{ATLAS_HOME}/workspaces/{workspace-name}/kb.sqlite" — but write out the
-#      literal absolute path; args are not env-expanded.
-#   2. Replace {{USER_NAME}} in the agent prompt or remove the line.
+# Do NOT reach for user-authored SQLite for plain "save a note / recall by
+# question" use cases. SQLite adds an MCP dependency (`uvx mcp-server-sqlite`),
+# a DB path to author (easy to hallucinate), schema-bootstrap SQL, and removes
+# the auto-inject that makes narrative memory usable at zero cost. Reserve
+# SQLite for genuinely relational data the user explicitly asked for
+# (structured logs, tables with joins, etc.).
+#
+# Before submitting: rename `workspace.name` and adapt the agent prompt;
+# everything else is safe to ship as-is.
 
 version: "1.0"
 workspace:
   name: knowledge-base
   description: >-
-    Personal knowledge base — save URLs, notes, and freeform text to SQLite,
-    then retrieve by asking plain-English questions.
-
-tools:
-  mcp:
-    client_config:
-      timeout:
-        progressTimeout: "2m"
-        maxTotalTimeout: "30m"
-    servers:
-      sqlite:
-        transport:
-          type: stdio
-          command: uvx
-          args:
-            - mcp-server-sqlite
-            - "--db-path"
-            - "{{DB_PATH}}"
+    Personal knowledge base — drop URLs, notes, and freeform text, then ask
+    plain-English questions to retrieve them. Everything persists in the
+    workspace's `notes` narrative memory and auto-injects into the agent
+    on every turn.
 
 agents:
   kb-chat:
@@ -41,102 +31,55 @@ agents:
     config:
       model: claude-sonnet-4-6
       temperature: 0.3
-      tools:
-        - read_query
-        - write_query
-        - create_table
-        - list_tables
-        - describe_table
       prompt: >-
-        You are the conversational interface for {{USER_NAME}}'s personal
-        knowledge base, stored locally in SQLite.
+        You are a personal knowledge-base assistant. Everything the user has
+        ever saved to this workspace lives in the `notes` narrative memory
+        corpus, which the runtime has already injected into this prompt under
+        a `<memory workspace="…" name="notes">` block. Read it before every
+        answer.
 
 
-        ## What you can do
+        ## When the user saves something
 
-        - Save URLs, notes, and freeform text
+        Call `memory_narrative_append` with:
 
-        - Search and retrieve entries by topic, keyword, tag, type, or date
+        - workspaceId: the current workspace id (available in context).
+        - memoryName: `"notes"`.
+        - entry: `{ text: <a self-contained sentence or two that will read
+          well later>, metadata: { kind: "url" | "note" | "quote" | …,
+          url: <if applicable>, tags: <short list>, source: <optional> } }`.
 
-        - Browse all entries or filter by type
-
-        - Delete or update entries by id
-
-
-        ## SQLite schema
-
-        Table: `entries`
-
-        - id INTEGER PRIMARY KEY AUTOINCREMENT
-
-        - type TEXT ('url', 'note', 'text') — default 'note'
-
-        - title TEXT (optional short label)
-
-        - content TEXT (the full URL, note body, or freeform text)
-
-        - tags TEXT (comma-separated, optional)
-
-        - created_at TEXT ISO datetime, auto-filled
+        Write the text so that a future reader (you, next session) can
+        understand it WITHOUT the current conversation context. No pronouns,
+        no "this article" — name the thing.
 
 
-        ## Bootstrap rule
-
-        Before any first operation per session, call list_tables. If `entries`
-        does not exist, create it:
-
-        ```sql
-
-        CREATE TABLE IF NOT EXISTS entries (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          type TEXT NOT NULL DEFAULT 'note',
-          title TEXT,
-          content TEXT NOT NULL,
-          tags TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        ```
+        Confirm saves in one short sentence ("Saved — 'Title of the thing'").
 
 
-        ## Saving entries
+        ## When the user asks a question
 
-        1. Infer type: starts with http:// or https:// → 'url', otherwise 'note'
-
-        2. Extract title from context if obvious
-
-        3. INSERT into entries, then SELECT the row back to confirm
-
-        4. Confirm: "Saved — entry #<id>: <title or first 60 chars>"
+        The recent entries are already in your prompt. Answer directly from
+        them and cite the titles/URLs. Only call `memory_narrative_read` if
+        the user asks about older material (e.g. "what did I save last
+        month?") or if the default 20-entry window isn't enough.
 
 
-        ## Searching entries
-
-        1. Parse intent: keyword, tag, type filter, recency
-
-        2. Build SQL with LIKE patterns, type filters, ORDER BY, LIMIT
-
-        3. Show id, type, title, content (full for short, first 120 chars for long), tags, date
-
-        4. If 0 results: say so and suggest broadening
+        If nothing relevant is saved, say so plainly and offer to save new
+        material.
 
 
-        ## Behavior
+        ## Style
 
-        - Direct and efficient — no preamble
+        - Concise. Direct. No preamble.
 
-        - Never fabricate entries — always query SQLite
+        - Cite source URLs when returning URL entries.
 
-        - For ambiguous requests, pick the most likely interpretation and run it
-
-        - Format dates human-readable
+        - Don't fabricate. Only surface what's actually in memory.
 
 memory:
   own:
     - name: notes
-      type: short_term
-      strategy: narrative
-    - name: long-term
       type: long_term
       strategy: narrative
   mounts: []

@@ -50,43 +50,75 @@ If that fails, see `friday-cli` for daemon lifecycle.
 
 ---
 
+## How chat reaches your workspace — the contract
+
+**Chat interacts with your workspace through `jobs`. Nothing else.** Agents
+and MCP servers are internals of the jobs that wrap them. This is the single
+most important mental model to get right:
+
+```
+user message → workspace-chat (platform meta-agent)
+                      │
+                      ├─ calls memory_narrative_append / read (built-in)
+                      │
+                      └─ calls <job-name> tool → fires signal → FSM runs
+                                                     │
+                                                     └─ invokes agents, uses MCP tools
+                                                        (all internal to this job)
+```
+
+**What this means for authoring:**
+
+- **Declaring an agent without a job that invokes it makes the agent
+  unreachable from chat.** Chat can't call agents directly, only jobs. A
+  lone `agents.kb-agent` with MCP tools attached will sit idle while the
+  user's save/retrieve requests get handled by chat's defaults. The
+  validator rejects this shape with `unreachable_agent`.
+- **For trivial save-and-recall** (notes, URLs, quotes, reading list),
+  **skip jobs and agents entirely.** Declare only a `memory.own.notes`
+  corpus — chat will use `memory_narrative_append` to save and auto-read
+  the entries out of its prompt. Zero agents, zero MCP, zero FSM. See
+  `assets/example-kb-workspace.yml`.
+- **For anything non-trivial** (structured data, signal-triggered
+  automation, multi-step work), **express it as one or more jobs.** Each
+  job declares a signal, an FSM, and agents internal to that FSM. Chat
+  sees the jobs as tools (via `createJobTools`) and calls them with
+  typed input. See `assets/example-jobs-pipeline.yml`.
+
+There is no third path. "Standalone conversation agent with MCP tools, no
+jobs" is a dead-end shape.
+
+---
+
 ## Quick start — create a workspace
 
 **Always call the `workspace_create` tool. Never shell out to curl.** One
 typed call, structured errors on 422, fix-and-retry in the same conversation.
 
-### Start from a template — the default path
+### Pick a template — match to the use case
 
-**Read `assets/example-kb-workspace.yml` and adapt it.** It's a
-SQLite-backed workspace with a single conversational agent that handles
-save + retrieve via direct MCP tool calls — no signals, no jobs, no FSM.
-Most "let me store and search X" requests (knowledge base, URL saver,
-notes app, expense tracker, reading list) fit this shape exactly. Change
-the agent's prompt, the SQLite schema section in that prompt, and the
-tool list — leave the scaffolding alone.
+**Trivial save-and-recall → `assets/example-kb-workspace.yml`.** No jobs,
+no agents, no MCP. Just a `memory.own.notes` corpus. Chat uses
+`memory_narrative_append` to save; recent entries auto-inject into
+chat's prompt on every turn for retrieval. Use for notes, URLs, quotes,
+reading list, journaling, "second brain" — anything unstructured.
 
-Submit it via `workspace_create` after substituting `{{DB_PATH}}` (absolute)
-and `{{USER_NAME}}`. This is the fastest path and avoids FSM entirely.
+**Signal-triggered or multi-step work → `assets/example-jobs-pipeline.yml`.**
+One signal per user-invokable operation; each signal has a job with an
+FSM; agents live inside the FSM. Chat sees the jobs as tools. Use for
+anything structured (tag-filtered bookmarks, expense tracker, invoice
+processor), anything signal-driven (webhook / cron / fs-watch), or
+anything multi-step (triage → classify → respond pipelines).
 
-### Build a custom one from scratch — only if the template doesn't fit
-
-Skip to this path only when the workspace needs signals, jobs, or FSM
-pipelines (e.g. "when an email arrives, run a multi-step classification
-workflow"). For pure data capture, the template above is faster and more
-reliable.
+If neither template fits, read the schema below and build from scratch —
+but verify first: trivial save-and-recall almost always fits the first
+template, and anything beyond that almost always fits the second.
 
 ```
 workspace_create({
   config: {
     version: "1.0",
-    workspace: { name: "my-space", description: "What it does" },
-    memory: {
-      own: [
-        { name: "user-profile", type: "long_term",  strategy: "narrative" },
-        { name: "notes",        type: "long_term",  strategy: "narrative" },
-        { name: "scratchpad",   type: "scratchpad", strategy: "narrative" }
-      ]
-    }
+    workspace: { name: "my-space", description: "What it does" }
   },
   workspaceName: "my-space"   // optional; kebab-case directory name
 })
@@ -279,9 +311,8 @@ agents:
 ```yaml
 memory:
   own:                          # corpora this workspace creates
-    - { name: "user-profile", type: "long_term",  strategy: "narrative" }
-    - { name: "notes",        type: "long_term",  strategy: "narrative" }
-    - { name: "scratchpad",   type: "scratchpad", strategy: "narrative" }
+    - { name: "notes",   type: "short_term", strategy: "narrative" }
+    - { name: "memory",  type: "long_term",  strategy: "narrative" }
 
   mounts:                       # read/write other workspaces' memory
     - name: "backlog"
@@ -378,12 +409,21 @@ Tool names exposed by these servers are what you list in `agents.*.config.tools`
 
 | Need | Transport | Command | Args |
 |---|---|---|---|
-| SQLite | stdio | `uvx` | `mcp-server-sqlite`, `--db-path`, `<abs-path>` |
+| SQLite | stdio | `uvx` | `mcp-server-sqlite`, `--db-path`, `${ATLAS_HOME}/workspaces/<ws-name>/<db>.sqlite` |
 | Filesystem | stdio | `npx` | `-y`, `@modelcontextprotocol/server-filesystem`, `<root>` |
 | GitHub | stdio | `npx` | `-y`, `@modelcontextprotocol/server-github` |
 | Postgres | stdio | `npx` | `-y`, `@modelcontextprotocol/server-postgres`, `<conn-str>` |
 | Fetch | stdio | `uvx` | `mcp-server-fetch` |
 | Time | stdio | `uvx` | `mcp-server-time` |
+
+**Path placeholders in MCP args.** The daemon expands `${HOME}` and
+`${ATLAS_HOME}` in every `args` entry at MCP spawn time. **Always prefer
+these over hardcoded `/Users/<name>/...` paths** — guessing the username
+is the single most common silent-failure mode (the sqlite process can't
+open the file, the MCP server dies, the agent's SQL tools vanish, and
+"saving" produces apologetic text while nothing persists). There is no
+`${WORKSPACE_PATH}` placeholder today; build the path from `${ATLAS_HOME}`
+plus the workspace name.
 
 For other servers, search the MCP registry. Validator flags `npm_package_not_found`
 / `pypi_package_not_found` if a package doesn't exist — fix and retry.
@@ -439,7 +479,10 @@ body has details; 422 includes `report.issues[]`.
 
 ## Go deeper
 
-All references are cited inline at the point of use. Dir map: `assets/` for
-copy-paste templates (`example-kb-workspace.yml`); `references/` for
-deep-dives on messaging signals, workspace editing, and the `friday.yml`
-platform superset.
+All references are cited inline at the point of use. Dir map:
+- `assets/example-kb-workspace.yml` — narrative-memory-only, for trivial
+  save-and-recall.
+- `assets/example-jobs-pipeline.yml` — signals + jobs + FSM + MCP, for
+  structured or signal-triggered work.
+- `references/` — messaging signals, workspace editing, `friday.yml`
+  platform superset.

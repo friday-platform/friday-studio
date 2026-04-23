@@ -50,6 +50,7 @@ export type ValidationIssueCode =
   | "unknown_signal_name"
   | "unknown_mcp_server_ref"
   | "unknown_memory_corpus"
+  | "unreachable_agent"
   // Cross-system
   | "unknown_skill"
   | "unknown_model"
@@ -202,10 +203,13 @@ function checkInternalCrossRefs(config: WorkspaceConfig): ValidationIssue[] {
 
   // Every agent referenced inside any FSM must be defined.
   const fsmAgents = extractFSMAgents(config);
+  const referencedAgentIds = new Set<string>();
   for (const response of Object.values(fsmAgents)) {
     if (response.type !== "agent") continue;
     const id = response.agentId;
-    if (!id || definedAgents.has(id)) continue;
+    if (!id) continue;
+    referencedAgentIds.add(id);
+    if (definedAgents.has(id)) continue;
     issues.push({
       severity: "error",
       code: "unknown_agent_id",
@@ -215,6 +219,37 @@ function checkInternalCrossRefs(config: WorkspaceConfig): ValidationIssue[] {
         `Job '${response.jobId}' FSM state '${response.stateId}' references agent '${id}', ` +
         `but no such agent is defined under agents.*.`,
       suggest: nearestStrings(id, [...definedAgents]),
+    });
+  }
+  // Execution-style jobs reference agents too — count them as reached.
+  for (const job of Object.values(jobs)) {
+    for (const agentSpec of job.execution?.agents ?? []) {
+      const id = agentIdFromSpec(agentSpec);
+      if (id) referencedAgentIds.add(id);
+    }
+  }
+
+  // Chat ↔ jobs contract: chat can only call agents through jobs. An agent
+  // declared but never invoked by any FSM or execution-style job is
+  // unreachable from chat and produces the "silent save failure" pattern —
+  // user types "save this", the workspace-chat meta-agent has no tool for
+  // the declared agent, falls back to defaults, and the intended pipeline
+  // never runs. Reject the config so the author either wraps the agent in
+  // a job or removes it.
+  for (const agentId of definedAgents) {
+    if (referencedAgentIds.has(agentId)) continue;
+    issues.push({
+      severity: "error",
+      code: "unreachable_agent",
+      path: `agents.${agentId}`,
+      value: agentId,
+      message:
+        `Agent '${agentId}' is declared but no job's FSM or execution invokes it. ` +
+        `Chat reaches the workspace through jobs; agents declared without a wrapping ` +
+        `job are unreachable and silently ignored at runtime. Either wrap it in a ` +
+        `job (add a state whose 'entry' includes { type: agent, agentId: '${agentId}' }), ` +
+        `or delete the agent and use platform tools (memory_narrative_append, etc.) ` +
+        `directly from chat.`,
     });
   }
 

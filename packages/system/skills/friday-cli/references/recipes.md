@@ -131,8 +131,9 @@ SID=$(deno task atlas session list --json | jq -r '[.[]|select(.status=="active"
 ## Publish updated skill
 
 ```bash
-deno task atlas skill publish -p ./packages/skills/fast-self-modification
-# or by name override:
+# From the skill's directory:
+deno task atlas skill publish -p .
+# or with an explicit name:
 deno task atlas skill publish -p . --name @tempest/my-skill
 ```
 
@@ -150,8 +151,7 @@ curl -s -X POST http://localhost:8080/api/skills/scoping/$SKILL_ID/assignments \
 
 ## Build + register Python WASM agent
 
-**Full authoring workflow: use the sibling `writing-friday-agents` skill at
-`packages/system/skills/writing-friday-agents/`.**
+**Full authoring workflow: use the `writing-friday-agents` skill.**
 It covers `@agent` decorator, `ctx.*` APIs, `ok()`/`err()`, JSON Schema strict
 mode gotchas, and file structure.
 

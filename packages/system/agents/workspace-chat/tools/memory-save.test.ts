@@ -47,7 +47,7 @@ describe("createMemorySaveTool", () => {
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost:3000/api/memory/ws-1/narrative/user-profile");
+    expect(url).toBe("http://localhost:3000/api/memory/ws-1/narrative/notes");
     expect(opts.method).toBe("POST");
     const body = JSON.parse(opts.body as string) as {
       text: string;

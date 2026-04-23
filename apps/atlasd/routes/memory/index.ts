@@ -3,6 +3,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { MdNarrativeCorpus } from "@atlas/adapters-md";
 import { NarrativeEntrySchema } from "@atlas/agent-sdk";
+import { parseMemoryMountSource } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -70,14 +71,49 @@ memoryNarrativeRoutes.get("/", async (c) => {
 });
 
 // GET /:workspaceId — list memories for a workspace.
-// Returns [{workspaceId, name, kind}] for every memory directory under
-// ~/.atlas/memory/{workspaceId}/{kind}/{name}. Used by the playground memory
-// viewer for discovery.
+// Returns [{workspaceId, name, kind}] for every corpus declared in the
+// workspace config (own + workspace-scoped mounts). For mounts, workspaceId
+// is the SOURCE workspace so callers use the correct path when fetching
+// entries. Falls back to filesystem scan for workspaces without memory config.
 memoryNarrativeRoutes.get(
   "/:workspaceId",
   validator("param", z.object({ workspaceId: z.string() })),
   async (c) => {
     const { workspaceId } = c.req.valid("param");
+    const manager = c.get("app").getWorkspaceManager();
+    const config = await manager.getWorkspaceConfig(workspaceId);
+    const memConfig = config?.workspace.memory;
+
+    if (memConfig) {
+      const memories: { workspaceId: string; name: string; kind: string }[] = [];
+
+      for (const own of memConfig.own) {
+        if (!own.strategy || own.strategy === "narrative") {
+          memories.push({ workspaceId, name: own.name, kind: "narrative" });
+        }
+      }
+
+      for (const mount of memConfig.mounts) {
+        if (mount.scope === "workspace") {
+          try {
+            const parsed = parseMemoryMountSource(mount.source);
+            if (parsed.kind === "narrative") {
+              memories.push({
+                workspaceId: parsed.workspaceId,
+                name: parsed.memoryName,
+                kind: "narrative",
+              });
+            }
+          } catch {
+            // Malformed mount source — skip
+          }
+        }
+      }
+
+      return c.json(memories);
+    }
+
+    // Fallback: filesystem scan for workspaces without explicit memory config.
     const wsRoot = path.join(getAtlasHome(), "memory", workspaceId);
     const memories: { workspaceId: string; name: string; kind: string }[] = [];
     for (const kind of KNOWN_KINDS) {

@@ -52,7 +52,26 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
         "`{type: code, function: 'fnName'}`, `{type: emit, event: EVENT_NAME}`. " +
         "Do NOT use `type: action, action: {...}, next: ...` — that's the legacy " +
         "shape and it fails with fsm_structural_error. Agent states typically end " +
-        "with `- type: emit, event: ADVANCE` and route via `on.ADVANCE.target`.",
+        "with `- type: emit, event: ADVANCE` and route via `on.ADVANCE.target`.\n\n" +
+        "Chat ↔ jobs contract: chat reaches your workspace through `jobs` only. " +
+        "Agents and MCP servers are internals of the jobs that wrap them; chat " +
+        "CANNOT call them directly. A declared agent that no job invokes is " +
+        "unreachable and the validator will reject the config with " +
+        "`unreachable_agent`. Three valid shapes:\n" +
+        "  1. Trivial save-and-recall (notes, URLs, quotes, reading list): no " +
+        "     agents, no jobs, no MCP. Just declare `memory.own.notes` — chat " +
+        "     uses `memory_narrative_append` and auto-injects recent entries.\n" +
+        "  2. Signal-triggered or structured work: declare signals + jobs + " +
+        "     FSMs; agents live inside the FSM. Chat sees the jobs as tools.\n" +
+        "  3. No agents at all (e.g. pure webhook receiver into memory): jobs " +
+        "     can use `type: code` actions without invoking any agent.\n" +
+        "There is NO valid shape where a workspace has `agents.*` declared but " +
+        "no job references them — that produces a workspace where chat can't " +
+        "reach the agent and nothing works.\n\n" +
+        "MCP stdio paths: use `${ATLAS_HOME}` (expanded at spawn time). NEVER " +
+        "author a literal `/Users/<name>/...` path — guessing usernames fails " +
+        "silently. Example: `args: [mcp-server-sqlite, --db-path, " +
+        '"${ATLAS_HOME}/workspaces/<ws-name>/data.sqlite"]`.',
       inputSchema: jsonSchema(WORKSPACE_CREATE_INPUT_SCHEMA),
       execute: async (input: Record<string, unknown>) => {
         const config = input.config as Record<string, unknown>;

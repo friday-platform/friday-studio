@@ -328,9 +328,6 @@
         // side from ChatStorage. Sending the full `msgs` array would be
         // wasteful bandwidth on long threads.
         const body: Record<string, unknown> = { id, message: msgs.at(-1), datetime: buildDatetime() };
-        if (wsId !== "user") {
-          body.foreground_workspace_ids = ["user"];
-        }
         return { body };
       },
     }),
