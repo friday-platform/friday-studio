@@ -22,19 +22,16 @@
 
   /**
    * Turn `POST /api/workspaces/create` error responses into short, user-facing
-   * strings. Prefer the reference-validator's issue messages (with path for
-   * locator context) because those are already human-authored and specific;
-   * fall back to `error` / plain text only when the shape doesn't match.
+   * strings. Prefer the reference-validator's issue messages because those
+   * are human-authored and already name the offending ref inline; the
+   * Zod path (e.g. "skills[0].name") is technical noise for an end user,
+   * so we drop it. Falls back to `error` / plain text when the shape
+   * doesn't match.
    */
   const ValidationReportSchema = z.object({
     error: z.literal("validation_failed").optional(),
     report: z.object({
-      issues: z.array(
-        z.object({
-          path: z.string().optional(),
-          message: z.string(),
-        }),
-      ),
+      issues: z.array(z.object({ message: z.string() })),
     }),
   });
   const PlainErrorSchema = z.object({ error: z.string() });
@@ -45,10 +42,7 @@
       const parsed: unknown = JSON.parse(raw);
       const report = ValidationReportSchema.safeParse(parsed);
       if (report.success) {
-        const lines = report.data.report.issues.map((i) =>
-          i.path ? `${i.path} — ${i.message}` : i.message,
-        );
-        return lines.join("\n");
+        return report.data.report.issues.map((i) => i.message).join("\n");
       }
       const plain = PlainErrorSchema.safeParse(parsed);
       if (plain.success) return plain.data.error;
