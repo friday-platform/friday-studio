@@ -19,6 +19,7 @@ import {
   SkillStorage,
   validateSkillReferences,
 } from "@atlas/skills";
+import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { UserConfigurationError } from "../errors/user-configuration-error.ts";
 import {

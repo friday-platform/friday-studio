@@ -29,6 +29,13 @@ vi.mock("@atlas/mcp", () => ({
   createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
 }));
 
+// Mock discoverMCPServers — default returns empty candidate list
+const mockDiscoverMCPServers = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+
+vi.mock("../mcp-registry/discovery.ts", () => ({
+  discoverMCPServers: (...args: unknown[]) => mockDiscoverMCPServers(...args),
+}));
+
 // Mock logger — warn is a vi.fn() so tests can assert on warning calls
 const mockWarn = vi.fn();
 const mockLogger = {
@@ -78,6 +85,7 @@ describe("buildAgentContext skill injection", () => {
     mockWarn.mockClear();
     mockDispose.mockResolvedValue(undefined);
     mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     // Create temp database for skills
     tempDbPath = join(tmpdir(), `skills-test-${Date.now()}.db`);
@@ -326,21 +334,6 @@ describe("buildAgentContext skill injection", () => {
   it("resolves global skill refs into context.skills", async () => {
     const workspaceId = "ws-global-skills";
 
-    // Workspace config includes a global skill ref
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: { mcp: { servers: {} } },
-              skills: [{ name: "@atlas/review-skill" }],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
-
     // Publish a skill so SkillStorage.get resolves it
     await tempAdapter.publish("atlas", "review-skill", "user-1", {
       description: "Reviews pull requests",
@@ -425,20 +418,6 @@ describe("buildAgentContext skill injection", () => {
   it("resolves global skill with archive into referenceFiles", async () => {
     const workspaceId = "ws-archive-skills";
 
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: { mcp: { servers: {} } },
-              skills: [{ name: "@atlas/archive-skill" }],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
-
     // Create a temp directory with reference files, then pack into archive
     const archiveDir = join(tmpdir(), `skill-archive-test-${Date.now()}`);
     const refsDir = join(archiveDir, "references");
@@ -484,20 +463,6 @@ describe("buildAgentContext skill injection", () => {
   it("handles archive extraction failure gracefully", async () => {
     const workspaceId = "ws-bad-archive";
 
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: { mcp: { servers: {} } },
-              skills: [{ name: "@atlas/bad-archive-skill" }],
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
-
     // Publish skill with invalid archive (not a valid tar.gz)
     await tempAdapter.publish("atlas", "bad-archive-skill", "user-1", {
       description: "Skill with bad archive",
@@ -541,6 +506,7 @@ describe("buildAgentContext credential error propagation", () => {
     vi.restoreAllMocks();
     mockDispose.mockResolvedValue(undefined);
     mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;
     globalThis.fetch = mockWorkspaceConfigFetch();
@@ -588,15 +554,17 @@ describe("buildAgentContext credential error propagation", () => {
   });
 });
 
-describe("buildAgentContext mergeServerConfigs precedence", () => {
+describe("buildAgentContext agent MCP config precedence", () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    mockDispose.mockReset().mockResolvedValue(undefined);
-    mockCreateMCPTools.mockReset().mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockDispose.mockClear().mockResolvedValue(undefined);
+    mockCreateMCPTools.mockClear().mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;
+    globalThis.fetch = mockWorkspaceConfigFetch();
   });
 
   afterEach(() => {
@@ -604,31 +572,20 @@ describe("buildAgentContext mergeServerConfigs precedence", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("agent MCP server overrides workspace server with same ID", async () => {
-    // Workspace config has "shared-server" with workspace command
-    globalThis.fetch = () =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            config: {
-              name: "test-workspace",
-              tools: {
-                mcp: {
-                  servers: {
-                    "shared-server": {
-                      transport: { type: "stdio", command: "workspace-cmd", args: [] },
-                    },
-                    "workspace-only": {
-                      transport: { type: "stdio", command: "ws-only-cmd", args: [] },
-                    },
-                  },
-                },
-              },
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+  it("agent MCP server overrides discovered server with same ID", async () => {
+    // discoverMCPServers returns two servers
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: { id: "shared-server" },
+        mergedConfig: { transport: { type: "stdio", command: "workspace-cmd", args: [] } },
+        configured: true,
+      },
+      {
+        metadata: { id: "workspace-only" },
+        mergedConfig: { transport: { type: "stdio", command: "ws-only-cmd", args: [] } },
+        configured: true,
+      },
+    ]);
 
     // Agent config has "shared-server" with a DIFFERENT command
     const agentMCPConfig = {
@@ -672,6 +629,7 @@ describe("buildAgentContext MCP dispose lifecycle", () => {
     vi.restoreAllMocks();
     mockDispose.mockResolvedValue(undefined);
     mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;
     globalThis.fetch = mockWorkspaceConfigFetch();
@@ -723,6 +681,7 @@ describe("buildAgentContext memory mount resolution", () => {
     mockWarn.mockClear();
     mockDispose.mockResolvedValue(undefined);
     mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;
     globalThis.fetch = mockWorkspaceConfigFetch();
