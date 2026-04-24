@@ -156,6 +156,61 @@ function createDockerOnlyUpstreamEntry(name: string, version: string): UpstreamS
   };
 }
 
+/** Create a streamable-http upstream entry without env vars (produces OAuth linkProvider) */
+function createHttpRemoteUpstreamEntry(name: string, version: string): UpstreamServerEntry {
+  return {
+    server: {
+      $schema: "https://registry.modelcontextprotocol.io/v0.1/schema.json",
+      name,
+      description: `HTTP remote server ${name}`,
+      version,
+      remotes: [{ type: "streamable-http", url: "https://api.example.com/mcp" }],
+    },
+    _meta: {
+      "io.modelcontextprotocol.registry/official": {
+        status: "active",
+        statusChangedAt: "2025-06-15T12:00:00.000000Z",
+        publishedAt: "2025-06-15T12:00:00.000000Z",
+        updatedAt: "2025-06-15T12:00:00.000000Z",
+        isLatest: true,
+      },
+    },
+  };
+}
+
+/** Create a streamable-http upstream entry with env vars from packages (produces API key linkProvider) */
+function createHttpRemoteWithEnvUpstreamEntry(name: string, version: string): UpstreamServerEntry {
+  return {
+    server: {
+      $schema: "https://registry.modelcontextprotocol.io/v0.1/schema.json",
+      name,
+      description: `HTTP remote server with env ${name}`,
+      version,
+      packages: [
+        {
+          registryType: "pypi",
+          identifier: "http-env-server",
+          version,
+          transport: { type: "stdio" },
+          environmentVariables: [
+            { name: "API_KEY", description: "API key for the server", isRequired: true },
+          ],
+        },
+      ],
+      remotes: [{ type: "streamable-http", url: "https://api.example.com/mcp" }],
+    },
+    _meta: {
+      "io.modelcontextprotocol.registry/official": {
+        status: "active",
+        statusChangedAt: "2025-06-15T12:00:00.000000Z",
+        publishedAt: "2025-06-15T12:00:00.000000Z",
+        updatedAt: "2025-06-15T12:00:00.000000Z",
+        isLatest: true,
+      },
+    },
+  };
+}
+
 /** Create an SSE-only upstream entry (will be rejected) */
 function createSseOnlyUpstreamEntry(name: string, version: string): UpstreamServerEntry {
   return {
@@ -729,6 +784,207 @@ describe("MCP Registry Routes", () => {
 
       expect(res.status).toBe(201);
       expect(fetchSpy).not.toHaveBeenCalled();
+
+      fetchSpy.mockRestore();
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // E2E: Three translator cases produce correct Link providers
+    // ═══════════════════════════════════════════════════════════════════════
+
+    it("case 1: npm+stdio with env vars → creates API key Link provider and persisted env uses Link refs", async () => {
+      const canonicalName = "io.github.test/npm-env-link-refs";
+      const upstreamEntry = createNpmStdioUpstreamEntryWithEnv(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              provider: { id: "io-github-test-npm-env-link-refs", type: "apikey" },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = InstallResponseSchema.parse(await res.json());
+      expect(body.warning).toBeUndefined();
+
+      // Verify Link call was made with apikey provider
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      expect(init?.method).toBe("POST");
+      if (!init || typeof init.body !== "string") throw new Error("expected string body");
+      const requestBody = z
+        .object({ provider: z.object({ type: z.literal("apikey"), id: z.string() }) })
+        .parse(JSON.parse(init.body));
+      expect(requestBody.provider.id).toBe("io-github-test-npm-env-link-refs");
+
+      // Verify persisted entry has Link refs in env, not placeholders
+      const adapter = testAdapter;
+      const persisted = await adapter.get(body.server.id);
+      expect(persisted).toBeDefined();
+      expect(persisted?.configTemplate.env).toEqual({
+        API_KEY: { from: "link", provider: "io-github-test-npm-env-link-refs", key: "API_KEY" },
+      });
+
+      fetchSpy.mockRestore();
+    });
+
+    it("case 2: http remote without env vars → creates OAuth Link provider (discovery mode)", async () => {
+      const canonicalName = "io.github.test/http-oauth";
+      const upstreamEntry = createHttpRemoteUpstreamEntry(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              provider: { id: "io-github-test-http-oauth", type: "oauth" },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = InstallResponseSchema.parse(await res.json());
+      expect(body.warning).toBeUndefined();
+
+      // Verify Link call was made with oauth provider in discovery mode
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      expect(init?.method).toBe("POST");
+      if (!init || typeof init.body !== "string") throw new Error("expected string body");
+      const requestBody = z
+        .object({
+          provider: z.object({
+            type: z.literal("oauth"),
+            id: z.string(),
+            oauthConfig: z.object({ mode: z.literal("discovery"), serverUrl: z.string() }),
+          }),
+        })
+        .parse(JSON.parse(init.body));
+      expect(requestBody.provider.id).toBe("io-github-test-http-oauth");
+      expect(requestBody.provider.oauthConfig.mode).toBe("discovery");
+      expect(requestBody.provider.oauthConfig.serverUrl).toBe("https://api.example.com/mcp");
+
+      // Verify persisted entry has no env (no env vars in this case)
+      const adapter = testAdapter;
+      const persisted = await adapter.get(body.server.id);
+      expect(persisted).toBeDefined();
+      expect(persisted?.configTemplate.env).toBeUndefined();
+
+      fetchSpy.mockRestore();
+    });
+
+    it("case 3: http remote with env vars → creates API key Link provider and persisted env uses Link refs", async () => {
+      const canonicalName = "io.github.test/http-apikey-env";
+      const upstreamEntry = createHttpRemoteWithEnvUpstreamEntry(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              provider: { id: "io-github-test-http-apikey-env", type: "apikey" },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = InstallResponseSchema.parse(await res.json());
+      expect(body.warning).toBeUndefined();
+
+      // Verify Link call was made with apikey provider
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      expect(init?.method).toBe("POST");
+      if (!init || typeof init.body !== "string") throw new Error("expected string body");
+      const requestBody = z
+        .object({
+          provider: z.object({
+            type: z.literal("apikey"),
+            id: z.string(),
+            secretSchema: z.object({ API_KEY: z.literal("string") }),
+          }),
+        })
+        .parse(JSON.parse(init.body));
+      expect(requestBody.provider.id).toBe("io-github-test-http-apikey-env");
+
+      // Verify persisted entry has Link refs in env, not placeholders
+      const adapter = testAdapter;
+      const persisted = await adapter.get(body.server.id);
+      expect(persisted).toBeDefined();
+      expect(persisted?.configTemplate.env).toEqual({
+        API_KEY: { from: "link", provider: "io-github-test-http-apikey-env", key: "API_KEY" },
+      });
+
+      fetchSpy.mockRestore();
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // E2E: Partial failure mode
+    // ═══════════════════════════════════════════════════════════════════════
+
+    it("partial failure: Link fails but registry entry persists and response has warning", async () => {
+      const canonicalName = "io.github.test/partial-fail";
+      const upstreamEntry = createHttpRemoteWithEnvUpstreamEntry(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ok: false, error: "internal error" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = InstallResponseSchema.parse(await res.json());
+      expect(body.warning).toContain("Link provider creation failed");
+
+      // Verify entry was persisted despite Link failure
+      const adapter = testAdapter;
+      const persisted = await adapter.get(body.server.id);
+      expect(persisted).toBeDefined();
+      expect(persisted?.upstream?.canonicalName).toBe(canonicalName);
+      // Verify env still uses Link refs even when Link creation failed
+      expect(persisted?.configTemplate.env).toEqual({
+        API_KEY: { from: "link", provider: "io-github-test-partial-fail", key: "API_KEY" },
+      });
 
       fetchSpy.mockRestore();
     });
