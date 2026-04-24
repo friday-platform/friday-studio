@@ -11,6 +11,22 @@ vi.mock("@atlas/core/mcp-registry/storage", async (importOriginal) => {
   return { ...original, getMCPRegistryAdapter: () => Promise.resolve(testAdapter) };
 });
 
+const mockCreateMCPTools = vi.hoisted(() => {
+  const dispose = vi.fn().mockResolvedValue(undefined);
+  return vi.fn().mockImplementation((configs: Record<string, unknown>) => {
+    const tools: Record<string, { description: string; inputSchema: unknown }> = {};
+    for (const serverId of Object.keys(configs)) {
+      tools[`${serverId}__test_tool`] = {
+        description: `Test tool for ${serverId}`,
+        inputSchema: {},
+      };
+    }
+    return Promise.resolve({ tools, dispose });
+  });
+});
+
+vi.mock("@atlas/mcp", () => ({ createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args) }));
+
 beforeAll(async () => {
   testKv = await Deno.openKv(":memory:");
   testAdapter = new LocalMCPRegistryAdapter(testKv);
@@ -32,6 +48,41 @@ function createDynamicEntry(suffix: string): MCPServerMetadata {
     securityRating: "medium",
     configTemplate: { transport: { type: "stdio", command: "echo", args: ["hello"] } },
     requiredConfig: [{ key: "DYNAMIC_KEY", description: "A dynamic key", type: "string" as const }],
+  };
+}
+
+/** Create a custom stdio test entry with Link env refs and skipResolverCheck */
+function createCustomStdioEntry(id: string): MCPServerMetadata {
+  return {
+    id,
+    name: `Custom Stdio ${id}`,
+    source: "registry",
+    securityRating: "medium",
+    configTemplate: {
+      transport: { type: "stdio", command: "echo", args: ["hello"] },
+      skipResolverCheck: true,
+      env: {
+        CUSTOM_TOKEN: { from: "link", provider: id, key: "CUSTOM_TOKEN" },
+      },
+    },
+    requiredConfig: [{ key: "CUSTOM_TOKEN", description: "Custom token", type: "string" as const }],
+  };
+}
+
+/** Create a custom HTTP test entry with Link env refs */
+function createCustomHttpEntry(id: string): MCPServerMetadata {
+  return {
+    id,
+    name: `Custom HTTP ${id}`,
+    source: "registry",
+    securityRating: "medium",
+    configTemplate: {
+      transport: { type: "http", url: "http://localhost:3000/sse" },
+      env: {
+        API_KEY: { from: "link", provider: id, key: "API_KEY" },
+      },
+    },
+    requiredConfig: [{ key: "API_KEY", description: "API key", type: "string" as const }],
   };
 }
 
@@ -250,5 +301,63 @@ describe("POST /tools — dynamic registry merge", () => {
       const data = (await res.json()) as { error: string };
       expect(data.error).not.toContain("Unknown server IDs");
     }
+  });
+});
+
+describe("POST /tools — custom servers", () => {
+  it("resolves a custom stdio server with Link env refs and returns 200 with tools", async () => {
+    const customId = "custom-stdio-echo";
+    const customEntry = createCustomStdioEntry(customId);
+    await testAdapter.add(customEntry);
+
+    const res = await mcpRoute.request("/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverIds: [customId],
+        env: { CUSTOM_TOKEN: "secret-value" },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      tools: Array<{ name: string; description: string; inputSchema: unknown }>;
+    };
+    expect(data.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: `${customId}__test_tool`,
+          description: `Test tool for ${customId}`,
+        }),
+      ]),
+    );
+  });
+
+  it("resolves a custom http server with Link env refs and returns 200 with tools", async () => {
+    const customId = "custom-http-local";
+    const customEntry = createCustomHttpEntry(customId);
+    await testAdapter.add(customEntry);
+
+    const res = await mcpRoute.request("/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        serverIds: [customId],
+        env: { API_KEY: "api-secret" },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as {
+      tools: Array<{ name: string; description: string; inputSchema: unknown }>;
+    };
+    expect(data.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: `${customId}__test_tool`,
+          description: `Test tool for ${customId}`,
+        }),
+      ]),
+    );
   });
 });
