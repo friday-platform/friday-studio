@@ -24,15 +24,15 @@ jobs:
       matrix:
         include:
           - platform: macos-arm
-            os: macos-14
+            os: macos-latest-xlarge
             target: aarch64-apple-darwin
             bundle_ext: dmg
           - platform: macos-intel
-            os: macos-13
+            os: macos-latest-large
             target: x86_64-apple-darwin
             bundle_ext: dmg
           - platform: windows
-            os: windows-latest
+            os: windows-latest-8-cores
             target: x86_64-pc-windows-msvc
             bundle_ext: exe
 
@@ -40,12 +40,14 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/studio-installer/package-lock.json
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -56,12 +58,54 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/studio-installer/src-tauri
+          cache-on-failure: true
+
+      - name: Import Apple Developer ID certificate (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+          security create-keychain -p "" build.keychain
+          security import /tmp/certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          security list-keychain -d user -s build.keychain
+          rm /tmp/certificate.p12
+
+      - name: Create self-signed certificate (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Subject "CN=Friday Studio, O=Tempest Labs, C=US" `
+            -Type CodeSigning `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -HashAlgorithm SHA256 `
+            -NotAfter (Get-Date).AddYears(1)
+          $pfxPath = "$env:RUNNER_TEMP\selfsigned.pfx"
+          $pwd = ConvertTo-SecureString -String "selfsigned" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
+          echo "WIN_CERT_PATH=$pfxPath" >> $env:GITHUB_ENV
+          echo "WIN_CERT_PASSWORD=selfsigned" >> $env:GITHUB_ENV
+          echo "WIN_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
 
       - name: Install npm dependencies
         working-directory: apps/studio-installer
+        env:
+          NPM_CONFIG_WORKSPACES: 'false'
         run: npm ci
 
-      - name: Build Tauri app
+      - name: Build Tauri app (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        working-directory: apps/studio-installer
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: npm run build -- --target ${{ matrix.target }}
+
+      - name: Build Tauri app (Windows)
+        if: matrix.bundle_ext == 'exe'
         working-directory: apps/studio-installer
         run: npm run build -- --target ${{ matrix.target }}
 
@@ -83,6 +127,49 @@ jobs:
           "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
           "name=$($f.Name)" >> $env:GITHUB_OUTPUT
 
+      - name: Sign NSIS installer (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign `
+            /fd SHA256 `
+            /f "$env:WIN_CERT_PATH" `
+            /p "$env:WIN_CERT_PASSWORD" `
+            /t http://timestamp.digicert.com `
+            "${{ steps.win-artifact.outputs.path }}"
+
+      - name: Notarize and staple DMG (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        env:
+          APPLE_API_KEY_PATH: /tmp/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+        run: |
+          echo "${{ secrets.APPLE_API_KEY }}" > "$APPLE_API_KEY_PATH"
+          xcrun notarytool submit "${{ steps.mac-artifact.outputs.path }}" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
+            --issuer "${{ secrets.APPLE_API_ISSUER }}" \
+            --wait
+          xcrun stapler staple "${{ steps.mac-artifact.outputs.path }}"
+          rm "$APPLE_API_KEY_PATH"
+
+      - name: Upload GitHub artifact (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: ${{ steps.mac-artifact.outputs.path }}
+          retention-days: 30
+
+      - name: Upload GitHub artifact (Windows)
+        if: matrix.bundle_ext == 'exe'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: ${{ steps.win-artifact.outputs.path }}
+          retention-days: 30
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -90,7 +177,7 @@ jobs:
           workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
 
       - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Upload to GCS (macOS)
         if: matrix.bundle_ext == 'dmg'
