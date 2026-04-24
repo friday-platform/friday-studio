@@ -51,7 +51,9 @@ export const OAuthCredentialSchema = z.object({
 export type OAuthCredential = z.infer<typeof OAuthCredentialSchema>;
 
 // What you get when LISTING (no secrets)
-export const CredentialSummarySchema = CredentialSchema.omit({ secret: true });
+export const CredentialSummarySchema = CredentialSchema.omit({ secret: true }).extend({
+  status: z.enum(["ready", "expired", "unknown"]).optional(),
+});
 export type CredentialSummary = z.infer<typeof CredentialSummarySchema>;
 
 /**

@@ -158,38 +158,101 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
       })
       /**
        * PATCH /:id
-       * Update credential metadata (displayName)
+       * Update credential metadata (displayName) and/or replace secret in-place
        */
       .patch(
         "/:id",
         zValidator("param", z.object({ id: z.string() })),
         zValidator(
           "json",
-          z.object({
-            displayName: z
-              .string()
-              .transform((s) => s.trim())
-              .pipe(
-                z
-                  .string()
-                  .min(1, "Display name cannot be empty")
-                  .max(100, "Display name must be 100 characters or less"),
-              ),
-          }),
+          z
+            .object({
+              displayName: z
+                .string()
+                .transform((s) => s.trim())
+                .pipe(
+                  z
+                    .string()
+                    .min(1, "Display name cannot be empty")
+                    .max(100, "Display name must be 100 characters or less"),
+                )
+                .optional(),
+              secret: z.record(z.string(), z.unknown()).optional(),
+            })
+            .refine((data) => data.displayName !== undefined || data.secret !== undefined, {
+              message: "At least one of displayName or secret must be provided",
+            }),
         ),
         async (c) => {
           const userId = c.get("userId");
           const { id } = c.req.valid("param");
-          const { displayName } = c.req.valid("json");
+          const { displayName, secret } = c.req.valid("json");
 
           try {
-            const metadata = await storage.updateMetadata(id, { displayName }, userId);
+            const existing = await storage.get(id, userId);
+            if (!existing) {
+              return c.json({ error: "Credential not found" }, 404);
+            }
+
+            if (secret !== undefined) {
+              const providerDef = await registry.get(existing.provider);
+              if (!providerDef) {
+                return c.json(
+                  {
+                    error: "unknown_provider",
+                    message: `Provider '${existing.provider}' is not registered`,
+                  },
+                  400,
+                );
+              }
+
+              if (providerDef.type !== "apikey") {
+                return c.json(
+                  {
+                    error: "invalid_provider_type",
+                    message:
+                      "Cannot replace secrets for OAuth or app-install providers via this endpoint",
+                  },
+                  400,
+                );
+              }
+
+              const secretResult = providerDef.secretSchema.safeParse(secret);
+              if (!secretResult.success) {
+                const firstIssue = secretResult.error.issues[0];
+                return c.json(
+                  {
+                    error: "validation_failed",
+                    message: firstIssue?.message ?? "Secret validation failed",
+                    provider: existing.provider,
+                    issues: secretResult.error.issues,
+                  },
+                  400,
+                );
+              }
+
+              const credentialInput: CredentialInput = {
+                type: existing.type,
+                provider: existing.provider,
+                userIdentifier: existing.userIdentifier ?? "",
+                label: existing.label,
+                displayName: existing.displayName,
+                secret: secretResult.data,
+              };
+
+              await storage.update(id, credentialInput, userId);
+            }
+
+            if (displayName !== undefined) {
+              await storage.updateMetadata(id, { displayName }, userId);
+            }
+
             const credential = await storage.get(id, userId);
             if (!credential) {
               return c.json({ error: "Credential not found" }, 404);
             }
             const { secret: _, ...summary } = credential;
-            return c.json({ ...summary, metadata });
+            return c.json({ ...summary, metadata: credential.metadata });
           } catch (error) {
             if (error instanceof Error && error.message === "Credential not found") {
               return c.json({ error: "Credential not found" }, 404);

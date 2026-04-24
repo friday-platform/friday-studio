@@ -55,6 +55,7 @@ const SummaryResponseSchema = z.object({
       createdAt: z.string(),
       updatedAt: z.string(),
       wiredWorkspaceId: z.string().nullable().optional(),
+      status: z.enum(["ready", "expired", "unknown"]).optional(),
     }),
   ),
 });
@@ -62,10 +63,11 @@ const SummaryResponseSchema = z.object({
 describe("GET /v1/summary endpoint", () => {
   let tempDir: string;
   let app: Awaited<ReturnType<typeof createApp>>;
+  let storage: FileSystemStorageAdapter;
 
   beforeAll(async () => {
     tempDir = await makeTempDir();
-    const storage = new FileSystemStorageAdapter(tempDir);
+    storage = new FileSystemStorageAdapter(tempDir);
     const oauthService = new OAuthService(registry, storage);
     app = await createApp(
       storage,
@@ -300,5 +302,70 @@ describe("GET /v1/summary endpoint", () => {
     });
     expect(cred?.createdAt).toBeDefined();
     expect(cred?.updatedAt).toBeDefined();
+  });
+
+  it("returns status 'ready' for fresh apikey credential", async () => {
+    const createRes = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: testProviders.apikey1.id,
+        label: "Status Ready Test",
+        secret: { apiKey: "sk-status-ready" },
+      }),
+    });
+    expect(createRes.status).toEqual(201);
+    const created = CredentialSummarySchema.parse(await createRes.json());
+
+    const res = await app.request("/v1/summary");
+    expect(res.status).toEqual(200);
+    const json = SummaryResponseSchema.parse(await res.json());
+
+    const cred = json.credentials.find((c) => c.id === created.id);
+    expect(cred?.status).toEqual("ready");
+  });
+
+  it("returns status 'expired' for expired OAuth without refresh_token", async () => {
+    const saved = await storage.save(
+      {
+        type: "oauth",
+        provider: "github",
+        userIdentifier: "test-user",
+        label: "Expired OAuth",
+        secret: { access_token: "expired-token", expires_at: Math.floor(Date.now() / 1000) - 3600 },
+      },
+      "dev",
+    );
+
+    const res = await app.request("/v1/summary");
+    expect(res.status).toEqual(200);
+    const json = SummaryResponseSchema.parse(await res.json());
+
+    const cred = json.credentials.find((c) => c.id === saved.id);
+    expect(cred?.status).toEqual("expired");
+  });
+
+  it("returns status 'ready' for expired OAuth with refresh_token", async () => {
+    const saved = await storage.save(
+      {
+        type: "oauth",
+        provider: "github",
+        userIdentifier: "test-user",
+        label: "Refreshable OAuth",
+        secret: {
+          access_token: "refreshable-token",
+          expires_at: Math.floor(Date.now() / 1000) - 3600,
+          refresh_token: "refresh-123",
+        },
+      },
+      "dev",
+    );
+
+    const res = await app.request("/v1/summary");
+    expect(res.status).toEqual(200);
+    const json = SummaryResponseSchema.parse(await res.json());
+
+    const cred = json.credentials.find((c) => c.id === saved.id);
+    expect(cred?.status).toEqual("ready");
   });
 });

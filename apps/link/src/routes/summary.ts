@@ -9,7 +9,38 @@ import { z } from "zod";
 import type { SlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
 import { factory } from "../factory.ts";
 import { registry } from "../providers/registry.ts";
-import type { StorageAdapter } from "../types.ts";
+import type { Credential, StorageAdapter } from "../types.ts";
+
+function computeCredentialStatus(credential: Credential | null): "ready" | "expired" | "unknown" {
+  if (!credential) return "unknown";
+
+  if (credential.type === "apikey") {
+    return "ready";
+  }
+
+  if (credential.type === "oauth") {
+    const secret = credential.secret as { expires_at?: number; refresh_token?: string };
+
+    if (typeof secret.expires_at !== "number") {
+      return "ready";
+    }
+
+    const REFRESH_BUFFER_SECONDS = 5 * 60;
+    const now = Math.floor(Date.now() / 1000);
+
+    if (secret.expires_at > now + REFRESH_BUFFER_SECONDS) {
+      return "ready";
+    }
+
+    if (secret.refresh_token) {
+      return "ready";
+    }
+
+    return "expired";
+  }
+
+  return "unknown";
+}
 
 export function createSummaryRoutes(
   storage: StorageAdapter,
@@ -53,15 +84,18 @@ export function createSummaryRoutes(
 
           // Sequential resolution — users have 1-2 bots in practice.
           let credentials: Array<
-            (typeof baseCredentials)[number] & { wiredWorkspaceId?: string | null }
+            (typeof baseCredentials)[number] & { wiredWorkspaceId?: string | null; status?: string }
           > = [];
           for (const cred of baseCredentials) {
+            const full = await storage.get(cred.id, userId);
+            const status = computeCredentialStatus(full);
+
             if (cred.provider !== "slack-app") {
-              credentials.push(cred);
+              credentials.push({ ...cred, status });
               continue;
             }
             const mapping = await slackAppWorkspaceRepo.findByCredentialId(cred.id, userId);
-            credentials.push({ ...cred, wiredWorkspaceId: mapping?.workspaceId ?? null });
+            credentials.push({ ...cred, wiredWorkspaceId: mapping?.workspaceId ?? null, status });
           }
 
           if (provider) {
