@@ -18,6 +18,7 @@
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./session/session-events": "./src/session/session-events.ts",
     "./session/session-reducer": "./src/session/session-reducer.ts",
+    "./mcp-registry/discovery": "./src/mcp-registry/discovery.ts",
     "./mcp-registry/registry-consolidated": "./src/mcp-registry/registry-consolidated.ts",
     "./mcp-registry/schemas": "./src/mcp-registry/schemas.ts",
     "./mcp-registry/requirement-validator": "./src/mcp-registry/requirement-validator.ts",
