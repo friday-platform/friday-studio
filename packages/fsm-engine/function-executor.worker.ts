@@ -47,11 +47,11 @@ onmessage = async (e: MessageEvent<string>) => {
 
   const { requestId, functionCode, contextData, signal, timeout } = request;
 
-  const controller = new AbortController();
+  let timedOut = false;
   const timeoutId = setTimeout(() => {
-    controller.abort();
+    timedOut = true;
     postMessage(JSON.stringify({ requestId, success: false, error: `Timeout after ${timeout}ms` }));
-    close(); // Self-terminate worker
+    // Parent is responsible for terminating the worker; we stay alive for pool reuse.
   }, timeout);
 
   try {
@@ -59,13 +59,13 @@ onmessage = async (e: MessageEvent<string>) => {
     const { result, mutations } = await executeFunction(functionCode, contextData, signal);
     clearTimeout(timeoutId);
 
-    if (controller.signal.aborted) return;
+    if (timedOut) return;
 
     postMessage(JSON.stringify({ requestId, success: true, result, mutations }));
   } catch (error) {
     clearTimeout(timeoutId);
 
-    if (controller.signal.aborted) return;
+    if (timedOut) return;
 
     const stack = error instanceof Error ? error.stack : undefined;
     postMessage(JSON.stringify({ requestId, success: false, error: stringifyError(error), stack }));

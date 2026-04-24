@@ -426,7 +426,9 @@ export interface CodeExecutor {
     functionName: string,
     context: Context,
     signal: Signal,
+    abortSignal?: AbortSignal,
   ): Promise<unknown>;
+  dispose?(): void;
 }
 
 export interface FSMEngineOptions {
@@ -742,7 +744,13 @@ export class FSMEngine {
         }
 
         try {
-          const result = await this._guardExecutor.execute(guardCode, guardName, this.context, sig);
+          const result = await this._guardExecutor.execute(
+            guardCode,
+            guardName,
+            this.context,
+            sig,
+            sig._context?.abortSignal,
+          );
           const passed = Boolean(result);
           logger.debug("Guard evaluated", {
             guardName,
@@ -1179,7 +1187,13 @@ export class FSMEngine {
 
             const executor = isIoAction ? this._toolExecutor : this._actionExecutor;
             try {
-              const returnValue = await executor.execute(actionCode, action.function, context, sig);
+              const returnValue = await executor.execute(
+                actionCode,
+                action.function,
+                context,
+                sig,
+                sig._context?.abortSignal,
+              );
               codeActionResult = parsePrepareResult(returnValue);
 
               // Process any stateAppend mutations from the code action
@@ -2376,7 +2390,9 @@ export class FSMEngine {
   }
 
   stop(): void {
-    // No-op: Workers are terminated after each call, no cleanup needed
+    this._guardExecutor.dispose?.();
+    this._actionExecutor.dispose?.();
+    this._toolExecutor.dispose?.();
   }
 
   /**
