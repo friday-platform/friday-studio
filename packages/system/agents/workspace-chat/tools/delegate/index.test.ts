@@ -409,6 +409,8 @@ describe("createDelegateTool", () => {
     const system = captured.args?.system as string;
     expect(system).toContain("Goal:");
     expect(system).toContain("Handoff:");
+    // Child must be instructed to stay terse — no conversational filler.
+    expect(system).toContain("terse back-end agent");
     // Must NOT contain a parent-prompt marker.
     expect(system).not.toContain("Workspaces may have");
     expect(system).not.toContain("<capabilities>");

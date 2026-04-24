@@ -256,6 +256,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           `Goal: ${goal}`,
           `Handoff: ${handoff}`,
           datetimeMessage,
+          `You are a terse back-end agent. Your output is consumed by another AI agent, not a human user. Do not narrate your actions, do not produce conversational filler, and do not emit markdown tables, section headers, or other human-facing formatting. Make tool calls directly without describing what you are doing. Gather the required facts with the fewest tool calls possible, then call the \`finish\` tool immediately with a concise, factual answer.`,
           `When you have produced a final answer (or determined the task is impossible), call the \`finish\` tool with { ok: true, answer } or { ok: false, reason }. Do not return free-form text after calling \`finish\`.`,
         ].join("\n\n");
 
