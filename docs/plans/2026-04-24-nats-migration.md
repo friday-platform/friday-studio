@@ -1,6 +1,6 @@
 # NATS Migration Plan
 
-**Date:** 2026-04-24  
+**Date:** 2026-04-24
 **Scope:** Replace FSM code execution (Deno workers) + daemon coordination with NATS; rewrite Python agent SDK from WASM to NATS subprocess model.
 
 ---
@@ -35,6 +35,7 @@ The daemon manages a `nats-server` subprocess — zero external infrastructure f
 | `_bridge.py` (WIT shim) | `packages/sdk-python/friday_agent_sdk/_bridge.py` | Replaced by NATS entry point |
 | WASM build step | `deno task agent build` / componentize-py / jco | No longer needed |
 | `SessionStreamRegistry` (in-memory) | `apps/atlasd/src/session-stream-registry.ts` | Replaced by NATS JetStream |
+| `writing-friday-agents` skill | `.claude/skills/writing-friday-agents/` | Rewritten for NATS model (Phase 2) |
 
 ### Kept (unchanged)
 | Component | Notes |
@@ -239,6 +240,15 @@ if __name__ == "__main__":
 - All `try: from wit_world.imports import ...` blocks
 - `pyproject.toml` build dependencies: `componentize-py`, `wasmtime`
 - `componentize-py` call in `deno task agent build`
+
+**Update skill: `.claude/skills/writing-friday-agents/`**
+This skill is the canonical guide for writing Python agents. It currently documents the WASM build flow (`deno task agent build`, `agent.js`, WIT bindings). Rewrite in full for the NATS model:
+- Entry point is `agent.py`, no build step
+- `if __name__ == "__main__": from friday_agent_sdk import run; run()` replaces the WASM export
+- `ctx.llm`, `ctx.http`, `ctx.tools`, `ctx.stream` API unchanged — just works async-natively now
+- Remove all references to `componentize-py`, `wasmtime`, `agent.js`, `source:` WASM path in `workspace.yml`
+- Update `workspace.yml` agent registration example: `source: ./agents/my-agent/agent.py`
+- Update references in `SKILL.md`, `references/capabilities.md`, `references/sandbox-constraints.md`, `references/structured-output.md`
 
 **Tests:** All existing tests in `packages/sdk-python/tests/` should pass unchanged — they test the public API and mock the capability layer. Update `conftest.py` to mock NATS instead of WIT.
 

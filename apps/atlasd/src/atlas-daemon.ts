@@ -97,6 +97,7 @@ import {
 } from "./chat-sdk/chat-sdk-instance.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
+import { NatsManager } from "./nats-manager.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
@@ -147,6 +148,7 @@ export class AtlasDaemon {
   private isInitialized = false;
   private platformModels: PlatformModels | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
+  private natsManager: NatsManager | null = null;
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private resourceStorage: ResourceStorageAdapter | null = null;
@@ -292,6 +294,12 @@ export class AtlasDaemon {
       configLoaded: atlasConfig !== null,
       configured: atlasConfig?.models ? Object.keys(atlasConfig.models) : [],
     });
+
+    // Start NATS server and establish daemon connection
+    logger.info("Starting NATS...");
+    this.natsManager = new NatsManager();
+    await this.natsManager.start();
+    logger.info("NATS ready");
 
     // Create WorkspaceManager (initialize later once registrars and watcher are ready)
     logger.info("Creating WorkspaceManager...");
@@ -2218,6 +2226,12 @@ export class AtlasDaemon {
     if (this.cronManager) {
       await this.cronManager.shutdown();
       this.cronManager = null;
+    }
+
+    // Stop NATS (drain connection, then kill nats-server subprocess)
+    if (this.natsManager) {
+      await this.natsManager.stop();
+      this.natsManager = null;
     }
 
     // Shutdown WorkspaceManager
