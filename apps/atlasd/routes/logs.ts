@@ -18,7 +18,7 @@ import { daemonFactory } from "../src/factory.ts";
 
 // --- Zod Schemas ---
 
-export const LogTailQuerySchema = z.object({
+const LogTailQuerySchema = z.object({
   since_offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(5000).default(500),
   level_filter: z.string().default("error,fatal"),
@@ -196,4 +196,5 @@ logsRoutes.get("/tail", validator("query", LogTailQuerySchema), async (c) => {
 });
 
 export { logsRoutes };
-export type LogsRoutes = typeof logsRoutes;
+
+type LogsRoutes = typeof logsRoutes;

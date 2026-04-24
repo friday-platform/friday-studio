@@ -14,7 +14,7 @@ const PROXY_BASE = "/api/daemon";
 const BACKLOG_WORKSPACE = "system";
 const BACKLOG_MEMORY = "autopilot-backlog";
 
-export const ImprovementFindingMetaSchema = z.object({
+const ImprovementFindingMetaSchema = z.object({
   kind: z.literal("improvement-finding"),
   target_job_id: z.string().optional(),
   improvement_flag: z.enum(["surface", "auto"]).optional(),
@@ -24,7 +24,7 @@ export const ImprovementFindingMetaSchema = z.object({
   proposed_full_config: z.string().optional(),
 });
 
-export type ImprovementFindingMeta = z.infer<typeof ImprovementFindingMetaSchema>;
+type ImprovementFindingMeta = z.infer<typeof ImprovementFindingMetaSchema>;
 
 const BacklogPayloadSchema = z.object({
   workspace_id: z.string(),

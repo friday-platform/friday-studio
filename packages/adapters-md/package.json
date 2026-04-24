@@ -5,6 +5,6 @@
   "type": "module",
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
-  "dependencies": { "zod": "^4.3.5" },
+  "dependencies": {},
   "devDependencies": { "vitest": "^4.1.0" }
 }

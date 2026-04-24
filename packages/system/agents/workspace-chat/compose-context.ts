@@ -21,7 +21,7 @@ export interface ComposedForegroundContext {
   resourceEntries: ResourceEntry[];
 }
 
-export interface ComposedContext {
+interface ComposedContext {
   workspaceSections: string;
   mergedSkills: SkillSummary[];
   foregroundTools: Record<string, AtlasTools>;

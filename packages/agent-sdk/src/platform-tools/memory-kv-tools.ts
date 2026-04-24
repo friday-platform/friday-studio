@@ -4,16 +4,16 @@ import type { AgentContext } from "../types.ts";
 import { stringifyError } from "../utils.ts";
 import { resolveStore } from "./store-resolve.ts";
 
-export const MemoryKVGetInput = z.object({ store: z.string(), key: z.string() });
+const MemoryKVGetInput = z.object({ store: z.string(), key: z.string() });
 
-export const MemoryKVSetInput = z.object({
+const MemoryKVSetInput = z.object({
   store: z.string(),
   key: z.string(),
   value: z.unknown(),
   ttlSeconds: z.number().int().nonnegative().optional(),
 });
 
-export const MemoryKVDeleteInput = z.object({ store: z.string(), key: z.string() });
+const MemoryKVDeleteInput = z.object({ store: z.string(), key: z.string() });
 
 export function createMemoryKVTools(ctx: AgentContext) {
   return {

@@ -4,7 +4,7 @@ import type { AgentContext } from "../types.ts";
 import { stringifyError } from "../utils.ts";
 import { resolveStore } from "./store-resolve.ts";
 
-export const MemoryRetrievalIngestInput = z.object({
+const MemoryRetrievalIngestInput = z.object({
   store: z.string(),
   docs: z.array(
     z.object({
@@ -17,7 +17,7 @@ export const MemoryRetrievalIngestInput = z.object({
   embedder: z.string().optional(),
 });
 
-export const MemoryRetrievalQueryInput = z.object({
+const MemoryRetrievalQueryInput = z.object({
   store: z.string(),
   text: z.string(),
   topK: z.number().int().positive().optional(),

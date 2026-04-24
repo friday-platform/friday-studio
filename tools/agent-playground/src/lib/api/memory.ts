@@ -37,7 +37,7 @@ export const EntryMetaSchema = z.object({
 
 export type EntryMeta = z.infer<typeof EntryMetaSchema>;
 
-export type StoreKind = StoreMetadata["kind"];
+type StoreKind = StoreMetadata["kind"];
 
 export function parseEntryMeta(entry: NarrativeEntry): EntryMeta {
   if (!entry.metadata) return {};

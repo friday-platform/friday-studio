@@ -22,45 +22,8 @@ export const NarrativeEntrySchema = z.object({
 
 export const SearchOptsSchema = z.object({ limit: z.number().int().optional() });
 
-export const DocBatchSchema = z.object({
-  docs: z.array(
-    z.object({
-      id: z.string(),
-      text: z.string(),
-      metadata: z.record(z.string(), z.unknown()).optional(),
-    }),
-  ),
-});
-
-export const IngestOptsSchema = z.object({
-  chunker: z.string().optional(),
-  embedder: z.string().optional(),
-});
-
-export const IngestResultSchema = z.object({
-  ingested: z.number().int().nonnegative(),
-  skipped: z.number().int().nonnegative(),
-});
-
-export const RetrievalQuerySchema = z.object({
-  text: z.string(),
-  topK: z.number().int().positive().optional(),
-});
-
 export const RetrievalOptsSchema = z.object({
   filter: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const HitSchema = z.object({
-  id: z.string(),
-  score: z.number(),
-  text: z.string(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const RetrievalStatsSchema = z.object({
-  count: z.number().int().nonnegative(),
-  sizeBytes: z.number().nonnegative(),
 });
 
 export const DedupEntrySchema = z.record(z.string(), z.unknown());

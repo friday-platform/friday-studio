@@ -44,7 +44,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
  * Search API key is configured in the environment. Exported so the
  * workspace-chat agent can gate registration with a Hermes-style check_fn.
  */
-export function isWebSearchAvailable(): boolean {
+function isWebSearchAvailable(): boolean {
   return (
     typeof process.env.BRAVE_SEARCH_API_KEY === "string" &&
     process.env.BRAVE_SEARCH_API_KEY.length > 0
@@ -106,7 +106,7 @@ async function callBrave(query: string, count: number, apiKey: string): Promise<
 
 // ─── Input schema ────────────────────────────────────────────────────────────
 
-export const WebSearchInput = z.object({
+const WebSearchInput = z.object({
   query: z
     .string()
     .min(1)

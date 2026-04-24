@@ -69,12 +69,12 @@ export type LintMode =
 // ─── Thresholds ─────────────────────────────────────────────────────────────
 
 export const BODY_WARN_LINES = 500;
-export const BODY_ERR_LINES = 800;
-export const BODY_WARN_TOKENS = 5000;
-export const BODY_ERR_TOKENS = 8000;
+const BODY_ERR_LINES = 800;
+const BODY_WARN_TOKENS = 5000;
+const BODY_ERR_TOKENS = 8000;
 
 /** References longer than this without a `## Contents` TOC produce a warning. */
-export const REF_WARN_LINES = 100;
+const REF_WARN_LINES = 100;
 
 // ─── Patterns ───────────────────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ function stripCode(text: string): string {
 }
 
 /** Rough token estimate — ~4 chars per token, consistent across providers. */
-export function estimateTokens(text: string): number {
+function estimateTokens(text: string): number {
   return Math.max(1, Math.floor(text.length / 4));
 }
 

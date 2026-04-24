@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ── Zod schemas ─────────────────────────────────────────────────────────────
 
-export const ScratchpadChunkSchema = z.object({
+const ScratchpadChunkSchema = z.object({
   id: z.string(),
   kind: z.string(),
   body: z.string(),
@@ -27,7 +27,7 @@ export const LifecycleImprovementSchema = z.object({
   createdAt: z.string(),
 });
 
-export const ImprovementFindingBodySchema = z.object({
+const ImprovementFindingBodySchema = z.object({
   kind: z.literal("improvement-finding"),
   target_job_id: z.string(),
   diff: z.string(),
@@ -37,7 +37,7 @@ export const ImprovementFindingBodySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const ApplyActionRequestSchema = z.object({
+const ApplyActionRequestSchema = z.object({
   workspaceId: z.string(),
   jobId: z.string().optional(),
   finding: ImprovementFindingBodySchema,
@@ -46,15 +46,15 @@ export const ApplyActionRequestSchema = z.object({
 
 // ── TypeScript types ────────────────────────────────────────────────────────
 
-export type ScratchpadChunk = z.infer<typeof ScratchpadChunkSchema>;
+type ScratchpadChunk = z.infer<typeof ScratchpadChunkSchema>;
 
 export type ImprovementType = z.infer<typeof ImprovementTypeSchema>;
 
-export type LifecycleImprovement = z.infer<typeof LifecycleImprovementSchema>;
+type LifecycleImprovement = z.infer<typeof LifecycleImprovementSchema>;
 
-export type ImprovementFindingBody = z.infer<typeof ImprovementFindingBodySchema>;
+type ImprovementFindingBody = z.infer<typeof ImprovementFindingBodySchema>;
 
-export type ApplyActionRequest = z.infer<typeof ApplyActionRequestSchema>;
+type ApplyActionRequest = z.infer<typeof ApplyActionRequestSchema>;
 
 export type ApplyAction = "accept" | "reject" | "dismiss" | "rollback";
 

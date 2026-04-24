@@ -81,7 +81,7 @@ function resolveInScratch(
 
 // ─── Input schemas ───────────────────────────────────────────────────────────
 
-export const ReadFileInput = z.object({
+const ReadFileInput = z.object({
   path: z
     .string()
     .min(1)
@@ -97,7 +97,7 @@ export const ReadFileInput = z.object({
     .describe(`Maximum bytes to read. Default and max ${MAX_READ_BYTES}.`),
 });
 
-export const WriteFileInput = z.object({
+const WriteFileInput = z.object({
   path: z.string().min(1).describe("Relative path inside the session scratch dir."),
   content: z
     .string()
@@ -107,7 +107,7 @@ export const WriteFileInput = z.object({
     ),
 });
 
-export const ListFilesInput = z.object({
+const ListFilesInput = z.object({
   path: z
     .string()
     .optional()

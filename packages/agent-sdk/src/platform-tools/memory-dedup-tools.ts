@@ -4,14 +4,14 @@ import type { AgentContext } from "../types.ts";
 import { stringifyError } from "../utils.ts";
 import { resolveStore } from "./store-resolve.ts";
 
-export const MemoryDedupAppendInput = z.object({
+const MemoryDedupAppendInput = z.object({
   store: z.string(),
   namespace: z.string(),
   entry: z.record(z.string(), z.unknown()),
   ttlHours: z.number().positive().optional(),
 });
 
-export const MemoryDedupFilterInput = z.object({
+const MemoryDedupFilterInput = z.object({
   store: z.string(),
   namespace: z.string(),
   field: z.string(),

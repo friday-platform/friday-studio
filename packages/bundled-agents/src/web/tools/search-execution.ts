@@ -75,17 +75,13 @@ async function condenseObjective(
   }
 }
 
-export function computeAfterDate(recencyDays: number): string {
+function computeAfterDate(recencyDays: number): string {
   const date = new Date();
   date.setDate(date.getDate() - recencyDays);
   return date.toISOString().slice(0, 10);
 }
 
-export function filterStaleResults(
-  result: SearchResult,
-  cutoff: string,
-  logger: Logger,
-): SearchResult {
+function filterStaleResults(result: SearchResult, cutoff: string, logger: Logger): SearchResult {
   const before = result.results.length;
 
   // Keep results without publish_date — the API's after_date is the primary

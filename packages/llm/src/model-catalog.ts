@@ -100,7 +100,7 @@ const GROQ_URL = "https://api.groq.com/openai/v1/models";
 
 const FETCH_TIMEOUT_MS = 3_000;
 /** One hour — models don't change intra-session. Prewarm covers first paint. */
-export const CACHE_TTL_MS = 60 * 60 * 1_000;
+const CACHE_TTL_MS = 60 * 60 * 1_000;
 
 const ENV_VAR_BY_CATALOG_PROVIDER: Record<CatalogProvider, string> = {
   anthropic: PROVIDER_ENV_VARS.anthropic,

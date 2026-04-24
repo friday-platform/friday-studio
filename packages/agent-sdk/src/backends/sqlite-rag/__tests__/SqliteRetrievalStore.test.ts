@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DocBatch } from "../../../memory-adapter.ts";
 import {
   ChunkerRegistry,
-  DefaultChunker,
   FixedChunker,
   getChunker,
   NoneChunker,
@@ -194,12 +193,12 @@ describe("SqliteRetrievalStore", () => {
 });
 
 describe("chunker", () => {
-  it("getChunker() falls back to DefaultChunker when opts.chunker is undefined", () => {
+  it("getChunker() falls back to SentenceChunker when opts.chunker is undefined", () => {
     const fn = getChunker(undefined);
-    expect(fn).toBe(DefaultChunker);
+    expect(fn).toBe(SentenceChunker);
 
     const fn2 = getChunker({});
-    expect(fn2).toBe(DefaultChunker);
+    expect(fn2).toBe(SentenceChunker);
   });
 
   it("getChunker() returns registered chunker by name from ChunkerRegistry", () => {
