@@ -94,10 +94,8 @@ jobs:
       - name: Install npm dependencies
         shell: bash
         run: |
-          mkdir -p /tmp/studio-deps
-          cp apps/studio-installer/package.json apps/studio-installer/package-lock.json /tmp/studio-deps/
-          cd /tmp/studio-deps && npm ci
-          cp -r /tmp/studio-deps/node_modules "$GITHUB_WORKSPACE/apps/studio-installer/"
+          # Run from / so npm finds no parent workspace package.json
+          cd / && npm ci --prefix "$GITHUB_WORKSPACE/apps/studio-installer"
 
       - name: Build Tauri app (macOS)
         if: matrix.bundle_ext == 'dmg'
