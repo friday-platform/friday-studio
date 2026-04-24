@@ -1366,15 +1366,23 @@ export class WorkspaceRuntime {
 
             const view = buildSessionView(sessionStream.getBufferedEvents());
 
+            // Only count actually-executed blocks in summary metrics
+            const executedBlocks = view.agentBlocks.filter(
+              (b) => b.status !== "skipped" && b.status !== "pending",
+            );
+
             const platformModels = this.options.platformModels;
-            const aiSummary = platformModels
-              ? await generateSessionSummary(
-                  view,
-                  { platformModels },
-                  job.description,
-                  this.workspace.name,
-                )
-              : undefined;
+            // Skip AI summarization for code-only sessions (no agent blocks) —
+            // nothing meaningful to summarize and it adds ~2s of LLM latency per invocation.
+            const aiSummary =
+              platformModels && executedBlocks.length > 0
+                ? await generateSessionSummary(
+                    view,
+                    { platformModels },
+                    job.description,
+                    this.workspace.name,
+                  )
+                : undefined;
             if (aiSummary) {
               sessionStream.emit({
                 type: "session:summary",
@@ -1383,11 +1391,6 @@ export class WorkspaceRuntime {
                 keyDetails: aiSummary.keyDetails,
               });
             }
-
-            // Only count actually-executed blocks in summary metrics
-            const executedBlocks = view.agentBlocks.filter(
-              (b) => b.status !== "skipped" && b.status !== "pending",
-            );
             const summaryV2: SessionSummaryV2 = {
               sessionId,
               workspaceId: this.workspace.id,
@@ -1407,12 +1410,14 @@ export class WorkspaceRuntime {
               logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
             });
 
-            // Replace "running" activity with final activity for terminal sessions
+            // Replace "running" activity with final activity for terminal sessions.
+            // Skip for code-only sessions (no agent blocks) — no meaningful output to title.
             if (
               this.options.activityStorage &&
               this.options.platformModels &&
               this.createdByUserId &&
               !isConversation &&
+              executedBlocks.length > 0 &&
               (view.status === "completed" || view.status === "failed")
             ) {
               const titlePlatformModels = this.options.platformModels;
@@ -2626,10 +2631,11 @@ export class WorkspaceRuntime {
         return;
       }
 
-      // Generate title before other writes to avoid race condition
+      // Title generation is fire-and-forget — it doesn't need to be ready before the
+      // HTTP response returns, and awaiting it adds ~300ms LLM latency to every session.
       const { status } = sessionResult;
       if (status !== WorkspaceSessionStatus.ACTIVE) {
-        await this.generateAndStoreTitle(sessionResult.id, {
+        this.generateAndStoreTitle(sessionResult.id, {
           signal: { type: signal.type, id: signal.id, data: signal.data },
           output: sessionResult.artifacts[0]?.data,
           status,
