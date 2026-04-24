@@ -1,9 +1,6 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
-import {
-  discoverMCPServers,
-  type LinkSummary,
-} from "@atlas/core/mcp-registry/discovery";
 import type { WorkspaceConfig } from "@atlas/config";
+import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
@@ -23,6 +20,8 @@ export interface MCPServerListItem {
   securityRating: string;
   configured: boolean;
   constraints?: string;
+  provider?: string;
+  requiredConfig?: string[];
 }
 
 export interface ListMcpServersSuccess {
@@ -59,11 +58,7 @@ export function createListMCPServersTool(
       inputSchema: ListMcpServersInput,
       execute: async ({ filter }): Promise<ListMcpServersSuccess | ListMcpServersError> => {
         try {
-          const candidates = await discoverMCPServers(
-            workspaceId,
-            workspaceConfig,
-            linkSummary,
-          );
+          const candidates = await discoverMCPServers(workspaceId, workspaceConfig, linkSummary);
 
           let filtered = candidates;
           if (filter === "configured") {
@@ -72,15 +67,34 @@ export function createListMCPServersTool(
             filtered = candidates.filter((c) => !c.configured);
           }
 
-          const servers: MCPServerListItem[] = filtered.map((c) => ({
-            id: c.metadata.id,
-            name: c.metadata.name,
-            description: c.metadata.description,
-            source: c.metadata.source,
-            securityRating: c.metadata.securityRating,
-            configured: c.configured,
-            constraints: c.metadata.constraints,
-          }));
+          const servers: MCPServerListItem[] = filtered.map((c) => {
+            let provider: string | undefined;
+            const requiredConfig: string[] = [];
+
+            if (!c.configured && c.mergedConfig.env) {
+              for (const [key, value] of Object.entries(c.mergedConfig.env)) {
+                if (typeof value === "object") {
+                  if (value.provider) {
+                    provider = value.provider;
+                  }
+                } else {
+                  requiredConfig.push(key);
+                }
+              }
+            }
+
+            return {
+              id: c.metadata.id,
+              name: c.metadata.name,
+              description: c.metadata.description,
+              source: c.metadata.source,
+              securityRating: c.metadata.securityRating,
+              configured: c.configured,
+              constraints: c.metadata.constraints,
+              ...(provider !== undefined && { provider }),
+              ...(requiredConfig.length > 0 && { requiredConfig }),
+            };
+          });
 
           logger.info("list_mcp_servers succeeded", {
             workspaceId,

@@ -1,3 +1,4 @@
+import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import type { LinkSummary, MCPServerCandidate } from "@atlas/core/mcp-registry/discovery";
 import type { Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +45,7 @@ function makeCandidate(
       description: overrides.metadata.description,
       constraints: overrides.metadata.constraints,
     },
-    mergedConfig: { transport: { type: "stdio", command: "echo" } },
+    mergedConfig: overrides.mergedConfig ?? { transport: { type: "stdio", command: "echo" } },
     configured: overrides.configured ?? true,
   } satisfies MCPServerCandidate;
 }
@@ -75,19 +76,11 @@ describe("createListMCPServersTool", () => {
   it("returns all servers by default", async () => {
     const candidates: MCPServerCandidate[] = [
       makeCandidate({
-        metadata: {
-          id: "github",
-          name: "GitHub",
-          description: "GitHub integration",
-        },
+        metadata: { id: "github", name: "GitHub", description: "GitHub integration" },
         configured: true,
       }),
       makeCandidate({
-        metadata: {
-          id: "slack",
-          name: "Slack",
-          description: "Slack integration",
-        },
+        metadata: { id: "slack", name: "Slack", description: "Slack integration" },
         configured: false,
       }),
     ];
@@ -125,22 +118,13 @@ describe("createListMCPServersTool", () => {
 
   it("filters by configured", async () => {
     const candidates: MCPServerCandidate[] = [
-      makeCandidate({
-        metadata: { id: "github", name: "GitHub" },
-        configured: true,
-      }),
-      makeCandidate({
-        metadata: { id: "slack", name: "Slack" },
-        configured: false,
-      }),
+      makeCandidate({ metadata: { id: "github", name: "GitHub" }, configured: true }),
+      makeCandidate({ metadata: { id: "slack", name: "Slack" }, configured: false }),
     ];
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute(
-      { filter: "configured" },
-      TOOL_CALL_OPTS,
-    );
+    const result = await tools.list_mcp_servers!.execute({ filter: "configured" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       servers: [
@@ -161,14 +145,8 @@ describe("createListMCPServersTool", () => {
 
   it("filters by unconfigured", async () => {
     const candidates: MCPServerCandidate[] = [
-      makeCandidate({
-        metadata: { id: "github", name: "GitHub" },
-        configured: true,
-      }),
-      makeCandidate({
-        metadata: { id: "slack", name: "Slack" },
-        configured: false,
-      }),
+      makeCandidate({ metadata: { id: "github", name: "GitHub" }, configured: true }),
+      makeCandidate({ metadata: { id: "slack", name: "Slack" }, configured: false }),
     ];
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
@@ -232,5 +210,108 @@ describe("createListMCPServersTool", () => {
       "list_mcp_servers failed",
       expect.objectContaining({ workspaceId: "ws-1", error: "Network failure" }),
     );
+  });
+
+  it("includes provider for unconfigured server with Link-backed env vars", async () => {
+    const githubToken: LinkCredentialRef = { from: "link", provider: "github", key: "token" };
+    const candidates: MCPServerCandidate[] = [
+      makeCandidate({
+        metadata: { id: "github", name: "GitHub" },
+        configured: false,
+        mergedConfig: {
+          transport: { type: "stdio", command: "echo" },
+          env: { GITHUB_TOKEN: githubToken },
+        },
+      }),
+    ];
+    mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
+
+    const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
+    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      servers: [
+        {
+          id: "github",
+          name: "GitHub",
+          source: "static",
+          securityRating: "high",
+          configured: false,
+          description: undefined,
+          constraints: undefined,
+          provider: "github",
+        },
+      ],
+      total: 1,
+      configuredCount: 0,
+    });
+  });
+
+  it("includes requiredConfig for unconfigured server with string env vars", async () => {
+    const candidates: MCPServerCandidate[] = [
+      makeCandidate({
+        metadata: { id: "slack", name: "Slack" },
+        configured: false,
+        mergedConfig: {
+          transport: { type: "stdio", command: "echo" },
+          env: { SLACK_TOKEN: "your-slack-token", SLACK_CHANNEL: "general" },
+        },
+      }),
+    ];
+    mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
+
+    const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
+    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      servers: [
+        {
+          id: "slack",
+          name: "Slack",
+          source: "static",
+          securityRating: "high",
+          configured: false,
+          description: undefined,
+          constraints: undefined,
+          requiredConfig: ["SLACK_TOKEN", "SLACK_CHANNEL"],
+        },
+      ],
+      total: 1,
+      configuredCount: 0,
+    });
+  });
+
+  it("omits provider and requiredConfig for configured server", async () => {
+    const githubToken: LinkCredentialRef = { from: "link", provider: "github", key: "token" };
+    const candidates: MCPServerCandidate[] = [
+      makeCandidate({
+        metadata: { id: "github", name: "GitHub" },
+        configured: true,
+        mergedConfig: {
+          transport: { type: "stdio", command: "echo" },
+          env: { GITHUB_TOKEN: githubToken, API_URL: "https://api.github.com" },
+        },
+      }),
+    ];
+    mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
+
+    const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
+    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      servers: [
+        {
+          id: "github",
+          name: "GitHub",
+          source: "static",
+          securityRating: "high",
+          configured: true,
+          description: undefined,
+          constraints: undefined,
+        },
+      ],
+      total: 1,
+      configuredCount: 1,
+    });
   });
 });
