@@ -4,27 +4,27 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
-import { resolveCorpus } from "./resolve.ts";
+import { resolveStore } from "./resolve.ts";
 
-/** Register MCP tool for removing a specific entry from a memory corpus. */
+/** Register MCP tool for removing a specific entry from a memory store. */
 export function registerMemoryRemoveTool(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     "memory_remove",
     {
       description:
-        "Remove a single entry from a named memory corpus by its id. " +
-        "Requires the corpus to be in `memory.own` or an `rw` mount — read-only mounts are rejected. " +
+        "Remove a single entry from a named memory store by its id. " +
+        "Requires the store to be in `memory.own` or an `rw` mount — read-only mounts are rejected. " +
         "Use sparingly; narrative memory is append-only by design and removing entries breaks audit trails.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID (runtime id like `grilled_xylem`)"),
-        memoryName: z.string().describe("Corpus name as declared in `memory.own` or a mount alias"),
+        memoryName: z.string().describe("Store name as declared in `memory.own` or a mount alias"),
         entryId: z.string().describe("The id field of the entry to remove"),
       },
     },
     async ({ workspaceId, memoryName, entryId }): Promise<CallToolResult> => {
       ctx.logger.info("MCP memory_remove called", { workspaceId, memoryName, entryId });
 
-      const resolved = await resolveCorpus({
+      const resolved = await resolveStore({
         daemonUrl: ctx.daemonUrl,
         workspaceId,
         memoryName,
@@ -39,7 +39,7 @@ export function registerMemoryRemoveTool(server: McpServer, ctx: ToolContext): v
 
       if (strategy !== "narrative") {
         return createErrorResponse(
-          `memory_remove currently only supports narrative corpora. Corpus '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
+          `memory_remove currently only supports narrative stores. Store '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
         );
       }
 

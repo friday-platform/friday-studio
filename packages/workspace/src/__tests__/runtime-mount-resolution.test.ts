@@ -1,20 +1,20 @@
 import type {
-  CorpusKind,
-  CorpusMetadata,
-  CorpusOf,
   HistoryEntry,
   HistoryFilter,
   MemoryAdapter,
-  NarrativeCorpus,
   NarrativeEntry,
+  NarrativeStore,
+  StoreKind,
+  StoreMetadata,
+  StoreOf,
 } from "@atlas/agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryMount } from "../config-schema.ts";
 import { MountSourceNotFoundError } from "../mount-errors.ts";
 import { mountRegistry } from "../mount-registry.ts";
-import { MountedCorpusBinding } from "../mounted-corpus-binding.ts";
+import { MountedStoreBinding } from "../mounted-store-binding.ts";
 
-function createMockCorpus(): NarrativeCorpus {
+function createMockStore(): NarrativeStore {
   return {
     append: vi
       .fn<(entry: NarrativeEntry) => Promise<NarrativeEntry>>()
@@ -28,22 +28,22 @@ function createMockCorpus(): NarrativeCorpus {
   };
 }
 
-function createMockAdapter(corpusOrNull?: NarrativeCorpus | null): MemoryAdapter {
-  const corpus = corpusOrNull === null ? undefined : (corpusOrNull ?? createMockCorpus());
+function createMockAdapter(storeOrNull?: NarrativeStore | null): MemoryAdapter {
+  const store = storeOrNull === null ? undefined : (storeOrNull ?? createMockStore());
   return {
-    corpus<K extends CorpusKind>(_wsId: string, _name: string, _kind: K): Promise<CorpusOf<K>> {
-      if (!corpus) {
-        return Promise.reject(new Error("Corpus not found"));
+    store<K extends StoreKind>(_wsId: string, _name: string, _kind: K): Promise<StoreOf<K>> {
+      if (!store) {
+        return Promise.reject(new Error("Store not found"));
       }
-      return Promise.resolve(corpus as CorpusOf<K>);
+      return Promise.resolve(store as StoreOf<K>);
     },
-    list: vi.fn<(_wsId: string) => Promise<CorpusMetadata[]>>().mockResolvedValue([]),
+    list: vi.fn<(_wsId: string) => Promise<StoreMetadata[]>>().mockResolvedValue([]),
     bootstrap: vi.fn<(_wsId: string, _agentId: string) => Promise<string>>().mockResolvedValue(""),
     history: vi
       .fn<(_wsId: string, _filter?: HistoryFilter) => Promise<HistoryEntry[]>>()
       .mockResolvedValue([]),
     rollback: vi
-      .fn<(_wsId: string, _corpus: string, _toVersion: string) => Promise<void>>()
+      .fn<(_wsId: string, _store: string, _toVersion: string) => Promise<void>>()
       .mockResolvedValue(undefined),
   };
 }
@@ -68,25 +68,25 @@ describe("runtime mount resolution (unit)", () => {
   });
 
   it("valid mounts parse and bind without error", async () => {
-    const corpus = createMockCorpus();
-    const adapter = createMockAdapter(corpus);
+    const store = createMockStore();
+    const adapter = createMockAdapter(store);
     const mount = validMount();
 
     mountRegistry.registerSource(mount.source, () =>
-      adapter.corpus("_global", "autopilot-backlog", "narrative"),
+      adapter.store("_global", "autopilot-backlog", "narrative"),
     );
     mountRegistry.addConsumer(mount.source, "test-ws");
 
-    const resolvedCorpus = await adapter.corpus("_global", "autopilot-backlog", "narrative");
+    const resolvedStore = await adapter.store("_global", "autopilot-backlog", "narrative");
 
-    const binding = new MountedCorpusBinding({
+    const binding = new MountedStoreBinding({
       name: mount.name,
       source: mount.source,
       mode: mount.mode,
       scope: mount.scope,
       scopeTarget: mount.scopeTarget,
-      read: (filter) => resolvedCorpus.read(filter),
-      append: (entry) => resolvedCorpus.append(entry),
+      read: (filter) => resolvedStore.read(filter),
+      append: (entry) => resolvedStore.append(entry),
     });
 
     expect(binding.name).toBe("backlog");
@@ -94,7 +94,7 @@ describe("runtime mount resolution (unit)", () => {
     expect(binding.mode).toBe("ro");
   });
 
-  it("missing source corpus throws MountSourceNotFoundError", async () => {
+  it("missing source store throws MountSourceNotFoundError", async () => {
     await expect(mountRegistry.resolve("nonexistent/narrative/missing")).rejects.toThrow(
       MountSourceNotFoundError,
     );
@@ -113,11 +113,11 @@ describe("runtime mount resolution (unit)", () => {
   });
 
   describe("scope filtering", () => {
-    function buildBindings(): MountedCorpusBinding[] {
+    function buildBindings(): MountedStoreBinding[] {
       const mockRead = () => Promise.resolve([]);
       const mockAppend = (e: NarrativeEntry) => Promise.resolve(e);
       return [
-        new MountedCorpusBinding({
+        new MountedStoreBinding({
           name: "ws-mount",
           source: "_global/narrative/shared",
           mode: "ro",
@@ -125,7 +125,7 @@ describe("runtime mount resolution (unit)", () => {
           read: mockRead,
           append: mockAppend,
         }),
-        new MountedCorpusBinding({
+        new MountedStoreBinding({
           name: "job-mount",
           source: "_global/narrative/job-data",
           mode: "rw",
@@ -134,7 +134,7 @@ describe("runtime mount resolution (unit)", () => {
           read: mockRead,
           append: mockAppend,
         }),
-        new MountedCorpusBinding({
+        new MountedStoreBinding({
           name: "agent-mount",
           source: "_global/narrative/agent-private",
           mode: "ro",
@@ -147,11 +147,11 @@ describe("runtime mount resolution (unit)", () => {
     }
 
     function getMountsForAgent(
-      bindings: MountedCorpusBinding[],
+      bindings: MountedStoreBinding[],
       agentId: string,
       jobName?: string,
-    ): Record<string, MountedCorpusBinding> {
-      const result: Record<string, MountedCorpusBinding> = {};
+    ): Record<string, MountedStoreBinding> {
+      const result: Record<string, MountedStoreBinding> = {};
       for (const binding of bindings) {
         switch (binding.scope) {
           case "workspace":

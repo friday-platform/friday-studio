@@ -1,9 +1,9 @@
-import type { NarrativeCorpus, NarrativeEntry } from "@atlas/agent-sdk";
+import type { NarrativeEntry, NarrativeStore } from "@atlas/agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MountSourceNotFoundError } from "../mount-errors.ts";
 import { mountRegistry } from "../mount-registry.ts";
 
-function createStubNarrativeCorpus(): NarrativeCorpus {
+function createStubNarrativeStore(): NarrativeStore {
   return {
     append: vi
       .fn<(entry: NarrativeEntry) => Promise<NarrativeEntry>>()
@@ -28,25 +28,25 @@ describe("mountRegistry", () => {
 
   describe("registerSource", () => {
     it("registers a source with a resolver", () => {
-      const corpus = createStubNarrativeCorpus();
-      mountRegistry.registerSource("ws-1/narrative/logs", () => Promise.resolve(corpus));
+      const store = createStubNarrativeStore();
+      mountRegistry.registerSource("ws-1/narrative/logs", () => Promise.resolve(store));
       expect(mountRegistry.hasSource("ws-1/narrative/logs")).toBe(true);
     });
 
     it("is idempotent — second registration does not overwrite", async () => {
-      const corpus1 = createStubNarrativeCorpus();
-      const corpus2 = createStubNarrativeCorpus();
-      mountRegistry.registerSource("src-1", () => Promise.resolve(corpus1));
-      mountRegistry.registerSource("src-1", () => Promise.resolve(corpus2));
+      const store1 = createStubNarrativeStore();
+      const store2 = createStubNarrativeStore();
+      mountRegistry.registerSource("src-1", () => Promise.resolve(store1));
+      mountRegistry.registerSource("src-1", () => Promise.resolve(store2));
 
       const resolved = await mountRegistry.resolve("src-1");
-      expect(resolved).toBe(corpus1);
+      expect(resolved).toBe(store1);
     });
   });
 
   describe("addConsumer", () => {
     it("tracks workspaceIds for a source", () => {
-      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeCorpus()));
+      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeStore()));
       mountRegistry.addConsumer("src-1", "ws-a");
       mountRegistry.addConsumer("src-1", "ws-b");
 
@@ -57,8 +57,8 @@ describe("mountRegistry", () => {
     });
 
     it("tracks multiple workspaces across sources", () => {
-      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeCorpus()));
-      mountRegistry.registerSource("src-2", () => Promise.resolve(createStubNarrativeCorpus()));
+      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeStore()));
+      mountRegistry.registerSource("src-2", () => Promise.resolve(createStubNarrativeStore()));
 
       mountRegistry.addConsumer("src-1", "ws-a");
       mountRegistry.addConsumer("src-2", "ws-b");
@@ -68,7 +68,7 @@ describe("mountRegistry", () => {
     });
 
     it("adding same consumer twice is idempotent", () => {
-      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeCorpus()));
+      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeStore()));
       mountRegistry.addConsumer("src-1", "ws-a");
       mountRegistry.addConsumer("src-1", "ws-a");
 
@@ -77,11 +77,11 @@ describe("mountRegistry", () => {
   });
 
   describe("resolve", () => {
-    it("returns the corpus from the resolver", async () => {
-      const corpus = createStubNarrativeCorpus();
-      mountRegistry.registerSource("src-1", () => Promise.resolve(corpus));
+    it("returns the store from the resolver", async () => {
+      const store = createStubNarrativeStore();
+      mountRegistry.registerSource("src-1", () => Promise.resolve(store));
       const result = await mountRegistry.resolve("src-1");
-      expect(result).toBe(corpus);
+      expect(result).toBe(store);
     });
 
     it("throws MountSourceNotFoundError for unknown source", async () => {
@@ -103,7 +103,7 @@ describe("mountRegistry", () => {
 
   describe("clear", () => {
     it("removes all sources and consumers", () => {
-      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeCorpus()));
+      mountRegistry.registerSource("src-1", () => Promise.resolve(createStubNarrativeStore()));
       mountRegistry.addConsumer("src-1", "ws-a");
 
       mountRegistry.clear();

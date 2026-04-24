@@ -69,12 +69,12 @@ export type LintMode =
 // ─── Thresholds ─────────────────────────────────────────────────────────────
 
 export const BODY_WARN_LINES = 500;
-export const BODY_ERR_LINES = 800;
-export const BODY_WARN_TOKENS = 5000;
-export const BODY_ERR_TOKENS = 8000;
+const BODY_ERR_LINES = 800;
+const BODY_WARN_TOKENS = 5000;
+const BODY_ERR_TOKENS = 8000;
 
 /** References longer than this without a `## Contents` TOC produce a warning. */
-export const REF_WARN_LINES = 100;
+const REF_WARN_LINES = 100;
 
 // ─── Patterns ───────────────────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ function stripCode(text: string): string {
 }
 
 /** Rough token estimate — ~4 chars per token, consistent across providers. */
-export function estimateTokens(text: string): number {
+function estimateTokens(text: string): number {
   return Math.max(1, Math.floor(text.length / 4));
 }
 
@@ -187,10 +187,10 @@ export function lintSkill(input: LintInput, mode: LintMode): LintResult {
       );
     }
     if (!/\buse\b/i.test(description) && !/\bused\b/i.test(description)) {
-      // Demoted to `info` after the Phase 4.a corpus run showed a 75% hit
+      // Demoted to `info` after the Phase 4.a skills run showed a 75% hit
       // rate on existing skills — the "Use when …" clause is a best-practice
       // recommendation but many perfectly-useful skills ship without it.
-      // See docs/learnings/2026-04-20-lint-corpus-report.md.
+      // See docs/learnings/2026-04-20-lint-skills-report.md.
       warn(
         "description-trigger",
         "Description should include a 'Use when …' clause so the router knows when to fire.",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { detectColumns, parseCsvRow, stripHtml } from "./corpus.ts";
+import { detectColumns, parseCsvRow, stripHtml } from "./store.ts";
 
 describe("parseCsvRow", () => {
   test("splits simple comma-separated values", () => {

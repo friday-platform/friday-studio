@@ -1,8 +1,8 @@
 /**
  * WorkerExecutor - Sandboxed execution of FSM functions in Deno Web Workers
  *
- * Spawns zero-permission workers for guards, actions, and tools.
- * Collects mutations from worker, applies them after execution.
+ * Maintains a pool of warm workers to eliminate per-invocation spawn cost.
+ * Workers are stateless between calls — all state is serialized per request.
  */
 
 import { stringifyError } from "@atlas/utils";
@@ -24,6 +24,8 @@ interface WorkerExecutorOptions {
   timeout: number;
   functionType: "guard" | "action" | "tool";
   permissions?: Deno.PermissionOptions;
+  /** Max idle workers to keep warm. Defaults to 1. */
+  poolSize?: number;
 }
 
 interface WorkerRequest {
@@ -77,15 +79,127 @@ function hasNodeWorkerApi(worker: Worker): worker is NodeWorker {
   return typeof (worker as NodeWorker).on === "function";
 }
 
+interface PendingRequest {
+  context: Context;
+  functionName: string;
+  resolve: (v: unknown) => void;
+  reject: (e: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+  worker: Worker;
+  abortSignal?: AbortSignal;
+  abortListener?: () => void;
+}
+
 export class WorkerExecutor {
   private readonly timeout: number;
   private readonly functionType: string;
   private readonly permissions: Deno.PermissionOptions;
+  private readonly poolSize: number;
+
+  /** Workers ready for the next request. */
+  private readonly idle: Worker[] = [];
+  /** In-flight requests keyed by requestId. */
+  private readonly pending = new Map<string, PendingRequest>();
 
   constructor(options: WorkerExecutorOptions) {
     this.timeout = options.timeout;
     this.functionType = options.functionType;
     this.permissions = options.permissions ?? "none";
+    this.poolSize = options.poolSize ?? 1;
+  }
+
+  private spawnWorker(): Worker {
+    const workerUrl = new URL("./function-executor.worker.ts", import.meta.url).href;
+    const worker = new Worker(workerUrl, {
+      type: "module",
+      deno: { permissions: this.permissions },
+    });
+
+    const handleMessage = (rawData: unknown) => {
+      const parsed = WorkerResponseSchema.safeParse(
+        typeof rawData === "string" ? JSON.parse(rawData) : rawData,
+      );
+      if (!parsed.success) return;
+
+      const entry = this.pending.get(parsed.data.requestId);
+      if (!entry || entry.worker !== worker) return;
+
+      clearTimeout(entry.timeoutId);
+      this.pending.delete(parsed.data.requestId);
+      if (entry.abortListener) {
+        entry.abortSignal?.removeEventListener("abort", entry.abortListener);
+      }
+
+      if (!parsed.data.success) {
+        const errorMsg = parsed.data.stack
+          ? `${parsed.data.error}\n${parsed.data.stack}`
+          : parsed.data.error;
+        entry.reject(new Error(errorMsg));
+      } else {
+        try {
+          if (parsed.data.mutations) {
+            this.applyMutations(parsed.data.mutations, entry.context);
+          }
+          entry.resolve(parsed.data.result);
+        } catch (err) {
+          entry.reject(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+
+      this.releaseWorker(worker);
+    };
+
+    const handleError = (error: Error | ErrorEvent) => {
+      for (const [requestId, entry] of this.pending) {
+        if (entry.worker !== worker) continue;
+        clearTimeout(entry.timeoutId);
+        this.pending.delete(requestId);
+        if (entry.abortListener) {
+          entry.abortSignal?.removeEventListener("abort", entry.abortListener);
+        }
+        const msg = error instanceof Error ? error.message : (error as ErrorEvent).message;
+        entry.reject(new Error(`Worker error: ${stringifyError(msg)}`));
+        break;
+      }
+      worker.terminate();
+    };
+
+    if (hasNodeWorkerApi(worker)) {
+      worker.on("message", handleMessage);
+      worker.on("error", handleError);
+      worker.on("messageerror", handleError);
+    } else {
+      worker.onmessage = (event: MessageEvent) => handleMessage(event.data);
+      worker.onerror = handleError;
+      worker.onmessageerror = (event: MessageEvent) =>
+        handleError(new Error(`Message deserialization failed: ${String(event.data)}`));
+    }
+
+    return worker;
+  }
+
+  private acquireWorker(): Worker {
+    return this.idle.pop() ?? this.spawnWorker();
+  }
+
+  private releaseWorker(worker: Worker): void {
+    if (this.idle.length < this.poolSize) {
+      this.idle.push(worker);
+    } else {
+      worker.terminate();
+    }
+  }
+
+  /** Terminate the worker and spawn a replacement to keep the pool warm. */
+  private discardAndReplenish(worker: Worker): void {
+    worker.terminate();
+    if (this.idle.length < this.poolSize) {
+      try {
+        this.idle.push(this.spawnWorker());
+      } catch {
+        // Non-fatal: pool will replenish on next execute() if spawn fails here.
+      }
+    }
   }
 
   execute(
@@ -93,85 +207,56 @@ export class WorkerExecutor {
     functionName: string,
     context: Context,
     signal: Signal,
+    abortSignal?: AbortSignal,
   ): Promise<unknown> {
+    if (abortSignal?.aborted) {
+      return Promise.reject(new Error(`${this.functionType} '${functionName}' was cancelled`));
+    }
+
     const requestId = crypto.randomUUID();
+    let worker: Worker;
+    try {
+      worker = this.acquireWorker();
+    } catch (error) {
+      return Promise.reject(
+        new Error(
+          `Worker creation failed for ${this.functionType} '${functionName}': ${stringifyError(error)}`,
+        ),
+      );
+    }
 
     return new Promise((resolve, reject) => {
-      let worker: Worker;
-      try {
-        const workerUrl = new URL("./function-executor.worker.ts", import.meta.url).href;
-        worker = new Worker(workerUrl, { type: "module", deno: { permissions: this.permissions } });
-      } catch (error) {
-        reject(
-          new Error(
-            `Worker creation failed for ${this.functionType} '${functionName}': ${stringifyError(error)}`,
-          ),
-        );
-        return;
-      }
-
       const timeoutId = setTimeout(() => {
-        worker.terminate();
+        this.pending.delete(requestId);
+        this.discardAndReplenish(worker);
         reject(
           new Error(`${this.functionType} '${functionName}' timed out after ${this.timeout}ms`),
         );
       }, this.timeout + 1000);
 
-      const handleMessage = (rawData: unknown) => {
-        const parsed = WorkerResponseSchema.safeParse(
-          typeof rawData === "string" ? JSON.parse(rawData) : rawData,
-        );
-
-        if (!parsed.success) {
-          clearTimeout(timeoutId);
-          worker.terminate();
-          reject(new Error(`Invalid worker response: ${parsed.error.message}`));
-          return;
-        }
-
-        const response = parsed.data;
-        if (response.requestId !== requestId) return;
-
-        clearTimeout(timeoutId);
-        worker.terminate();
-
-        if (!response.success) {
-          const errorMsg = response.stack ? `${response.error}\n${response.stack}` : response.error;
-          reject(new Error(errorMsg));
-          return;
-        }
-
-        // Apply mutations to real context
-        try {
-          if (response.mutations) {
-            this.applyMutations(response.mutations, context);
-          }
-          resolve(response.result);
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error(String(error)));
-        }
-      };
-
-      const handleError = (error: Error | ErrorEvent) => {
-        clearTimeout(timeoutId);
-        worker.terminate();
-        const errorMsg = error instanceof Error ? error.message : (error as ErrorEvent).message;
-        reject(new Error(`Worker error: ${stringifyError(errorMsg)}`));
-      };
-
-      // Attach error handlers immediately after creation so async module-load
-      // failures (e.g. file-not-found in compiled binaries) are caught before
-      // they bubble to the global handler as unhandled exceptions.
-      if (hasNodeWorkerApi(worker)) {
-        worker.on("message", handleMessage);
-        worker.on("error", handleError);
-        worker.on("messageerror", handleError);
-      } else {
-        worker.onmessage = (event: MessageEvent) => handleMessage(event.data);
-        worker.onerror = handleError;
-        worker.onmessageerror = (event: MessageEvent) =>
-          handleError(new Error(`Message deserialization failed: ${String(event.data)}`));
+      let abortListener: (() => void) | undefined;
+      if (abortSignal) {
+        abortListener = () => {
+          const entry = this.pending.get(requestId);
+          if (!entry) return; // Already resolved/rejected
+          clearTimeout(entry.timeoutId);
+          this.pending.delete(requestId);
+          this.discardAndReplenish(worker);
+          reject(new Error(`${this.functionType} '${functionName}' was cancelled`));
+        };
+        abortSignal.addEventListener("abort", abortListener, { once: true });
       }
+
+      this.pending.set(requestId, {
+        context,
+        functionName,
+        resolve,
+        reject,
+        timeoutId,
+        worker,
+        abortSignal,
+        abortListener,
+      });
 
       const request: WorkerRequest = {
         requestId,
@@ -188,8 +273,15 @@ export class WorkerExecutor {
     });
   }
 
+  /** Terminate all idle workers. Call when the workspace runtime shuts down. */
+  dispose(): void {
+    for (const worker of this.idle) {
+      worker.terminate();
+    }
+    this.idle.length = 0;
+  }
+
   private applyMutations(mutations: Mutation[], context: Context): void {
-    // Collect stateAppend mutations separately — they're applied by the engine to SQLite
     const pendingAppends: Array<{
       key: string;
       entry: Record<string, unknown>;

@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import type {
   AgentContext,
   AgentMemoryContext,
-  CorpusMountBinding,
   NarrativeEntry,
+  StoreMountBinding,
 } from "../index.ts";
 
 describe("AgentContext.memory.mounts type", () => {
-  it("accepts a Record<string, CorpusMountBinding>", () => {
-    const binding: CorpusMountBinding = {
+  it("accepts a Record<string, StoreMountBinding>", () => {
+    const binding: StoreMountBinding = {
       name: "backlog",
       source: "_global/narrative/backlog",
       mode: "ro",

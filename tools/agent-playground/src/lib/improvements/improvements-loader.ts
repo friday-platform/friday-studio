@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fetchNarrativeCorpus, type NarrativeEntry } from "../api/memory.ts";
+import { fetchNarrativeStore, type NarrativeEntry } from "../api/memory.ts";
 import {
   ImprovementTypeSchema,
   LifecycleImprovementSchema,
@@ -14,7 +14,7 @@ const PROXY_BASE = "/api/daemon";
 const BACKLOG_WORKSPACE = "system";
 const BACKLOG_MEMORY = "autopilot-backlog";
 
-export const ImprovementFindingMetaSchema = z.object({
+const ImprovementFindingMetaSchema = z.object({
   kind: z.literal("improvement-finding"),
   target_job_id: z.string().optional(),
   improvement_flag: z.enum(["surface", "auto"]).optional(),
@@ -24,7 +24,7 @@ export const ImprovementFindingMetaSchema = z.object({
   proposed_full_config: z.string().optional(),
 });
 
-export type ImprovementFindingMeta = z.infer<typeof ImprovementFindingMetaSchema>;
+type ImprovementFindingMeta = z.infer<typeof ImprovementFindingMetaSchema>;
 
 const BacklogPayloadSchema = z.object({
   workspace_id: z.string(),
@@ -105,7 +105,7 @@ async function loadLifecycleFindings(
 async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
   let entries: NarrativeEntry[];
   try {
-    entries = await fetchNarrativeCorpus(BACKLOG_WORKSPACE, BACKLOG_MEMORY);
+    entries = await fetchNarrativeStore(BACKLOG_WORKSPACE, BACKLOG_MEMORY);
   } catch {
     return [];
   }
@@ -230,7 +230,7 @@ async function loadWorkspaceFindings(
 ): Promise<ImprovementEntry[]> {
   let entries: NarrativeEntry[];
   try {
-    entries = await fetchNarrativeCorpus(workspaceId, "notes");
+    entries = await fetchNarrativeStore(workspaceId, "notes");
   } catch {
     return [];
   }

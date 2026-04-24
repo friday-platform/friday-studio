@@ -31,9 +31,6 @@ import { registerLibraryStatsTool } from "./library/stats.ts";
 import { registerLibraryStoreTool } from "./library/store.ts";
 import { registerLibraryTemplatesTool } from "./library/templates.ts";
 // Import memory tools
-import { registerMemoryNarrativeAppendTool } from "./memory/narrative-append.ts";
-import { registerMemoryNarrativeForgetTool } from "./memory/narrative-forget.ts";
-import { registerMemoryNarrativeReadTool } from "./memory/narrative-read.ts";
 import { registerMemoryReadTool } from "./memory/read.ts";
 import { registerMemoryRemoveTool } from "./memory/remove.ts";
 import { registerMemorySaveTool } from "./memory/save.ts";
@@ -119,10 +116,6 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerMemorySaveTool(server, context);
   registerMemoryReadTool(server, context);
   registerMemoryRemoveTool(server, context);
-  // Narrative-specific aliases (backward compat)
-  registerMemoryNarrativeAppendTool(server, context);
-  registerMemoryNarrativeReadTool(server, context);
-  registerMemoryNarrativeForgetTool(server, context);
 
   // System tools
   registerBashTool(server, context);

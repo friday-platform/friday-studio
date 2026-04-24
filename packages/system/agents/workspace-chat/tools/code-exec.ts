@@ -95,7 +95,7 @@ function scratchDir(sessionId: string): string {
 
 // ─── Input schema ────────────────────────────────────────────────────────────
 
-export const RunCodeInput = z.object({
+const RunCodeInput = z.object({
   language: z
     .enum(SUPPORTED_LANGUAGES)
     .describe("Interpreter: `python` (python3), `javascript` (deno), or `bash`."),

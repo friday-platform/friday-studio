@@ -1,4 +1,4 @@
-import { USER_PROFILE_CORPUS } from "@atlas/agent-sdk";
+import { USER_PROFILE_STORE } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { z } from "zod";
@@ -43,7 +43,7 @@ export async function fetchUserProfileState(
   logger: Logger,
 ): Promise<UserProfileState> {
   const daemonUrl = getAtlasDaemonUrl();
-  const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${USER_PROFILE_CORPUS}?limit=50`;
+  const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${USER_PROFILE_STORE}?limit=50`;
 
   try {
     const res = await fetch(url);

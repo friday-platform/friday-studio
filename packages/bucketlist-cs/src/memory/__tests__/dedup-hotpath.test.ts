@@ -1,7 +1,7 @@
-import type { DedupCorpus, DedupEntry, MemoryAdapter } from "@atlas/agent-sdk";
+import type { DedupEntry, DedupStore, MemoryAdapter } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 
-class InMemoryDedupCorpus implements DedupCorpus {
+class InMemoryDedupStore implements DedupStore {
   private store = new Map<string, Map<string, DedupEntry>>();
 
   append(namespace: string, entry: DedupEntry, _ttlHours?: number): Promise<void> {
@@ -34,79 +34,79 @@ class InMemoryDedupCorpus implements DedupCorpus {
   }
 }
 
-function makeAdapter(): { adapter: MemoryAdapter; corpus: InMemoryDedupCorpus } {
-  const corpus = new InMemoryDedupCorpus();
+function makeAdapter(): { adapter: MemoryAdapter; store: InMemoryDedupStore } {
+  const store = new InMemoryDedupStore();
   const adapter: MemoryAdapter = {
-    corpus: () => Promise.resolve(corpus as never),
+    store: () => Promise.resolve(store as never),
     list: () => Promise.resolve([]),
     bootstrap: () => Promise.resolve(""),
     history: () => Promise.resolve([]),
     rollback: () => Promise.resolve(),
   };
-  return { adapter, corpus };
+  return { adapter, store };
 }
 
-describe("DedupCorpus hot-path: filter replaces Set<string>", () => {
+describe("DedupStore hot-path: filter replaces Set<string>", () => {
   it("new ticket IDs pass through filter unchanged", async () => {
     const { adapter } = makeAdapter();
-    const corpus = await adapter.corpus("ws-test", "processed-tickets", "dedup");
+    const store = await adapter.store("ws-test", "processed-tickets", "dedup");
 
     const candidates = ["t-new-1", "t-new-2", "t-new-3"];
-    const unseen = await corpus.filter("tickets", "ticketId", candidates);
+    const unseen = await store.filter("tickets", "ticketId", candidates);
 
     expect(unseen).toEqual(["t-new-1", "t-new-2", "t-new-3"]);
   });
 
   it("processed ticket IDs are filtered out", async () => {
     const { adapter } = makeAdapter();
-    const corpus = await adapter.corpus("ws-test", "processed-tickets", "dedup");
+    const store = await adapter.store("ws-test", "processed-tickets", "dedup");
 
-    await corpus.append("tickets", { ticketId: "t-1" });
-    await corpus.append("tickets", { ticketId: "t-2" });
+    await store.append("tickets", { ticketId: "t-1" });
+    await store.append("tickets", { ticketId: "t-2" });
 
-    const unseen = await corpus.filter("tickets", "ticketId", ["t-1", "t-2", "t-3"]);
+    const unseen = await store.filter("tickets", "ticketId", ["t-1", "t-2", "t-3"]);
 
     expect(unseen).toEqual(["t-3"]);
   });
 
   it("mixed batch returns only unseen IDs", async () => {
     const { adapter } = makeAdapter();
-    const corpus = await adapter.corpus("ws-test", "processed-tickets", "dedup");
+    const store = await adapter.store("ws-test", "processed-tickets", "dedup");
 
-    await corpus.append("tickets", { ticketId: "t-1" });
-    await corpus.append("tickets", { ticketId: "t-3" });
-    await corpus.append("tickets", { ticketId: "t-5" });
+    await store.append("tickets", { ticketId: "t-1" });
+    await store.append("tickets", { ticketId: "t-3" });
+    await store.append("tickets", { ticketId: "t-5" });
 
     const candidates = ["t-1", "t-2", "t-3", "t-4", "t-5"];
-    const unseen = await corpus.filter("tickets", "ticketId", candidates);
+    const unseen = await store.filter("tickets", "ticketId", candidates);
 
     expect(unseen).toEqual(["t-2", "t-4"]);
   });
 
   it("empty candidate list returns empty", async () => {
     const { adapter } = makeAdapter();
-    const corpus = await adapter.corpus("ws-test", "processed-tickets", "dedup");
+    const store = await adapter.store("ws-test", "processed-tickets", "dedup");
 
-    await corpus.append("tickets", { ticketId: "t-1" });
+    await store.append("tickets", { ticketId: "t-1" });
 
-    const unseen = await corpus.filter("tickets", "ticketId", []);
+    const unseen = await store.filter("tickets", "ticketId", []);
 
     expect(unseen).toEqual([]);
   });
 
   it("append then filter round-trip is consistent", async () => {
     const { adapter } = makeAdapter();
-    const corpus = await adapter.corpus("ws-test", "processed-tickets", "dedup");
+    const store = await adapter.store("ws-test", "processed-tickets", "dedup");
 
     const batch = ["t-a", "t-b", "t-c"];
     for (const id of batch) {
-      await corpus.append("tickets", { ticketId: id }, 168);
+      await store.append("tickets", { ticketId: id }, 168);
     }
 
-    const unseen = await corpus.filter("tickets", "ticketId", batch);
+    const unseen = await store.filter("tickets", "ticketId", batch);
     expect(unseen).toEqual([]);
 
-    const mixed = await corpus.filter("tickets", "ticketId", [...batch, "t-d"]);
+    const mixed = await store.filter("tickets", "ticketId", [...batch, "t-d"]);
     expect(mixed).toEqual(["t-d"]);
   });
 });

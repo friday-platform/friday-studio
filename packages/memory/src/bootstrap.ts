@@ -1,4 +1,4 @@
-import type { CorpusMetadata, MemoryAdapter, NarrativeEntry } from "@atlas/agent-sdk";
+import type { MemoryAdapter, NarrativeEntry, StoreMetadata } from "@atlas/agent-sdk";
 import { z } from "zod";
 
 // ── Bootstrap scope types ───────────────────────────────────────────────────
@@ -39,7 +39,7 @@ export const BootstrapOptsSchema = z.object({
   separator: z.string().optional(),
 });
 
-// ── resolveBootstrap (legacy — iterates all narrative corpora via render) ───
+// ── resolveBootstrap (legacy — iterates all narrative stores via render) ───
 
 export async function resolveBootstrap(
   adapter: MemoryAdapter,
@@ -49,16 +49,16 @@ export async function resolveBootstrap(
 ): Promise<string> {
   const separator = opts.separator ?? "\n\n";
 
-  const allCorpora: CorpusMetadata[] = await adapter.list(workspaceId);
+  const allStores: StoreMetadata[] = await adapter.list(workspaceId);
 
-  const narrativeCorpora = allCorpora.filter(
+  const narrativeStores = allStores.filter(
     (c) => c.kind === "narrative" && c.workspaceId === workspaceId,
   );
 
   const blocks: string[] = [];
-  for (const meta of narrativeCorpora) {
-    const corpus = await adapter.corpus(workspaceId, meta.name, "narrative");
-    const rendered = await corpus.render();
+  for (const meta of narrativeStores) {
+    const store = await adapter.store(workspaceId, meta.name, "narrative");
+    const rendered = await store.render();
     if (rendered.trim().length > 0) {
       blocks.push(rendered);
     }
@@ -80,7 +80,7 @@ export const MountBootstrapConfigSchema = z.object({
 
 export const AgentMountConfigSchema = z.object({
   name: z.string(),
-  corpus: z.string(),
+  store: z.string(),
   filter: z.record(z.string(), z.unknown()).optional(),
   bootstrap: MountBootstrapConfigSchema.optional(),
 });
@@ -93,7 +93,7 @@ export interface MountBootstrapConfig {
 
 export interface AgentMountConfig {
   name: string;
-  corpus: string;
+  store: string;
   filter?: Record<string, unknown>;
   bootstrap?: MountBootstrapConfig;
 }
@@ -199,8 +199,8 @@ export async function buildBootstrapBlock(
   let totalSize = 0;
 
   for (const mount of mounts) {
-    const corpus = await adapter.corpus(workspaceId, mount.corpus, "narrative");
-    const allEntries = await corpus.read();
+    const store = await adapter.store(workspaceId, mount.store, "narrative");
+    const allEntries = await store.read();
     const filtered = mount.filter ? applyFilter(allEntries, mount.filter) : allEntries;
     if (filtered.length === 0) continue;
 
@@ -222,20 +222,20 @@ export async function buildBootstrapBlock(
   return sections.join("\n\n");
 }
 
-// ── buildBootstrap (canonical entry-point — all narrative corpora, workspace scope)
+// ── buildBootstrap (canonical entry-point — all narrative stores, workspace scope)
 
 export async function buildBootstrap(
   adapter: MemoryAdapter,
   workspaceId: string,
   _agentId: string,
 ): Promise<string> {
-  const allCorpora: CorpusMetadata[] = await adapter.list(workspaceId);
-  const narrativeCorpora = allCorpora.filter((c) => c.kind === "narrative");
+  const allStores: StoreMetadata[] = await adapter.list(workspaceId);
+  const narrativeStores = allStores.filter((c) => c.kind === "narrative");
 
   const sections: string[] = [];
-  for (const meta of narrativeCorpora) {
-    const corpus = await adapter.corpus(workspaceId, meta.name, "narrative");
-    const rendered = await corpus.render();
+  for (const meta of narrativeStores) {
+    const store = await adapter.store(workspaceId, meta.name, "narrative");
+    const rendered = await store.render();
     if (rendered.trim()) {
       sections.push(rendered.trim());
     }

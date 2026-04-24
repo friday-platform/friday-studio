@@ -1,6 +1,6 @@
 import type { Database } from "@db/sqlite";
 import { z } from "zod";
-import type { KVCorpus } from "../memory-adapter.ts";
+import type { KVStore } from "../memory-adapter.ts";
 
 const KVRowSchema = z.object({ value: z.string(), expires_at: z.number().nullable() });
 
@@ -25,7 +25,7 @@ ON CONFLICT (key) DO UPDATE SET value = excluded.value, expires_at = excluded.ex
 const LIST_SQL = `SELECT key FROM kv_entries
 WHERE (expires_at IS NULL OR expires_at > ?) AND key LIKE ?`;
 
-export class SqliteKVCorpus implements KVCorpus {
+export class SqliteKVStore implements KVStore {
   private initialized = false;
 
   constructor(
@@ -92,7 +92,7 @@ export class SqliteKVCorpus implements KVCorpus {
     return Promise.resolve(keys);
   }
 
-  static create(db: Database, workspaceId: string, name: string): SqliteKVCorpus {
-    return new SqliteKVCorpus(db, workspaceId, name);
+  static create(db: Database, workspaceId: string, name: string): SqliteKVStore {
+    return new SqliteKVStore(db, workspaceId, name);
   }
 }

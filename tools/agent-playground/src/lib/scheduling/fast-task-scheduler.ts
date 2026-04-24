@@ -22,7 +22,7 @@ const SIGNAL_ID = "run-task" as const;
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
-export const ScheduleProposalSchema = z.object({
+const ScheduleProposalSchema = z.object({
   taskId: z.string(),
   text: z.string().max(120),
   taskBrief: z.string(),

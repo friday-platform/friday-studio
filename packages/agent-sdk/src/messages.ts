@@ -78,10 +78,7 @@ export const AtlasDataEventSchemas = {
     stepIndex: z.number().optional(),
     totalSteps: z.number().optional(),
   }),
-  "tool-timing": z.object({
-    toolCallId: z.string(),
-    durationMs: z.number(),
-  }),
+  "tool-timing": z.object({ toolCallId: z.string(), durationMs: z.number() }),
   "outline-update": z.object({
     id: z.string(),
     title: z.string(),
@@ -132,14 +129,14 @@ export const AtlasDataEventSchemas = {
   // Adapter write events — leapfrog #3 (observable mutations)
   "memory-write": z.object({
     workspaceId: z.string(),
-    corpus: z.string(),
+    store: z.string(),
     entryId: z.string(),
     kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
     at: z.string(),
   }),
   "memory-rollback": z.object({
     workspaceId: z.string(),
-    corpus: z.string(),
+    store: z.string(),
     toVersion: z.string(),
     at: z.string(),
   }),
@@ -183,7 +180,7 @@ export const AtlasDataEventSchemas = {
 export const MemoryWriteEventSchema = z.object({
   type: z.literal("memory-write"),
   workspaceId: z.string(),
-  corpus: z.string(),
+  store: z.string(),
   entryId: z.string(),
   kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
   at: z.string(),
@@ -192,7 +189,7 @@ export const MemoryWriteEventSchema = z.object({
 export const MemoryRollbackEventSchema = z.object({
   type: z.literal("memory-rollback"),
   workspaceId: z.string(),
-  corpus: z.string(),
+  store: z.string(),
   toVersion: z.string(),
   at: z.string(),
 });

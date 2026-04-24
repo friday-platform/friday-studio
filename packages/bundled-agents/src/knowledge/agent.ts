@@ -2,7 +2,7 @@
  * Hybrid RAG knowledge agent: BM25 + Vector + Reranker + LLM synthesis.
  *
  * All retrieval happens BEFORE the LLM call — single round-trip.
- * Uses pre-built corpus.db (created by corpus.ts).
+ * Uses pre-built store.db (created by store.ts).
  */
 import process from "node:process";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
@@ -10,7 +10,6 @@ import { getDefaultProviderOpts, registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
 import { Database } from "@db/sqlite";
 import { generateText } from "ai";
-import { buildCorpus } from "./corpus.ts";
 import { buildHybridPrompt } from "./prompts.ts";
 import { rerank } from "./rerank.ts";
 import {
@@ -20,6 +19,7 @@ import {
   loadEmbeddings,
 } from "./search.ts";
 import { KnowledgeOutputSchema, type KnowledgeResult, type KnowledgeSource } from "./shared.ts";
+import { buildStore } from "./store.ts";
 
 /**
  * Check if the agent context contains a build/reindex config.
@@ -38,14 +38,14 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
   displayName: "Knowledge (Hybrid RAG)",
   version: "1.0.0",
   summary:
-    "Hybrid retrieval agent: BM25 + vector search + reranker. Requires a pre-built corpus.db.",
+    "Hybrid retrieval agent: BM25 + vector search + reranker. Requires a pre-built store.db.",
   description:
     "Knowledge agent using hybrid RAG: BM25 full-text search (SQLite FTS5) combined with " +
     "vector similarity search, merged via Reciprocal Rank Fusion, reranked by LLM cross-encoder, " +
     "and synthesized into a structured CS briefing. Single LLM round-trip.",
   constraints:
-    "Read-only. Requires KNOWLEDGE_CORPUS_PATH pointing to a pre-built corpus.db file " +
-    "(created by corpus.ts). Requires FIREWORKS_API_KEY for query embedding and " +
+    "Read-only. Requires KNOWLEDGE_CORPUS_PATH pointing to a pre-built store.db file " +
+    "(created by store.ts). Requires FIREWORKS_API_KEY for query embedding and " +
     "GROQ_API_KEY for reranking (optional, degrades gracefully).",
   outputSchema: KnowledgeOutputSchema,
   useWorkspaceSkills: true,
@@ -61,7 +61,7 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
     required: [
       {
         name: "KNOWLEDGE_CORPUS_PATH",
-        description: "Path to pre-built corpus.db file (created by corpus.ts)",
+        description: "Path to pre-built store.db file (created by store.ts)",
       },
       {
         name: "FIREWORKS_API_KEY",
@@ -75,16 +75,16 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
       },
       {
         name: "KNOWLEDGE_DATA_DIR",
-        description: "Path to directory containing source files for corpus building",
+        description: "Path to directory containing source files for store building",
       },
     ],
   },
 
   handler: async (prompt, { logger, stream, abortSignal, env, config, skills }) => {
     const startTime = performance.now();
-    const corpusPath = env.KNOWLEDGE_CORPUS_PATH ?? process.env.KNOWLEDGE_CORPUS_PATH;
+    const storePath = env.KNOWLEDGE_CORPUS_PATH ?? process.env.KNOWLEDGE_CORPUS_PATH;
 
-    if (!corpusPath) {
+    if (!storePath) {
       return err("KNOWLEDGE_CORPUS_PATH environment variable is required");
     }
 
@@ -102,13 +102,13 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
 
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Knowledge (Hybrid)", content: `Building corpus from ${dataDir}...` },
+        data: { toolName: "Knowledge (Hybrid)", content: `Building store from ${dataDir}...` },
       });
 
       try {
-        const result = await buildCorpus({
+        const result = await buildStore({
           inputPath: dataDir,
-          outputPath: corpusPath,
+          outputPath: storePath,
           onProgress: (phase, done, total) => {
             stream?.emit({
               type: "data-tool-progress",
@@ -121,19 +121,19 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
           .map((s) => `- **${s.file}** (${s.type}): ${s.count} documents`)
           .join("\n");
         const summary = [
-          "## Corpus Built Successfully",
+          "## Store Built Successfully",
           "",
           `- **Documents indexed:** ${result.documentCount}`,
           `- **Embeddings generated:** ${result.embeddedCount}`,
           `- **Duration:** ${(result.durationMs / 1000).toFixed(1)}s`,
-          `- **Output:** ${corpusPath}`,
+          `- **Output:** ${storePath}`,
           "",
           "### Sources",
           sourceLines,
         ].join("\n");
 
         invalidateEmbeddingCache();
-        logger.info("Corpus build complete", {
+        logger.info("Store build complete", {
           documentCount: result.documentCount,
           embeddedCount: result.embeddedCount,
           durationMs: result.durationMs,
@@ -142,7 +142,7 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
 
         return ok({ response: summary, sources: [] });
       } catch (error) {
-        logger.error("Corpus build failed", { error, dataDir });
+        logger.error("Store build failed", { error, dataDir });
         return err(stringifyError(error));
       }
     }
@@ -162,29 +162,29 @@ export const knowledgeHybridAgent = createAgent<string, KnowledgeResult>({
       ? `${synthesisContext}\n\nQuestion: ${searchQuery}`
       : searchQuery;
 
-    // Phase 1: Open corpus (query mode)
+    // Phase 1: Open store (query mode)
     stream?.emit({
       type: "data-tool-progress",
-      data: { toolName: "Knowledge (Hybrid)", content: "Loading corpus..." },
+      data: { toolName: "Knowledge (Hybrid)", content: "Loading store..." },
     });
 
     let db: Database | undefined;
     let embeddingCache: EmbeddingCache;
     try {
       const loadStart = performance.now();
-      db = new Database(corpusPath, { readonly: true });
-      embeddingCache = loadEmbeddings(db, corpusPath);
+      db = new Database(storePath, { readonly: true });
+      embeddingCache = loadEmbeddings(db, storePath);
       const loadMs = Math.round(performance.now() - loadStart);
-      logger.info("Corpus loaded", { documents: embeddingCache.ids.length, corpusPath, loadMs });
+      logger.info("Store loaded", { documents: embeddingCache.ids.length, storePath, loadMs });
       stream?.emit({
         type: "data-tool-progress",
         data: {
           toolName: "Knowledge (Hybrid)",
-          content: `Corpus loaded (${loadMs}ms, ${embeddingCache.ids.length} docs)`,
+          content: `Store loaded (${loadMs}ms, ${embeddingCache.ids.length} docs)`,
         },
       });
     } catch (error) {
-      logger.error("Failed to open corpus", { error, corpusPath });
+      logger.error("Failed to open store", { error, storePath });
       // Close db if openDatabase succeeded but loadEmbeddings failed
       if (db) db.close();
       return err(stringifyError(error));

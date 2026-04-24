@@ -4,21 +4,21 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
-import { resolveCorpus } from "./resolve.ts";
+import { resolveStore } from "./resolve.ts";
 
-/** Register MCP tool for reading entries from a workspace memory corpus. */
+/** Register MCP tool for reading entries from a workspace memory store. */
 export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     "memory_read",
     {
       description:
-        "Read entries from a named memory corpus in a workspace, newest-first by default. " +
-        "The corpus must be declared in workspace.yml under `memory.own` or as a mount — undeclared corpora are rejected. " +
-        "The corpus strategy is resolved from config — you do not need to specify the adapter type. " +
+        "Read entries from a named memory store in a workspace, newest-first by default. " +
+        "The store must be declared in workspace.yml under `memory.own` or as a mount — undeclared stores are rejected. " +
+        "The store strategy is resolved from config — you do not need to specify the adapter type. " +
         "Note: narrative memory is also auto-injected into workspace-chat system prompts; call this only for explicit lookup, time filtering, or reading more than the default prompt window.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID (runtime id like `grilled_xylem`)"),
-        memoryName: z.string().describe("Corpus name as declared in `memory.own` or a mount alias"),
+        memoryName: z.string().describe("Store name as declared in `memory.own` or a mount alias"),
         since: z
           .string()
           .optional()
@@ -29,7 +29,7 @@ export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): voi
     async ({ workspaceId, memoryName, since, limit }): Promise<CallToolResult> => {
       ctx.logger.info("MCP memory_read called", { workspaceId, memoryName, since, limit });
 
-      const resolved = await resolveCorpus({
+      const resolved = await resolveStore({
         daemonUrl: ctx.daemonUrl,
         workspaceId,
         memoryName,
@@ -44,7 +44,7 @@ export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): voi
 
       if (strategy !== "narrative") {
         return createErrorResponse(
-          `memory_read currently only supports narrative corpora. Corpus '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
+          `memory_read currently only supports narrative stores. Store '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
         );
       }
 

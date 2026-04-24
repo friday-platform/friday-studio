@@ -8,9 +8,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Database } from "@db/sqlite";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { buildCorpus } from "./corpus.ts";
 import { embeddingToBlob } from "./embed.ts";
 import { invalidateEmbeddingCache, loadEmbeddings } from "./search.ts";
+import { buildStore } from "./store.ts";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS documents (
@@ -86,7 +86,7 @@ describe("loadEmbeddings", () => {
   });
 });
 
-describe("buildCorpus", () => {
+describe("buildStore", () => {
   let outputPath: string;
 
   afterEach(async () => {
@@ -100,7 +100,7 @@ describe("buildCorpus", () => {
 
   test("ingests CSV via streaming and embeds all documents", async () => {
     const dir = makeTempDir();
-    outputPath = path.join(dir, "corpus.db");
+    outputPath = path.join(dir, "store.db");
     const csvPath = path.join(dir, "tickets.csv");
     writeFileSync(
       csvPath,
@@ -115,7 +115,7 @@ describe("buildCorpus", () => {
     const embedModule = await import("./embed.ts");
     vi.spyOn(embedModule, "embedBatch").mockImplementation(mockEmbedBatch());
 
-    const result = await buildCorpus({ inputPath: csvPath, outputPath });
+    const result = await buildStore({ inputPath: csvPath, outputPath });
 
     expect(result.documentCount).toBe(3);
     expect(result.embeddedCount).toBe(3);
@@ -132,7 +132,7 @@ describe("buildCorpus", () => {
 
   test("handles multi-line CSV fields via streaming", async () => {
     const dir = makeTempDir();
-    outputPath = path.join(dir, "corpus.db");
+    outputPath = path.join(dir, "store.db");
     const csvPath = path.join(dir, "multiline.csv");
     writeFileSync(
       csvPath,
@@ -146,7 +146,7 @@ describe("buildCorpus", () => {
     const embedModule = await import("./embed.ts");
     vi.spyOn(embedModule, "embedBatch").mockImplementation(mockEmbedBatch());
 
-    const result = await buildCorpus({ inputPath: csvPath, outputPath });
+    const result = await buildStore({ inputPath: csvPath, outputPath });
     expect(result.documentCount).toBe(2);
 
     const db = new Database(outputPath, { readonly: true });

@@ -21,7 +21,7 @@ export interface ComposedForegroundContext {
   resourceEntries: ResourceEntry[];
 }
 
-export interface ComposedContext {
+interface ComposedContext {
   workspaceSections: string;
   mergedSkills: SkillSummary[];
   foregroundTools: Record<string, AtlasTools>;
@@ -164,27 +164,27 @@ export async function composeMemoryBlocks(
       const listData = MemoryListSchema.safeParse(await listRes.json());
       if (!listData.success || listData.data.length === 0) return [];
 
-      const narrativeCorpora = listData.data.filter((m) => m.kind === "narrative");
-      if (narrativeCorpora.length === 0) return [];
+      const narrativeStores = listData.data.filter((m) => m.kind === "narrative");
+      if (narrativeStores.length === 0) return [];
 
-      // Group corpora by their source workspace. Own corpora have
-      // corpus.workspaceId === workspaceId; mounted corpora point elsewhere.
+      // Group stores by their source workspace. Own stores have
+      // store.workspaceId === workspaceId; mounted stores point elsewhere.
       const bySource = new Map<string, z.infer<typeof MemoryListSchema>[number][]>();
-      for (const corpus of narrativeCorpora) {
-        const src = corpus.workspaceId;
+      for (const store of narrativeStores) {
+        const src = store.workspaceId;
         const existing = bySource.get(src) ?? [];
-        existing.push(corpus);
+        existing.push(store);
         bySource.set(src, existing);
       }
 
       const wsBlocks: string[] = [];
-      for (const [sourceId, corpora] of bySource) {
+      for (const [sourceId, stores] of bySource) {
         if (emittedSourceIds.has(sourceId)) continue;
         emittedSourceIds.add(sourceId);
 
         const entryResults = await Promise.allSettled(
-          corpora.map(async (corpus) => {
-            const url = `${daemonUrl}/api/memory/${encodeURIComponent(corpus.workspaceId)}/narrative/${encodeURIComponent(corpus.name)}?limit=20`;
+          stores.map(async (store) => {
+            const url = `${daemonUrl}/api/memory/${encodeURIComponent(store.workspaceId)}/narrative/${encodeURIComponent(store.name)}?limit=20`;
             const res = await fetch(url);
             if (!res.ok) return [];
             const data = z.array(NarrativeEntrySchema).safeParse(await res.json());

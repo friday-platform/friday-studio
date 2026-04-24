@@ -30,7 +30,7 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
   displayName: "Skill Distiller",
   version: "1.0.0",
   description:
-    "Distills corpus material from artifacts into a reusable skill definition. Takes artifact IDs as input, uses LLM to extract patterns and preferences, saves result as a skill-draft artifact.",
+    "Distills store material from artifacts into a reusable skill definition. Takes artifact IDs as input, uses LLM to extract patterns and preferences, saves result as a skill-draft artifact.",
   expertise: { examples: [] },
   inputSchema: SkillDistillerInputSchema,
   useWorkspaceSkills: true,
@@ -47,25 +47,25 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
     try {
       stream?.emit({
         type: "data-tool-progress",
-        data: { toolName: "Skill Distiller", content: "Loading corpus material" },
+        data: { toolName: "Skill Distiller", content: "Loading store material" },
       });
 
-      const corpusResponse = await parseResult(
+      const storeResponse = await parseResult(
         client.artifactsStorage["batch-get"].$post(
           { json: { ids: input.artifactIds } },
           { init: { signal: abortSignal } },
         ),
       );
 
-      if (!corpusResponse.ok) {
-        return err(`Failed to load corpus artifacts: ${stringifyError(corpusResponse.error)}`);
+      if (!storeResponse.ok) {
+        return err(`Failed to load store artifacts: ${stringifyError(storeResponse.error)}`);
       }
 
-      if (corpusResponse.data.artifacts.length === 0) {
+      if (storeResponse.data.artifacts.length === 0) {
         return err("No artifacts found for the provided IDs");
       }
 
-      logger.info("Loaded corpus artifacts", { count: corpusResponse.data.artifacts.length });
+      logger.info("Loaded store artifacts", { count: storeResponse.data.artifacts.length });
 
       let existingDraft: SkillDraft | null = null;
       if (input.draftArtifactId) {
@@ -96,7 +96,7 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
         data: { toolName: "Skill Distiller", content: "Analyzing patterns and extracting skill" },
       });
 
-      const corpusContent = corpusResponse.data.artifacts
+      const storeContent = storeResponse.data.artifacts
         .map((artifact, idx) => {
           const content =
             artifact.data.type === "file"
@@ -106,14 +106,14 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
         })
         .join("\n\n---\n\n");
 
-      let userPrompt = `Distill the following corpus material into a reusable skill definition.
+      let userPrompt = `Distill the following store material into a reusable skill definition.
 
 ${input.focus ? `Focus area: ${input.focus}\n` : ""}
 ${input.name ? `Suggested name: ${input.name}\n` : ""}
 
-## Corpus Material
+## Store Material
 
-${corpusContent}`;
+${storeContent}`;
 
       if (existingDraft) {
         userPrompt += `
@@ -125,7 +125,7 @@ Description: ${existingDraft.description}
 Instructions:
 ${existingDraft.instructions}
 
-Update this draft based on the corpus material. Preserve what works, improve what doesn't.`;
+Update this draft based on the store material. Preserve what works, improve what doesn't.`;
       }
 
       const result = await generateObject({

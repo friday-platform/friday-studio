@@ -1,28 +1,28 @@
 /**
  * MdMemoryAdapter — Markdown-backed MemoryAdapter facade.
  *
- * Routes corpus() to MdNarrativeCorpus for the 'narrative' kind.
+ * Routes store() to MdNarrativeStore for the 'narrative' kind.
  * Retrieval, dedup, and kv backends are deferred to Phase 1b.
  *
  * Storage layout: {root}/memory/{workspaceId}/narrative/{memoryName}/
- * Each memory gets its own directory; MdNarrativeCorpus writes MEMORY.md inside it.
+ * Each memory gets its own directory; MdNarrativeStore writes MEMORY.md inside it.
  *
  * From parity plan v6, lines 585-603:
- * > MemoryAdapter — corpus-typed memory with swappable backends.
+ * > MemoryAdapter — store-typed memory with swappable backends.
  */
 
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
-  CorpusKind,
-  CorpusMetadata,
-  CorpusOf,
   HistoryEntry,
   HistoryFilter,
   MemoryAdapter,
+  StoreKind,
+  StoreMetadata,
+  StoreOf,
 } from "@atlas/agent-sdk";
-import { MdNarrativeCorpus } from "./md-narrative-corpus.ts";
+import { MdNarrativeStore } from "./md-narrative-store.ts";
 import { NotImplementedError } from "./md-skill-adapter.ts";
 
 export class MdMemoryAdapter implements MemoryAdapter {
@@ -40,23 +40,23 @@ export class MdMemoryAdapter implements MemoryAdapter {
     await fs.mkdir(path.join(this.narrativeDir(workspaceId), memoryName), { recursive: true });
   }
 
-  // TS cannot narrow conditional CorpusOf<K> from a runtime check on K
+  // TS cannot narrow conditional StoreOf<K> from a runtime check on K
   // (microsoft/TypeScript#33014); safe because all non-narrative paths throw
-  async corpus<K extends CorpusKind>(
+  async store<K extends StoreKind>(
     workspaceId: string,
     name: string,
     kind: K,
-  ): Promise<CorpusOf<K>> {
+  ): Promise<StoreOf<K>> {
     if (kind !== "narrative") {
       throw new NotImplementedError(`${kind} backend not implemented — see Phase 1b`);
     }
-    const corpusDir = path.join(this.narrativeDir(workspaceId), name);
-    await fs.mkdir(corpusDir, { recursive: true });
-    const result: unknown = new MdNarrativeCorpus({ workspaceRoot: corpusDir });
-    return result as CorpusOf<K>;
+    const storeDir = path.join(this.narrativeDir(workspaceId), name);
+    await fs.mkdir(storeDir, { recursive: true });
+    const result: unknown = new MdNarrativeStore({ workspaceRoot: storeDir });
+    return result as StoreOf<K>;
   }
 
-  async list(workspaceId: string): Promise<CorpusMetadata[]> {
+  async list(workspaceId: string): Promise<StoreMetadata[]> {
     const dir = this.narrativeDir(workspaceId);
     let entries: Dirent[];
     try {
@@ -65,7 +65,7 @@ export class MdMemoryAdapter implements MemoryAdapter {
       return [];
     }
 
-    const results: CorpusMetadata[] = [];
+    const results: StoreMetadata[] = [];
     for (const entry of entries) {
       if (entry.isDirectory()) {
         results.push({ name: entry.name, kind: "narrative", workspaceId });
@@ -75,15 +75,15 @@ export class MdMemoryAdapter implements MemoryAdapter {
   }
 
   async bootstrap(workspaceId: string, _agentId: string): Promise<string> {
-    const corpora = await this.list(workspaceId);
-    if (corpora.length === 0) {
+    const stores = await this.list(workspaceId);
+    if (stores.length === 0) {
       return "";
     }
 
     const rendered: string[] = [];
-    for (const meta of corpora) {
-      const corpus = await this.corpus(workspaceId, meta.name, "narrative");
-      const content = await corpus.render();
+    for (const meta of stores) {
+      const store = await this.store(workspaceId, meta.name, "narrative");
+      const content = await store.render();
       rendered.push(content);
     }
     return rendered.join("\n");
@@ -93,7 +93,7 @@ export class MdMemoryAdapter implements MemoryAdapter {
     throw new NotImplementedError("history() not implemented — see Phase 1b");
   }
 
-  rollback(_workspaceId: string, _corpus: string, _toVersion: string): Promise<void> {
+  rollback(_workspaceId: string, _store: string, _toVersion: string): Promise<void> {
     throw new NotImplementedError("rollback() not implemented — see Phase 1b");
   }
 }

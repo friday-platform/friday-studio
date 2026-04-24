@@ -1,14 +1,14 @@
 import { Database } from "@db/sqlite";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { SqliteKVCorpus } from "../sqlite-kv-corpus.ts";
+import { SqliteKVStore } from "../sqlite-kv-store.ts";
 
-describe("SqliteKVCorpus", () => {
+describe("SqliteKVStore", () => {
   let db: Database;
-  let kv: SqliteKVCorpus;
+  let kv: SqliteKVStore;
 
   beforeEach(() => {
     db = new Database(":memory:");
-    kv = SqliteKVCorpus.create(db, "ws-test", "kv-test");
+    kv = SqliteKVStore.create(db, "ws-test", "kv-test");
   });
 
   afterEach(() => {

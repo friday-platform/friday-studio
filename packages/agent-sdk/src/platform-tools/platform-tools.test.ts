@@ -1,30 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  CorpusMetadata,
-  DedupCorpus,
   DedupEntry,
+  DedupStore,
   HistoryEntry,
-  KVCorpus,
+  KVStore,
   MemoryAdapter,
-  NarrativeCorpus,
   NarrativeEntry,
-  RetrievalCorpus,
+  NarrativeStore,
+  RetrievalStore,
+  StoreMetadata,
 } from "../memory-adapter.ts";
 import { createPlatformTools, PLATFORM_TOOL_NAMES } from "../platform-tools.ts";
 import type { ScratchpadAdapter, ScratchpadChunk } from "../scratchpad-adapter.ts";
 import type { AgentContext, AgentSessionData, Logger } from "../types.ts";
-import { resolveCorpus } from "./corpus-resolve.ts";
 import { createMemoryDedupTools } from "./memory-dedup-tools.ts";
 import { createMemoryKVTools } from "./memory-kv-tools.ts";
-import {
-  createMemoryNarrativeTools,
-  MemoryNarrativeAppendInput,
-  MemoryNarrativeForgetInput,
-  MemoryNarrativeReadInput,
-  MemoryNarrativeSearchInput,
-} from "./memory-narrative-tools.ts";
 import { createMemoryRetrievalTools } from "./memory-retrieval-tools.ts";
 import { createScratchpadTools } from "./scratchpad-tools.ts";
+import { resolveStore } from "./store-resolve.ts";
 
 const TOOL_CALL_OPTS = { toolCallId: "tc1", messages: [] };
 
@@ -40,7 +33,7 @@ function mockLogger(): Logger {
   };
 }
 
-function mockNarrativeCorpus(): NarrativeCorpus {
+function mockNarrativeStore(): NarrativeStore {
   return {
     append: vi
       .fn<(entry: NarrativeEntry) => Promise<NarrativeEntry>>()
@@ -54,7 +47,7 @@ function mockNarrativeCorpus(): NarrativeCorpus {
   };
 }
 
-function mockRetrievalCorpus(): RetrievalCorpus {
+function mockRetrievalStore(): RetrievalStore {
   return {
     ingest: vi.fn().mockResolvedValue({ ingested: 2, skipped: 0 }),
     query: vi.fn().mockResolvedValue([]),
@@ -63,7 +56,7 @@ function mockRetrievalCorpus(): RetrievalCorpus {
   };
 }
 
-function mockDedupCorpus(): DedupCorpus {
+function mockDedupStore(): DedupStore {
   return {
     append: vi
       .fn<(ns: string, entry: DedupEntry, ttl?: number) => Promise<void>>()
@@ -75,7 +68,7 @@ function mockDedupCorpus(): DedupCorpus {
   };
 }
 
-function mockKVCorpus(): KVCorpus {
+function mockKVStore(): KVStore {
   return {
     get: vi.fn().mockResolvedValue("hello"),
     set: vi
@@ -99,18 +92,18 @@ function mockScratchpadAdapter(): ScratchpadAdapter {
   };
 }
 
-function mockMemoryAdapter(corpusMap: Record<string, unknown> = {}): MemoryAdapter {
+function mockMemoryAdapter(storeMap: Record<string, unknown> = {}): MemoryAdapter {
   return {
-    corpus: vi.fn().mockImplementation((_wsId: string, name: string) => {
-      const c = corpusMap[name];
-      if (!c) return Promise.reject(new Error(`Corpus ${name} not found`));
+    store: vi.fn().mockImplementation((_wsId: string, name: string) => {
+      const c = storeMap[name];
+      if (!c) return Promise.reject(new Error(`Store ${name} not found`));
       return Promise.resolve(c);
     }),
-    list: vi.fn<(wsId: string) => Promise<CorpusMetadata[]>>().mockResolvedValue([]),
+    list: vi.fn<(wsId: string) => Promise<StoreMetadata[]>>().mockResolvedValue([]),
     bootstrap: vi.fn<(wsId: string, agentId: string) => Promise<string>>().mockResolvedValue(""),
     history: vi.fn<(wsId: string) => Promise<HistoryEntry[]>>().mockResolvedValue([]),
     rollback: vi
-      .fn<(wsId: string, corpus: string, toVersion: string) => Promise<void>>()
+      .fn<(wsId: string, store: string, toVersion: string) => Promise<void>>()
       .mockResolvedValue(undefined),
   };
 }
@@ -132,109 +125,47 @@ function createMockContext(overrides?: {
   };
 }
 
-// ── resolveCorpus ─────────────────────────────────────────────────────────────
+// ── resolveStore ─────────────────────────────────────────────────────────────
 
-describe("resolveCorpus", () => {
-  it("calls adapter.corpus with workspaceId, name, and kind", async () => {
-    const nc = mockNarrativeCorpus();
+describe("resolveStore", () => {
+  it("calls adapter.store with workspaceId, name, and kind", async () => {
+    const nc = mockNarrativeStore();
     const adapter = mockMemoryAdapter({ notes: nc });
     const ctx = createMockContext({ adapter });
 
-    const result = await resolveCorpus(ctx, "notes", "narrative");
+    const result = await resolveStore(ctx, "notes", "narrative");
     expect(result).toBe(nc);
-    expect(adapter.corpus).toHaveBeenCalledWith("ws1", "notes", "narrative");
+    expect(adapter.store).toHaveBeenCalledWith("ws1", "notes", "narrative");
   });
 
   it("throws when adapter is not available", async () => {
     const ctx = createMockContext();
     ctx.memory = { mounts: {} };
 
-    await expect(resolveCorpus(ctx, "notes", "narrative")).rejects.toThrow(
+    await expect(resolveStore(ctx, "notes", "narrative")).rejects.toThrow(
       "MemoryAdapter not available on agent context",
     );
-  });
-});
-
-// ── memory_narrative tools ────────────────────────────────────────────────────
-
-describe("memory_narrative tools", () => {
-  let nc: NarrativeCorpus;
-  let ctx: AgentContext;
-
-  beforeEach(() => {
-    nc = mockNarrativeCorpus();
-    ctx = createMockContext({ adapter: mockMemoryAdapter({ journal: nc }) });
-  });
-
-  it("append calls corpus.append with NarrativeEntry and returns the persisted entry", async () => {
-    const entry = { id: "e1", text: "hello", createdAt: "2026-01-01T00:00:00Z" };
-    const tools = createMemoryNarrativeTools(ctx);
-    const exec = tools.memory_narrative_append.execute;
-    if (!exec) throw new Error("execute missing");
-
-    const result = await exec({ corpus: "journal", entry }, TOOL_CALL_OPTS);
-    expect(nc.append).toHaveBeenCalledWith(entry);
-    expect(result).toEqual(entry);
-  });
-
-  it("read calls corpus.read with since/limit opts and returns entries", async () => {
-    const entries = [{ id: "e1", text: "a", createdAt: "2026-01-01T00:00:00Z" }];
-    vi.mocked(nc.read).mockResolvedValue(entries);
-
-    const tools = createMemoryNarrativeTools(ctx);
-    const exec = tools.memory_narrative_read.execute;
-    if (!exec) throw new Error("execute missing");
-
-    const result = await exec(
-      { corpus: "journal", since: "2025-01-01", limit: 10 },
-      TOOL_CALL_OPTS,
-    );
-    expect(nc.read).toHaveBeenCalledWith({ since: "2025-01-01", limit: 10 });
-    expect(result).toEqual(entries);
-  });
-
-  it("search calls corpus.search with query + SearchOpts and returns entries", async () => {
-    const hits = [{ id: "e2", text: "match", createdAt: "2026-01-01T00:00:00Z" }];
-    vi.mocked(nc.search).mockResolvedValue(hits);
-
-    const tools = createMemoryNarrativeTools(ctx);
-    const exec = tools.memory_narrative_search.execute;
-    if (!exec) throw new Error("execute missing");
-
-    const result = await exec({ corpus: "journal", query: "hello", limit: 5 }, TOOL_CALL_OPTS);
-    expect(nc.search).toHaveBeenCalledWith("hello", { limit: 5 });
-    expect(result).toEqual(hits);
-  });
-
-  it("forget calls corpus.forget(id) and returns ack", async () => {
-    const tools = createMemoryNarrativeTools(ctx);
-    const exec = tools.memory_narrative_forget.execute;
-    if (!exec) throw new Error("execute missing");
-
-    const result = await exec({ corpus: "journal", id: "e1" }, TOOL_CALL_OPTS);
-    expect(nc.forget).toHaveBeenCalledWith("e1");
-    expect(result).toEqual({ ok: true });
   });
 });
 
 // ── memory_retrieval tools ────────────────────────────────────────────────────
 
 describe("memory_retrieval tools", () => {
-  let rc: RetrievalCorpus;
+  let rc: RetrievalStore;
   let ctx: AgentContext;
 
   beforeEach(() => {
-    rc = mockRetrievalCorpus();
+    rc = mockRetrievalStore();
     ctx = createMockContext({ adapter: mockMemoryAdapter({ docs: rc }) });
   });
 
-  it("ingest calls corpus.ingest with DocBatch + IngestOpts and returns IngestResult", async () => {
+  it("ingest calls store.ingest with DocBatch + IngestOpts and returns IngestResult", async () => {
     const tools = createMemoryRetrievalTools(ctx);
     const exec = tools.memory_retrieval_ingest.execute;
     if (!exec) throw new Error("execute missing");
 
     const result = await exec(
-      { corpus: "docs", docs: [{ id: "d1", text: "doc text" }], chunker: "sentence" },
+      { store: "docs", docs: [{ id: "d1", text: "doc text" }], chunker: "sentence" },
       TOOL_CALL_OPTS,
     );
 
@@ -245,7 +176,7 @@ describe("memory_retrieval tools", () => {
     expect(result).toEqual({ ingested: 2, skipped: 0 });
   });
 
-  it("query calls corpus.query with RetrievalQuery + RetrievalOpts and returns Hit[]", async () => {
+  it("query calls store.query with RetrievalQuery + RetrievalOpts and returns Hit[]", async () => {
     const hits = [{ id: "d1", score: 0.9, text: "result", metadata: {} }];
     vi.mocked(rc.query).mockResolvedValue(hits);
 
@@ -254,7 +185,7 @@ describe("memory_retrieval tools", () => {
     if (!exec) throw new Error("execute missing");
 
     const result = await exec(
-      { corpus: "docs", text: "query text", topK: 3, filter: { type: "article" } },
+      { store: "docs", text: "query text", topK: 3, filter: { type: "article" } },
       TOOL_CALL_OPTS,
     );
 
@@ -269,21 +200,21 @@ describe("memory_retrieval tools", () => {
 // ── memory_dedup tools ────────────────────────────────────────────────────────
 
 describe("memory_dedup tools", () => {
-  let dc: DedupCorpus;
+  let dc: DedupStore;
   let ctx: AgentContext;
 
   beforeEach(() => {
-    dc = mockDedupCorpus();
+    dc = mockDedupStore();
     ctx = createMockContext({ adapter: mockMemoryAdapter({ dedup: dc }) });
   });
 
-  it("append calls corpus.append(namespace, entry, ttlHours)", async () => {
+  it("append calls store.append(namespace, entry, ttlHours)", async () => {
     const tools = createMemoryDedupTools(ctx);
     const exec = tools.memory_dedup_append.execute;
     if (!exec) throw new Error("execute missing");
 
     const result = await exec(
-      { corpus: "dedup", namespace: "urls", entry: { url: "https://example.com" }, ttlHours: 24 },
+      { store: "dedup", namespace: "urls", entry: { url: "https://example.com" }, ttlHours: 24 },
       TOOL_CALL_OPTS,
     );
 
@@ -291,13 +222,13 @@ describe("memory_dedup tools", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("filter calls corpus.filter(namespace, field, values) and returns filtered values", async () => {
+  it("filter calls store.filter(namespace, field, values) and returns filtered values", async () => {
     const tools = createMemoryDedupTools(ctx);
     const exec = tools.memory_dedup_filter.execute;
     if (!exec) throw new Error("execute missing");
 
     const result = await exec(
-      { corpus: "dedup", namespace: "urls", field: "url", values: ["a", "b"] },
+      { store: "dedup", namespace: "urls", field: "url", values: ["a", "b"] },
       TOOL_CALL_OPTS,
     );
 
@@ -309,20 +240,20 @@ describe("memory_dedup tools", () => {
 // ── memory_kv tools ───────────────────────────────────────────────────────────
 
 describe("memory_kv tools", () => {
-  let kv: KVCorpus;
+  let kv: KVStore;
   let ctx: AgentContext;
 
   beforeEach(() => {
-    kv = mockKVCorpus();
+    kv = mockKVStore();
     ctx = createMockContext({ adapter: mockMemoryAdapter({ cache: kv }) });
   });
 
-  it("get calls corpus.get(key) and returns value", async () => {
+  it("get calls store.get(key) and returns value", async () => {
     const tools = createMemoryKVTools(ctx);
     const exec = tools.memory_kv_get.execute;
     if (!exec) throw new Error("execute missing");
 
-    const result = await exec({ corpus: "cache", key: "greeting" }, TOOL_CALL_OPTS);
+    const result = await exec({ store: "cache", key: "greeting" }, TOOL_CALL_OPTS);
     expect(kv.get).toHaveBeenCalledWith("greeting");
     expect(result).toEqual({ value: "hello" });
   });
@@ -334,17 +265,17 @@ describe("memory_kv tools", () => {
     const exec = tools.memory_kv_get.execute;
     if (!exec) throw new Error("execute missing");
 
-    const result = await exec({ corpus: "cache", key: "missing" }, TOOL_CALL_OPTS);
+    const result = await exec({ store: "cache", key: "missing" }, TOOL_CALL_OPTS);
     expect(result).toEqual({ value: null });
   });
 
-  it("set calls corpus.set(key, value, ttlSeconds)", async () => {
+  it("set calls store.set(key, value, ttlSeconds)", async () => {
     const tools = createMemoryKVTools(ctx);
     const exec = tools.memory_kv_set.execute;
     if (!exec) throw new Error("execute missing");
 
     const result = await exec(
-      { corpus: "cache", key: "greeting", value: "world", ttlSeconds: 300 },
+      { store: "cache", key: "greeting", value: "world", ttlSeconds: 300 },
       TOOL_CALL_OPTS,
     );
 
@@ -352,12 +283,12 @@ describe("memory_kv tools", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("delete calls corpus.delete(key)", async () => {
+  it("delete calls store.delete(key)", async () => {
     const tools = createMemoryKVTools(ctx);
     const exec = tools.memory_kv_delete.execute;
     if (!exec) throw new Error("execute missing");
 
-    const result = await exec({ corpus: "cache", key: "greeting" }, TOOL_CALL_OPTS);
+    const result = await exec({ store: "cache", key: "greeting" }, TOOL_CALL_OPTS);
     expect(kv.delete).toHaveBeenCalledWith("greeting");
     expect(result).toEqual({ ok: true });
   });
@@ -420,11 +351,10 @@ describe("scratchpad tools", () => {
 // ── PLATFORM_TOOL_NAMES ───────────────────────────────────────────────────────
 
 describe("PLATFORM_TOOL_NAMES", () => {
-  const newToolNames = [
-    "memory_narrative_append",
-    "memory_narrative_read",
-    "memory_narrative_search",
-    "memory_narrative_forget",
+  const expectedToolNames = [
+    "memory_save",
+    "memory_read",
+    "memory_remove",
     "memory_retrieval_ingest",
     "memory_retrieval_query",
     "memory_dedup_append",
@@ -437,10 +367,16 @@ describe("PLATFORM_TOOL_NAMES", () => {
     "scratchpad_clear",
   ];
 
-  it("includes all 14 new tool names", () => {
-    for (const name of newToolNames) {
+  it("includes all expected tool names", () => {
+    for (const name of expectedToolNames) {
       expect(PLATFORM_TOOL_NAMES.has(name)).toBe(true);
     }
+  });
+
+  it("does not include removed narrative aliases", () => {
+    expect(PLATFORM_TOOL_NAMES.has("memory_narrative_append")).toBe(false);
+    expect(PLATFORM_TOOL_NAMES.has("memory_narrative_read")).toBe(false);
+    expect(PLATFORM_TOOL_NAMES.has("memory_narrative_forget")).toBe(false);
   });
 });
 
@@ -448,10 +384,10 @@ describe("PLATFORM_TOOL_NAMES", () => {
 
 describe("createPlatformTools", () => {
   it("returns tools matching PLATFORM_TOOL_NAMES entries for memory/scratchpad", () => {
-    const nc = mockNarrativeCorpus();
-    const rc = mockRetrievalCorpus();
-    const dc = mockDedupCorpus();
-    const kv = mockKVCorpus();
+    const nc = mockNarrativeStore();
+    const rc = mockRetrievalStore();
+    const dc = mockDedupStore();
+    const kv = mockKVStore();
     const adapter = mockMemoryAdapter({ n: nc, r: rc, d: dc, k: kv });
     const sp = mockScratchpadAdapter();
     const ctx = createMockContext({ adapter, scratchpad: sp });
@@ -459,10 +395,6 @@ describe("createPlatformTools", () => {
     const tools = createPlatformTools(ctx);
 
     const expectedKeys = [
-      "memory_narrative_append",
-      "memory_narrative_read",
-      "memory_narrative_search",
-      "memory_narrative_forget",
       "memory_retrieval_ingest",
       "memory_retrieval_query",
       "memory_dedup_append",
@@ -479,39 +411,5 @@ describe("createPlatformTools", () => {
       expect(tools).toHaveProperty(key);
       expect(PLATFORM_TOOL_NAMES.has(key)).toBe(true);
     }
-  });
-});
-
-// ── Zod validation ────────────────────────────────────────────────────────────
-
-describe("Zod validation rejects malformed inputs", () => {
-  it("MemoryNarrativeAppendInput rejects missing entry", () => {
-    const result = MemoryNarrativeAppendInput.safeParse({ corpus: "x" });
-    expect(result.success).toBe(false);
-  });
-
-  it("MemoryNarrativeReadInput rejects negative limit", () => {
-    const result = MemoryNarrativeReadInput.safeParse({ corpus: "x", limit: -1 });
-    expect(result.success).toBe(false);
-  });
-
-  it("MemoryNarrativeSearchInput rejects missing query", () => {
-    const result = MemoryNarrativeSearchInput.safeParse({ corpus: "x" });
-    expect(result.success).toBe(false);
-  });
-
-  it("MemoryNarrativeForgetInput rejects missing id", () => {
-    const result = MemoryNarrativeForgetInput.safeParse({ corpus: "x" });
-    expect(result.success).toBe(false);
-  });
-
-  it("tools surface errors as { error: string } when Zod validation fails", async () => {
-    const ctx = createMockContext({ adapter: mockMemoryAdapter({ notes: mockNarrativeCorpus() }) });
-    const tools = createMemoryNarrativeTools(ctx);
-    const exec = tools.memory_narrative_append.execute;
-    if (!exec) throw new Error("execute missing");
-
-    const result = await exec({ corpus: "notes", entry: { bad: true } } as never, TOOL_CALL_OPTS);
-    expect(result).toHaveProperty("error");
   });
 });

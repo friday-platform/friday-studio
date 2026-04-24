@@ -1,6 +1,5 @@
 import process from "node:process";
 import type {
-  CorpusMetadata,
   HistoryEntry,
   MemoryAdapter,
   ScratchpadAdapter,
@@ -8,6 +7,7 @@ import type {
   SkillAdapter,
   SkillMetadata,
   SkillVersion,
+  StoreMetadata,
 } from "@atlas/agent-sdk";
 import type { YargsInstance } from "../utils/yargs.ts";
 
@@ -100,7 +100,7 @@ async function inspectMemory(deps: InspectDeps, args: InspectArgs): Promise<Insp
       return { output: "No history entries found." };
     }
     const headers = ["VERSION", "MEMORY", "AT", "SUMMARY"];
-    const rows = entries.map((e: HistoryEntry) => [e.version, e.corpus, e.at, e.summary]);
+    const rows = entries.map((e: HistoryEntry) => [e.version, e.store, e.at, e.summary]);
     return { output: formatTable(headers, rows) };
   }
 
@@ -112,7 +112,7 @@ async function inspectMemory(deps: InspectDeps, args: InspectArgs): Promise<Insp
     return { output: "No memories found." };
   }
   const headers = ["NAME", "KIND", "WORKSPACE"];
-  const rows = memories.map((c: CorpusMetadata) => [c.name, c.kind, c.workspaceId]);
+  const rows = memories.map((c: StoreMetadata) => [c.name, c.kind, c.workspaceId]);
   return { output: formatTable(headers, rows) };
 }
 

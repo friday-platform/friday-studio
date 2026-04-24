@@ -1,10 +1,10 @@
 import { Database } from "@db/sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { DedupCorpus, KVCorpus } from "../../memory-adapter.ts";
-import { SqliteDedupCorpus } from "../sqlite-dedup-corpus.ts";
-import { SqliteKVCorpus } from "../sqlite-kv-corpus.ts";
+import type { DedupStore, KVStore } from "../../memory-adapter.ts";
+import { SqliteDedupStore } from "../sqlite-dedup-store.ts";
+import { SqliteKVStore } from "../sqlite-kv-store.ts";
 
-describe("Integration: MemoryAdapter.corpus() factory pattern", () => {
+describe("Integration: MemoryAdapter.store() factory pattern", () => {
   let db: Database;
 
   beforeEach(() => {
@@ -16,27 +16,27 @@ describe("Integration: MemoryAdapter.corpus() factory pattern", () => {
   });
 
   describe("kind='dedup'", () => {
-    test("creates a working DedupCorpus via the factory", async () => {
-      const corpus: DedupCorpus = SqliteDedupCorpus.create(db, "ws1", "dedup-test");
+    test("creates a working DedupStore via the factory", async () => {
+      const store: DedupStore = SqliteDedupStore.create(db, "ws1", "dedup-test");
 
-      await corpus.append("ns", { url: "https://example.com" });
-      const novel = await corpus.filter("ns", "url", ["https://example.com", "https://new.com"]);
+      await store.append("ns", { url: "https://example.com" });
+      const novel = await store.filter("ns", "url", ["https://example.com", "https://new.com"]);
       expect(novel).toEqual(["https://new.com"]);
     });
 
     test("clear removes all entries", async () => {
-      const corpus: DedupCorpus = SqliteDedupCorpus.create(db, "ws1", "dedup-test");
+      const store: DedupStore = SqliteDedupStore.create(db, "ws1", "dedup-test");
 
-      await corpus.append("ns", { a: "1", b: "2" });
-      await corpus.clear("ns");
-      const novel = await corpus.filter("ns", "a", ["1"]);
+      await store.append("ns", { a: "1", b: "2" });
+      await store.clear("ns");
+      const novel = await store.filter("ns", "a", ["1"]);
       expect(novel).toEqual(["1"]);
     });
   });
 
   describe("kind='kv'", () => {
-    test("creates a working KVCorpus via the factory", async () => {
-      const kv: KVCorpus = SqliteKVCorpus.create(db, "ws1", "kv-test");
+    test("creates a working KVStore via the factory", async () => {
+      const kv: KVStore = SqliteKVStore.create(db, "ws1", "kv-test");
 
       await kv.set("greeting", "hello");
       const result = await kv.get("greeting");
@@ -44,7 +44,7 @@ describe("Integration: MemoryAdapter.corpus() factory pattern", () => {
     });
 
     test("list returns keys matching prefix", async () => {
-      const kv: KVCorpus = SqliteKVCorpus.create(db, "ws1", "kv-test");
+      const kv: KVStore = SqliteKVStore.create(db, "ws1", "kv-test");
 
       await kv.set("cfg:a", 1);
       await kv.set("cfg:b", 2);
@@ -55,7 +55,7 @@ describe("Integration: MemoryAdapter.corpus() factory pattern", () => {
     });
 
     test("delete removes a key", async () => {
-      const kv: KVCorpus = SqliteKVCorpus.create(db, "ws1", "kv-test");
+      const kv: KVStore = SqliteKVStore.create(db, "ws1", "kv-test");
 
       await kv.set("key", "value");
       await kv.delete("key");
@@ -63,10 +63,10 @@ describe("Integration: MemoryAdapter.corpus() factory pattern", () => {
     });
   });
 
-  describe("isolation between corpora on the same database", () => {
+  describe("isolation between stores on the same database", () => {
     test("dedup and kv do not interfere with each other", async () => {
-      const dedup: DedupCorpus = SqliteDedupCorpus.create(db, "ws1", "dedup");
-      const kv: KVCorpus = SqliteKVCorpus.create(db, "ws1", "kv");
+      const dedup: DedupStore = SqliteDedupStore.create(db, "ws1", "dedup");
+      const kv: KVStore = SqliteKVStore.create(db, "ws1", "kv");
 
       await dedup.append("ns", { key: "val" });
       await kv.set("key", "kv-val");

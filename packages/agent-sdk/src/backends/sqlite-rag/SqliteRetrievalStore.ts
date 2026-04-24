@@ -7,10 +7,10 @@ import type {
   Hit,
   IngestOpts,
   IngestResult,
-  RetrievalCorpus,
   RetrievalOpts,
   RetrievalQuery,
   RetrievalStats,
+  RetrievalStore,
 } from "../../memory-adapter.ts";
 import { getChunker } from "./chunker.ts";
 
@@ -23,7 +23,7 @@ export interface SqliteRagConfig {
 const MetadataSchema = z.record(z.string(), z.unknown());
 
 const SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS corpus_meta (
+CREATE TABLE IF NOT EXISTS store_meta (
   workspace_id TEXT NOT NULL,
   name         TEXT NOT NULL,
   kind         TEXT NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS corpus_meta (
 CREATE TABLE IF NOT EXISTS chunks (
   pk           INTEGER PRIMARY KEY,
   id           TEXT NOT NULL UNIQUE,
-  corpus       TEXT NOT NULL,
+  store        TEXT NOT NULL,
   doc_id       TEXT NOT NULL,
   chunk_index  INTEGER NOT NULL DEFAULT 0,
   text         TEXT NOT NULL,
@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS chunks (
   created_at   TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_chunks_corpus ON chunks(corpus);
-CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(corpus, doc_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_store ON chunks(store);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(store, doc_id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
   text,
@@ -59,15 +59,15 @@ CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
   INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.pk, old.text);
 END;
 
-CREATE TABLE IF NOT EXISTS corpus_history (
+CREATE TABLE IF NOT EXISTS store_history (
   version TEXT NOT NULL,
-  corpus  TEXT NOT NULL,
+  store   TEXT NOT NULL,
   at      TEXT NOT NULL,
   summary TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_history_corpus ON corpus_history(corpus);
-CREATE INDEX IF NOT EXISTS idx_history_at ON corpus_history(at);
+CREATE INDEX IF NOT EXISTS idx_history_store ON store_history(store);
+CREATE INDEX IF NOT EXISTS idx_history_at ON store_history(at);
 `;
 
 function sanitizeFtsQuery(query: string): string | null {
@@ -82,7 +82,7 @@ function sanitizeFtsQuery(query: string): string | null {
   return tokens.join(" OR ");
 }
 
-export class SqliteRetrievalCorpus implements RetrievalCorpus {
+export class SqliteRetrievalStore implements RetrievalStore {
   private initialized = false;
 
   constructor(
@@ -96,7 +96,7 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
     this.db.exec(SCHEMA_SQL);
     this.db
       .prepare(
-        "INSERT OR IGNORE INTO corpus_meta (workspace_id, name, kind, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO store_meta (workspace_id, name, kind, created_at) VALUES (?, ?, ?, ?)",
       )
       .run(this.workspaceId, this.name, "retrieval", new Date().toISOString());
     this.initialized = true;
@@ -105,7 +105,7 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
   private appendHistory(summary: string): void {
     const version = crypto.randomUUID();
     this.db
-      .prepare("INSERT INTO corpus_history (version, corpus, at, summary) VALUES (?, ?, ?, ?)")
+      .prepare("INSERT INTO store_history (version, store, at, summary) VALUES (?, ?, ?, ?)")
       .run(version, this.name, new Date().toISOString(), summary);
   }
 
@@ -120,7 +120,7 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
     try {
       for (const doc of docs.docs) {
         const existing = this.db
-          .prepare("SELECT 1 FROM chunks WHERE corpus = ? AND doc_id = ?")
+          .prepare("SELECT 1 FROM chunks WHERE store = ? AND doc_id = ?")
           .get<Record<string, number>>(this.name, doc.id);
 
         if (existing) {
@@ -137,7 +137,7 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
           const chunkId = textChunks.length > 1 ? `${doc.id}#${i}` : doc.id;
           this.db
             .prepare(
-              "INSERT INTO chunks (id, corpus, doc_id, chunk_index, text, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              "INSERT INTO chunks (id, store, doc_id, chunk_index, text, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .run(chunkId, this.name, doc.id, i, chunk, metadataJson, now);
         }
@@ -171,7 +171,7 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
          FROM chunks_fts
          JOIN chunks c ON chunks_fts.rowid = c.pk
          WHERE chunks_fts MATCH ?
-         AND c.corpus = ?
+         AND c.store = ?
          ORDER BY score
          LIMIT ?`,
       )
@@ -211,7 +211,7 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
     this.ensureInit();
     const row = this.db
       .prepare(
-        "SELECT COUNT(*) as count, COALESCE(SUM(LENGTH(text)), 0) as sizeBytes FROM chunks WHERE corpus = ?",
+        "SELECT COUNT(*) as count, COALESCE(SUM(LENGTH(text)), 0) as sizeBytes FROM chunks WHERE store = ?",
       )
       .get<{ count: number; sizeBytes: number }>(this.name);
     return { count: row?.count ?? 0, sizeBytes: row?.sizeBytes ?? 0 };
@@ -220,14 +220,14 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
   // deno-lint-ignore require-await
   async reset(): Promise<void> {
     this.ensureInit();
-    this.db.prepare("DELETE FROM chunks WHERE corpus = ?").run(this.name);
+    this.db.prepare("DELETE FROM chunks WHERE store = ?").run(this.name);
     this.db.exec("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')");
-    this.appendHistory("Corpus reset");
+    this.appendHistory("Store reset");
   }
 
   getHistory(filter?: HistoryFilter): HistoryEntry[] {
     this.ensureInit();
-    let sql = "SELECT version, corpus, at, summary FROM corpus_history WHERE corpus = ?";
+    let sql = "SELECT version, store, at, summary FROM store_history WHERE store = ?";
     const params: (string | number)[] = [this.name];
 
     if (filter?.since) {
@@ -245,7 +245,7 @@ export class SqliteRetrievalCorpus implements RetrievalCorpus {
     return this.db.prepare(sql).all<HistoryEntry>(...params);
   }
 
-  static create(db: Database, workspaceId: string, name: string): SqliteRetrievalCorpus {
-    return new SqliteRetrievalCorpus(db, workspaceId, name);
+  static create(db: Database, workspaceId: string, name: string): SqliteRetrievalStore {
+    return new SqliteRetrievalStore(db, workspaceId, name);
   }
 }

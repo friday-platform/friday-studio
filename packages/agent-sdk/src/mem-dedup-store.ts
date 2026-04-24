@@ -1,12 +1,12 @@
 import type {
-  CorpusKind,
-  CorpusMetadata,
-  CorpusOf,
-  DedupCorpus,
   DedupEntry,
+  DedupStore,
   HistoryEntry,
   HistoryFilter,
   MemoryAdapter,
+  StoreKind,
+  StoreMetadata,
+  StoreOf,
 } from "./memory-adapter.ts";
 
 interface StoredEntry {
@@ -15,7 +15,7 @@ interface StoredEntry {
   expiresAt: number | null;
 }
 
-export class MemDedupCorpus implements DedupCorpus {
+export class MemDedupStore implements DedupStore {
   private entries = new Map<string, StoredEntry>();
 
   constructor(
@@ -87,39 +87,39 @@ export class MemDedupCorpus implements DedupCorpus {
 }
 
 export class InMemoryMemoryAdapter implements MemoryAdapter {
-  private corpora = new Map<string, MemDedupCorpus>();
+  private stores = new Map<string, MemDedupStore>();
 
-  private corporaKey(workspaceId: string, name: string): string {
+  private storesKey(workspaceId: string, name: string): string {
     return `${workspaceId}:${name}`;
   }
 
-  // TS cannot narrow conditional CorpusOf<K> from a runtime check on K
+  // TS cannot narrow conditional StoreOf<K> from a runtime check on K
   // (microsoft/TypeScript#33014); safe because all non-dedup paths throw
   // deno-lint-ignore require-await
-  async corpus<K extends CorpusKind>(
+  async store<K extends StoreKind>(
     workspaceId: string,
     name: string,
     kind: K,
-  ): Promise<CorpusOf<K>> {
+  ): Promise<StoreOf<K>> {
     if (kind !== "dedup") {
-      throw new Error(`InMemoryMemoryAdapter only supports 'dedup' corpora, got '${kind}'`);
+      throw new Error(`InMemoryMemoryAdapter only supports 'dedup' stores, got '${kind}'`);
     }
-    const key = this.corporaKey(workspaceId, name);
-    let existing = this.corpora.get(key);
+    const key = this.storesKey(workspaceId, name);
+    let existing = this.stores.get(key);
     if (!existing) {
-      existing = new MemDedupCorpus(workspaceId, name);
-      this.corpora.set(key, existing);
+      existing = new MemDedupStore(workspaceId, name);
+      this.stores.set(key, existing);
     }
     const result: unknown = existing;
-    return result as CorpusOf<K>;
+    return result as StoreOf<K>;
   }
 
   // deno-lint-ignore require-await
-  async list(workspaceId: string): Promise<CorpusMetadata[]> {
-    const result: CorpusMetadata[] = [];
-    for (const [key, corpus] of this.corpora) {
+  async list(workspaceId: string): Promise<StoreMetadata[]> {
+    const result: StoreMetadata[] = [];
+    for (const [key, store] of this.stores) {
       if (key.startsWith(`${workspaceId}:`)) {
-        result.push({ name: corpus.name, kind: "dedup", workspaceId: corpus.workspaceId });
+        result.push({ name: store.name, kind: "dedup", workspaceId: store.workspaceId });
       }
     }
     return result;
@@ -135,7 +135,7 @@ export class InMemoryMemoryAdapter implements MemoryAdapter {
     return [];
   }
 
-  async rollback(_workspaceId: string, _corpus: string, _toVersion: string): Promise<void> {
+  async rollback(_workspaceId: string, _store: string, _toVersion: string): Promise<void> {
     // no-op in memory stub
   }
 }

@@ -1,8 +1,8 @@
-import type { KVCorpus } from "@atlas/agent-sdk";
+import type { KVStore } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { MountRegistry } from "./registry.ts";
 
-function createPersistentKV(): KVCorpus {
+function createPersistentKV(): KVStore {
   const store = new Map<string, string>();
   return {
     get<T = unknown>(key: string): Promise<T | undefined> {

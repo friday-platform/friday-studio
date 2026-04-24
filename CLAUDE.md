@@ -16,6 +16,15 @@ the simplest version?" before building. Be a sparring partner, not a yes-man.
 - Zod v4 (all external input validation)
 - Hono (HTTP framework)
 
+## Active vs Deprecated UI / Agent Paths
+
+**Active:** `agent-playground` (SvelteKit web client) uses `workspace-chat.agent.ts`
+exclusively. All chat UI work goes here.
+
+**Deprecated (reference only):** `conversation-agent` and the old `web-ui` are no
+longer used. Do not add features to them or treat their patterns as canonical — they
+exist only as historical reference.
+
 ## Commands
 
 ```bash

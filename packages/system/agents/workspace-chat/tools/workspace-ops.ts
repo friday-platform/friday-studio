@@ -60,7 +60,7 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
         "`unreachable_agent`. Three valid shapes:\n" +
         "  1. Trivial save-and-recall (notes, URLs, quotes, reading list): no " +
         "     agents, no jobs, no MCP. Just declare `memory.own.notes` — chat " +
-        "     uses `memory_narrative_append` and auto-injects recent entries.\n" +
+        "     uses `memory_save` and auto-injects recent entries.\n" +
         "  2. Signal-triggered or structured work: declare signals + jobs + " +
         "     FSMs; agents live inside the FSM. Chat sees the jobs as tools.\n" +
         "  3. No agents at all (e.g. pure webhook receiver into memory): jobs " +

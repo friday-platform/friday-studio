@@ -4,24 +4,24 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
-import { resolveCorpus } from "./resolve.ts";
+import { resolveStore } from "./resolve.ts";
 
-/** Register MCP tool for saving an entry to a workspace memory corpus. */
+/** Register MCP tool for saving an entry to a workspace memory store. */
 export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     "memory_save",
     {
       description:
-        "Save an entry to a named memory corpus in a workspace. " +
-        "The corpus must be declared in workspace.yml under `memory.own` (or reachable via an `rw` mount) — undeclared corpora are rejected with the list of declared ones. " +
-        "The corpus strategy (narrative, retrieval, dedup, kv) is resolved from the workspace config — you do not need to know the adapter type. " +
+        "Save an entry to a named memory store in a workspace. " +
+        "The store must be declared in workspace.yml under `memory.own` (or reachable via an `rw` mount) — undeclared stores are rejected with the list of declared ones. " +
+        "The store strategy (narrative, retrieval, dedup, kv) is resolved from the workspace config — you do not need to know the adapter type. " +
         "Entries persist across sessions. Use for facts, decisions, and notes the agent should remember long-term. " +
         "For session-scoped ephemeral state, use state_append instead.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID (runtime id like `grilled_xylem`)"),
         memoryName: z
           .string()
-          .describe("Corpus name as declared in `memory.own` or a mount alias (e.g. 'notes')"),
+          .describe("Store name as declared in `memory.own` or a mount alias (e.g. 'notes')"),
         text: z.string().min(1, "text is required"),
         id: z.string().optional().describe("UUID; auto-generated if omitted"),
         author: z.string().optional(),
@@ -40,7 +40,7 @@ export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): voi
     }): Promise<CallToolResult> => {
       ctx.logger.info("MCP memory_save called", { workspaceId, memoryName });
 
-      const resolved = await resolveCorpus({
+      const resolved = await resolveStore({
         daemonUrl: ctx.daemonUrl,
         workspaceId,
         memoryName,
@@ -55,7 +55,7 @@ export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): voi
 
       if (strategy !== "narrative") {
         return createErrorResponse(
-          `memory_save currently only supports narrative corpora. Corpus '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
+          `memory_save currently only supports narrative stores. Store '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
         );
       }
 

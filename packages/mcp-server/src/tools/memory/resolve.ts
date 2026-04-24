@@ -18,7 +18,7 @@ export type MemoryOp = "read" | "write";
 
 export type MemoryStrategy = "narrative" | "retrieval" | "dedup" | "kv";
 
-export interface ResolvedCorpus {
+export interface ResolvedStore {
   /** Workspace that actually holds the entries (equals input workspaceId unless the call was via a mount). */
   effectiveWorkspaceId: string;
   /** Memory name on disk (may differ from the mount alias the agent passed). */
@@ -53,16 +53,16 @@ const MemoryBlock = z
 const ConfigEnvelope = z.object({ config: z.object({ memory: MemoryBlock }).passthrough() });
 
 /**
- * Resolve a corpus against the workspace config without strategy enforcement.
+ * Resolve a store against the workspace config without strategy enforcement.
  * Returns `strategy` so callers can dispatch to the right backend.
  */
-export async function resolveCorpus(args: {
+export async function resolveStore(args: {
   daemonUrl: string;
   workspaceId: string;
   memoryName: string;
   op: MemoryOp;
   logger: Logger;
-}): Promise<{ ok: true; resolved: ResolvedCorpus } | { ok: false; error: string }> {
+}): Promise<{ ok: true; resolved: ResolvedStore } | { ok: false; error: string }> {
   const { daemonUrl, workspaceId, memoryName, op, logger } = args;
 
   let cfg: z.infer<typeof MemoryBlock>;
@@ -78,7 +78,7 @@ export async function resolveCorpus(args: {
     }
     cfg = parsed.data.config.memory;
   } catch (err) {
-    logger.warn("resolveCorpus: config fetch failed", {
+    logger.warn("resolveStore: config fetch failed", {
       workspaceId,
       memoryName,
       error: stringifyError(err),
@@ -137,34 +137,10 @@ export async function resolveCorpus(args: {
   ];
   const listHint =
     declared.length > 0
-      ? ` Declared corpora: ${declared.join(", ")}.`
-      : " No corpora declared in workspace.yml.";
+      ? ` Declared stores: ${declared.join(", ")}.`
+      : " No stores declared in workspace.yml.";
   return {
     ok: false,
     error: `memory '${memoryName}' is not declared in workspace '${workspaceId}'.${listHint} Add it to memory.own in workspace.yml.`,
   };
-}
-
-/**
- * Resolve a corpus and enforce that it uses the narrative strategy.
- * Used by the adapter-specific `memory_narrative_*` tools.
- */
-export async function resolveNarrativeCorpus(args: {
-  daemonUrl: string;
-  workspaceId: string;
-  memoryName: string;
-  op: MemoryOp;
-  logger: Logger;
-}): Promise<{ ok: true; resolved: ResolvedCorpus } | { ok: false; error: string }> {
-  const result = await resolveCorpus(args);
-  if (!result.ok) return result;
-
-  const { strategy } = result.resolved;
-  if (strategy !== "narrative") {
-    return {
-      ok: false,
-      error: `memory '${args.memoryName}' exists but has strategy '${strategy}', not 'narrative'. Use the matching memory_* tool family.`,
-    };
-  }
-  return result;
 }

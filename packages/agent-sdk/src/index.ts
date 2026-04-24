@@ -1,5 +1,5 @@
 export type { AgentServerAdapter, AgentSessionManager } from "./adapter.ts";
-// SQLite-backed corpora are NOT re-exported from the top-level barrel —
+// SQLite-backed stores are NOT re-exported from the top-level barrel —
 // they pull `@db/sqlite` (FFI) which can't run in the browser. The web
 // client and playground transitively import this package via
 // @atlas/skills/schemas → @atlas/config → here, so any runtime sqlite
@@ -7,7 +7,7 @@ export type { AgentServerAdapter, AgentSessionManager } from "./adapter.ts";
 // flags for @atlas/core.
 //
 // Consumers needing the sqlite backends import them from the subpath:
-//   import { SqliteRetrievalCorpus } from "@atlas/agent-sdk/backends";
+//   import { SqliteRetrievalStore } from "@atlas/agent-sdk/backends";
 export type { SqliteRagConfig } from "./backends/index.ts";
 export {
   type ClosePendingToolPartsResult,
@@ -81,7 +81,6 @@ export type {
   AtlasAgentConfig,
   AtlasTool,
   AtlasTools,
-  CorpusMountBinding,
   CreateAgentConfig,
   LinkCredentialRef,
   LogContext,
@@ -91,6 +90,7 @@ export type {
   MCPServerToolFilter,
   MCPTransportConfig,
   OutlineRef,
+  StoreMountBinding,
   StreamEmitter,
   ToolCall,
   ToolContext,

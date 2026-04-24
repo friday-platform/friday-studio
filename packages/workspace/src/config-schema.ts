@@ -1,17 +1,15 @@
 import {
-  CorpusKindSchema,
   type MemoryConfig,
   MemoryConfigSchema,
   type MemoryMount,
   MemoryMountSchema,
   MemoryMountSourceSchema,
   MemoryOwnEntrySchema,
-  MemoryShareableSchema,
   MemoryStrategySchema,
   MemoryTypeSchema,
   type MountFilter,
-  MountFilterSchema,
   parseMemoryMountSource,
+  StoreKindSchema,
 } from "@atlas/config";
 import { z } from "zod";
 
@@ -23,22 +21,18 @@ export type ImprovementMode = z.infer<typeof ImprovementModeSchema>;
 // ── Memory mount schemas (re-exported from @atlas/config) ────────────────────
 
 export {
-  CorpusKindSchema,
   type MemoryConfig,
   MemoryConfigSchema,
   type MemoryMount,
   MemoryMountSchema,
   MemoryMountSourceSchema,
   MemoryOwnEntrySchema,
-  MemoryShareableSchema,
   MemoryStrategySchema,
   MemoryTypeSchema,
   type MountFilter,
-  MountFilterSchema,
   parseMemoryMountSource,
+  StoreKindSchema,
 };
-
-export type MemoryShareable = z.infer<typeof MemoryShareableSchema>;
 
 export const ImprovementProposalChunkSchema = z.object({
   id: z.string(),
@@ -47,7 +41,7 @@ export const ImprovementProposalChunkSchema = z.object({
   createdAt: z.string(),
 });
 
-export type ImprovementProposalChunk = z.infer<typeof ImprovementProposalChunkSchema>;
+type ImprovementProposalChunk = z.infer<typeof ImprovementProposalChunkSchema>;
 
 const DEFAULT_MODE: ImprovementMode = "surface";
 
@@ -57,7 +51,7 @@ export const JobImprovementConfigSchema = z.object({
   improvement: ImprovementModeSchema.optional(),
 });
 
-export type JobImprovementConfig = z.infer<typeof JobImprovementConfigSchema>;
+type JobImprovementConfig = z.infer<typeof JobImprovementConfigSchema>;
 
 export const WorkspaceImprovementConfigSchema = z.object({
   improvement: ImprovementModeSchema.optional(),
@@ -72,7 +66,7 @@ export const ImprovementModeRequestSchema = z.object({
   newFullConfig: WorkspaceImprovementConfigSchema,
 });
 
-export type ImprovementModeRequest = z.infer<typeof ImprovementModeRequestSchema>;
+type ImprovementModeRequest = z.infer<typeof ImprovementModeRequestSchema>;
 
 // ── Resolution helper ────────────────────────────────────────────────────────
 

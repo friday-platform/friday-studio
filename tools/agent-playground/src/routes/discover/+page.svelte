@@ -14,7 +14,7 @@
 <div class="discover-root">
   <header class="page-header">
     <div class="header-icon">
-      <IconLarge.Compass />
+      <IconLarge.OpenSquare />
     </div>
     <div class="header-text">
       <h1>Discover Spaces</h1>

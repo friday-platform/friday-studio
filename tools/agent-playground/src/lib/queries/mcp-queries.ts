@@ -33,7 +33,7 @@ const SearchResultSchema = z.object({
   repositoryUrl: z.string().nullable().optional(),
 });
 
-export const SearchResponseSchema = z.object({
+const SearchResponseSchema = z.object({
   servers: z.array(SearchResultSchema),
 });
 

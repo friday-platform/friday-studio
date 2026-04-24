@@ -95,16 +95,6 @@
         "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
       }
     },
-    "apps/web-client": {
-      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!", "*.ts!"],
-      "paths": {
-        "$lib": ["./src/lib"],
-        "$lib/*": ["./src/lib/*"],
-        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
-        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
-      }
-    },
     "tools/evals": {
       "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]
@@ -131,10 +121,10 @@
       }
     }
   },
-  "ignore": [],
+  "ignore": ["deprecated/**"],
   "ignoreDependencies": ["@types/deno", "@anthropic-ai/claude-agent-sdk"],
   "ignoreBinaries": ["svelte-kit", "svelte-package", "prettier"],
-  "ignoreExportsUsedInFile": { "interface": true, "type": true },
+  "ignoreExportsUsedInFile": { "interface": true, "type": true, "function": true, "class": true },
   "rules": {
     "files": "error",
     "dependencies": "error",

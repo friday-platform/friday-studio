@@ -1,18 +1,18 @@
 import type { NarrativeEntry } from "@atlas/agent-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { MountReadonlyError } from "../mount-errors.ts";
-import type { MountFilter } from "../mounted-corpus-binding.ts";
-import { MountedCorpusBinding } from "../mounted-corpus-binding.ts";
+import type { MountFilter } from "../mounted-store-binding.ts";
+import { MountedStoreBinding } from "../mounted-store-binding.ts";
 
 const ENTRY: NarrativeEntry = { id: "e-1", text: "test entry", createdAt: "2026-04-14T00:00:00Z" };
 
-describe("MountedCorpusBinding", () => {
+describe("MountedStoreBinding", () => {
   describe("read()", () => {
     it("delegates to the underlying read function", async () => {
       const readFn = vi
         .fn<(filter?: MountFilter) => Promise<NarrativeEntry[]>>()
         .mockResolvedValue([ENTRY]);
-      const binding = new MountedCorpusBinding({
+      const binding = new MountedStoreBinding({
         name: "backlog",
         source: "_global/narrative/backlog",
         mode: "ro",
@@ -30,7 +30,7 @@ describe("MountedCorpusBinding", () => {
       const readFn = vi
         .fn<(filter?: MountFilter) => Promise<NarrativeEntry[]>>()
         .mockResolvedValue([]);
-      const binding = new MountedCorpusBinding({
+      const binding = new MountedStoreBinding({
         name: "backlog",
         source: "_global/narrative/backlog",
         mode: "ro",
@@ -46,7 +46,7 @@ describe("MountedCorpusBinding", () => {
 
   describe("append() with mode='ro'", () => {
     it("throws MountReadonlyError", () => {
-      const binding = new MountedCorpusBinding({
+      const binding = new MountedStoreBinding({
         name: "readonly-mount",
         source: "ws-1/narrative/logs",
         mode: "ro",
@@ -59,7 +59,7 @@ describe("MountedCorpusBinding", () => {
     });
 
     it("thrown error includes mount name", () => {
-      const binding = new MountedCorpusBinding({
+      const binding = new MountedStoreBinding({
         name: "readonly-mount",
         source: "ws-1/narrative/logs",
         mode: "ro",
@@ -86,7 +86,7 @@ describe("MountedCorpusBinding", () => {
       const appendFn = vi
         .fn<(entry: NarrativeEntry) => Promise<NarrativeEntry>>()
         .mockResolvedValue(ENTRY);
-      const binding = new MountedCorpusBinding({
+      const binding = new MountedStoreBinding({
         name: "writable-mount",
         source: "ws-1/narrative/logs",
         mode: "rw",
@@ -103,7 +103,7 @@ describe("MountedCorpusBinding", () => {
 
   describe("properties", () => {
     it("exposes all readonly properties", () => {
-      const binding = new MountedCorpusBinding({
+      const binding = new MountedStoreBinding({
         name: "scoped-mount",
         source: "ws-1/narrative/logs",
         mode: "rw",

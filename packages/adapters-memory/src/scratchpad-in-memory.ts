@@ -48,10 +48,10 @@ export class InMemoryScratchpadAdapter implements ScratchpadAdapter {
   async promote(
     _sessionKey: string,
     _chunkId: string,
-    _target: { workspaceId: string; corpus: string },
+    _target: { workspaceId: string; store: string },
   ): Promise<NarrativeEntry> {
     throw new NotImplementedError(
-      "promote() requires NarrativeCorpus injection — out of scope for in-memory adapter",
+      "promote() requires NarrativeStore injection — out of scope for in-memory adapter",
     );
   }
 }

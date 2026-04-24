@@ -33,11 +33,7 @@ import {
   streamText,
 } from "ai";
 import { z } from "zod";
-import { fetchLinkSummary, formatIntegrationsSection } from "../conversation/link-context.ts";
-import { connectServiceSucceeded } from "../conversation/stop-conditions.ts";
-import { createConnectServiceTool } from "../conversation/tools/connect-service.ts";
-import { createDelegateTool } from "../conversation/tools/delegate/index.ts";
-import { fetchUserIdentitySection } from "../conversation/user-identity.ts";
+import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
 import {
   composeMemoryBlocks,
   composeResources,
@@ -48,9 +44,12 @@ import {
 } from "./compose-context.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
+import { connectServiceSucceeded } from "./stop-conditions.ts";
 import { artifactTools } from "./tools/artifact-tools.ts";
 import { createAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
+import { createConnectServiceTool } from "./tools/connect-service.ts";
+import { createDelegateTool } from "./tools/delegate/index.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListMCPServersTool } from "./tools/list-mcp-servers.ts";
@@ -59,6 +58,7 @@ import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resou
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
 import { createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
+import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
 
 const ROLE_SYSTEM = "system" as const;

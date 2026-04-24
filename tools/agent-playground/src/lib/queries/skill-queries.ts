@@ -27,14 +27,14 @@ const JobSkillsResponseSchema = z.object({
   friday: z.array(SkillSummarySchema),
   available: z.array(SkillSummarySchema),
 });
-export type JobSkillsResponse = z.infer<typeof JobSkillsResponseSchema>;
+type JobSkillsResponse = z.infer<typeof JobSkillsResponseSchema>;
 
 const JobSkillsBreakdownResponseSchema = z.object({
   byJob: z.array(
     z.object({ jobName: z.string(), skills: z.array(SkillSummarySchema) }),
   ),
 });
-export type JobSkillsBreakdown = z.infer<typeof JobSkillsBreakdownResponseSchema>;
+type JobSkillsBreakdown = z.infer<typeof JobSkillsBreakdownResponseSchema>;
 
 // ==============================================================================
 // SCHEMAS & TYPES

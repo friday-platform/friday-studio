@@ -313,7 +313,7 @@ export interface AgentSkill {
   referenceFiles?: Record<string, string>;
 }
 
-export interface CorpusMountBinding {
+export interface StoreMountBinding {
   readonly name: string;
   readonly source: string;
   readonly mode: "ro" | "rw";
@@ -324,7 +324,7 @@ export interface CorpusMountBinding {
 }
 
 export interface AgentMemoryContext {
-  mounts: Record<string, CorpusMountBinding>;
+  mounts: Record<string, StoreMountBinding>;
   adapter?: MemoryAdapter;
   scratchpad?: ScratchpadAdapter;
 }

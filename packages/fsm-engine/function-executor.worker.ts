@@ -45,28 +45,16 @@ onmessage = async (e: MessageEvent<string>) => {
     return;
   }
 
-  const { requestId, functionCode, contextData, signal, timeout } = request;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-    postMessage(JSON.stringify({ requestId, success: false, error: `Timeout after ${timeout}ms` }));
-    close(); // Self-terminate worker
-  }, timeout);
+  const { requestId, functionCode, contextData, signal } = request;
 
   try {
-    // MUST await - user code can be async
+    // MUST await - user code can be async.
+    // Timeout is enforced by the parent WorkerExecutor, which terminates this
+    // worker via discardAndReplenish() — we don't self-timeout here so that
+    // async infinite loops don't sneak a still-running worker back into the pool.
     const { result, mutations } = await executeFunction(functionCode, contextData, signal);
-    clearTimeout(timeoutId);
-
-    if (controller.signal.aborted) return;
-
     postMessage(JSON.stringify({ requestId, success: true, result, mutations }));
   } catch (error) {
-    clearTimeout(timeoutId);
-
-    if (controller.signal.aborted) return;
-
     const stack = error instanceof Error ? error.stack : undefined;
     postMessage(JSON.stringify({ requestId, success: false, error: stringifyError(error), stack }));
   }
@@ -126,6 +114,11 @@ async function executeFunction(
     },
 
     // State tools — pre-loaded cache enables local filtering, append is fire-and-forget
+
+    /**
+     * Dedup filter: given a list of candidate values, return those NOT already
+     * present in the state cache under `field`. Use for idempotent append logic.
+     */
     stateFilter(
       key: string,
       field: string,
@@ -146,6 +139,29 @@ async function executeFunction(
         }
       }
       return values.filter((v) => !existing.has(String(v)));
+    },
+
+    /**
+     * Query filter: return all entries in `key` whose fields match every
+     * key-value pair in `filter`. Use for reading state by ID or tag.
+     */
+    stateQuery(key: string, filter: Record<string, unknown>): Record<string, unknown>[] {
+      const results = contextData.results ?? {};
+      const cache: StateCache = (results.__stateCache ?? {}) as StateCache;
+      const entries = cache[key] ?? [];
+      const matched: Record<string, unknown>[] = [];
+      for (const entry of entries) {
+        try {
+          const raw: unknown = JSON.parse(entry.data);
+          if (typeof raw !== "object" || raw === null) continue;
+          const obj = raw as Record<string, unknown>;
+          const matches = Object.keys(filter).every((k) => obj[k] === filter[k]);
+          if (matches) matched.push(obj);
+        } catch {
+          // Skip corrupt entries
+        }
+      }
+      return matched;
     },
 
     stateAppend(key: string, entry: Record<string, unknown>, ttlHours?: number) {

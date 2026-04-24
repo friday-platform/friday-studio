@@ -10,9 +10,7 @@ import { MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
 import { createMutation, useQueryClient } from "@tanstack/svelte-query";
 import { z } from "zod";
 import { getDaemonClient } from "../daemon-client.ts";
-import { mcpQueries, SearchResponseSchema } from "./mcp-queries.ts";
-
-export { SearchResponseSchema };
+import { mcpQueries } from "./mcp-queries.ts";
 
 // ==============================================================================
 // SCHEMAS & TYPES

@@ -1,4 +1,4 @@
-import type { CorpusKind } from "@atlas/agent-sdk";
+import type { StoreKind } from "@atlas/agent-sdk";
 import { z } from "zod";
 
 export const MountSourceSchema = z.object({
@@ -19,6 +19,6 @@ export const MountConsumerSchema = z.object({
 export type MountSource = z.infer<typeof MountSourceSchema>;
 export type MountConsumer = z.infer<typeof MountConsumerSchema>;
 
-export function buildSourceId(workspaceId: string, kind: CorpusKind, name: string): string {
+export function buildSourceId(workspaceId: string, kind: StoreKind, name: string): string {
   return `${workspaceId}/${kind}/${name}`;
 }

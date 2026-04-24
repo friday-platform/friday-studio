@@ -65,7 +65,7 @@ const USER_AGENT =
  *
  * Handles both IPv4 (dotted quad) and IPv6 (RFC 5952 forms).
  */
-export function isBlockedIP(ip: string): boolean {
+function isBlockedIP(ip: string): boolean {
   const family = isIP(ip);
   if (family === 0) return true; // not a valid IP — be safe, block
   if (family === 4) return isBlockedIPv4(ip);
@@ -181,7 +181,7 @@ async function htmlToText(html: string): Promise<string> {
 
 // ─── Input schema ────────────────────────────────────────────────────────────
 
-export const WebFetchInput = z.object({
+const WebFetchInput = z.object({
   url: z.string().url().describe("Fully-qualified URL (http/https). HTTP is upgraded to HTTPS."),
   format: z
     .enum(["markdown", "text", "html"])

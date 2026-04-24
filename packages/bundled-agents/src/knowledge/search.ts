@@ -20,7 +20,7 @@ export interface EmbeddingCache {
   embeddings: Float32Array[];
 }
 
-/** Cosine similarity between a number[] query vector and a Float32Array corpus vector. */
+/** Cosine similarity between a number[] query vector and a Float32Array store vector. */
 export function cosineSimilarity(a: number[], b: Float32Array): number {
   const n = a.length;
   let dot = 0;
@@ -37,16 +37,16 @@ export function cosineSimilarity(a: number[], b: Float32Array): number {
 }
 
 // Module-level cache: avoids reloading embeddings from SQLite per request.
-// Keyed by corpus file path so a reindex with a new corpus invalidates correctly.
+// Keyed by store file path so a reindex with a new store invalidates correctly.
 let _cachedEmbeddings: { path: string; cache: EmbeddingCache } | undefined;
 
 /**
- * Load all embeddings from the corpus into memory for vector search.
+ * Load all embeddings from the store into memory for vector search.
  * Results are cached at module level — subsequent calls with the same
- * corpusPath return instantly.
+ * storePath return instantly.
  */
-export function loadEmbeddings(db: Database, corpusPath?: string): EmbeddingCache {
-  if (_cachedEmbeddings && corpusPath && _cachedEmbeddings.path === corpusPath) {
+export function loadEmbeddings(db: Database, storePath?: string): EmbeddingCache {
+  if (_cachedEmbeddings && storePath && _cachedEmbeddings.path === storePath) {
     return _cachedEmbeddings.cache;
   }
 
@@ -75,8 +75,8 @@ export function loadEmbeddings(db: Database, corpusPath?: string): EmbeddingCach
   stmt.finalize?.();
 
   const cache = { ids, embeddings };
-  if (corpusPath) {
-    _cachedEmbeddings = { path: corpusPath, cache };
+  if (storePath) {
+    _cachedEmbeddings = { path: storePath, cache };
   }
   return cache;
 }

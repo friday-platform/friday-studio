@@ -1,17 +1,17 @@
 import type {
   AgentContext,
   AgentMemoryContext,
-  CorpusMountBinding,
   MemoryAdapter,
   NarrativeEntry,
+  StoreMountBinding,
 } from "@atlas/agent-sdk";
 import { describe, expect, it, vi } from "vitest";
-import { MountedCorpusBinding } from "../mounted-corpus-binding.ts";
+import { MountedStoreBinding } from "../mounted-store-binding.ts";
 
 const ENTRY: NarrativeEntry = { id: "e-1", text: "hello", createdAt: "2026-04-14T00:00:00Z" };
 
 function buildMockContext(): AgentContext {
-  const binding = new MountedCorpusBinding({
+  const binding = new MountedStoreBinding({
     name: "backlog",
     source: "_global/narrative/autopilot-backlog",
     mode: "rw",
@@ -54,10 +54,10 @@ function buildMockContext(): AgentContext {
 }
 
 describe("ctx.memory.mounts[name]", () => {
-  it("is accessible as CorpusMountBinding after runtime start", () => {
+  it("is accessible as StoreMountBinding after runtime start", () => {
     const ctx = buildMockContext();
 
-    const mount: CorpusMountBinding | undefined = ctx.memory?.mounts["backlog"];
+    const mount: StoreMountBinding | undefined = ctx.memory?.mounts["backlog"];
     expect(mount).toBeDefined();
     expect(mount?.name).toBe("backlog");
     expect(mount?.mode).toBe("rw");
@@ -80,8 +80,8 @@ describe("ctx.memory.mounts[name]", () => {
     expect(result).toEqual(ENTRY);
   });
 
-  it("MountedCorpusBinding satisfies CorpusMountBinding interface", () => {
-    const binding = new MountedCorpusBinding({
+  it("MountedStoreBinding satisfies StoreMountBinding interface", () => {
+    const binding = new MountedStoreBinding({
       name: "test",
       source: "ws/narrative/corpus",
       mode: "ro",
@@ -91,7 +91,7 @@ describe("ctx.memory.mounts[name]", () => {
       append: vi.fn<(e: NarrativeEntry) => Promise<NarrativeEntry>>(),
     });
 
-    const asInterface: CorpusMountBinding = binding;
+    const asInterface: StoreMountBinding = binding;
     expect(asInterface.name).toBe("test");
     expect(asInterface.source).toBe("ws/narrative/corpus");
     expect(asInterface.mode).toBe("ro");
@@ -107,7 +107,7 @@ describe("ctx.memory.mounts[name]", () => {
 
   it("adapter can be provided on AgentMemoryContext", () => {
     const adapter: MemoryAdapter = {
-      corpus: vi.fn(),
+      store: vi.fn(),
       list: vi.fn(),
       bootstrap: vi.fn(),
       history: vi.fn(),

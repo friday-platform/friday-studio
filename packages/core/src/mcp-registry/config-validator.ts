@@ -4,7 +4,7 @@
  * Runs at `POST /api/workspaces/create`, `PUT /api/workspaces/:id/config`, and
  * `POST /api/workspaces/:id/lint`. Catches the class of bug where an LLM
  * invents a reference (npm package, agent id, signal name, skill ref, model
- * id, memory corpus) that looks plausible but doesn't resolve — Yena's
+ * id, memory store) that looks plausible but doesn't resolve — Yena's
  * knowledge-base workspace referenced `@joshuarileydev/sqlite-mcp-server`,
  * which doesn't exist on npm, and we only discovered that at runtime when
  * the MCP subprocess spawn failed.
@@ -49,7 +49,7 @@ export type ValidationIssueCode =
   | "unknown_agent_id"
   | "unknown_signal_name"
   | "unknown_mcp_server_ref"
-  | "unknown_memory_corpus"
+  | "unknown_memory_store"
   | "unreachable_agent"
   | "job_without_trigger"
   // Cross-system
@@ -213,12 +213,12 @@ function checkInternalCrossRefs(config: WorkspaceConfig): ValidationIssue[] {
     if (job.outputs?.memory && !definedMemory.has(job.outputs.memory)) {
       issues.push({
         severity: "error",
-        code: "unknown_memory_corpus",
+        code: "unknown_memory_store",
         path: `jobs.${jobName}.outputs.memory`,
         value: job.outputs.memory,
         message:
           `Job '${jobName}' writes output to memory '${job.outputs.memory}', ` +
-          `but no such corpus exists under memory.own or memory.mounts.`,
+          `but no such store exists under memory.own or memory.mounts.`,
         suggest: nearestStrings(job.outputs.memory, [...definedMemory]),
       });
     }
@@ -271,7 +271,7 @@ function checkInternalCrossRefs(config: WorkspaceConfig): ValidationIssue[] {
         `Chat reaches the workspace through jobs; agents declared without a wrapping ` +
         `job are unreachable and silently ignored at runtime. Either wrap it in a ` +
         `job (add a state whose 'entry' includes { type: agent, agentId: '${agentId}' }), ` +
-        `or delete the agent and use platform tools (memory_narrative_append, etc.) ` +
+        `or delete the agent and use platform tools (memory_save, etc.) ` +
         `directly from chat.`,
     });
   }

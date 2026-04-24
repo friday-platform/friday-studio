@@ -3,17 +3,14 @@ import { z } from "zod";
 import type { AgentContext } from "../types.ts";
 import { stringifyError } from "../utils.ts";
 
-export const ScratchpadAppendInput = z.object({
+const ScratchpadAppendInput = z.object({
   sessionKey: z.string(),
   chunk: z.object({ id: z.string(), kind: z.string(), body: z.string(), createdAt: z.string() }),
 });
 
-export const ScratchpadReadInput = z.object({
-  sessionKey: z.string(),
-  since: z.string().optional(),
-});
+const ScratchpadReadInput = z.object({ sessionKey: z.string(), since: z.string().optional() });
 
-export const ScratchpadClearInput = z.object({ sessionKey: z.string() });
+const ScratchpadClearInput = z.object({ sessionKey: z.string() });
 
 function getScratchpad(ctx: AgentContext) {
   if (!ctx.memory?.scratchpad) {

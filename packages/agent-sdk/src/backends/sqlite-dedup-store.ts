@@ -1,6 +1,6 @@
 import type { Database } from "@db/sqlite";
 import { z } from "zod";
-import type { DedupCorpus, DedupEntry } from "../memory-adapter.ts";
+import type { DedupEntry, DedupStore } from "../memory-adapter.ts";
 
 const DedupRowSchema = z.object({ value: z.string() });
 
@@ -31,7 +31,7 @@ function makeId(namespace: string, field: string, value: string): string {
   return `${namespace}:${field}:${value}`;
 }
 
-export class SqliteDedupCorpus implements DedupCorpus {
+export class SqliteDedupStore implements DedupStore {
   private initialized = false;
 
   constructor(
@@ -99,8 +99,8 @@ export class SqliteDedupCorpus implements DedupCorpus {
     return Promise.resolve();
   }
 
-  static create(db: Database, workspaceId: string, name: string): SqliteDedupCorpus {
-    return new SqliteDedupCorpus(db, workspaceId, name);
+  static create(db: Database, workspaceId: string, name: string): SqliteDedupStore {
+    return new SqliteDedupStore(db, workspaceId, name);
   }
 
   static makeRowId(namespace: string, field: string, value: unknown): string {

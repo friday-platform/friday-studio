@@ -1,18 +1,18 @@
 import type {
-  CorpusKind,
-  CorpusMetadata,
-  CorpusOf,
   HistoryEntry,
   HistoryFilter,
   MemoryAdapter,
-  NarrativeCorpus,
   NarrativeEntry,
+  NarrativeStore,
   ResolvedWorkspaceMemory,
+  StoreKind,
+  StoreMetadata,
+  StoreOf,
 } from "@atlas/agent-sdk";
 import { buildResolvedWorkspaceMemory } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 
-function createMockCorpus(): NarrativeCorpus {
+function createMockStore(): NarrativeStore {
   return {
     append: (_entry: NarrativeEntry) => Promise.resolve(_entry),
     read: () => Promise.resolve([]),
@@ -23,22 +23,22 @@ function createMockCorpus(): NarrativeCorpus {
 }
 
 function createMockAdapter(): MemoryAdapter {
-  const corpus = createMockCorpus();
+  const store = createMockStore();
   return {
-    corpus<K extends CorpusKind>(_wsId: string, _name: string, _kind: K): Promise<CorpusOf<K>> {
-      return Promise.resolve(corpus as CorpusOf<K>);
+    store<K extends StoreKind>(_wsId: string, _name: string, _kind: K): Promise<StoreOf<K>> {
+      return Promise.resolve(store as StoreOf<K>);
     },
-    list: (_wsId: string): Promise<CorpusMetadata[]> => Promise.resolve([]),
+    list: (_wsId: string): Promise<StoreMetadata[]> => Promise.resolve([]),
     bootstrap: (_wsId: string, _agentId: string): Promise<string> => Promise.resolve(""),
     history: (_wsId: string, _filter?: HistoryFilter): Promise<HistoryEntry[]> =>
       Promise.resolve([]),
-    rollback: (_wsId: string, _corpus: string, _toVersion: string): Promise<void> =>
+    rollback: (_wsId: string, _store: string, _toVersion: string): Promise<void> =>
       Promise.resolve(),
   };
 }
 
 describe("buildResolvedWorkspaceMemory integration", () => {
-  it("captures own corpora from config", () => {
+  it("captures own stores from config", () => {
     const resolved = buildResolvedWorkspaceMemory({
       workspaceId: "braised_biscuit",
       ownEntries: [
@@ -90,14 +90,14 @@ describe("buildResolvedWorkspaceMemory integration", () => {
     expect(resolved.mounts[0]).toMatchObject({
       name: "backlog",
       sourceWorkspaceId: "thick_endive",
-      sourceCorpusKind: "narrative",
-      sourceCorpusName: "autopilot-backlog",
+      sourceStoreKind: "narrative",
+      sourceStoreName: "autopilot-backlog",
       mode: "ro",
     });
     expect(resolved.mounts[1]).toMatchObject({
       name: "reflections",
       sourceWorkspaceId: "_global",
-      sourceCorpusKind: "narrative",
+      sourceStoreKind: "narrative",
       scope: "agent",
       scopeTarget: "my-agent",
     });

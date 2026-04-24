@@ -300,5 +300,6 @@ export interface LLMProvider {
     providerOptions?: Record<string, unknown>;
     /** Callback for real-time streaming events (tool calls, tool results) during LLM execution */
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;
+    abortSignal?: AbortSignal;
   }): Promise<AgentResult<string, FSMLLMOutput>>;
 }

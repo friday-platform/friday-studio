@@ -4,8 +4,8 @@ import {
   buildResolvedWorkspaceMemory,
   type ResolvedMount,
   ResolvedMountSchema,
-  type ResolvedOwnCorpus,
-  ResolvedOwnCorpusSchema,
+  type ResolvedOwnStore,
+  ResolvedOwnStoreSchema,
   type ResolvedWorkspaceMemory,
   ResolvedWorkspaceMemorySchema,
   type ScopeTag,
@@ -26,8 +26,8 @@ describe("ResolvedWorkspaceMemory type contracts", () => {
           mode: "ro",
           scope: "workspace",
           sourceWorkspaceId: "_global",
-          sourceCorpusKind: "narrative",
-          sourceCorpusName: "orders",
+          sourceStoreKind: "narrative",
+          sourceStoreName: "orders",
         },
       ],
       globalAccess: { canRead: true, canWrite: false },
@@ -39,8 +39,8 @@ describe("ResolvedWorkspaceMemory type contracts", () => {
     expect(resolved.globalAccess.canWrite).toBe(false);
   });
 
-  it("ResolvedOwnCorpus scope is always 'workspace'", () => {
-    const own: ResolvedOwnCorpus = {
+  it("ResolvedOwnStore scope is always 'workspace'", () => {
+    const own: ResolvedOwnStore = {
       name: "test",
       type: "long_term",
       strategy: "narrative",
@@ -56,12 +56,12 @@ describe("ResolvedWorkspaceMemory type contracts", () => {
       mode: "ro",
       scope: "workspace",
       sourceWorkspaceId: "thick_endive",
-      sourceCorpusKind: "narrative",
-      sourceCorpusName: "reflections",
+      sourceStoreKind: "narrative",
+      sourceStoreName: "reflections",
     };
     expect(mount.sourceWorkspaceId).toBe("thick_endive");
-    expect(mount.sourceCorpusKind).toBe("narrative");
-    expect(mount.sourceCorpusName).toBe("reflections");
+    expect(mount.sourceStoreKind).toBe("narrative");
+    expect(mount.sourceStoreName).toBe("reflections");
   });
 
   it("ResolvedMount inherits MountDeclaration shape fields", () => {
@@ -75,8 +75,8 @@ describe("ResolvedWorkspaceMemory type contracts", () => {
     const mount: ResolvedMount = {
       ...decl,
       sourceWorkspaceId: "ws1",
-      sourceCorpusKind: "narrative",
-      sourceCorpusName: "corpus1",
+      sourceStoreKind: "narrative",
+      sourceStoreName: "corpus1",
     };
     expect(mount.name).toBe(decl.name);
     expect(mount.source).toBe(decl.source);
@@ -110,8 +110,8 @@ describe("ScopeTag discriminated union", () => {
 });
 
 describe("Zod schema validation", () => {
-  it("ResolvedOwnCorpusSchema accepts valid own entry", () => {
-    const result = ResolvedOwnCorpusSchema.safeParse({
+  it("ResolvedOwnStoreSchema accepts valid own entry", () => {
+    const result = ResolvedOwnStoreSchema.safeParse({
       name: "backlog",
       type: "long_term",
       strategy: "narrative",
@@ -120,8 +120,8 @@ describe("Zod schema validation", () => {
     expect(result.success).toBe(true);
   });
 
-  it("ResolvedOwnCorpusSchema rejects invalid scope", () => {
-    const result = ResolvedOwnCorpusSchema.safeParse({
+  it("ResolvedOwnStoreSchema rejects invalid scope", () => {
+    const result = ResolvedOwnStoreSchema.safeParse({
       name: "backlog",
       type: "long_term",
       scope: "global",
@@ -136,8 +136,8 @@ describe("Zod schema validation", () => {
       mode: "ro",
       scope: "workspace",
       sourceWorkspaceId: "_global",
-      sourceCorpusKind: "narrative",
-      sourceCorpusName: "orders",
+      sourceStoreKind: "narrative",
+      sourceStoreName: "orders",
     });
     expect(result.success).toBe(true);
   });
@@ -177,8 +177,8 @@ describe("buildResolvedWorkspaceMemory", () => {
     expect(resolved.own[0]?.scope).toBe("workspace");
     expect(resolved.mounts).toHaveLength(1);
     expect(resolved.mounts[0]?.sourceWorkspaceId).toBe("_global");
-    expect(resolved.mounts[0]?.sourceCorpusKind).toBe("narrative");
-    expect(resolved.mounts[0]?.sourceCorpusName).toBe("orders");
+    expect(resolved.mounts[0]?.sourceStoreKind).toBe("narrative");
+    expect(resolved.mounts[0]?.sourceStoreName).toBe("orders");
     expect(resolved.globalAccess.canRead).toBe(true);
     expect(resolved.globalAccess.canWrite).toBe(false);
   });

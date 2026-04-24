@@ -9,7 +9,7 @@ import { generateText } from "ai";
 import { z } from "zod";
 
 /** Schema for workspace planner success data - exported for use in stop conditions */
-export const WorkspacePlannerSuccessDataSchema = z.object({
+const WorkspacePlannerSuccessDataSchema = z.object({
   planSummary: z.string(),
   artifactId: z.string(),
   revision: z.number(),

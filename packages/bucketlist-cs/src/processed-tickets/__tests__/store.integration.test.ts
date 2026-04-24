@@ -1,8 +1,8 @@
-import type { DedupCorpus, DedupEntry, MemoryAdapter } from "@atlas/agent-sdk";
+import type { DedupEntry, DedupStore, MemoryAdapter } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { createProcessedTicketStore } from "../store.ts";
 
-class InMemoryDedupCorpus implements DedupCorpus {
+class InMemoryDedupStore implements DedupStore {
   private store = new Map<string, Map<string, { entry: DedupEntry; expiresAt: number | null }>>();
 
   append(namespace: string, entry: DedupEntry, ttlHours?: number): Promise<void> {
@@ -39,13 +39,13 @@ class InMemoryDedupCorpus implements DedupCorpus {
 }
 
 function makeInMemoryAdapter(): MemoryAdapter {
-  const corpora = new Map<string, DedupCorpus>();
+  const stores = new Map<string, DedupStore>();
   return {
-    corpus(_workspaceId, name, _kind) {
-      if (!corpora.has(name)) {
-        corpora.set(name, new InMemoryDedupCorpus());
+    store(_workspaceId, name, _kind) {
+      if (!stores.has(name)) {
+        stores.set(name, new InMemoryDedupStore());
       }
-      return Promise.resolve(corpora.get(name) as never);
+      return Promise.resolve(stores.get(name) as never);
     },
     list: () => Promise.resolve([]),
     bootstrap: () => Promise.resolve(""),
@@ -54,7 +54,7 @@ function makeInMemoryAdapter(): MemoryAdapter {
   };
 }
 
-describe("ProcessedTicketStore integration (in-memory DedupCorpus)", () => {
+describe("ProcessedTicketStore integration (in-memory DedupStore)", () => {
   it("filters out known IDs after recording them", async () => {
     const adapter = makeInMemoryAdapter();
     const store = await createProcessedTicketStore(adapter, "ws-test");

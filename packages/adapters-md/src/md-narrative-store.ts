@@ -1,20 +1,20 @@
 /**
- * MdNarrativeCorpus — Markdown-backed NarrativeCorpus implementation.
+ * MdNarrativeStore — Markdown-backed NarrativeStore implementation.
  *
  * First real backend consumer of withSchemaBoundary. Stores narrative
  * entries as markdown list items in MEMORY.md at the workspace root.
  *
  * From parity plan v6, lines 787-796:
- * > Backend: `md` narrative corpus, root at
+ * > Backend: `md` narrative store, root at
  * > `~/.friday/workspaces/<id>/MEMORY.md` + `memory/YYYY-MM-DD.md`.
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { NarrativeCorpus, NarrativeEntry, SearchOpts } from "@atlas/agent-sdk";
+import type { NarrativeEntry, NarrativeStore, SearchOpts } from "@atlas/agent-sdk";
 import { NarrativeEntrySchema, withSchemaBoundary } from "@atlas/agent-sdk";
 
-export class MdNarrativeCorpus implements NarrativeCorpus {
+export class MdNarrativeStore implements NarrativeStore {
   private readonly memoryPath: string;
   private readonly jsonlPath: string;
 
@@ -72,8 +72,47 @@ export class MdNarrativeCorpus implements NarrativeCorpus {
     throw new Error("not implemented in skeleton, see Phase 1a follow-up tasks");
   }
 
-  forget(_id: string): Promise<void> {
-    throw new Error("not implemented in skeleton, see Phase 1a follow-up tasks");
+  async forget(id: string): Promise<void> {
+    // Remove from JSONL
+    try {
+      const raw = await fs.readFile(this.jsonlPath, "utf-8");
+      const filtered = raw
+        .split("\n")
+        .filter((line) => {
+          if (!line.trim()) return false;
+          try {
+            const parsed: unknown = JSON.parse(line);
+            return !(
+              typeof parsed === "object" &&
+              parsed !== null &&
+              "id" in parsed &&
+              (parsed as { id: unknown }).id === id
+            );
+          } catch {
+            return true;
+          }
+        })
+        .join("\n");
+      await fs.writeFile(this.jsonlPath, filtered ? filtered + "\n" : "", "utf-8");
+    } catch {
+      // JSONL may not exist yet — nothing to remove
+    }
+
+    // Remove from MEMORY.md
+    try {
+      const content = await fs.readFile(this.memoryPath, "utf-8");
+      const linePattern = /^- \[(.+?)\] (.+?) \(id: (.+?)\)$/;
+      const filtered = content
+        .split("\n")
+        .filter((line) => {
+          const match = linePattern.exec(line.trim());
+          return !match || match[3] !== id;
+        })
+        .join("\n");
+      await fs.writeFile(this.memoryPath, filtered, "utf-8");
+    } catch {
+      // MEMORY.md may not exist yet — nothing to remove
+    }
   }
 
   async render(): Promise<string> {

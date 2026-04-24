@@ -37,6 +37,10 @@ const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   "bash",
   "csv",
   "webfetch",
+  // Memory — adapter-agnostic
+  "memory_save",
+  "memory_read",
+  "memory_remove",
   // Workspace (limited)
   "convert_task_to_workspace",
   "workspace_signal_trigger",

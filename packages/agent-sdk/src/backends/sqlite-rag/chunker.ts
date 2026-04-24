@@ -51,7 +51,7 @@ export function NoneChunker(text: string): string[] {
   return [text];
 }
 
-export const DefaultChunker = SentenceChunker;
+const DefaultChunker = SentenceChunker;
 
 export const ChunkerRegistry = new Map<string, ChunkerFn>([
   ["sentence", SentenceChunker],

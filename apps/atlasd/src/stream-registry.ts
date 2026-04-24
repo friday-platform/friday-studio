@@ -377,4 +377,4 @@ export class StreamRegistry {
 }
 
 // Export constants for testing
-export { CLEANUP_INTERVAL_MS, FINISHED_TTL_MS, MAX_EVENTS, STALE_TTL_MS, TOTAL_EVENT_CEILING };
+export { CLEANUP_INTERVAL_MS, FINISHED_TTL_MS, MAX_EVENTS, STALE_TTL_MS };

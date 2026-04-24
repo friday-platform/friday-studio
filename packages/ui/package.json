@@ -43,6 +43,7 @@
     "svelte": "^5.0.0"
   },
   "dependencies": {
+    "@tanstack/svelte-table": "^9.0.0-alpha.10",
     "@lezer/common": "^1.5.1",
     "@lezer/markdown": "^1.6.3",
     "@melt-ui/svelte": "^0.86.6",

@@ -93,14 +93,10 @@ const PLATFORM_TOOL_ALLOWLIST = new Set([
   "state_filter",
   "state_lookup",
   // Memory — adapter-agnostic; validated against workspace.yml memory.own / mounts
-  // in the tool handler, so FSM jobs can only write corpora the workspace declares.
+  // in the tool handler, so FSM jobs can only write stores the workspace declares.
   "memory_save",
   "memory_read",
   "memory_remove",
-  // Narrative-specific aliases (kept for backward compat)
-  "memory_narrative_append",
-  "memory_narrative_read",
-  "memory_narrative_forget",
 ]);
 
 const FSMStateSchema = z.object({ state: z.string() });
@@ -430,7 +426,9 @@ export interface CodeExecutor {
     functionName: string,
     context: Context,
     signal: Signal,
+    abortSignal?: AbortSignal,
   ): Promise<unknown>;
+  dispose?(): void;
 }
 
 export interface FSMEngineOptions {
@@ -746,7 +744,13 @@ export class FSMEngine {
         }
 
         try {
-          const result = await this._guardExecutor.execute(guardCode, guardName, this.context, sig);
+          const result = await this._guardExecutor.execute(
+            guardCode,
+            guardName,
+            this.context,
+            sig,
+            sig._context?.abortSignal,
+          );
           const passed = Boolean(result);
           logger.debug("Guard evaluated", {
             guardName,
@@ -1183,7 +1187,13 @@ export class FSMEngine {
 
             const executor = isIoAction ? this._toolExecutor : this._actionExecutor;
             try {
-              const returnValue = await executor.execute(actionCode, action.function, context, sig);
+              const returnValue = await executor.execute(
+                actionCode,
+                action.function,
+                context,
+                sig,
+                sig._context?.abortSignal,
+              );
               codeActionResult = parsePrepareResult(returnValue);
 
               // Process any stateAppend mutations from the code action
@@ -1257,7 +1267,7 @@ export class FSMEngine {
             });
 
             const buildResult = action.tools
-              ? await this.buildTools(action.tools, context)
+              ? await this.buildTools(action.tools, context, sig._context?.abortSignal)
               : { tools: {}, dispose: async () => {} };
             const baseTools = buildResult.tools;
 
@@ -1410,6 +1420,7 @@ export class FSMEngine {
                 toolChoice: llmToolChoice,
                 stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
                 onStreamEvent: sig._context?.onStreamEvent,
+                abortSignal: sig._context?.abortSignal,
               });
 
               // Check for adapter-level errors (network, API, etc.)
@@ -1486,6 +1497,7 @@ export class FSMEngine {
                     toolChoice: llmToolChoice,
                     stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
                     onStreamEvent: sig._context?.onStreamEvent,
+                    abortSignal: sig._context?.abortSignal,
                   });
 
                   // Check for adapter-level errors on retry
@@ -1928,6 +1940,7 @@ export class FSMEngine {
   private async buildTools(
     toolNames: string[],
     context: Context,
+    abortSignal?: AbortSignal,
   ): Promise<{ tools: Record<string, Tool>; dispose: () => Promise<void> }> {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
@@ -1948,10 +1961,13 @@ export class FSMEngine {
         description: toolDef.description,
         inputSchema: zodSchema,
         execute: (args) =>
-          this._toolExecutor.execute(toolDef.code, toolName, context, {
-            type: "__tool__",
-            data: args,
-          }),
+          this._toolExecutor.execute(
+            toolDef.code,
+            toolName,
+            context,
+            { type: "__tool__", data: args },
+            abortSignal,
+          ),
       };
     }
 
@@ -2380,7 +2396,9 @@ export class FSMEngine {
   }
 
   stop(): void {
-    // No-op: Workers are terminated after each call, no cleanup needed
+    this._guardExecutor.dispose?.();
+    this._actionExecutor.dispose?.();
+    this._toolExecutor.dispose?.();
   }
 
   /**

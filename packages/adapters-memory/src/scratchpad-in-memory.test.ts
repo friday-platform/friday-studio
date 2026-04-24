@@ -58,7 +58,7 @@ describe("InMemoryScratchpadAdapter", () => {
   it("promote throws NotImplementedError", async () => {
     const adapter = new InMemoryScratchpadAdapter();
     try {
-      await adapter.promote("session", "chunk-id", { workspaceId: "ws", corpus: "persona" });
+      await adapter.promote("session", "chunk-id", { workspaceId: "ws", store: "persona" });
       expect.fail("promote should have thrown");
     } catch (e: unknown) {
       expect(e).toBeInstanceOf(NotImplementedError);

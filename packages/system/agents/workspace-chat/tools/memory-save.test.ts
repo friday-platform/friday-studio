@@ -18,98 +18,122 @@ const logger: Logger = {
   child: vi.fn(),
 } as unknown as Logger;
 
+const OPTS = { toolCallId: "tc-1", messages: [], abortSignal: new AbortController().signal };
+
 beforeEach(() => {
   mockFetch.mockReset();
 });
 
-describe("createMemorySaveTool", () => {
-  it("returns object with memory_save key", () => {
+describe("memory_save", () => {
+  it("returns tool object with memory_save, memory_read, memory_remove", () => {
     const tools = createMemorySaveTool("ws-1", logger);
     expect(tools).toHaveProperty("memory_save");
-    expect(tools.memory_save).toBeDefined();
+    expect(tools).toHaveProperty("memory_read");
+    expect(tools).toHaveProperty("memory_remove");
   });
 
-  it("sends POST with correct body and metadata type", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "abc", text: "User's name is Ken" }), { status: 200 }),
-    );
-
-    const tools = createMemorySaveTool("ws-1", logger);
-    const memorySave = tools.memory_save;
-    if (!memorySave) throw new Error("memory_save tool not defined");
-    const executeFn = memorySave.execute;
-    if (!executeFn) throw new Error("execute not defined");
-
-    const result = await executeFn(
-      { text: "User's name is Ken", type: "user-name" },
-      { toolCallId: "tc-1", messages: [], abortSignal: new AbortController().signal },
-    );
-
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost:3000/api/memory/ws-1/narrative/notes");
-    expect(opts.method).toBe("POST");
-    const body = JSON.parse(opts.body as string) as {
-      text: string;
-      id: string;
-      metadata: { type: string };
-    };
-    expect(body.text).toBe("User's name is Ken");
-    expect(body.id).toBeTruthy();
-    expect(body.metadata).toEqual({ type: "user-name" });
-    expect(result).toHaveProperty("saved", true);
-  });
-
-  it("sends POST without metadata when type is omitted", async () => {
+  it("POSTs to correct workspaceId + memoryName URL", async () => {
     mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
 
-    const tools = createMemorySaveTool("ws-1", logger);
-    const memorySave = tools.memory_save;
-    if (!memorySave) throw new Error("memory_save tool not defined");
-    const executeFn = memorySave.execute;
-    if (!executeFn) throw new Error("execute not defined");
+    const { memory_save } = createMemorySaveTool("al-dente_vanilla", logger);
+    await memory_save!.execute!({ memoryName: "notes", text: "Ken won 45/40" }, OPTS);
 
-    await executeFn(
-      { text: "User prefers dark mode" },
-      { toolCallId: "tc-2", messages: [], abortSignal: new AbortController().signal },
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/memory/al-dente_vanilla/narrative/notes");
+  });
+
+  it("includes metadata when provided", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
+
+    const { memory_save } = createMemorySaveTool("ws-1", logger);
+    await memory_save!.execute!(
+      { memoryName: "notes", text: "hello", metadata: { kind: "note" } },
+      OPTS,
     );
 
     const [, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(opts.body as string) as { metadata?: unknown };
-    expect(body.metadata).toBeUndefined();
+    const body = JSON.parse(opts.body as string) as { metadata: unknown };
+    expect(body.metadata).toEqual({ kind: "note" });
   });
 
-  it("returns error on daemon API failure", async () => {
-    mockFetch.mockResolvedValueOnce(new Response("Internal Server Error", { status: 500 }));
-
-    const tools = createMemorySaveTool("ws-1", logger);
-    const memorySave = tools.memory_save;
-    if (!memorySave) throw new Error("memory_save tool not defined");
-    const executeFn = memorySave.execute;
-    if (!executeFn) throw new Error("execute not defined");
-
-    const result = await executeFn(
-      { text: "User's name is Ken", type: "user-name" },
-      { toolCallId: "tc-3", messages: [], abortSignal: new AbortController().signal },
-    );
-
+  it("returns error on HTTP failure", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("error", { status: 500 }));
+    const { memory_save } = createMemorySaveTool("ws-1", logger);
+    const result = await memory_save!.execute!({ memoryName: "notes", text: "x" }, OPTS);
     expect(result).toHaveProperty("error");
   });
 
   it("returns error on network failure", async () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    const { memory_save } = createMemorySaveTool("ws-1", logger);
+    const result = await memory_save!.execute!({ memoryName: "notes", text: "x" }, OPTS);
+    expect(result).toHaveProperty("error");
+  });
+});
 
-    const tools = createMemorySaveTool("ws-1", logger);
-    const memorySave = tools.memory_save;
-    if (!memorySave) throw new Error("memory_save tool not defined");
-    const executeFn = memorySave.execute;
-    if (!executeFn) throw new Error("execute not defined");
+describe("memory_read", () => {
+  it("GETs correct URL with since/limit params", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
 
-    const result = await executeFn(
-      { text: "test" },
-      { toolCallId: "tc-4", messages: [], abortSignal: new AbortController().signal },
+    const { memory_read } = createMemorySaveTool("al-dente_vanilla", logger);
+    await memory_read!.execute!({ memoryName: "notes", since: "2026-01-01", limit: 10 }, OPTS);
+
+    const [url] = mockFetch.mock.calls[0] as [string];
+    expect(url).toContain("/api/memory/al-dente_vanilla/narrative/notes");
+    expect(url).toContain("since=2026-01-01");
+    expect(url).toContain("limit=10");
+  });
+
+  it("returns entries and count", async () => {
+    const entries = [{ id: "e1", text: "a", createdAt: "2026-01-01T00:00:00Z" }];
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(entries), { status: 200 }));
+
+    const { memory_read } = createMemorySaveTool("ws-1", logger);
+    const result = await memory_read!.execute!({ memoryName: "notes" }, OPTS);
+    expect(result).toMatchObject({ entries, count: 1 });
+  });
+
+  it("returns error on HTTP failure", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("error", { status: 500 }));
+    const { memory_read } = createMemorySaveTool("ws-1", logger);
+    const result = await memory_read!.execute!({ memoryName: "notes" }, OPTS);
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns error on network failure", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    const { memory_read } = createMemorySaveTool("ws-1", logger);
+    const result = await memory_read!.execute!({ memoryName: "notes" }, OPTS);
+    expect(result).toHaveProperty("error");
+  });
+});
+
+describe("memory_remove", () => {
+  it("sends DELETE to correct URL", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
     );
 
+    const { memory_remove } = createMemorySaveTool("al-dente_vanilla", logger);
+    const result = await memory_remove!.execute!({ memoryName: "notes", entryId: "e123" }, OPTS);
+
+    const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:3000/api/memory/al-dente_vanilla/narrative/notes/e123");
+    expect(opts.method).toBe("DELETE");
+    expect(result).toHaveProperty("removed", true);
+  });
+
+  it("returns error on HTTP failure", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("error", { status: 500 }));
+    const { memory_remove } = createMemorySaveTool("ws-1", logger);
+    const result = await memory_remove!.execute!({ memoryName: "notes", entryId: "e1" }, OPTS);
+    expect(result).toHaveProperty("error");
+  });
+
+  it("returns error on network failure", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    const { memory_remove } = createMemorySaveTool("ws-1", logger);
+    const result = await memory_remove!.execute!({ memoryName: "notes", entryId: "e1" }, OPTS);
     expect(result).toHaveProperty("error");
   });
 });
