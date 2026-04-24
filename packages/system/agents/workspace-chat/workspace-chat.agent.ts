@@ -53,6 +53,7 @@ import { createAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createJobTools } from "./tools/job-tools.ts";
+import { createListMCPServersTool } from "./tools/list-mcp-servers.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
@@ -279,18 +280,6 @@ function describeSignalTrigger(sig: unknown): string {
   return provider ?? "";
 }
 
-/** Pull MCP server names from the workspace config when present. */
-function mcpServerNames(config: WorkspaceConfig | undefined): string[] {
-  if (!config) return [];
-  const tools = (config.workspace as { tools?: unknown }).tools;
-  if (typeof tools !== "object" || tools === null) return [];
-  const mcp = (tools as { mcp?: unknown }).mcp;
-  if (typeof mcp !== "object" || mcp === null) return [];
-  const servers = (mcp as { servers?: unknown }).servers;
-  if (typeof servers !== "object" || servers === null) return [];
-  return Object.keys(servers as Record<string, unknown>);
-}
-
 /**
  * Format workspace capabilities as a system prompt section.
  *
@@ -329,11 +318,6 @@ export function formatWorkspaceSection(
       return trigger ? `${s.name} (${trigger})` : s.name;
     });
     section += `\n<signals>\n${signalEntries.join("\n")}\n</signals>`;
-  }
-
-  const mcpServers = mcpServerNames(config);
-  if (mcpServers.length > 0) {
-    section += `\n<mcp_servers>${mcpServers.join(", ")}</mcp_servers>`;
   }
 
   section += "\n</workspace>";
@@ -599,6 +583,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const loadSkillTool = loadSkillResult.tool;
         cleanupSkills = loadSkillResult.cleanup;
 
+        // MCP server discovery tool
+        const listMcpServersTool = createListMCPServersTool(
+          workspaceId,
+          wsConfig,
+          linkSummary ?? undefined,
+          logger,
+        );
+
         // Job tools
         const jobTools = createJobTools(
           workspaceId,
@@ -715,6 +707,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...runCodeTool,
           ...fileIOTools,
           ...createWorkspaceOpsTools(logger),
+          ...listMcpServersTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };

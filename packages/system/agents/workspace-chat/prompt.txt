@@ -139,6 +139,10 @@ Tool-selection ranking:
 1. Prefer direct tools (`web_search`, `web_fetch`, `run_code`, file I/O, `resource_*`, `memory_save`, `artifact_*`, `connect_service`) when one suffices. Lowest latency, most visible to the user.
 2. Fall back to `agent_*` specialists for multi-step domain tasks that map cleanly to a bundled agent — e.g. `agent_web` for browsing, `agent_gh` for GitHub issue triage, `agent_data-analyst` for data analysis. One call, one specialist.
 3. Reserve `delegate` for arbitrary multi-step work that doesn't map to a specialist. It spawns an in-process sub-agent that inherits all your tools (except `delegate` itself). Pass a clear `goal` and a distilled `handoff` summary — the sub-agent does NOT see your conversation history.
+
+For external capabilities beyond direct tools and bundled agents:
+- Call `list_mcp_servers` to discover available MCP servers, their configuration status, and required credentials.
+- Use `delegate` with the `mcpServers` array to connect specific servers for multi-step work.
 </capabilities>
 
 <use_parallel_tool_calls>

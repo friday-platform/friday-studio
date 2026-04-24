@@ -145,29 +145,6 @@ describe("formatWorkspaceSection", () => {
     expect(result).toContain("tick (cron */5 * * * *)");
   });
 
-  it("lists MCP server names so Friday can cite tool sources", () => {
-    // Regression: knowledge-base workspace mounts sqlite MCP server with
-    // SQLITE_DB_PATH env. Without this in-context, Friday hallucinated
-    // generic DATABASE_URL / docker-compose advice.
-    const result = formatWorkspaceSection("ws-mcp", makeDetails(), {
-      version: "1.0",
-      workspace: {
-        name: "ws-mcp",
-        tools: {
-          mcp: {
-            servers: {
-              sqlite: {
-                transport: { type: "stdio", command: "npx", args: [] },
-                env: { SQLITE_DB_PATH: "/data/kb.db" },
-              },
-            },
-          },
-        },
-      },
-    } as never);
-    expect(result).toContain("<mcp_servers>sqlite</mcp_servers>");
-  });
-
   it("does not render resources XML block (handled separately via guidance)", () => {
     const result = formatWorkspaceSection("ws-7", makeDetails());
     expect(result).not.toContain("<resources>");
@@ -684,5 +661,11 @@ describe("system prompt ranking rubric", () => {
   it("prompt.txt does not contain do_task references", async () => {
     const prompt = await readPromptText();
     expect(prompt).not.toContain("do_task");
+  });
+
+  it("prompt.txt contains MCP workflow instructions", async () => {
+    const prompt = await readPromptText();
+    expect(prompt).toContain("list_mcp_servers");
+    expect(prompt).toContain("mcpServers");
   });
 });
