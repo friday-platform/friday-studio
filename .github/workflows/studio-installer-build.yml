@@ -156,7 +156,7 @@ jobs:
 
       - name: Upload GitHub artifact (macOS)
         if: matrix.bundle_ext == 'dmg'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.platform }}
           path: ${{ steps.mac-artifact.outputs.path }}
@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload GitHub artifact (Windows)
         if: matrix.bundle_ext == 'exe'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.platform }}
           path: ${{ steps.win-artifact.outputs.path }}
