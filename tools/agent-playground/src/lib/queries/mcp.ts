@@ -34,8 +34,32 @@ const PullUpdateResponseSchema = z.object({ server: MCPServerMetadataSchema });
 
 const DeleteErrorSchema = z.object({ error: z.string() });
 
+const AddCustomResponseSchema = z.object({
+  server: MCPServerMetadataSchema,
+  warning: z.string().optional(),
+});
+
+const AddCustomErrorSchema = z.object({ error: z.string() });
+
 export interface InstallMCPInput {
   registryName: string;
+}
+
+export interface AddCustomMCPInput {
+  name: string;
+  id?: string;
+  description?: string;
+  httpUrl?: string;
+  configJson?: {
+    transport:
+      | { type: "stdio"; command: string; args?: string[] }
+      | { type: "http"; url: string };
+    envVars?: Array<{
+      key: string;
+      description?: string;
+      exampleValue?: string;
+    }>;
+  };
 }
 
 // ==============================================================================
@@ -109,6 +133,37 @@ export function usePullMCPUpdate() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
       queryClient.invalidateQueries({ queryKey: mcpQueries.detail(id).queryKey });
+    },
+  }));
+}
+
+/**
+ * Mutation for adding a custom MCP server.
+ * Wraps `POST /api/mcp-registry/custom` via daemon client.
+ * Invalidates catalog query on success.
+ * Parses error response and throws with message for UI toast display.
+ */
+export function useAddCustomMCPServer() {
+  const client = getDaemonClient();
+  const queryClient = useQueryClient();
+
+  return createMutation(() => ({
+    mutationFn: async (input: AddCustomMCPInput) => {
+      const res = await client.mcp.custom.$post({ json: input });
+      const body = await res.json();
+
+      if (!res.ok) {
+        const parsed = AddCustomErrorSchema.safeParse(body);
+        const msg = parsed.success
+          ? parsed.data.error
+          : `Add custom server failed: ${res.status}`;
+        throw new Error(msg);
+      }
+
+      return AddCustomResponseSchema.parse(body);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mcpQueries.all() });
     },
   }));
 }
