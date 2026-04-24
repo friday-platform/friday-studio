@@ -30,6 +30,7 @@
     "./mcp-registry/translator": "./src/mcp-registry/translator.ts",
     "./mcp-registry/readme-fetcher": "./src/mcp-registry/readme-fetcher.ts",
     "./mcp-registry/config-validator": "./src/mcp-registry/config-validator.ts",
+    "./mcp-registry/custom-parser": "./src/mcp-registry/custom-parser.ts",
     "./mcp-registry/resolvers": "./src/mcp-registry/resolvers/index.ts",
     "./streaming": "./src/streaming/stream-emitters.ts",
     "./agent-context": "./src/agent-context/index.ts",
