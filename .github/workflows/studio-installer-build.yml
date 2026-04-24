@@ -32,7 +32,7 @@ jobs:
             target: x86_64-apple-darwin
             bundle_ext: dmg
           - platform: windows
-            os: windows-latest-8-cores
+            os: windows-latest
             target: x86_64-pc-windows-msvc
             bundle_ext: exe
 
