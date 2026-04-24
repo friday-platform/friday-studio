@@ -23,7 +23,7 @@ fn process_exists(pid: u32) -> bool {
         use windows_sys::Win32::Foundation::CloseHandle;
         unsafe {
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if handle == 0 {
+            if handle.is_null() {
                 return false;
             }
             CloseHandle(handle);
