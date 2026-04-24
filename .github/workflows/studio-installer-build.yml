@@ -1,0 +1,108 @@
+name: studio-installer-build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/studio-installer/**'
+  workflow_dispatch:
+
+env:
+  GCS_BUCKET: friday-production-studio-artifact
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm
+            os: macos-14
+            target: aarch64-apple-darwin
+            bundle_ext: dmg
+          - platform: macos-intel
+            os: macos-13
+            target: x86_64-apple-darwin
+            bundle_ext: dmg
+          - platform: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle_ext: exe
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/studio-installer/src-tauri
+
+      - name: Install npm dependencies
+        working-directory: apps/studio-installer
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: apps/studio-installer
+        run: npm run build -- --target ${{ matrix.target }}
+
+      - name: Locate DMG (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        id: mac-artifact
+        shell: bash
+        run: |
+          path=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/dmg -name "*.dmg" | head -1)
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$path")" >> "$GITHUB_OUTPUT"
+
+      - name: Locate NSIS installer (Windows)
+        if: matrix.bundle_ext == 'exe'
+        id: win-artifact
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem "apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*-setup.exe" | Select-Object -First 1
+          "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($f.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload to GCS (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        run: |
+          gsutil cp "${{ steps.mac-artifact.outputs.path }}" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/${{ steps.mac-artifact.outputs.name }}"
+          gsutil cp "${{ steps.mac-artifact.outputs.path }}" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/FridayStudioInstaller-latest.dmg"
+
+      - name: Upload to GCS (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          gsutil cp "${{ steps.win-artifact.outputs.path }}" "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/${{ steps.win-artifact.outputs.name }}"
+          gsutil cp "${{ steps.win-artifact.outputs.path }}" "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/FridayStudioInstaller-latest.exe"

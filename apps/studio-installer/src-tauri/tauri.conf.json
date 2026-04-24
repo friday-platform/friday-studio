@@ -1,0 +1,44 @@
+{
+  "productName": "Friday Studio Installer",
+  "version": "0.1.0",
+  "identifier": "ai.hellofriday.installer",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1421",
+    "beforeDevCommand": "npm run vite:dev",
+    "beforeBuildCommand": "npm run vite:build"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "hardenedRuntime": true,
+      "signingIdentity": null,
+      "entitlements": "entitlements.plist"
+    },
+    "windows": {
+      "nsis": { "installMode": "currentUser", "startMenuFolder": "Friday", "languages": ["en-US"] },
+      "webviewInstallMode": { "type": "embedBootstrapper" }
+    }
+  },
+  "plugins": {},
+  "app": {
+    "windows": [
+      {
+        "title": "Friday Studio Installer",
+        "width": 640,
+        "height": 520,
+        "resizable": false,
+        "fullscreen": false
+      }
+    ],
+    "security": { "csp": null }
+  }
+}

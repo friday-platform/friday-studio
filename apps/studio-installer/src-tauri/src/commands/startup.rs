@@ -1,0 +1,143 @@
+use std::fs;
+use std::path::PathBuf;
+
+fn scripts_dir() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+    Ok(home.join(".friday").join("local").join("scripts"))
+}
+
+#[cfg(unix)]
+fn generate_unix_script(install_dir: &str) -> String {
+    format!(
+        r#"#!/bin/bash
+export FRIDAY_HOME="$HOME/.friday/local"
+
+mkdir -p "$FRIDAY_HOME/pids"
+
+# Phase 1 — backends
+nohup "{install_dir}/atlas" >> "$FRIDAY_HOME/atlas.log" 2>&1 &
+echo $! > "$FRIDAY_HOME/pids/atlas.pid"
+
+nohup "{install_dir}/link" >> "$FRIDAY_HOME/link.log" 2>&1 &
+echo $! > "$FRIDAY_HOME/pids/link.pid"
+
+# Wait for backends
+for i in $(seq 1 30); do
+  curl -sf http://localhost:8080/health > /dev/null 2>&1 && break
+  sleep 1
+done
+
+for i in $(seq 1 30); do
+  curl -sf http://localhost:3100/health > /dev/null 2>&1 && break
+  sleep 1
+done
+
+# Phase 2 — frontends
+nohup "{install_dir}/agent-playground" >> "$FRIDAY_HOME/agent-playground.log" 2>&1 &
+echo $! > "$FRIDAY_HOME/pids/agent-playground.pid"
+
+nohup "{install_dir}/pty-server" >> "$FRIDAY_HOME/pty-server.log" 2>&1 &
+echo $! > "$FRIDAY_HOME/pids/pty-server.pid"
+
+nohup "{install_dir}/webhook-tunnel" >> "$FRIDAY_HOME/webhook-tunnel.log" 2>&1 &
+echo $! > "$FRIDAY_HOME/pids/webhook-tunnel.pid"
+
+# Wait for Studio port
+for i in $(seq 1 30); do
+  nc -z localhost 5200 2>/dev/null && break
+  sleep 1
+done
+
+open "http://localhost:5200"
+"#,
+        install_dir = install_dir
+    )
+}
+
+#[cfg(windows)]
+fn generate_windows_script(install_dir: &str) -> String {
+    format!(
+        r#"@echo off
+set FRIDAY_HOME=%USERPROFILE%\.friday\local
+mkdir "%FRIDAY_HOME%\pids" 2>nul
+
+REM Phase 1 — backends
+start /B "" "{install_dir}\atlas.exe" >> "%FRIDAY_HOME%\atlas.log" 2>&1
+for /f %%i in ('powershell -command "Get-Process -Name atlas | Select-Object -Last 1 -ExpandProperty Id"') do echo %%i > "%FRIDAY_HOME%\pids\atlas.pid"
+
+start /B "" "{install_dir}\link.exe" >> "%FRIDAY_HOME%\link.log" 2>&1
+for /f %%i in ('powershell -command "Get-Process -Name link | Select-Object -Last 1 -ExpandProperty Id"') do echo %%i > "%FRIDAY_HOME%\pids\link.pid"
+
+REM Wait for backends
+:wait_atlas
+powershell -command "try {{ Invoke-WebRequest -Uri http://localhost:8080/health -UseBasicParsing -ErrorAction Stop | Out-Null; exit 0 }} catch {{ exit 1 }}"
+if errorlevel 1 (
+    timeout /t 1 /nobreak > nul
+    goto wait_atlas
+)
+
+:wait_link
+powershell -command "try {{ Invoke-WebRequest -Uri http://localhost:3100/health -UseBasicParsing -ErrorAction Stop | Out-Null; exit 0 }} catch {{ exit 1 }}"
+if errorlevel 1 (
+    timeout /t 1 /nobreak > nul
+    goto wait_link
+)
+
+REM Phase 2 — frontends
+start /B "" "{install_dir}\agent-playground.exe" >> "%FRIDAY_HOME%\agent-playground.log" 2>&1
+start /B "" "{install_dir}\pty-server.exe" >> "%FRIDAY_HOME%\pty-server.log" 2>&1
+start /B "" "{install_dir}\webhook-tunnel.exe" >> "%FRIDAY_HOME%\webhook-tunnel.log" 2>&1
+
+REM Wait for Studio port and open browser
+:wait_studio
+powershell -command "(New-Object System.Net.Sockets.TcpClient).Connect('localhost', 5200)"
+if errorlevel 1 (
+    timeout /t 1 /nobreak > nul
+    goto wait_studio
+)
+
+start "" "http://localhost:5200"
+"#,
+        install_dir = install_dir
+    )
+}
+
+#[tauri::command]
+pub fn create_startup_script(install_dir: String) -> Result<String, String> {
+    let scripts = scripts_dir()?;
+    fs::create_dir_all(&scripts)
+        .map_err(|e| format!("Failed to create scripts dir: {e}"))?;
+
+    #[cfg(unix)]
+    {
+        let script_path = scripts.join("start-studio.sh");
+        let content = generate_unix_script(&install_dir);
+        fs::write(&script_path, content.as_bytes())
+            .map_err(|e| format!("Failed to write startup script: {e}"))?;
+
+        // Make executable
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&script_path)
+            .map_err(|e| format!("Cannot stat script: {e}"))?
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms)
+            .map_err(|e| format!("Cannot chmod script: {e}"))?;
+
+        Ok(script_path.to_string_lossy().into_owned())
+    }
+
+    #[cfg(windows)]
+    {
+        let script_path = scripts.join("start-studio.bat");
+        let content = generate_windows_script(&install_dir);
+        fs::write(&script_path, content.as_bytes())
+            .map_err(|e| format!("Failed to write startup script: {e}"))?;
+        Ok(script_path.to_string_lossy().into_owned())
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        Err("Unsupported platform for startup script generation".to_string())
+    }
+}
