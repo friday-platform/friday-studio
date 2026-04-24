@@ -26,6 +26,7 @@
     MarkdownRendered,
     markdownToHTML,
   } from "@atlas/ui";
+  import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import { writable } from "svelte/store";
   import DOMPurify from "dompurify";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
@@ -299,6 +300,14 @@
               {/each}
             </div>
           </section>
+        {/if}
+
+        <!-- Credentials -->
+        {#if server.configTemplate}
+          <McpCredentialsPanel
+            serverId={server.id}
+            configTemplate={server.configTemplate}
+          />
         {/if}
 
         <!-- Upstream info -->

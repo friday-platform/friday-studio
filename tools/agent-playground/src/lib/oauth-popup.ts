@@ -11,6 +11,28 @@ export const OAuthCallbackMessageSchema = z.object({
 export type OAuthCallbackMessage = z.infer<typeof OAuthCallbackMessageSchema>;
 
 /**
+ * Builds the OAuth authorization URL for the given provider.
+ * Includes the `redirect_uri` pointing to the playground's `/oauth/callback` route.
+ */
+export function getOAuthUrl(provider: string): string {
+  const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
+  const url = new URL(`/api/link/v1/oauth/authorize/${provider}`, EXTERNAL_DAEMON_URL);
+  url.searchParams.set("redirect_uri", callbackUrl.href);
+  return url.href;
+}
+
+/**
+ * Builds the app-install authorization URL for the given provider.
+ * Includes the `redirect_uri` pointing to the playground's `/oauth/callback` route.
+ */
+export function getAppInstallUrl(provider: string): string {
+  const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
+  const url = new URL(`/api/link/v1/app-install/${provider}/authorize`, EXTERNAL_DAEMON_URL);
+  url.searchParams.set("redirect_uri", callbackUrl.href);
+  return url.href;
+}
+
+/**
  * Opens a centered popup window for OAuth authorization.
  * Points at the daemon's OAuth authorize endpoint with a redirect_uri
  * back to the playground's `/oauth/callback` route.
@@ -18,11 +40,7 @@ export type OAuthCallbackMessage = z.infer<typeof OAuthCallbackMessageSchema>;
  * @returns The popup window reference, or `null` if blocked by the browser.
  */
 export function startOAuthFlow(provider: string): Window | null {
-  const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
-  const url = new URL(`/api/link/v1/oauth/authorize/${provider}`, EXTERNAL_DAEMON_URL);
-  url.searchParams.set("redirect_uri", callbackUrl.href);
-
-  return openCenteredPopup(url.href);
+  return openCenteredPopup(getOAuthUrl(provider));
 }
 
 /**
@@ -33,11 +51,7 @@ export function startOAuthFlow(provider: string): Window | null {
  * @returns The popup window reference, or `null` if blocked by the browser.
  */
 export function startAppInstallFlow(provider: string): Window | null {
-  const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
-  const url = new URL(`/api/link/v1/app-install/${provider}/authorize`, EXTERNAL_DAEMON_URL);
-  url.searchParams.set("redirect_uri", callbackUrl.href);
-
-  return openCenteredPopup(url.href);
+  return openCenteredPopup(getAppInstallUrl(provider));
 }
 
 /**

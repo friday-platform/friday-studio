@@ -13,12 +13,8 @@
   import { Button, MarkdownRendered, markdownToHTML } from "@atlas/ui";
   import { browser } from "$app/environment";
   import DOMPurify from "dompurify";
-  import {
-    listenForOAuthCallback,
-    startAppInstallFlow,
-    startOAuthFlow,
-  } from "$lib/oauth-popup.ts";
-  import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url.ts";
+  import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
+  import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
   import { z } from "zod";
 
   // ─── Types ───────────────────────────────────────────────────────────────
@@ -61,30 +57,10 @@
 
   let details = $state<ProviderDetails | null>(null);
   let error = $state<string | null>(null);
-  let popupBlocked = $state(false);
   let connected = $state(false);
-
-  // API-key form state
-  let apiKeyLabel = $state("");
-  let apiKeyFields = $state<Record<string, string>>({});
-  let apiKeySubmitting = $state(false);
-  let apiKeyError = $state<string | null>(null);
   let apiKeyExpanded = $state(false);
 
-  // ─── Derived ───────────────────────────────────────────────────────────────
-
-  const secretFields = $derived.by(() => {
-    if (!details?.secretSchema) return [];
-    const parsed = SecretSchemaShape.safeParse(details.secretSchema);
-    if (!parsed.success) return [];
-    const properties = parsed.data.properties ?? {};
-    const required = new Set(parsed.data.required ?? []);
-    return Object.keys(properties).map((key) => ({
-      key,
-      label: secretKeyToLabel(key),
-      required: required.has(key),
-    }));
-  });
+  const connect = useCredentialConnect(provider);
 
   // ─── Fetch provider details ──────────────────────────────────────────────────
 
@@ -123,125 +99,25 @@
 
   // ─── OAuth / app-install listeners ───────────────────────────────────────────
 
-  let cleanupListener: (() => void) | undefined;
-
   $effect(() => {
     if (!browser || !provider) return;
 
-    cleanupListener = listenForOAuthCallback(() => {
+    const cleanup = connect.listenForCallback(() => {
       connected = true;
       onConnected?.();
-    }, provider);
+    });
 
-    return () => cleanupListener?.();
+    return () => cleanup();
   });
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  function handleOAuth() {
-    popupBlocked = false;
-    const popup = startOAuthFlow(provider);
-    if (!popup || popup.closed) {
-      popupBlocked = true;
-    }
-  }
-
-  function handleOAuthFallback() {
-    // Full-page redirect fallback when popup is blocked
-    const url = startOAuthFlow(provider);
-    // startOAuthFlow returns the popup window; for fallback we need the URL
-    // Reconstruct it manually
-    const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
-    const target = new URL(`/api/link/v1/oauth/authorize/${provider}`, getDaemonUrl());
-    target.searchParams.set("redirect_uri", callbackUrl.href);
-    globalThis.location.href = target.href;
-  }
-
-  function handleAppInstall() {
-    popupBlocked = false;
-    const popup = startAppInstallFlow(provider);
-    if (!popup || popup.closed) {
-      popupBlocked = true;
-    }
-  }
-
-  function handleAppInstallFallback() {
-    const callbackUrl = new URL("/oauth/callback", globalThis.location.origin);
-    const target = new URL(`/api/link/v1/app-install/${provider}/authorize`, getDaemonUrl());
-    target.searchParams.set("redirect_uri", callbackUrl.href);
-    globalThis.location.href = target.href;
-  }
-
-  async function handleApiKeySubmit(e: SubmitEvent) {
-    e.preventDefault();
-    if (!details) return;
-
-    const label = apiKeyLabel.trim();
-    if (!label) {
-      apiKeyError = "Label is required";
-      return;
-    }
-
-    const missing = secretFields.filter((f) => f.required && !apiKeyFields[f.key]?.trim());
-    if (missing.length > 0) {
-      apiKeyError = `Required: ${missing.map((f) => f.label).join(", ")}`;
-      return;
-    }
-
-    const secret: Record<string, string> = {};
-    for (const field of secretFields) {
-      const value = apiKeyFields[field.key]?.trim();
-      if (value) secret[field.key] = value;
-    }
-
-    apiKeySubmitting = true;
-    apiKeyError = null;
-
-    try {
-      const res = await fetch(`/api/daemon/api/link/v1/credentials/apikey`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, label, secret }),
-      });
-
-      if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
-        const msg =
-          typeof body === "object" &&
-          body !== null &&
-          "message" in body &&
-          typeof (body as { message: unknown }).message === "string"
-            ? (body as { message: string }).message
-            : `HTTP ${res.status}`;
-        apiKeyError = msg;
-        return;
-      }
-
+  async function handleApiKeySubmit(label: string, secret: Record<string, string>) {
+    await connect.submitApiKey(label, secret);
+    if (!connect.error) {
       connected = true;
       onConnected?.();
-    } catch (e) {
-      apiKeyError = e instanceof Error ? e.message : String(e);
-    } finally {
-      apiKeySubmitting = false;
     }
-  }
-
-  function getDaemonUrl(): string {
-    return EXTERNAL_DAEMON_URL;
-  }
-
-  function secretKeyToLabel(key: string): string {
-    const upperWords = new Set(["api", "id", "url", "uri", "sql", "ssh"]);
-    return key
-      .split("_")
-      .map((w) =>
-        upperWords.has(w.toLowerCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1),
-      )
-      .join(" ");
-  }
-
-  function isSensitiveField(key: string): boolean {
-    return /password|secret|token|key/i.test(key);
   }
 </script>
 
@@ -280,27 +156,27 @@
     {/if}
 
     {#if details.type === "oauth"}
-      <Button variant="primary" size="small" onclick={handleOAuth}>
+      <Button variant="primary" size="small" onclick={connect.startOAuth}>
         Connect {details.displayName}
       </Button>
-      {#if popupBlocked}
+      {#if connect.popupBlocked && connect.blockedUrl}
         <div class="popup-blocked">
           <p>Popup was blocked by your browser.</p>
-          <button class="fallback-link" onclick={handleOAuthFallback}>
+          <a href={connect.blockedUrl} class="fallback-link">
             Continue in this tab instead
-          </button>
+          </a>
         </div>
       {/if}
     {:else if details.type === "app_install"}
-      <Button variant="primary" size="small" onclick={handleAppInstall}>
+      <Button variant="primary" size="small" onclick={connect.startAppInstall}>
         Install {details.displayName}
       </Button>
-      {#if popupBlocked}
+      {#if connect.popupBlocked && connect.blockedUrl}
         <div class="popup-blocked">
           <p>Popup was blocked by your browser.</p>
-          <button class="fallback-link" onclick={handleAppInstallFallback}>
+          <a href={connect.blockedUrl} class="fallback-link">
             Continue in this tab instead
-          </button>
+          </a>
         </div>
       {/if}
     {:else if details.type === "apikey"}
@@ -313,58 +189,13 @@
           Enter API key for {details.displayName}
         </Button>
       {:else}
-        <form class="apikey-form" onsubmit={handleApiKeySubmit}>
-          <div class="field">
-            <label for="apikey-label">Label</label>
-            <input
-              id="apikey-label"
-              type="text"
-              bind:value={apiKeyLabel}
-              placeholder="e.g., Work Account"
-              disabled={apiKeySubmitting}
-              required
-            />
-          </div>
-
-          {#each secretFields as field (field.key)}
-            <div class="field">
-              <label for="apikey-{field.key}">{field.label}</label>
-              <input
-                id="apikey-{field.key}"
-                type={isSensitiveField(field.key) ? "password" : "text"}
-                bind:value={apiKeyFields[field.key]}
-                placeholder={field.required
-                  ? `Enter ${field.label.toLowerCase()}`
-                  : `${field.label} (optional)`}
-                disabled={apiKeySubmitting}
-                required={field.required}
-              />
-            </div>
-          {/each}
-
-          {#if apiKeyError}
-            <div class="form-error">{apiKeyError}</div>
-          {/if}
-
-          <div class="form-actions">
-            <Button
-              variant="secondary"
-              size="small"
-              onclick={() => (apiKeyExpanded = false)}
-              disabled={apiKeySubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="small"
-              type="submit"
-              disabled={apiKeySubmitting}
-            >
-              {apiKeySubmitting ? "Connecting…" : "Connect"}
-            </Button>
-          </div>
-        </form>
+        <CredentialSecretForm
+          secretSchema={details.secretSchema ?? {}}
+          submitting={connect.submitting}
+          error={connect.error}
+          onSubmit={handleApiKeySubmit}
+          onCancel={() => (apiKeyExpanded = false)}
+        />
       {/if}
     {:else}
       <Button variant="secondary" size="small" disabled>
