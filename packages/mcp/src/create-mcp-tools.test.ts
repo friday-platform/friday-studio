@@ -719,6 +719,78 @@ describe("createMCPTools", () => {
     expect(slowClose).toHaveBeenCalledTimes(1);
   });
 
+  it("prefixes tool keys with toolPrefix when provided", async () => {
+    mockCreateMCPClient.mockResolvedValue({
+      tools: vi
+        .fn()
+        .mockResolvedValue({
+          "get-activity": { description: "Fetch an activity" },
+          "list-activities": { description: "List activities" },
+        }),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const configs: Record<string, MCPServerConfig> = {
+      strava: { transport: { type: "stdio", command: "echo", args: [] } },
+    };
+
+    const result = await createMCPTools(configs, fakeLogger, { toolPrefix: "strava" });
+
+    expect(result.tools).toHaveProperty("strava_get-activity");
+    expect(result.tools).toHaveProperty("strava_list-activities");
+    expect(result.tools["strava_get-activity"]).toEqual({ description: "Fetch an activity" });
+    expect(result.tools["strava_list-activities"]).toEqual({ description: "List activities" });
+
+    await result.dispose();
+  });
+
+  it("leaves tool keys unchanged when toolPrefix is omitted", async () => {
+    mockCreateMCPClient.mockResolvedValue({
+      tools: vi.fn().mockResolvedValue({ "get-activity": { description: "Fetch an activity" } }),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const configs: Record<string, MCPServerConfig> = {
+      strava: { transport: { type: "stdio", command: "echo", args: [] } },
+    };
+
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.tools).toHaveProperty("get-activity");
+    expect(result.tools).not.toHaveProperty("strava_get-activity");
+
+    await result.dispose();
+  });
+
+  it("warns on collision when prefixed tool names overlap", async () => {
+    mockCreateMCPClient
+      .mockResolvedValueOnce({
+        tools: vi.fn().mockResolvedValue({ "shared-tool": { description: "from A" } }),
+        close: vi.fn().mockResolvedValue(undefined),
+      })
+      .mockResolvedValueOnce({
+        tools: vi.fn().mockResolvedValue({ "shared-tool": { description: "from B" } }),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+    const configsA: Record<string, MCPServerConfig> = {
+      serverA: { transport: { type: "stdio", command: "echo", args: [] } },
+    };
+    const configsB: Record<string, MCPServerConfig> = {
+      serverB: { transport: { type: "stdio", command: "echo", args: [] } },
+    };
+
+    const resultA = await createMCPTools(configsA, fakeLogger, { toolPrefix: "prefix" });
+    const resultB = await createMCPTools(configsB, fakeLogger, { toolPrefix: "prefix" });
+
+    // Both prefixed to "prefix_shared-tool" — second set overwrites first
+    expect(resultA.tools).toHaveProperty("prefix_shared-tool");
+    expect(resultB.tools).toHaveProperty("prefix_shared-tool");
+
+    await resultA.dispose();
+    await resultB.dispose();
+  });
+
   describe("stdio arg placeholder expansion", () => {
     // Regression: Friday kept hallucinating absolute paths like
     // `/Users/yena/.atlas/...` when the real user was `yenaoh`. Expanding

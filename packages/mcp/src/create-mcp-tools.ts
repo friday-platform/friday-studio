@@ -39,6 +39,8 @@ export interface MCPToolsResult {
 export interface CreateMCPToolsOptions {
   /** Signal to abort connection attempts early (e.g., on agent cancellation). */
   signal?: AbortSignal;
+  /** Prefix all tool keys with `{toolPrefix}_` in the returned tools map. */
+  toolPrefix?: string;
 }
 
 /**
@@ -69,8 +71,11 @@ export async function createMCPTools(
       clients.push(connected.client);
 
       const filtered = filterTools(connected.tools, config.tools);
+      const prefixed = options?.toolPrefix
+        ? prefixToolKeys(filtered, options.toolPrefix)
+        : filtered;
 
-      const clobbered = Object.keys(filtered).filter((name) => name in allTools);
+      const clobbered = Object.keys(prefixed).filter((name) => name in allTools);
       if (clobbered.length > 0) {
         logger.warn(`MCP tool name collision: server "${serverId}" overwrites existing tools`, {
           operation: "mcp_connect",
@@ -79,7 +84,7 @@ export async function createMCPTools(
         });
       }
 
-      Object.assign(allTools, filtered);
+      Object.assign(allTools, prefixed);
 
       logger.info(`Connected MCP server: ${serverId}`, {
         operation: "mcp_connect",
@@ -278,4 +283,13 @@ function filterTools(
     filtered[name] = tool;
   }
   return filtered;
+}
+
+/** Prefix every key in a tools map with `{prefix}_`. Descriptions are unmodified. */
+function prefixToolKeys(tools: Record<string, Tool>, prefix: string): Record<string, Tool> {
+  const prefixed: Record<string, Tool> = {};
+  for (const [name, tool] of Object.entries(tools)) {
+    prefixed[`${prefix}_${name}`] = tool;
+  }
+  return prefixed;
 }
