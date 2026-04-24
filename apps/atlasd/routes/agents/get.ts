@@ -58,7 +58,7 @@ getAgent.get(
       const registry = c.get("app").getAgentRegistry();
       const agent = await registry.getAgent(id);
       if (!agent) {
-        // Fallback: user agents (Python WASM) are not AtlasAgent instances.
+        // Fallback: user agents (SDK/NATS clients) are not AtlasAgent instances.
         // registry.getAgent() explicitly returns undefined for them (see registry.ts:122-131).
         // Check getUserAgentSummary before giving up.
         const summary = registry.getUserAgentSummary(id);

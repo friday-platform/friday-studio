@@ -1784,7 +1784,10 @@ export class WorkspaceRuntime {
   ): Promise<AgentResult> {
     // Resolve agent source location from disk
     const agentSource = await this.userAdapter.loadAgent(userAgentId);
-    const sourceLocation = path.join(agentSource.metadata.sourceLocation, "agent-js");
+    const sourceLocation = path.join(
+      agentSource.metadata.sourceLocation,
+      agentSource.metadata.entrypoint ?? "agent.py",
+    );
 
     // Resolve workspace skills when the agent opts in
     let resolvedSkills: AgentSkill[] | undefined;
@@ -1928,19 +1931,16 @@ export class WorkspaceRuntime {
     // Inject built-in bash tool so code agents can shell out
     mcpTools.bash = createBashTool();
 
-    // Merge skills metadata into agent config when resolved
+    // Inject workDir for claude-code agents that discover skills from disk
     let agentConfig = opts.config;
-    if (resolvedSkills) {
+    if (resolvedSkills && skillsTempDir) {
       const existingWorkDir =
         agentConfig && typeof agentConfig === "object"
           ? (agentConfig as Record<string, unknown>).workDir
           : undefined;
-      agentConfig = {
-        ...agentConfig,
-        skills: resolvedSkills.map((s) => ({ name: s.name, description: s.description })),
-        // Only set workDir if we created a temp dir (don't overwrite FSM's clone path)
-        ...(skillsTempDir && !existingWorkDir && { workDir: skillsTempDir }),
-      };
+      if (!existingWorkDir) {
+        agentConfig = { ...agentConfig, workDir: skillsTempDir };
+      }
     }
 
     const executor = this.options.agentExecutor ?? this.codeAgentExecutor;
@@ -1981,6 +1981,11 @@ export class WorkspaceRuntime {
         agentConfig,
         agentLlmConfig: agentSource.metadata.llm,
         outputSchema: opts.outputSchema,
+        skills: resolvedSkills?.map((s) => ({
+          name: s.name,
+          description: s.description,
+          instructions: s.instructions,
+        })),
       });
     } finally {
       await dispose();

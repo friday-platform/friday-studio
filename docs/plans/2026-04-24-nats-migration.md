@@ -5,6 +5,21 @@
 
 ---
 
+## Phase Status
+
+| Phase | Description | Status |
+|---|---|---|
+| 1 | NATS Server Management | ✅ Complete |
+| 2 | Python Agent SDK Rewrite | ✅ Complete |
+| 3 | Process Agent Executor | ✅ Complete |
+| 4 | Remove FSM Code Actions | ✅ Complete |
+| 5 | Session Events via NATS JetStream | ✅ Complete |
+| 6 | Signal Routing via NATS | ✅ Complete |
+| 7 | TypeScript Agent SDK | ✅ Complete |
+| 8 | Agent Registration Protocol | ✅ Complete |
+
+---
+
 ## Problem Statement
 
 Three separate concerns are fused in the current design:
@@ -34,6 +49,7 @@ The daemon manages a `nats-server` subprocess — zero external infrastructure f
 | WIT interface | `packages/sdk-python/wit/agent.wit` | Replaced by NATS subjects |
 | `_bridge.py` (WIT shim) | `packages/sdk-python/friday_agent_sdk/_bridge.py` | Replaced by NATS entry point |
 | WASM build step | `deno task agent build` / componentize-py / jco | No longer needed |
+| `packages/sdk-python/` | in-repo Python SDK (WASM model) | Deleted — SDK lives at `~/tempest/agent-sdk` |
 | `SessionStreamRegistry` (in-memory) | `apps/atlasd/src/session-stream-registry.ts` | Replaced by NATS JetStream |
 | `writing-friday-agents` skill | `.claude/skills/writing-friday-agents/` | Rewritten for NATS model (Phase 2) |
 
@@ -55,14 +71,17 @@ The daemon manages a `nats-server` subprocess — zero external infrastructure f
 All subjects are scoped to prevent cross-session access.
 
 ```
+# Agent registration (one-shot — see Phase 8)
+agents.validate.{validateId}        → publish (agent → daemon), registration handshake
+
 # Agent capability back-channel (scoped per session)
 caps.{sessionId}.llm.generate       → request/reply
 caps.{sessionId}.http.fetch         → request/reply
 caps.{sessionId}.tools.call         → request/reply
 caps.{sessionId}.tools.list         → request/reply
 
-# Agent execution result
-agents.{sessionId}.result           → publish (agent → daemon)
+# Agent execution (request/reply)
+agents.{sessionId}.execute          → request/reply (daemon → agent)
 
 # Session lifecycle events (JetStream durable)
 sessions.{sessionId}.events         → publish (daemon OR agent → subscribers)
@@ -73,9 +92,307 @@ signals.{workspaceId}.{signalId}    → publish (HTTP handler → runtime)
 # Session control
 sessions.{sessionId}.cancel         → publish (HTTP → runtime)
 
-# Code executor (replaces WorkerExecutor — see Phase 4)
-exec.run                            → request/reply (daemon → executor service)
+# Code executor (removed in Phase 4)
+# exec.run                          → removed with WorkerExecutor
 ```
+
+---
+
+## NATS Protocol Reference
+
+Holistic view of what the daemon facilitates over NATS. Organized by who initiates each message and what the daemon is responsible for at that step.
+
+### Daemon as Publisher
+
+| Subject | When | Payload |
+|---|---|---|
+| `agents.{sessionId}.execute` | Agent invocation start | `{ prompt: string, context: SerializedAgentContext }` |
+| `signals.{workspaceId}.{signalId}` | HTTP trigger or cron fire | `{ payload, sessionId, streamId, userId }` |
+| `sessions.{sessionId}.cancel` | `DELETE /api/sessions/:id` | `{}` |
+
+### Daemon as Subscriber (wildcard)
+
+| Subject | Subscriber pattern | Daemon action |
+|---|---|---|
+| `agents.validate.*` | `agents.validate.*` | Receive agent metadata on registration; write metadata.json |
+| `caps.*.llm.generate` | `caps.*.llm.generate` | Extract sessionId from subject[1]; route to session's LLM config |
+| `caps.*.http.fetch` | `caps.*.http.fetch` | Extract sessionId; forward outbound HTTP; return response |
+| `caps.*.tools.call` | `caps.*.tools.call` | Extract sessionId; forward to session's MCP tool call handler |
+| `caps.*.tools.list` | `caps.*.tools.list` | Extract sessionId; return tools available to this session |
+| `sessions.*.events` | `sessions.*.events` (JetStream) | Persist to session history; fan out to SSE subscribers |
+| `signals.{workspaceId}.*` | Per-workspace pattern | Route to matching workspace runtime |
+
+### Protocol Flows
+
+#### Registration (Phase 8)
+
+```
+CLI / HTTP                Daemon                   Agent subprocess
+  │                         │                           │
+  ├─ POST /agents/register ─►                           │
+  │                         ├─ gen validateId           │
+  │                         ├─ spawn <entrypoint>       │
+  │                         │   ATLAS_VALIDATE_ID=id    │
+  │                         │   NATS_URL=...            │
+  │                         │                           ├─ detect ATLAS_VALIDATE_ID
+  │                         │                           ├─ connect NATS
+  │                         │                           ├─ publish agents.validate.{id}
+  │   ◄── 201 { agentId } ──┤   ◄── metadata ──────────┤
+  │                         ├─ SHA256(entrypoint file)  ├─ exit
+  │                         ├─ write metadata.json      │
+  │                         ├─ reload registry          │
+```
+
+**Open question:** validate response vs agent metadata format — whether the SDK publishes the full `@agent(...)` decorator payload or a minimal `{ id, version, entrypoint }` subset. TBD when implementing Phase 8.
+
+#### Invocation
+
+```
+WorkspaceRuntime          Daemon                   Agent subprocess
+  │                         │                           │
+  ├─ ProcessAgentExecutor   │                           │
+  │   .execute(...)         │                           │
+  │                         ├─ capRegistry.register(sid, ctx)
+  │                         ├─ infer cmd from entrypoint extension
+  │                         ├─ spawn <cmd> <entrypoint>
+  │                         │   NATS_URL, ATLAS_SESSION_ID=sid
+  │                         │                           ├─ connect NATS
+  │                         │                           ├─ subscribe agents.{sid}.execute
+  │                         ├─ nc.request agents.{sid}.execute ──►
+  │                         │   { prompt, context }     │
+  │                         │                           ├─ call handler(prompt, ctx)
+  │   [capability calls interleaved — see below]        │
+  │                         │   ◄── { tag, val } ───────┤
+  │                         ├─ capRegistry.unregister(sid)
+  │   ◄── AgentResult ──────┤
+  │                         ├─ kill process
+```
+
+#### Capability: LLM
+
+Agent calls `ctx.llm.generate(...)` → SDK sends NATS request to `caps.{sid}.llm.generate`.
+
+Daemon's wildcard subscriber (`CapabilityHandlerRegistry`):
+1. Extract `sid = subject.split(".")[1]`
+2. Lookup session context from registry
+3. Call LLM via `agentLlmConfig` (model, temperature, etc. from metadata.json `llm` field or workspace default)
+4. Serialize response to JSON; reply
+
+**Error:** `{ "error": "message" }` in reply payload → SDK raises `LlmError`.
+
+Current limitation: streaming LLM responses are not supported — the entire generation is buffered and returned in one reply. Streaming would require a different subject pattern (e.g. `caps.{sid}.llm.stream.*`) and is deferred.
+
+#### Capability: HTTP
+
+Agent calls `ctx.http.fetch(url, options)` → NATS request to `caps.{sid}.http.fetch`.
+
+Daemon makes outbound HTTP call, serializes `{ status, headers, body }` as reply. Enforces allowlist if configured (TBD — currently unrestricted).
+
+#### Capability: Tools (MCP)
+
+Agent calls `ctx.tools.list()` → `caps.{sid}.tools.list` → daemon returns MCP tools available to this session.
+
+Agent calls `ctx.tools.call(name, args)` → `caps.{sid}.tools.call` → daemon routes to session's MCP client.
+
+MCP server config comes from `metadata.json` `mcp` field (agent-declared servers) merged with workspace-level MCP config.
+
+#### Skills Access
+
+Agent declares `use_workspace_skills: true` in `@agent(...)` decorator.
+
+At invocation, before spawning the subprocess, daemon:
+1. Reads workspace's assigned skill IDs from config
+2. Fetches skill content from local skill store (`~/.atlas/skills/`)
+3. Serializes as `context.skills: Record<string, string>` (skill name → markdown content)
+
+Skills are injected **once at invocation time** — no NATS round-trip per skill. Agent accesses via `ctx.skills`. This is a pull-on-entry model.
+
+**Open question:** exact serialization path for skill content (full SKILL.md content? frontmatter stripped?). TBD in Phase 8 implementation.
+
+#### Session Events (Stream)
+
+Agents publish text/tool-call deltas directly to `sessions.{sid}.events` (no daemon round-trip):
+
+```python
+await nc.publish(f"sessions.{session_id}.events", json.dumps({
+    "type": "data-text-delta", "data": {"text": "..."}
+}).encode())
+```
+
+Daemon JetStream subscriber receives, persists, and fans out to SSE connections. Same subject used for daemon-published lifecycle events (`step:start`, `step:complete`, etc.).
+
+### SDK Location
+
+The Python agent SDK lives at `~/tempest/agent-sdk` (external repo, separate release cadence). This plan covers only the **daemon-side protocol contract**. SDK implementation details (how `_bridge.py` connects NATS, how `_context.py` calls caps subjects) are external to this repo.
+
+Protocol contract = the subjects the daemon subscribes to, the payload shapes it accepts, and the response shapes it produces. Any conformant NATS client in any language can implement the SDK side.
+
+---
+
+## Protocol Design Reference
+
+This section documents the full protocol model, workspace.yml interaction, platform tools, and skills — derived from design sessions after the initial phases shipped.
+
+### The Five Channels
+
+Every agent execution uses exactly five NATS subjects:
+
+```
+agents.{sessionId}.execute       ← daemon → agent  (request/reply)
+                                    "here's your prompt + context, go"
+
+caps.{sessionId}.llm.generate    ← agent → daemon  (request/reply)
+caps.{sessionId}.http.fetch      ← agent → daemon  (request/reply)
+caps.{sessionId}.tools.call      ← agent → daemon  (request/reply)
+caps.{sessionId}.tools.list      ← agent → daemon  (request/reply)
+
+sessions.{sessionId}.events      ← agent → daemon  (publish, no reply)
+                                    "here's a streaming text delta"
+```
+
+### Execute Payload Shape
+
+```json
+{
+  "prompt": "summarize this document...",
+  "context": {
+    "session": {
+      "id": "sess_abc",
+      "workspace_id": "grilled_xylem",
+      "user_id": "user_123",
+      "datetime": "2026-04-24T..."
+    },
+    "env":    { "SOME_API_KEY": "..." },
+    "config": { "workDir": "/tmp/...", "agentSpecificField": "..." },
+    "skills": [
+      { "name": "summarizer", "description": "...", "instructions": "..." }
+    ],
+    "llm_config": { "model": "claude-sonnet-4-6", "temperature": 0.3 },
+    "output_schema": { ... }
+  }
+}
+```
+
+`context.skills` is only present when `useWorkspaceSkills: true` in `metadata.json` and the workspace has skills configured. Each entry contains the full instruction text — agents do not read from disk.
+
+### Capability Proxying
+
+The `CapabilityHandlerRegistry` holds four long-lived wildcard NATS subscribers registered at daemon startup. When `ProcessAgentExecutor.execute()` runs, it calls `capabilityRegistry.register(sessionId, ctx)` to bind that session's LLM config, MCP tool functions, and stream emitter.
+
+When an agent calls `ctx.llm.generate(...)`, that becomes a NATS request to `caps.{sid}.llm.generate`. The daemon's wildcard subscriber:
+1. Extracts `sid` from `subject.split(".")[1]`
+2. Looks up the registered session context
+3. Calls the real LLM via the session's `agentLlmConfig` (from `metadata.json`)
+4. Serializes the full response as one reply (no streaming)
+
+HTTP and tools follow the same pattern. The agent **never talks to any provider directly** — all I/O is proxied.
+
+### Platform Tools (memory_save, etc.)
+
+Platform tools (memory_save, memory_read, fs_read_file, bash, etc.) are **not proxied through NATS subjects**. They flow through a different path.
+
+`executeCodeAgent()` always injects an `atlas-platform` MCP server:
+```typescript
+const mcpConfigs = {
+  "atlas-platform": getAtlasPlatformServerConfig(),
+  // + workspace.yml tools.mcp.servers
+  // + metadata.json mcp servers (highest precedence, last-write-wins)
+};
+const { tools: mcpTools } = await createMCPTools(mcpConfigs, logger);
+```
+
+`getAtlasPlatformServerConfig()` returns `{ transport: { type: "http", url: "http://localhost:8080/mcp" } }` — the daemon itself. The full call chain for `ctx.tools.call("memory_save", {...})`:
+
+```
+Agent subprocess
+  └─ NATS request → caps.{sid}.tools.call
+        └─ CapabilityHandlerRegistry → mcpToolCall(name, args)
+              └─ mcpTools["memory_save"].execute(args)
+                    └─ HTTP POST → http://localhost:8080/mcp  (atlas-platform MCP server)
+                          └─ daemon MCP handler → memory API → database
+```
+
+This is intentionally circular: the MCP client is ephemeral and per-session (lives in the daemon's capability registry context), while the MCP server is the daemon's permanent `/mcp` endpoint. They are structurally independent even though they run in the same process.
+
+`workspace.yml`'s `tools.mcp.servers` entries are merged in alongside `atlas-platform`. Agent-declared `metadata.json` mcp servers take highest precedence.
+
+### workspace.yml Interaction
+
+#### The `agents:` block
+
+```yaml
+agents:
+  my-summarizer:
+    type: user
+    agent: summarizer-agent       # matches id in metadata.json
+    description: "Summarizes docs"
+    prompt: "Focus on action items"
+    env:
+      OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+```
+
+`type: user` is the NATS subprocess path. The other types (`llm`, `system`, `atlas`) go through the MCP orchestrator — they never touch `ProcessAgentExecutor`.
+
+#### Three things workspace.yml controls for user agents
+
+**1. `prompt` — workspace-level overlay**
+Extracted via `extractAgentConfigPrompt()`. Lower precedence than the FSM action's own `prompt`. Final prompt assembled as:
+```
+action.prompt            (highest — FSM action's task)
+  + agentConfigPrompt    (workspace.yml default instructions)
+  + context              (signal data + FSM documents + temporal facts)
+```
+
+Lets you specialize a generic agent per workspace without editing its code.
+
+**2. `env` — resolved credential env vars**
+`agentConfig.env` is `Record<string, string | LinkCredentialRef>`. The runtime calls `resolveEnvValues()` to expand `${{ secrets.X }}` references before passing them as the subprocess environment. If `env` is omitted, the daemon's full `process.env` passes through.
+
+**3. Routing**
+`resolveRuntimeAgentId()` converts `type: user` entries to `user:{agentId}`, routing them to `executeCodeAgent()` instead of the MCP orchestrator.
+
+#### Two-tier config system
+
+| Source | Controls |
+|---|---|
+| `metadata.json` `llm` field | LLM model/provider/temperature for `ctx.llm.generate()` |
+| `metadata.json` `mcp` field | MCP servers available for `ctx.tools.*` |
+| `metadata.json` `useWorkspaceSkills` | Whether workspace skills are injected |
+| `workspace.yml` `prompt` | Task/instruction text prepended to the agent's prompt |
+| `workspace.yml` `env` | Environment variables the subprocess receives |
+
+The **agent author** controls the model via `@agent(llm={"model": "..."})` — not the workspace operator. `workspace.yml` has no `llm:` field on `UserAgentConfigSchema` intentionally.
+
+### Skills Injection
+
+#### Current model
+
+When `metadata.json` has `useWorkspaceSkills: true`:
+1. Runtime reads `workspace.yml`'s `skills:` entries (inline + global store refs)
+2. Fetches global skills from `SkillStorage` (`~/.atlas/skills/`)
+3. Passes skills to the subprocess via the execute payload as `context.skills` (array of `{name, description, instructions}`)
+
+Skills are injected **once at invocation time** — pull-on-entry. No NATS round-trip per skill, no dynamic skill requests during execution.
+
+#### claude-code agents also get filesystem materialization
+
+For agents using the `claude-code` provider (which discovers SKILL.md files on disk), the runtime additionally writes skills to `{workDir}/.claude/skills/{name}/SKILL.md`. The `workDir` field in `context.config` points to either the FSM's cloned repo (for pipeline agents) or a temp directory. NATS subprocess agents (Python, TypeScript) receive the inline text in `context.skills` instead and should ignore `workDir`.
+
+#### Skill shape in the payload
+
+```json
+{
+  "skills": [
+    {
+      "name": "code-reviewer",
+      "description": "Reviews code for correctness and clarity",
+      "instructions": "When reviewing code, focus on..."
+    }
+  ]
+}
+```
+
+Frontmatter is stripped — agents receive the body only. Skill name is the plain name, not the `namespace/name` storage key (an internal detail the agent doesn't need).
 
 ---
 
@@ -129,134 +446,27 @@ export class NatsManager {
 
 ---
 
-## Phase 2: Python Agent SDK Rewrite
+## Phase 2: Python Agent SDK Rewrite ✅
 
 **Goal:** `friday_agent_sdk` becomes a NATS client. No WASM, no build step. Public API identical.
 
-**Files changed (all in `packages/sdk-python/friday_agent_sdk/`):**
+**Status:** Complete. The SDK is now at `~/tempest/agent-sdk` (external repo). `packages/sdk-python/` was deleted from this repo.
 
-### `_bridge.py` → NATS entry point
+**Protocol contract delivered:**
+- `_bridge.py`: connects `NATS_URL`, subscribes `agents.{ATLAS_SESSION_ID}.execute`, single-shot, exits after `nc.drain()`
+- `_context.py`: `caps.{sid}.llm.generate`, `caps.{sid}.http.fetch`, `caps.{sid}.tools.call/list` via NATS request/reply
+- `sessions.{sid}.events` published directly by agent for stream events
+- Sync and async handlers both supported via `asyncio.to_thread`
 
-The WIT bridge becomes a NATS subscriber that:
-1. Connects to NATS (`NATS_URL` env var, default `nats://localhost:4222`)
-2. Subscribes to `agents.{sessionId}.execute` (session ID from `ATLAS_SESSION_ID` env var)
-3. Calls handler, returns result
-
-```python
-# friday_agent_sdk/_bridge.py
-import asyncio, json, os
-from nats.aio.client import Client as NATS
-
-async def _run():
-    nc = await NATS().connect(os.environ.get("NATS_URL", "nats://localhost:4222"))
-    session_id = os.environ["ATLAS_SESSION_ID"]
-
-    async def on_execute(msg):
-        payload = json.loads(msg.data)
-        prompt = payload["prompt"]
-        context_raw = payload["context"]
-
-        ctx = build_context(context_raw, nc, session_id)
-        reg = get_registered_agent()
-
-        try:
-            result = await _call_handler(reg.handler, prompt, ctx)
-            response = _serialize_result(result)
-        except Exception as e:
-            response = {"tag": "err", "val": str(e)}
-
-        await msg.respond(json.dumps(response).encode())
-        await nc.drain()
-
-    sub = await nc.subscribe(f"agents.{session_id}.execute")
-    # single-shot: handle one message then exit (spawn-per-call)
-    msg = await sub.next_msg(timeout=30)
-    await on_execute(msg)
-
-def run():
-    asyncio.run(_run())
-```
-
-### `_context.py` → NATS capability calls
-
-Capability stubs replace WIT calls with NATS request/reply:
-
-```python
-# friday_agent_sdk/_context.py
-def build_context(raw: dict, nc, session_id: str) -> AgentContext:
-    async def llm_generate(request_json: str) -> str:
-        resp = await nc.request(
-            f"caps.{session_id}.llm.generate",
-            request_json.encode(),
-            timeout=120,
-        )
-        return resp.data.decode()
-
-    async def http_fetch(request_json: str) -> str:
-        resp = await nc.request(
-            f"caps.{session_id}.http.fetch",
-            request_json.encode(),
-            timeout=60,
-        )
-        return resp.data.decode()
-
-    async def stream_emit(chunk: dict) -> None:
-        # Agent publishes directly to session events — no daemon roundtrip
-        await nc.publish(
-            f"sessions.{session_id}.events",
-            json.dumps(chunk).encode(),
-        )
-
-    # ... tools similarly
-    return AgentContext(
-        env=raw.get("env", {}),
-        config=raw.get("config", {}),
-        session=...,
-        llm=Llm(llm_generate, ...),
-        http=Http(http_fetch),
-        tools=Tools(...),
-        stream=StreamEmitter(stream_emit),
-    )
-```
-
-**Sync handler compatibility:**
-Existing handlers are `def execute(prompt, ctx)` (sync). Since the NATS loop is asyncio, wrap sync handlers:
-```python
-async def _call_handler(handler, prompt, ctx):
-    if asyncio.iscoroutinefunction(handler):
-        return await handler(prompt, ctx)
-    return await asyncio.to_thread(handler, prompt, ctx)
-```
-
-**Existing agent.py changes needed:** One line added at the bottom:
-```python
-if __name__ == "__main__":
-    from friday_agent_sdk import run
-    run()
-```
-
-**Remove:**
-- `wit/agent.wit`
-- All `try: from wit_world.imports import ...` blocks
-- `pyproject.toml` build dependencies: `componentize-py`, `wasmtime`
-- `componentize-py` call in `deno task agent build`
-
-**Update skill: `.claude/skills/writing-friday-agents/`**
-This skill is the canonical guide for writing Python agents. It currently documents the WASM build flow (`deno task agent build`, `agent.js`, WIT bindings). Rewrite in full for the NATS model:
-- Entry point is `agent.py`, no build step
-- `if __name__ == "__main__": from friday_agent_sdk import run; run()` replaces the WASM export
-- `ctx.llm`, `ctx.http`, `ctx.tools`, `ctx.stream` API unchanged — just works async-natively now
-- Remove all references to `componentize-py`, `wasmtime`, `agent.js`, `source:` WASM path in `workspace.yml`
-- Update `workspace.yml` agent registration example: `source: ./agents/my-agent/agent.py`
-- Update references in `SKILL.md`, `references/capabilities.md`, `references/sandbox-constraints.md`, `references/structured-output.md`
-
-**Tests:** All existing tests in `packages/sdk-python/tests/` should pass unchanged — they test the public API and mock the capability layer. Update `conftest.py` to mock NATS instead of WIT.
+SDK internals (how `_bridge.py` works, test patterns, package structure) are now maintained in the external repo — outside the scope of this document.
 
 ---
 
-## Phase 3: Process Agent Executor (Daemon Side)
+## Phase 3: Process Agent Executor (Daemon Side) ✅
 
 **Goal:** Replace `CodeAgentExecutor` (WASM dynamic import) with `ProcessAgentExecutor` (subprocess + NATS capabilities).
+
+**Status:** Complete. Known limitation still pending in Phase 8: `ProcessAgentExecutor` hardcodes `python3` as the spawn command. Polyglot entrypoint inference (`.py` → `python3`, `.ts` → `deno run`, binary → direct exec) requires `entrypoint` field in `metadata.json` — see Phase 8.
 
 **Files:**
 - `packages/workspace/src/process-agent-executor.ts` — new (replaces code-agent-executor.ts)
@@ -520,19 +730,136 @@ The `AgentContext` TypeScript interface mirrors the Python `AgentContext` exactl
 
 ---
 
+## Phase 8: Agent Registration Protocol
+
+**Goal:** Replace the WASM `buildAgent` pipeline in `POST /api/agents/register` with a NATS validate handshake. Record `entrypoint` + `hash` in `metadata.json`. Enable polyglot spawn.
+
+### What's still broken
+
+- `apps/atlasd/routes/agents/register.ts` imports `buildAgent` from `@atlas/workspace/agent-builder` — the WASM compile pipeline that no longer applies.
+- `packages/workspace/src/agent-builder.ts` still exists but has no role in the subprocess model.
+- `apps/atlasd/src/process-agent-executor.ts` hardcodes `python3`; can't spawn TypeScript or compiled agents.
+- `packages/core/src/agent-loader/adapters/user-adapter.ts` `AgentMetadataFileSchema` has no `entrypoint` or `hash` fields.
+
+### metadata.json schema extension
+
+Add to `AgentMetadataFileSchema` (`packages/core/src/agent-loader/adapters/user-adapter.ts`):
+
+```typescript
+const AgentMetadataFileSchema = z.object({
+  id: z.string(),
+  version: z.string(),
+  displayName: z.string().optional(),
+  description: z.string(),
+  entrypoint: z.string(),           // ← new: filename relative to agent dir (e.g. "agent.py")
+  hash: z.string().optional(),      // ← new: SHA256 hex of entrypoint at registration time
+  llm: AgentLLMConfigSchema.optional(),
+  mcp: z.record(z.string(), MCPServerConfigSchema).optional(),
+  useWorkspaceSkills: z.boolean().optional(),
+});
+```
+
+Existing agents without `entrypoint` fall back to `"agent.py"` during a transition period; the field becomes required after Phase 8 lands.
+
+### Validate handshake
+
+The daemon uses NATS to ask the agent for its own metadata rather than parsing it via a build tool. The SDK detects `ATLAS_VALIDATE_ID` at startup and exits after publishing.
+
+**Daemon side (`apps/atlasd/routes/agents/register.ts`):**
+
+```typescript
+// 1. Generate a validate ID
+const validateId = nanoid();
+
+// 2. Subscribe to the validate reply before spawning (avoid race)
+const sub = nc.subscribe(`agents.validate.${validateId}`, { max: 1 });
+
+// 3. Spawn agent in validate mode
+const proc = spawn(inferCommand(entrypointPath), [entrypointPath], {
+  env: { ATLAS_VALIDATE_ID: validateId, NATS_URL: natsUrl },
+});
+
+// 4. Await metadata with timeout
+const msg = await Promise.race([
+  sub[Symbol.asyncIterator]().next(),
+  timeout(10_000, "validate timeout"),
+]);
+const metadata = AgentValidateResponseSchema.parse(JSON.parse(msg.value.string()));
+
+// 5. Hash + write metadata.json
+const hash = await sha256File(entrypointPath);
+await writeMetadataJson(destDir, { ...metadata, entrypoint: entrypointFile, hash });
+
+// 6. Reload registry
+await agentRegistry.reload();
+```
+
+**SDK side (agent-sdk repo):** SDK's `run()` checks `ATLAS_VALIDATE_ID` before subscribing to execute. If present: connect NATS, publish registered agent metadata to `agents.validate.{id}`, drain, exit. No execute handler invoked.
+
+### Polyglot spawn
+
+`ProcessAgentExecutor.execute()` currently:
+```typescript
+const proc = spawn("python3", [agentPath], { ... });
+```
+
+Post-Phase 8, reads `metadata.entrypoint` extension:
+```typescript
+function inferCommand(entrypoint: string): string {
+  if (entrypoint.endsWith(".py")) return "python3";
+  if (entrypoint.endsWith(".ts")) return "deno";
+  return entrypoint; // assume compiled binary, exec directly
+}
+
+// For .ts entrypoints, prepend `--allow-net --allow-env` to args
+```
+
+`agentPath` changes from `path.join(sourceLocation, "agent.py")` to `path.join(sourceLocation, metadata.entrypoint)`.
+
+### Files to change
+
+| File | Change |
+|---|---|
+| `packages/core/src/agent-loader/adapters/user-adapter.ts` | Add `entrypoint`, `hash` to `AgentMetadataFileSchema` |
+| `apps/atlasd/routes/agents/register.ts` | Replace `buildAgent` with validate handshake |
+| `apps/atlasd/routes/agents/register.test.ts` | Update tests for new register flow |
+| `apps/atlasd/src/process-agent-executor.ts` | Polyglot command inference; read `entrypoint` from metadata |
+| `packages/workspace/src/runtime.ts` | Use `metadata.entrypoint` instead of joining `"agent.py"` |
+| `packages/workspace/src/agent-builder.ts` | **Delete** |
+| `packages/workspace/package.json` | Remove `"./agent-builder"` export |
+| `apps/atlas-cli/src/cli/commands/agent/register.ts` | Remove WASM-specific flags (`--sdk-path`, `--wit-dir`) |
+
+### Skills injection (hook into invocation)
+
+When `metadata.useWorkspaceSkills === true`, `ProcessAgentExecutor.execute()` fetches workspace skill content before serializing context:
+
+```typescript
+let skills: Record<string, string> = {};
+if (agentMetadata.useWorkspaceSkills) {
+  skills = await loadWorkspaceSkills(workspaceId);  // reads ~/.atlas/skills/ or skill registry
+}
+// skills injected into serializeAgentContext output as context.skills
+```
+
+**Open question:** exact serialization path (full SKILL.md vs. body-only, skill name as key vs. namespace/name). TBD.
+
+---
+
 ## Sequencing & Dependencies
 
 ```
-Phase 1 (NATS infra)
-  └─ Phase 2 (Python SDK) ── can test independently with nats-server running
-  └─ Phase 3 (Process executor) ── depends on Phase 1 + 2
-       └─ Phase 4 (Remove code actions) ── depends on Phase 3 + workspace audit
-  └─ Phase 5 (Session events) ── depends on Phase 1; parallel with 2/3
-  └─ Phase 6 (Signal routing) ── depends on Phase 1 + 5
-       └─ Phase 7 (TS SDK) ── depends on Phase 1 + 3 (protocol established)
+✅ Phase 1 (NATS infra)
+  └─ ✅ Phase 2 (Python SDK — external)
+  └─ ✅ Phase 3 (Process executor) — hardcoded python3, fixed in Phase 8
+       └─ ✅ Phase 4 (Remove code actions)
+  └─ ✅ Phase 5 (Session events)
+  └─ ✅ Phase 6 (Signal routing)
+       └─ ✅ Phase 7 (TS SDK)
+
+🔲 Phase 8 (Registration protocol) ── depends on 1 + 3 (metadata.json + executor wiring)
 ```
 
-Phases 2, 5, 6 can proceed in parallel once Phase 1 is done. Phase 4 is gated on workspace audit + Phase 3 completion.
+Phases 1–7 are shipped. Phase 8 is unblocked — depends only on existing NATS infrastructure.
 
 ---
 
@@ -602,8 +929,10 @@ Phases 2, 5, 6 can proceed in parallel once Phase 1 is done. Phase 4 is gated on
 
 ## Out of Scope (Future)
 
-- **Phase 8: Subprocess pool** — N warm Python processes on `agents.pool.execute` queue group; restores startup latency without breaking statelessness. Gate on performance data from Phase 3 rollout.
-- NATS-based auth/AuthN (use NATS accounts/nkeys for agent identity)
+- **Subprocess pool** — N warm processes on `agents.pool.execute` queue group; restores startup latency without breaking statelessness. Gate on performance data from Phase 8 rollout.
+- **Streaming LLM capability** — `caps.{sid}.llm.stream.*` subject pattern for token-by-token streaming back to the agent. Requires design work on NATS-based streaming (JetStream push or multiple replies).
+- **Agent identity / capability allowlists** — per-agent NATS accounts or subject-level ACLs to prevent agents from subscribing to other sessions' caps subjects.
+- NATS-based auth/AuthN (NATS accounts/nkeys for agent identity)
 - NATS cluster / multi-region
 - Moving agent registry to NATS KV store
 - Full multi-daemon horizontal scaling (Phase 6 enables it, but load balancing and workspace affinity are separate work)

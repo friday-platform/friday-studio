@@ -22,6 +22,8 @@ export interface AgentContext {
   env: Record<string, string>;
   /** Agent configuration from workspace.yml. */
   config: Record<string, unknown>;
+  /** Workspace skills injected at invocation time (useWorkspaceSkills: true). */
+  skills: AgentSkill[];
   /** Session metadata (id, workspaceId, userId, datetime). */
   session: SessionData;
   llm: {
@@ -48,6 +50,12 @@ export interface AgentContext {
     /** Publish a streaming event to the session event stream. */
     emit(eventType: string, payload: unknown): void;
   };
+}
+
+export interface AgentSkill {
+  name: string;
+  description: string;
+  instructions: string;
 }
 
 export interface AgentMeta {

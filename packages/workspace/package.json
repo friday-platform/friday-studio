@@ -9,8 +9,7 @@
     "./manager": "./src/manager.ts",
     "./signal-to-stream": "./src/signal-to-stream.ts",
     "./storage": "./src/storage.ts",
-    "./types": "./src/types.ts",
-    "./agent-builder": "./src/agent-builder.ts"
+    "./types": "./src/types.ts"
   },
   "main": "./mod.ts",
   "dependencies": {

@@ -23,6 +23,8 @@ const AgentMetadataFileSchema = z.object({
   llm: AgentLLMConfigSchema.optional(),
   mcp: z.record(z.string(), MCPServerConfigSchema).optional(),
   useWorkspaceSkills: z.boolean().optional(),
+  entrypoint: z.string().optional(),
+  hash: z.string().optional(),
 });
 
 /**
@@ -115,6 +117,7 @@ export class UserAdapter implements AgentAdapter {
         llm: metadata.llm,
         mcp: metadata.mcp,
         useWorkspaceSkills: metadata.useWorkspaceSkills,
+        entrypoint: metadata.entrypoint,
       },
     };
   }

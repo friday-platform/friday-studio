@@ -6,7 +6,7 @@
 
 import type { NatsConnection } from "nats";
 import { StringCodec } from "nats";
-import type { AgentContext, SessionData, ToolDefinition } from "./types.ts";
+import type { AgentContext, AgentSkill, SessionData, ToolDefinition } from "./types.ts";
 
 const sc = StringCodec();
 
@@ -44,9 +44,18 @@ export function buildContext(
       ? (raw.config as Record<string, unknown>)
       : {};
 
+  const skills: AgentSkill[] = Array.isArray(raw.skills)
+    ? (raw.skills as Array<Record<string, unknown>>).map((s) => ({
+        name: String(s.name ?? ""),
+        description: String(s.description ?? ""),
+        instructions: String(s.instructions ?? ""),
+      }))
+    : [];
+
   return {
     env,
     config,
+    skills,
     session,
     llm: {
       async generate(request) {

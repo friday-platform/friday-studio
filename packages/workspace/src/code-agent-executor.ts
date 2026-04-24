@@ -37,6 +37,12 @@ export interface CodeAgentStreamEmitter {
 }
 
 /** Host function bindings provided per-execution */
+export interface AgentSkillPayload {
+  name: string;
+  description: string;
+  instructions: string;
+}
+
 export interface CodeAgentExecutorOptions {
   logger: Logger;
   streamEmitter?: CodeAgentStreamEmitter;
@@ -48,6 +54,8 @@ export interface CodeAgentExecutorOptions {
   env?: Record<string, string>;
   outputSchema?: Record<string, unknown>;
   timeoutMs?: number;
+  /** Skills to inject into the execute payload. Body-only, frontmatter stripped. */
+  skills?: AgentSkillPayload[];
 }
 
 /** Default execution timeout (3 minutes) */
@@ -507,6 +515,7 @@ export function serializeAgentContext(options: CodeAgentExecutorOptions): string
     },
     llm_config: options.agentLlmConfig,
     output_schema: options.outputSchema,
+    ...(options.skills && options.skills.length > 0 && { skills: options.skills }),
   });
 }
 

@@ -2,12 +2,14 @@ import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { join } from "node:path";
+import process from "node:process";
 import { promisify } from "node:util";
 import { logger } from "@atlas/logger";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { connect, type NatsConnection } from "nats";
 
 const NATS_PORT = 4222;
+const NATS_MONITOR_PORT = 8222;
 const READY_TIMEOUT_MS = 10_000;
 const READY_POLL_MS = 100;
 
@@ -88,7 +90,12 @@ export class NatsManager {
 
   private spawnServer(binary: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.proc = spawn(binary, ["--port", String(NATS_PORT), "--jetstream"], { stdio: "pipe" });
+      const args = ["--port", String(NATS_PORT), "--jetstream"];
+      if (process.env.ATLAS_NATS_MONITOR === "1") {
+        args.push("--http_port", String(NATS_MONITOR_PORT));
+        logger.info(`NATS monitoring enabled at http://localhost:${NATS_MONITOR_PORT}`);
+      }
+      this.proc = spawn(binary, args, { stdio: "pipe" });
 
       // Reject immediately on exec-level failures (binary not executable, etc.)
       this.proc.once("error", (err) =>

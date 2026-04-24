@@ -33,6 +33,7 @@ export type {
   AgentHandler,
   AgentMeta,
   AgentResult,
+  AgentSkill,
   ErrResult,
   OkResult,
   SessionData,
@@ -45,11 +46,24 @@ let _meta: AgentMeta | null = null;
 let _handler: AgentHandler | null = null;
 
 /**
- * Register an agent handler and auto-run when `ATLAS_SESSION_ID` is set.
+ * Register an agent handler. Auto-runs when env vars are set:
+ *   ATLAS_VALIDATE_ID — validation handshake: publish metadata then exit
+ *   ATLAS_SESSION_ID  — normal execution: handle one request then exit
  */
 export function agent(meta: AgentMeta, handler: AgentHandler): void {
   _meta = meta;
   _handler = handler;
+
+  const validateId = process.env.ATLAS_VALIDATE_ID;
+  if (validateId) {
+    void _validate(validateId).catch((err) => {
+      process.stderr.write(
+        `Agent validate failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    });
+    return;
+  }
 
   const sessionId = process.env.ATLAS_SESSION_ID;
   if (sessionId) {
@@ -82,6 +96,18 @@ export function ok(
  */
 export function err(message: string): ErrResult {
   return { tag: "err", val: message };
+}
+
+async function _validate(validateId: string): Promise<void> {
+  const natsUrl = process.env.NATS_URL ?? "nats://localhost:4222";
+  const nc = await connect({ servers: natsUrl });
+  const meta = _meta;
+  if (!meta) throw new Error("No agent registered");
+  try {
+    nc.publish(`agents.validate.${validateId}`, sc.encode(JSON.stringify(meta)));
+  } finally {
+    await nc.drain();
+  }
 }
 
 async function _run(sessionId: string): Promise<void> {

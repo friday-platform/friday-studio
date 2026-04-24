@@ -30,6 +30,8 @@ export interface AgentSourceData {
     mcp?: Record<string, MCPServerConfig>;
     /** When true, host should resolve workspace skills and pass them to the agent */
     useWorkspaceSkills?: boolean;
+    /** Entrypoint filename relative to sourceLocation (e.g. "agent.py", "agent.ts") */
+    entrypoint?: string;
   };
 }
 
