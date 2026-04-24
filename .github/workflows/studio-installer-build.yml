@@ -92,8 +92,12 @@ jobs:
           echo "WIN_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
 
       - name: Install npm dependencies
-        working-directory: apps/studio-installer
-        run: npm install --ignore-scripts
+        shell: bash
+        run: |
+          mkdir -p /tmp/studio-deps
+          cp apps/studio-installer/package.json apps/studio-installer/package-lock.json /tmp/studio-deps/
+          cd /tmp/studio-deps && npm ci
+          cp -r /tmp/studio-deps/node_modules apps/studio-installer/
 
       - name: Build Tauri app (macOS)
         if: matrix.bundle_ext == 'dmg'
