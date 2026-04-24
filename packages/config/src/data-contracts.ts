@@ -72,7 +72,7 @@ export function deriveDataContracts(config: WorkspaceConfig): DataContract[] {
       const producerAction = state.entry.find(
         (a) => (a.type === "agent" || a.type === "llm") && a.outputType,
       );
-      if (!producerAction || producerAction.type === "code" || producerAction.type === "emit") {
+      if (!producerAction || producerAction.type === "emit") {
         continue;
       }
 

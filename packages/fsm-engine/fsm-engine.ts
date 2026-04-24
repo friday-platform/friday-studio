@@ -78,7 +78,6 @@ import type {
   SignalWithContext,
   TransitionDefinition,
 } from "./types.ts";
-import { WorkerExecutor } from "./worker-executor.ts";
 
 /**
  * Platform tools exposed to FSM LLM steps.
@@ -261,67 +260,6 @@ function findFailStepToolArgs(result: LLMResult): Record<string, unknown> | unde
   return extractToolCallInput(result.toolCalls ?? [], "failStep");
 }
 
-/**
- * Transform code for Function constructor (same as function-executor.worker.ts).
- */
-function transformForExecution(code: string): string {
-  const trimmed = code.trim();
-  if (trimmed.startsWith("export default")) {
-    return trimmed.replace("export default", "const __fn__ =");
-  }
-  return `const __fn__ = ${trimmed}`;
-}
-
-/**
- * Try to parse code, returning the error if it fails.
- */
-function tryParse(code: string): SyntaxError | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    new Function(
-      "context",
-      "event",
-      `${transformForExecution(code)}; return __fn__(context, event);`,
-    );
-    return null;
-  } catch (error) {
-    return error instanceof SyntaxError ? error : null;
-  }
-}
-
-/**
- * Attempt to fix apostrophes in single-quoted strings.
- * Example: 'team's calendar' → "team's calendar"
- */
-function attemptStringQuoteFix(code: string): string | null {
-  // Pattern: 'word's thing' or 'couldn't work' - apostrophe between letters
-  const pattern = /'([^'\\]*[a-zA-Z])'([a-zA-Z][^']*)'/g;
-  const fixed = code.replace(pattern, '"$1\'$2"');
-  return fixed !== code ? fixed : null;
-}
-
-/**
- * Validate and potentially fix function code syntax at compile time.
- * Attempts auto-fix for common LLM mistakes before failing.
- */
-function validateAndFixFunctionSyntax(code: string, functionName: string): string {
-  // Try original code
-  const error = tryParse(code);
-  if (!error) return code;
-
-  // Try auto-fix
-  const fixedCode = attemptStringQuoteFix(code);
-  if (fixedCode && !tryParse(fixedCode)) {
-    logger.info(`Auto-fixed string escaping in function "${functionName}"`);
-    return fixedCode;
-  }
-
-  // Neither worked
-  throw new Error(
-    `Syntax error in function "${functionName}": ${error.message}\n\nFunction code:\n${code}`,
-  );
-}
-
 /** Max characters per tool result when formatting for retry context */
 const MAX_RETRY_TOOL_RESULT_CHARS = 4000;
 
@@ -415,22 +353,6 @@ export type AgentExecutor = (
   options?: { outputSchema?: Record<string, unknown> },
 ) => Promise<AgentSDKExecutionResult>;
 
-/**
- * Executor for compiled code functions (guards, actions, tools).
- * Default implementation uses Deno Web Workers for sandboxed execution.
- * Provide a custom implementation for environments without Deno Workers.
- */
-export interface CodeExecutor {
-  execute(
-    functionCode: string,
-    functionName: string,
-    context: Context,
-    signal: Signal,
-    abortSignal?: AbortSignal,
-  ): Promise<unknown>;
-  dispose?(): void;
-}
-
 export interface FSMEngineOptions {
   llmProvider?: LLMProvider;
   documentStore: DocumentStore;
@@ -443,8 +365,6 @@ export interface FSMEngineOptions {
   artifactStorage?: ArtifactStorageAdapter;
   /** Ledger storage adapter for versioned workspace resources */
   resourceAdapter?: ResourceStorageAdapter;
-  /** Custom code executor for guards, actions, and tools. Defaults to WorkerExecutor (requires Deno). */
-  codeExecutor?: CodeExecutor;
 }
 
 export class FSMEngine {
@@ -457,12 +377,6 @@ export class FSMEngine {
   private _recursionDepth = 0;
   private _compiledSchemas = new Map<string, z.ZodType>();
   private _emittedEvents: EmittedEvent[] = [];
-  private _guardFunctions = new Map<string, string>(); // Store CODE, not compiled fn
-  private _actionFunctions = new Map<string, string>(); // Store CODE, not compiled fn
-  private _ioActionFunctions = new Map<string, string>(); // action-io: runs via _toolExecutor (net, read, env)
-  private _guardExecutor: CodeExecutor;
-  private _actionExecutor: CodeExecutor;
-  private _toolExecutor: CodeExecutor;
   private static readonly MAX_RECURSION_DEPTH = 10;
   private static readonly MAX_PROCESSED_SIGNALS = 100;
   private _processedSignalsCount = 0;
@@ -473,20 +387,6 @@ export class FSMEngine {
     private options: FSMEngineOptions,
   ) {
     this._currentState = _definition.initial;
-
-    // Documents will be loaded in initialize() to avoid race condition
-    // between definition and persistent storage
-
-    const ce = options.codeExecutor;
-    this._guardExecutor = ce ?? new WorkerExecutor({ timeout: 1000, functionType: "guard" });
-    this._actionExecutor = ce ?? new WorkerExecutor({ timeout: 10000, functionType: "action" });
-    this._toolExecutor =
-      ce ??
-      new WorkerExecutor({
-        timeout: 180000,
-        functionType: "tool",
-        permissions: { net: true, read: true, env: true },
-      });
   }
 
   async initialize(): Promise<void> {
@@ -532,30 +432,6 @@ export class FSMEngine {
         } catch (error) {
           throw new Error(
             `Failed to compile schema for document type "${typeName}": ${stringifyError(error)}`,
-          );
-        }
-      }
-    }
-
-    // Load and compile guard/action functions
-    if (this._definition.functions) {
-      for (const [name, func] of Object.entries(this._definition.functions)) {
-        try {
-          // Validate syntax and auto-fix common LLM escaping issues
-          const validatedCode = validateAndFixFunctionSyntax(func.code, name);
-
-          if (func.type === "guard") {
-            this._guardFunctions.set(name, validatedCode);
-          } else if (func.type === "action-io") {
-            this._ioActionFunctions.set(name, validatedCode);
-          } else {
-            this._actionFunctions.set(name, validatedCode);
-          }
-
-          logger.debug(`Compiled ${func.type} function: ${name}`);
-        } catch (error) {
-          throw new Error(
-            `Failed to compile ${func.type} function "${name}": ${stringifyError(error)}`,
           );
         }
       }
@@ -726,53 +602,8 @@ export class FSMEngine {
       ? transitionsOrSingle
       : [transitionsOrSingle];
 
-    // Find first transition whose guards all pass (or first without guards)
-    let selectedTransition: TransitionDefinition | null = null;
-    for (const t of transitions) {
-      if (!t.guards || t.guards.length === 0) {
-        // Unconditional transition
-        selectedTransition = t;
-        break;
-      }
-
-      // Check all guards
-      let allGuardsPassed = true;
-      for (const guardName of t.guards) {
-        const guardCode = this._guardFunctions.get(guardName);
-        if (!guardCode) {
-          throw new Error(`Guard function "${guardName}" not found`);
-        }
-
-        try {
-          const result = await this._guardExecutor.execute(
-            guardCode,
-            guardName,
-            this.context,
-            sig,
-            sig._context?.abortSignal,
-          );
-          const passed = Boolean(result);
-          logger.debug("Guard evaluated", {
-            guardName,
-            passed,
-            signalType: sig.type,
-            currentState: this._currentState,
-          });
-
-          if (!passed) {
-            allGuardsPassed = false;
-            break;
-          }
-        } catch (error) {
-          throw new Error(`Guard "${guardName}" threw error: ${stringifyError(error)}`);
-        }
-      }
-
-      if (allGuardsPassed) {
-        selectedTransition = t;
-        break;
-      }
-    }
+    // Select first transition (guards removed in Phase 4)
+    const selectedTransition: TransitionDefinition | null = transitions[0] ?? null;
 
     if (!selectedTransition) return; // No valid transition found
 
@@ -1147,7 +978,6 @@ export class FSMEngine {
       deleteDoc: this.makeDeleteDocFn(documents, currentState),
     };
 
-    let codeActionResult: PrepareResult | undefined;
     let llmResultData: FSMActionExecutionEvent["data"]["llmResult"];
 
     // Build OTEL attributes based on action type
@@ -1163,59 +993,6 @@ export class FSMEngine {
     const executeInSpan = async (span: OtelSpan | null) => {
       try {
         switch (action.type) {
-          case "code": {
-            // action-io functions run via _toolExecutor (net, read, env; 180s timeout)
-            const isIoAction = this._ioActionFunctions.has(action.function);
-            const actionCode = isIoAction
-              ? this._ioActionFunctions.get(action.function)
-              : this._actionFunctions.get(action.function);
-            if (!actionCode) {
-              throw new Error(`Action function "${action.function}" not found`);
-            }
-
-            logger.debug("Executing code action", {
-              function: action.function,
-              state: currentState,
-              signalType: sig.type,
-              io: isIoAction,
-            });
-
-            // Pre-load state cache so code actions can use context.stateFilter()
-            await this.preloadStateCache(resultsMap);
-            // Update the snapshot so the worker receives the cache
-            context.results = Object.fromEntries(resultsMap);
-
-            const executor = isIoAction ? this._toolExecutor : this._actionExecutor;
-            try {
-              const returnValue = await executor.execute(
-                actionCode,
-                action.function,
-                context,
-                sig,
-                sig._context?.abortSignal,
-              );
-              codeActionResult = parsePrepareResult(returnValue);
-
-              // Process any stateAppend mutations from the code action
-              const hasPending = resultsMap.has("__pendingStateAppends");
-              if (hasPending) {
-                logger.info("Found pending stateAppend mutations", {
-                  items: resultsMap.get("__pendingStateAppends"),
-                });
-              }
-              await this.applyPendingStateAppends(resultsMap);
-
-              logger.debug("Code action completed", {
-                function: action.function,
-                state: currentState,
-                hasReturnValue: returnValue != null,
-              });
-            } catch (error) {
-              throw new Error(`Action "${action.function}" threw error: ${stringifyError(error)}`);
-            }
-            break;
-          }
-
           case "emit": {
             events.push({ event: action.event, data: action.data });
             logger.debug("Event emitted", { event: action.event, data: action.data });
@@ -1797,11 +1574,7 @@ export class FSMEngine {
         throw error;
       }
 
-      // Code actions produce new prepareResults (or clear them by returning
-      // null). Non-code actions (agent, llm, emit) pass through the incoming
-      // prepareResult so subsequent actions in the same entry sequence still
-      // receive the prepare context (input.config with workDir, streaming, etc.).
-      return action.type === "code" ? codeActionResult : prepareResult;
+      return prepareResult;
     }; // end executeInSpan
 
     return await withOtelSpan("fsm.action", otelAttrs, executeInSpan);
@@ -1814,8 +1587,6 @@ export class FSMEngine {
     switch (action.type) {
       case "agent":
         return action.agentId;
-      case "code":
-        return action.function;
       case "emit":
         return action.event;
       case "llm":
@@ -1933,43 +1704,18 @@ export class FSMEngine {
   }
 
   /**
-   * Build AI SDK Tool objects for LLM action
-   * FSM tools: JSONSchema → Zod → Tool (one conversion)
+   * Build AI SDK Tool objects for LLM action.
    * MCP tools: ephemeral createMCPTools() call — dispose in finally block
    */
   private async buildTools(
     toolNames: string[],
-    context: Context,
-    abortSignal?: AbortSignal,
+    _context: Context,
+    _abortSignal?: AbortSignal,
   ): Promise<{ tools: Record<string, Tool>; dispose: () => Promise<void> }> {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
 
-    const fsmToolNames = toolNames.filter((name) => this._definition.tools?.[name]);
-    const mcpServerIds = toolNames.filter((name) => !this._definition.tools?.[name]);
-
-    // FSM tools: compile code, wrap in Tool
-    for (const toolName of fsmToolNames) {
-      const toolDef = this._definition.tools?.[toolName];
-      if (!toolDef) {
-        throw new Error(`Tool ${toolName} not found in FSM definition`);
-      }
-      const raw: Record<string, unknown> = toolDef.inputSchema;
-      const zodSchema = z.fromJSONSchema(raw);
-
-      tools[toolName] = {
-        description: toolDef.description,
-        inputSchema: zodSchema,
-        execute: (args) =>
-          this._toolExecutor.execute(
-            toolDef.code,
-            toolName,
-            context,
-            { type: "__tool__", data: args },
-            abortSignal,
-          ),
-      };
-    }
+    const mcpServerIds = toolNames;
 
     // MCP tools: always include atlas-platform for ambient capabilities (webfetch,
     // artifacts) even when the action only uses FSM-defined tools. The connection
@@ -2395,11 +2141,7 @@ export class FSMEngine {
     return serializer.toYAML(this.definition);
   }
 
-  stop(): void {
-    this._guardExecutor.dispose?.();
-    this._actionExecutor.dispose?.();
-    this._toolExecutor.dispose?.();
-  }
+  stop(): void {}
 
   /**
    * Reset FSM to initial state without re-initialization

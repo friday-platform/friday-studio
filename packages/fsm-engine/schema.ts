@@ -37,8 +37,6 @@ export const LLMActionSchema = z.object({
   outputType: z.string().optional(),
 });
 
-export const CodeActionSchema = z.object({ type: z.literal("code"), function: z.string() });
-
 export const EmitActionSchema = z.object({
   type: z.literal("emit"),
   event: z.string(),
@@ -59,14 +57,12 @@ export const AgentActionSchema = z.object({
 
 export const ActionSchema = z.discriminatedUnion("type", [
   LLMActionSchema,
-  CodeActionSchema,
   EmitActionSchema,
   AgentActionSchema,
 ]);
 
 export const TransitionDefinitionSchema = z.object({
   target: z.string(),
-  guards: z.array(z.string()).optional(),
   actions: z.array(ActionSchema).optional(),
 });
 
@@ -79,23 +75,10 @@ export const StateDefinitionSchema = z.object({
   type: z.literal("final").optional(),
 });
 
-export const FunctionDefinitionSchema = z.object({
-  type: z.enum(["guard", "action", "action-io"]),
-  code: z.string(),
-});
-
-export const ToolFunctionDefinitionSchema = z.object({
-  description: z.string(),
-  inputSchema: JSONSchemaSchema,
-  code: z.string(),
-});
-
 export const FSMDefinitionSchema = z.object({
   id: z.string(),
   initial: z.string(),
   states: z.record(z.string(), StateDefinitionSchema),
-  functions: z.record(z.string(), FunctionDefinitionSchema).optional(),
-  tools: z.record(z.string(), ToolFunctionDefinitionSchema).optional(),
   documentTypes: z.record(z.string(), JSONSchemaSchema).optional(),
 });
 

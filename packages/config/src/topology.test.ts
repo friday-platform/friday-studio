@@ -50,13 +50,9 @@ function prReviewConfig() {
           id: "pr-code-review-pipeline",
           initial: "idle",
           states: {
-            idle: {
-              entry: [{ type: "code", function: "cleanup" }],
-              on: { "review-pr": { target: "step_clone_repo" } },
-            },
+            idle: { on: { "review-pr": { target: "step_clone_repo" } } },
             step_clone_repo: {
               entry: [
-                { type: "code", function: "prepare_clone" },
                 {
                   type: "agent",
                   agentId: "claude-code",
@@ -65,11 +61,10 @@ function prReviewConfig() {
                 },
                 { type: "emit", event: "ADVANCE" },
               ],
-              on: { ADVANCE: { target: "step_review_pr", guards: ["guard_clone_done"] } },
+              on: { ADVANCE: { target: "step_review_pr" } },
             },
             step_review_pr: {
               entry: [
-                { type: "code", function: "prepare_review" },
                 {
                   type: "agent",
                   agentId: "claude-code",
@@ -78,11 +73,10 @@ function prReviewConfig() {
                 },
                 { type: "emit", event: "ADVANCE" },
               ],
-              on: { ADVANCE: { target: "step_post_review", guards: ["guard_review_done"] } },
+              on: { ADVANCE: { target: "step_post_review" } },
             },
             step_post_review: {
               entry: [
-                { type: "code", function: "prepare_post_review" },
                 {
                   type: "agent",
                   agentId: "claude-code",
@@ -91,7 +85,7 @@ function prReviewConfig() {
                 },
                 { type: "emit", event: "ADVANCE" },
               ],
-              on: { ADVANCE: { target: "completed", guards: ["guard_post_review_done"] } },
+              on: { ADVANCE: { target: "completed" } },
             },
             completed: { type: "final" },
           },
@@ -262,7 +256,7 @@ describe("deriveTopology", () => {
       expect(cloneStep).toBeDefined();
       expect(cloneStep?.metadata).toMatchObject({ type: "agent", agentId: "claude-code" });
 
-      // Idle state has no agent metadata (only code actions)
+      // Idle state has no agent metadata (no entry actions)
       const idleStep = agentNodes.find((n) => n.id.includes("idle"));
       expect(idleStep).toBeDefined();
       expect(idleStep?.metadata).toEqual({});

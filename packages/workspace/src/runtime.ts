@@ -528,59 +528,18 @@ export class WorkspaceRuntime {
 
     if (!SKIP_CHAT_INJECTION.has(this.workspace.id)) {
       // Auto-inject chat signal + handle-chat job for workspace direct chat
+      // Signal payload (chatId, userId, streamId) is available to the agent via signal.data directly.
       const chatFSM = {
         id: `${this.workspace.id}-chat`,
         initial: "idle",
-        documentTypes: {
-          ChatContext: {
-            type: "object",
-            properties: {
-              chatId: { type: "string" },
-              userId: { type: "string" },
-              streamId: { type: "string" },
-            },
-            required: ["userId"],
-          },
-        },
         states: {
-          idle: {
-            on: {
-              chat: {
-                target: "processing",
-                actions: [{ type: "code", function: "storeChatContext" }],
-              },
-            },
-          },
+          idle: { on: { chat: { target: "processing" } } },
           processing: {
             entry: [
               { type: "agent", agentId: "workspace-chat", outputTo: "chat-result" },
               { type: "emit", event: "chat_complete" },
             ],
             on: { chat_complete: { target: "idle" } },
-          },
-        },
-        functions: {
-          storeChatContext: {
-            type: "action",
-            code: `export default function storeChatContext(context, event) {
-  try {
-    context.createDoc({
-      id: 'chat-context',
-      type: 'ChatContext',
-      data: {
-        chatId: event.data.chatId,
-        userId: event.data.userId,
-        streamId: event.data.streamId
-      }
-    });
-  } catch {
-    context.updateDoc('chat-context', {
-      chatId: event.data.chatId,
-      userId: event.data.userId,
-      streamId: event.data.streamId
-    });
-  }
-}`,
           },
         },
       };

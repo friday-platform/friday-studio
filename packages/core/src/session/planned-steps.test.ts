@@ -22,7 +22,7 @@ describe("extractPlannedSteps", () => {
   test("returns empty array for FSM with no agent/LLM actions", () => {
     const def = makeDef({
       states: {
-        idle: { entry: [{ type: "code", function: "setup" }], on: { ADVANCE: { target: "done" } } },
+        idle: { entry: [{ type: "emit", event: "READY" }], on: { ADVANCE: { target: "done" } } },
         done: { type: "final" },
       },
     });
@@ -92,13 +92,12 @@ describe("extractPlannedSteps", () => {
     expect(extractPlannedSteps(def)).toEqual([]);
   });
 
-  test("skips code and emit actions", () => {
+  test("skips emit actions", () => {
     const def = makeDef({
       states: {
         idle: { on: { ADVANCE: { target: "step_1" } } },
         step_1: {
           entry: [
-            { type: "code", function: "prepare" },
             { type: "agent", agentId: "worker", outputTo: "work_result" },
             { type: "emit", event: "done" },
           ],
@@ -154,12 +153,10 @@ describe("extractPlannedSteps", () => {
     ]);
   });
 
-  test("handles array-valued transitions (guarded) by taking first target", () => {
+  test("handles array-valued transitions by taking first target", () => {
     const def = makeDef({
       states: {
-        idle: {
-          on: { ADVANCE: [{ target: "step_1", guards: ["isReady"] }, { target: "fallback" }] },
-        },
+        idle: { on: { ADVANCE: [{ target: "step_1" }, { target: "fallback" }] } },
         step_1: {
           entry: [{ type: "agent", agentId: "primary" }],
           on: { ADVANCE: { target: "completed" } },

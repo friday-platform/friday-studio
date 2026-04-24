@@ -33,8 +33,6 @@ export interface FSMDefinition {
   id: string;
   initial: string;
   states: Record<string, StateDefinition>;
-  functions?: Record<string, FunctionDefinition>;
-  tools?: Record<string, ToolFunctionDefinition>;
   documentTypes?: Record<string, JSONSchema>;
 }
 
@@ -53,11 +51,10 @@ export interface Document {
 
 export interface TransitionDefinition {
   target: string;
-  guards?: string[];
   actions?: Action[];
 }
 
-export type Action = LLMAction | CodeAction | EmitAction | AgentAction;
+export type Action = LLMAction | EmitAction | AgentAction;
 
 export interface LLMAction {
   type: "llm";
@@ -68,11 +65,6 @@ export interface LLMAction {
   outputTo?: string;
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType?: string;
-}
-
-export interface CodeAction {
-  type: "code";
-  function: string;
 }
 
 export interface EmitAction {
@@ -91,22 +83,11 @@ export interface AgentAction {
   prompt?: string;
 }
 
-export interface FunctionDefinition {
-  type: "guard" | "action" | "action-io";
-  code: string;
-}
-
-export interface ToolFunctionDefinition {
-  description: string;
-  inputSchema: JSONSchema;
-  code: string;
-}
-
 export interface Context {
   state: string;
   results: Record<string, Record<string, unknown>>;
   setResult?: (key: string, data: Record<string, unknown>) => void;
-  /** Structured input from a preceding prepare (code) action in the same action sequence */
+  /** Structured input from the triggering signal or a preceding prepare result */
   input?: { task?: string; config?: Record<string, unknown> };
   emit?: (signal: Signal) => Promise<void>;
 
@@ -119,10 +100,6 @@ export interface Context {
   /** @deprecated */
   deleteDoc?: (id: string) => void;
 }
-
-export type GuardFunction = (context: Context, event: Signal) => boolean;
-
-export type ActionFunction = (context: Context, event: Signal) => void | Promise<void>;
 
 export interface Signal {
   type: string;

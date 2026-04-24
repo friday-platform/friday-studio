@@ -1,9 +1,9 @@
 /**
- * Integration test: prepare-as-return-value end-to-end flow.
+ * Integration test: multi-step pipeline with prepare mappings in the plan.
  *
- * Verifies the complete pipeline: compile fixture with prepare mappings →
- * run through harness → data flows via return values (context.input) instead
- * of request documents. Covers engine, compiler, and harness integration.
+ * Verifies that a plan with prepareMappings compiles and runs correctly.
+ * Prepare mappings are inert in the compiler (no code is generated for them)
+ * but the pipeline still executes end-to-end via agent actions.
  *
  * @module
  */
@@ -158,39 +158,9 @@ const agentOverrides = {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("prepare-as-return-value — e2e", () => {
+describe("multi-step pipeline with prepare mappings — e2e", () => {
   it("compiles without errors", () => {
     expect(compiled.success).toBe(true);
-  });
-
-  it("agent action trace includes structured input from prepare return value", async () => {
-    if (!compiled.success) throw new Error("Compile failed");
-
-    const report = await runFSM({
-      fsm: compiled.value.fsm,
-      plan,
-      triggerSignal: "order-placed",
-      agentOverrides,
-    });
-
-    // The send-invoice step has a prepare mapping, so the agent trace
-    // should include input with task and config from the return value
-    const invoiceAgentTraces = report.actionTrace.filter(
-      (t) => t.actionType === "agent" && t.actionId === "invoice-agent" && t.status === "completed",
-    );
-    expect(invoiceAgentTraces).toHaveLength(1);
-
-    const trace = invoiceAgentTraces[0];
-    if (!trace?.input?.config) throw new Error("Expected trace with input and config");
-    expect(trace.input).toBeDefined();
-    expect(trace.input).toHaveProperty("task");
-    expect(trace.input).toHaveProperty("config");
-
-    // Verify the config contains the prepared values
-    const config = trace.input.config;
-    expect(config.recipient).toBe("alice@example.com");
-    expect(config.subtotal).toBe(45); // (10*2) + (25*1)
-    expect(config.currency).toBe("USD");
   });
 
   it("no request documents exist in the document store", async () => {

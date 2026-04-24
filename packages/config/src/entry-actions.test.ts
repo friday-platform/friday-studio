@@ -16,7 +16,6 @@ describe("deriveEntryActions", () => {
   test("extracts mixed action types in declaration order", () => {
     const state: FSMStateDefinition = {
       entry: [
-        { type: "code", function: "prepare_clone" },
         { type: "agent", agentId: "claude-code", outputTo: "clone-output", prompt: "Clone it" },
         { type: "emit", event: "ADVANCE" },
       ],
@@ -26,18 +25,9 @@ describe("deriveEntryActions", () => {
     const result = deriveEntryActions(state);
 
     expect(result).toEqual([
-      { type: "code", name: "prepare_clone" },
       { type: "agent", name: "claude-code", agentId: "claude-code", outputTo: "clone-output" },
       { type: "emit", name: "ADVANCE", event: "ADVANCE" },
     ]);
-  });
-
-  test("extracts single code action", () => {
-    const state: FSMStateDefinition = { entry: [{ type: "code", function: "cleanup" }] };
-
-    const result = deriveEntryActions(state);
-
-    expect(result).toEqual([{ type: "code", name: "cleanup" }]);
   });
 
   test("extracts agent action with outputTo and outputType", () => {
@@ -154,7 +144,7 @@ describe("deriveAllEntryActions", () => {
             initial: "setup",
             states: {
               setup: {
-                entry: [{ type: "code", function: "prepare_env" }],
+                entry: [{ type: "emit", event: "READY" }],
                 on: { READY: { target: "compile" } },
               },
               compile: {
@@ -174,7 +164,9 @@ describe("deriveAllEntryActions", () => {
     const result = deriveAllEntryActions(config);
 
     expect(result.size).toBe(2);
-    expect(result.get("build-pipeline:setup")).toEqual([{ type: "code", name: "prepare_env" }]);
+    expect(result.get("build-pipeline:setup")).toEqual([
+      { type: "emit", name: "READY", event: "READY" },
+    ]);
     expect(result.get("build-pipeline:compile")).toEqual([
       { type: "agent", name: "builder", agentId: "builder" },
       { type: "emit", name: "DONE", event: "DONE" },
@@ -191,7 +183,7 @@ describe("deriveAllEntryActions", () => {
             initial: "step1",
             states: {
               step1: {
-                entry: [{ type: "code", function: "fn_a" }],
+                entry: [{ type: "agent", agentId: "worker-a", prompt: "Do work A" }],
                 on: { NEXT: { target: "done" } },
               },
               done: { type: "final" },
@@ -218,7 +210,9 @@ describe("deriveAllEntryActions", () => {
     const result = deriveAllEntryActions(config);
 
     expect(result.size).toBe(2);
-    expect(result.get("job-a:step1")).toEqual([{ type: "code", name: "fn_a" }]);
+    expect(result.get("job-a:step1")).toEqual([
+      { type: "agent", name: "worker-a", agentId: "worker-a" },
+    ]);
     expect(result.get("job-b:init")).toEqual([{ type: "emit", name: "STARTED", event: "STARTED" }]);
   });
 
@@ -265,7 +259,7 @@ describe("deriveAllEntryActions", () => {
             states: {
               idle: { on: { GO: { target: "work" } } },
               work: {
-                entry: [{ type: "code", function: "do_work" }],
+                entry: [{ type: "agent", agentId: "worker", prompt: "Do work" }],
                 on: { DONE: { target: "cleanup" } },
               },
               cleanup: {
@@ -282,7 +276,9 @@ describe("deriveAllEntryActions", () => {
     const result = deriveAllEntryActions(config);
 
     expect(result.size).toBe(1);
-    expect(result.get("sparse-pipeline:work")).toEqual([{ type: "code", name: "do_work" }]);
+    expect(result.get("sparse-pipeline:work")).toEqual([
+      { type: "agent", name: "worker", agentId: "worker" },
+    ]);
     expect(result.has("sparse-pipeline:idle")).toBe(false);
     expect(result.has("sparse-pipeline:cleanup")).toBe(false);
     expect(result.has("sparse-pipeline:end")).toBe(false);

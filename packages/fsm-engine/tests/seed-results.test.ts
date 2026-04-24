@@ -3,31 +3,11 @@ import type { FSMDefinition } from "../types.ts";
 import { createTestEngine } from "./lib/test-utils.ts";
 
 describe("FSMEngine.seedResults", () => {
-  it("seeded __meta is visible in context.results inside code actions", async () => {
+  it("seeded __meta is visible in engine.results after signal", async () => {
     const fsm: FSMDefinition = {
       id: "seed-visible",
       initial: "idle",
-      states: {
-        idle: {
-          on: { GO: { target: "done", actions: [{ type: "code", function: "check_meta" }] } },
-        },
-        done: { type: "final" },
-      },
-      functions: {
-        check_meta: {
-          type: "action",
-          code: `export default function check_meta(context) {
-            var meta = context.results['__meta'];
-            if (!meta) throw new Error('__meta not found in results');
-            if (meta.repo_root !== '/fake/repo') {
-              throw new Error('repo_root mismatch: ' + meta.repo_root);
-            }
-            if (meta.workspace_id !== 'test-ws') {
-              throw new Error('workspace_id mismatch: ' + meta.workspace_id);
-            }
-          }`,
-        },
-      },
+      states: { idle: { on: { GO: { target: "done" } } }, done: { type: "final" } },
     };
 
     const { engine } = await createTestEngine(fsm);
@@ -70,25 +50,7 @@ describe("FSMEngine.seedResults", () => {
     const fsm: FSMDefinition = {
       id: "seed-merge",
       initial: "idle",
-      states: {
-        idle: {
-          on: { GO: { target: "done", actions: [{ type: "code", function: "check_both" }] } },
-        },
-        done: { type: "final" },
-      },
-      functions: {
-        check_both: {
-          type: "action",
-          code: `export default function check_both(context) {
-            var meta = context.results['__meta'];
-            var extra = context.results['__extra'];
-            if (!meta) throw new Error('__meta not found');
-            if (!extra) throw new Error('__extra not found');
-            if (meta.repo_root !== '/repo') throw new Error('meta.repo_root wrong');
-            if (extra.key !== 'value') throw new Error('extra.key wrong');
-          }`,
-        },
-      },
+      states: { idle: { on: { GO: { target: "done" } } }, done: { type: "final" } },
     };
 
     const { engine } = await createTestEngine(fsm);

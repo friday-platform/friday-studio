@@ -6,56 +6,22 @@ import { userOnboardingFSM } from "./scenarios/user-onboarding.ts";
 
 describe("FSM Engine - Scenarios", () => {
   describe("Order Processing", () => {
-    it("should approve order when inventory is sufficient", async () => {
-      const { engine } = await createTestEngine(orderProcessingFSM, {
-        initialState: "pending",
-        documents: [
-          { id: "order", type: "order", data: { item: "laptop", quantity: 1, status: "pending" } },
-          { id: "inventory", type: "inventory", data: { laptop: 10 } },
-        ],
-      });
+    it("should approve order", async () => {
+      const { engine } = await createTestEngine(orderProcessingFSM, { initialState: "pending" });
 
       await engine.signal({ type: "APPROVE" });
 
       expect(engine.state).toBe("approved");
-      expect(engine.getDocument("order")).toMatchObject({ data: { status: "approved" } });
       expect(engine.emittedEvents).toHaveLength(1);
       expect(engine.emittedEvents[0]).toMatchObject({ event: "order.approved" });
     });
 
-    it("should not approve order when inventory is insufficient", async () => {
-      const { engine } = await createTestEngine(orderProcessingFSM, {
-        initialState: "pending",
-        documents: [
-          {
-            id: "order",
-            type: "order",
-            data: { item: "gold-bar", quantity: 5, status: "pending" },
-          },
-          { id: "inventory", type: "inventory", data: { "gold-bar": 0 } },
-        ],
-      });
-
-      await engine.signal({ type: "APPROVE" });
-
-      // Should stay in pending because guard failed
-      expect(engine.state).toBe("pending");
-      expect(engine.getDocument("order")).toMatchObject({ data: { status: "pending" } });
-      expect(engine.emittedEvents).toHaveLength(0);
-    });
-
     it("should reject order explicitly", async () => {
-      const { engine } = await createTestEngine(orderProcessingFSM, {
-        initialState: "pending",
-        documents: [
-          { id: "order", type: "order", data: { item: "laptop", quantity: 1, status: "pending" } },
-        ],
-      });
+      const { engine } = await createTestEngine(orderProcessingFSM, { initialState: "pending" });
 
       await engine.signal({ type: "REJECT" });
 
       expect(engine.state).toBe("rejected");
-      expect(engine.getDocument("order")).toMatchObject({ data: { status: "rejected" } });
     });
   });
 
@@ -66,23 +32,26 @@ describe("FSM Engine - Scenarios", () => {
       await engine.signal({ type: "COMPLETE_PROFILE", data: { userId: "user-123" } });
 
       expect(engine.state).toBe("active");
-      expect(engine.getDocument("profile")).toMatchObject({ data: { userId: "user-123" } });
       expect(engine.emittedEvents).toHaveLength(1);
       expect(engine.emittedEvents[0]).toMatchObject({ event: "user.onboarded" });
     });
   });
 
   describe("Simple Counter", () => {
-    it("should increment counter", async () => {
-      const { engine } = await createTestEngine(simpleCounterFSM, {
-        initialState: "counting",
-        documents: [{ id: "counter", type: "counter", data: { value: 0 } }],
-      });
+    it("should self-transition on INCREMENT", async () => {
+      const { engine } = await createTestEngine(simpleCounterFSM, { initialState: "counting" });
 
       await engine.signal({ type: "INCREMENT" });
 
       expect(engine.state).toBe("counting");
-      expect(engine.getDocument("counter")).toMatchObject({ data: { value: 1 } });
+    });
+
+    it("should stop on STOP", async () => {
+      const { engine } = await createTestEngine(simpleCounterFSM, { initialState: "counting" });
+
+      await engine.signal({ type: "STOP" });
+
+      expect(engine.state).toBe("done");
     });
   });
 });

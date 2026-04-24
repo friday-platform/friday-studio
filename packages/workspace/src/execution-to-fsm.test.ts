@@ -35,17 +35,6 @@ describe("compileExecutionToFsm", () => {
     expect(transition && !Array.isArray(transition) && transition.target).toBe("step_0_writer");
   });
 
-  it("captures signal payload into a JobInput document on the first transition", () => {
-    const fsm = compileExecutionToFsm("save_entry", baseJob());
-    const idleTransition = fsm.states.idle?.on?.save;
-    const actions =
-      idleTransition && !Array.isArray(idleTransition) ? idleTransition.actions : undefined;
-    expect(actions).toHaveLength(1);
-    expect(actions?.[0]).toMatchObject({ type: "code", function: "storeJobInput" });
-    expect(fsm.functions?.storeJobInput?.code).toContain("createDoc");
-    expect(fsm.documentTypes?.JobInput).toMatchObject({ type: "object" });
-  });
-
   it("chains multiple agents in order with ADVANCE transitions", () => {
     const fsm = compileExecutionToFsm("pipeline", {
       triggers: [{ signal: "go" }],

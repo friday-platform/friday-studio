@@ -13,35 +13,6 @@ describe("FSM Engine - Results Accumulator", () => {
     });
   });
 
-  describe("context.results in code actions", () => {
-    it("is available to code actions", async () => {
-      const fsm: FSMDefinition = {
-        id: "context-results",
-        initial: "idle",
-        states: {
-          idle: {
-            on: { GO: { target: "done", actions: [{ type: "code", function: "assert_results" }] } },
-          },
-          done: { type: "final" },
-        },
-        functions: {
-          assert_results: {
-            type: "action",
-            code: `export default function assert_results(context) {
-              if (typeof context.results !== "object" || context.results === null) {
-                throw new Error("context.results is not an object: " + typeof context.results);
-              }
-            }`,
-          },
-        },
-      };
-
-      const { engine } = await createTestEngine(fsm);
-      await engine.signal({ type: "GO" });
-      expect(engine.state).toEqual("done");
-    });
-  });
-
   describe("results clear on transition to initial state", () => {
     it("clears results when transitioning back to initial state", async () => {
       const fsm: FSMDefinition = {
@@ -50,23 +21,32 @@ describe("FSM Engine - Results Accumulator", () => {
         states: {
           idle: { on: { START: { target: "working" } } },
           working: {
-            entry: [{ type: "code", function: "write_result" }],
+            entry: [{ type: "agent", agentId: "analyzer", outputTo: "analysis" }],
             on: { DONE: { target: "idle" } },
-          },
-        },
-        functions: {
-          write_result: {
-            type: "action",
-            code: `export default function write_result(context) {
-              context.setResult("analysis", { summary: "found stuff" });
-            }`,
           },
         },
       };
 
-      const { engine } = await createTestEngine(fsm);
+      const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
 
-      // Transition to working - write a result
+      const engine = new FSMEngine(fsm, {
+        documentStore: store,
+        scope,
+        agentExecutor: (action: AgentAction, _ctx: Context) => {
+          // Wait for DONE signal before emitting
+          return Promise.resolve({
+            agentId: action.agentId,
+            timestamp: new Date().toISOString(),
+            input: "",
+            ok: true as const,
+            data: { summary: "found stuff" },
+            durationMs: 0,
+          });
+        },
+      });
+      await engine.initialize();
+
+      // Transition to working - agent writes a result
       await engine.signal({ type: "START" });
       expect(engine.state).toEqual("working");
       expect(engine.results).toEqual({ analysis: { summary: "found stuff" } });
@@ -85,19 +65,26 @@ describe("FSM Engine - Results Accumulator", () => {
         initial: "idle",
         states: {
           idle: { on: { START: { target: "working" } } },
-          working: { entry: [{ type: "code", function: "write_result" }] },
-        },
-        functions: {
-          write_result: {
-            type: "action",
-            code: `export default function write_result(context) {
-              context.setResult("report", { title: "test report" });
-            }`,
-          },
+          working: { entry: [{ type: "agent", agentId: "reporter", outputTo: "report" }] },
         },
       };
 
-      const { engine } = await createTestEngine(fsm);
+      const { store, scope } = await createTestEngine(fsm, { initialState: "idle" });
+
+      const engine = new FSMEngine(fsm, {
+        documentStore: store,
+        scope,
+        agentExecutor: (action: AgentAction, _ctx: Context) =>
+          Promise.resolve({
+            agentId: action.agentId,
+            timestamp: new Date().toISOString(),
+            input: "",
+            ok: true as const,
+            data: { title: "test report" },
+            durationMs: 0,
+          }),
+      });
+      await engine.initialize();
 
       await engine.signal({ type: "START" });
       expect(engine.results).toEqual({ report: { title: "test report" } });
@@ -105,51 +92,6 @@ describe("FSM Engine - Results Accumulator", () => {
       await engine.reset();
       expect(engine.state).toEqual("idle");
       expect(engine.results).toEqual({});
-    });
-  });
-
-  describe("context.results reflects pending state inside transaction", () => {
-    it("second code action sees results written by first in same action sequence", async () => {
-      const fsm: FSMDefinition = {
-        id: "results-pending",
-        initial: "idle",
-        states: {
-          idle: {
-            on: {
-              GO: {
-                target: "done",
-                actions: [
-                  { type: "code", function: "write_result" },
-                  { type: "code", function: "read_result" },
-                ],
-              },
-            },
-          },
-          done: { type: "final" },
-        },
-        functions: {
-          write_result: {
-            type: "action",
-            code: `export default function write_result(context) {
-              context.setResult("step1", { value: 42 });
-            }`,
-          },
-          read_result: {
-            type: "action",
-            code: `export default function read_result(context) {
-              const step1 = context.results.step1;
-              if (!step1 || step1.value !== 42) {
-                throw new Error("Expected step1.value to be 42, got: " + JSON.stringify(step1));
-              }
-            }`,
-          },
-        },
-      };
-
-      const { engine } = await createTestEngine(fsm);
-      await engine.signal({ type: "GO" });
-      expect(engine.state).toEqual("done");
-      expect(engine.results).toEqual({ step1: { value: 42 } });
     });
   });
 

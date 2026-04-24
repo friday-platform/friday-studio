@@ -54,10 +54,7 @@ describe("isAgentAction", () => {
     expect(isAgentAction(agentExecutionEvent({ actionType: "llm" }))).toBe(true);
   });
 
-  const nonStepTypes = [
-    { name: "code", actionType: "code" },
-    { name: "emit", actionType: "emit" },
-  ] as const;
+  const nonStepTypes = [{ name: "emit", actionType: "emit" }] as const;
 
   test.each(nonStepTypes)("returns false for actionType '$name'", ({ actionType }) => {
     expect(isAgentAction(agentExecutionEvent({ actionType }))).toBe(false);

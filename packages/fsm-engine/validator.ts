@@ -62,43 +62,6 @@ export function validateFSMStructure(fsm: FSMDefinition): ValidationResult {
                 `Fix: Either add state "${transition.target}" to states object, or change the transition target to an existing state.`,
             );
           }
-
-          // Check guard references
-          if (transition.guards) {
-            for (const guardName of transition.guards) {
-              if (!fsm.functions?.[guardName]) {
-                errors.push(
-                  `State "${stateName}" transition references undefined guard "${guardName}". ` +
-                    `Fix: Add function "${guardName}" to functions object with type: "guard" and code.`,
-                );
-              } else if (fsm.functions[guardName]?.type !== "guard") {
-                errors.push(
-                  `State "${stateName}" transition references "${guardName}" but it is not a guard function. ` +
-                    `Fix: Set function "${guardName}" type to "guard".`,
-                );
-              }
-            }
-          }
-
-          // Check action references for code actions
-          if (transition.actions) {
-            for (const action of transition.actions) {
-              if (action.type === "code") {
-                const functionName = (action as { function: string }).function;
-                if (!fsm.functions?.[functionName]) {
-                  errors.push(
-                    `State "${stateName}" transition references undefined action function "${functionName}". ` +
-                      `Fix: Add function "${functionName}" to functions object with type: "action" and code.`,
-                  );
-                } else if (fsm.functions[functionName]?.type !== "action") {
-                  errors.push(
-                    `State "${stateName}" transition references "${functionName}" but it is not an action function. ` +
-                      `Fix: Set function "${functionName}" type to "action".`,
-                  );
-                }
-              }
-            }
-          }
         }
       }
     }

@@ -17,7 +17,6 @@ export * from "./document-schemas.ts";
 // Core engine and execution
 export type {
   AgentExecutor,
-  CodeExecutor,
   FSMEngineOptions,
 } from "./fsm-engine.ts";
 export { FSMEngine } from "./fsm-engine.ts";

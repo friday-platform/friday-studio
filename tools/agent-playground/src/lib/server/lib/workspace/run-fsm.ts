@@ -17,8 +17,7 @@ import {
   type FSMEvent,
 } from "@atlas/fsm-engine";
 import { registry, traceModel } from "@atlas/llm";
-import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
-import { createInlineCodeExecutor } from "./inline-code-executor.ts";
+import type { CompiledFSMDefinition, WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { createMockAgentExecutor, createMockLLMProvider } from "./mock-executor.ts";
 
 // ---------------------------------------------------------------------------
@@ -48,7 +47,7 @@ export interface ExecutionReport {
 // ---------------------------------------------------------------------------
 
 export interface RunFSMOptions {
-  fsm: FSMDefinition;
+  fsm: CompiledFSMDefinition;
   plan: WorkspaceBlueprint;
   triggerSignal: string;
   signalPayload?: Record<string, unknown>;
@@ -72,6 +71,38 @@ export interface RunFSMOptions {
     status: "started" | "completed" | "failed";
     error?: string;
   }) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert CompiledFSMDefinition to FSMDefinition for the engine.
+ * Drops the `functions` metadata and `guards` fields (engine doesn't execute them).
+ */
+function toFSMDefinition(fsm: CompiledFSMDefinition): FSMDefinition {
+  const states: FSMDefinition["states"] = {};
+  for (const [name, state] of Object.entries(fsm.states)) {
+    const on: FSMDefinition["states"][string]["on"] = {};
+    for (const [event, transitionOrArray] of Object.entries(state.on ?? {})) {
+      if (Array.isArray(transitionOrArray)) {
+        on[event] = transitionOrArray.map(({ target, actions }) => ({
+          target,
+          ...(actions?.length ? { actions } : {}),
+        }));
+      } else {
+        const { target, actions } = transitionOrArray;
+        on[event] = { target, ...(actions?.length ? { actions } : {}) };
+      }
+    }
+    states[name] = {
+      ...(state.entry?.length ? { entry: state.entry } : {}),
+      ...(Object.keys(on).length ? { on } : {}),
+      ...(state.type ? { type: state.type } : {}),
+    };
+  }
+  return { id: fsm.id, initial: fsm.initial, states };
 }
 
 // ---------------------------------------------------------------------------
@@ -114,12 +145,13 @@ export async function runFSM(opts: RunFSMOptions): Promise<ExecutionReport> {
         };
       })();
 
-  const engine = new FSMEngine(opts.fsm, {
+  const engineFsm = toFSMDefinition(opts.fsm);
+
+  const engine = new FSMEngine(engineFsm, {
     documentStore: store,
     scope,
     agentExecutor,
     llmProvider,
-    codeExecutor: createInlineCodeExecutor(),
   });
 
   // Event collector for tracing

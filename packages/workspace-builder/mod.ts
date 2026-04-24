@@ -72,7 +72,6 @@ export { validateRevisionScope } from "./validate-revision-scope.ts";
 export { FSMBuilder } from "./builder.ts";
 export {
   agentAction,
-  codeAction,
   emitAction,
   llmAction,
 } from "./helpers.ts";
@@ -117,6 +116,9 @@ export type {
   Action,
   BuildError,
   BuildErrorType,
+  CompiledFSMDefinition,
+  CompiledStateDefinition,
+  CompiledTransitionDefinition,
   FSMDefinition,
   FunctionConfig,
   JSONSchema,

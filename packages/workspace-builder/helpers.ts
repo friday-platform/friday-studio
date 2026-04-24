@@ -2,11 +2,6 @@
 
 import type { Action } from "../fsm-engine/mod.ts";
 
-/** @example builder.onEntry(codeAction('initialize_workflow')) */
-export function codeAction(functionName: string): Action {
-  return { type: "code", function: functionName };
-}
-
 /**
  * @example builder.onEntry(agentAction('quality-checker', { outputTo: 'quality_result' }))
  * @example builder.onEntry(agentAction('claude-code', { prompt: 'Implement the feature' }))

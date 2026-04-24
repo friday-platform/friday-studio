@@ -120,7 +120,6 @@ describe("expandAgentActions", () => {
       writer: llmAgent({ prompt: "Write content", tools: ["filesystem"] }),
     };
 
-    const codeAction: Action = { type: "code", function: "prepareData" };
     const agentAction: Action = {
       type: "agent",
       agentId: "writer",
@@ -131,19 +130,17 @@ describe("expandAgentActions", () => {
 
     const fsm = makeFSM({
       idle: { on: { START: { target: "step_write" } } },
-      step_write: { entry: [codeAction, agentAction, emitAction] },
+      step_write: { entry: [agentAction, emitAction] },
       completed: { type: "final" },
     });
 
     const result = expandAgentActions(fsm, agents);
     const entry = getEntry(result, "step_write");
 
-    // code action untouched
-    expect(entry[0]).toEqual(codeAction);
     // agent action expanded to llm
-    expect(entry[1]?.type).toBe("llm");
+    expect(entry[0]?.type).toBe("llm");
     // emit action untouched
-    expect(entry[2]).toEqual(emitAction);
+    expect(entry[1]).toEqual(emitAction);
   });
 
   it("does not mutate the input FSM definition", () => {

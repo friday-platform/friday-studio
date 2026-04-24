@@ -3,16 +3,21 @@
  *
  * Accumulates errors instead of throwing. addState() auto-exits previous context.
  * Function names are normalized from kebab-case to snake_case.
+ *
+ * Note: The builder produces CompiledFSMDefinition (extends FSMDefinition with
+ * functions map for guard code). Core FSMDefinition has no functions field.
  */
 
-import type { Action, FSMDefinition, JSONSchema, StateDefinition } from "../fsm-engine/mod.ts";
+import type { JSONSchema } from "../fsm-engine/mod.ts";
 import type {
+  Action,
   BuildError,
+  CompiledFSMDefinition,
+  CompiledTransitionDefinition,
   FunctionConfig,
   Result,
   StateConfig,
   TransitionConfig,
-  TransitionDefinition,
 } from "./types.ts";
 
 export class FSMBuilder {
@@ -176,7 +181,7 @@ export class FSMBuilder {
     return this;
   }
 
-  build(): Result<FSMDefinition, BuildError[]> {
+  build(): Result<CompiledFSMDefinition, BuildError[]> {
     if (this.errors.length > 0) {
       return { success: false, error: this.errors };
     }
@@ -240,35 +245,16 @@ export class FSMBuilder {
           }
         }
       }
-
-      for (const action of state.entry) {
-        if (action.type === "code") {
-          const funcName = action.function;
-          if (!this.functions.has(funcName)) {
-            validationErrors.push({
-              type: "invalid_function_reference",
-              message: `State '${stateName}' entry action references undefined function '${funcName}'`,
-              context: { stateName, functionName: funcName },
-            });
-          } else if (this.functions.get(funcName)?.type !== "action") {
-            validationErrors.push({
-              type: "invalid_function_reference",
-              message: `State '${stateName}' entry action references '${funcName}' which is a guard, not an action`,
-              context: { stateName, functionName: funcName },
-            });
-          }
-        }
-      }
     }
 
     if (validationErrors.length > 0) {
       return { success: false, error: validationErrors };
     }
 
-    const states: Record<string, StateDefinition> = {};
+    const states: CompiledFSMDefinition["states"] = {};
 
     for (const [name, config] of this.states) {
-      const state: StateDefinition = {};
+      const state: CompiledFSMDefinition["states"][string] = {};
 
       if (config.entry.length > 0) {
         state.entry = config.entry;
@@ -279,13 +265,13 @@ export class FSMBuilder {
         for (const [event, transitionOrArray] of Object.entries(config.on)) {
           if (Array.isArray(transitionOrArray)) {
             state.on[event] = transitionOrArray.map((t) => {
-              const def: TransitionDefinition = { target: t.target };
+              const def: CompiledTransitionDefinition = { target: t.target };
               if (t.guards.length > 0) def.guards = t.guards;
               if (t.actions.length > 0) def.actions = t.actions;
               return def;
             });
           } else {
-            const def: TransitionDefinition = { target: transitionOrArray.target };
+            const def: CompiledTransitionDefinition = { target: transitionOrArray.target };
             if (transitionOrArray.guards.length > 0) def.guards = transitionOrArray.guards;
             if (transitionOrArray.actions.length > 0) def.actions = transitionOrArray.actions;
             state.on[event] = def;
@@ -312,14 +298,7 @@ export class FSMBuilder {
 
     return {
       success: true,
-      value: {
-        id: this.id,
-        initial: this.initial,
-        states,
-        functions,
-        documentTypes,
-        tools: {}, // Empty tools for now
-      },
+      value: { id: this.id, initial: this.initial, states, functions, documentTypes },
     };
   }
 }

@@ -28,7 +28,7 @@ const fsmWithActions: FSMDefinition = {
     idle: { on: { START: { target: "analyze" } } },
     analyze: {
       entry: [
-        { type: "code", function: "prepare_data" },
+        { type: "agent", agentId: "prepare-agent" },
         { type: "llm", provider: "anthropic", model: "claude", prompt: "Analyze" },
         { type: "emit", event: "ADVANCE" },
       ],
@@ -117,7 +117,6 @@ describe("buildFSMDefinition", () => {
 
     it("includes classDef declarations", () => {
       const result = buildFSMDefinition(minimalFSM);
-      expect(result).toContain("classDef codeFn");
       expect(result).toContain("classDef llmAction");
       expect(result).toContain("classDef agentAction");
       expect(result).toContain("classDef emitSignal");
@@ -138,9 +137,9 @@ describe("buildFSMDefinition", () => {
       expect(result).toContain("direction TB");
     });
 
-    it("renders code action nodes with codeFn class", () => {
+    it("renders agent action nodes with agentAction class (first entry)", () => {
       const result = buildFSMDefinition(fsmWithActions);
-      expect(result).toMatch(/analyze_a0\["prepare_data"\]:::codeFn/);
+      expect(result).toMatch(/analyze_a0\["agent: prepare-agent"\]:::agentAction/);
     });
 
     it("renders llm action nodes with llmAction class", () => {

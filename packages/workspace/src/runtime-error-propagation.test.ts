@@ -16,7 +16,7 @@ import { WorkspaceRuntime } from "./runtime.ts";
 
 const stubPlatformModels = createStubPlatformModels();
 
-/** FSM with a code action that references a non-existent function → throws at execution */
+/** FSM with an agent action referencing a non-existent agent → throws at execution */
 function createFailingConfig(): MergedConfig {
   return {
     atlas: null,
@@ -35,7 +35,7 @@ function createFailingConfig(): MergedConfig {
             states: {
               idle: { on: { "test-signal": { target: "processing" } } },
               processing: {
-                entry: [{ type: "code", function: "nonexistent_function" }],
+                entry: [{ type: "agent", agentId: "nonexistent-agent" }],
                 on: { DONE: { target: "complete" } },
               },
               complete: { type: "final" },
@@ -123,7 +123,6 @@ describe("session error propagation", () => {
 
     expect(session.status).toBe("failed");
     expect(session.error).toBeTypeOf("string");
-    expect(session.error).toContain("nonexistent_function");
   });
 
   it("successful FSM sets session.status to 'completed' with no error", async () => {

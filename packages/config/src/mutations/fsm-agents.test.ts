@@ -13,7 +13,7 @@ function createFSMJob(
   entries: Array<
     | { type: "agent"; agentId: string; prompt?: string }
     | { type: "llm"; provider: string; model: string; prompt: string }
-    | { type: "code"; function: string }
+    | { type: "emit"; event: string }
   >,
 ) {
   return {
@@ -67,7 +67,6 @@ describe("extractFSMAgents", () => {
     const config = createTestConfig({
       jobs: {
         "research-job": createFSMJob([
-          { type: "code", function: "prepare" },
           { type: "agent", agentId: "research", prompt: "Do research" },
         ]),
       },
@@ -80,7 +79,7 @@ describe("extractFSMAgents", () => {
         id: "research-job:step_0",
         jobId: "research-job",
         stateId: "step_0",
-        entryIndex: 1,
+        entryIndex: 0,
         type: "agent",
         agentId: "research",
         prompt: "Do research",
@@ -317,12 +316,12 @@ describe("extractFSMAgents", () => {
     expect(result).not.toHaveProperty("partial-job:complete");
   });
 
-  test("skips states with only code/emit actions", () => {
+  test("skips states with only emit actions", () => {
     const config = createTestConfig({
       jobs: {
-        "code-only-job": createFSMJob([
-          { type: "code", function: "setup" },
-          { type: "code", function: "process" },
+        "emit-only-job": createFSMJob([
+          { type: "emit", event: "START" },
+          { type: "emit", event: "DONE" },
         ]),
       },
     });
@@ -484,14 +483,14 @@ describe("updateFSMAgent", () => {
       const config = createTestConfig({
         jobs: {
           "my-job": {
-            description: "Job with code-only state",
+            description: "Job with emit-only state",
             triggers: [{ signal: "webhook" }],
             fsm: {
               id: "test",
               initial: "step_0",
               states: {
                 step_0: {
-                  entry: [{ type: "code", function: "() => {}" }],
+                  entry: [{ type: "emit", event: "DONE" }],
                   on: { DONE: { target: "complete" } },
                 },
                 complete: { type: "final" },

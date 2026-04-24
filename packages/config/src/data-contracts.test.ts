@@ -16,13 +16,9 @@ describe("deriveDataContracts", () => {
             id: "pr-pipeline",
             initial: "idle",
             states: {
-              idle: {
-                entry: [{ type: "code", function: "cleanup" }],
-                on: { "review-pr": { target: "step_clone_repo" } },
-              },
+              idle: { on: { "review-pr": { target: "step_clone_repo" } } },
               step_clone_repo: {
                 entry: [
-                  { type: "code", function: "prepare_clone" },
                   {
                     type: "agent",
                     agentId: "claude-code",
@@ -36,7 +32,6 @@ describe("deriveDataContracts", () => {
               },
               step_review_pr: {
                 entry: [
-                  { type: "code", function: "prepare_review" },
                   {
                     type: "agent",
                     agentId: "claude-code",
@@ -50,7 +45,6 @@ describe("deriveDataContracts", () => {
               },
               step_post_review: {
                 entry: [
-                  { type: "code", function: "prepare_post" },
                   {
                     type: "agent",
                     agentId: "claude-code",
@@ -123,10 +117,7 @@ describe("deriveDataContracts", () => {
             id: "simple",
             initial: "idle",
             states: {
-              idle: {
-                entry: [{ type: "code", function: "setup" }],
-                on: { START: { target: "step_process" } },
-              },
+              idle: { on: { START: { target: "step_process" } } },
               step_process: {
                 entry: [
                   { type: "agent", agentId: "worker", prompt: "Do work" },

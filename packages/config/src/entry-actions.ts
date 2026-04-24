@@ -19,7 +19,7 @@ import type { WorkspaceConfig } from "./workspace.ts";
 // ==============================================================================
 
 export interface EntryAction {
-  type: "code" | "agent" | "llm" | "emit";
+  type: "agent" | "llm" | "emit";
   name: string;
   agentId?: string;
   outputTo?: string;
@@ -87,9 +87,6 @@ export function deriveAllEntryActions(config: WorkspaceConfig): Map<string, Entr
  */
 function mapAction(action: FSMAction): EntryAction {
   switch (action.type) {
-    case "code":
-      return { type: "code", name: action.function };
-
     case "agent":
       return {
         type: "agent",

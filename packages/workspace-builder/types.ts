@@ -79,3 +79,33 @@ export interface FunctionConfig {
 }
 
 export type { Action, FSMDefinition, JSONSchema, TransitionDefinition };
+
+// ---------------------------------------------------------------------------
+// Workspace-builder extended FSM types
+//
+// The compiler (build-fsm.ts) generates guard functions as compiled JavaScript
+// stored in the `functions` map. Guards are not currently executed by the FSM
+// engine but document the intended transition logic.
+// ---------------------------------------------------------------------------
+
+export interface CompiledTransitionDefinition {
+  target: string;
+  guards?: string[];
+  actions?: Action[];
+}
+
+export interface CompiledStateDefinition {
+  documents?: unknown[];
+  entry?: Action[];
+  on?: Record<string, CompiledTransitionDefinition | CompiledTransitionDefinition[]>;
+  type?: "final";
+}
+
+/** Extended FSM definition produced by the workspace-builder compiler. */
+export interface CompiledFSMDefinition {
+  id: string;
+  initial: string;
+  states: Record<string, CompiledStateDefinition>;
+  documentTypes?: Record<string, JSONSchema>;
+  functions?: Record<string, { type: "action" | "guard"; code: string }>;
+}

@@ -28,8 +28,6 @@ function mermaidId(name: string): string {
 /** Build a display label for an entry action node. */
 function actionLabel(action: Action): string {
   switch (action.type) {
-    case "code":
-      return action.function;
     case "llm":
       return `AI: ${action.model}`;
     case "agent":
@@ -42,8 +40,6 @@ function actionLabel(action: Action): string {
 /** Map action type to its Mermaid classDef name. */
 function actionClass(action: Action): string {
   switch (action.type) {
-    case "code":
-      return "codeFn";
     case "llm":
       return "llmAction";
     case "agent":
@@ -134,7 +130,6 @@ export function buildFSMDefinition(
 
   // ClassDef declarations — action types
   lines.push("");
-  lines.push("    classDef codeFn fill:#d97706,stroke:#b45309,color:#fff,font-family:monospace");
   lines.push("    classDef llmAction fill:#3b82f6,stroke:#2563eb,color:#fff");
   lines.push("    classDef agentAction fill:#22c55e,stroke:#16a34a,color:#fff");
   lines.push("    classDef emitSignal fill:#6b7280,stroke:#4b5563,color:#fff,stroke-dasharray:5 5");

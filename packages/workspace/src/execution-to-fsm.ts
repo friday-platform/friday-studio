@@ -12,8 +12,7 @@
  *
  *   idle --{trigger}--> step_0_<agent0> --ADVANCE--> step_1_<agent1> --...--> completed
  *
- * Signal payload is captured into a `job-input` document on the transition
- * from idle, so agents can read their input via `context.documents["job-input"]`.
+ * Signal payload is available to agents via `signal.data` directly.
  * The compiler intentionally only supports `strategy: "sequential"` — for
  * parallel or complex topologies, authors must use `fsm:` explicitly; there's
  * no silent best-effort fallback that would mask a misconfiguration.
@@ -53,21 +52,6 @@ function stepStateName(index: number, id: string): string {
 }
 
 /**
- * `event.data` is the signal payload. Stash it on a document so downstream
- * agent actions can read `context.documents["job-input"].data`. Uses createDoc
- * with updateDoc fallback so re-firing the signal on an existing session
- * (unlikely but possible) doesn't throw.
- */
-const STORE_JOB_INPUT_CODE = `export default function storeJobInput(context, event) {
-  const payload = (event && event.data) || {};
-  try {
-    context.createDoc({ id: 'job-input', type: 'JobInput', data: payload });
-  } catch {
-    context.updateDoc('job-input', payload);
-  }
-}`;
-
-/**
  * Produce an FSM definition equivalent to `execution.sequential` on the given
  * job. Does NOT mutate the input job spec. Throws ExecutionCompileError when
  * the shape can't be compiled (caller decides whether to warn-and-skip or
@@ -105,14 +89,7 @@ export function compileExecutionToFsm(jobName: string, jobSpec: JobSpecification
 
   const agentIds = agents.map(agentId);
   const states: FSMDefinition["states"] = {
-    idle: {
-      on: {
-        [triggerSignal]: {
-          target: stepStateName(0, agentIds[0] as string),
-          actions: [{ type: "code", function: "storeJobInput" }],
-        },
-      },
-    },
+    idle: { on: { [triggerSignal]: { target: stepStateName(0, agentIds[0] as string) } } },
   };
 
   for (let i = 0; i < agentIds.length; i++) {
@@ -130,11 +107,5 @@ export function compileExecutionToFsm(jobName: string, jobSpec: JobSpecification
 
   states.completed = { type: "final" };
 
-  return {
-    id: `${jobName}-sequential`,
-    initial: "idle",
-    states,
-    documentTypes: { JobInput: { type: "object", additionalProperties: true } },
-    functions: { storeJobInput: { type: "action", code: STORE_JOB_INPUT_CODE } },
-  };
+  return { id: `${jobName}-sequential`, initial: "idle", states };
 }

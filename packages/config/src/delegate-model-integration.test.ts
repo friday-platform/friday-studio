@@ -51,7 +51,6 @@ function prReviewLegacyFSM(): FSMDefinition {
       idle: { on: { "review-pr": { target: "step_clone_repo" } } },
       step_clone_repo: {
         entry: [
-          { type: "code", function: "prepare_clone" },
           {
             type: "agent",
             agentId: "claude-code",
@@ -65,7 +64,6 @@ function prReviewLegacyFSM(): FSMDefinition {
       },
       step_review_pr: {
         entry: [
-          { type: "code", function: "prepare_review" },
           {
             type: "agent",
             agentId: "claude-code",
@@ -79,7 +77,6 @@ function prReviewLegacyFSM(): FSMDefinition {
       },
       step_post_review: {
         entry: [
-          { type: "code", function: "prepare_post_review" },
           {
             type: "agent",
             agentId: "claude-code",
@@ -108,7 +105,6 @@ function notionResearchLegacyFSM(): FSMDefinition {
       idle: { on: { "research-topic": { target: "step_search_notion_pages" } } },
       step_search_notion_pages: {
         entry: [
-          { type: "code", function: "prepare_search_notion_pages" },
           {
             type: "llm",
             provider: "anthropic",
@@ -124,7 +120,6 @@ function notionResearchLegacyFSM(): FSMDefinition {
       },
       step_summarize_findings: {
         entry: [
-          { type: "code", function: "prepare_summarize_findings" },
           {
             type: "llm",
             provider: "anthropic",
@@ -140,7 +135,6 @@ function notionResearchLegacyFSM(): FSMDefinition {
       },
       step_create_summary_page: {
         entry: [
-          { type: "code", function: "prepare_create_summary_page" },
           {
             type: "llm",
             provider: "anthropic",
@@ -171,7 +165,6 @@ function prReviewDelegateFSM(): FSMDefinition {
       idle: { on: { "review-pr": { target: "step_clone_repo" } } },
       step_clone_repo: {
         entry: [
-          { type: "code", function: "prepare_clone" },
           {
             type: "agent",
             agentId: "repo-cloner",
@@ -185,7 +178,6 @@ function prReviewDelegateFSM(): FSMDefinition {
       },
       step_review_pr: {
         entry: [
-          { type: "code", function: "prepare_review" },
           {
             type: "agent",
             agentId: "code-reviewer",
@@ -199,7 +191,6 @@ function prReviewDelegateFSM(): FSMDefinition {
       },
       step_post_review: {
         entry: [
-          { type: "code", function: "prepare_post_review" },
           {
             type: "agent",
             agentId: "review-reporter",
@@ -228,7 +219,6 @@ function notionResearchDelegateFSM(): FSMDefinition {
       idle: { on: { "research-topic": { target: "step_search_notion_pages" } } },
       step_search_notion_pages: {
         entry: [
-          { type: "code", function: "prepare_search_notion_pages" },
           {
             type: "agent",
             agentId: "notion-research-agent",
@@ -242,7 +232,6 @@ function notionResearchDelegateFSM(): FSMDefinition {
       },
       step_summarize_findings: {
         entry: [
-          { type: "code", function: "prepare_summarize_findings" },
           {
             type: "agent",
             agentId: "notion-research-agent",
@@ -256,7 +245,6 @@ function notionResearchDelegateFSM(): FSMDefinition {
       },
       step_create_summary_page: {
         entry: [
-          { type: "code", function: "prepare_create_summary_page" },
           {
             type: "agent",
             agentId: "notion-research-agent",
