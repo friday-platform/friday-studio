@@ -1,6 +1,6 @@
-export type { CorpusKind, MemoryAdapter, NarrativeEntry } from "./memory-adapter.ts";
+export type { MemoryAdapter, NarrativeEntry, StoreKind } from "./memory-adapter.ts";
 export type {
   AgentContext,
   AgentMemoryContext,
-  CorpusMountBinding,
+  StoreMountBinding,
 } from "./types.ts";

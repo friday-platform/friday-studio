@@ -1,4 +1,4 @@
-import type { CorpusKind, KVCorpus } from "@atlas/agent-sdk";
+import type { KVStore, StoreKind } from "@atlas/agent-sdk";
 import {
   buildSourceId,
   type MountConsumer,
@@ -12,9 +12,9 @@ const CONS = "mount:cons:";
 const IDX = "mount:idx:";
 
 export class MountRegistry {
-  constructor(private readonly kv: KVCorpus) {}
+  constructor(private readonly kv: KVStore) {}
 
-  async registerSource(workspaceId: string, kind: CorpusKind, name: string): Promise<MountSource> {
+  async registerSource(workspaceId: string, kind: StoreKind, name: string): Promise<MountSource> {
     const id = buildSourceId(workspaceId, kind, name);
     const now = new Date().toISOString();
 

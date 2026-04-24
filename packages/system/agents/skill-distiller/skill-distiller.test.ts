@@ -15,7 +15,7 @@ import { skillDistillerAgent } from "./skill-distiller.agent.ts";
 // Test Fixtures
 // =============================================================================
 
-const validCorpusArtifacts = {
+const validStoreArtifacts = {
   artifacts: [
     {
       id: "artifact-1",
@@ -180,7 +180,7 @@ describe("skillDistillerAgent", () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.reason).toContain("Failed to load corpus artifacts");
+        expect(result.error.reason).toContain("Failed to load store artifacts");
       }
     });
 
@@ -194,7 +194,7 @@ describe("skillDistillerAgent", () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.reason).toContain("Failed to load corpus artifacts");
+        expect(result.error.reason).toContain("Failed to load store artifacts");
       }
     });
   });
@@ -212,7 +212,7 @@ describe("skillDistillerAgent", () => {
         if (url.includes("/api/artifacts/batch") && method === "POST") {
           callLog.push("batch-get");
           return Promise.resolve(
-            new Response(JSON.stringify(validCorpusArtifacts), {
+            new Response(JSON.stringify(validStoreArtifacts), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             }),
@@ -269,7 +269,7 @@ describe("skillDistillerAgent", () => {
         if (url.includes("/api/artifacts/batch") && method === "POST") {
           callLog.push("batch-get");
           return Promise.resolve(
-            new Response(JSON.stringify(validCorpusArtifacts), {
+            new Response(JSON.stringify(validStoreArtifacts), {
               status: 200,
               headers: { "Content-Type": "application/json" },
             }),
@@ -300,7 +300,7 @@ describe("skillDistillerAgent", () => {
     });
   });
 
-  describe("returns error if corpus is empty", () => {
+  describe("returns error if store is empty", () => {
     it("fails when artifactIds array is empty after validation", async () => {
       setupFetchMock({ batchGetArtifacts: { status: 200, data: { artifacts: [] } } });
 

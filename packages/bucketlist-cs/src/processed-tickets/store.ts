@@ -14,22 +14,22 @@ export async function createProcessedTicketStore(
   memory: MemoryAdapter,
   workspaceId: string,
 ): Promise<ProcessedTicketStore> {
-  const corpus = await memory.corpus(workspaceId, "processed-tickets", "dedup");
+  const store = await memory.store(workspaceId, "processed-tickets", "dedup");
 
   return {
     async recordProcessed(ticketIds, ttlHours) {
       for (const ticketId of ticketIds) {
-        await corpus.append(NAMESPACE, { ticketId }, ttlHours);
+        await store.append(NAMESPACE, { ticketId }, ttlHours);
       }
     },
 
     async filterNew(candidateIds) {
-      const unseen = await corpus.filter(NAMESPACE, FIELD, candidateIds);
+      const unseen = await store.filter(NAMESPACE, FIELD, candidateIds);
       return z.array(z.string()).parse(unseen);
     },
 
     async clear() {
-      await corpus.clear(NAMESPACE);
+      await store.clear(NAMESPACE);
     },
   };
 }

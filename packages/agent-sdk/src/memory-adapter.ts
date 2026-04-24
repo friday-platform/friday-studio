@@ -1,8 +1,8 @@
 /**
  * Memory Adapter Interface
  *
- * Corpus-typed memory with swappable backends. A thin MemoryAdapter router
- * hands out kind-typed Corpus handles. Every corpus write emits a typed
+ * Store-typed memory with swappable backends. A thin MemoryAdapter router
+ * hands out kind-typed Store handles. Every store write emits a typed
  * AtlasDataEvent and records a version.
  *
  * From parity plan v6, lines 582-652.
@@ -66,19 +66,19 @@ export const RetrievalStatsSchema = z.object({
 export const DedupEntrySchema = z.record(z.string(), z.unknown());
 
 export const HistoryFilterSchema = z.object({
-  corpus: z.string().optional(),
+  store: z.string().optional(),
   since: z.string().optional(),
   limit: z.number().int().positive().optional(),
 });
 
 export const HistoryEntrySchema = z.object({
   version: z.string(),
-  corpus: z.string(),
+  store: z.string(),
   at: z.string(),
   summary: z.string(),
 });
 
-export const CorpusMetadataSchema = z.object({
+export const StoreMetadataSchema = z.object({
   name: z.string().min(1),
   kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
   workspaceId: z.string().min(1),
@@ -90,7 +90,7 @@ export const StatusMetadataSchema = z.object({
   dispatched_session_id: z.string().optional(),
 });
 
-// ── Reflection-specific schemas (for corpus entries written by the reflector) ─
+// ── Reflection-specific schemas (for store entries written by the reflector) ─
 
 export const ReflectionMetadataSchema = z.object({
   target_workspace_id: z.string(),
@@ -110,7 +110,7 @@ export const ReflectionNarrativeEntrySchema = z.object({
 
 // ── TypeScript types (authoritative — verbatim from plan) ───────────────────
 
-export type CorpusKind = "narrative" | "retrieval" | "dedup" | "kv";
+export type StoreKind = "narrative" | "retrieval" | "dedup" | "kv";
 
 export interface NarrativeEntry {
   id: string;
@@ -155,23 +155,23 @@ export interface DedupEntry {
   [field: string]: unknown;
 }
 export interface HistoryFilter {
-  corpus?: string;
+  store?: string;
   since?: string;
   limit?: number;
 }
 export interface HistoryEntry {
   version: string;
-  corpus: string;
+  store: string;
   at: string;
   summary: string;
 }
-export interface CorpusMetadata {
+export interface StoreMetadata {
   name: string;
-  kind: CorpusKind;
+  kind: StoreKind;
   workspaceId: string;
 }
 
-export interface NarrativeCorpus {
+export interface NarrativeStore {
   append(entry: NarrativeEntry): Promise<NarrativeEntry>;
   read(opts?: { since?: string; limit?: number }): Promise<NarrativeEntry[]>;
   search(query: string, opts?: SearchOpts): Promise<NarrativeEntry[]>;
@@ -179,48 +179,48 @@ export interface NarrativeCorpus {
   render(): Promise<string>;
 }
 
-export interface RetrievalCorpus {
+export interface RetrievalStore {
   ingest(docs: DocBatch, opts?: IngestOpts): Promise<IngestResult>;
   query(q: RetrievalQuery, opts?: RetrievalOpts): Promise<Hit[]>;
   stats(): Promise<RetrievalStats>;
   reset(): Promise<void>;
 }
 
-export interface DedupCorpus {
+export interface DedupStore {
   append(namespace: string, entry: DedupEntry, ttlHours?: number): Promise<void>;
   filter(namespace: string, field: string, values: unknown[]): Promise<unknown[]>;
   clear(namespace: string): Promise<void>;
 }
 
-export interface KVCorpus {
+export interface KVStore {
   get<T = unknown>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
   delete(key: string): Promise<void>;
   list(prefix?: string): Promise<string[]>;
 }
 
-export type CorpusOf<K extends CorpusKind> = K extends "narrative"
-  ? NarrativeCorpus
+export type StoreOf<K extends StoreKind> = K extends "narrative"
+  ? NarrativeStore
   : K extends "retrieval"
-    ? RetrievalCorpus
+    ? RetrievalStore
     : K extends "dedup"
-      ? DedupCorpus
+      ? DedupStore
       : K extends "kv"
-        ? KVCorpus
+        ? KVStore
         : never;
 
 export interface MemoryAdapter {
-  /** Open or create a named corpus. Backend resolved per-corpus from config. */
-  corpus<K extends CorpusKind>(workspaceId: string, name: string, kind: K): Promise<CorpusOf<K>>;
+  /** Open or create a named store. Backend resolved per-store from config. */
+  store<K extends StoreKind>(workspaceId: string, name: string, kind: K): Promise<StoreOf<K>>;
 
-  /** Enumerate corpora registered in this workspace. */
-  list(workspaceId: string): Promise<CorpusMetadata[]>;
+  /** Enumerate stores registered in this workspace. */
+  list(workspaceId: string): Promise<StoreMetadata[]>;
 
   /** Bootstrap block injected into agent system prompt at session start.
-   *  A *view* over one or more narrative corpora. */
+   *  A *view* over one or more narrative stores. */
   bootstrap(workspaceId: string, agentId: string): Promise<string>;
 
   /** Versioned history — leapfrog dimension #2. */
   history(workspaceId: string, filter?: HistoryFilter): Promise<HistoryEntry[]>;
-  rollback(workspaceId: string, corpus: string, toVersion: string): Promise<void>;
+  rollback(workspaceId: string, store: string, toVersion: string): Promise<void>;
 }

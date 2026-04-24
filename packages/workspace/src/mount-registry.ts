@@ -1,17 +1,15 @@
-import type { DedupCorpus, KVCorpus, NarrativeCorpus, RetrievalCorpus } from "@atlas/agent-sdk";
+import type { DedupStore, KVStore, NarrativeStore, RetrievalStore } from "@atlas/agent-sdk";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 
-export type CorpusResolver = () => Promise<
-  NarrativeCorpus | RetrievalCorpus | DedupCorpus | KVCorpus
->;
+export type StoreResolver = () => Promise<NarrativeStore | RetrievalStore | DedupStore | KVStore>;
 
-export type AnyCorpus = NarrativeCorpus | RetrievalCorpus | DedupCorpus | KVCorpus;
+export type AnyStore = NarrativeStore | RetrievalStore | DedupStore | KVStore;
 
 class MountRegistryImpl {
-  private sources = new Map<string, CorpusResolver>();
+  private sources = new Map<string, StoreResolver>();
   private consumers = new Map<string, Set<string>>();
 
-  registerSource(sourceId: string, resolver: CorpusResolver): void {
+  registerSource(sourceId: string, resolver: StoreResolver): void {
     if (!this.sources.has(sourceId)) {
       this.sources.set(sourceId, resolver);
     }
@@ -26,7 +24,7 @@ class MountRegistryImpl {
     }
   }
 
-  resolve(sourceId: string): Promise<AnyCorpus> {
+  resolve(sourceId: string): Promise<AnyStore> {
     const resolver = this.sources.get(sourceId);
     if (!resolver) {
       return Promise.reject(new MountSourceNotFoundError(sourceId));

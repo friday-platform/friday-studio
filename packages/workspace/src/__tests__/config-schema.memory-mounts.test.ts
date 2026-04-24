@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CorpusKindSchema,
   type MemoryConfig,
   MemoryConfigSchema,
   type MemoryMount,
@@ -10,6 +9,7 @@ import {
   MemoryStrategySchema,
   MemoryTypeSchema,
   parseMemoryMountSource,
+  StoreKindSchema,
 } from "../config-schema.ts";
 
 function validMount(overrides: Partial<MemoryMount> = {}): Record<string, unknown> {
@@ -40,7 +40,7 @@ describe("MemoryMountSchema", () => {
       expect(result.source).toBe("_global/kv/shared-flags");
     });
 
-    it("accepts all four corpus kinds", () => {
+    it("accepts all four store kinds", () => {
       for (const kind of ["narrative", "retrieval", "dedup", "kv"]) {
         const result = MemoryMountSchema.parse(validMount({ source: `ws_1/${kind}/corpus-name` }));
         expect(result.source).toBe(`ws_1/${kind}/corpus-name`);
@@ -59,7 +59,7 @@ describe("MemoryMountSchema", () => {
       expect(() => MemoryMountSourceSchema.parse("bad//corpus")).toThrow();
     });
 
-    it("rejects source missing corpus name", () => {
+    it("rejects source missing store name", () => {
       expect(() => MemoryMountSchema.parse(validMount({ source: "ws/narrative/" }))).toThrow();
     });
 
@@ -265,15 +265,15 @@ describe("MemoryConfigSchema", () => {
   });
 });
 
-describe("CorpusKindSchema", () => {
+describe("StoreKindSchema", () => {
   it("accepts all four kinds", () => {
     for (const kind of ["narrative", "retrieval", "dedup", "kv"]) {
-      expect(CorpusKindSchema.parse(kind)).toBe(kind);
+      expect(StoreKindSchema.parse(kind)).toBe(kind);
     }
   });
 
   it("rejects unknown kind", () => {
-    expect(() => CorpusKindSchema.parse("vector")).toThrow();
+    expect(() => StoreKindSchema.parse("vector")).toThrow();
   });
 });
 

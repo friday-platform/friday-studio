@@ -1,6 +1,5 @@
 import { createMemoryDedupTools } from "./platform-tools/memory-dedup-tools.ts";
 import { createMemoryKVTools } from "./platform-tools/memory-kv-tools.ts";
-import { createMemoryNarrativeTools } from "./platform-tools/memory-narrative-tools.ts";
 import { createMemoryRetrievalTools } from "./platform-tools/memory-retrieval-tools.ts";
 import { createScratchpadTools } from "./platform-tools/scratchpad-tools.ts";
 import type { AgentContext } from "./types.ts";
@@ -63,11 +62,10 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "csv",
   "system_version",
   "webfetch",
-  // Memory — narrative
-  "memory_narrative_append",
-  "memory_narrative_read",
-  "memory_narrative_search",
-  "memory_narrative_forget",
+  // Memory — adapter-agnostic
+  "memory_save",
+  "memory_read",
+  "memory_remove",
   // Memory — retrieval
   "memory_retrieval_ingest",
   "memory_retrieval_query",
@@ -86,7 +84,6 @@ export const PLATFORM_TOOL_NAMES = new Set([
 
 export function createPlatformTools(ctx: AgentContext) {
   return {
-    ...createMemoryNarrativeTools(ctx),
     ...createMemoryRetrievalTools(ctx),
     ...createMemoryDedupTools(ctx),
     ...createMemoryKVTools(ctx),

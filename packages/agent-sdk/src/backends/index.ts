@@ -1,10 +1,10 @@
-export { SqliteDedupCorpus } from "./sqlite-dedup-corpus.ts";
-export { SqliteKVCorpus } from "./sqlite-kv-corpus.ts";
+export { SqliteDedupStore } from "./sqlite-dedup-store.ts";
+export { SqliteKVStore } from "./sqlite-kv-store.ts";
 export type { SqliteRagConfig } from "./sqlite-rag/index.ts";
 export {
   ChunkerRegistry,
   DefaultChunker,
   getChunker,
   SqliteRagConfigSchema,
-  SqliteRetrievalCorpus,
+  SqliteRetrievalStore,
 } from "./sqlite-rag/index.ts";

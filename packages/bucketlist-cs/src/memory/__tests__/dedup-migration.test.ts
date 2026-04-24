@@ -1,8 +1,8 @@
-import type { DedupCorpus, DedupEntry, MemoryAdapter } from "@atlas/agent-sdk";
+import type { DedupEntry, DedupStore, MemoryAdapter } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { runMigration } from "../dedup-migration.ts";
 
-class InMemoryDedupCorpus implements DedupCorpus {
+class InMemoryDedupStore implements DedupStore {
   private store = new Map<string, Map<string, DedupEntry>>();
 
   append(namespace: string, entry: DedupEntry, _ttlHours?: number): Promise<void> {
@@ -39,27 +39,27 @@ class InMemoryDedupCorpus implements DedupCorpus {
   }
 }
 
-function makeAdapter(): { adapter: MemoryAdapter; corpus: InMemoryDedupCorpus } {
-  const corpus = new InMemoryDedupCorpus();
+function makeAdapter(): { adapter: MemoryAdapter; store: InMemoryDedupStore } {
+  const store = new InMemoryDedupStore();
   const adapter: MemoryAdapter = {
-    corpus: () => Promise.resolve(corpus as never),
+    store: () => Promise.resolve(store as never),
     list: () => Promise.resolve([]),
     bootstrap: () => Promise.resolve(""),
     history: () => Promise.resolve([]),
     rollback: () => Promise.resolve(),
   };
-  return { adapter, corpus };
+  return { adapter, store };
 }
 
 describe("runMigration", () => {
-  it("migrates all legacy IDs into the dedup corpus", async () => {
-    const { adapter, corpus } = makeAdapter();
+  it("migrates all legacy IDs into the dedup store", async () => {
+    const { adapter, store } = makeAdapter();
     const ids = ["t-1", "t-2", "t-3"];
 
     const result = await runMigration(adapter, "ws-test", ids);
 
     expect(result).toEqual({ migrated: 3, skipped: 0 });
-    expect(corpus.entryCount("tickets")).toBe(3);
+    expect(store.entryCount("tickets")).toBe(3);
   });
 
   it("is idempotent — second run produces migrated=0", async () => {
@@ -73,15 +73,15 @@ describe("runMigration", () => {
   });
 
   it("skips pre-existing entries and migrates only new ones", async () => {
-    const { adapter, corpus } = makeAdapter();
+    const { adapter, store } = makeAdapter();
 
-    await corpus.append("tickets", { ticketId: "t-1" });
-    await corpus.append("tickets", { ticketId: "t-3" });
+    await store.append("tickets", { ticketId: "t-1" });
+    await store.append("tickets", { ticketId: "t-3" });
 
     const result = await runMigration(adapter, "ws-test", ["t-1", "t-2", "t-3", "t-4"]);
 
     expect(result).toEqual({ migrated: 2, skipped: 2 });
-    expect(corpus.entryCount("tickets")).toBe(4);
+    expect(store.entryCount("tickets")).toBe(4);
   });
 
   it("handles empty legacy ID list", async () => {

@@ -1,7 +1,4 @@
 import type {
-  CorpusKind,
-  CorpusMetadata,
-  CorpusOf,
   HistoryEntry,
   MemoryAdapter,
   ScratchpadAdapter,
@@ -9,24 +6,27 @@ import type {
   SkillAdapter,
   SkillMetadata,
   SkillVersion,
+  StoreKind,
+  StoreMetadata,
+  StoreOf,
 } from "@atlas/agent-sdk";
 import { describe, expect, it, vi } from "vitest";
 import type { InspectDeps } from "../commands/inspect.ts";
 import { inspectCommand } from "../commands/inspect.ts";
 
-function unusedCorpus<K extends CorpusKind>(
+function unusedStore<K extends StoreKind>(
   _workspaceId: string,
   _name: string,
   _kind: K,
-): Promise<CorpusOf<K>> {
+): Promise<StoreOf<K>> {
   throw new Error("not called in test");
 }
 
 function createDeps(overrides?: Partial<InspectDeps>): InspectDeps {
   return {
     memory: {
-      corpus: unusedCorpus,
-      list: vi.fn<(workspaceId: string) => Promise<CorpusMetadata[]>>().mockResolvedValue([]),
+      store: unusedStore,
+      list: vi.fn<(workspaceId: string) => Promise<StoreMetadata[]>>().mockResolvedValue([]),
       bootstrap: vi
         .fn<(workspaceId: string, agentId: string) => Promise<string>>()
         .mockResolvedValue(""),
@@ -54,15 +54,15 @@ function createDeps(overrides?: Partial<InspectDeps>): InspectDeps {
 
 describe("inspect --kind memory", () => {
   it("renders table rows for two memories", async () => {
-    const memories: CorpusMetadata[] = [
+    const memories: StoreMetadata[] = [
       { name: "session-log", kind: "narrative", workspaceId: "ws-1" },
       { name: "docs-index", kind: "retrieval", workspaceId: "ws-1" },
     ];
     const deps = createDeps({
       memory: {
-        corpus: unusedCorpus,
+        store: unusedStore,
         list: vi
-          .fn<(workspaceId: string) => Promise<CorpusMetadata[]>>()
+          .fn<(workspaceId: string) => Promise<StoreMetadata[]>>()
           .mockResolvedValue(memories),
         bootstrap: vi
           .fn<(workspaceId: string, agentId: string) => Promise<string>>()
@@ -104,14 +104,14 @@ describe("inspect --kind memory", () => {
   });
 
   it("outputs JSON array with --json flag", async () => {
-    const memories: CorpusMetadata[] = [
+    const memories: StoreMetadata[] = [
       { name: "session-log", kind: "narrative", workspaceId: "ws-1" },
     ];
     const deps = createDeps({
       memory: {
-        corpus: unusedCorpus,
+        store: unusedStore,
         list: vi
-          .fn<(workspaceId: string) => Promise<CorpusMetadata[]>>()
+          .fn<(workspaceId: string) => Promise<StoreMetadata[]>>()
           .mockResolvedValue(memories),
         bootstrap: vi
           .fn<(workspaceId: string, agentId: string) => Promise<string>>()
@@ -123,7 +123,7 @@ describe("inspect --kind memory", () => {
 
     const result = await inspectCommand(deps, { kind: "memory", json: true });
 
-    const parsed = JSON.parse(result.output) as CorpusMetadata[];
+    const parsed = JSON.parse(result.output) as StoreMetadata[];
     expect(Array.isArray(parsed)).toBe(true);
     expect(parsed[0]?.name).toBe("session-log");
   });
@@ -132,13 +132,13 @@ describe("inspect --kind memory", () => {
 describe("inspect --kind memory --history", () => {
   it("renders memory version history", async () => {
     const entries: HistoryEntry[] = [
-      { version: "v1", corpus: "session-log", at: "2026-04-14T08:00:00Z", summary: "Initial" },
-      { version: "v2", corpus: "session-log", at: "2026-04-14T09:00:00Z", summary: "Updated" },
+      { version: "v1", store: "session-log", at: "2026-04-14T08:00:00Z", summary: "Initial" },
+      { version: "v2", store: "session-log", at: "2026-04-14T09:00:00Z", summary: "Updated" },
     ];
     const deps = createDeps({
       memory: {
-        corpus: unusedCorpus,
-        list: vi.fn<(workspaceId: string) => Promise<CorpusMetadata[]>>().mockResolvedValue([]),
+        store: unusedStore,
+        list: vi.fn<(workspaceId: string) => Promise<StoreMetadata[]>>().mockResolvedValue([]),
         bootstrap: vi
           .fn<(workspaceId: string, agentId: string) => Promise<string>>()
           .mockResolvedValue(""),

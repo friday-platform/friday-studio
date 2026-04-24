@@ -9,7 +9,7 @@ export interface MountFilter {
   limit?: number;
 }
 
-export class MountedCorpusBinding {
+export class MountedStoreBinding {
   readonly name: string;
   readonly source: string;
   readonly mode: MountMode;

@@ -100,7 +100,7 @@ describe("AtlasDataEventSchema", () => {
     const event = {
       type: "memory-write" as const,
       workspaceId: "ws-1",
-      corpus: "notes",
+      store: "notes",
       entryId: "e-1",
       kind: "narrative" as const,
       at: "2026-01-01T00:00:00Z",
@@ -113,7 +113,7 @@ describe("AtlasDataEventSchema", () => {
     const event = {
       type: "memory-rollback" as const,
       workspaceId: "ws-1",
-      corpus: "notes",
+      store: "notes",
       toVersion: "v2",
       at: "2026-01-01T00:00:00Z",
     };
@@ -167,14 +167,14 @@ describe("AtlasDataEventSchema", () => {
 
 describe("HistoryEntrySchema", () => {
   it("rejects objects missing version/at/summary", () => {
-    const result = HistoryEntrySchema.safeParse({ corpus: "notes" });
+    const result = HistoryEntrySchema.safeParse({ store: "notes" });
     expect(result.success).toBe(false);
   });
 
   it("accepts a valid HistoryEntry", () => {
     const result = HistoryEntrySchema.safeParse({
       version: "v1",
-      corpus: "notes",
+      store: "notes",
       at: "2026-01-01T00:00:00Z",
       summary: "initial commit",
     });

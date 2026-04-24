@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fetchNarrativeCorpus, type NarrativeEntry } from "../api/memory.ts";
+import { fetchNarrativeStore, type NarrativeEntry } from "../api/memory.ts";
 import {
   ImprovementTypeSchema,
   LifecycleImprovementSchema,
@@ -105,7 +105,7 @@ async function loadLifecycleFindings(
 async function loadBacklogFindings(): Promise<ImprovementEntry[]> {
   let entries: NarrativeEntry[];
   try {
-    entries = await fetchNarrativeCorpus(BACKLOG_WORKSPACE, BACKLOG_MEMORY);
+    entries = await fetchNarrativeStore(BACKLOG_WORKSPACE, BACKLOG_MEMORY);
   } catch {
     return [];
   }
@@ -230,7 +230,7 @@ async function loadWorkspaceFindings(
 ): Promise<ImprovementEntry[]> {
   let entries: NarrativeEntry[];
   try {
-    entries = await fetchNarrativeCorpus(workspaceId, "notes");
+    entries = await fetchNarrativeStore(workspaceId, "notes");
   } catch {
     return [];
   }

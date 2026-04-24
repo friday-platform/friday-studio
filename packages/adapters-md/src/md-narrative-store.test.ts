@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MdNarrativeCorpus } from "../src/md-narrative-corpus.ts";
+import { MdNarrativeStore } from "../src/md-narrative-store.ts";
 
-describe("MdNarrativeCorpus", () => {
+describe("MdNarrativeStore", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -16,10 +16,10 @@ describe("MdNarrativeCorpus", () => {
   });
 
   it("append writes to MEMORY.md", async () => {
-    const corpus = new MdNarrativeCorpus({ workspaceRoot: tmpDir });
+    const store = new MdNarrativeStore({ workspaceRoot: tmpDir });
     const entry = { id: "entry-1", text: "hello world", createdAt: "2026-04-14T00:00:00Z" };
 
-    const result = await corpus.append(entry);
+    const result = await store.append(entry);
 
     expect(result.id).toBe("entry-1");
     expect(result.text).toBe("hello world");
@@ -35,8 +35,8 @@ describe("MdNarrativeCorpus", () => {
 
     await expect(fs.access(memoryPath)).rejects.toThrow();
 
-    const corpus = new MdNarrativeCorpus({ workspaceRoot: tmpDir });
-    await corpus.append({ id: "entry-2", text: "created file", createdAt: "2026-04-14T00:00:00Z" });
+    const store = new MdNarrativeStore({ workspaceRoot: tmpDir });
+    await store.append({ id: "entry-2", text: "created file", createdAt: "2026-04-14T00:00:00Z" });
 
     const content = await fs.readFile(memoryPath, "utf-8");
     expect(content).toContain("created file");
@@ -44,10 +44,10 @@ describe("MdNarrativeCorpus", () => {
   });
 
   it("two appends preserve order", async () => {
-    const corpus = new MdNarrativeCorpus({ workspaceRoot: tmpDir });
+    const store = new MdNarrativeStore({ workspaceRoot: tmpDir });
 
-    await corpus.append({ id: "entry-a", text: "first", createdAt: "2026-04-14T00:00:00Z" });
-    await corpus.append({ id: "entry-b", text: "second", createdAt: "2026-04-14T00:01:00Z" });
+    await store.append({ id: "entry-a", text: "first", createdAt: "2026-04-14T00:00:00Z" });
+    await store.append({ id: "entry-b", text: "second", createdAt: "2026-04-14T00:01:00Z" });
 
     const content = await fs.readFile(path.join(tmpDir, "MEMORY.md"), "utf-8");
     expect(content.indexOf("first")).toBeLessThan(content.indexOf("second"));

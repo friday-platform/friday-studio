@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { MdNarrativeCorpus } from "@atlas/adapters-md";
+import { MdNarrativeStore } from "@atlas/adapters-md";
 import { NarrativeEntrySchema } from "@atlas/agent-sdk";
 import { parseMemoryMountSource } from "@atlas/config";
 import { logger } from "@atlas/logger";
@@ -28,9 +28,9 @@ const ForgetParamsSchema = z.object({
   entryId: z.string(),
 });
 
-function resolveMemory(workspaceId: string, memoryName: string): MdNarrativeCorpus {
+function resolveMemory(workspaceId: string, memoryName: string): MdNarrativeStore {
   const memoryPath = path.join(getAtlasHome(), "memory", workspaceId, "narrative", memoryName);
-  return new MdNarrativeCorpus({ workspaceRoot: memoryPath });
+  return new MdNarrativeStore({ workspaceRoot: memoryPath });
 }
 
 const memoryNarrativeRoutes = daemonFactory.createApp();
@@ -71,7 +71,7 @@ memoryNarrativeRoutes.get("/", async (c) => {
 });
 
 // GET /:workspaceId — list memories for a workspace.
-// Returns [{workspaceId, name, kind}] for every corpus declared in the
+// Returns [{workspaceId, name, kind}] for every store declared in the
 // workspace config (own + workspace-scoped mounts). For mounts, workspaceId
 // is the SOURCE workspace so callers use the correct path when fetching
 // entries. Falls back to filesystem scan for workspaces without memory config.
@@ -143,8 +143,8 @@ memoryNarrativeRoutes.get(
     const { since, limit } = c.req.valid("query");
 
     try {
-      const corpus = resolveMemory(workspaceId, memoryName);
-      const entries = await corpus.read({ since, limit });
+      const store = resolveMemory(workspaceId, memoryName);
+      const entries = await store.read({ since, limit });
       return c.json(entries);
     } catch (error: unknown) {
       logger.warn("memory narrative read failed, returning empty", {
@@ -175,8 +175,8 @@ memoryNarrativeRoutes.post(
     });
 
     try {
-      const corpus = resolveMemory(workspaceId, memoryName);
-      const appended = await corpus.append(entry);
+      const store = resolveMemory(workspaceId, memoryName);
+      const appended = await store.append(entry);
       return c.json(appended);
     } catch (error: unknown) {
       logger.error("memory narrative append failed", { workspaceId, memoryName, error });
@@ -193,8 +193,8 @@ memoryNarrativeRoutes.delete(
     const { workspaceId, memoryName, entryId } = c.req.valid("param");
 
     try {
-      const corpus = resolveMemory(workspaceId, memoryName);
-      await corpus.forget(entryId);
+      const store = resolveMemory(workspaceId, memoryName);
+      await store.forget(entryId);
       return c.json({ success: true });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

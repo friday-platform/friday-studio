@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/svelte-query";
 import {
   fetchMemories,
-  fetchNarrativeCorpus,
+  fetchNarrativeStore,
   fetchWorkspacesWithMemory,
 } from "$lib/api/memory.ts";
 
@@ -25,7 +25,7 @@ export const memoryQueries = {
   narrativeEntries: (workspaceId: string, memoryName: string) =>
     queryOptions({
       queryKey: ["memory", workspaceId, "narrative", memoryName] as const,
-      queryFn: () => fetchNarrativeCorpus(workspaceId, memoryName),
+      queryFn: () => fetchNarrativeStore(workspaceId, memoryName),
       staleTime: 10_000,
     }),
 };

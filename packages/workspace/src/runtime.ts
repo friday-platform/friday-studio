@@ -14,13 +14,13 @@ import {
   type AgentSkill,
   type AtlasUIMessageChunk,
   buildResolvedWorkspaceMemory,
-  type CorpusMountBinding,
   GLOBAL_WORKSPACE_ID,
   type LinkCredentialRef,
   type MCPServerConfig,
   type MemoryAdapter,
-  type NarrativeCorpus,
+  type NarrativeStore,
   type ResolvedWorkspaceMemory,
+  type StoreMountBinding,
 } from "@atlas/agent-sdk";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
@@ -121,7 +121,7 @@ import {
 } from "./improvement-loop.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { mountRegistry } from "./mount-registry.ts";
-import { MountedCorpusBinding } from "./mounted-corpus-binding.ts";
+import { MountedStoreBinding } from "./mounted-store-binding.ts";
 import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
 
 /**
@@ -359,8 +359,8 @@ export class WorkspaceRuntime {
   // Populated by executeAgent, consumed by onEvent callback for step:complete events
   private agentResultSideChannel = new Map<string, Map<string, AgentResultData>>();
 
-  // Resolved corpus mount bindings, keyed by mount name
-  private mountBindings = new Map<string, MountedCorpusBinding>();
+  // Resolved store mount bindings, keyed by mount name
+  private mountBindings = new Map<string, MountedStoreBinding>();
 
   // Fully-resolved memory surface (own + mounts + global access), built after initialize()
   private _resolvedMemory: ResolvedWorkspaceMemory | undefined;
@@ -676,7 +676,7 @@ export class WorkspaceRuntime {
       logger.debug("Registered standalone FSM job", { jobName, fsmPath: fsmFile, signals });
     }
 
-    // Resolve memory mounts — fail loud if any source corpus is missing
+    // Resolve memory mounts — fail loud if any source store is missing
     if (this.options.memoryMounts && this.options.memoryMounts.length > 0) {
       await this.resolveMounts(this.options.memoryMounts);
     }
@@ -705,10 +705,10 @@ export class WorkspaceRuntime {
     }
 
     // TODO(phase-1b): Enforce shareable validation before resolving each mount.
-    // Currently any workspace can mount another workspace's corpus without the
+    // Currently any workspace can mount another workspace's store without the
     // source having declared it via memory.shareable.list / allowedWorkspaces.
     // When a getWorkspaceConfig(wsId) callback is available on
-    // WorkspaceRuntimeOptions, verify the mounted corpus name is in
+    // WorkspaceRuntimeOptions, verify the mounted store name is in
     // shareable.list and the consumer is in allowedWorkspaces (or absent = all).
     // If no shareable block exists on the source, allow the mount (backward-compat).
     // See: design memo for memory-three-scope-model task.
@@ -717,10 +717,10 @@ export class WorkspaceRuntime {
       const sourceId = mount.source;
       const sourceParts = sourceId.split("/");
       const sourceWsId = sourceParts[0];
-      const corpusKind = sourceParts[1];
+      const storeKind = sourceParts[1];
       const memoryName = sourceParts[2];
 
-      if (!sourceWsId || !corpusKind || !memoryName) {
+      if (!sourceWsId || !storeKind || !memoryName) {
         throw new MountSourceNotFoundError(
           sourceId,
           `Mount '${mount.name}': invalid source format '${mount.source}' — ` +
@@ -728,10 +728,10 @@ export class WorkspaceRuntime {
         );
       }
 
-      if (corpusKind !== "narrative") {
+      if (storeKind !== "narrative") {
         throw new MountSourceNotFoundError(
           sourceId,
-          `Mount '${mount.name}': only narrative memories are supported for mounts, got '${corpusKind}'`,
+          `Mount '${mount.name}': only narrative memories are supported for mounts, got '${storeKind}'`,
         );
       }
 
@@ -740,13 +740,13 @@ export class WorkspaceRuntime {
       }
 
       mountRegistry.registerSource(sourceId, () =>
-        adapter.corpus(sourceWsId, memoryName, "narrative"),
+        adapter.store(sourceWsId, memoryName, "narrative"),
       );
       mountRegistry.addConsumer(sourceId, this.workspace.id);
 
-      let resolvedCorpus: NarrativeCorpus;
+      let resolvedStore: NarrativeStore;
       try {
-        resolvedCorpus = await adapter.corpus(sourceWsId, memoryName, "narrative");
+        resolvedStore = await adapter.store(sourceWsId, memoryName, "narrative");
       } catch {
         throw new MountSourceNotFoundError(
           sourceId,
@@ -755,14 +755,14 @@ export class WorkspaceRuntime {
         );
       }
 
-      const binding = new MountedCorpusBinding({
+      const binding = new MountedStoreBinding({
         name: mount.name,
         source: mount.source,
         mode: mount.mode,
         scope: mount.scope,
         scopeTarget: mount.scopeTarget,
-        read: (filter) => resolvedCorpus.read(filter),
-        append: (entry) => resolvedCorpus.append(entry),
+        read: (filter) => resolvedStore.read(filter),
+        append: (entry) => resolvedStore.append(entry),
       });
 
       this.mountBindings.set(mount.name, binding);
@@ -777,8 +777,8 @@ export class WorkspaceRuntime {
     }
   }
 
-  getMountsForAgent(agentId: string, jobName?: string): Record<string, CorpusMountBinding> {
-    const result: Record<string, CorpusMountBinding> = {};
+  getMountsForAgent(agentId: string, jobName?: string): Record<string, StoreMountBinding> {
+    const result: Record<string, StoreMountBinding> = {};
     for (const binding of this.mountBindings.values()) {
       switch (binding.scope) {
         case "workspace":
@@ -1519,7 +1519,7 @@ export class WorkspaceRuntime {
     const parts: string[] = [];
 
     try {
-      const globalMemory = await adapter.corpus(
+      const globalMemory = await adapter.store(
         GLOBAL_WORKSPACE_ID,
         STANDING_ORDERS_NAME,
         "narrative",
@@ -1530,21 +1530,18 @@ export class WorkspaceRuntime {
     }
 
     try {
-      const wsMemory = await adapter.corpus(this.workspace.id, STANDING_ORDERS_NAME, "narrative");
+      const wsMemory = await adapter.store(this.workspace.id, STANDING_ORDERS_NAME, "narrative");
       parts.push(await wsMemory.render());
     } catch {
       // Workspace level missing or unreadable — skip silently
     }
 
     for (const mount of this._resolvedMemory?.mounts ?? []) {
-      if (
-        mount.sourceCorpusName === STANDING_ORDERS_NAME &&
-        mount.sourceCorpusKind === "narrative"
-      ) {
+      if (mount.sourceStoreName === STANDING_ORDERS_NAME && mount.sourceStoreKind === "narrative") {
         try {
-          const mountedMemory = await adapter.corpus(
+          const mountedMemory = await adapter.store(
             mount.sourceWorkspaceId,
-            mount.sourceCorpusName,
+            mount.sourceStoreName,
             "narrative",
           );
           parts.push(await mountedMemory.render());

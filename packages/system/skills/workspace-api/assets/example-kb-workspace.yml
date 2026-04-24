@@ -2,7 +2,7 @@
 #
 # Every workspace already has a `notes` narrative memory corpus that the chat
 # runtime auto-injects into the agent's system prompt on every turn and that
-# the platform exposes via `memory_narrative_{append,read,forget}`. Use that.
+# the platform exposes via `memory_save`, `memory_read`, and `memory_remove`. Use those.
 #
 # Do NOT reach for user-authored SQLite for plain "save a note / recall by
 # question" use cases. SQLite adds an MCP dependency (`uvx mcp-server-sqlite`),
@@ -41,13 +41,12 @@ agents:
 
         ## When the user saves something
 
-        Call `memory_narrative_append` with:
+        Call `memory_save` with:
 
         - workspaceId: the current workspace id (available in context).
         - memoryName: `"notes"`.
-        - entry: `{ text: <a self-contained sentence or two that will read
-          well later>, metadata: { kind: "url" | "note" | "quote" | …,
-          url: <if applicable>, tags: <short list>, source: <optional> } }`.
+        - text: a self-contained sentence or two that will read well later.
+        - metadata: `{ kind: "url" | "note" | "quote" | …, url: <if applicable>, tags: <short list>, source: <optional> }`.
 
         Write the text so that a future reader (you, next session) can
         understand it WITHOUT the current conversation context. No pronouns,
@@ -60,7 +59,7 @@ agents:
         ## When the user asks a question
 
         The recent entries are already in your prompt. Answer directly from
-        them and cite the titles/URLs. Only call `memory_narrative_read` if
+        them and cite the titles/URLs. Only call `memory_read` if
         the user asks about older material (e.g. "what did I save last
         month?") or if the default 20-entry window isn't enough.
 

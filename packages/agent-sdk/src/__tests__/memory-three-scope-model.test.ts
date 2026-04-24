@@ -85,9 +85,9 @@ describe("SCOPE_ACCESS_RULES", () => {
   });
 });
 
-// ── PER-WORKSPACE scope (own corpora) ────────────────────────────────────
+// ── PER-WORKSPACE scope (own stores) ────────────────────────────────────
 
-describe("buildResolvedWorkspaceMemory with only own corpora", () => {
+describe("buildResolvedWorkspaceMemory with only own stores", () => {
   it("produces workspace-scoped entries with correct type/strategy", () => {
     const resolved = buildResolvedWorkspaceMemory({
       workspaceId: "braised_biscuit",
@@ -101,8 +101,8 @@ describe("buildResolvedWorkspaceMemory with only own corpora", () => {
     });
 
     expect(resolved.own).toHaveLength(3);
-    for (const corpus of resolved.own) {
-      expect(corpus.scope).toBe("workspace");
+    for (const store of resolved.own) {
+      expect(store.scope).toBe("workspace");
     }
 
     const notes = resolved.own.find((c) => c.name === "notes");
@@ -126,7 +126,7 @@ describe("buildResolvedWorkspaceMemory with only own corpora", () => {
 // ── MOUNTED scope (source string parsing) ────────────────────────────────
 
 describe("buildResolvedWorkspaceMemory with mount declarations", () => {
-  it("parses source strings into {sourceWorkspaceId, sourceCorpusKind, sourceCorpusName}", () => {
+  it("parses source strings into {sourceWorkspaceId, sourceStoreKind, sourceStoreName}", () => {
     const decls: MountDeclaration[] = [
       {
         name: "autopilot-backlog",
@@ -154,13 +154,13 @@ describe("buildResolvedWorkspaceMemory with mount declarations", () => {
 
     const m0 = resolved.mounts[0];
     expect(m0?.sourceWorkspaceId).toBe("thick_endive");
-    expect(m0?.sourceCorpusKind).toBe("narrative");
-    expect(m0?.sourceCorpusName).toBe("autopilot-backlog");
+    expect(m0?.sourceStoreKind).toBe("narrative");
+    expect(m0?.sourceStoreName).toBe("autopilot-backlog");
 
     const m1 = resolved.mounts[1];
     expect(m1?.sourceWorkspaceId).toBe("braised_biscuit");
-    expect(m1?.sourceCorpusKind).toBe("kv");
-    expect(m1?.sourceCorpusName).toBe("config");
+    expect(m1?.sourceStoreKind).toBe("kv");
+    expect(m1?.sourceStoreName).toBe("config");
     expect(m1?.scope).toBe("agent");
     expect(m1?.scopeTarget).toBe("my-agent");
   });
@@ -273,9 +273,9 @@ describe("mixed three-scope composition", () => {
     expect(resolved.workspaceId).toBe("braised_biscuit");
 
     const globalMount = resolved.mounts.find((m) => m.sourceWorkspaceId === "_global");
-    expect(globalMount?.sourceCorpusName).toBe("orders");
+    expect(globalMount?.sourceStoreName).toBe("orders");
 
     const crossMount = resolved.mounts.find((m) => m.sourceWorkspaceId === "thick_endive");
-    expect(crossMount?.sourceCorpusName).toBe("reflections");
+    expect(crossMount?.sourceStoreName).toBe("reflections");
   });
 });

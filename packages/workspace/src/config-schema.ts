@@ -1,5 +1,4 @@
 import {
-  CorpusKindSchema,
   type MemoryConfig,
   MemoryConfigSchema,
   type MemoryMount,
@@ -12,6 +11,7 @@ import {
   type MountFilter,
   MountFilterSchema,
   parseMemoryMountSource,
+  StoreKindSchema,
 } from "@atlas/config";
 import { z } from "zod";
 
@@ -23,7 +23,6 @@ export type ImprovementMode = z.infer<typeof ImprovementModeSchema>;
 // ── Memory mount schemas (re-exported from @atlas/config) ────────────────────
 
 export {
-  CorpusKindSchema,
   type MemoryConfig,
   MemoryConfigSchema,
   type MemoryMount,
@@ -36,6 +35,7 @@ export {
   type MountFilter,
   MountFilterSchema,
   parseMemoryMountSource,
+  StoreKindSchema,
 };
 
 export type MemoryShareable = z.infer<typeof MemoryShareableSchema>;

@@ -286,7 +286,7 @@ describe("validateWorkspaceConfig", () => {
     expect(issue?.path).toContain("save_entry");
   });
 
-  it("catches an unknown memory corpus in outputs.memory", async () => {
+  it("catches an unknown memory store in outputs.memory", async () => {
     const config = makeConfig({
       agents: { writer: { type: "llm", config: {} } },
       signals: { save: { provider: "http", config: { path: "/hook" } } },
@@ -300,7 +300,7 @@ describe("validateWorkspaceConfig", () => {
       },
     } as never);
     const report = await validateWorkspaceConfig(config, makeCtx());
-    const issue = report.issues.find((i) => i.code === "unknown_memory_corpus");
+    const issue = report.issues.find((i) => i.code === "unknown_memory_store");
     expect(issue?.value).toBe("notess");
     expect(issue?.suggest).toContain("notes");
   });

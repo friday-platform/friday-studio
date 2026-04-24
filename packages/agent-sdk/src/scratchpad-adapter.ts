@@ -33,10 +33,10 @@ export interface ScratchpadAdapter {
   append(sessionKey: string, chunk: ScratchpadChunk): Promise<void>;
   read(sessionKey: string, opts?: { since?: string }): Promise<ScratchpadChunk[]>;
   clear(sessionKey: string): Promise<void>;
-  /** Promote a chunk into a narrative corpus. Agent-gated by config. */
+  /** Promote a chunk into a narrative store. Agent-gated by config. */
   promote(
     sessionKey: string,
     chunkId: string,
-    target: { workspaceId: string; corpus: string },
+    target: { workspaceId: string; store: string },
   ): Promise<NarrativeEntry>;
 }

@@ -1,12 +1,12 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env --allow-sys --unstable-kv
 
 /**
- * Migrates existing workspaces from the old 3-corpus memory model to the new 2-corpus model.
+ * Migrates existing workspaces from the old 3-store memory model to the new 2-store model.
  *
  * Old model: own=[user-profile(long_term), notes(long_term), scratchpad(scratchpad)]
  * New model: own=[notes(short_term), memory(long_term)] + mounts from user workspace
  *
- * Data migration: entries in user-profile corpus are appended to the notes corpus
+ * Data migration: entries in user-profile store are appended to the notes store
  * so nothing is silently orphaned. Uses the workspace registry (Deno KV) to resolve
  * workspace directory names to machine IDs so memory directories are found correctly.
  *
@@ -82,7 +82,7 @@ function hasOldModel(memory: MemorySection | undefined): boolean {
   return names.includes("user-profile") || names.includes("scratchpad");
 }
 
-function needsNewCorpus(memory: MemorySection | undefined): boolean {
+function needsNewStore(memory: MemorySection | undefined): boolean {
   if (!memory?.own) return true;
   return !memory.own.some((e) => e.name === "memory");
 }
@@ -96,7 +96,7 @@ function needsUserMounts(workspaceId: string, memory: MemorySection | undefined)
 }
 
 function requiresMigration(workspaceId: string, memory: MemorySection | undefined): boolean {
-  return hasOldModel(memory) || needsNewCorpus(memory) || needsUserMounts(workspaceId, memory);
+  return hasOldModel(memory) || needsNewStore(memory) || needsUserMounts(workspaceId, memory);
 }
 
 function buildNewMemory(workspaceId: string, memory: MemorySection | undefined): MemorySection {
@@ -178,19 +178,19 @@ function replaceMemoryBlock(yamlText: string, newMemory: MemorySection): string 
 
 // ── Data migration: copy user-profile entries into notes ──────────────────────
 
-async function migrateCorpusEntries(
+async function migrateStoreEntries(
   wsMemoryDir: string,
-  fromCorpus: string,
-  toCorpus: string,
+  fromStore: string,
+  toStore: string,
 ): Promise<number> {
-  const srcEntries = join(wsMemoryDir, "narrative", fromCorpus, "entries.jsonl");
+  const srcEntries = join(wsMemoryDir, "narrative", fromStore, "entries.jsonl");
   if (!existsSync(srcEntries)) return 0;
 
   const srcText = await readFile(srcEntries, "utf-8");
   const srcLines = srcText.trim().split("\n").filter(Boolean);
   if (srcLines.length === 0) return 0;
 
-  const destDir = join(wsMemoryDir, "narrative", toCorpus);
+  const destDir = join(wsMemoryDir, "narrative", toStore);
   const destEntries = join(destDir, "entries.jsonl");
 
   let existingText = "";
@@ -240,7 +240,7 @@ async function migrateWorkspace(
   }
 
   const wsMemoryDir = join(atlasHome, "memory", memoryId);
-  const movedProfile = await migrateCorpusEntries(wsMemoryDir, "user-profile", "notes");
+  const movedProfile = await migrateStoreEntries(wsMemoryDir, "user-profile", "notes");
 
   const label = dirName !== memoryId ? `${dirName} (${memoryId})` : dirName;
   console.log(`\n  ${label}`);

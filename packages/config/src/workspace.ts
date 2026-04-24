@@ -52,7 +52,7 @@ export const MemoryTypeSchema = z.enum(["short_term", "long_term", "scratchpad"]
 
 export const MemoryStrategySchema = z.enum(["narrative", "retrieval", "dedup", "kv"]).optional();
 
-export const CorpusKindSchema = z.enum(["narrative", "retrieval", "dedup", "kv"]);
+export const StoreKindSchema = z.enum(["narrative", "retrieval", "dedup", "kv"]);
 
 export const MemoryOwnEntrySchema = z.object({
   name: z.string().min(1),
@@ -117,7 +117,7 @@ export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 
 export function parseMemoryMountSource(source: string): {
   workspaceId: string;
-  kind: z.infer<typeof CorpusKindSchema>;
+  kind: z.infer<typeof StoreKindSchema>;
   memoryName: string;
 } {
   const match = SOURCE_RE.exec(source);
@@ -126,7 +126,7 @@ export function parseMemoryMountSource(source: string): {
   }
   return {
     workspaceId: match[1] ?? "",
-    kind: CorpusKindSchema.parse(match[2]),
+    kind: StoreKindSchema.parse(match[2]),
     memoryName: match[3] ?? "",
   };
 }

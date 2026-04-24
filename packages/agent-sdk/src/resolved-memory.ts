@@ -19,16 +19,16 @@ export type ScopeTag = "global" | "workspace" | "mounted";
 
 const MemoryTypeValues = ["short_term", "long_term", "scratchpad"] as const;
 const MemoryStrategyValues = ["narrative", "retrieval", "dedup", "kv"] as const;
-const CorpusKindValues = ["narrative", "retrieval", "dedup", "kv"] as const;
+const StoreKindValues = ["narrative", "retrieval", "dedup", "kv"] as const;
 
-export const ResolvedOwnCorpusSchema = z.object({
+export const ResolvedOwnStoreSchema = z.object({
   name: z.string(),
   type: z.enum(MemoryTypeValues),
   strategy: z.enum(MemoryStrategyValues).optional(),
   scope: z.literal("workspace" as const),
 });
 
-export type ResolvedOwnCorpus = z.infer<typeof ResolvedOwnCorpusSchema>;
+export type ResolvedOwnStore = z.infer<typeof ResolvedOwnStoreSchema>;
 
 export const ResolvedMountSchema = z.object({
   name: z.string(),
@@ -38,15 +38,15 @@ export const ResolvedMountSchema = z.object({
   scopeTarget: z.string().optional(),
   sourceWorkspaceId: z.string(),
   // Runtime currently only supports "narrative" mounts (runtime.ts:550)
-  sourceCorpusKind: z.enum(CorpusKindValues),
-  sourceCorpusName: z.string(),
+  sourceStoreKind: z.enum(StoreKindValues),
+  sourceStoreName: z.string(),
 });
 
 export type ResolvedMount = z.infer<typeof ResolvedMountSchema>;
 
 export const ResolvedWorkspaceMemorySchema = z.object({
   workspaceId: z.string(),
-  own: z.array(ResolvedOwnCorpusSchema),
+  own: z.array(ResolvedOwnStoreSchema),
   mounts: z.array(ResolvedMountSchema),
   globalAccess: z.object({ canRead: z.boolean(), canWrite: z.boolean() }),
 });
@@ -65,8 +65,8 @@ export interface BuildResolvedMemoryInput {
 export function buildResolvedWorkspaceMemory(
   input: BuildResolvedMemoryInput,
 ): ResolvedWorkspaceMemory {
-  const own: ResolvedOwnCorpus[] = input.ownEntries.map((entry) =>
-    ResolvedOwnCorpusSchema.parse({
+  const own: ResolvedOwnStore[] = input.ownEntries.map((entry) =>
+    ResolvedOwnStoreSchema.parse({
       name: entry.name,
       type: entry.type,
       strategy: entry.strategy,
@@ -83,8 +83,8 @@ export function buildResolvedWorkspaceMemory(
       scope: decl.scope,
       scopeTarget: decl.scopeTarget,
       sourceWorkspaceId: parts[0] ?? "",
-      sourceCorpusKind: parts[1] ?? "narrative",
-      sourceCorpusName: parts[2] ?? "",
+      sourceStoreKind: parts[1] ?? "narrative",
+      sourceStoreName: parts[2] ?? "",
     });
   });
 

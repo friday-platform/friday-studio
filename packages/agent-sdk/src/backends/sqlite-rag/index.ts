@@ -7,8 +7,8 @@ export {
   NoneChunker,
   SentenceChunker,
 } from "./chunker.ts";
-export type { SqliteRagConfig } from "./SqliteRetrievalCorpus.ts";
-export { SqliteRagConfigSchema, SqliteRetrievalCorpus } from "./SqliteRetrievalCorpus.ts";
+export type { SqliteRagConfig } from "./SqliteRetrievalStore.ts";
+export { SqliteRagConfigSchema, SqliteRetrievalStore } from "./SqliteRetrievalStore.ts";
 export {
   DocBatchSchema,
   HitSchema,

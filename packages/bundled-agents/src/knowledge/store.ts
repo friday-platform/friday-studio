@@ -1,10 +1,10 @@
 /**
- * Corpus Builder: ingest CSV/TXT files → SQLite with FTS5 + vector embeddings.
+ * Store Builder: ingest CSV/TXT files → SQLite with FTS5 + vector embeddings.
  * Auto-detects CSV column structure — works with any CSV schema.
  *
  * CLI:
- *   deno run -A corpus.ts --input /path/to/data/dir --output /tmp/corpus.db
- *   deno run -A corpus.ts --input /path/to/file.csv --output /tmp/corpus.db
+ *   deno run -A store.ts --input /path/to/data/dir --output /tmp/store.db
+ *   deno run -A store.ts --input /path/to/file.csv --output /tmp/store.db
  */
 import { createReadStream, readdirSync, readFileSync, statSync } from "node:fs";
 import { unlink } from "node:fs/promises";
@@ -15,15 +15,15 @@ import { createLogger } from "@atlas/logger";
 import { Database } from "@db/sqlite";
 import { embedBatch, embeddingToBlob } from "./embed.ts";
 
-const log = createLogger({ name: "knowledge:corpus" });
+const log = createLogger({ name: "knowledge:store" });
 
-export interface CorpusBuildOptions {
+export interface StoreBuildOptions {
   inputPath: string;
   outputPath: string;
   onProgress?: (phase: string, done: number, total: number) => void;
 }
 
-export interface CorpusBuildResult {
+export interface StoreBuildResult {
   documentCount: number;
   embeddedCount: number;
   durationMs: number;
@@ -370,12 +370,12 @@ async function embedDocuments(
 
 // ── Public API ─────────────────────────────────────────────────────
 
-export async function buildCorpus(options: CorpusBuildOptions): Promise<CorpusBuildResult> {
+export async function buildStore(options: StoreBuildOptions): Promise<StoreBuildResult> {
   const start = performance.now();
   const outputPath = path.resolve(options.outputPath);
   const sources: Array<{ file: string; type: string; count: number }> = [];
 
-  // Validate input BEFORE deleting the existing corpus — prevents data loss
+  // Validate input BEFORE deleting the existing store — prevents data loss
   // if the input path is wrong.
   const inputPath = path.resolve(options.inputPath);
   const inputStat = statSync(inputPath);
@@ -450,7 +450,7 @@ if (import.meta.main) {
   const outputIdx = args.indexOf("--output");
 
   if (inputIdx === -1 || outputIdx === -1) {
-    log.error("Usage: deno run -A corpus.ts --input <dir-or-file> --output <corpus.db>");
+    log.error("Usage: deno run -A store.ts --input <dir-or-file> --output <store.db>");
     process.exit(1);
   }
 
@@ -458,13 +458,13 @@ if (import.meta.main) {
   const outputPath = args[outputIdx + 1];
 
   if (!inputPath || !outputPath) {
-    log.error("Usage: deno run -A corpus.ts --input <dir-or-file> --output <corpus.db>");
+    log.error("Usage: deno run -A store.ts --input <dir-or-file> --output <store.db>");
     process.exit(1);
   }
 
-  log.info("Starting corpus build", { inputPath, outputPath });
+  log.info("Starting store build", { inputPath, outputPath });
 
-  const result = await buildCorpus({
+  const result = await buildStore({
     inputPath,
     outputPath,
     onProgress: (phase, done, total) => {
@@ -476,7 +476,7 @@ if (import.meta.main) {
     },
   });
 
-  log.info("Corpus built", {
+  log.info("Store built", {
     documents: result.documentCount,
     embedded: result.embeddedCount,
     durationMs: result.durationMs,

@@ -1,8 +1,8 @@
-import type { KVCorpus } from "@atlas/agent-sdk";
+import type { KVStore } from "@atlas/agent-sdk";
 import { beforeEach, describe, expect, it } from "vitest";
 import { MountRegistry } from "./registry.ts";
 
-function createInMemoryKV(): KVCorpus {
+function createInMemoryKV(): KVStore {
   const store = new Map<string, unknown>();
   return {
     get<T = unknown>(key: string): Promise<T | undefined> {

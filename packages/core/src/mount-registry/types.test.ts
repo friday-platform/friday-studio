@@ -90,7 +90,7 @@ describe("buildSourceId", () => {
     expect(buildSourceId("ws-1", "kv", "settings")).toBe("ws-1/kv/settings");
   });
 
-  it("handles all four corpus kinds", () => {
+  it("handles all four store kinds", () => {
     expect(buildSourceId("ws", "narrative", "n")).toBe("ws/narrative/n");
     expect(buildSourceId("ws", "retrieval", "r")).toBe("ws/retrieval/r");
     expect(buildSourceId("ws", "dedup", "d")).toBe("ws/dedup/d");

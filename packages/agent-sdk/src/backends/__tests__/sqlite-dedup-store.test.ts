@@ -1,14 +1,14 @@
 import { Database } from "@db/sqlite";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { SqliteDedupCorpus } from "../sqlite-dedup-corpus.ts";
+import { SqliteDedupStore } from "../sqlite-dedup-store.ts";
 
-describe("SqliteDedupCorpus", () => {
+describe("SqliteDedupStore", () => {
   let db: Database;
-  let corpus: SqliteDedupCorpus;
+  let store: SqliteDedupStore;
 
   beforeEach(() => {
     db = new Database(":memory:");
-    corpus = SqliteDedupCorpus.create(db, "ws-test", "dedup-test");
+    store = SqliteDedupStore.create(db, "ws-test", "dedup-test");
   });
 
   afterEach(() => {
@@ -17,7 +17,7 @@ describe("SqliteDedupCorpus", () => {
 
   describe("append", () => {
     test("stores entry fields as individual rows", async () => {
-      await corpus.append("ns1", { url: "https://a.com", title: "A" });
+      await store.append("ns1", { url: "https://a.com", title: "A" });
 
       const rows = db.prepare("SELECT * FROM dedup_entries").all() as Array<
         Record<string, unknown>
@@ -26,8 +26,8 @@ describe("SqliteDedupCorpus", () => {
     });
 
     test("upserts on duplicate (namespace, field, value)", async () => {
-      await corpus.append("ns1", { url: "https://a.com" });
-      await corpus.append("ns1", { url: "https://a.com" });
+      await store.append("ns1", { url: "https://a.com" });
+      await store.append("ns1", { url: "https://a.com" });
 
       const rows = db.prepare("SELECT * FROM dedup_entries").all() as Array<
         Record<string, unknown>
@@ -39,7 +39,7 @@ describe("SqliteDedupCorpus", () => {
       const now = 1_000_000;
       vi.spyOn(Date, "now").mockReturnValue(now);
 
-      await corpus.append("ns1", { key: "val" }, 2);
+      await store.append("ns1", { key: "val" }, 2);
 
       const row = db.prepare("SELECT expires_at FROM dedup_entries").get() as {
         expires_at: number;
@@ -50,7 +50,7 @@ describe("SqliteDedupCorpus", () => {
     });
 
     test("leaves expires_at null when ttlHours is omitted", async () => {
-      await corpus.append("ns1", { key: "val" });
+      await store.append("ns1", { key: "val" });
 
       const row = db.prepare("SELECT expires_at FROM dedup_entries").get() as {
         expires_at: number | null;
@@ -61,43 +61,43 @@ describe("SqliteDedupCorpus", () => {
 
   describe("filter", () => {
     test("returns all values when nothing is stored", async () => {
-      const result = await corpus.filter("ns1", "url", ["https://a.com", "https://b.com"]);
+      const result = await store.filter("ns1", "url", ["https://a.com", "https://b.com"]);
       expect(result).toEqual(["https://a.com", "https://b.com"]);
     });
 
-    test("excludes values already in the corpus", async () => {
-      await corpus.append("ns1", { url: "https://a.com" });
+    test("excludes values already in the store", async () => {
+      await store.append("ns1", { url: "https://a.com" });
 
-      const result = await corpus.filter("ns1", "url", ["https://a.com", "https://b.com"]);
+      const result = await store.filter("ns1", "url", ["https://a.com", "https://b.com"]);
       expect(result).toEqual(["https://b.com"]);
     });
 
     test("returns expired values as novel", async () => {
       const pastTime = 1_000_000;
       vi.spyOn(Date, "now").mockReturnValue(pastTime);
-      await corpus.append("ns1", { url: "https://a.com" }, 1);
+      await store.append("ns1", { url: "https://a.com" }, 1);
 
       vi.spyOn(Date, "now").mockReturnValue(pastTime + 2 * 3_600_000);
-      const result = await corpus.filter("ns1", "url", ["https://a.com"]);
+      const result = await store.filter("ns1", "url", ["https://a.com"]);
       expect(result).toEqual(["https://a.com"]);
 
       vi.restoreAllMocks();
     });
 
     test("handles complex values with JSON serialization", async () => {
-      await corpus.append("ns1", { data: { nested: true } });
+      await store.append("ns1", { data: { nested: true } });
 
-      const result = await corpus.filter("ns1", "data", [{ nested: true }, { nested: false }]);
+      const result = await store.filter("ns1", "data", [{ nested: true }, { nested: false }]);
       expect(result).toEqual([{ nested: false }]);
     });
   });
 
   describe("clear", () => {
     test("removes all entries for the given namespace", async () => {
-      await corpus.append("ns1", { a: "1" });
-      await corpus.append("ns2", { b: "2" });
+      await store.append("ns1", { a: "1" });
+      await store.append("ns2", { b: "2" });
 
-      await corpus.clear("ns1");
+      await store.clear("ns1");
 
       const rows = db.prepare("SELECT * FROM dedup_entries").all() as Array<
         Record<string, unknown>
@@ -108,18 +108,18 @@ describe("SqliteDedupCorpus", () => {
 
   describe("multi-namespace isolation", () => {
     test("filter only checks within the specified namespace", async () => {
-      await corpus.append("ns1", { url: "https://a.com" });
-      await corpus.append("ns2", { url: "https://a.com" });
+      await store.append("ns1", { url: "https://a.com" });
+      await store.append("ns2", { url: "https://a.com" });
 
-      const ns1Result = await corpus.filter("ns1", "url", ["https://a.com"]);
+      const ns1Result = await store.filter("ns1", "url", ["https://a.com"]);
       expect(ns1Result).toEqual([]);
 
-      await corpus.clear("ns1");
+      await store.clear("ns1");
 
-      const ns1After = await corpus.filter("ns1", "url", ["https://a.com"]);
+      const ns1After = await store.filter("ns1", "url", ["https://a.com"]);
       expect(ns1After).toEqual(["https://a.com"]);
 
-      const ns2After = await corpus.filter("ns2", "url", ["https://a.com"]);
+      const ns2After = await store.filter("ns2", "url", ["https://a.com"]);
       expect(ns2After).toEqual([]);
     });
   });
@@ -128,10 +128,10 @@ describe("SqliteDedupCorpus", () => {
     test("prunes expired rows from all namespaces on append", async () => {
       const pastTime = 1_000_000;
       vi.spyOn(Date, "now").mockReturnValue(pastTime);
-      await corpus.append("ns1", { old: "val" }, 1);
+      await store.append("ns1", { old: "val" }, 1);
 
       vi.spyOn(Date, "now").mockReturnValue(pastTime + 2 * 3_600_000);
-      await corpus.append("ns2", { fresh: "val" });
+      await store.append("ns2", { fresh: "val" });
 
       const rows = db.prepare("SELECT * FROM dedup_entries").all() as Array<
         Record<string, unknown>

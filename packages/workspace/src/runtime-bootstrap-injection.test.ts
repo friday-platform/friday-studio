@@ -217,7 +217,7 @@ describe("memory bootstrap injection", () => {
 
   it("continues with original prompt when bootstrap throws", async () => {
     process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
-    mockBootstrapFn.mockRejectedValue(new Error("corpus unavailable"));
+    mockBootstrapFn.mockRejectedValue(new Error("store unavailable"));
 
     await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
       const session = await runtime.processSignal({
@@ -234,7 +234,7 @@ describe("memory bootstrap injection", () => {
     // Prompt passed without bootstrap prefix
     expect(capturedPrompts).toHaveLength(1);
     expect(capturedPrompts[0]).toContain("do the task");
-    expect(capturedPrompts[0]).not.toContain("corpus unavailable");
+    expect(capturedPrompts[0]).not.toContain("store unavailable");
   });
 
   it("passes prompt unchanged when bootstrap returns empty string", async () => {

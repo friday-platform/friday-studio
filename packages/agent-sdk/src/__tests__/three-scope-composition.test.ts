@@ -27,7 +27,7 @@ import {
 import {
   buildResolvedWorkspaceMemory,
   type ResolvedMount,
-  type ResolvedOwnCorpus,
+  type ResolvedOwnStore,
   type ResolvedWorkspaceMemory,
 } from "../resolved-memory.ts";
 
@@ -113,12 +113,12 @@ describe("PER-WORKSPACE scope invariants", () => {
       kernelWorkspaceId: undefined,
     });
 
-    for (const corpus of resolved.own) {
-      expect(corpus.scope).toBe("workspace");
+    for (const store of resolved.own) {
+      expect(store.scope).toBe("workspace");
     }
   });
 
-  it("own corpora retain name and type from input", () => {
+  it("own stores retain name and type from input", () => {
     const resolved = buildResolvedWorkspaceMemory({
       workspaceId: "braised_biscuit",
       ownEntries: [{ name: "reflections", type: "long_term", strategy: "narrative" }],
@@ -126,10 +126,10 @@ describe("PER-WORKSPACE scope invariants", () => {
       kernelWorkspaceId: undefined,
     });
 
-    const corpus = resolved.own[0];
-    expect(corpus?.name).toBe("reflections");
-    expect(corpus?.type).toBe("long_term");
-    expect(corpus?.strategy).toBe("narrative");
+    const store = resolved.own[0];
+    expect(store?.name).toBe("reflections");
+    expect(store?.type).toBe("long_term");
+    expect(store?.strategy).toBe("narrative");
   });
 
   it("workspaceId is preserved on the resolved memory object", () => {
@@ -147,7 +147,7 @@ describe("PER-WORKSPACE scope invariants", () => {
 // ── MOUNTED scope invariants ──────────────────────────────────────────────
 
 describe("MOUNTED scope invariants", () => {
-  it("carries parsed sourceWorkspaceId, sourceCorpusKind, sourceCorpusName from source string", () => {
+  it("carries parsed sourceWorkspaceId, sourceStoreKind, sourceStoreName from source string", () => {
     const decl: MountDeclaration = {
       name: "autopilot-backlog",
       source: "thick_endive/narrative/autopilot-backlog",
@@ -164,8 +164,8 @@ describe("MOUNTED scope invariants", () => {
 
     const mount = resolved.mounts[0];
     expect(mount?.sourceWorkspaceId).toBe("thick_endive");
-    expect(mount?.sourceCorpusKind).toBe("narrative");
-    expect(mount?.sourceCorpusName).toBe("autopilot-backlog");
+    expect(mount?.sourceStoreKind).toBe("narrative");
+    expect(mount?.sourceStoreName).toBe("autopilot-backlog");
   });
 
   it("parses _global as the sourceWorkspaceId for global mounts", () => {
@@ -180,8 +180,8 @@ describe("MOUNTED scope invariants", () => {
 
     const mount = resolved.mounts[0];
     expect(mount?.sourceWorkspaceId).toBe("_global");
-    expect(mount?.sourceCorpusKind).toBe("narrative");
-    expect(mount?.sourceCorpusName).toBe("orders");
+    expect(mount?.sourceStoreKind).toBe("narrative");
+    expect(mount?.sourceStoreName).toBe("orders");
   });
 
   it("preserves mode field from MountDeclaration", () => {
@@ -203,7 +203,7 @@ describe("MOUNTED scope invariants", () => {
 // ── Mixed three-scope scenario ─────────────────────────────────────────────
 
 describe("mixed three-scope composition", () => {
-  it("workspace with own corpora + _global mount + cross-workspace mount produces correct ResolvedWorkspaceMemory", () => {
+  it("workspace with own stores + _global mount + cross-workspace mount produces correct ResolvedWorkspaceMemory", () => {
     const ownEntries = [
       { name: "notes", type: "short_term" },
       { name: "backlog", type: "long_term", strategy: "narrative" },
@@ -239,12 +239,12 @@ describe("mixed three-scope composition", () => {
 
     const globalMount = resolved.mounts.find((m) => m.sourceWorkspaceId === "_global");
     expect(globalMount).toBeDefined();
-    expect(globalMount?.sourceCorpusName).toBe("orders");
+    expect(globalMount?.sourceStoreName).toBe("orders");
     expect(globalMount?.mode).toBe("ro");
 
     const crossMount = resolved.mounts.find((m) => m.sourceWorkspaceId === "thick_endive");
     expect(crossMount).toBeDefined();
-    expect(crossMount?.sourceCorpusName).toBe("reflections");
+    expect(crossMount?.sourceStoreName).toBe("reflections");
     expect(crossMount?.mode).toBe("ro");
 
     // GLOBAL scope — read allowed, write denied (not kernel)
@@ -280,7 +280,7 @@ describe("mixed three-scope composition", () => {
       kernelWorkspaceId: "thick_endive",
     });
 
-    // PER-WORKSPACE: kernel's own corpora
+    // PER-WORKSPACE: kernel's own stores
     expect(resolved.own).toHaveLength(3);
 
     // MOUNTED: both mounts present
@@ -379,11 +379,11 @@ describe("MemoryScope type", () => {
   });
 });
 
-// ── Type compatibility: ResolvedOwnCorpus and ResolvedMount ───────────────
+// ── Type compatibility: ResolvedOwnStore and ResolvedMount ───────────────
 
 describe("type compatibility", () => {
-  it("ResolvedOwnCorpus is structurally correct with scope='workspace'", () => {
-    const own: ResolvedOwnCorpus = {
+  it("ResolvedOwnStore is structurally correct with scope='workspace'", () => {
+    const own: ResolvedOwnStore = {
       name: "autopilot-backlog",
       type: "long_term",
       strategy: "narrative",
@@ -402,14 +402,14 @@ describe("type compatibility", () => {
     const mount: ResolvedMount = {
       ...decl,
       sourceWorkspaceId: "thick_endive",
-      sourceCorpusKind: "narrative",
-      sourceCorpusName: "reflections",
+      sourceStoreKind: "narrative",
+      sourceStoreName: "reflections",
     };
     expect(mount.name).toBe(decl.name);
     expect(mount.source).toBe(decl.source);
     expect(mount.mode).toBe(decl.mode);
     expect(mount.sourceWorkspaceId).toBe("thick_endive");
-    expect(mount.sourceCorpusKind).toBe("narrative");
-    expect(mount.sourceCorpusName).toBe("reflections");
+    expect(mount.sourceStoreKind).toBe("narrative");
+    expect(mount.sourceStoreName).toBe("reflections");
   });
 });

@@ -12,17 +12,17 @@ export const NarrativeEntrySchema = z.object({
 
 export type NarrativeEntry = z.infer<typeof NarrativeEntrySchema>;
 
-export const CorpusMetadataSchema = z.object({
+export const StoreMetadataSchema = z.object({
   name: z.string(),
   kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
   workspaceId: z.string(),
 });
 
-export type CorpusMetadata = z.infer<typeof CorpusMetadataSchema>;
+export type StoreMetadata = z.infer<typeof StoreMetadataSchema>;
 
-const NarrativeCorpusResponseSchema = z.array(NarrativeEntrySchema);
+const NarrativeStoreResponseSchema = z.array(NarrativeEntrySchema);
 
-const CorpusListResponseSchema = z.array(CorpusMetadataSchema);
+const StoreListResponseSchema = z.array(StoreMetadataSchema);
 
 
 export const EntryMetaSchema = z.object({
@@ -37,7 +37,7 @@ export const EntryMetaSchema = z.object({
 
 export type EntryMeta = z.infer<typeof EntryMetaSchema>;
 
-export type CorpusKind = CorpusMetadata["kind"];
+export type StoreKind = StoreMetadata["kind"];
 
 export function parseEntryMeta(entry: NarrativeEntry): EntryMeta {
   if (!entry.metadata) return {};
@@ -55,16 +55,16 @@ export async function fetchWorkspacesWithMemory(): Promise<string[]> {
 
 export async function fetchMemories(
   workspaceId: string,
-): Promise<CorpusMetadata[]> {
+): Promise<StoreMetadata[]> {
   const res = await globalThis.fetch(
     `${PROXY_BASE}/api/memory/${encodeURIComponent(workspaceId)}`,
   );
   if (!res.ok) return [];
   const data: unknown = await res.json();
-  return CorpusListResponseSchema.parse(data);
+  return StoreListResponseSchema.parse(data);
 }
 
-export async function fetchNarrativeCorpus(
+export async function fetchNarrativeStore(
   workspaceId: string,
   memoryName: string,
 ): Promise<NarrativeEntry[]> {
@@ -77,5 +77,5 @@ export async function fetchNarrativeCorpus(
     );
   }
   const data: unknown = await res.json();
-  return NarrativeCorpusResponseSchema.parse(data);
+  return NarrativeStoreResponseSchema.parse(data);
 }

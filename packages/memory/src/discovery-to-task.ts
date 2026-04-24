@@ -60,7 +60,7 @@ export async function shortHash(input: string): Promise<string> {
 }
 
 export async function appendDiscoveryAsTask(
-  corpusBaseUrl: string,
+  storeBaseUrl: string,
   discovery: Discovery,
 ): Promise<{ id: string; createdAt: string }> {
   const validated = DiscoverySchema.parse(discovery);
@@ -93,14 +93,14 @@ export async function appendDiscoveryAsTask(
     metadata,
   };
 
-  const res = await fetch(corpusBaseUrl, {
+  const res = await fetch(storeBaseUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(entry),
   });
 
   if (!res.ok) {
-    throw new Error(`POST ${corpusBaseUrl} failed: HTTP ${res.status}`);
+    throw new Error(`POST ${storeBaseUrl} failed: HTTP ${res.status}`);
   }
 
   const body: unknown = await res.json();

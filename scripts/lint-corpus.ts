@@ -10,7 +10,7 @@
  *
  * Usage:
  *   deno run -A scripts/lint-corpus.ts
- *   deno run -A scripts/lint-corpus.ts --markdown > docs/learnings/...-corpus.md
+ *   deno run -A scripts/lint-corpus.ts --markdown > docs/learnings/...-store.md
  */
 
 import { readdir, readFile } from "node:fs/promises";
@@ -180,9 +180,9 @@ function formatReport(
   );
 
   if (markdown) {
-    lines.push("# Lint corpus report");
+    lines.push("# Lint skills report");
     lines.push("");
-    lines.push(`Corpus size: **${String(total)}** skills.`);
+    lines.push(`Skills count: **${String(total)}** skills.`);
     lines.push("");
     lines.push(
       `Decision threshold: rules firing on >${String(FALSE_POSITIVE_THRESHOLD * 100)}% of samples are candidates for demotion or rule adjustment.`,
@@ -217,7 +217,7 @@ function formatReport(
       lines.push("");
     }
   } else {
-    lines.push(`Corpus size: ${String(total)} skills`);
+    lines.push(`Skills count: ${String(total)} skills`);
     lines.push(`Threshold: >${String(FALSE_POSITIVE_THRESHOLD * 100)}% rate → demote`);
     lines.push("");
     lines.push("Rule                          warn  error  rate   verdict");

@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import process from "node:process";
-import type { AgentResult, NarrativeCorpus } from "@atlas/agent-sdk";
+import type { AgentResult, NarrativeStore } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // ---------------------------------------------------------------------------
 
 const capturedPrompts = vi.hoisted(() => [] as string[]);
-const mockCorpusFn = vi.hoisted(() =>
-  vi.fn<(wsId: string, name: string, kind: string) => Promise<NarrativeCorpus>>(),
+const mockStoreFn = vi.hoisted(() =>
+  vi.fn<(wsId: string, name: string, kind: string) => Promise<NarrativeStore>>(),
 );
 
 vi.mock("@atlas/core", async (importActual) => {
@@ -49,7 +49,7 @@ vi.mock("@atlas/core", async (importActual) => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeNarrativeMock(content: string): NarrativeCorpus {
+function makeNarrativeMock(content: string): NarrativeStore {
   return {
     append: (entry) => Promise.resolve(entry),
     read: () => Promise.resolve([]),
@@ -97,14 +97,14 @@ function createAgentConfig(opts?: {
 
 function buildMockAdapter(): {
   bootstrap: ReturnType<typeof vi.fn>;
-  corpus: typeof mockCorpusFn;
+  store: typeof mockStoreFn;
   list: ReturnType<typeof vi.fn>;
   history: ReturnType<typeof vi.fn>;
   rollback: ReturnType<typeof vi.fn>;
 } {
   return {
     bootstrap: vi.fn<() => Promise<string>>().mockResolvedValue(""),
-    corpus: mockCorpusFn,
+    store: mockStoreFn,
     list: vi.fn().mockResolvedValue([]),
     history: vi.fn().mockResolvedValue([]),
     rollback: vi.fn().mockResolvedValue(undefined),
@@ -175,7 +175,7 @@ describe("standing orders bootstrap injection", () => {
 
   beforeEach(() => {
     capturedPrompts.length = 0;
-    mockCorpusFn.mockReset();
+    mockStoreFn.mockReset();
   });
 
   afterEach(() => {
@@ -188,7 +188,7 @@ describe("standing orders bootstrap injection", () => {
 
   it("loads global-level standing orders and prepends to prompt when flag=1", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
-    mockCorpusFn.mockImplementation((wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL ORDER: never delete files"));
       }
@@ -196,7 +196,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
@@ -209,7 +209,7 @@ describe("standing orders bootstrap injection", () => {
 
   it("loads workspace-level standing orders after global level", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
-    mockCorpusFn.mockImplementation((wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL ORDER"));
       }
@@ -220,7 +220,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
@@ -236,7 +236,7 @@ describe("standing orders bootstrap injection", () => {
 
   it("loads mounted standing orders after workspace level", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
-    mockCorpusFn.mockImplementation((wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL ORDER"));
       }
@@ -250,7 +250,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime(
       {
@@ -281,7 +281,7 @@ describe("standing orders bootstrap injection", () => {
 
   it("all three levels concatenate separated by double newlines", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
-    mockCorpusFn.mockImplementation((wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL"));
       }
@@ -295,7 +295,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime(
       {
@@ -321,7 +321,7 @@ describe("standing orders bootstrap injection", () => {
 
   it("silently skips missing memory at any level — other levels still included", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
-    mockCorpusFn.mockImplementation((wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.reject(new Error("directory not found"));
       }
@@ -332,7 +332,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
@@ -346,7 +346,7 @@ describe("standing orders bootstrap injection", () => {
 
   it("skips empty render results without spurious newlines", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
-    mockCorpusFn.mockImplementation((wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock(""));
       }
@@ -357,7 +357,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
@@ -371,38 +371,38 @@ describe("standing orders bootstrap injection", () => {
 
   it("does not call adapter when ATLAS_STANDING_ORDERS_BOOTSTRAP is unset", async () => {
     delete process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP;
-    mockCorpusFn.mockResolvedValue(makeNarrativeMock("SHOULD NOT APPEAR"));
+    mockStoreFn.mockResolvedValue(makeNarrativeMock("SHOULD NOT APPEAR"));
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
     });
 
-    expect(mockCorpusFn).not.toHaveBeenCalled();
+    expect(mockStoreFn).not.toHaveBeenCalled();
     expect(capturedPrompts[0]).not.toContain("SHOULD NOT APPEAR");
   });
 
   it("does not call adapter when ATLAS_STANDING_ORDERS_BOOTSTRAP is '0'", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "0";
-    mockCorpusFn.mockResolvedValue(makeNarrativeMock("SHOULD NOT APPEAR"));
+    mockStoreFn.mockResolvedValue(makeNarrativeMock("SHOULD NOT APPEAR"));
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
     });
 
-    expect(mockCorpusFn).not.toHaveBeenCalled();
+    expect(mockStoreFn).not.toHaveBeenCalled();
   });
 
   it("standing orders appear BEFORE the existing memory bootstrap in the final prompt", async () => {
     process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
     process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
 
-    mockCorpusFn.mockImplementation((_wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((_wsId: string, name: string): Promise<NarrativeStore> => {
       if (name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("STANDING ORDER"));
       }
@@ -410,7 +410,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
     adapter.bootstrap = vi.fn<() => Promise<string>>().mockResolvedValue("MEMORY BOOTSTRAP");
 
     const originalMemEnv = process.env.ATLAS_MEMORY_BOOTSTRAP;
@@ -440,7 +440,7 @@ describe("standing orders bootstrap injection", () => {
     const failingMock = makeNarrativeMock("");
     failingMock.render = () => Promise.reject(new Error("render failed at global"));
 
-    mockCorpusFn.mockImplementation((wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       callCount++;
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(failingMock);
@@ -452,7 +452,7 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
@@ -466,7 +466,7 @@ describe("standing orders bootstrap injection", () => {
 
   it("hot-reads flag per-invocation — toggling env var mid-process takes effect on next signal", async () => {
     delete process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP;
-    mockCorpusFn.mockImplementation((_wsId: string, name: string): Promise<NarrativeCorpus> => {
+    mockStoreFn.mockImplementation((_wsId: string, name: string): Promise<NarrativeStore> => {
       if (name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("STANDING ORDER"));
       }
@@ -474,16 +474,16 @@ describe("standing orders bootstrap injection", () => {
     });
 
     const adapter = buildMockAdapter();
-    adapter.corpus = mockCorpusFn;
+    adapter.store = mockStoreFn;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
-      expect(mockCorpusFn).not.toHaveBeenCalled();
+      expect(mockStoreFn).not.toHaveBeenCalled();
 
       process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
 
       await fireSignal(runtime);
-      expect(mockCorpusFn).toHaveBeenCalled();
+      expect(mockStoreFn).toHaveBeenCalled();
       expect(capturedPrompts[1]).toContain("STANDING ORDER");
     });
   });

@@ -37,7 +37,7 @@ If that fails, see `friday-cli` for daemon lifecycle.
 4. **Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*`.**
    There are no platform-default filesystem tools. Listing a tool name without
    a configured MCP server that provides it is a no-op. *Exception:* the
-   platform ships narrative-memory tools (`memory_narrative_{append,read,forget}`)
+   platform ships memory tools (`memory_save`, `memory_read`, `memory_remove`)
    and state tools (`state_{append,filter,lookup}`) for both chat and FSM LLM
    agents without any MCP server config.
 
@@ -59,7 +59,7 @@ most important mental model to get right:
 ```
 user message → workspace-chat (platform meta-agent)
                       │
-                      ├─ calls memory_narrative_append / read (built-in)
+                      ├─ calls memory_save / memory_read (built-in)
                       │
                       └─ calls <job-name> tool → fires signal → FSM runs
                                                      │
@@ -76,7 +76,7 @@ user message → workspace-chat (platform meta-agent)
   validator rejects this shape with `unreachable_agent`.
 - **For trivial save-and-recall** (notes, URLs, quotes, reading list),
   **skip jobs and agents entirely.** Declare only a `memory.own.notes`
-  corpus — chat will use `memory_narrative_append` to save and auto-read
+  corpus — chat will use `memory_save` to save and auto-read
   the entries out of its prompt. Zero agents, zero MCP, zero FSM. See
   `assets/example-kb-workspace.yml`.
 - **For anything non-trivial** (structured data, signal-triggered
@@ -99,7 +99,7 @@ typed call, structured errors on 422, fix-and-retry in the same conversation.
 
 **Trivial save-and-recall → `assets/example-kb-workspace.yml`.** No jobs,
 no agents, no MCP. Just a `memory.own.notes` corpus. Chat uses
-`memory_narrative_append` to save; recent entries auto-inject into
+`memory_save` to save; recent entries auto-inject into
 chat's prompt on every turn for retrieval. Use for notes, URLs, quotes,
 reading list, journaling, "second brain" — anything unstructured.
 
@@ -335,14 +335,14 @@ otherwise. Persistent state across sessions lives here.
 **Reads auto-inject into chat system prompts.** The chat runtime fetches every
 declared narrative corpus on every turn and flattens entries into
 `<memory>` blocks. Agents see recent entries without calling anything —
-reach for `memory_narrative_read` only for older entries, a specific `since`
+reach for `memory_read` only for older entries, a specific `since`
 cutoff, or more than 20 entries.
 
 **Writes** go through
-`memory_narrative_append({ workspaceId, memoryName, entry: { text, metadata? } })`.
+`memory_save({ workspaceId, memoryName, text, metadata? })`.
 The tool validates `memoryName` against `memory.own` / `memory.mounts`; `ro`
 mounts reject writes; `rw` mounts rewrite transparently to the source workspace.
-Companion tools: `memory_narrative_read`, `memory_narrative_forget`.
+Companion tools: `memory_read`, `memory_remove`.
 **FSM `type: llm` agents can call these three tools** — they're in the FSM
 LLM allowlist.
 

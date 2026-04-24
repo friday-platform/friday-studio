@@ -1,10 +1,10 @@
 import type {
-  CorpusKind,
-  CorpusMetadata,
-  CorpusOf,
   MemoryAdapter,
-  NarrativeCorpus,
   NarrativeEntry,
+  NarrativeStore,
+  StoreKind,
+  StoreMetadata,
+  StoreOf,
 } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import type { AgentMountConfig } from "./bootstrap.ts";
@@ -186,20 +186,20 @@ describe("renderSection", () => {
 
 // ── buildBootstrapBlock ─────────────────────────────────────────────────────
 
-// TS cannot narrow conditional CorpusOf<K> from runtime check (microsoft/TypeScript#33014)
-function mockAdapter(corpora: Record<string, NarrativeEntry[]>): MemoryAdapter {
+// TS cannot narrow conditional StoreOf<K> from runtime check (microsoft/TypeScript#33014)
+function mockAdapter(stores: Record<string, NarrativeEntry[]>): MemoryAdapter {
   return {
-    corpus<K extends CorpusKind>(_wid: string, name: string, _kind: K): Promise<CorpusOf<K>> {
-      const data = corpora[name] ?? [];
-      const narrativeCorpus: NarrativeCorpus = {
+    store<K extends StoreKind>(_wid: string, name: string, _kind: K): Promise<StoreOf<K>> {
+      const data = stores[name] ?? [];
+      const narrativeStore: NarrativeStore = {
         read: () => Promise.resolve(data),
         append: (e: NarrativeEntry) => Promise.resolve(e),
         search: () => Promise.resolve([]),
         forget: () => Promise.resolve(),
         render: () => Promise.resolve(data.map((e) => e.text).join("\n")),
       };
-      const result: unknown = narrativeCorpus;
-      return Promise.resolve(result as CorpusOf<K>);
+      const result: unknown = narrativeStore;
+      return Promise.resolve(result as StoreOf<K>);
     },
     list: () => Promise.resolve([]),
     bootstrap: () => Promise.resolve(""),
@@ -209,22 +209,22 @@ function mockAdapter(corpora: Record<string, NarrativeEntry[]>): MemoryAdapter {
 }
 
 describe("buildBootstrapBlock", () => {
-  it("calls corpus() with correct kind='narrative'", async () => {
+  it("calls store() with correct kind='narrative'", async () => {
     const data = [entry({ text: "test" })];
     const kindsSeen: string[] = [];
 
     const adapter: MemoryAdapter = {
-      corpus<K extends CorpusKind>(_wid: string, _name: string, kind: K): Promise<CorpusOf<K>> {
+      store<K extends StoreKind>(_wid: string, _name: string, kind: K): Promise<StoreOf<K>> {
         kindsSeen.push(kind);
-        const narrativeCorpus: NarrativeCorpus = {
+        const narrativeStore: NarrativeStore = {
           read: () => Promise.resolve(data),
           append: (e: NarrativeEntry) => Promise.resolve(e),
           search: () => Promise.resolve([]),
           forget: () => Promise.resolve(),
           render: () => Promise.resolve(""),
         };
-        const result: unknown = narrativeCorpus;
-        return Promise.resolve(result as CorpusOf<K>);
+        const result: unknown = narrativeStore;
+        return Promise.resolve(result as StoreOf<K>);
       },
       list: () => Promise.resolve([]),
       bootstrap: () => Promise.resolve(""),
@@ -232,7 +232,7 @@ describe("buildBootstrapBlock", () => {
       rollback: () => Promise.resolve(),
     };
 
-    await buildBootstrapBlock(adapter, "ws-1", [{ name: "tasks", corpus: "my-corpus" }]);
+    await buildBootstrapBlock(adapter, "ws-1", [{ name: "tasks", store: "my-corpus" }]);
     expect(kindsSeen).toEqual(["narrative"]);
   });
 
@@ -243,9 +243,9 @@ describe("buildBootstrapBlock", () => {
       gamma: [entry({ text: "G1" })],
     });
     const mounts: AgentMountConfig[] = [
-      { name: "alpha", corpus: "alpha" },
-      { name: "beta", corpus: "beta" },
-      { name: "gamma", corpus: "gamma" },
+      { name: "alpha", store: "alpha" },
+      { name: "beta", store: "beta" },
+      { name: "gamma", store: "gamma" },
     ];
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     const alphaIdx = result.indexOf("## alpha");
@@ -262,9 +262,9 @@ describe("buildBootstrapBlock", () => {
     const adapter = mockAdapter({ c1: bigEntries, c2: bigEntries, c3: bigEntries });
 
     const mounts: AgentMountConfig[] = [
-      { name: "c1", corpus: "c1", bootstrap: { maxBytes: 20000 } },
-      { name: "c2", corpus: "c2", bootstrap: { maxBytes: 20000 } },
-      { name: "c3", corpus: "c3", bootstrap: { maxBytes: 20000 } },
+      { name: "c1", store: "c1", bootstrap: { maxBytes: 20000 } },
+      { name: "c2", store: "c2", bootstrap: { maxBytes: 20000 } },
+      { name: "c3", store: "c3", bootstrap: { maxBytes: 20000 } },
     ];
 
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts, {
@@ -282,12 +282,12 @@ describe("buildBootstrapBlock", () => {
       }),
     );
 
-    const adapter = mockAdapter({ corpus1: entries });
+    const adapter = mockAdapter({ store1: entries });
 
     const smallCap: AgentMountConfig[] = [
-      { name: "corpus1", corpus: "corpus1", bootstrap: { maxBytes: 256 } },
+      { name: "store1", store: "store1", bootstrap: { maxBytes: 256 } },
     ];
-    const defaultCap: AgentMountConfig[] = [{ name: "corpus1", corpus: "corpus1" }];
+    const defaultCap: AgentMountConfig[] = [{ name: "store1", store: "store1" }];
 
     const smallResult = await buildBootstrapBlock(adapter, "ws-1", smallCap);
     const defaultResult = await buildBootstrapBlock(adapter, "ws-1", defaultCap);
@@ -302,8 +302,8 @@ describe("buildBootstrapBlock", () => {
       entry({ text: `Entry ${i} ${"padding ".repeat(20)}`, metadata: { priority: 200 - i } }),
     );
 
-    const adapter = mockAdapter({ corpus1: entries });
-    const mounts: AgentMountConfig[] = [{ name: "corpus1", corpus: "corpus1" }];
+    const adapter = mockAdapter({ store1: entries });
+    const mounts: AgentMountConfig[] = [{ name: "store1", store: "store1" }];
 
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     const bullets = result.split("\n").filter((l) => l.startsWith("- "));
@@ -327,7 +327,7 @@ describe("buildBootstrapBlock", () => {
       ],
     });
     const mounts: AgentMountConfig[] = [
-      { name: "tasks", corpus: "tasks", filter: { category: "bug", team: "infra" } },
+      { name: "tasks", store: "tasks", filter: { category: "bug", team: "infra" } },
     ];
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     expect(result).toContain("- match");
@@ -343,7 +343,7 @@ describe("buildBootstrapBlock", () => {
         entry({ text: "mid", metadata: { priority: 50 } }),
       ],
     });
-    const mounts: AgentMountConfig[] = [{ name: "tasks", corpus: "tasks" }];
+    const mounts: AgentMountConfig[] = [{ name: "tasks", store: "tasks" }];
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     const bullets = result.split("\n").filter((l) => l.startsWith("- "));
     expect(bullets).toEqual(["- high", "- mid", "- low"]);
@@ -355,8 +355,8 @@ describe("buildBootstrapBlock", () => {
       beta: [entry({ text: "B1" })],
     });
     const mounts: AgentMountConfig[] = [
-      { name: "alpha", corpus: "alpha" },
-      { name: "beta", corpus: "beta" },
+      { name: "alpha", store: "alpha" },
+      { name: "beta", store: "beta" },
     ];
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     expect(result).toContain("## alpha");
@@ -372,8 +372,8 @@ describe("buildBootstrapBlock", () => {
       second: [entry({ text: "S1" })],
     });
     const mounts: AgentMountConfig[] = [
-      { name: "first", corpus: "first" },
-      { name: "second", corpus: "second" },
+      { name: "first", store: "first" },
+      { name: "second", store: "second" },
     ];
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
     expect(result).toContain("## first\n- F1\n\n## second\n- S1");
@@ -386,8 +386,8 @@ describe("buildBootstrapBlock", () => {
     const smallEntries = [entry({ text: "small" })];
     const adapter = mockAdapter({ big: bigEntries, small: smallEntries });
     const mounts: AgentMountConfig[] = [
-      { name: "big", corpus: "big", bootstrap: { maxBytes: 8192 } },
-      { name: "small", corpus: "small" },
+      { name: "big", store: "big", bootstrap: { maxBytes: 8192 } },
+      { name: "small", store: "small" },
     ];
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts, { totalMaxBytes: 8200 });
     expect(result).toContain("## big");
@@ -400,7 +400,7 @@ describe("buildBootstrapBlock", () => {
     });
 
     const mounts: AgentMountConfig[] = [
-      { name: "empty", corpus: "empty", filter: { status: "pending" } },
+      { name: "empty", store: "empty", filter: { status: "pending" } },
     ];
 
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
@@ -422,7 +422,7 @@ describe("integration", () => {
     });
 
     const mounts: AgentMountConfig[] = [
-      { name: "tasks", corpus: "tasks", filter: { status: "pending", priority_min: 90 } },
+      { name: "tasks", store: "tasks", filter: { status: "pending", priority_min: 90 } },
     ];
 
     const result = await buildBootstrapBlock(adapter, "ws-1", mounts);
@@ -437,22 +437,22 @@ describe("integration", () => {
 // ── resolveBootstrap (legacy) ───────────────────────────────────────────────
 
 function mockResolveAdapter(
-  corpora: CorpusMetadata[],
+  stores: StoreMetadata[],
   renderResults: Record<string, string>,
 ): MemoryAdapter {
   return {
-    corpus<K extends CorpusKind>(_wid: string, name: string, _kind: K): Promise<CorpusOf<K>> {
-      const narrativeCorpus: NarrativeCorpus = {
+    store<K extends StoreKind>(_wid: string, name: string, _kind: K): Promise<StoreOf<K>> {
+      const narrativeStore: NarrativeStore = {
         read: () => Promise.resolve([]),
         append: (e: NarrativeEntry) => Promise.resolve(e),
         search: () => Promise.resolve([]),
         forget: () => Promise.resolve(),
         render: () => Promise.resolve(renderResults[name] ?? ""),
       };
-      const result: unknown = narrativeCorpus;
-      return Promise.resolve(result as CorpusOf<K>);
+      const result: unknown = narrativeStore;
+      return Promise.resolve(result as StoreOf<K>);
     },
-    list: () => Promise.resolve(corpora),
+    list: () => Promise.resolve(stores),
     bootstrap: () => Promise.resolve(""),
     history: () => Promise.resolve([]),
     rollback: () => Promise.resolve(),
@@ -466,44 +466,44 @@ describe("resolveBootstrap", () => {
     expect(result).toBe("");
   });
 
-  it("returns '' when all corpus.render() calls return whitespace-only strings", async () => {
-    const corpora: CorpusMetadata[] = [
+  it("returns '' when all store.render() calls return whitespace-only strings", async () => {
+    const stores: StoreMetadata[] = [
       { name: "c1", kind: "narrative", workspaceId: "ws-1" },
       { name: "c2", kind: "narrative", workspaceId: "ws-1" },
     ];
-    const adapter = mockResolveAdapter(corpora, { c1: "   ", c2: "\n\t\n" });
+    const adapter = mockResolveAdapter(stores, { c1: "   ", c2: "\n\t\n" });
     const result = await resolveBootstrap(adapter, "ws-1", "agent-1");
     expect(result).toBe("");
   });
 
   it("concatenates non-empty renders with default separator", async () => {
-    const corpora: CorpusMetadata[] = [
+    const stores: StoreMetadata[] = [
       { name: "c1", kind: "narrative", workspaceId: "ws-1" },
       { name: "c2", kind: "narrative", workspaceId: "ws-1" },
     ];
-    const adapter = mockResolveAdapter(corpora, { c1: "Block one", c2: "Block two" });
+    const adapter = mockResolveAdapter(stores, { c1: "Block one", c2: "Block two" });
     const result = await resolveBootstrap(adapter, "ws-1", "agent-1");
     expect(result).toBe("Block one\n\nBlock two");
   });
 
   it("respects custom separator option", async () => {
-    const corpora: CorpusMetadata[] = [
+    const stores: StoreMetadata[] = [
       { name: "c1", kind: "narrative", workspaceId: "ws-1" },
       { name: "c2", kind: "narrative", workspaceId: "ws-1" },
     ];
-    const adapter = mockResolveAdapter(corpora, { c1: "AAA", c2: "BBB" });
+    const adapter = mockResolveAdapter(stores, { c1: "AAA", c2: "BBB" });
     const result = await resolveBootstrap(adapter, "ws-1", "agent-1", { separator: "---" });
     expect(result).toBe("AAA---BBB");
   });
 
-  it("skips non-narrative corpora (kind != 'narrative')", async () => {
-    const corpora: CorpusMetadata[] = [
+  it("skips non-narrative stores (kind != 'narrative')", async () => {
+    const stores: StoreMetadata[] = [
       { name: "c-narrative", kind: "narrative", workspaceId: "ws-1" },
       { name: "c-retrieval", kind: "retrieval", workspaceId: "ws-1" },
       { name: "c-kv", kind: "kv", workspaceId: "ws-1" },
       { name: "c-dedup", kind: "dedup", workspaceId: "ws-1" },
     ];
-    const adapter = mockResolveAdapter(corpora, {
+    const adapter = mockResolveAdapter(stores, {
       "c-narrative": "Narrative content",
       "c-retrieval": "Should not appear",
       "c-kv": "Should not appear",
@@ -517,20 +517,20 @@ describe("resolveBootstrap", () => {
 // ── buildBootstrap ───────────────────────────────────────────────────────
 
 describe("buildBootstrap", () => {
-  it("returns empty string when no narrative corpora exist", async () => {
+  it("returns empty string when no narrative stores exist", async () => {
     const adapter = mockResolveAdapter([], {});
     const result = await buildBootstrap(adapter, "ws-1", "agent-1");
     expect(result).toBe("");
   });
 
-  it("only renders narrative corpora — skips retrieval, dedup, kv", async () => {
-    const corpora: CorpusMetadata[] = [
+  it("only renders narrative stores — skips retrieval, dedup, kv", async () => {
+    const stores: StoreMetadata[] = [
       { name: "notes", kind: "narrative", workspaceId: "ws-1" },
       { name: "docs", kind: "retrieval", workspaceId: "ws-1" },
       { name: "cache", kind: "dedup", workspaceId: "ws-1" },
       { name: "flags", kind: "kv", workspaceId: "ws-1" },
     ];
-    const adapter = mockResolveAdapter(corpora, {
+    const adapter = mockResolveAdapter(stores, {
       notes: "Important notes",
       docs: "Should not appear",
       cache: "Should not appear",
@@ -540,46 +540,46 @@ describe("buildBootstrap", () => {
     expect(result).toBe("Important notes");
   });
 
-  it("returns empty string when all corpus renders are whitespace-only", async () => {
-    const corpora: CorpusMetadata[] = [
+  it("returns empty string when all store renders are whitespace-only", async () => {
+    const stores: StoreMetadata[] = [
       { name: "c1", kind: "narrative", workspaceId: "ws-1" },
       { name: "c2", kind: "narrative", workspaceId: "ws-1" },
     ];
-    const adapter = mockResolveAdapter(corpora, { c1: "   ", c2: "\n\t\n" });
+    const adapter = mockResolveAdapter(stores, { c1: "   ", c2: "\n\t\n" });
     const result = await buildBootstrap(adapter, "ws-1", "agent-1");
     expect(result).toBe("");
   });
 
-  it("concatenates multiple narrative corpus renders with double-newline separator", async () => {
-    const corpora: CorpusMetadata[] = [
+  it("concatenates multiple narrative store renders with double-newline separator", async () => {
+    const stores: StoreMetadata[] = [
       { name: "c1", kind: "narrative", workspaceId: "ws-1" },
       { name: "c2", kind: "narrative", workspaceId: "ws-1" },
     ];
-    const adapter = mockResolveAdapter(corpora, { c1: "Block one", c2: "Block two" });
+    const adapter = mockResolveAdapter(stores, { c1: "Block one", c2: "Block two" });
     const result = await buildBootstrap(adapter, "ws-1", "agent-1");
     expect(result).toBe("Block one\n\nBlock two");
   });
 
-  it("propagates error when corpus.render() throws", async () => {
-    const corpora: CorpusMetadata[] = [{ name: "broken", kind: "narrative", workspaceId: "ws-1" }];
+  it("propagates error when store.render() throws", async () => {
+    const stores: StoreMetadata[] = [{ name: "broken", kind: "narrative", workspaceId: "ws-1" }];
     const adapter: MemoryAdapter = {
-      corpus<K extends CorpusKind>(_wid: string, _name: string, _kind: K): Promise<CorpusOf<K>> {
-        const narrativeCorpus: NarrativeCorpus = {
+      store<K extends StoreKind>(_wid: string, _name: string, _kind: K): Promise<StoreOf<K>> {
+        const narrativeStore: NarrativeStore = {
           read: () => Promise.resolve([]),
           append: (e: NarrativeEntry) => Promise.resolve(e),
           search: () => Promise.resolve([]),
           forget: () => Promise.resolve(),
-          render: () => Promise.reject(new Error("corpus unavailable")),
+          render: () => Promise.reject(new Error("store unavailable")),
         };
-        const result: unknown = narrativeCorpus;
-        return Promise.resolve(result as CorpusOf<K>);
+        const result: unknown = narrativeStore;
+        return Promise.resolve(result as StoreOf<K>);
       },
-      list: () => Promise.resolve(corpora),
+      list: () => Promise.resolve(stores),
       bootstrap: () => Promise.resolve(""),
       history: () => Promise.resolve([]),
       rollback: () => Promise.resolve(),
     };
-    await expect(buildBootstrap(adapter, "ws-1", "agent-1")).rejects.toThrow("corpus unavailable");
+    await expect(buildBootstrap(adapter, "ws-1", "agent-1")).rejects.toThrow("store unavailable");
   });
 });
 

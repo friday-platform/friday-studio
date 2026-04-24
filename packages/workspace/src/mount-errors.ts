@@ -4,8 +4,8 @@ export class MountSourceNotFoundError extends Error {
   constructor(source: string, detail?: string) {
     super(
       detail ??
-        `Mount source corpus '${source}' could not be resolved. ` +
-          `Ensure the corpus exists and the memory adapter is configured correctly.`,
+        `Mount source store '${source}' could not be resolved. ` +
+          `Ensure the store exists and the memory adapter is configured correctly.`,
     );
     this.name = "MountSourceNotFoundError";
   }

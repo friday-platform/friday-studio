@@ -187,10 +187,10 @@ export function lintSkill(input: LintInput, mode: LintMode): LintResult {
       );
     }
     if (!/\buse\b/i.test(description) && !/\bused\b/i.test(description)) {
-      // Demoted to `info` after the Phase 4.a corpus run showed a 75% hit
+      // Demoted to `info` after the Phase 4.a skills run showed a 75% hit
       // rate on existing skills — the "Use when …" clause is a best-practice
       // recommendation but many perfectly-useful skills ship without it.
-      // See docs/learnings/2026-04-20-lint-corpus-report.md.
+      // See docs/learnings/2026-04-20-lint-skills-report.md.
       warn(
         "description-trigger",
         "Description should include a 'Use when …' clause so the router knows when to fire.",

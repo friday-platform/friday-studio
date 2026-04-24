@@ -74,9 +74,9 @@ export type MemoryScopeDescriptor =
   | { scope: "workspace"; ownerId: string }
   | { scope: "mounted"; source: string; mode: MountMode };
 
-// ── Well-known corpus names ──────────────────────────────────────────────────
+// ── Well-known store names ──────────────────────────────────────────────────
 
-export const USER_PROFILE_CORPUS = "notes" as const;
+export const USER_PROFILE_STORE = "notes" as const;
 
 export type UserProfileEntryType = "user-name" | "name-declined";
 
