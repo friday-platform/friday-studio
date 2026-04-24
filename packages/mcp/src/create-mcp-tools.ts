@@ -5,6 +5,7 @@
  * @module
  */
 
+import { spawn as defaultSpawn, type ChildProcess } from "node:child_process";
 import process from "node:process";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
@@ -30,6 +31,21 @@ const RETRY_OPTIONS: RetryOptions = {
   maxTimeout: 3000,
 };
 
+/** Error thrown when an MCP HTTP server fails to start up. */
+export class MCPStartupError extends Error {
+  constructor(
+    public readonly kind: "spawn" | "timeout" | "connect",
+    public readonly serverId: string,
+    public readonly command?: string,
+    override readonly cause?: unknown,
+  ) {
+    super(
+      `MCP server "${serverId}" startup failed (${kind})${command ? `: ${command}` : ""}`,
+    );
+    this.name = "MCPStartupError";
+  }
+}
+
 /** Result of creating MCP tools — tools map + cleanup callback. */
 export interface MCPToolsResult {
   tools: Record<string, Tool>;
@@ -53,6 +69,7 @@ export async function createMCPTools(
   options?: CreateMCPToolsOptions,
 ): Promise<MCPToolsResult> {
   const clients: MCPClient[] = [];
+  const allChildren = new Set<ChildProcess>();
   const allTools: Record<string, Tool> = {};
   let disposed = false;
 
@@ -60,15 +77,20 @@ export async function createMCPTools(
 
   for (const [serverId, config] of Object.entries(configs)) {
     if (signal?.aborted) {
-      await Promise.allSettled(clients.map((c) => c.close()));
+      await disposeAll(clients, allChildren);
       throw signal.reason ?? new Error("Aborted");
     }
 
     try {
       const resolvedEnv = config.env ? await resolveEnvValues(config.env, logger) : {};
 
-      const connected = await connectServer(config, resolvedEnv);
+      const connected = await connectServer(config, resolvedEnv, serverId, logger);
       clients.push(connected.client);
+      if (connected.children) {
+        for (const child of connected.children) {
+          allChildren.add(child);
+        }
+      }
 
       const filtered = filterTools(connected.tools, config.tools);
       const prefixed = options?.toolPrefix
@@ -98,7 +120,7 @@ export async function createMCPTools(
         error instanceof NoDefaultCredentialError
       ) {
         // Clean up any already-connected clients before re-throwing
-        await Promise.allSettled(clients.map((c) => c.close()));
+        await disposeAll(clients, allChildren);
 
         // Enrich with server name if not already set
         if (error instanceof LinkCredentialNotFoundError && !error.serverName) {
@@ -119,7 +141,11 @@ export async function createMCPTools(
       }
 
       // Clean up any already-connected clients before throwing
-      await Promise.allSettled(clients.map((c) => c.close()));
+      await disposeAll(clients, allChildren);
+
+      if (error instanceof MCPStartupError) {
+        throw error;
+      }
 
       const command =
         config.transport.type === "stdio"
@@ -138,15 +164,42 @@ export async function createMCPTools(
     dispose: async () => {
       if (disposed) return;
       disposed = true;
-      await Promise.allSettled(clients.map((c) => c.close()));
+      await disposeAll(clients, allChildren);
     },
   };
+}
+
+/** Dispose all clients and child processes. */
+async function disposeAll(clients: MCPClient[], children: Set<ChildProcess>): Promise<void> {
+  // Send SIGTERM to all living children
+  for (const child of children) {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM");
+    }
+  }
+
+  // Wait grace period
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // SIGKILL survivors
+  for (const child of children) {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+    }
+  }
+
+  // Brief pause for SIGKILL to take effect
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  // Close MCP clients
+  await Promise.allSettled(clients.map((c) => c.close()));
 }
 
 /** Client + tools fetched during connection. */
 interface ConnectedServer {
   client: MCPClient;
   tools: Record<string, Tool>;
+  children?: Set<ChildProcess>;
 }
 
 /**
@@ -156,18 +209,20 @@ interface ConnectedServer {
 async function connectServer(
   config: MCPServerConfig,
   resolvedEnv: Record<string, string>,
+  serverId: string,
+  logger: Logger,
 ): Promise<ConnectedServer> {
   const { transport } = config;
   switch (transport.type) {
     case "stdio":
       return await connectStdio(transport, resolvedEnv);
     case "http":
-      return await connectHttp(transport, config.auth, resolvedEnv);
+      return await connectHttp(config, resolvedEnv, serverId, logger);
   }
 }
 
 /**
- * Expand `${HOME}` / `${ATLAS_HOME}` inside a single stdio arg. Friday
+ * Expand `${HOME}` / `${ATLAS_HOME}` inside a single string value. Friday
  * regularly hallucinates usernames when asked to write absolute paths in
  * workspace.yml (e.g. `/Users/yena/...` when the real user is `yenaoh`),
  * which 3-retries into "MCP server failed to start" and silently strips
@@ -220,18 +275,145 @@ async function connectStdio(
   }, RETRY_OPTIONS);
 }
 
-async function connectHttp(
-  transport: Extract<MCPServerConfig["transport"], { type: "http" }>,
-  auth: MCPServerConfig["auth"],
+/** Check whether an HTTP URL returns a 2xx response. */
+async function isReachable(url: string, fetchImpl: typeof fetch): Promise<boolean> {
+  try {
+    const resp = await fetchImpl(url, { method: "GET" });
+    return resp.status >= 200 && resp.status < 300;
+  } catch {
+    return false;
+  }
+}
+
+/** Connect to an HTTP MCP server, with optional auto-startup. */
+export async function connectHttp(
+  config: MCPServerConfig,
   resolvedEnv: Record<string, string>,
+  serverId: string,
+  logger: Logger,
+  deps: {
+    spawn?: typeof defaultSpawn;
+    fetch?: typeof fetch;
+  } = {},
 ): Promise<ConnectedServer> {
+  const { transport, auth, startup } = config;
+  if (transport.type !== "http") {
+    throw new Error("Expected HTTP transport");
+  }
+
   const { url } = transport;
+  const _fetch = deps.fetch ?? fetch;
+  const _spawn = deps.spawn ?? defaultSpawn;
 
   const headers = buildAuthHeaders(auth, resolvedEnv);
 
-  // Retry covers both transport creation AND tools() — matching stdio behavior.
-  // StreamableHTTPClientTransport overwrites requestInit.signal with its own
-  // internal AbortController, so no application-level timeout needed.
+  // If already reachable, connect directly — no spawn needed.
+  if (await isReachable(url, _fetch)) {
+    return connectHttpClient(url, headers);
+  }
+
+  // No startup config — try direct connection (will likely fail, matching old behaviour).
+  if (!startup) {
+    return connectHttpClient(url, headers);
+  }
+
+  // Resolve startup.env separately from config.env — bearer tokens must never
+  // leak into the child process, and startup.env must never reach HTTP headers.
+  const resolvedStartupEnv = startup.env
+    ? await resolveEnvValues(startup.env, logger)
+    : {};
+
+  // Merge parent env + resolved startup env (with interpolation)
+  const parentEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+
+  const mergedEnv: Record<string, string> = {
+    ...parentEnv,
+    ...Object.fromEntries(
+      Object.entries(resolvedStartupEnv).map(([k, v]) => [k, interpolateArg(v)]),
+    ),
+  };
+
+  const { command, args = [] } = startup;
+  const pollUrl = startup.ready_url ?? url;
+  const timeoutMs = startup.ready_timeout_ms;
+  const intervalMs = startup.ready_interval_ms;
+
+  // Spawn the startup command
+  let child: ChildProcess;
+  try {
+    child = _spawn(command, args, {
+      env: mergedEnv,
+      detached: false,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+  } catch (err) {
+    throw new MCPStartupError("spawn", serverId, command, err);
+  }
+
+  // Collect stderr for EADDRINUSE detection
+  let stderrAccumulator = "";
+  child.stderr?.on("data", (data: Uint8Array) => {
+    stderrAccumulator += new TextDecoder().decode(data);
+  });
+
+  let childExited = false;
+  let exitCode: number | null = null;
+  child.on("exit", (code) => {
+    childExited = true;
+    exitCode = code;
+  });
+
+  // Poll until reachable or timeout
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    // If child exited early with error, check for EADDRINUSE fallback
+    if (childExited && exitCode !== 0) {
+      const eaddrInUse =
+        stderrAccumulator.includes("EADDRINUSE") ||
+        stderrAccumulator.includes("address already in use");
+      if (eaddrInUse) {
+        // Another instance may already be listening — re-check reachability
+        if (await isReachable(url, _fetch)) {
+          return connectHttpClient(url, headers);
+        }
+      }
+      throw new MCPStartupError(
+        "spawn",
+        serverId,
+        command,
+        new Error(stderrAccumulator || `Process exited with code ${exitCode}`),
+      );
+    }
+
+    try {
+      const resp = await _fetch(pollUrl, { method: "GET" });
+      if (resp.status >= 200 && resp.status < 300) {
+        const result = await connectHttpClient(url, headers);
+        return { ...result, children: new Set([child]) };
+      }
+    } catch {
+      // Not ready yet — continue polling
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  // Timeout — terminate the child and throw
+  if (!child.killed) {
+    child.kill("SIGTERM");
+  }
+  throw new MCPStartupError("timeout", serverId, command);
+}
+
+/** Create MCP client over HTTP transport and verify with tools(). */
+async function connectHttpClient(
+  url: string,
+  headers: Record<string, string>,
+): Promise<ConnectedServer> {
   return await retry(async () => {
     const httpTransport = new StreamableHTTPClientTransport(new URL(url), {
       requestInit: { headers },
