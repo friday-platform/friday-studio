@@ -56,7 +56,7 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
-import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
+import { type NatsConnection, RetentionPolicy, StorageType, type Subscription } from "nats";
 import { activityRoutes } from "../routes/activity.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
@@ -177,6 +177,8 @@ export class AtlasDaemon {
   >();
   // Track active SSE connections per session
   private agentSSEConnections = new Set<string>();
+  // NATS signal subscriptions per workspace (drained on runtime destroy)
+  private signalSubscriptions = new Map<string, Subscription>();
   // Single shared agent registry
   private agentRegistry: AgentRegistryType | null = null;
   // Session limits
@@ -428,81 +430,30 @@ export class AtlasDaemon {
     logger.info("Agent registry initialized");
     this.agentRegistry = agentRegistry;
 
-    // Set up workspace wakeup callback
+    // Set up workspace wakeup callback — publishes to NATS so runtimes receive
+    // signals via their own subscriptions (decoupled from the cron/fs-watch call path).
     const wakeupCallback: WorkspaceSignalTriggerCallback = async (
       workspaceId: string,
       signalId: string,
       signalData,
     ) => {
-      try {
-        // Inject workspace owner's userId for analytics if not present in signal
-        // This ensures cron/schedule signals track analytics correctly
-        let enrichedSignalData = signalData;
-        if (!signalData.userId) {
-          const manager = this.getWorkspaceManager();
-          const workspace = await manager.find({ id: workspaceId });
-          if (workspace?.metadata?.createdBy) {
-            enrichedSignalData = {
-              ...signalData,
-              userId: workspace.metadata.createdBy,
-            };
-          }
+      // Inject workspace owner's userId for analytics before publishing
+      let enrichedSignalData = signalData;
+      if (!signalData.userId) {
+        const manager = this.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (workspace?.metadata?.createdBy) {
+          enrichedSignalData = { ...signalData, userId: workspace.metadata.createdBy };
         }
+      }
 
-        await this.triggerWorkspaceSignal(
-          workspaceId,
-          signalId,
-          enrichedSignalData,
+      const nc = this.natsManager?.connection;
+      if (nc) {
+        nc.publish(
+          `signals.${workspaceId}.${signalId}`,
+          JSON.stringify({ payload: enrichedSignalData }),
         );
-
-        logger.info("Signal processed", { workspaceId, signalId });
-      } catch (error) {
-        // Session-level failures (LLM timeout, missing OAuth, etc.) are non-fatal —
-        // the workspace runtime is fine, only this session failed. Don't destroy.
-        if (error instanceof SessionFailedError) {
-          logger.warn("Signal session failed", {
-            workspaceId,
-            signalId,
-            status: error.status,
-            error: error.message,
-          });
-          return;
-        }
-
-        // Infrastructure errors (workspace not found, runtime crash) — mark inactive and destroy
-        logger.error("Failed to process signal", {
-          error,
-          workspaceId,
-          signalId,
-        });
-        try {
-          const manager = this.getWorkspaceManager();
-          const workspace = await manager.find({ id: workspaceId });
-
-          await manager.updateWorkspaceStatus(workspaceId, "inactive", {
-            metadata: {
-              ...workspace?.metadata,
-              lastError: error instanceof Error ? error.message : String(error),
-              lastErrorAt: new Date().toISOString(),
-              failureCount: (workspace?.metadata?.failureCount || 0) + 1,
-            },
-          });
-
-          logger.info("Marked workspace as failed with error details", {
-            workspaceId,
-            signalId,
-            error: error,
-            failureCount: (workspace?.metadata?.failureCount || 0) + 1,
-          });
-
-          await this.destroyWorkspaceRuntime(workspaceId);
-          logger.info("Cleaned up failed workspace runtime", { workspaceId });
-        } catch (statusError) {
-          logger.error("Failed to update workspace status or cleanup", {
-            workspaceId,
-            statusError,
-          });
-        }
+        logger.debug("Signal published to NATS", { workspaceId, signalId });
       }
     };
 
@@ -1426,6 +1377,9 @@ export class AtlasDaemon {
         workspaceId: workspace.id,
       });
 
+      // Subscribe to NATS signal subjects for this workspace
+      this.subscribeWorkspaceToSignals(workspace.id, runtime);
+
       // Watcher is managed centrally by WorkspaceManager.initialize()
 
       // Set idle timeout
@@ -1918,6 +1872,13 @@ export class AtlasDaemon {
       this.runtimes.delete(workspaceId);
     }
 
+    // Drain the NATS signal subscription for this workspace
+    const signalSub = this.signalSubscriptions.get(workspaceId);
+    if (signalSub) {
+      signalSub.unsubscribe();
+      this.signalSubscriptions.delete(workspaceId);
+    }
+
     await this.evictChatSdkInstance(workspaceId);
 
     // Unregister runtime from WorkspaceManager
@@ -1942,6 +1903,97 @@ export class AtlasDaemon {
     }
 
     logger.info("Workspace runtime destroyed", { workspaceId });
+  }
+
+  /**
+   * Subscribe to NATS `signals.{workspaceId}.*` for the given runtime.
+   * Called once per runtime creation; drained when the runtime is destroyed.
+   * Queue group per workspace ensures only one daemon instance processes each signal.
+   */
+  private subscribeWorkspaceToSignals(workspaceId: string, runtime: WorkspaceRuntime): void {
+    const nc = this.natsManager?.connection;
+    if (!nc) return;
+
+    const sub = nc.subscribe(`signals.${workspaceId}.*`, {
+      queue: `signal-processors.${workspaceId}`,
+    });
+    this.signalSubscriptions.set(workspaceId, sub);
+
+    void (async () => {
+      try {
+        for await (const msg of sub) {
+          const parts = msg.subject.split(".");
+          const signalId = parts[2];
+          if (!signalId) continue;
+
+          let payload: Record<string, unknown> = {};
+          let streamId: string | undefined;
+
+          try {
+            const parsed: unknown = JSON.parse(msg.string());
+            if (typeof parsed === "object" && parsed !== null) {
+              if ("payload" in parsed) {
+                const p = (parsed as { payload: unknown }).payload;
+                if (typeof p === "object" && p !== null) {
+                  payload = p as Record<string, unknown>;
+                }
+              }
+              if ("streamId" in parsed) {
+                const s = (parsed as { streamId: unknown }).streamId;
+                if (typeof s === "string") streamId = s;
+              }
+            }
+          } catch {
+            // ignore parse errors on malformed payloads
+          }
+
+          if (runtime.hasActiveSessionsForSignal(signalId)) {
+            logger.warn("Skipping NATS signal — active session in progress", {
+              workspaceId,
+              signalId,
+            });
+            continue;
+          }
+
+          try {
+            await runtime.triggerSignalWithSession(signalId, payload, streamId);
+            logger.info("NATS signal processed", { workspaceId, signalId });
+          } catch (err) {
+            if (err instanceof SessionFailedError) {
+              logger.warn("NATS signal session failed", {
+                workspaceId,
+                signalId,
+                status: err.status,
+                error: err.message,
+              });
+            } else {
+              logger.error("Failed to process NATS signal", { error: err, workspaceId, signalId });
+              try {
+                const manager = this.getWorkspaceManager();
+                const workspace = await manager.find({ id: workspaceId });
+                await manager.updateWorkspaceStatus(workspaceId, "inactive", {
+                  metadata: {
+                    ...workspace?.metadata,
+                    lastError: err instanceof Error ? err.message : String(err),
+                    lastErrorAt: new Date().toISOString(),
+                    failureCount: (workspace?.metadata?.failureCount ?? 0) + 1,
+                  },
+                });
+                logger.info("Marked workspace as failed", { workspaceId, signalId });
+                await this.destroyWorkspaceRuntime(workspaceId);
+              } catch (statusError) {
+                logger.error("Failed to update workspace status after NATS signal failure", {
+                  workspaceId,
+                  statusError,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // subscription drained — expected during destroyWorkspaceRuntime
+      }
+    })();
   }
 
   private setupSignalHandlers() {
