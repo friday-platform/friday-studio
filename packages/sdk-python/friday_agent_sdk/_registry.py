@@ -1,4 +1,4 @@
-"""Module-level agent registration — one agent per WASM component."""
+"""Module-level agent registration — one agent per process."""
 
 from dataclasses import dataclass, field
 from typing import Any, Callable

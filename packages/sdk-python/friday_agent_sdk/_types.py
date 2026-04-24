@@ -33,7 +33,7 @@ class ToolDefinition:
 
 
 class Tools:
-    """Wrapper around WIT capabilities for tool invocation."""
+    """Wrapper around NATS capability subjects for tool invocation."""
 
     def __init__(
         self,
@@ -44,15 +44,11 @@ class Tools:
         self._list_tools = list_tools
 
     def call(self, name: str, args: dict) -> dict:
-        """Call a tool by name. Raises ToolCallError on failure.
-
-        componentize-py unwraps result<string, string>: Ok returns the
-        string directly, Err raises an Err(str) exception.
-        """
+        """Call a tool by name. Raises ToolCallError on failure."""
         try:
             result = self._call_tool(name, json.dumps(args))
         except Exception as e:
-            raise ToolCallError(e.value) from e
+            raise ToolCallError(str(e)) from e
         return json.loads(result)
 
     def list(self) -> list[ToolDefinition]:
@@ -93,7 +89,7 @@ class HttpResponse:
 
 
 class Llm:
-    """Wrapper around WIT llm-generate capability."""
+    """Wrapper around NATS llm-generate capability subject."""
 
     def __init__(
         self,
@@ -140,7 +136,7 @@ class Llm:
         try:
             raw = self._llm_generate(json.dumps(request))
         except Exception as e:
-            raise LlmError(e.value) from e
+            raise LlmError(str(e)) from e
 
         return self._parse_response(raw)
 
@@ -172,13 +168,13 @@ class Llm:
         try:
             raw = self._llm_generate(json.dumps(request))
         except Exception as e:
-            raise LlmError(e.value) from e
+            raise LlmError(str(e)) from e
 
         return self._parse_response(raw)
 
 
 class Http:
-    """Wrapper around WIT http-fetch capability."""
+    """Wrapper around NATS http-fetch capability subject."""
 
     def __init__(self, http_fetch: Callable[[str], str]) -> None:
         self._http_fetch = http_fetch
@@ -204,7 +200,7 @@ class Http:
         try:
             raw = self._http_fetch(json.dumps(request))
         except Exception as e:
-            raise HttpError(e.value) from e
+            raise HttpError(str(e)) from e
 
         data = json.loads(raw)
         return HttpResponse(
@@ -215,7 +211,7 @@ class Http:
 
 
 class StreamEmitter:
-    """Wrapper around WIT stream-emit capability."""
+    """Publishes stream events directly to the NATS session subject."""
 
     def __init__(self, stream_emit: Callable[[str, str], None]) -> None:
         self._stream_emit = stream_emit
