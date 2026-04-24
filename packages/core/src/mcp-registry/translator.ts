@@ -9,9 +9,36 @@
  * @module
  */
 
+import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import type { MCPServerMetadata, RequiredConfigField } from "./schemas.ts";
 import type { UpstreamServer, UpstreamServerEntry } from "./upstream-client.ts";
+
+/** Wire-safe input for dynamic API key providers (Link auto-creation). */
+export type DynamicApiKeyProviderInput = {
+  type: "apikey";
+  id: string;
+  displayName: string;
+  description: string;
+  secretSchema: Record<string, "string">;
+  setupInstructions?: string;
+};
+
+/** Wire-safe input for dynamic OAuth providers (Link auto-creation, discovery mode only). */
+export type DynamicOAuthProviderInput = {
+  type: "oauth";
+  id: string;
+  displayName: string;
+  description: string;
+  oauthConfig: {
+    mode: "discovery";
+    serverUrl: string;
+    scopes?: string[];
+  };
+};
+
+/** Union of dynamic provider inputs for Link auto-creation. */
+export type DynamicProviderInput = DynamicApiKeyProviderInput | DynamicOAuthProviderInput;
 
 const logger = createLogger({ name: "mcp-registry-translator" });
 
@@ -19,7 +46,7 @@ const logger = createLogger({ name: "mcp-registry-translator" });
  * Result of translation - discriminated union.
  */
 export type TranslateResult =
-  | { success: true; entry: MCPServerMetadata }
+  | { success: true; entry: MCPServerMetadata; linkProvider?: DynamicProviderInput }
   | { success: false; reason: string };
 
 /**
@@ -71,14 +98,17 @@ function substituteUrlVariables(
 /**
  * Map upstream environment variables to RequiredConfigField and configTemplate.env.
  */
-function mapEnvironmentVariables(envVars: UpstreamServer["packages"]): {
+function mapEnvironmentVariables(
+  packages: UpstreamServer["packages"],
+  serverId: string,
+): {
   requiredConfig: RequiredConfigField[];
-  env: Record<string, string>;
+  env: Record<string, string | LinkCredentialRef>;
 } {
   const requiredConfig: RequiredConfigField[] = [];
-  const env: Record<string, string> = {};
+  const env: Record<string, string | LinkCredentialRef> = {};
 
-  for (const pkg of envVars ?? []) {
+  for (const pkg of packages ?? []) {
     for (const ev of pkg.environmentVariables ?? []) {
       // Build description with placeholder in parens if present
       let description = ev.description ?? ev.name;
@@ -86,8 +116,8 @@ function mapEnvironmentVariables(envVars: UpstreamServer["packages"]): {
         description = `${description} (e.g. ${ev.placeholder})`;
       }
 
-      // Placeholder value in configTemplate.env
-      env[ev.name] = `<${ev.name}>`;
+      // Link credential reference in configTemplate.env
+      env[ev.name] = { from: "link", provider: serverId, key: ev.name };
 
       // Required fields go into requiredConfig
       if (ev.isRequired) {
@@ -101,6 +131,40 @@ function mapEnvironmentVariables(envVars: UpstreamServer["packages"]): {
   }
 
   return { requiredConfig, env };
+}
+
+function buildApiKeyProvider(
+  id: string,
+  name: string,
+  description: string | undefined,
+  env: Record<string, string | LinkCredentialRef>,
+): DynamicApiKeyProviderInput {
+  const secretSchema: Record<string, "string"> = {};
+  for (const key of Object.keys(env)) {
+    secretSchema[key] = "string";
+  }
+  return {
+    type: "apikey",
+    id,
+    displayName: name.slice(0, 100),
+    description: (description || name).slice(0, 200),
+    secretSchema,
+  };
+}
+
+function buildOAuthProvider(
+  id: string,
+  name: string,
+  description: string | undefined,
+  serverUrl: string,
+): DynamicOAuthProviderInput {
+  return {
+    type: "oauth",
+    id,
+    displayName: name.slice(0, 200),
+    description: (description || name).slice(0, 200),
+    oauthConfig: { mode: "discovery", serverUrl },
+  };
 }
 
 /**
@@ -141,9 +205,11 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
     const command = "npx";
     const args = ["-y", `${npmStdioPackage.identifier}@${server.version}`];
 
-    const { requiredConfig, env } = mapEnvironmentVariables(
-      npmStdioPackage.environmentVariables ? [npmStdioPackage] : undefined,
-    );
+    const { requiredConfig, env } = mapEnvironmentVariables(server.packages, id);
+
+    const linkProvider = Object.keys(env).length > 0
+      ? buildApiKeyProvider(id, server.name, server.description, env)
+      : undefined;
 
     const entry: MCPServerMetadata = {
       id,
@@ -163,7 +229,7 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
       requiredConfig: requiredConfig.length > 0 ? requiredConfig : undefined,
     };
 
-    return { success: true, entry };
+    return { success: true, entry, linkProvider };
   }
 
   // Rule 2: streamable-http with no unresolved URL variables
@@ -188,6 +254,36 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
       };
     }
 
+    const { requiredConfig, env } = mapEnvironmentVariables(server.packages, id);
+
+    if (Object.keys(env).length > 0) {
+      // http remote with env vars → DynamicApiKeyProviderInput
+      const entry: MCPServerMetadata = {
+        id,
+        name: server.name,
+        description: server.description,
+        securityRating: "unverified",
+        source: "registry",
+        upstream: {
+          canonicalName: server.name,
+          version: server.version,
+          updatedAt: _meta["io.modelcontextprotocol.registry/official"].updatedAt,
+        },
+        configTemplate: {
+          transport: { type: "http", url: urlResult.url },
+          env,
+        },
+        requiredConfig: requiredConfig.length > 0 ? requiredConfig : undefined,
+      };
+
+      return {
+        success: true,
+        entry,
+        linkProvider: buildApiKeyProvider(id, server.name, server.description, env),
+      };
+    }
+
+    // http remote without env vars → DynamicOAuthProviderInput
     const entry: MCPServerMetadata = {
       id,
       name: server.name,
@@ -202,7 +298,11 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
       configTemplate: { transport: { type: "http", url: urlResult.url } },
     };
 
-    return { success: true, entry };
+    return {
+      success: true,
+      entry,
+      linkProvider: buildOAuthProvider(id, server.name, server.description, urlResult.url),
+    };
   }
 
   // Rule 3: Check for unsupported transports and provide specific rejection reasons

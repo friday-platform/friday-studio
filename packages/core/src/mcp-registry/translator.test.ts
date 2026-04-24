@@ -6,7 +6,9 @@ import type { UpstreamServerEntry } from "./upstream-client.ts";
 /**
  * Type guard for successful translation result.
  */
-function isSuccess(result: TranslateResult): result is { success: true; entry: MCPServerMetadata } {
+function isSuccess(
+  result: TranslateResult,
+): result is { success: true; entry: MCPServerMetadata; linkProvider?: import("./translator.ts").DynamicProviderInput } {
   return result.success === true;
 }
 
@@ -167,11 +169,20 @@ describe("translate", () => {
         examples: ["https://api.example.com"],
       });
 
-      // Check configTemplate.env has all env vars with placeholders
+      // Check configTemplate.env uses Link credential references
       expect(result.entry.configTemplate.env).toEqual({
-        API_KEY: "<API_KEY>",
-        DEBUG: "<DEBUG>",
-        ENDPOINT: "<ENDPOINT>",
+        API_KEY: { from: "link", provider: "com-example-api-server", key: "API_KEY" },
+        DEBUG: { from: "link", provider: "com-example-api-server", key: "DEBUG" },
+        ENDPOINT: { from: "link", provider: "com-example-api-server", key: "ENDPOINT" },
+      });
+
+      // Check linkProvider is DynamicApiKeyProviderInput
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "com-example-api-server",
+        displayName: "com.example.api-server",
+        description: "API server with env vars",
+        secretSchema: { API_KEY: "string", DEBUG: "string", ENDPOINT: "string" },
       });
     });
 
@@ -210,6 +221,15 @@ describe("translate", () => {
       // HTTP transport has no env vars by default
       expect(result.entry.configTemplate.env).toBeUndefined();
       expect(result.entry.requiredConfig).toBeUndefined();
+
+      // Check linkProvider is DynamicOAuthProviderInput
+      expect(result.linkProvider).toEqual({
+        type: "oauth",
+        id: "io-github-example-http-server",
+        displayName: "io.github.example.http-server",
+        description: "HTTP-based MCP server",
+        oauthConfig: { mode: "discovery", serverUrl: "https://mcp.example.com/v1/mcp" },
+      });
     });
 
     it("streamable-http with variables having defaults", ({ expect }) => {
@@ -248,6 +268,85 @@ describe("translate", () => {
       expect(result.entry.configTemplate.transport).toEqual({
         type: "http",
         url: "https://us-east-1.saas.example.com/mcp",
+      });
+
+      // Check linkProvider is DynamicOAuthProviderInput
+      expect(result.linkProvider).toEqual({
+        type: "oauth",
+        id: "io-example-saas-integration",
+        displayName: "io.example.saas-integration",
+        description: "SaaS MCP integration",
+        oauthConfig: { mode: "discovery", serverUrl: "https://us-east-1.saas.example.com/mcp" },
+      });
+    });
+
+    it("streamable-http with env vars from packages → DynamicApiKeyProviderInput", ({ expect }) => {
+      const fixture: UpstreamServerEntry = {
+        server: {
+          $schema: "https://example.com/schema.json",
+          name: "io.example.http-with-env",
+          description: "HTTP server with env vars from packages",
+          version: "1.0.0",
+          packages: [
+            {
+              registryType: "pypi",
+              identifier: "http-env-server",
+              version: "1.0.0",
+              transport: { type: "stdio" },
+              environmentVariables: [
+                {
+                  name: "API_KEY",
+                  description: "API key for authentication",
+                  isRequired: true,
+                },
+                {
+                  name: "ENDPOINT",
+                  description: "Custom endpoint",
+                  isRequired: false,
+                },
+              ],
+            },
+          ],
+          remotes: [{ type: "streamable-http", url: "https://http-env.example.com/mcp" }],
+        },
+        _meta: {
+          "io.modelcontextprotocol.registry/official": {
+            status: "active",
+            statusChangedAt: "2025-01-01T00:00:00.000000Z",
+            publishedAt: "2025-01-01T00:00:00.000000Z",
+            updatedAt: "2025-01-01T00:00:00.000000Z",
+            isLatest: true,
+          },
+        },
+      };
+
+      const result = translate(fixture);
+
+      expect(result.success).toBe(true);
+      if (!isSuccess(result)) return;
+
+      // HTTP transport wins (pypi stdio is rejected later, but http branch runs first)
+      expect(result.entry.configTemplate.transport).toEqual({
+        type: "http",
+        url: "https://http-env.example.com/mcp",
+      });
+
+      // Env vars from packages become Link refs
+      expect(result.entry.configTemplate.env).toEqual({
+        API_KEY: { from: "link", provider: "io-example-http-with-env", key: "API_KEY" },
+        ENDPOINT: { from: "link", provider: "io-example-http-with-env", key: "ENDPOINT" },
+      });
+      expect(result.entry.requiredConfig).toEqual([
+        { key: "API_KEY", description: "API key for authentication", type: "string" },
+      ]);
+
+      // Link provider is apikey because env vars exist
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-http-with-env",
+        displayName: "io.example.http-with-env",
+        description: "HTTP server with env vars from packages",
+        secretSchema: { API_KEY: "string", ENDPOINT: "string" },
       });
     });
 
@@ -290,6 +389,9 @@ describe("translate", () => {
         command: "npx",
         args: ["-y", "@example/multi@1.0.0"],
       });
+
+      // No env vars, so no linkProvider
+      expect(result.linkProvider).toBeUndefined();
     });
 
     it("streamable-http used when no npm stdio available", ({ expect }) => {
@@ -329,6 +431,15 @@ describe("translate", () => {
       expect(result.entry.configTemplate.transport).toEqual({
         type: "http",
         url: "https://http-only.example.com/mcp",
+      });
+
+      // No env vars from packages, so linkProvider is OAuth
+      expect(result.linkProvider).toEqual({
+        type: "oauth",
+        id: "io-example-http-only",
+        displayName: "io.example.http-only",
+        description: "HTTP-only MCP server",
+        oauthConfig: { mode: "discovery", serverUrl: "https://http-only.example.com/mcp" },
       });
     });
 
@@ -451,6 +562,17 @@ describe("translate", () => {
       if (!isSuccess(result)) return;
 
       expect(result.entry.requiredConfig?.[0]?.description).toBe("A simple variable");
+
+      expect(result.entry.configTemplate.env).toEqual({
+        SIMPLE_VAR: { from: "link", provider: "io-example-simple-env", key: "SIMPLE_VAR" },
+      });
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-simple-env",
+        displayName: "io.example.simple-env",
+        description: "Simple env vars",
+        secretSchema: { SIMPLE_VAR: "string" },
+      });
     });
 
     it("handles environment variable with description and placeholder", ({ expect }) => {
@@ -496,6 +618,17 @@ describe("translate", () => {
       expect(result.entry.requiredConfig?.[0]?.description).toBe(
         "Authentication token (e.g. ghp_xxxxxxxxxxxx)",
       );
+
+      expect(result.entry.configTemplate.env).toEqual({
+        TOKEN: { from: "link", provider: "io-example-placeholder-env", key: "TOKEN" },
+      });
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-placeholder-env",
+        displayName: "io.example.placeholder-env",
+        description: "Placeholder test",
+        secretSchema: { TOKEN: "string" },
+      });
     });
   });
 
@@ -1001,6 +1134,7 @@ describe("translate", () => {
 
       expect(result.entry.requiredConfig).toBeUndefined();
       expect(result.entry.configTemplate.env).toBeUndefined();
+      expect(result.linkProvider).toBeUndefined();
     });
 
     it("handles multiple environment variables with mixed required/optional", ({ expect }) => {
@@ -1043,10 +1177,17 @@ describe("translate", () => {
 
       expect(result.entry.requiredConfig).toHaveLength(2);
       expect(result.entry.configTemplate.env).toEqual({
-        REQ1: "<REQ1>",
-        OPT1: "<OPT1>",
-        REQ2: "<REQ2>",
-        OPT2: "<OPT2>",
+        REQ1: { from: "link", provider: "io-example-mixed-env", key: "REQ1" },
+        OPT1: { from: "link", provider: "io-example-mixed-env", key: "OPT1" },
+        REQ2: { from: "link", provider: "io-example-mixed-env", key: "REQ2" },
+        OPT2: { from: "link", provider: "io-example-mixed-env", key: "OPT2" },
+      });
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-mixed-env",
+        displayName: "io.example.mixed-env",
+        description: "Mixed env vars",
+        secretSchema: { REQ1: "string", OPT1: "string", REQ2: "string", OPT2: "string" },
       });
     });
 
@@ -1167,6 +1308,17 @@ describe("translate", () => {
 
       // Choices are ignored in v1 per design doc
       expect(result.entry.requiredConfig?.[0]?.examples).toBeUndefined();
+
+      expect(result.entry.configTemplate.env).toEqual({
+        REGION: { from: "link", provider: "io-example-choices", key: "REGION" },
+      });
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-choices",
+        displayName: "io.example.choices",
+        description: "With choices",
+        secretSchema: { REGION: "string" },
+      });
     });
 
     it("handles environment variable with isSecret (ignored in v1)", ({ expect }) => {
@@ -1211,6 +1363,17 @@ describe("translate", () => {
 
       // isSecret is not mapped in v1 per design doc
       expect(result.entry.requiredConfig?.[0]).not.toHaveProperty("isSecret");
+
+      expect(result.entry.configTemplate.env).toEqual({
+        SECRET_KEY: { from: "link", provider: "io-example-secret", key: "SECRET_KEY" },
+      });
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-secret",
+        displayName: "io.example.secret",
+        description: "With secret",
+        secretSchema: { SECRET_KEY: "string" },
+      });
     });
 
     it("handles environment variable with format (ignored in v1)", ({ expect }) => {
@@ -1250,6 +1413,17 @@ describe("translate", () => {
 
       // format is ignored in v1 per design doc
       expect(result.entry.requiredConfig?.[0]).not.toHaveProperty("format");
+
+      expect(result.entry.configTemplate.env).toEqual({
+        EMAIL: { from: "link", provider: "io-example-format", key: "EMAIL" },
+      });
+      expect(result.linkProvider).toEqual({
+        type: "apikey",
+        id: "io-example-format",
+        displayName: "io.example.format",
+        description: "With format",
+        secretSchema: { EMAIL: "string" },
+      });
     });
   });
 });
