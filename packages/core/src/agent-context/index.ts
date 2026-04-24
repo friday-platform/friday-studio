@@ -6,8 +6,7 @@ import type {
   AtlasAgent,
   AtlasTool,
 } from "@atlas/agent-sdk";
-import { client, parseResult } from "@atlas/client/v2";
-import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import type { MCPServerConfig } from "@atlas/config";
 import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -20,13 +19,13 @@ import {
   SkillStorage,
   validateSkillReferences,
 } from "@atlas/skills";
-import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { UserConfigurationError } from "../errors/user-configuration-error.ts";
 import {
   hasUnusableCredentialCause,
   resolveSlackAppByWorkspace,
 } from "../mcp-registry/credential-resolver.ts";
+import { discoverMCPServers } from "../mcp-registry/discovery.ts";
 import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
@@ -241,8 +240,9 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
 /**
  * Fetch all tools directly from MCP servers.
- * Merges workspace, platform, and agent servers with proper precedence.
- * Also returns workspace skill entries for load_skill tool configuration.
+ * Discovers all workspace, registry, and static servers via discoverMCPServers,
+ * applies agent-level overrides, injects atlas-platform, and resolves slack-app
+ * credentials. Delegates to createMCPTools for the actual tool instantiation.
  */
 async function fetchAllTools(
   workspaceId: string,
@@ -256,32 +256,34 @@ async function fetchAllTools(
     agentMCPServerIds: agentMCPConfig ? Object.keys(agentMCPConfig) : [],
   });
 
-  // Get workspace config from daemon
-  const response = await parseResult(
-    client.workspace[":workspaceId"].config.$get({ param: { workspaceId } }),
-  );
+  const candidates = await discoverMCPServers(workspaceId);
 
-  if (!response.ok) {
-    logger.error("Failed to fetch workspace config", {
-      operation: "fetch_all_tools",
-      workspaceId,
-      error: response.error,
-    });
-    throw new Error(`Failed to fetch workspace config: ${stringifyError(response.error)}`);
+  // Build config map from discovered candidates (workspace + registry + static)
+  const allServerConfigs: Record<string, MCPServerConfig> = {};
+  for (const candidate of candidates) {
+    allServerConfigs[candidate.metadata.id] = candidate.mergedConfig;
   }
-  const workspaceConfig: WorkspaceConfig = response.data.config;
 
-  // Merge workspace and agent MCP servers (agent takes precedence)
-  const allServerConfigs = mergeServerConfigs(
-    workspaceConfig.tools?.mcp?.servers || {},
-    agentMCPConfig || {},
-    logger,
-  );
+  // Always inject atlas-platform
+  allServerConfigs["atlas-platform"] = getAtlasPlatformServerConfig();
+
+  // Agent-level MCP configs take highest precedence
+  for (const [id, agentConfig] of Object.entries(agentMCPConfig ?? {})) {
+    if (allServerConfigs[id]) {
+      logger.info("Agent MCP server overriding discovered server", {
+        operation: "fetch_all_tools",
+        serverId: id,
+        existingTransport: allServerConfigs[id].transport.type,
+        agentTransport: agentConfig.transport.type,
+      });
+    }
+    allServerConfigs[id] = agentConfig;
+  }
 
   logger.info("Created merged MCP server configuration", {
     operation: "fetch_all_tools",
     workspaceId,
-    workspaceServers: Object.keys(workspaceConfig.tools?.mcp?.servers ?? {}),
+    discoveredServerCount: candidates.length,
     agentServers: Object.keys(agentMCPConfig || {}),
     totalServerCount: Object.keys(allServerConfigs).length,
     serverIds: Object.keys(allServerConfigs),
@@ -297,41 +299,10 @@ async function fetchAllTools(
 }
 
 /**
- * Merge MCP server configs with precedence: agent > platform > workspace
- */
-function mergeServerConfigs(
-  workspaceServers: Record<string, MCPServerConfig>,
-  agentServers: Record<string, MCPServerConfig>,
-  logger: Logger,
-): Record<string, MCPServerConfig> {
-  // Start with workspace servers (lowest priority)
-  const merged = { ...workspaceServers };
-
-  // Add Atlas platform server (takes priority over workspace servers)
-  merged["atlas-platform"] = getAtlasPlatformServerConfig();
-
-  // Agent servers take highest precedence over everything
-  for (const [id, agentConfig] of Object.entries(agentServers)) {
-    if (merged[id]) {
-      logger.info("Agent MCP server overriding other server", {
-        operation: "merge_server_configs",
-        serverId: id,
-        existingTransport: merged[id].transport.type,
-        agentTransport: agentConfig.transport.type,
-      });
-    }
-
-    merged[id] = agentConfig;
-  }
-
-  return merged;
-}
-
-/**
  * Find a provider-only slack-app credential ref in MCP server envs and
  * replace it with the credential ID wired to this workspace.
  */
-async function injectSlackAppCredentialId(
+export async function injectSlackAppCredentialId(
   configs: Record<string, MCPServerConfig>,
   workspaceId: string,
 ): Promise<void> {

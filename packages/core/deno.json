@@ -32,6 +32,7 @@
     "./mcp-registry/config-validator": "./src/mcp-registry/config-validator.ts",
     "./mcp-registry/resolvers": "./src/mcp-registry/resolvers/index.ts",
     "./streaming": "./src/streaming/stream-emitters.ts",
+    "./agent-context": "./src/agent-context/index.ts",
     "./agent-loader": "./src/agent-loader/index.ts",
     "./agent-loader/user-adapter": "./src/agent-loader/adapters/user-adapter.ts",
     "./errors/missing-environment": "./src/errors/missing-environment-error.ts",
