@@ -40,6 +40,7 @@ const mockFetchUserIdentitySection = vi.hoisted(() => vi.fn());
 const mockCreateConnectServiceTool = vi.hoisted(() => vi.fn());
 const mockCreateJobTools = vi.hoisted(() => vi.fn());
 const mockCreateAgentTool = vi.hoisted(() => vi.fn(() => ({})));
+const mockCreateListMCPServersTool = vi.hoisted(() => vi.fn());
 
 const mockStreamText = vi.hoisted(() => vi.fn());
 const mockCreateUIMessageStream = vi.hoisted(() => vi.fn());
@@ -144,6 +145,10 @@ vi.mock("@atlas/bundled-agents", () => ({ bundledAgents: [] }));
 vi.mock("./tools/bundled-agent-tools.ts", () => ({ createAgentTool: mockCreateAgentTool }));
 
 vi.mock("./tools/job-tools.ts", () => ({ createJobTools: mockCreateJobTools }));
+
+vi.mock("./tools/list-mcp-servers.ts", () => ({
+  createListMCPServersTool: mockCreateListMCPServersTool,
+}));
 
 vi.mock("./tools/artifact-tools.ts", () => ({ artifactTools: {} }));
 
@@ -269,6 +274,9 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
   mockCreateConnectServiceTool.mockReturnValue({ description: "connect" });
   mockCreateJobTools.mockReturnValue({});
   mockCreateAgentTool.mockReturnValue({});
+  mockCreateListMCPServersTool.mockReturnValue({
+    list_mcp_servers: { description: "List MCP servers" },
+  });
 
   // ChatStorage
   mockSetSystemPromptContext.mockResolvedValue({ ok: true });
@@ -360,6 +368,7 @@ describe("workspace-chat handler", () => {
     mockCreateConnectServiceTool.mockReset();
     mockCreateJobTools.mockReset();
     mockCreateAgentTool.mockReset();
+    mockCreateListMCPServersTool.mockReset();
     mockStreamText.mockReset();
     mockCreateUIMessageStream.mockReset();
     mockConvertToModelMessages.mockReset();
@@ -626,5 +635,283 @@ describe("workspace-chat handler", () => {
       expect.objectContaining({ role: "assistant" }),
       "ws-1",
     );
+  });
+
+  // -----------------------------------------------------------------------
+  // Seamless auto-continue after connect_service
+  // -----------------------------------------------------------------------
+
+  it("auto-continues after connect_service with data-credential-linked message", async () => {
+    const userMessage = makeMessage("user", "what are my Stripe charges?");
+
+    // Base mocks (sets up client proxy, ChatStorage, LLM, etc.)
+    setupDefaultMocks([userMessage]);
+
+    // Turn 1: Link has stripe-mcp provider but no credential yet
+    mockFetchLinkSummary.mockResolvedValue({ providers: [{ id: "stripe-mcp" }], credentials: [] });
+
+    // Set up list_mcp_servers tool to return unconfigured stripe
+    mockCreateListMCPServersTool.mockReturnValue({
+      list_mcp_servers: {
+        description: "List MCP servers",
+        parameters: {},
+        execute: vi
+          .fn()
+          .mockResolvedValue([
+            {
+              id: "stripe-mcp",
+              name: "Stripe",
+              configured: false,
+              provider: "stripe-mcp",
+              requiredConfig: ["STRIPE_API_KEY"],
+            },
+          ]),
+      },
+    });
+
+    // parseResult for turn 1
+    mockParseResult.mockResolvedValue({
+      ok: true,
+      data: {
+        messages: [userMessage],
+        name: "test-ws",
+        config: { version: "1.0", workspace: { name: "test-ws" } },
+        user: { full_name: "Alice", email: "alice@test.com", display_name: "Alice" },
+        signals: { signals: [] },
+        artifacts: { artifacts: [] },
+      },
+    });
+
+    const capturedStreamTextCalls: Array<{
+      tools: Record<string, unknown>;
+      messages: unknown[];
+      stopWhen: unknown[];
+    }> = [];
+
+    mockStreamText.mockImplementation((opts) => {
+      capturedStreamTextCalls.push(opts as never);
+      opts.onFinish?.({ text: "" });
+      return {
+        toUIMessageStream: vi.fn().mockReturnValue(
+          new ReadableStream({
+            start(controller) {
+              controller.close();
+            },
+          }),
+        ),
+      };
+    });
+
+    // createUIMessageStream: produce turn-specific assistant messages
+    mockCreateUIMessageStream.mockImplementation(
+      ({
+        execute,
+        onFinish,
+        originalMessages,
+      }: {
+        execute: (ctx: {
+          writer: { write: ReturnType<typeof vi.fn>; merge: ReturnType<typeof vi.fn> };
+        }) => Promise<void>;
+        onFinish: (ctx: { messages: AtlasUIMessage[] }) => Promise<void>;
+        originalMessages: AtlasUIMessage[];
+      }) => {
+        return new ReadableStream({
+          async start(controller) {
+            const mockWriter = { write: vi.fn(), merge: vi.fn() };
+            await execute({ writer: mockWriter });
+
+            // Build assistant message based on turn
+            let assistantMessage: AtlasUIMessage;
+            if (originalMessages.length === 1) {
+              // Turn 1: list_mcp_servers → connect_service
+              assistantMessage = {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                parts: [
+                  { type: "text", text: "I'll help you check your Stripe charges." },
+                  {
+                    type: "tool-call",
+                    toolCallId: "tc-1",
+                    toolName: "list_mcp_servers",
+                    input: {},
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                  {
+                    type: "tool-result",
+                    toolCallId: "tc-1",
+                    toolName: "list_mcp_servers",
+                    input: {},
+                    output: [
+                      {
+                        id: "stripe-mcp",
+                        name: "Stripe",
+                        configured: false,
+                        provider: "stripe-mcp",
+                        requiredConfig: ["STRIPE_API_KEY"],
+                      },
+                    ],
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                  {
+                    type: "tool-call",
+                    toolCallId: "tc-2",
+                    toolName: "connect_service",
+                    input: { provider: "stripe-mcp" },
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                  {
+                    type: "tool-result",
+                    toolCallId: "tc-2",
+                    toolName: "connect_service",
+                    input: { provider: "stripe-mcp" },
+                    output: { provider: "stripe-mcp" },
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                ],
+              };
+            } else {
+              // Turn 2: list_mcp_servers → delegate
+              assistantMessage = {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                parts: [
+                  { type: "text", text: "Now I'll fetch your Stripe charges." },
+                  {
+                    type: "tool-call",
+                    toolCallId: "tc-3",
+                    toolName: "list_mcp_servers",
+                    input: {},
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                  {
+                    type: "tool-result",
+                    toolCallId: "tc-3",
+                    toolName: "list_mcp_servers",
+                    input: {},
+                    output: [{ id: "stripe-mcp", name: "Stripe", configured: true }],
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                  {
+                    type: "tool-call",
+                    toolCallId: "tc-4",
+                    toolName: "delegate",
+                    input: { mcpServers: ["stripe-mcp"], goal: "Fetch Stripe charges" },
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                  {
+                    type: "tool-result",
+                    toolCallId: "tc-4",
+                    toolName: "delegate",
+                    input: { mcpServers: ["stripe-mcp"], goal: "Fetch Stripe charges" },
+                    output: { ok: true, text: "You have 3 charges." },
+                    dynamic: false,
+                  } as unknown as AtlasUIMessage["parts"][number],
+                ],
+              };
+            }
+
+            const finishMessages = [...originalMessages, assistantMessage];
+            await onFinish({ messages: finishMessages });
+            controller.close();
+          },
+        });
+      },
+    );
+
+    const handler = getHandler();
+    const ctx = makeContext();
+
+    // ---- Turn 1 ----
+    await handler("", ctx);
+
+    expect(capturedStreamTextCalls).toHaveLength(1);
+    const turn1Args = capturedStreamTextCalls[0]!;
+
+    // Turn 1 tools include list_mcp_servers, connect_service, and delegate
+    expect(turn1Args.tools).toHaveProperty("list_mcp_servers");
+    expect(turn1Args.tools).toHaveProperty("connect_service");
+    expect(turn1Args.tools).toHaveProperty("delegate");
+
+    // Turn 1 stopWhen includes connectServiceSucceeded
+    expect(turn1Args.stopWhen).toHaveLength(2);
+    expect(turn1Args.stopWhen).toEqual([expect.any(Function), expect.any(Function)]);
+
+    // Turn 1 messages include the user query
+    expect(turn1Args.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "system" }),
+        expect.objectContaining({ role: "user" }),
+      ]),
+    );
+
+    // Persisted assistant message from turn 1
+    expect(mockAppendMessage).toHaveBeenCalledWith(
+      "stream-1",
+      expect.objectContaining({
+        role: "assistant",
+        parts: expect.arrayContaining([
+          expect.objectContaining({ type: "tool-call", toolName: "list_mcp_servers" }),
+          expect.objectContaining({ type: "tool-call", toolName: "connect_service" }),
+        ]),
+      }),
+      "ws-1",
+    );
+
+    // ---- Turn 2: simulate data-credential-linked message ----
+    const credentialLinkedMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      parts: [
+        {
+          type: "data-credential-linked",
+          data: { provider: "stripe-mcp", displayName: "stripe-mcp" },
+        },
+      ],
+    } as unknown as AtlasUIMessage;
+
+    mockParseResult.mockResolvedValue({
+      ok: true,
+      data: {
+        messages: [userMessage, credentialLinkedMessage],
+        name: "test-ws",
+        config: { version: "1.0", workspace: { name: "test-ws" } },
+        user: { full_name: "Alice", email: "alice@test.com", display_name: "Alice" },
+        signals: { signals: [] },
+        artifacts: { artifacts: [] },
+      },
+    });
+
+    // Update list_mcp_servers to return configured stripe for turn 2
+    mockCreateListMCPServersTool.mockReturnValue({
+      list_mcp_servers: {
+        description: "List MCP servers",
+        parameters: {},
+        execute: vi
+          .fn()
+          .mockResolvedValue([{ id: "stripe-mcp", name: "Stripe", configured: true }]),
+      },
+    });
+
+    await handler("", ctx);
+
+    expect(capturedStreamTextCalls).toHaveLength(2);
+    const turn2Args = capturedStreamTextCalls[1]!;
+
+    // Turn 2 tools still include list_mcp_servers and delegate
+    expect(turn2Args.tools).toHaveProperty("list_mcp_servers");
+    expect(turn2Args.tools).toHaveProperty("delegate");
+
+    // Turn 2 messages include data-credential-linked
+    const modelMessages = turn2Args.messages as Array<{ role: string; parts?: unknown[] }>;
+    const hasCredentialLinked = modelMessages.some(
+      (m) =>
+        m.role === "user" &&
+        Array.isArray(m.parts) &&
+        m.parts.some((p: unknown) => {
+          const part = p as { type?: string; data?: { provider?: string } };
+          return part.type === "data-credential-linked" && part.data?.provider === "stripe-mcp";
+        }),
+    );
+    expect(hasCredentialLinked).toBe(true);
   });
 });
