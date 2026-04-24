@@ -1,9 +1,8 @@
 <!--
-  MCP Registry Import — command-palette style picker.
+  MCP Registry Import — command-palette style picker with custom server addition.
 
   Wide, left-aligned overlay for searching and installing servers from the
-  upstream registry. No title block, no cancel button. Search is the entire
-  interface. Install button is explicit, not hover-reveal.
+  upstream registry, plus adding custom HTTP or JSON-configured servers.
 
   @component
   @prop open - Whether the picker is visible
@@ -13,10 +12,13 @@
 -->
 
 <script lang="ts">
-  import { Button, IconSmall } from "@atlas/ui";
+  import { goto } from "$app/navigation";
+  import { Button, IconSmall, toast } from "@atlas/ui";
   import { createDialog } from "@melt-ui/svelte";
   import { createQuery } from "@tanstack/svelte-query";
+  import { parseCustomMCPConfig, type ParseResult } from "@atlas/core/mcp-registry/custom-parser";
   import { mcpQueries, type SearchResult } from "$lib/queries/mcp-queries";
+  import { useAddCustomMCPServer, type AddCustomMCPInput } from "$lib/queries/mcp";
 
   interface Props {
     open: boolean;
@@ -26,6 +28,25 @@
   }
 
   let { open, onclose, onInstall, installing }: Props = $props();
+
+  // ---------------------------------------------------------------------------
+  // Tabs
+  // ---------------------------------------------------------------------------
+
+  let activeTab = $state<"search" | "custom">("search");
+
+  $effect(() => {
+    if (open) {
+      activeTab = "search";
+      customName = "";
+      customDescription = "";
+      customId = "";
+      idManuallyEdited = false;
+      httpUrl = "";
+      jsonText = "";
+      jsonParseResult = null;
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Melt UI dialog primitives — bypass @atlas/ui Dialog to control layout
@@ -75,7 +96,7 @@
   });
 
   $effect(() => {
-    if (open && inputRef) {
+    if (open && activeTab === "search" && inputRef) {
       setTimeout(() => inputRef?.focus(), 50);
     }
   });
@@ -99,6 +120,112 @@
       // Parent toasts success and failure; suppress unhandled rejection
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Custom form state
+  // ---------------------------------------------------------------------------
+
+  let customName = $state("");
+  let customDescription = $state("");
+  let customId = $state("");
+  let idManuallyEdited = $state(false);
+  let httpUrl = $state("");
+  let jsonText = $state("");
+  let jsonParseResult = $state<ParseResult | null>(null);
+  let jsonDebounce: ReturnType<typeof setTimeout> | undefined;
+
+  const addCustomMut = useAddCustomMCPServer();
+
+  function deriveId(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 64);
+  }
+
+  $effect(() => {
+    if (!idManuallyEdited) {
+      customId = deriveId(customName);
+    }
+  });
+
+  function handleIdInput(): void {
+    idManuallyEdited = true;
+  }
+
+  function handleJsonInput(): void {
+    clearTimeout(jsonDebounce);
+    jsonDebounce = setTimeout(() => {
+      parseJson();
+    }, 300);
+  }
+
+  $effect(() => {
+    if (jsonText === "") {
+      clearTimeout(jsonDebounce);
+      jsonParseResult = null;
+    }
+    return () => clearTimeout(jsonDebounce);
+  });
+
+  function parseJson(): void {
+    if (jsonText.trim().length === 0) {
+      jsonParseResult = null;
+      return;
+    }
+    jsonParseResult = parseCustomMCPConfig(jsonText);
+  }
+
+  function handleJsonBlur(): void {
+    clearTimeout(jsonDebounce);
+    parseJson();
+  }
+
+  const hasHttpUrl = $derived(httpUrl.trim().length > 0);
+  const hasJson = $derived(jsonText.trim().length > 0);
+  const jsonValid = $derived(
+    jsonParseResult !== null && jsonParseResult.success === true,
+  );
+  const canSubmitCustom = $derived(
+    customName.trim().length > 0 &&
+      ((hasHttpUrl && !hasJson) || (!hasHttpUrl && hasJson && jsonValid)) &&
+      !addCustomMut.isPending,
+  );
+
+  async function handleSubmitCustom(): Promise<void> {
+    if (!canSubmitCustom) return;
+
+    const payload: AddCustomMCPInput = {
+      name: customName.trim(),
+    };
+
+    const trimmedId = customId.trim();
+    if (trimmedId) payload.id = trimmedId;
+
+    const trimmedDescription = customDescription.trim();
+    if (trimmedDescription) payload.description = trimmedDescription;
+
+    if (hasHttpUrl) {
+      payload.httpUrl = httpUrl.trim();
+    } else if (hasJson && jsonParseResult && jsonParseResult.success) {
+      payload.configJson = {
+        transport: jsonParseResult.transport,
+        envVars: jsonParseResult.envVars,
+      };
+    } else {
+      return;
+    }
+
+    try {
+      const result = await addCustomMut.mutateAsync(payload);
+      onclose();
+      goto(`/mcp/${result.server.id}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast({ title: "Add custom server failed", description: message, error: true });
+    }
+  }
 </script>
 
 {#if $dialogOpen}
@@ -111,91 +238,196 @@
     ></div>
 
     <div class="panel" {...$dialogContent} use:dialogContent>
-      <!-- Search -->
-      <div class="search-bar" class:focused={searchFocused}>
-        <span class="search-icon"><IconSmall.Search /></span>
-        <input
-          bind:this={inputRef}
-          type="text"
-          placeholder="Search MCP registry (e.g. filesystem, linear…)"
-          bind:value={searchInput}
-          oninput={handleSearchInput}
-          onfocus={() => (searchFocused = true)}
-          onblur={() => (searchFocused = false)}
-          autocomplete="off"
-        />
-        {#if searchResultsQuery.isLoading && searchQuery.length >= 2}
-          <span class="search-spinner"><IconSmall.Progress /></span>
-        {/if}
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <button
+          type="button"
+          class="tab"
+          class:active={activeTab === "search"}
+          onclick={() => (activeTab = "search")}
+        >
+          Search Registry
+        </button>
+        <button
+          type="button"
+          class="tab"
+          class:active={activeTab === "custom"}
+          onclick={() => (activeTab = "custom")}
+        >
+          Add Custom
+        </button>
       </div>
 
-      <!-- Results -->
-      {#if searchQuery.length >= 2}
-        <div class="results-scroll">
-          {#if searchResultsQuery.isLoading}
-            <div class="status">
-              <span class="spin"><IconSmall.Progress /></span>
-              Searching registry…
-            </div>
-          {:else if registryResults.length === 0}
-            <div class="status empty">
-              <p>No servers found for "{searchQuery}"</p>
-            </div>
-          {:else}
-            <ul class="results-list">
-              {#each registryResults as result (result.name)}
-                {@const canInstall = !result.alreadyInstalled}
-                <li class="result-row">
-                  {#if canInstall}
-                    <div class="result-item">
-                      <div class="result-body">
-                        <span class="result-name">{result.name}</span>
-                        {#if result.description}
-                          <p class="result-desc">{result.description}</p>
-                        {/if}
-                      </div>
-
-                      <div class="result-actions">
-                        {#if result.repositoryUrl}
-                          <Button
-                            variant="secondary"
-                            size="icon"
-                            href={result.repositoryUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="Open repository"
-                          >
-                            <IconSmall.ExternalLink />
-                          </Button>
-                        {/if}
-                        <Button
-                          variant="primary"
-                          size="small"
-                          onclick={() => doInstall(result)}
-                          disabled={installing}
-                        >
-                          {installing ? "…" : "Add"}
-                        </Button>
-                      </div>
-                    </div>
-                  {:else}
-                    <div class="result-item installed">
-                      <div class="result-body">
-                        <span class="result-name">{result.name}</span>
-                        {#if result.description}
-                          <p class="result-desc">{result.description}</p>
-                        {/if}
-                      </div>
-                      <span class="installed-badge">Added</span>
-                    </div>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
+      {#if activeTab === "search"}
+        <!-- Search -->
+        <div class="search-bar" class:focused={searchFocused}>
+          <span class="search-icon"><IconSmall.Search /></span>
+          <input
+            bind:this={inputRef}
+            type="text"
+            placeholder="Search MCP registry (e.g. filesystem, linear…)"
+            bind:value={searchInput}
+            oninput={handleSearchInput}
+            onfocus={() => (searchFocused = true)}
+            onblur={() => (searchFocused = false)}
+            autocomplete="off"
+          />
+          {#if searchResultsQuery.isLoading && searchQuery.length >= 2}
+            <span class="search-spinner"><IconSmall.Progress /></span>
           {/if}
         </div>
+
+        <!-- Results -->
+        {#if searchQuery.length >= 2}
+          <div class="results-scroll">
+            {#if searchResultsQuery.isLoading}
+              <div class="status">
+                <span class="spin"><IconSmall.Progress /></span>
+                Searching registry…
+              </div>
+            {:else if registryResults.length === 0}
+              <div class="status empty">
+                <p>No servers found for "{searchQuery}"</p>
+              </div>
+            {:else}
+              <ul class="results-list">
+                {#each registryResults as result (result.name)}
+                  {@const canInstall = !result.alreadyInstalled}
+                  <li class="result-row">
+                    {#if canInstall}
+                      <div class="result-item">
+                        <div class="result-body">
+                          <span class="result-name">{result.name}</span>
+                          {#if result.description}
+                            <p class="result-desc">{result.description}</p>
+                          {/if}
+                        </div>
+
+                        <div class="result-actions">
+                          {#if result.repositoryUrl}
+                            <Button
+                              variant="secondary"
+                              size="icon"
+                              href={result.repositoryUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label="Open repository"
+                            >
+                              <IconSmall.ExternalLink />
+                            </Button>
+                          {/if}
+                          <Button
+                            variant="primary"
+                            size="small"
+                            onclick={() => doInstall(result)}
+                            disabled={installing}
+                          >
+                            {installing ? "…" : "Add"}
+                          </Button>
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="result-item installed">
+                        <div class="result-body">
+                          <span class="result-name">{result.name}</span>
+                          {#if result.description}
+                            <p class="result-desc">{result.description}</p>
+                          {/if}
+                        </div>
+                        <span class="installed-badge">Added</span>
+                      </div>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        {:else}
+          <div class="status hint-text">Type to search the MCP registry</div>
+        {/if}
       {:else}
-        <div class="status hint-text">Type to search the MCP registry</div>
+        <!-- Custom form -->
+        <div class="custom-form">
+          <div class="field-group">
+            <label class="field-label" for="custom-name">
+              Name <span class="required">*</span>
+            </label>
+            <input
+              id="custom-name"
+              type="text"
+              class="field-input"
+              placeholder="My Custom Server"
+              bind:value={customName}
+            />
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="custom-description">Description</label>
+            <input
+              id="custom-description"
+              type="text"
+              class="field-input"
+              placeholder="Optional description"
+              bind:value={customDescription}
+            />
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="custom-id">Server ID</label>
+            <input
+              id="custom-id"
+              type="text"
+              class="field-input"
+              placeholder="auto-generated-from-name"
+              bind:value={customId}
+              oninput={handleIdInput}
+            />
+            <span class="field-hint">Lowercase, alphanumeric, dashes. Max 64 chars.</span>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="custom-http-url">HTTP URL</label>
+            <input
+              id="custom-http-url"
+              type="url"
+              class="field-input"
+              placeholder="https://example.com/mcp"
+              bind:value={httpUrl}
+            />
+          </div>
+
+          <div class="field-divider">
+            <span class="divider-line"></span>
+            <span class="divider-text">or</span>
+            <span class="divider-line"></span>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="custom-json">JSON Config</label>
+            <textarea
+              id="custom-json"
+              class="field-textarea"
+              placeholder="Paste Claude Desktop config, or bare stdio or HTTP JSON"
+              bind:value={jsonText}
+              oninput={handleJsonInput}
+              onblur={handleJsonBlur}
+            ></textarea>
+            {#if jsonParseResult && !jsonParseResult.success}
+              <p class="json-error">{jsonParseResult.reason}</p>
+            {/if}
+          </div>
+
+          <div class="form-actions">
+            <Button
+              variant="primary"
+              size="regular"
+              onclick={handleSubmitCustom}
+              disabled={!canSubmitCustom}
+            >
+              {addCustomMut.isPending ? "Adding…" : "Add Server"}
+            </Button>
+          </div>
+        </div>
       {/if}
     </div>
   </div>
@@ -238,6 +470,39 @@
     overflow: hidden;
     position: relative;
     text-align: start;
+  }
+
+  /* ─── Tab bar ───────────────────────────────────────────────────────────── */
+
+  .tab-bar {
+    align-items: center;
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--size-1);
+    padding: var(--size-3) var(--size-4) 0;
+  }
+
+  .tab {
+    background: none;
+    border: none;
+    border-block-end: 2px solid transparent;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: default;
+    font-family: inherit;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    padding: var(--size-2) var(--size-3);
+    transition: all 150ms ease;
+  }
+
+  .tab.active {
+    border-block-end-color: var(--color-text);
+    color: var(--color-text);
+  }
+
+  .tab:not(.active):hover {
+    color: color-mix(in srgb, var(--color-text), transparent 15%);
   }
 
   /* ─── Search bar ─────────────────────────────────────────────────────────── */
@@ -394,5 +659,107 @@
   .spin {
     animation: spin 2s linear infinite;
     display: flex;
+  }
+
+  /* ─── Custom form ────────────────────────────────────────────────────────── */
+
+  .custom-form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: var(--size-3);
+    overflow-y: auto;
+    padding: var(--size-4);
+    scrollbar-width: thin;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .field-label {
+    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+  }
+
+  .required {
+    color: var(--color-error);
+  }
+
+  .field-input {
+    background: var(--color-surface-2);
+    border: none;
+    border-radius: var(--radius-2-5);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: var(--font-size-2);
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .field-input::placeholder {
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+  }
+
+  .field-input:focus-visible {
+    outline: 1px solid var(--color-text);
+  }
+
+  .field-hint {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-1);
+  }
+
+  .field-divider {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+    padding-block: var(--size-1);
+  }
+
+  .divider-line {
+    background: var(--color-border-1);
+    flex: 1;
+    block-size: 1px;
+  }
+
+  .divider-text {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-1);
+    text-transform: uppercase;
+  }
+
+  .field-textarea {
+    background: var(--color-surface-2);
+    border: none;
+    border-radius: var(--radius-2-5);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: var(--font-size-2);
+    min-block-size: 120px;
+    padding: var(--size-2) var(--size-3);
+    resize: vertical;
+  }
+
+  .field-textarea::placeholder {
+    color: color-mix(in srgb, var(--color-text), transparent 55%);
+  }
+
+  .field-textarea:focus-visible {
+    outline: 1px solid var(--color-text);
+  }
+
+  .json-error {
+    color: var(--color-error);
+    font-size: var(--font-size-1);
+    margin: 0;
+  }
+
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-block-start: var(--size-2);
   }
 </style>
