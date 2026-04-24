@@ -963,6 +963,7 @@ describe("createDelegateTool", () => {
     const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["server-a"] });
 
     expect(result.ok).toBe(true);
+    expect("serverFailures" in result).toBe(false);
     expect(mockCreateMCPTools).toHaveBeenCalledWith(
       { "server-a": { transport: { type: "stdio", command: "a" } } },
       expect.any(Object),
@@ -1082,6 +1083,7 @@ describe("createDelegateTool", () => {
     const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["good", "bad"] });
 
     expect(result.ok).toBe(true);
+    expect(result.serverFailures).toEqual([{ serverId: "bad", reason: "Connection refused" }]);
     expect(mockCreateMCPTools).toHaveBeenCalledTimes(2);
     const tools = captured.args?.tools as Record<string, unknown> | undefined;
     expect(tools?.tool_good).toBeDefined();
@@ -1130,6 +1132,10 @@ describe("createDelegateTool", () => {
       ok: false,
       reason: "All requested MCP servers failed to connect.",
       toolsUsed: [],
+      serverFailures: [
+        { serverId: "a", reason: "boom" },
+        { serverId: "b", reason: "boom" },
+      ],
     });
   });
 

@@ -100,9 +100,21 @@ export interface DelegateLedgerEntry {
   durationMs: number;
 }
 
+export type ServerFailure = { serverId: string; reason: string };
+
 export type DelegateResult =
-  | { ok: true; answer: string; toolsUsed: DelegateToolsUsedEntry[] }
-  | { ok: false; reason: string; toolsUsed: DelegateToolsUsedEntry[] };
+  | {
+      ok: true;
+      answer: string;
+      toolsUsed: DelegateToolsUsedEntry[];
+      serverFailures?: ServerFailure[];
+    }
+  | {
+      ok: false;
+      reason: string;
+      toolsUsed: DelegateToolsUsedEntry[];
+      serverFailures?: ServerFailure[];
+    };
 
 /**
  * Build the `delegate` tool. The child's tool set is computed lazily via
@@ -140,6 +152,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       let abortReason: string | undefined;
       let executionError: Error | undefined;
       let mcpDispose: (() => Promise<void>) | undefined;
+      const serverFailures: ServerFailure[] = [];
 
       try {
         const inheritedTools = toolSetThunk();
@@ -211,11 +224,13 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
               Object.assign(mcpTools, result.value.tools);
               disposes.push(result.value.dispose);
             } else {
+              const reason =
+                result.reason instanceof Error ? result.reason.message : String(result.reason);
+              serverFailures.push({ serverId, reason });
               logger.warn("MCP server connection failed in delegate", {
                 delegateToolCallId: toolCallId,
                 serverId,
-                error:
-                  result.reason instanceof Error ? result.reason.message : String(result.reason),
+                error: reason,
               });
             }
           }
@@ -225,6 +240,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
               ok: false,
               reason: "All requested MCP servers failed to connect.",
               toolsUsed: [],
+              serverFailures,
             };
           }
 
@@ -395,22 +411,24 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         outcome,
       }));
 
+      const resultBase = serverFailures.length > 0 ? { toolsUsed, serverFailures } : { toolsUsed };
+
       if (executionError) {
-        return { ok: false, reason: executionError.message, toolsUsed };
+        return { ok: false, reason: executionError.message, ...resultBase };
       }
       if (finishInput) {
         if (finishInput.ok) {
-          return { ok: true, answer: finishInput.answer, toolsUsed };
+          return { ok: true, answer: finishInput.answer, ...resultBase };
         }
-        return { ok: false, reason: finishInput.reason, toolsUsed };
+        return { ok: false, reason: finishInput.reason, ...resultBase };
       }
       if (abortReason) {
-        return { ok: false, reason: abortReason, toolsUsed };
+        return { ok: false, reason: abortReason, ...resultBase };
       }
       if (textError) {
-        return { ok: false, reason: textError.message, toolsUsed };
+        return { ok: false, reason: textError.message, ...resultBase };
       }
-      return { ok: true, answer: finalText, toolsUsed };
+      return { ok: true, answer: finalText, ...resultBase };
     },
   });
 }
