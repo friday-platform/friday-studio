@@ -121,6 +121,7 @@ const EnvValueSchema = z.union([z.string(), LinkCredentialRefSchema]);
 
 export const MCPServerConfigSchema = z.strictObject({
   transport: MCPTransportConfigSchema,
+  description: z.string().optional().describe("Human-readable description of the MCP server"),
   client_config: z.strictObject({ timeout: WorkspaceTimeoutConfigSchema.optional() }).optional(),
   auth: MCPAuthConfigSchema.optional(),
   tools: MCPServerToolFilterSchema.optional(),
