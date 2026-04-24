@@ -5,12 +5,8 @@ import type { MCPServerMetadata, MCPServersRegistry } from "./schemas.ts";
  * Google Workspace service definitions.
  * Each service runs its own workspace-mcp HTTP instance on a dedicated port
  * with `--tools` filtering for tool isolation. Bearer tokens from per-service
- * Link providers authenticate each connection.
- *
- * Manual launch required (see constraints):
- *   GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> \
- *   MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true \
- *   WORKSPACE_MCP_PORT=<port> uvx workspace-mcp --tools <service> --transport streamable-http
+ * Link providers authenticate each connection. Servers auto-start via the
+ * `startup` field in their config template.
  */
 const GOOGLE_WORKSPACE_SERVICES = [
   {
@@ -23,7 +19,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Calendar management via workspace-mcp — list calendars, search events, create/modify/delete events, add attendees, create Google Meet links",
     constraints:
-      "Requires OAuth. Use for calendar queries, event creation, scheduling, meeting management. Launch: GOOGLE_OAUTH_CLIENT_ID=406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=kSmqreRr0qwBWJgbf5Y-PjSU MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8001 uvx workspace-mcp --tools calendar --transport streamable-http",
+      "Requires OAuth. Use for calendar queries, event creation, scheduling, meeting management.",
   },
   {
     id: "google-gmail",
@@ -35,7 +31,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Read and manage Gmail via workspace-mcp — search messages, read email content and attachments, send emails, create drafts, manage labels and filters. Full inbox access. This is the ONLY way to read email.",
     constraints:
-      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead. Launch: GOOGLE_OAUTH_CLIENT_ID=406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=kSmqreRr0qwBWJgbf5Y-PjSU MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8002 uvx workspace-mcp --tools gmail --transport streamable-http",
+      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead.",
   },
   {
     id: "google-drive",
@@ -47,7 +43,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Drive management via workspace-mcp — search files, list folders, create/update files, manage sharing and permissions, get download URLs",
     constraints:
-      "Requires OAuth. Use for file storage, searching, sharing, managing permissions, and document access. Launch: GOOGLE_OAUTH_CLIENT_ID=406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=kSmqreRr0qwBWJgbf5Y-PjSU MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8003 uvx workspace-mcp --tools drive --transport streamable-http",
+      "Requires OAuth. Use for file storage, searching, sharing, managing permissions, and document access.",
   },
   {
     id: "google-docs",
@@ -59,7 +55,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Docs management via workspace-mcp — search docs, create documents, edit text, insert images/tables, find and replace, export to PDF",
     constraints:
-      "Requires OAuth. Use for document creation, editing, formatting, tables, images, and PDF export. Launch: GOOGLE_OAUTH_CLIENT_ID=406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=kSmqreRr0qwBWJgbf5Y-PjSU MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8004 uvx workspace-mcp --tools docs --transport streamable-http",
+      "Requires OAuth. Use for document creation, editing, formatting, tables, images, and PDF export.",
   },
   {
     id: "google-sheets",
@@ -71,7 +67,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Sheets management via workspace-mcp — list spreadsheets, read/write cell values, create sheets, format cells, conditional formatting.",
     constraints:
-      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead. Launch: GOOGLE_OAUTH_CLIENT_ID=406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=kSmqreRr0qwBWJgbf5Y-PjSU MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8005 uvx workspace-mcp --tools sheets --transport streamable-http",
+      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead.",
   },
 ];
 
@@ -96,6 +92,20 @@ function createGoogleWorkspaceEntry(
       auth: { type: "bearer", token_env: tokenEnvKey },
       env: { [tokenEnvKey]: { from: "link", provider: spec.id, key: "access_token" } },
       client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },
+      startup: {
+        type: "command",
+        command: "uvx",
+        args: ["workspace-mcp", "--tools", spec.toolFlag, "--transport", "streamable-http"],
+        env: {
+          GOOGLE_OAUTH_CLIENT_ID:
+            "406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com",
+          GOOGLE_OAUTH_CLIENT_SECRET: "kSmqreRr0qwBWJgbf5Y-PjSU",
+          MCP_ENABLE_OAUTH21: "true",
+          EXTERNAL_OAUTH21_PROVIDER: "true",
+          WORKSPACE_MCP_PORT: String(spec.defaultPort),
+        },
+        ready_url: defaultUrl,
+      },
     },
     requiredConfig: [
       { key: tokenEnvKey, description: `${spec.name} access token from Link`, type: "string" },

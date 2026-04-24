@@ -5,7 +5,7 @@
  * @module
  */
 
-import { spawn as defaultSpawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn as defaultSpawn } from "node:child_process";
 import process from "node:process";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
@@ -39,9 +39,7 @@ export class MCPStartupError extends Error {
     public readonly command?: string,
     override readonly cause?: unknown,
   ) {
-    super(
-      `MCP server "${serverId}" startup failed (${kind})${command ? `: ${command}` : ""}`,
-    );
+    super(`MCP server "${serverId}" startup failed (${kind})${command ? `: ${command}` : ""}`);
     this.name = "MCPStartupError";
   }
 }
@@ -291,10 +289,7 @@ export async function connectHttp(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
-  deps: {
-    spawn?: typeof defaultSpawn;
-    fetch?: typeof fetch;
-  } = {},
+  deps: { spawn?: typeof defaultSpawn; fetch?: typeof fetch } = {},
 ): Promise<ConnectedServer> {
   const { transport, auth, startup } = config;
   if (transport.type !== "http") {
@@ -319,9 +314,7 @@ export async function connectHttp(
 
   // Resolve startup.env separately from config.env — bearer tokens must never
   // leak into the child process, and startup.env must never reach HTTP headers.
-  const resolvedStartupEnv = startup.env
-    ? await resolveEnvValues(startup.env, logger)
-    : {};
+  const resolvedStartupEnv = startup.env ? await resolveEnvValues(startup.env, logger) : {};
 
   // Merge parent env + resolved startup env (with interpolation)
   const parentEnv = Object.fromEntries(
@@ -339,8 +332,8 @@ export async function connectHttp(
 
   const { command, args = [] } = startup;
   const pollUrl = startup.ready_url ?? url;
-  const timeoutMs = startup.ready_timeout_ms;
-  const intervalMs = startup.ready_interval_ms;
+  const timeoutMs = startup.ready_timeout_ms ?? 30000;
+  const intervalMs = startup.ready_interval_ms ?? 500;
 
   // Spawn the startup command
   let child: ChildProcess;

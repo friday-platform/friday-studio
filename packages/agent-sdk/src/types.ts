@@ -125,8 +125,8 @@ export const MCPStartupConfigSchema = z.strictObject({
   args: z.array(z.string()).optional(),
   env: z.record(z.string(), EnvValueSchema).optional(),
   ready_url: z.string().optional(),
-  ready_timeout_ms: z.number().positive().optional().default(30000),
-  ready_interval_ms: z.number().positive().optional().default(500),
+  ready_timeout_ms: z.number().positive().optional(),
+  ready_interval_ms: z.number().positive().optional(),
 });
 export type MCPStartupConfig = z.infer<typeof MCPStartupConfigSchema>;
 
