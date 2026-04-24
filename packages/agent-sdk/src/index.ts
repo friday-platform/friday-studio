@@ -88,6 +88,7 @@ export type {
   MCPAuthConfig,
   MCPServerConfig,
   MCPServerToolFilter,
+  MCPStartupConfig,
   MCPTransportConfig,
   OutlineRef,
   StoreMountBinding,
@@ -114,6 +115,7 @@ export {
   MCPAuthConfigSchema,
   MCPServerConfigSchema,
   MCPServerToolFilterSchema,
+  MCPStartupConfigSchema,
   MCPTransportConfigSchema,
   OutlineRefSchema,
 } from "./types.ts";

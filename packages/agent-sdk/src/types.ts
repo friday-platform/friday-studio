@@ -117,7 +117,18 @@ export const LinkCredentialRefSchema = z
   });
 export type LinkCredentialRef = z.infer<typeof LinkCredentialRefSchema>;
 
-const EnvValueSchema = z.union([z.string(), LinkCredentialRefSchema]);
+export const EnvValueSchema = z.union([z.string(), LinkCredentialRefSchema]);
+
+export const MCPStartupConfigSchema = z.strictObject({
+  type: z.literal("command"),
+  command: z.string(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), EnvValueSchema).optional(),
+  ready_url: z.string().optional(),
+  ready_timeout_ms: z.number().positive().optional().default(30000),
+  ready_interval_ms: z.number().positive().optional().default(500),
+});
+export type MCPStartupConfig = z.infer<typeof MCPStartupConfigSchema>;
 
 export const MCPServerConfigSchema = z.strictObject({
   transport: MCPTransportConfigSchema,
@@ -129,6 +140,7 @@ export const MCPServerConfigSchema = z.strictObject({
     .record(z.string(), EnvValueSchema)
     .optional()
     .describe("Environment variables for the server process"),
+  startup: MCPStartupConfigSchema.optional(),
   skipResolverCheck: z
     .boolean()
     .optional()

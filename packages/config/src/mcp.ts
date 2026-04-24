@@ -13,6 +13,8 @@ import {
   MCPServerConfigSchema,
   type MCPServerToolFilter,
   MCPServerToolFilterSchema,
+  type MCPStartupConfig,
+  MCPStartupConfigSchema,
   type MCPTransportConfig,
   MCPTransportConfigSchema,
 } from "@atlas/agent-sdk";
@@ -120,6 +122,8 @@ export {
   MCPServerConfigSchema,
   type MCPServerToolFilter,
   MCPServerToolFilterSchema,
+  type MCPStartupConfig,
+  MCPStartupConfigSchema,
   type MCPTransportConfig,
   MCPTransportConfigSchema,
 };
