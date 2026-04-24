@@ -49,7 +49,7 @@
       <button class="dismiss" onclick={() => memoriesQuery.refetch()}>Retry</button>
     </div>
   {:else if narrativeMemories.length === 0}
-    <div class="empty">No narrative memories found in {workspaceId}.</div>
+    <div class="empty">No narrative memories found in {workspaceName}.</div>
   {:else}
     <ul class="card-list">
       {#each narrativeMemories as memory (memory.name)}
@@ -103,7 +103,6 @@
   }
 
   .page-header h1 {
-    font-family: var(--font-mono);
     font-size: var(--font-size-6);
     font-weight: var(--font-weight-7);
   }

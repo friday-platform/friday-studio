@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { createQuery } from "@tanstack/svelte-query";
@@ -369,6 +370,19 @@
         void instance.stop().catch(() => {});
       };
     }
+  });
+
+  // One-shot: auto-submit a seed message planted by the overview start-chat card.
+  // Only fires for fresh chats (no prior messages) to avoid replaying on navigation.
+  // `untrack` around handleSubmit prevents chat.sendMessage()'s synchronous status
+  // mutation from re-triggering this effect mid-execution.
+  $effect(() => {
+    if (!chat || initialMessages.length > 0) return;
+    const key = `chat-seed-${wsId}`;
+    const seed = sessionStorage.getItem(key);
+    if (!seed) return;
+    sessionStorage.removeItem(key);
+    untrack(() => void handleSubmit(seed));
   });
 
   // Propagate transport / Chat errors into the playground error banner, but

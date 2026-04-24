@@ -16,9 +16,10 @@
   import { deriveSignalDetails } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
-  import { Button, Dialog, DropdownMenu, IconSmall, Icons, toast } from "@atlas/ui";
+  import { Button, Dialog, DropdownMenu, IconLarge, IconSmall, Icons, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
+  import { browser } from "$app/environment";
   import { page } from "$app/state";
   import AgentsCard from "$lib/components/agents/agents-card.svelte";
   import SessionProgressCard from "$lib/components/session/session-progress-card.svelte";
@@ -246,6 +247,42 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Empty state — start-chat card
+  // ---------------------------------------------------------------------------
+
+  const isEmpty = $derived(
+    !!configQuery.data &&
+      jobSummaries.length === 0 &&
+      signalsWithJobs.length === 0 &&
+      workspaceAgents.length === 0 &&
+      visibleSessions.length === 0,
+  );
+
+  let startMessage = $state("");
+
+  const SUGGESTED_PROMPTS = [
+    "Automate inbox triage",
+    "Run daily research briefings",
+    "Track leads and follow-ups",
+    "Monitor systems for errors",
+    "Fix bugs and ship PRs",
+    "Build a searchable knowledge base",
+  ];
+
+  function startChat(msg = startMessage.trim()) {
+    if (!msg || !workspaceId || !browser) return;
+    sessionStorage.setItem(`chat-seed-${workspaceId}`, msg);
+    void goto(`/platform/${workspaceId}/chat`);
+  }
+
+  function handleStartKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      startChat();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Delete workspace
   // ---------------------------------------------------------------------------
 
@@ -385,6 +422,93 @@
         <AgentsCard agents={workspaceAgents} {workspaceId} />
       {/if}
     </div>
+
+    <!-- Empty state: no jobs/agents/signals/runs yet -->
+    {#if isEmpty}
+      <div class="empty-hero">
+        <div class="hero-copy">
+          <h2 class="hero-headline">AI that keeps working, even when you're not.</h2>
+          <p class="hero-sub">
+            Set up AI systems in minutes that don't drift, don't forget,
+            and get the work done around the clock.
+          </p>
+        </div>
+
+        <div class="composer-card">
+          <textarea
+            class="composer-input"
+            placeholder="What do you need done?"
+            bind:value={startMessage}
+            onkeydown={handleStartKeydown}
+            rows={3}
+          ></textarea>
+
+          <div class="composer-footer">
+            <div class="suggested-prompts">
+              {#each SUGGESTED_PROMPTS as prompt (prompt)}
+                <button class="prompt-chip" onclick={() => startChat(prompt)}>
+                  {prompt}
+                </button>
+              {/each}
+            </div>
+            <button
+              class="composer-send"
+              onclick={() => startChat()}
+              disabled={!startMessage.trim()}
+              aria-label="Send"
+            >
+              <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 13V3M8 3L3 8M8 3l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="skeleton-cards">
+          <div class="skeleton-card">
+            <div class="skeleton-card-icon">
+              <IconLarge.Target />
+            </div>
+            <div class="skeleton-card-body">
+              <div class="skeleton-card-title">How It Works</div>
+              <div class="skeleton-card-sub">Define it, don't build it.</div>
+              <div class="skeleton-lines">
+                <div class="skeleton-line" style="inline-size: 85%"></div>
+                <div class="skeleton-line" style="inline-size: 65%"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="skeleton-card">
+            <div class="skeleton-card-icon">
+              <IconLarge.Compass />
+            </div>
+            <div class="skeleton-card-body">
+              <div class="skeleton-card-title">Space Directory</div>
+              <div class="skeleton-card-sub">Explore how others are using Friday, then build your own.</div>
+              <div class="skeleton-lines">
+                <div class="skeleton-line" style="inline-size: 90%"></div>
+                <div class="skeleton-line" style="inline-size: 55%"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="skeleton-card">
+            <div class="skeleton-card-icon">
+              <IconLarge.Write />
+            </div>
+            <div class="skeleton-card-body">
+              <div class="skeleton-card-title">Docs</div>
+              <div class="skeleton-card-sub">Everything you need to get started.</div>
+              <div class="skeleton-lines">
+                <div class="skeleton-line" style="inline-size: 80%"></div>
+                <div class="skeleton-line" style="inline-size: 60%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -696,6 +820,190 @@
   /* When no duration exists, push time right instead */
   .status-icon + .compact-time {
     margin-inline-start: auto;
+  }
+
+  /* Empty hero */
+  .empty-hero {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-8);
+    padding-block: var(--size-10);
+  }
+
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    max-inline-size: 580px;
+    text-align: center;
+    width: 100%;
+  }
+
+  .hero-headline {
+    font-size: var(--font-size-7);
+    font-weight: var(--font-weight-7);
+    letter-spacing: -0.02em;
+    line-height: var(--font-lineheight-1);
+    margin: 0;
+  }
+
+  .hero-sub {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-size: var(--font-size-3);
+    line-height: var(--font-lineheight-4);
+    margin: 0 auto;
+    max-inline-size: 44ch;
+  }
+
+  /* Composer card */
+  .composer-card {
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+    max-inline-size: 580px;
+    padding: var(--size-4) var(--size-5);
+    width: 100%;
+  }
+
+  .composer-input {
+    background: transparent;
+    border: none;
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: var(--font-size-3);
+    line-height: var(--font-lineheight-3);
+    outline: none;
+    padding: var(--size-1) var(--size-1);
+    resize: none;
+    width: 100%;
+
+    &::placeholder {
+      color: color-mix(in srgb, var(--color-text), transparent 55%);
+    }
+  }
+
+  .composer-footer {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+    justify-content: space-between;
+  }
+
+  .composer-send {
+    align-items: center;
+    background: var(--color-accent, #1171df);
+    border: none;
+    border-radius: var(--radius-2);
+    block-size: var(--size-7);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    flex-shrink: 0;
+    inline-size: var(--size-7);
+    justify-content: center;
+    transition: opacity 150ms ease;
+
+    &:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
+    &:not(:disabled):hover {
+      opacity: 0.85;
+    }
+
+    :global(svg) {
+      block-size: 14px;
+      inline-size: 14px;
+    }
+  }
+
+  .suggested-prompts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1-5);
+  }
+
+  .prompt-chip {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-round);
+    color: color-mix(in srgb, var(--color-text), transparent 20%);
+    cursor: pointer;
+    font-size: var(--font-size-1);
+    padding: var(--size-1) var(--size-2-5);
+    transition:
+      background 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease;
+
+    &:hover {
+      background: var(--color-surface-3);
+      border-color: color-mix(in srgb, var(--color-accent, #1171df), transparent 55%);
+      color: var(--color-text);
+    }
+  }
+
+  /* Skeleton discovery cards */
+  .skeleton-cards {
+    display: grid;
+    gap: var(--size-4);
+    grid-template-columns: repeat(3, 1fr);
+    max-inline-size: 580px;
+    width: 100%;
+  }
+
+  .skeleton-card {
+    background: var(--color-surface-1);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+    opacity: 0.5;
+    padding: var(--size-4) var(--size-4);
+  }
+
+  .skeleton-card-icon {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+
+    :global(svg) {
+      block-size: 20px;
+      inline-size: 20px;
+    }
+  }
+
+  .skeleton-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
+  }
+
+  .skeleton-card-title {
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-6);
+  }
+
+  .skeleton-card-sub {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-size: var(--font-size-1);
+    line-height: var(--font-lineheight-3);
+  }
+
+  .skeleton-lines {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
+  }
+
+  .skeleton-line {
+    background: color-mix(in srgb, var(--color-text), transparent 82%);
+    block-size: var(--size-2);
+    border-radius: var(--radius-round);
   }
 
   /* Empty / loading states */

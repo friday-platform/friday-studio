@@ -331,6 +331,17 @@ export class WorkspaceRuntime {
   // Session tracking
   private sessions = new Map<string, ActiveSession>();
   private sessionResults = new Map<string, SessionResult>();
+  /**
+   * Cache of FSM documents captured at `handleSessionCompletion`, keyed by
+   * sessionId. The live `sessions` map is cleared before the signal endpoint
+   * returns, but synchronous callers (`triggerWorkspaceSignal` in atlas-daemon)
+   * still need to read the final output docs afterward. Entries self-evict
+   * after 60s so the cache doesn't grow without bound.
+   */
+  private completedSessionDocuments = new Map<
+    string,
+    Array<{ id: string; type: string; data: Record<string, unknown> }>
+  >();
   private sessionCompletionEmitter = new EventEmitter();
 
   /**
@@ -2277,6 +2288,13 @@ export class WorkspaceRuntime {
   getSessionFsmDocuments(
     sessionId: string,
   ): Array<{ id: string; type: string; data: Record<string, unknown> }> {
+    // Post-completion: `handleSessionCompletion` has already cleared the
+    // live `sessions` map and snapshotted the docs here. The synchronous
+    // signal endpoint hits this path.
+    const cached = this.completedSessionDocuments.get(sessionId);
+    if (cached) return cached;
+
+    // Pre-completion: still live — read straight from the engine.
     const active = this.sessions.get(sessionId);
     if (!active) return [];
     const job = this.jobs.get(active.jobName);
@@ -2470,6 +2488,28 @@ export class WorkspaceRuntime {
         sessionId: sessionResult.id,
         jobName,
       });
+    }
+
+    // Snapshot the job's FSM documents BEFORE `onSessionFinished` fires.
+    // That callback (atlas-daemon's `destroyWorkspaceRuntime`) calls
+    // `runtime.shutdown()`, which stops every job's engine and drops its
+    // documents — after that, there is nothing to snapshot. And the live
+    // `sessions` map is cleared a few lines down, so the signal endpoint's
+    // subsequent `getSessionFsmDocuments(sessionId)` call would return `[]`
+    // without this cache. Net effect of the bug: retrieval jobs run, save
+    // their result doc, then the HTTP response is `output: []`.
+    const active = this.sessions.get(sessionResult.id);
+    if (active) {
+      const job = this.jobs.get(active.jobName);
+      const plumbingTypes = new Set([
+        "state-transition",
+        "fsm-state",
+        "ChatContext",
+        "signal-payload",
+      ]);
+      const docs = job?.engine?.documents.filter((d) => !plumbingTypes.has(d.type)) ?? [];
+      this.completedSessionDocuments.set(sessionResult.id, docs);
+      setTimeout(() => this.completedSessionDocuments.delete(sessionResult.id), 60_000);
     }
 
     if (this.options.onSessionFinished) {

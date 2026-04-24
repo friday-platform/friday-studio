@@ -3,6 +3,6 @@
   import { onMount } from "svelte";
 
   onMount(() => {
-    void goto("/platform/user/chat", { replaceState: true });
+    void goto("/platform/user", { replaceState: true });
   });
 </script>

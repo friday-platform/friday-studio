@@ -8,18 +8,45 @@
   import { memoryQueries, workspaceQueries } from "$lib/queries";
 
   const workspacesQuery = createQuery(() => memoryQueries.workspaces());
-  const wsListQuery = createQuery(() => workspaceQueries.list());
+  const enrichedQuery = createQuery(() => workspaceQueries.enriched());
 
-  /** Map workspace ID → display name from the daemon workspace list. */
+  const COLORS: Record<string, string> = {
+    yellow: "var(--yellow-2, #facc15)",
+    purple: "var(--purple-2, #a78bfa)",
+    red: "var(--red-2, #f87171)",
+    blue: "var(--blue-2, #60a5fa)",
+    green: "var(--green-2, #4ade80)",
+    brown: "var(--brown-2, #a3824a)",
+  };
+
+  /** Map workspace ID → display name (config name > daemon name > id). */
   const nameMap = $derived.by(() => {
     const map = new Map<string, string>();
-    for (const ws of wsListQuery.data ?? []) {
-      map.set(ws.id, ws.name);
+    for (const ws of enrichedQuery.data ?? []) {
+      map.set(ws.id, ws.displayName);
     }
     return map;
   });
 
-  const workspaces = $derived(workspacesQuery.data ?? []);
+  /** Map workspace ID → dot color matching the sidebar. */
+  const colorMap = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const ws of enrichedQuery.data ?? []) {
+      const key = ws.metadata?.color ?? "yellow";
+      map.set(ws.id, COLORS[key] ?? COLORS["yellow"] ?? "#facc15");
+    }
+    return map;
+  });
+
+  const allWorkspaces = $derived(workspacesQuery.data ?? []);
+
+  const mounted = $derived(allWorkspaces.filter((id) => nameMap.has(id)));
+  const unmounted = $derived(allWorkspaces.filter((id) => !nameMap.has(id)));
+
+  type Tab = "mounted" | "unmounted";
+  let activeTab = $state<Tab>("mounted");
+
+  const visible = $derived(activeTab === "mounted" ? mounted : unmounted);
 </script>
 
 <div class="memory-root">
@@ -28,27 +55,60 @@
     <p class="subtitle">Browse workspace memories</p>
   </header>
 
-  {#if workspacesQuery.isLoading}
+  {#if workspacesQuery.isLoading || enrichedQuery.isLoading}
     <div class="loading">Loading workspaces…</div>
   {:else if workspacesQuery.error}
     <div class="error-banner">
       <span>Failed to load workspaces: {workspacesQuery.error.message}</span>
       <button class="dismiss" onclick={() => workspacesQuery.refetch()}>Retry</button>
     </div>
-  {:else if workspaces.length === 0}
-    <div class="empty">No workspaces with memories found.</div>
   {:else}
-    <ul class="workspace-list">
-      {#each workspaces as ws (ws)}
-        {@const displayName = nameMap.get(ws) ?? ws}
-        <li>
-          <a href="/memory/{encodeURIComponent(ws)}" class="workspace-card">
-            <span class="ws-dot"></span>
-            <span class="ws-name">{displayName}</span>
-          </a>
-        </li>
-      {/each}
-    </ul>
+    <div class="tab-bar">
+      <button
+        class="tab"
+        class:active={activeTab === "mounted"}
+        onclick={() => (activeTab = "mounted")}
+      >
+        Workspaces
+        {#if mounted.length > 0}<span class="badge">{mounted.length}</span>{/if}
+      </button>
+      <button
+        class="tab"
+        class:active={activeTab === "unmounted"}
+        onclick={() => (activeTab = "unmounted")}
+      >
+        Unmounted
+        {#if unmounted.length > 0}<span class="badge muted">{unmounted.length}</span>{/if}
+      </button>
+    </div>
+
+    {#if visible.length === 0}
+      <div class="empty">
+        {activeTab === "mounted"
+          ? "No active workspaces with memories."
+          : "No orphaned memories found."}
+      </div>
+    {:else}
+      <ul class="workspace-list">
+        {#each visible as wsId (wsId)}
+          {@const displayName = nameMap.get(wsId) ?? wsId}
+          {@const dotColor = colorMap.get(wsId)}
+          <li>
+            <a href="/memory/{encodeURIComponent(wsId)}" class="workspace-card">
+              <span
+                class="ws-dot"
+                class:muted={activeTab === "unmounted"}
+                style:--dot-color={dotColor}
+              ></span>
+              <span class="ws-name">{displayName}</span>
+              {#if activeTab === "unmounted"}
+                <span class="ws-id">{wsId}</span>
+              {/if}
+            </a>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </div>
 
@@ -76,6 +136,52 @@
   .subtitle {
     color: color-mix(in srgb, var(--color-text), transparent 35%);
     font-size: var(--font-size-2);
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: var(--size-1);
+    border-block-end: 1px solid var(--color-border-1);
+  }
+
+  .tab {
+    all: unset;
+    align-items: center;
+    border-block-end: 2px solid transparent;
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    cursor: pointer;
+    display: flex;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-1-5);
+    margin-block-end: -1px;
+    padding: var(--size-2) var(--size-1);
+    transition: color 120ms ease;
+
+    &:hover {
+      color: var(--color-text);
+    }
+
+    &.active {
+      border-color: var(--color-accent, #1171df);
+      color: var(--color-text);
+    }
+  }
+
+  .badge {
+    background: color-mix(in srgb, var(--color-accent, #1171df), transparent 80%);
+    border-radius: var(--radius-round);
+    color: var(--color-accent, #1171df);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-6);
+    min-inline-size: var(--size-4);
+    padding-inline: var(--size-1);
+    text-align: center;
+
+    &.muted {
+      background: color-mix(in srgb, var(--color-text), transparent 88%);
+      color: color-mix(in srgb, var(--color-text), transparent 30%);
+    }
   }
 
   .loading,
@@ -135,16 +241,26 @@
   }
 
   .ws-dot {
-    background: var(--blue-2, #60a5fa);
+    background: var(--dot-color, var(--yellow-2, #facc15));
     block-size: 8px;
     border-radius: 50%;
     flex-shrink: 0;
     inline-size: 8px;
+
+    &.muted {
+      background: color-mix(in srgb, var(--color-text), transparent 60%);
+    }
   }
 
   .ws-name {
-    font-family: var(--font-mono);
+    flex: 1;
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
+  }
+
+  .ws-id {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-1);
   }
 </style>

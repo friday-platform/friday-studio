@@ -85,15 +85,31 @@
     </ul>
 
     <Collapsible.Root defaultOpen={true}>
-      <Collapsible.Trigger>
-        {#snippet children(_open)}
-          <span class="section-trigger">
-            Spaces <IconSmall.CaretDown />
-          </span>
-        {/snippet}
-      </Collapsible.Trigger>
+      <div class="section-header">
+        <Collapsible.Trigger>
+          {#snippet children(_open)}
+            <span class="section-trigger">
+              Spaces <IconSmall.CaretDown />
+            </span>
+          {/snippet}
+        </Collapsible.Trigger>
+        <button class="add-space-btn" onclick={() => addDialogOpen.set(true)} aria-label="Add space">
+          <IconSmall.Plus />
+        </button>
+      </div>
       <Collapsible.Content>
         <ul class="section-list">
+          <li>
+            <a
+              href="/discover"
+              class="nav-item"
+              class:active={pathname.startsWith("/discover")}
+            >
+              <IconLarge.Compass />
+              Discover Spaces
+            </a>
+          </li>
+
           {#each visibleWorkspaces as ws (ws.id)}
             {@const active = activeWorkspaceId === ws.id}
             <li>
@@ -134,6 +150,11 @@
                     href: `${base}/sessions`,
                     isActive: pathname.startsWith(`${base}/sessions`),
                   },
+                  {
+                    label: "Memory",
+                    href: `/memory/${ws.id}`,
+                    isActive: pathname.startsWith(`/memory/${ws.id}`),
+                  },
                 ]}
                 <ul class="sub-nav">
                   {#each subPages as sub (sub.label)}
@@ -148,12 +169,6 @@
             </li>
           {/each}
 
-          <li>
-            <button class="nav-item as-button" onclick={() => addDialogOpen.set(true)}>
-              <IconLarge.OpenSquare />
-              Add Space
-            </button>
-          </li>
         </ul>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -236,11 +251,25 @@
 
   .sidebar-header {
     align-items: center;
+    background-color: var(--surface-dark);
     display: flex;
     flex-shrink: 0;
     gap: var(--size-2);
     padding-block: var(--size-5) var(--size-1);
     padding-inline: var(--size-5);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+
+    &::after {
+      background: linear-gradient(to bottom, var(--surface-dark) 0%, transparent 100%);
+      block-size: var(--size-10);
+      content: "";
+      inset-block-start: 100%;
+      inset-inline: 0;
+      pointer-events: none;
+      position: absolute;
+    }
 
     .logo {
       block-size: 20px;
@@ -289,6 +318,29 @@
     gap: var(--size-6);
     padding-block: var(--size-5) 0;
     padding-inline: var(--size-3);
+  }
+
+  .section-header {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+    padding-inline-end: var(--size-2);
+  }
+
+  .add-space-btn {
+    align-items: center;
+    background: none;
+    border: none;
+    border-radius: var(--radius-2);
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    display: flex;
+    padding: var(--size-1);
+    transition: color 100ms ease;
+
+    &:hover {
+      color: var(--color-text);
+    }
   }
 
   .section-trigger {
