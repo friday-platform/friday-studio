@@ -1,9 +1,14 @@
 import process from "node:process";
+import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { fetchReadme } from "@atlas/core/mcp-registry/readme-fetcher";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
-import { translate } from "@atlas/core/mcp-registry/translator";
+import {
+  type DynamicApiKeyProviderInput,
+  type DynamicOAuthProviderInput,
+  translate,
+} from "@atlas/core/mcp-registry/translator";
 import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
 import { createLogger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
@@ -11,6 +16,59 @@ import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
 const logger = createLogger({ name: "mcp-registry-routes" });
+
+/**
+ * Derive a kebab-case ID from a display name.
+ */
+function deriveId(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64);
+}
+
+/**
+ * Best-effort creation of a Link provider.
+ * Returns undefined on success, a warning string on failure.
+ */
+async function createLinkProvider(
+  provider: DynamicApiKeyProviderInput | DynamicOAuthProviderInput,
+): Promise<string | undefined> {
+  const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+  const url = `${linkServiceUrl}/v1/providers`;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const atlasKey = process.env.ATLAS_KEY;
+  if (atlasKey) {
+    headers.Authorization = `Bearer ${atlasKey}`;
+  }
+
+  try {
+    const linkRes = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ provider }),
+    });
+
+    if (linkRes.status === 409) {
+      logger.debug("link provider already exists", { providerId: provider.id });
+      return undefined;
+    }
+    if (!linkRes.ok) {
+      const body = await linkRes.text().catch(() => "");
+      logger.warn("link provider creation failed", {
+        status: linkRes.status,
+        providerId: provider.id,
+        body,
+      });
+      return `Link provider creation failed: ${linkRes.status}`;
+    }
+    return undefined;
+  } catch (error) {
+    logger.warn("link provider creation request failed", { error, providerId: provider.id });
+    return "Link provider creation failed: network error";
+  }
+}
 
 /**
  * Schema for creating new MCP registry entries.
@@ -48,6 +106,45 @@ const SearchQuerySchema = z.object({
   q: z.string().default(""),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+/**
+ * Schema for custom server addition request.
+ */
+const AddCustomServerRequestSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    id: z
+      .string()
+      .regex(/^[a-z0-9-]+$/)
+      .max(64)
+      .optional(),
+    description: z.string().max(500).optional(),
+    httpUrl: z.string().url().optional(),
+    configJson: z
+      .object({
+        transport: z.union([
+          z.object({
+            type: z.literal("stdio"),
+            command: z.string().min(1),
+            args: z.array(z.string()).default([]),
+          }),
+          z.object({ type: z.literal("http"), url: z.string().url() }),
+        ]),
+        envVars: z
+          .array(
+            z.object({
+              key: z.string().min(1).max(128),
+              description: z.string().max(200).optional(),
+              exampleValue: z.string().optional(),
+            }),
+          )
+          .default([]),
+      })
+      .optional(),
+  })
+  .refine((data) => (data.httpUrl ? !data.configJson : !!data.configJson), {
+    message: "Provide either httpUrl or configJson, not both.",
+  });
 
 /**
  * Create upstream client (can be mocked for tests).
@@ -196,43 +293,8 @@ export const mcpRegistryRouter = daemonFactory
 
       let warning: string | undefined;
 
-      // Auto-create Link provider when translator produced one
       if (translateResult.linkProvider) {
-        const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
-        const url = `${linkServiceUrl}/v1/providers`;
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        const atlasKey = process.env.ATLAS_KEY;
-        if (atlasKey) {
-          headers.Authorization = `Bearer ${atlasKey}`;
-        }
-
-        try {
-          const linkRes = await fetch(url, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ provider: translateResult.linkProvider }),
-          });
-
-          if (linkRes.status === 409) {
-            logger.debug("link provider already exists", {
-              providerId: translateResult.linkProvider.id,
-            });
-          } else if (!linkRes.ok) {
-            const body = await linkRes.text().catch(() => "");
-            logger.warn("link provider creation failed", {
-              status: linkRes.status,
-              providerId: translateResult.linkProvider.id,
-              body,
-            });
-            warning = `Link provider creation failed: ${linkRes.status}`;
-          }
-        } catch (error) {
-          logger.warn("link provider creation request failed", {
-            error,
-            providerId: translateResult.linkProvider.id,
-          });
-          warning = "Link provider creation failed: network error";
-        }
+        warning = await createLinkProvider(translateResult.linkProvider);
       }
 
       const response = warning ? { server: entry, warning } : { server: entry };
@@ -244,6 +306,119 @@ export const mcpRegistryRouter = daemonFactory
       }
       return c.json({ error: "Install failed" }, 502);
     }
+  })
+  .post("/custom", zValidator("json", AddCustomServerRequestSchema), async (c) => {
+    const body = c.req.valid("json");
+    const adapter = await getMCPRegistryAdapter();
+
+    let id = "";
+
+    if (body.id) {
+      // Explicit ID: immediate collision checks, no auto-retry
+      id = body.id;
+      if (mcpServersRegistry.servers[id]) {
+        return c.json({ error: `Server ID "${id}" collides with blessed registry entry.` }, 409);
+      }
+      const existingDynamic = await adapter.get(id);
+      if (existingDynamic) {
+        return c.json({ error: `Server ID "${id}" already used.` }, 409);
+      }
+    } else {
+      // Derive ID from name; retry once with timestamp suffix on dynamic collision
+      const derivedId = deriveId(body.name);
+      const tryIds = [derivedId, `${derivedId}-${Date.now().toString(36).slice(-4)}`];
+      let resolved = false;
+      for (const candidateId of tryIds) {
+        if (mcpServersRegistry.servers[candidateId]) {
+          continue; // blessed collision — try suffix
+        }
+        const existingDynamic = await adapter.get(candidateId);
+        if (existingDynamic) {
+          continue; // dynamic collision — try suffix
+        }
+        id = candidateId;
+        resolved = true;
+        break;
+      }
+      if (!resolved) {
+        return c.json({ error: `Server ID "${tryIds[tryIds.length - 1]}" already used.` }, 409);
+      }
+    }
+
+    // Build MCPServerMetadata
+    const requiredConfig: Array<{
+      key: string;
+      description: string;
+      type: "string" | "array" | "object" | "number";
+      examples?: string[];
+    }> = [];
+    let linkProvider: DynamicApiKeyProviderInput | DynamicOAuthProviderInput | undefined;
+
+    let configTemplate: MCPServerConfig;
+
+    if (body.httpUrl) {
+      configTemplate = { transport: { type: "http", url: body.httpUrl } };
+      linkProvider = {
+        type: "oauth",
+        id,
+        displayName: body.name,
+        description: body.description ?? `OAuth provider for ${body.name}`,
+        oauthConfig: { mode: "discovery", serverUrl: body.httpUrl },
+      };
+    } else if (body.configJson) {
+      const { transport, envVars } = body.configJson;
+      configTemplate = {
+        transport,
+        ...(transport.type === "stdio" ? { skipResolverCheck: true as const } : {}),
+      };
+
+      if (envVars.length > 0) {
+        const env: Record<string, string | LinkCredentialRef> = {};
+        const secretSchema: Record<string, "string"> = {};
+        for (const ev of envVars) {
+          env[ev.key] = { from: "link", provider: id, key: ev.key };
+          secretSchema[ev.key] = "string";
+          requiredConfig.push({
+            key: ev.key,
+            description: ev.description ?? `Credential: ${ev.key}`,
+            type: "string",
+            examples: ev.exampleValue ? [ev.exampleValue] : undefined,
+          });
+        }
+        configTemplate = { ...configTemplate, env };
+        linkProvider = {
+          type: "apikey",
+          id,
+          displayName: body.name,
+          description: body.description ?? `API key provider for ${body.name}`,
+          secretSchema,
+        };
+      }
+    } else {
+      // This branch is unreachable because Zod refine ensures one path is present,
+      // but TypeScript needs the explicit exhaustiveness.
+      return c.json({ error: "Provide either httpUrl or configJson." }, 400);
+    }
+
+    const entry = {
+      id,
+      name: body.name,
+      description: body.description,
+      securityRating: "unverified" as const,
+      source: "web" as const,
+      configTemplate,
+      requiredConfig: requiredConfig.length > 0 ? requiredConfig : undefined,
+    };
+
+    await adapter.add(entry);
+
+    let warning: string | undefined;
+    if (linkProvider) {
+      warning = await createLinkProvider(linkProvider);
+    }
+
+    const response = warning ? { server: entry, warning } : { server: entry };
+    return c.json(response, 201);
   })
   .get(
     "/:id/check-update",

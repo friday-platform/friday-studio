@@ -1446,4 +1446,402 @@ describe("MCP Registry Routes", () => {
       expect(afterIds).not.toContain(entry.id);
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // POST /custom
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("POST /custom", () => {
+    it("creates a custom HTTP URL entry and returns 201 with OAuth provider creation", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ ok: true, provider: { id: "custom-http-url", type: "oauth" } }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Custom HTTP Server",
+          description: "A custom HTTP MCP server",
+          httpUrl: "https://api.example.com/mcp",
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = z
+        .object({
+          server: z.object({
+            id: z.string(),
+            name: z.string(),
+            source: z.literal("web"),
+            securityRating: z.literal("unverified"),
+            configTemplate: z.object({
+              transport: z.object({ type: z.literal("http"), url: z.string().url() }),
+            }),
+          }),
+          warning: z.string().optional(),
+        })
+        .parse(await res.json());
+
+      expect(body.server.id).toBe("custom-http-server");
+      expect(body.server.name).toBe("Custom HTTP Server");
+      expect(body.server.source).toBe("web");
+      expect(body.server.securityRating).toBe("unverified");
+      expect(body.server.configTemplate.transport).toEqual({
+        type: "http",
+        url: "https://api.example.com/mcp",
+      });
+
+      // Verify Link call was made with OAuth provider in discovery mode
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      expect(init?.method).toBe("POST");
+      if (!init || typeof init.body !== "string") throw new Error("expected string body");
+      const requestBody = z
+        .object({
+          provider: z.object({
+            type: z.literal("oauth"),
+            id: z.string(),
+            oauthConfig: z.object({ mode: z.literal("discovery"), serverUrl: z.string().url() }),
+          }),
+        })
+        .parse(JSON.parse(init.body));
+      expect(requestBody.provider.id).toBe(body.server.id);
+      expect(requestBody.provider.oauthConfig.serverUrl).toBe("https://api.example.com/mcp");
+
+      fetchSpy.mockRestore();
+    });
+
+    it("creates a custom JSON stdio entry with env and returns 201 with API-key provider", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ ok: true, provider: { id: "custom-stdio-env", type: "apikey" } }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Custom Stdio Server",
+          description: "A custom stdio MCP server",
+          configJson: {
+            transport: { type: "stdio", command: "uvx", args: ["my-server"] },
+            envVars: [{ key: "API_KEY", description: "API key", exampleValue: "your-key-here" }],
+          },
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = z
+        .object({
+          server: z.object({
+            id: z.string(),
+            name: z.string(),
+            source: z.literal("web"),
+            configTemplate: z.object({
+              transport: z.object({
+                type: z.literal("stdio"),
+                command: z.string(),
+                args: z.array(z.string()),
+              }),
+              skipResolverCheck: z.literal(true),
+              env: z.record(
+                z.string(),
+                z.object({ from: z.literal("link"), provider: z.string(), key: z.string() }),
+              ),
+            }),
+            requiredConfig: z.array(
+              z.object({
+                key: z.string(),
+                description: z.string(),
+                type: z.literal("string"),
+                examples: z.array(z.string()).optional(),
+              }),
+            ),
+          }),
+          warning: z.string().optional(),
+        })
+        .parse(await res.json());
+
+      expect(body.server.id).toBe("custom-stdio-server");
+      expect(body.server.configTemplate.transport).toEqual({
+        type: "stdio",
+        command: "uvx",
+        args: ["my-server"],
+      });
+      expect(body.server.configTemplate.skipResolverCheck).toBe(true);
+      expect(body.server.configTemplate.env).toEqual({
+        API_KEY: { from: "link", provider: body.server.id, key: "API_KEY" },
+      });
+      expect(body.server.requiredConfig).toEqual([
+        { key: "API_KEY", description: "API key", type: "string", examples: ["your-key-here"] },
+      ]);
+
+      // Verify Link call was made with API-key provider
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [, init] = fetchSpy.mock.calls[0]!;
+      expect(init?.method).toBe("POST");
+      if (!init || typeof init.body !== "string") throw new Error("expected string body");
+      const requestBody = z
+        .object({
+          provider: z.object({
+            type: z.literal("apikey"),
+            id: z.string(),
+            secretSchema: z.record(z.string(), z.literal("string")),
+          }),
+        })
+        .parse(JSON.parse(init.body));
+      expect(requestBody.provider.id).toBe(body.server.id);
+      expect(requestBody.provider.secretSchema).toEqual({ API_KEY: "string" });
+
+      fetchSpy.mockRestore();
+    });
+
+    it("creates a custom JSON http entry with env and returns 201 with API-key provider", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ ok: true, provider: { id: "custom-http-env", type: "apikey" } }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Custom HTTP with Env",
+          configJson: {
+            transport: { type: "http", url: "https://http-env.example.com/mcp" },
+            envVars: [{ key: "TOKEN" }],
+          },
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = z
+        .object({
+          server: z.object({
+            id: z.string(),
+            source: z.literal("web"),
+            configTemplate: z.object({
+              transport: z.object({ type: z.literal("http"), url: z.string().url() }),
+              env: z.record(
+                z.string(),
+                z.object({ from: z.literal("link"), provider: z.string(), key: z.string() }),
+              ),
+            }),
+            requiredConfig: z.array(
+              z.object({ key: z.string(), description: z.string(), type: z.literal("string") }),
+            ),
+          }),
+          warning: z.string().optional(),
+        })
+        .parse(await res.json());
+
+      expect(body.server.configTemplate.transport).toEqual({
+        type: "http",
+        url: "https://http-env.example.com/mcp",
+      });
+      expect(body.server.configTemplate.env).toEqual({
+        TOKEN: { from: "link", provider: body.server.id, key: "TOKEN" },
+      });
+      expect(body.server.requiredConfig).toEqual([
+        { key: "TOKEN", description: "Credential: TOKEN", type: "string" },
+      ]);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      fetchSpy.mockRestore();
+    });
+
+    it("creates a custom JSON stdio entry without env and returns 201 with no provider", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Custom No Env",
+          configJson: {
+            transport: { type: "stdio", command: "npx", args: ["-y", "@example/mcp"] },
+            envVars: [],
+          },
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = z
+        .object({
+          server: z.object({
+            id: z.string(),
+            source: z.literal("web"),
+            configTemplate: z.object({
+              transport: z.object({ type: z.literal("stdio"), command: z.string() }),
+              skipResolverCheck: z.literal(true),
+            }),
+            requiredConfig: z.undefined().or(z.array(z.any()).length(0)),
+          }),
+          warning: z.string().optional(),
+        })
+        .parse(await res.json());
+
+      expect(body.server.requiredConfig).toBeUndefined();
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      fetchSpy.mockRestore();
+    });
+
+    it("returns 400 when both httpUrl and configJson are provided", async () => {
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Both Inputs",
+          httpUrl: "https://example.com/mcp",
+          configJson: { transport: { type: "stdio", command: "echo" }, envVars: [] },
+        }),
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when neither httpUrl nor configJson is provided", async () => {
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "No Inputs" }),
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 409 for blessed registry collision", async () => {
+      const blessedId = Object.keys(mcpServersRegistry.servers)[0];
+      if (!blessedId) throw new Error("expected at least one blessed server");
+
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: blessedId,
+          id: blessedId,
+          httpUrl: "https://example.com/mcp",
+        }),
+      });
+
+      expect(res.status).toBe(409);
+      const body = z.object({ error: z.string() }).parse(await res.json());
+      expect(body.error).toContain("blessed");
+    });
+
+    it("returns 409 for duplicate dynamic ID collision", async () => {
+      const entry = createTestEntry("custom-dup");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: entry.name,
+          id: entry.id,
+          httpUrl: "https://example.com/mcp",
+        }),
+      });
+
+      expect(res.status).toBe(409);
+      const body = z.object({ error: z.string() }).parse(await res.json());
+      expect(body.error).toContain("already used");
+    });
+
+    it("returns 201 with warning when Link provider creation fails", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ok: false, error: "internal error" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Link Fail Server",
+          httpUrl: "https://link-fail.example.com/mcp",
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = z
+        .object({ server: z.object({ id: z.string(), name: z.string() }), warning: z.string() })
+        .parse(await res.json());
+      expect(body.warning).toContain("Link provider creation failed");
+
+      fetchSpy.mockRestore();
+    });
+
+    it("derives ID from name when omitted and succeeds", async () => {
+      const res = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "My Awesome Server",
+          httpUrl: "https://awesome.example.com/mcp",
+        }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = z.object({ server: z.object({ id: z.string() }) }).parse(await res.json());
+      expect(body.server.id).toBe("my-awesome-server");
+    });
+
+    it("appends timestamp suffix when derived ID collides and succeeds", async () => {
+      const firstRes = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Collision Server",
+          httpUrl: "https://collision1.example.com/mcp",
+        }),
+      });
+      expect(firstRes.status).toBe(201);
+      const firstBody = z
+        .object({ server: z.object({ id: z.string() }) })
+        .parse(await firstRes.json());
+      const firstId = firstBody.server.id;
+      expect(firstId).toBe("collision-server");
+
+      const secondRes = await mcpRegistryRouter.request("/custom", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Collision Server",
+          httpUrl: "https://collision2.example.com/mcp",
+        }),
+      });
+      expect(secondRes.status).toBe(201);
+      const secondBody = z
+        .object({ server: z.object({ id: z.string() }) })
+        .parse(await secondRes.json());
+      expect(secondBody.server.id).not.toBe(firstId);
+      expect(secondBody.server.id).toMatch(/^collision-server-/);
+    });
+  });
 });
