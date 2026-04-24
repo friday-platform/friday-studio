@@ -18,8 +18,12 @@
  */
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import { injectSlackAppCredentialId } from "@atlas/core/agent-context";
+import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
+import { createMCPTools } from "@atlas/mcp";
 import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
@@ -35,6 +39,10 @@ const CHILD_MAX_OUTPUT_TOKENS = 20000;
 const DelegateInputSchema = z.strictObject({
   goal: z.string().describe("What the sub-agent should accomplish."),
   handoff: z.string().describe("Distilled context the sub-agent needs to do the work."),
+  mcpServers: z
+    .array(z.string())
+    .optional()
+    .describe("List of MCP server IDs to make available to the sub-agent."),
 });
 
 interface DatetimeContext {
@@ -71,6 +79,8 @@ export interface DelegateDeps {
     inheritedTool: AtlasTool,
     proxyWriter: UIMessageStreamWriter<AtlasUIMessage>,
   ) => AtlasTool;
+  workspaceConfig?: WorkspaceConfig;
+  linkSummary?: LinkSummary;
 }
 
 export type DelegateToolsUsedEntry = { name: string; outcome: "success" | "error" };
@@ -106,7 +116,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
     description:
       "Spawn a sub-agent that runs in-process and inherits all of your tools (except delegate itself). Use for arbitrary multi-step work that doesn't map to a more specific tool. Provide a clear goal and a distilled handoff summary — the sub-agent does NOT see your conversation history.",
     inputSchema: DelegateInputSchema,
-    execute: async ({ goal, handoff }, { toolCallId }): Promise<DelegateResult> => {
+    execute: async ({ goal, handoff, mcpServers }, { toolCallId }): Promise<DelegateResult> => {
       const proxy = createDelegateProxyWriter({
         parent: writer,
         delegateToolCallId: toolCallId,
@@ -129,6 +139,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       let textError: Error | undefined;
       let abortReason: string | undefined;
       let executionError: Error | undefined;
+      let mcpDispose: (() => Promise<void>) | undefined;
 
       try {
         const inheritedTools = toolSetThunk();
@@ -139,6 +150,89 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           childTools[name] = deps.rebindAgentTool
             ? deps.rebindAgentTool(t, proxy)
             : rebindAgentTool(t, proxy);
+        }
+
+        if (mcpServers && mcpServers.length > 0) {
+          let candidates: import("@atlas/core/mcp-registry/discovery").MCPServerCandidate[];
+          try {
+            candidates = await discoverMCPServers(
+              session.workspaceId,
+              deps.workspaceConfig,
+              deps.linkSummary,
+            );
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            return { ok: false, reason: `MCP server discovery failed: ${reason}`, toolsUsed: [] };
+          }
+
+          const candidateMap = new Map(candidates.map((c) => [c.metadata.id, c]));
+          const invalid = mcpServers.filter((id) => {
+            const c = candidateMap.get(id);
+            return !c || !c.configured;
+          });
+          if (invalid.length > 0) {
+            return {
+              ok: false,
+              reason: `Unknown or unconfigured MCP server(s): ${invalid.join(", ")}`,
+              toolsUsed: [],
+            };
+          }
+
+          const selectedConfigs: Record<string, MCPServerConfig> = {};
+          for (const id of mcpServers) {
+            const c = candidateMap.get(id);
+            if (c) selectedConfigs[id] = c.mergedConfig;
+          }
+
+          try {
+            await injectSlackAppCredentialId(selectedConfigs, session.workspaceId);
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            return { ok: false, reason, toolsUsed: [] };
+          }
+
+          const serverEntries = Object.entries(selectedConfigs);
+          const serverResults = await Promise.allSettled(
+            serverEntries.map(([serverId, config]) => {
+              const prefix = serverEntries.length > 1 ? serverId : undefined;
+              return createMCPTools({ [serverId]: config }, logger, {
+                signal: abortSignal,
+                toolPrefix: prefix,
+              });
+            }),
+          );
+
+          const mcpTools: AtlasTools = {};
+          const disposes: Array<() => Promise<void>> = [];
+          for (let i = 0; i < serverResults.length; i++) {
+            const [serverId] = serverEntries[i]!;
+            const result = serverResults[i]!;
+            if (result.status === "fulfilled") {
+              Object.assign(mcpTools, result.value.tools);
+              disposes.push(result.value.dispose);
+            } else {
+              logger.warn("MCP server connection failed in delegate", {
+                delegateToolCallId: toolCallId,
+                serverId,
+                error:
+                  result.reason instanceof Error ? result.reason.message : String(result.reason),
+              });
+            }
+          }
+
+          if (disposes.length === 0) {
+            return {
+              ok: false,
+              reason: "All requested MCP servers failed to connect.",
+              toolsUsed: [],
+            };
+          }
+
+          mcpDispose = async () => {
+            await Promise.allSettled(disposes.map((d) => d()));
+          };
+
+          Object.assign(childTools, mcpTools);
         }
 
         const datetimeMessage = buildTemporalFacts(session.datetime);
@@ -287,6 +381,13 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
         // Terminal — late writes/merges from any straggler are silently dropped.
         proxy.close();
+
+        // Dispose any established MCP connections.
+        try {
+          await mcpDispose?.();
+        } catch {
+          // ignore cleanup errors
+        }
       }
 
       const toolsUsed: DelegateToolsUsedEntry[] = [...ledger.values()].map(({ name, outcome }) => ({

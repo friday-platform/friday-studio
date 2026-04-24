@@ -665,6 +665,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             logger,
             abortSignal,
             repairToolCall,
+            workspaceConfig: wsConfig,
+            linkSummary: linkSummary ?? undefined,
           },
           () => allToolsRef,
         );

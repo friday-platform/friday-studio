@@ -8,6 +8,8 @@
 
 import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import type { WorkspaceConfig } from "@atlas/config";
+import type { MCPServerCandidate } from "@atlas/core/mcp-registry/discovery";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
@@ -17,11 +19,24 @@ import { z } from "zod";
 
 const mockStreamText = vi.hoisted(() => vi.fn());
 const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: n })));
+const mockDiscoverMCPServers = vi.hoisted(() => vi.fn());
+const mockCreateMCPTools = vi.hoisted(() => vi.fn());
+const mockInjectSlackAppCredentialId = vi.hoisted(() => vi.fn());
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
   return { ...actual, streamText: mockStreamText, stepCountIs: mockStepCountIs };
 });
+
+vi.mock("@atlas/core/mcp-registry/discovery", () => ({
+  discoverMCPServers: mockDiscoverMCPServers,
+}));
+
+vi.mock("@atlas/mcp", () => ({ createMCPTools: mockCreateMCPTools }));
+
+vi.mock("@atlas/core/agent-context", () => ({
+  injectSlackAppCredentialId: mockInjectSlackAppCredentialId,
+}));
 
 import { createDelegateTool, type DelegateResult } from "./index.ts";
 
@@ -151,6 +166,7 @@ function makeDelegate(
   writer?: MockWriter,
   abortSignal?: AbortSignal,
   logger?: Logger,
+  depsOverrides?: Record<string, unknown>,
 ) {
   const w = writer ?? makeWriter();
   const tools: AtlasTools = overrideTools ?? {
@@ -178,6 +194,7 @@ function makeDelegate(
       logger: log,
       abortSignal,
       repairToolCall,
+      ...depsOverrides,
     },
     () => tools,
   );
@@ -187,12 +204,17 @@ function makeDelegate(
 async function runDelegate(
   delegateTool: ReturnType<typeof createDelegateTool>,
   toolCallId = "del-call-1",
+  overrides?: Partial<{ goal: string; handoff: string; mcpServers: string[] }>,
 ): Promise<DelegateResult> {
   // The AI SDK's tool() wraps execute; invoke directly via the typed handle.
   const execute = delegateTool.execute;
   if (!execute) throw new Error("delegate has no execute");
   const result = (await execute(
-    { goal: "summarize a webpage", handoff: "the user wants a one-paragraph summary" },
+    {
+      goal: overrides?.goal ?? "summarize a webpage",
+      handoff: overrides?.handoff ?? "the user wants a one-paragraph summary",
+      ...overrides,
+    },
     { toolCallId, messages: [], abortSignal: undefined as unknown as AbortSignal },
   )) as DelegateResult;
   return result;
@@ -204,6 +226,9 @@ describe("createDelegateTool", () => {
   beforeEach(() => {
     mockStreamText.mockReset();
     mockStepCountIs.mockClear();
+    mockDiscoverMCPServers.mockReset();
+    mockCreateMCPTools.mockReset();
+    mockInjectSlackAppCredentialId.mockReset();
   });
 
   it("happy path — finish ok=true drives answer, envelopes carry namespaced toolCallIds", async () => {
@@ -864,6 +889,306 @@ describe("createDelegateTool", () => {
     expect(lastDelegateChunk).toBeDefined();
     if (!lastDelegateChunk) throw new Error("expected last delegate chunk");
     expect(extractDelegateEndPending(lastDelegateChunk)).toEqual([]);
+  });
+
+  it("rejects unknown or unconfigured MCP server IDs with ok=false", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "known",
+          name: "Known",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "cmd" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "cmd" } },
+        configured: true,
+      },
+      {
+        metadata: {
+          id: "unconfigured",
+          name: "Unconfigured",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "cmd" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "cmd" } },
+        configured: false,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", {
+      mcpServers: ["unknown", "unconfigured"],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "Unknown or unconfigured MCP server(s): unknown, unconfigured",
+      toolsUsed: [],
+    });
+    expect(mockCreateMCPTools).not.toHaveBeenCalled();
+  });
+
+  it("connects a single MCP server without tool prefix", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "server-a",
+          name: "A",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "a" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "a" } },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
+    const mockDispose = vi.fn();
+    mockCreateMCPTools.mockResolvedValue({ tools: { tool_a: dummyTool }, dispose: mockDispose });
+
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ finish: { ok: true, answer: "done" } }],
+      finalText: "",
+    });
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["server-a"] });
+
+    expect(result.ok).toBe(true);
+    expect(mockCreateMCPTools).toHaveBeenCalledWith(
+      { "server-a": { transport: { type: "stdio", command: "a" } } },
+      expect.any(Object),
+      { signal: undefined, toolPrefix: undefined },
+    );
+    const tools = captured.args?.tools as Record<string, unknown> | undefined;
+    expect(tools?.tool_a).toBeDefined();
+    expect(tools?.finish).toBeDefined();
+    expect(mockDispose).toHaveBeenCalled();
+  });
+
+  it("connects multiple MCP servers with prefixed tool names", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "s1",
+          name: "S1",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "s1" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "s1" } },
+        configured: true,
+      },
+      {
+        metadata: {
+          id: "s2",
+          name: "S2",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "s2" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "s2" } },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
+    const dispose1 = vi.fn();
+    const dispose2 = vi.fn();
+    mockCreateMCPTools
+      .mockResolvedValueOnce({ tools: { tool_x: dummyTool }, dispose: dispose1 })
+      .mockResolvedValueOnce({ tools: { tool_y: dummyTool }, dispose: dispose2 });
+
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ finish: { ok: true, answer: "done" } }],
+      finalText: "",
+    });
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["s1", "s2"] });
+
+    expect(result.ok).toBe(true);
+    expect(mockCreateMCPTools).toHaveBeenCalledTimes(2);
+    expect(mockCreateMCPTools).toHaveBeenNthCalledWith(
+      1,
+      { s1: { transport: { type: "stdio", command: "s1" } } },
+      expect.any(Object),
+      { signal: undefined, toolPrefix: "s1" },
+    );
+    expect(mockCreateMCPTools).toHaveBeenNthCalledWith(
+      2,
+      { s2: { transport: { type: "stdio", command: "s2" } } },
+      expect.any(Object),
+      { signal: undefined, toolPrefix: "s2" },
+    );
+
+    const tools = captured.args?.tools as Record<string, unknown> | undefined;
+    expect(tools?.tool_x).toBeDefined();
+    expect(tools?.tool_y).toBeDefined();
+    expect(dispose1).toHaveBeenCalled();
+    expect(dispose2).toHaveBeenCalled();
+  });
+
+  it("proceeds when at least one MCP server connects", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "good",
+          name: "Good",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "good" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "good" } },
+        configured: true,
+      },
+      {
+        metadata: {
+          id: "bad",
+          name: "Bad",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "bad" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "bad" } },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
+    const disposeGood = vi.fn();
+    mockCreateMCPTools
+      .mockResolvedValueOnce({ tools: { tool_good: dummyTool }, dispose: disposeGood })
+      .mockRejectedValueOnce(new Error("Connection refused"));
+
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ finish: { ok: true, answer: "done" } }],
+      finalText: "",
+    });
+
+    const { delegateTool, logger } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["good", "bad"] });
+
+    expect(result.ok).toBe(true);
+    expect(mockCreateMCPTools).toHaveBeenCalledTimes(2);
+    const tools = captured.args?.tools as Record<string, unknown> | undefined;
+    expect(tools?.tool_good).toBeDefined();
+    expect(tools?.bad_tool_good).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "MCP server connection failed in delegate",
+      expect.objectContaining({ serverId: "bad" }),
+    );
+    expect(disposeGood).toHaveBeenCalled();
+  });
+
+  it("returns ok=false when all MCP servers fail to connect", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "a",
+          name: "A",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "a" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "a" } },
+        configured: true,
+      },
+      {
+        metadata: {
+          id: "b",
+          name: "B",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "b" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "b" } },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
+    mockCreateMCPTools.mockRejectedValue(new Error("boom"));
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["a", "b"] });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "All requested MCP servers failed to connect.",
+      toolsUsed: [],
+    });
+  });
+
+  it("returns ok=false when injectSlackAppCredentialId throws", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "slack",
+          name: "Slack",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "slack" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "slack" } },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockInjectSlackAppCredentialId.mockRejectedValue(new Error("missing slack-app credential"));
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["slack"] });
+
+    expect(result).toEqual({ ok: false, reason: "missing slack-app credential", toolsUsed: [] });
+  });
+
+  it("disposes MCP connections in finally even when child stream throws", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      {
+        metadata: {
+          id: "mcp",
+          name: "MCP",
+          source: "workspace",
+          securityRating: "unverified",
+          configTemplate: { transport: { type: "stdio", command: "mcp" } },
+        },
+        mergedConfig: { transport: { type: "stdio", command: "mcp" } },
+        configured: true,
+      },
+    ] satisfies MCPServerCandidate[]);
+    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
+    const mockDispose = vi.fn();
+    mockCreateMCPTools.mockResolvedValue({ tools: { mcp_tool: dummyTool }, dispose: mockDispose });
+
+    const captured: CapturedStreamTextArgs = { args: undefined };
+    setupMockStreamText(captured, {
+      steps: [{ toolCalls: [{ toolCallId: "c1", toolName: "web_search" }] }],
+      finalText: "",
+      throwOnText: new Error("boom"),
+    });
+
+    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
+      workspaceConfig: {} as unknown as WorkspaceConfig,
+    });
+    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["mcp"] });
+
+    expect(result.ok).toBe(false);
+    expect(mockDispose).toHaveBeenCalled();
   });
 });
 
