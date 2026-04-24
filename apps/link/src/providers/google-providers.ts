@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
 
-// Well-known gcloud OAuth client credentials (public, not sensitive).
-const GCLOUD_CLIENT_ID = "764086051850-6qr4p6gpi6hn506pt8ejuq83di341hur.apps.googleusercontent.com";
-const GCLOUD_CLIENT_SECRET = "d-FL95Q19q7MQmFpd7hHD0Ty";
+// Google OAuth client credentials (public, not sensitive).
+const GCLOUD_CLIENT_ID = "406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com";
+const GCLOUD_CLIENT_SECRET = "kSmqreRr0qwBWJgbf5Y-PjSU";
 
 /**
  * Google API scopes for each Workspace service.
