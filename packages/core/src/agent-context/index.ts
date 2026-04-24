@@ -6,6 +6,7 @@ import type {
   AtlasAgent,
   AtlasTool,
 } from "@atlas/agent-sdk";
+import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
@@ -26,7 +27,7 @@ import {
   hasUnusableCredentialCause,
   resolveSlackAppByWorkspace,
 } from "../mcp-registry/credential-resolver.ts";
-import { discoverMCPServers } from "../mcp-registry/discovery.ts";
+import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
 import { createEnvironmentContext } from "./environment-context.ts";
@@ -257,11 +258,26 @@ async function fetchAllTools(
     agentMCPServerIds: agentMCPConfig ? Object.keys(agentMCPConfig) : [],
   });
 
-  const candidates = await discoverMCPServers(workspaceId);
+  // Fetch Link summary so we can accurately determine which Link-backed servers
+  // are configured. Without this, all Link-backed servers show as unconfigured.
+  let linkSummary: LinkSummary | undefined;
+  try {
+    const result = await parseResult(client.link.v1.summary.$get({ query: {} }));
+    if (result.ok && "providers" in result.data) {
+      linkSummary = result.data as LinkSummary;
+    }
+  } catch {
+    // Ignore — unconfigured Link-backed servers will be filtered out, which is safe.
+  }
+
+  const candidates = await discoverMCPServers(workspaceId, undefined, linkSummary);
 
   // Build config map from discovered candidates (workspace + registry + static)
+  // Only include servers whose credentials are resolved — unconfigured servers
+  // would cause createMCPTools to throw when resolving Link/env refs.
   const allServerConfigs: Record<string, MCPServerConfig> = {};
   for (const candidate of candidates) {
+    if (!candidate.configured) continue;
     allServerConfigs[candidate.metadata.id] = candidate.mergedConfig;
   }
 

@@ -101,6 +101,18 @@ export function createListMCPServersTool(
             total: candidates.length,
             returned: servers.length,
             filter,
+            configuredIds: candidates.filter((c) => c.configured).map((c) => c.metadata.id),
+            unconfigured: candidates
+              .filter((c) => !c.configured)
+              .map((c) => ({
+                id: c.metadata.id,
+                provider: c.mergedConfig.env
+                  ? Object.entries(c.mergedConfig.env)
+                      .filter(([, v]) => typeof v === "object" && v.provider)
+                      .map(([, v]) => (v as { provider: string }).provider)
+                  : undefined,
+                requiredConfig: c.metadata.requiredConfig?.map((rc) => rc.key),
+              })),
           });
 
           return {

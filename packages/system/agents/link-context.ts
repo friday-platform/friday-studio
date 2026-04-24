@@ -31,6 +31,10 @@ export async function fetchLinkSummary(logger: Logger): Promise<SummaryResponse 
     }
     // Narrow to success type (has providers array)
     if ("providers" in result.data) {
+      logger.debug("Link summary fetched", {
+        providerIds: result.data.providers.map((p: { id: string }) => p.id),
+        credentialProviders: result.data.credentials.map((c: { provider: string }) => c.provider),
+      });
       return result.data;
     }
     return null;
