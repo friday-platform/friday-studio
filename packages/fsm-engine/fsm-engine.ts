@@ -1267,7 +1267,7 @@ export class FSMEngine {
             });
 
             const buildResult = action.tools
-              ? await this.buildTools(action.tools, context)
+              ? await this.buildTools(action.tools, context, sig._context?.abortSignal)
               : { tools: {}, dispose: async () => {} };
             const baseTools = buildResult.tools;
 
@@ -1420,6 +1420,7 @@ export class FSMEngine {
                 toolChoice: llmToolChoice,
                 stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
                 onStreamEvent: sig._context?.onStreamEvent,
+                abortSignal: sig._context?.abortSignal,
               });
 
               // Check for adapter-level errors (network, API, etc.)
@@ -1496,6 +1497,7 @@ export class FSMEngine {
                     toolChoice: llmToolChoice,
                     stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
                     onStreamEvent: sig._context?.onStreamEvent,
+                    abortSignal: sig._context?.abortSignal,
                   });
 
                   // Check for adapter-level errors on retry
@@ -1938,6 +1940,7 @@ export class FSMEngine {
   private async buildTools(
     toolNames: string[],
     context: Context,
+    abortSignal?: AbortSignal,
   ): Promise<{ tools: Record<string, Tool>; dispose: () => Promise<void> }> {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
@@ -1958,10 +1961,13 @@ export class FSMEngine {
         description: toolDef.description,
         inputSchema: zodSchema,
         execute: (args) =>
-          this._toolExecutor.execute(toolDef.code, toolName, context, {
-            type: "__tool__",
-            data: args,
-          }),
+          this._toolExecutor.execute(
+            toolDef.code,
+            toolName,
+            context,
+            { type: "__tool__", data: args },
+            abortSignal,
+          ),
       };
     }
 

@@ -115,6 +115,7 @@
     "npm:@tanstack/query-core@^5.99.0": "5.99.0",
     "npm:@tanstack/svelte-query@^6.1.16": "6.1.16_svelte@5.55.4__acorn@8.16.0",
     "npm:@tanstack/svelte-table@9.0.0-alpha.10": "9.0.0-alpha.10_svelte@5.55.4__acorn@8.16.0",
+    "npm:@tanstack/svelte-table@^9.0.0-alpha.10": "9.0.0-alpha.10_svelte@5.55.4__acorn@8.16.0",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/deno@2.5.0": "2.5.0",
     "npm:@types/markdown-it@^14.1.2": "14.1.2",
@@ -8760,7 +8761,6 @@
         "npm:@vitest/coverage-v8@4.1.0",
         "npm:knip@6.4.1",
         "npm:lint-staged@^16.4.0",
-        "npm:nanoid@^5.1.6",
         "npm:vitest@^4.1.0"
       ]
     },
@@ -8964,16 +8964,14 @@
       "packages/adapters-md": {
         "packageJson": {
           "dependencies": [
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
+            "npm:vitest@^4.1.0"
           ]
         }
       },
       "packages/adapters-memory": {
         "packageJson": {
           "dependencies": [
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
+            "npm:vitest@^4.1.0"
           ]
         }
       },
@@ -9310,6 +9308,7 @@
             "npm:@sveltejs/kit@^2.55.0",
             "npm:@sveltejs/package@^2.5.7",
             "npm:@sveltejs/vite-plugin-svelte@^6.2.4",
+            "npm:@tanstack/svelte-table@^9.0.0-alpha.10",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
             "npm:eslint-plugin-svelte@^3.17.0",

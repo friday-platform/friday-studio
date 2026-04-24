@@ -86,6 +86,8 @@ interface PendingRequest {
   reject: (e: Error) => void;
   timeoutId: ReturnType<typeof setTimeout>;
   worker: Worker;
+  abortSignal?: AbortSignal;
+  abortListener?: () => void;
 }
 
 export class WorkerExecutor {
@@ -124,6 +126,9 @@ export class WorkerExecutor {
 
       clearTimeout(entry.timeoutId);
       this.pending.delete(parsed.data.requestId);
+      if (entry.abortListener) {
+        entry.abortSignal?.removeEventListener("abort", entry.abortListener);
+      }
 
       if (!parsed.data.success) {
         const errorMsg = parsed.data.stack
@@ -149,11 +154,14 @@ export class WorkerExecutor {
         if (entry.worker !== worker) continue;
         clearTimeout(entry.timeoutId);
         this.pending.delete(requestId);
+        if (entry.abortListener) {
+          entry.abortSignal?.removeEventListener("abort", entry.abortListener);
+        }
         const msg = error instanceof Error ? error.message : (error as ErrorEvent).message;
         entry.reject(new Error(`Worker error: ${stringifyError(msg)}`));
         break;
       }
-      // Don't return to pool — worker state is unknown after an error.
+      worker.terminate();
     };
 
     if (hasNodeWorkerApi(worker)) {
@@ -226,20 +234,29 @@ export class WorkerExecutor {
         );
       }, this.timeout + 1000);
 
-      this.pending.set(requestId, { context, functionName, resolve, reject, timeoutId, worker });
-
-      abortSignal?.addEventListener(
-        "abort",
-        () => {
+      let abortListener: (() => void) | undefined;
+      if (abortSignal) {
+        abortListener = () => {
           const entry = this.pending.get(requestId);
           if (!entry) return; // Already resolved/rejected
           clearTimeout(entry.timeoutId);
           this.pending.delete(requestId);
           this.discardAndReplenish(worker);
           reject(new Error(`${this.functionType} '${functionName}' was cancelled`));
-        },
-        { once: true },
-      );
+        };
+        abortSignal.addEventListener("abort", abortListener, { once: true });
+      }
+
+      this.pending.set(requestId, {
+        context,
+        functionName,
+        resolve,
+        reject,
+        timeoutId,
+        worker,
+        abortSignal,
+        abortListener,
+      });
 
       const request: WorkerRequest = {
         requestId,

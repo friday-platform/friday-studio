@@ -66,6 +66,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
     stopOnToolCall?: string[];
     providerOptions?: Record<string, unknown>;
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void;
+    abortSignal?: AbortSignal;
   }): Promise<AgentResult<string, FSMLLMOutput>> {
     const startMs = Date.now();
     const providerName = this.defaultModel.provider;
@@ -108,6 +109,7 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         toolChoice: params.toolChoice,
         experimental_repairToolCall: repairToolCall,
         stopWhen: stopConditions,
+        abortSignal: params.abortSignal,
         ...(this.providerOptions || {}),
         ...(params.providerOptions || {}),
         onChunk: emitChunk
