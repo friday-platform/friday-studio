@@ -99,40 +99,6 @@ export const MCPAuthConfigSchema = z.strictObject({
 });
 export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
 
-/**
- * Startup configuration for auto-spawning an HTTP MCP server.
- * When the transport URL is not reachable, the command is spawned and
- * the runtime polls ready_url until it responds or the timeout fires.
- */
-export const MCPStartupConfigSchema = z.strictObject({
-  type: z.literal("command"),
-  command: z.string(),
-  args: z.array(z.string()).optional(),
-  env: z
-    .record(z.string(), z.string())
-    .optional()
-    .describe("Extra environment variables passed to the spawned process"),
-  ready_url: z
-    .string()
-    .optional()
-    .describe("URL to poll for readiness (defaults to the transport URL)"),
-  ready_timeout_ms: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .default(30000)
-    .describe("How long to wait for the server to become ready (default 30s)"),
-  ready_interval_ms: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .default(500)
-    .describe("Polling interval in ms while waiting for readiness (default 500ms)"),
-});
-export type MCPStartupConfig = z.infer<typeof MCPStartupConfigSchema>;
-
 export const MCPServerToolFilterSchema = AllowDenyFilterSchema.describe(
   "Filter which tools to allow or deny from this MCP server",
 );
@@ -163,10 +129,6 @@ export const MCPServerConfigSchema = z.strictObject({
     .record(z.string(), EnvValueSchema)
     .optional()
     .describe("Environment variables for the server process"),
-  startup: MCPStartupConfigSchema.optional().describe(
-    "Command to auto-spawn before connecting (HTTP transport only). " +
-      "The runtime waits for the ready_url to respond before proceeding.",
-  ),
   skipResolverCheck: z
     .boolean()
     .optional()

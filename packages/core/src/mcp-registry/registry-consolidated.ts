@@ -1,67 +1,88 @@
+import process from "node:process";
 import type { MCPServerMetadata, MCPServersRegistry } from "./schemas.ts";
 
 /**
  * Google Workspace service definitions.
- * Each service runs its own workspace-mcp stdio instance with `--tools`
- * filtering for tool isolation. Auth (GOOGLE_OAUTH_CLIENT_ID / SECRET) is
- * handled by the server; see google-providers.ts in apps/link.
+ * Each service runs its own workspace-mcp HTTP instance on a dedicated port
+ * with `--tools` filtering for tool isolation. Bearer tokens from per-service
+ * Link providers authenticate each connection.
+ *
+ * Manual launch required (see constraints):
+ *   GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> \
+ *   MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true \
+ *   WORKSPACE_MCP_PORT=<port> uvx workspace-mcp --tools <service> --transport streamable-http
  */
 const GOOGLE_WORKSPACE_SERVICES = [
   {
     id: "google-calendar",
     name: "Google Calendar",
     urlDomains: ["calendar.google.com"],
+    urlEnvKey: "GOOGLE_CALENDAR_MCP_URL",
+    defaultPort: 8001,
     toolFlag: "calendar",
     description:
       "Full Google Calendar management via workspace-mcp — list calendars, search events, create/modify/delete events, add attendees, create Google Meet links",
     constraints:
-      "Requires OAuth. Use for calendar queries, event creation, scheduling, meeting management. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools calendar",
+      "Requires OAuth. Use for calendar queries, event creation, scheduling, meeting management. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8001 uvx workspace-mcp --tools calendar --transport streamable-http",
   },
   {
     id: "google-gmail",
     name: "Gmail",
     urlDomains: ["mail.google.com"],
+    urlEnvKey: "GOOGLE_GMAIL_MCP_URL",
+    defaultPort: 8002,
     toolFlag: "gmail",
     description:
       "Read and manage Gmail via workspace-mcp — search messages, read email content and attachments, send emails, create drafts, manage labels and filters. Full inbox access. This is the ONLY way to read email.",
     constraints:
-      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools gmail",
+      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8002 uvx workspace-mcp --tools gmail --transport streamable-http",
   },
   {
     id: "google-drive",
     name: "Google Drive",
     urlDomains: ["drive.google.com"],
+    urlEnvKey: "GOOGLE_DRIVE_MCP_URL",
+    defaultPort: 8003,
     toolFlag: "drive",
     description:
       "Full Google Drive management via workspace-mcp — search files, list folders, create/update files, manage sharing and permissions, get download URLs",
     constraints:
-      "Requires OAuth. Use for file storage, searching, sharing, managing permissions, and document access. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools drive",
+      "Requires OAuth. Use for file storage, searching, sharing, managing permissions, and document access. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8003 uvx workspace-mcp --tools drive --transport streamable-http",
   },
   {
     id: "google-docs",
     name: "Google Docs",
     urlDomains: ["docs.google.com"],
+    urlEnvKey: "GOOGLE_DOCS_MCP_URL",
+    defaultPort: 8004,
     toolFlag: "docs",
     description:
       "Full Google Docs management via workspace-mcp — search docs, create documents, edit text, insert images/tables, find and replace, export to PDF",
     constraints:
-      "Requires OAuth. Use for document creation, editing, formatting, tables, images, and PDF export. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools docs",
+      "Requires OAuth. Use for document creation, editing, formatting, tables, images, and PDF export. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8004 uvx workspace-mcp --tools docs --transport streamable-http",
   },
   {
     id: "google-sheets",
     name: "Google Sheets",
     urlDomains: ["docs.google.com"],
+    urlEnvKey: "GOOGLE_SHEETS_MCP_URL",
+    defaultPort: 8005,
     toolFlag: "sheets",
     description:
       "Full Google Sheets management via workspace-mcp — list spreadsheets, read/write cell values, create sheets, format cells, conditional formatting.",
     constraints:
-      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools sheets",
+      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead. Launch: GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8005 uvx workspace-mcp --tools sheets --transport streamable-http",
   },
 ];
 
 function createGoogleWorkspaceEntry(
   spec: (typeof GOOGLE_WORKSPACE_SERVICES)[number],
 ): MCPServerMetadata {
+  // Token env var: google-calendar -> GOOGLE_CALENDAR_ACCESS_TOKEN
+  const tokenEnvKey = `${spec.id.toUpperCase().replace(/-/g, "_")}_ACCESS_TOKEN`;
+  const defaultUrl = `http://localhost:${spec.defaultPort}/mcp`;
+  const url = process.env[spec.urlEnvKey] || defaultUrl;
+
   return {
     id: spec.id,
     name: spec.name,
@@ -71,13 +92,14 @@ function createGoogleWorkspaceEntry(
     source: "static",
     securityRating: "high",
     configTemplate: {
-      transport: {
-        type: "stdio",
-        command: "uvx",
-        args: ["workspace-mcp", "--tools", spec.toolFlag],
-      },
+      transport: { type: "http", url },
+      auth: { type: "bearer", token_env: tokenEnvKey },
+      env: { [tokenEnvKey]: { from: "link", provider: spec.id, key: "access_token" } },
       client_config: { timeout: { progressTimeout: "60s", maxTotalTimeout: "30m" } },
     },
+    requiredConfig: [
+      { key: tokenEnvKey, description: `${spec.name} access token from Link`, type: "string" },
+    ],
   };
 }
 
