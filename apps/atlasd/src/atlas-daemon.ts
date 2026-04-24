@@ -56,6 +56,7 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
+import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import { activityRoutes } from "../routes/activity.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
@@ -304,6 +305,9 @@ export class AtlasDaemon {
     this.natsManager = new NatsManager();
     const nc = await this.natsManager.start();
     logger.info("NATS ready");
+
+    // Ensure the SESSIONS JetStream stream exists (durable session event store)
+    await this.ensureSessionsStream(nc);
 
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
@@ -554,7 +558,7 @@ export class AtlasDaemon {
     this.sessionHistoryAdapter = new LocalSessionHistoryAdapter(
       join(getAtlasHome(), "sessions-v2"),
     );
-    this.sessionStreamRegistry = new SessionStreamRegistry();
+    this.sessionStreamRegistry = new SessionStreamRegistry(nc);
     this.sessionStreamRegistry.start();
 
     // Start SSE health check interval
@@ -741,6 +745,36 @@ export class AtlasDaemon {
       // Platform MCP Server doesn't have explicit stop() - just remove from map
       this.platformMcpSessions.delete(sessionId);
       logger.info("[Daemon] Platform session cleaned up", { sessionId });
+    }
+  }
+
+  /** Get the NATS connection (available after initialize()). */
+  public getNatsConnection() {
+    if (!this.natsManager) {
+      throw new Error("NATS not initialized — call initialize() first");
+    }
+    return this.natsManager.connection;
+  }
+
+  /**
+   * Create the SESSIONS JetStream stream if it doesn't already exist.
+   * The stream retains events for 24 hours so SSE clients can reconnect
+   * and replay the full session history.
+   */
+  private async ensureSessionsStream(nc: NatsConnection): Promise<void> {
+    const jsm = await nc.jetstreamManager();
+    try {
+      await jsm.streams.info("SESSIONS");
+      // Stream already exists
+    } catch {
+      await jsm.streams.add({
+        name: "SESSIONS",
+        subjects: ["sessions.*.events"],
+        retention: RetentionPolicy.Limits,
+        storage: StorageType.Memory,
+        max_age: 24 * 60 * 60 * 1_000_000_000, // 24 hours in nanoseconds
+      });
+      logger.info("Created SESSIONS JetStream stream");
     }
   }
 

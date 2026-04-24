@@ -5,6 +5,7 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
+import { consumerOpts } from "nats";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 
@@ -66,27 +67,111 @@ const sessionsRoutes = daemonFactory
    * GET /api/sessions/:id/stream
    * SSE endpoint for real-time session events.
    *
-   * Active session: replays buffered durable events, then streams live events.
-   * Finalized session (still in registry): replays all events including
-   * session:complete, then closes.
-   * Completed session (v2 adapter): returns 404 — client falls back to
-   * GET /:id JSON endpoint, which returns the full SessionView.
-   * Old-format session (v1 JSON file exists): returns 410 Gone.
+   * Subscribes to the NATS JetStream SESSIONS stream with DeliverAll so
+   * reconnecting clients get full event replay. Also subscribes to the
+   * NATS core ephemeral subject for live streaming chunks.
+   *
+   * Session existence is confirmed via the in-memory registry. If the
+   * session is unknown, falls through to 404 (client uses GET /:id).
    */
   .get("/:id/stream", async (c) => {
     const ctx = c.get("app");
     const sessionId = c.req.param("id");
     const registry = ctx.sessionStreamRegistry;
 
-    // 1. Check registry for active or recently-finalized stream
+    // 1. Check registry — confirms the session is active or recently finalized
     const stream = registry.get(sessionId);
     if (stream) {
+      const nc = ctx.daemon.getNatsConnection();
+      const js = nc.jetstream();
+      const encoder = new TextEncoder();
+
       const sseStream = new ReadableStream<Uint8Array>({
         start(controller) {
-          stream.subscribe(controller);
+          let closed = false;
+
+          function enqueue(data: string) {
+            if (!closed) {
+              try {
+                controller.enqueue(encoder.encode(data));
+              } catch {
+                closed = true;
+              }
+            }
+          }
+
+          function close() {
+            if (!closed) {
+              closed = true;
+              try {
+                controller.close();
+              } catch {
+                // already closed
+              }
+            }
+          }
+
+          // Subscribe to durable events via JetStream (replays from sequence 0)
+          const opts = consumerOpts();
+          opts.deliverAll();
+          opts.ackNone();
+          opts.replayInstantly();
+          opts.orderedConsumer();
+          const jsSub = js.subscribe(`sessions.${sessionId}.events`, opts);
+
+          void (async () => {
+            try {
+              const sub = await jsSub;
+              for await (const msg of sub) {
+                if (closed) {
+                  sub.unsubscribe();
+                  break;
+                }
+                const data = msg.string();
+                enqueue(`data: ${data}\n\n`);
+                // Close after session:complete — SSE clients handle this terminal event
+                try {
+                  const parsed: unknown = JSON.parse(data);
+                  if (
+                    typeof parsed === "object" &&
+                    parsed !== null &&
+                    "type" in parsed &&
+                    parsed.type === "session:complete"
+                  ) {
+                    sub.unsubscribe();
+                    close();
+                    break;
+                  }
+                } catch {
+                  // ignore parse errors on individual messages
+                }
+              }
+              close();
+            } catch (err) {
+              if (!closed) {
+                controller.error(err instanceof Error ? err : new Error(String(err)));
+              }
+            }
+          })();
+
+          // Subscribe to ephemeral chunks via NATS core (live only, no replay)
+          const ephemerSub = nc.subscribe(`sessions.${sessionId}.ephemeral`);
+          void (async () => {
+            try {
+              for await (const msg of ephemerSub) {
+                if (closed) break;
+                enqueue(`event: ephemeral\ndata: ${msg.string()}\n\n`);
+              }
+            } catch {
+              // subscription closed
+            }
+          })();
 
           c.req.raw.signal.addEventListener("abort", () => {
-            stream.unsubscribe(controller);
+            closed = true;
+            ephemerSub.unsubscribe();
+            jsSub.then((sub) => sub.unsubscribe()).catch(() => {});
+            close();
           });
         },
       });

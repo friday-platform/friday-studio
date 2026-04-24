@@ -1,4 +1,5 @@
 import type { SessionHistoryAdapter } from "@atlas/core";
+import type { NatsConnection } from "nats";
 import { aroundEach, describe, expect, test, vi } from "vitest";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 
@@ -15,6 +16,18 @@ function mockAdapter(): SessionHistoryAdapter {
   };
 }
 
+function mockNatsConnection(): NatsConnection {
+  const jsMock = {
+    publish: vi
+      .fn<() => Promise<{ stream: string; seq: number }>>()
+      .mockResolvedValue({ stream: "SESSIONS", seq: 1 }),
+  };
+  return {
+    jetstream: vi.fn<() => typeof jsMock>().mockReturnValue(jsMock),
+    publish: vi.fn<() => void>(),
+  } as unknown as NatsConnection;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -23,7 +36,7 @@ let registry: SessionStreamRegistry;
 
 aroundEach(async (run) => {
   vi.useFakeTimers();
-  registry = new SessionStreamRegistry();
+  registry = new SessionStreamRegistry(mockNatsConnection());
   registry.start();
   await run();
   registry.shutdown();

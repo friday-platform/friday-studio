@@ -21,6 +21,7 @@ import {
   type StepStartEvent,
 } from "@atlas/core";
 import { Hono } from "hono";
+import type { NatsConnection } from "nats";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { SessionStreamRegistry } from "../../src/session-stream-registry.ts";
@@ -33,6 +34,18 @@ vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => mockAtlasHome.
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
+
+function mockNatsConnection(): NatsConnection {
+  const jsMock = {
+    publish: vi
+      .fn<() => Promise<{ stream: string; seq: number }>>()
+      .mockResolvedValue({ stream: "SESSIONS", seq: 1 }),
+  };
+  return {
+    jetstream: vi.fn<() => typeof jsMock>().mockReturnValue(jsMock),
+    publish: vi.fn<() => void>(),
+  } as unknown as NatsConnection;
+}
 
 function makeSessionStart(overrides: Partial<SessionStartEvent> = {}): SessionStartEvent {
   return {
@@ -157,6 +170,8 @@ function createTestApp(options: {
     evictChatSdkInstance: vi.fn() as unknown as AppContext["evictChatSdkInstance"],
     getLedgerAdapter: vi.fn() as unknown as AppContext["getLedgerAdapter"],
     getActivityAdapter: vi.fn() as unknown as AppContext["getActivityAdapter"],
+    exposeKernel: false,
+    platformModels: {} as AppContext["platformModels"],
   };
 
   const app = new Hono<AppVariables>();
@@ -187,7 +202,7 @@ describe("Session History v2 Routes", () => {
     // Point getAtlasHome() at our temp directory so v1 file checks work
     mockAtlasHome.value = testDir;
     adapter = new LocalSessionHistoryAdapter(testDir);
-    registry = new SessionStreamRegistry();
+    registry = new SessionStreamRegistry(mockNatsConnection());
   });
 
   afterEach(async () => {

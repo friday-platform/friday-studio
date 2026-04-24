@@ -1,5 +1,5 @@
 /**
- * SessionStreamRegistry — manages lifecycle of SessionEventStream instances.
+ * SessionStreamRegistry — manages lifecycle of NatsSessionStream instances.
  *
  * Creates/gets streams by sessionId, lists active streams, and handles
  * TTL eviction of finalized and stale streams. Mirrors StreamRegistry
@@ -10,7 +10,8 @@
 
 import type { SessionHistoryAdapter } from "@atlas/core";
 import { logger } from "@atlas/logger";
-import { SessionEventStream } from "./session-event-stream.ts";
+import type { NatsConnection } from "nats";
+import { NatsSessionStream } from "./nats-session-stream.ts";
 
 /** TTL for finalized streams (5 minutes) */
 const FINALIZED_TTL_MS = 5 * 60 * 1000;
@@ -20,7 +21,7 @@ const STALE_TTL_MS = 30 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 
 interface StreamEntry {
-  stream: SessionEventStream;
+  stream: NatsSessionStream;
   createdAt: number;
   lastActivityAt: number;
 }
@@ -32,6 +33,8 @@ interface StreamEntry {
 export class SessionStreamRegistry {
   private streams = new Map<string, StreamEntry>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+  constructor(private readonly nc: NatsConnection) {}
 
   /** Start the cleanup interval. */
   start(): void {
@@ -54,21 +57,21 @@ export class SessionStreamRegistry {
    * Create a new stream for a session. Replaces any existing stream
    * for the same sessionId.
    */
-  create(sessionId: string, adapter: SessionHistoryAdapter): SessionEventStream {
+  create(sessionId: string, adapter: SessionHistoryAdapter): NatsSessionStream {
     const now = Date.now();
-    const stream = new SessionEventStream(sessionId, adapter);
+    const stream = new NatsSessionStream(sessionId, adapter, this.nc);
     this.streams.set(sessionId, { stream, createdAt: now, lastActivityAt: now });
     return stream;
   }
 
   /** Get a stream by sessionId. */
-  get(sessionId: string): SessionEventStream | undefined {
+  get(sessionId: string): NatsSessionStream | undefined {
     return this.streams.get(sessionId)?.stream;
   }
 
   /** List only active (non-finalized) streams. */
-  listActive(): SessionEventStream[] {
-    const active: SessionEventStream[] = [];
+  listActive(): NatsSessionStream[] {
+    const active: NatsSessionStream[] = [];
     for (const entry of this.streams.values()) {
       if (entry.stream.isActive()) {
         active.push(entry.stream);
