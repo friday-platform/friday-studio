@@ -105,7 +105,7 @@
               class="nav-item"
               class:active={pathname.startsWith("/discover")}
             >
-              <IconLarge.Compass />
+              <IconLarge.OpenSquare />
               Discover Spaces
             </a>
           </li>
