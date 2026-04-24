@@ -93,9 +93,7 @@ jobs:
 
       - name: Install npm dependencies
         working-directory: apps/studio-installer
-        env:
-          NPM_CONFIG_WORKSPACES: 'false'
-        run: npm ci
+        run: npm install --ignore-scripts
 
       - name: Build Tauri app (macOS)
         if: matrix.bundle_ext == 'dmg'
