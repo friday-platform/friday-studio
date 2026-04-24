@@ -40,8 +40,7 @@ export class CapabilityHandlerRegistry {
     this.sessions.delete(sessionId);
   }
 
-  // deno-lint-ignore require-await
-  async start(nc: NatsConnection): Promise<void> {
+  start(nc: NatsConnection): void {
     this.subs.push(
       nc.subscribe("caps.*.llm.generate", { callback: (err, msg) => this.handleLlm(err, msg, nc) }),
       nc.subscribe("caps.*.http.fetch", { callback: (err, msg) => this.handleHttp(err, msg, nc) }),

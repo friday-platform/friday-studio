@@ -307,7 +307,7 @@ export class AtlasDaemon {
 
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
-    await this.capabilityRegistry.start(nc);
+    this.capabilityRegistry.start(nc);
     this.processAgentExecutor = new ProcessAgentExecutor(nc, this.capabilityRegistry);
 
     // Create WorkspaceManager (initialize later once registrars and watcher are ready)
