@@ -173,11 +173,17 @@ export class MCPUpstreamClient {
   /**
    * Search for MCP servers matching the given query.
    *
-   * Calls /v0.1/servers?search={query}&limit={limit}
+   * Calls /v0.1/servers?search={query}&limit={limit}&version={version}
    * Returns validated search results.
+   *
+   * @param version - Optional version filter. Use `"latest"` to return only
+   *   the latest version of each server.
    */
-  async search(query: string, limit = 20): Promise<UpstreamSearchResponse> {
-    const url = `${this.baseUrl}/servers?search=${encodeURIComponent(query)}&limit=${String(limit)}`;
+  async search(query: string, limit = 20, version?: string): Promise<UpstreamSearchResponse> {
+    let url = `${this.baseUrl}/servers?search=${encodeURIComponent(query)}&limit=${String(limit)}`;
+    if (version) {
+      url += `&version=${encodeURIComponent(version)}`;
+    }
     logger.debug("upstream registry search", { url });
 
     const response = await this.fetchFn(url, { headers: { Accept: "application/json" } });

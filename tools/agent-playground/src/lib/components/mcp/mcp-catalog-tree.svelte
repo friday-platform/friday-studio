@@ -16,6 +16,7 @@
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import { mcpQueries } from "$lib/queries/mcp-queries";
 
   interface Props {
@@ -108,6 +109,16 @@
         return "color-mix(in srgb, var(--color-text), transparent 45%)";
     }
   }
+
+  function isOfficialServer(
+    server: (typeof allServers)[number],
+  ): boolean {
+    if (server.source === "static") return true;
+    if (server.upstream?.canonicalName) {
+      return isOfficialCanonicalName(server.upstream.canonicalName);
+    }
+    return false;
+  }
 </script>
 
 <div class="catalog-tree">
@@ -174,6 +185,9 @@
                 style:--dot-color={securityColor(server.securityRating)}
               ></span>
               <span class="item-name">{server.name}</span>
+              {#if isOfficialServer(server)}
+                <span class="official-pill">Official</span>
+              {/if}
               <span class="item-meta">{transportBadge(server)}</span>
             </button>
           {/each}
@@ -194,6 +208,9 @@
                 style:--dot-color={securityColor(server.securityRating)}
               ></span>
               <span class="item-name">{server.name}</span>
+              {#if isOfficialServer(server)}
+                <span class="official-pill">Official</span>
+              {/if}
               <span class="item-meta">{transportBadge(server)}</span>
             </button>
           {/each}
@@ -214,6 +231,9 @@
                 style:--dot-color={securityColor(server.securityRating)}
               ></span>
               <span class="item-name">{server.name}</span>
+              {#if isOfficialServer(server)}
+                <span class="official-pill">Official</span>
+              {/if}
               <span class="item-meta">{transportBadge(server)}</span>
             </button>
           {/each}
@@ -373,6 +393,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .official-pill {
+    background: var(--color-accent);
+    border-radius: var(--radius-1);
+    color: var(--color-surface-1);
+    flex-shrink: 0;
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-5);
+    letter-spacing: 0.02em;
+    line-height: 1;
+    padding: 1px 5px;
   }
 
   .item-meta {

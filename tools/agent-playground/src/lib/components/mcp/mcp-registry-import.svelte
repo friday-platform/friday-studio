@@ -38,6 +38,8 @@
   $effect(() => {
     if (open) {
       activeTab = "search";
+      searchInput = "";
+      searchQuery = "";
       customName = "";
       customDescription = "";
       customId = "";
@@ -293,11 +295,18 @@
               <ul class="results-list">
                 {#each registryResults as result (result.name)}
                   {@const canInstall = !result.alreadyInstalled}
+                  {@const displayName = result.displayName ?? result.name}
                   <li class="result-row">
                     {#if canInstall}
                       <div class="result-item">
                         <div class="result-body">
-                          <span class="result-name">{result.name}</span>
+                          <div class="result-name-row">
+                            <span class="result-name">{displayName}</span>
+                            {#if result.isOfficial}
+                              <span class="official-badge">Official</span>
+                            {/if}
+                            <span class="version-badge">{result.version}</span>
+                          </div>
                           {#if result.description}
                             <p class="result-desc">{result.description}</p>
                           {/if}
@@ -329,7 +338,13 @@
                     {:else}
                       <div class="result-item installed">
                         <div class="result-body">
-                          <span class="result-name">{result.name}</span>
+                          <div class="result-name-row">
+                            <span class="result-name">{displayName}</span>
+                            {#if result.isOfficial}
+                              <span class="official-badge">Official</span>
+                            {/if}
+                            <span class="version-badge">{result.version}</span>
+                          </div>
                           {#if result.description}
                             <p class="result-desc">{result.description}</p>
                           {/if}
@@ -603,10 +618,38 @@
     min-inline-size: 0;
   }
 
+  .result-name-row {
+    align-items: center;
+    display: flex;
+    gap: var(--size-2);
+  }
+
   .result-name {
     color: var(--color-text);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
+  }
+
+  .official-badge {
+    background: var(--color-accent);
+    border-radius: var(--radius-1);
+    color: var(--color-surface-1);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-5);
+    letter-spacing: 0.02em;
+    line-height: 1;
+    padding: var(--size-0-5) var(--size-1-5);
+  }
+
+  .version-badge {
+    background: var(--color-surface-3);
+    border-radius: var(--radius-1);
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-4);
+    line-height: 1;
+    padding: var(--size-0-5) var(--size-1-5);
   }
 
   .result-desc {

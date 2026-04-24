@@ -11,6 +11,7 @@
 
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
+import { getOfficialOverride } from "./official-servers.ts";
 import type { MCPServerMetadata, RequiredConfigField } from "./schemas.ts";
 import type { UpstreamServer, UpstreamServerEntry } from "./upstream-client.ts";
 
@@ -30,11 +31,7 @@ export type DynamicOAuthProviderInput = {
   id: string;
   displayName: string;
   description: string;
-  oauthConfig: {
-    mode: "discovery";
-    serverUrl: string;
-    scopes?: string[];
-  };
+  oauthConfig: { mode: "discovery"; serverUrl: string; scopes?: string[] };
 };
 
 /** Union of dynamic provider inputs for Link auto-creation. */
@@ -101,10 +98,8 @@ function substituteUrlVariables(
 function mapEnvironmentVariables(
   packages: UpstreamServer["packages"],
   serverId: string,
-): {
-  requiredConfig: RequiredConfigField[];
-  env: Record<string, string | LinkCredentialRef>;
-} {
+  providerId?: string,
+): { requiredConfig: RequiredConfigField[]; env: Record<string, string | LinkCredentialRef> } {
   const requiredConfig: RequiredConfigField[] = [];
   const env: Record<string, string | LinkCredentialRef> = {};
 
@@ -117,7 +112,7 @@ function mapEnvironmentVariables(
       }
 
       // Link credential reference in configTemplate.env
-      env[ev.name] = { from: "link", provider: serverId, key: ev.name };
+      env[ev.name] = { from: "link", provider: providerId ?? serverId, key: ev.name };
 
       // Required fields go into requiredConfig
       if (ev.isRequired) {
@@ -194,6 +189,11 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
 
   const id = deriveId(server.name);
 
+  // Check for official override
+  const official = getOfficialOverride(server.name);
+  const displayName = official?.displayName ?? server.name;
+  const effectiveProviderId = official?.providerId ?? id;
+
   // Determine transport per precedence rules
   // Rule 1: npm + stdio wins
   const npmStdioPackage = server.packages?.find(
@@ -205,15 +205,20 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
     const command = "npx";
     const args = ["-y", `${npmStdioPackage.identifier}@${server.version}`];
 
-    const { requiredConfig, env } = mapEnvironmentVariables(server.packages, id);
+    const { requiredConfig, env } = mapEnvironmentVariables(
+      server.packages,
+      id,
+      effectiveProviderId,
+    );
 
-    const linkProvider = Object.keys(env).length > 0
-      ? buildApiKeyProvider(id, server.name, server.description, env)
-      : undefined;
+    const linkProvider =
+      !official?.providerId && Object.keys(env).length > 0
+        ? buildApiKeyProvider(id, server.name, server.description, env)
+        : undefined;
 
     const entry: MCPServerMetadata = {
       id,
-      name: server.name,
+      name: displayName,
       description: server.description,
       securityRating: "unverified",
       source: "registry",
@@ -254,13 +259,17 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
       };
     }
 
-    const { requiredConfig, env } = mapEnvironmentVariables(server.packages, id);
+    const { requiredConfig, env } = mapEnvironmentVariables(
+      server.packages,
+      id,
+      effectiveProviderId,
+    );
 
     if (Object.keys(env).length > 0) {
       // http remote with env vars → DynamicApiKeyProviderInput
       const entry: MCPServerMetadata = {
         id,
-        name: server.name,
+        name: displayName,
         description: server.description,
         securityRating: "unverified",
         source: "registry",
@@ -269,24 +278,23 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
           version: server.version,
           updatedAt: _meta["io.modelcontextprotocol.registry/official"].updatedAt,
         },
-        configTemplate: {
-          transport: { type: "http", url: urlResult.url },
-          env,
-        },
+        configTemplate: { transport: { type: "http", url: urlResult.url }, env },
         requiredConfig: requiredConfig.length > 0 ? requiredConfig : undefined,
       };
 
       return {
         success: true,
         entry,
-        linkProvider: buildApiKeyProvider(id, server.name, server.description, env),
+        linkProvider: official?.providerId
+          ? undefined
+          : buildApiKeyProvider(id, server.name, server.description, env),
       };
     }
 
     // http remote without env vars → DynamicOAuthProviderInput
     const entry: MCPServerMetadata = {
       id,
-      name: server.name,
+      name: displayName,
       description: server.description,
       securityRating: "unverified",
       source: "registry",
@@ -301,7 +309,9 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
     return {
       success: true,
       entry,
-      linkProvider: buildOAuthProvider(id, server.name, server.description, urlResult.url),
+      linkProvider: official?.providerId
+        ? undefined
+        : buildOAuthProvider(id, server.name, server.description, urlResult.url),
     };
   }
 

@@ -26,10 +26,12 @@ const CatalogResponseSchema = z.object({
 
 const SearchResultSchema = z.object({
   name: z.string(),
+  displayName: z.string().optional(),
   description: z.string().optional(),
   vendor: z.string(),
-  version: z.string().optional(),
+  version: z.string(),
   alreadyInstalled: z.boolean(),
+  isOfficial: z.boolean(),
   repositoryUrl: z.string().nullable().optional(),
 });
 
@@ -79,14 +81,8 @@ export const mcpQueries = {
             }
           : skipToken,
       staleTime: 30_000,
-      select: (data) => ({
-        ...data,
-        // Upstream search can return multiple versions of the same canonical
-        // name. Deduplicate by name — the install route always fetches latest.
-        servers: data.servers.filter(
-          (s, i, arr) => arr.findIndex((t) => t.name === s.name) === i,
-        ),
-      }),
+      // Upstream returns only latest versions when version=latest is passed.
+      // No client-side deduplication needed.
     }),
 
   /** Single server detail by ID. */

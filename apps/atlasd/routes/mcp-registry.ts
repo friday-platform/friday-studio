@@ -1,5 +1,9 @@
 import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
+import {
+  getOfficialOverride,
+  isOfficialCanonicalName,
+} from "@atlas/core/mcp-registry/official-servers";
 import { fetchReadme } from "@atlas/core/mcp-registry/readme-fetcher";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
@@ -199,7 +203,7 @@ export const mcpRegistryRouter = daemonFactory
     const adapter = await getMCPRegistryAdapter();
 
     try {
-      const searchResult = await client.search(q, limit);
+      const searchResult = await client.search(q, limit, "latest");
       const dynamicServers = await adapter.list();
 
       // Build set of installed canonical names for quick lookup
@@ -209,12 +213,19 @@ export const mcpRegistryRouter = daemonFactory
           .map((s) => s.upstream!.canonicalName),
       );
 
-      const servers = searchResult.servers.map((entry) => ({
-        ...entry.server,
-        vendor: entry.server.name.split("/")[0] ?? entry.server.name,
-        alreadyInstalled: installedCanonicalNames.has(entry.server.name),
-        repositoryUrl: entry.server.repository?.url ?? null,
-      }));
+      const servers = searchResult.servers.map((entry) => {
+        const official = getOfficialOverride(entry.server.name);
+        return {
+          name: entry.server.name,
+          displayName: official?.displayName,
+          description: entry.server.description,
+          vendor: entry.server.name.split("/")[0] ?? entry.server.name,
+          version: entry.server.version,
+          alreadyInstalled: installedCanonicalNames.has(entry.server.name),
+          isOfficial: isOfficialCanonicalName(entry.server.name),
+          repositoryUrl: entry.server.repository?.url ?? null,
+        };
+      });
 
       return c.json({ servers });
     } catch (error) {

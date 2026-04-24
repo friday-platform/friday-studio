@@ -18,7 +18,10 @@ vi.mock("@atlas/core/mcp-registry/storage", async (importOriginal) => {
 // Mock the upstream client - use simpler typing to avoid esbuild parsing issues
 type SearchResult = { server: { name: string } };
 const mockFetchLatest = vi.fn<(name: string) => Promise<UpstreamServerEntry>>();
-const mockSearch = vi.fn<(query: string, limit?: number) => Promise<{ servers: SearchResult[] }>>();
+const mockSearch =
+  vi.fn<
+    (query: string, limit?: number, version?: string) => Promise<{ servers: SearchResult[] }>
+  >();
 
 vi.mock("@atlas/core/mcp-registry/upstream-client", () => ({
   MCPUpstreamClient: class MockClient {
@@ -265,6 +268,7 @@ const SearchResponseSchema = z.object({
     z
       .object({
         name: z.string(),
+        version: z.string(),
         alreadyInstalled: z.boolean(),
         repositoryUrl: z.string().nullable().optional(),
       })
@@ -478,8 +482,8 @@ describe("MCP Registry Routes", () => {
       // Search returns installed and not-installed servers
       mockSearch.mockResolvedValue({
         servers: [
-          { server: { name: canonicalName } }, // already installed
-          { server: { name: "io.github.test/new-server" } }, // not installed
+          { server: { name: canonicalName, version: "1.0.0" } }, // already installed
+          { server: { name: "io.github.test/new-server", version: "2.0.0" } }, // not installed
         ],
       });
 
@@ -489,7 +493,9 @@ describe("MCP Registry Routes", () => {
       const body = SearchResponseSchema.parse(await res.json());
       expect(body.servers).toHaveLength(2);
       expect(body.servers[0]!.alreadyInstalled).toBe(true);
+      expect(body.servers[0]!.version).toBe("1.0.0");
       expect(body.servers[1]!.alreadyInstalled).toBe(false);
+      expect(body.servers[1]!.version).toBe("2.0.0");
     });
 
     it("handles empty search results", async () => {

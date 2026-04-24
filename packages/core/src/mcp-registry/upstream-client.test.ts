@@ -59,6 +59,28 @@ describe("MCPUpstreamClient", () => {
       expect(result.servers[0]?.server.name).toEqual("io.github.test/mcp-server");
     });
 
+    it("appends version parameter when provided", async () => {
+      const mockResponse = { servers: [] };
+
+      let capturedUrl: string | undefined;
+      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+        capturedUrl = url.toString();
+        return Promise.resolve(
+          new Response(JSON.stringify(mockResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      };
+
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      await client.search("filesystem", 20, "latest");
+
+      expect(capturedUrl).toEqual(
+        "https://registry.modelcontextprotocol.io/v0.1/servers?search=filesystem&limit=20&version=latest",
+      );
+    });
+
     it("uses default limit of 20 when not specified", async () => {
       const mockResponse = { servers: [] };
 

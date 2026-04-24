@@ -29,6 +29,7 @@
   import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import { writable } from "svelte/store";
   import DOMPurify from "dompurify";
+  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
   import type { SearchResult } from "$lib/queries/mcp-queries";
 
@@ -62,6 +63,12 @@
 
   const deleteDialogOpen = writable(false);
 
+  // Reset delete dialog when navigating to a different server
+  $effect(() => {
+    server?.id;
+    deleteDialogOpen.set(false);
+  });
+
   // ---------------------------------------------------------------------------
   // Derived display values
   // ---------------------------------------------------------------------------
@@ -72,6 +79,15 @@
   const isInstalled = $derived(server !== null);
   const isRegistry = $derived(source === "registry" || registryResult !== null);
   const readme = $derived(server?.readme ?? null);
+
+  const isOfficial = $derived.by(() => {
+    if (server?.source === "static") return true;
+    if (server?.upstream?.canonicalName) {
+      return isOfficialCanonicalName(server.upstream.canonicalName);
+    }
+    if (registryResult?.isOfficial) return true;
+    return false;
+  });
 
   const repoUrl = $derived.by(() => {
     // For registry results, we don't have the repo URL in the search response yet
@@ -185,6 +201,9 @@
             <span class="badge transport-badge">
               {server.configTemplate.transport.type}
             </span>
+          {/if}
+          {#if isOfficial}
+            <span class="badge official-badge">Official</span>
           {/if}
         </div>
       </div>
@@ -457,6 +476,10 @@
   .transport-badge {
     --badge-color: color-mix(in srgb, var(--color-text), transparent 45%);
     font-family: var(--font-family-monospace);
+  }
+
+  .official-badge {
+    --badge-color: var(--color-accent);
   }
 
   .header-actions {
