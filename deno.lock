@@ -119,7 +119,6 @@
     "npm:@types/deno@2.5.0": "2.5.0",
     "npm:@types/markdown-it@^14.1.2": "14.1.2",
     "npm:@types/node@25": "25.6.0",
-    "npm:@types/papaparse@^5.5.2": "5.5.2",
     "npm:@types/proper-lockfile@^4.1.4": "4.1.4",
     "npm:@types/react@^19.2.14": "19.2.14",
     "npm:@types/turndown@^5.0.6": "5.0.6",
@@ -188,19 +187,6 @@
     "npm:prettier@^3.8.2": "3.8.2",
     "npm:prom-client@^15.1.3": "15.1.3",
     "npm:proper-lockfile@^4.1.2": "4.1.2",
-    "npm:prosemirror-commands@^1.7.1": "1.7.1",
-    "npm:prosemirror-dropcursor@^1.8.2": "1.8.2",
-    "npm:prosemirror-example-setup@^1.2.3": "1.2.3",
-    "npm:prosemirror-gapcursor@^1.4.1": "1.4.1",
-    "npm:prosemirror-history@^1.5.0": "1.5.0",
-    "npm:prosemirror-inputrules@^1.5.1": "1.5.1",
-    "npm:prosemirror-keymap@^1.2.3": "1.2.3",
-    "npm:prosemirror-markdown@^1.13.4": "1.13.4",
-    "npm:prosemirror-model@^1.25.4": "1.25.4",
-    "npm:prosemirror-schema-basic@^1.2.4": "1.2.4",
-    "npm:prosemirror-schema-list@^1.5.1": "1.5.1",
-    "npm:prosemirror-state@^1.4.4": "1.4.4",
-    "npm:prosemirror-view@^1.41.7": "1.41.8",
     "npm:publint@~0.3.18": "0.3.18",
     "npm:random-words@^2.0.1": "2.0.1",
     "npm:react@^19.2.4": "19.2.5",
@@ -209,7 +195,6 @@
     "npm:snowflake-sdk@^2.3.6": "2.4.0_asn1.js@5.4.1",
     "npm:svelte-check@^4.4.6": "4.4.6_svelte@5.55.4__acorn@8.16.0_typescript@6.0.2",
     "npm:svelte-eslint-parser@^1.6.0": "1.6.0_svelte@5.55.4__acorn@8.16.0_postcss@8.5.9",
-    "npm:svelte-exmarkdown@^5.0.2": "5.0.2_svelte@5.55.4__acorn@8.16.0",
     "npm:svelte@^5.55.4": "5.55.4_acorn@8.16.0",
     "npm:tar@^7.5.13": "7.5.13",
     "npm:tsx@^4.19.0": "4.21.0",
@@ -4406,12 +4391,6 @@
         "undici-types"
       ]
     },
-    "@types/papaparse@5.5.2": {
-      "integrity": "sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA==",
-      "dependencies": [
-        "@types/node"
-      ]
-    },
     "@types/pg-pool@2.0.7": {
       "integrity": "sha512-U4CwmGVQcbEuqpyju8/ptOKg6gEC+Tqsvj2xS9o1g71bUh8twxnC6ZL5rZKCsGN0iyH0CwgUyc9VR5owNQF9Ng==",
       "dependencies": [
@@ -7225,9 +7204,6 @@
         "word-wrap"
       ]
     },
-    "orderedmap@2.1.1": {
-      "integrity": "sha512-TvAWxi0nDe1j/rtMcWcIj94+Ffe6n7zhow33h40SKxmsmozs6dz/e+EajymfoFcHd7sxNn8yHM8839uixMOV6g=="
-    },
     "oxc-parser@0.121.0": {
       "integrity": "sha512-ek9o58+SCv6AV7nchiAcUJy1DNE2CC5WRdBcO0mF+W4oRjNQfPO7b3pLjTHSFECpHkKGOZSQxx3hk8viIL5YCg==",
       "dependencies": [
@@ -7538,127 +7514,6 @@
     "property-information@7.1.0": {
       "integrity": "sha512-TwEZ+X+yCJmYfL7TPUOcvBZ4QfoT5YenQiJuX//0th53DE6w0xxLEtfK3iyryQFddXuvkIk51EEgrJQ0WJkOmQ=="
     },
-    "prosemirror-commands@1.7.1": {
-      "integrity": "sha512-rT7qZnQtx5c0/y/KlYaGvtG411S97UaL6gdp6RIZ23DLHanMYLyfGBV5DtSnZdthQql7W+lEVbpSfwtO8T+L2w==",
-      "dependencies": [
-        "prosemirror-model",
-        "prosemirror-state",
-        "prosemirror-transform"
-      ]
-    },
-    "prosemirror-dropcursor@1.8.2": {
-      "integrity": "sha512-CCk6Gyx9+Tt2sbYk5NK0nB1ukHi2ryaRgadV/LvyNuO3ena1payM2z6Cg0vO1ebK8cxbzo41ku2DE5Axj1Zuiw==",
-      "dependencies": [
-        "prosemirror-state",
-        "prosemirror-transform",
-        "prosemirror-view"
-      ]
-    },
-    "prosemirror-example-setup@1.2.3": {
-      "integrity": "sha512-+hXZi8+xbFvYM465zZH3rdZ9w7EguVKmUYwYLZjIJIjPK+I0nPTwn8j0ByW2avchVczRwZmOJGNvehblyIerSQ==",
-      "dependencies": [
-        "prosemirror-commands",
-        "prosemirror-dropcursor",
-        "prosemirror-gapcursor",
-        "prosemirror-history",
-        "prosemirror-inputrules",
-        "prosemirror-keymap",
-        "prosemirror-menu",
-        "prosemirror-schema-list",
-        "prosemirror-state"
-      ]
-    },
-    "prosemirror-gapcursor@1.4.1": {
-      "integrity": "sha512-pMdYaEnjNMSwl11yjEGtgTmLkR08m/Vl+Jj443167p9eB3HVQKhYCc4gmHVDsLPODfZfjr/MmirsdyZziXbQKw==",
-      "dependencies": [
-        "prosemirror-keymap",
-        "prosemirror-model",
-        "prosemirror-state",
-        "prosemirror-view"
-      ]
-    },
-    "prosemirror-history@1.5.0": {
-      "integrity": "sha512-zlzTiH01eKA55UAf1MEjtssJeHnGxO0j4K4Dpx+gnmX9n+SHNlDqI2oO1Kv1iPN5B1dm5fsljCfqKF9nFL6HRg==",
-      "dependencies": [
-        "prosemirror-state",
-        "prosemirror-transform",
-        "prosemirror-view",
-        "rope-sequence"
-      ]
-    },
-    "prosemirror-inputrules@1.5.1": {
-      "integrity": "sha512-7wj4uMjKaXWAQ1CDgxNzNtR9AlsuwzHfdFH1ygEHA2KHF2DOEaXl1CJfNPAKCg9qNEh4rum975QLaCiQPyY6Fw==",
-      "dependencies": [
-        "prosemirror-state",
-        "prosemirror-transform"
-      ]
-    },
-    "prosemirror-keymap@1.2.3": {
-      "integrity": "sha512-4HucRlpiLd1IPQQXNqeo81BGtkY8Ai5smHhKW9jjPKRc2wQIxksg7Hl1tTI2IfT2B/LgX6bfYvXxEpJl7aKYKw==",
-      "dependencies": [
-        "prosemirror-state",
-        "w3c-keyname"
-      ]
-    },
-    "prosemirror-markdown@1.13.4": {
-      "integrity": "sha512-D98dm4cQ3Hs6EmjK500TdAOew4Z03EV71ajEFiWra3Upr7diytJsjF4mPV2dW+eK5uNectiRj0xFxYI9NLXDbw==",
-      "dependencies": [
-        "@types/markdown-it",
-        "markdown-it",
-        "prosemirror-model"
-      ]
-    },
-    "prosemirror-menu@1.3.0": {
-      "integrity": "sha512-TImyPXCHPcDsSka2/lwJ6WjTASr4re/qWq1yoTTuLOqfXucwF6VcRa2LWCkM/EyTD1UO3CUwiH8qURJoWJRxwg==",
-      "dependencies": [
-        "crelt",
-        "prosemirror-commands",
-        "prosemirror-history",
-        "prosemirror-state"
-      ]
-    },
-    "prosemirror-model@1.25.4": {
-      "integrity": "sha512-PIM7E43PBxKce8OQeezAs9j4TP+5yDpZVbuurd1h5phUxEKIu+G2a+EUZzIC5nS1mJktDJWzbqS23n1tsAf5QA==",
-      "dependencies": [
-        "orderedmap"
-      ]
-    },
-    "prosemirror-schema-basic@1.2.4": {
-      "integrity": "sha512-ELxP4TlX3yr2v5rM7Sb70SqStq5NvI15c0j9j/gjsrO5vaw+fnnpovCLEGIcpeGfifkuqJwl4fon6b+KdrODYQ==",
-      "dependencies": [
-        "prosemirror-model"
-      ]
-    },
-    "prosemirror-schema-list@1.5.1": {
-      "integrity": "sha512-927lFx/uwyQaGwJxLWCZRkjXG0p48KpMj6ueoYiu4JX05GGuGcgzAy62dfiV8eFZftgyBUvLx76RsMe20fJl+Q==",
-      "dependencies": [
-        "prosemirror-model",
-        "prosemirror-state",
-        "prosemirror-transform"
-      ]
-    },
-    "prosemirror-state@1.4.4": {
-      "integrity": "sha512-6jiYHH2CIGbCfnxdHbXZ12gySFY/fz/ulZE333G6bPqIZ4F+TXo9ifiR86nAHpWnfoNjOb3o5ESi7J8Uz1jXHw==",
-      "dependencies": [
-        "prosemirror-model",
-        "prosemirror-transform",
-        "prosemirror-view"
-      ]
-    },
-    "prosemirror-transform@1.12.0": {
-      "integrity": "sha512-GxboyN4AMIsoHNtz5uf2r2Ru551i5hWeCMD6E2Ib4Eogqoub0NflniaBPVQ4MrGE5yZ8JV9tUHg9qcZTTrcN4w==",
-      "dependencies": [
-        "prosemirror-model"
-      ]
-    },
-    "prosemirror-view@1.41.8": {
-      "integrity": "sha512-TnKDdohEatgyZNGCDWIdccOHXhYloJwbwU+phw/a23KBvJIR9lWQWW7WHHK3vBdOLDNuF7TaX98GObUZOWkOnA==",
-      "dependencies": [
-        "prosemirror-model",
-        "prosemirror-state",
-        "prosemirror-transform"
-      ]
-    },
     "protobufjs@7.5.4": {
       "integrity": "sha512-CvexbZtbov6jW2eXAvLukXjXUW1TzFaivC46BpWc/3BpcCysb5Vffu+B3XHMm8lVEuy2Mm4XGex8hBSg1yapPg==",
       "dependencies": [
@@ -7816,16 +7671,6 @@
         "unified"
       ]
     },
-    "remark-rehype@11.1.2": {
-      "integrity": "sha512-Dh7l57ianaEoIpzbp0PC9UKAdCSVklD8E5Rpw7ETfbTl3FqcOOgq5q2LVDhgGCkaBv7p24JXikPdvhhmHvKMsw==",
-      "dependencies": [
-        "@types/hast",
-        "@types/mdast",
-        "mdast-util-to-hast",
-        "unified",
-        "vfile"
-      ]
-    },
     "remark-stringify@11.0.0": {
       "integrity": "sha512-1OSmLd3awB/t8qdoEOMazZkNsfVTeY4fTsgzcQFdXNq8ToTN4ZGwrMnlda4K6smTFKD+GRV6O48i6Z4iKgPPpw==",
       "dependencies": [
@@ -7929,9 +7774,6 @@
         "fsevents"
       ],
       "bin": true
-    },
-    "rope-sequence@1.3.4": {
-      "integrity": "sha512-UT5EDe2cu2E/6O4igUr5PSFs23nvvukicWHx6GnOPlHAiiYbzNuCRQCuiUdHJQcqKalLKlrYJnjY0ySGsXNQXQ=="
     },
     "router@2.2.0": {
       "integrity": "sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==",
@@ -8311,16 +8153,6 @@
       ],
       "optionalPeers": [
         "svelte"
-      ]
-    },
-    "svelte-exmarkdown@5.0.2_svelte@5.55.4__acorn@8.16.0": {
-      "integrity": "sha512-/GhWbh0TBd7OPsL6IhQZm4BVuglP5MP4lVwBDnIF8IYfmHfwfY0z/nu78L8FDwJM2pP+DW8045g+jUhM357U1w==",
-      "dependencies": [
-        "remark-gfm",
-        "remark-parse",
-        "remark-rehype",
-        "svelte",
-        "unified"
       ]
     },
     "svelte2tsx@0.7.53_svelte@5.55.4__acorn@8.16.0_typescript@5.9.3": {
@@ -9097,54 +8929,6 @@
             "npm:postgres@3.4.7",
             "npm:vitest@^4.1.4",
             "npm:zod@4.3.6"
-          ]
-        }
-      },
-      "apps/web-client": {
-        "packageJson": {
-          "dependencies": [
-            "npm:@ai-sdk/svelte@^4.0.141",
-            "npm:@jsr/std__yaml@^1.0.10",
-            "npm:@lezer/common@^1.5.1",
-            "npm:@lezer/markdown@^1.6.3",
-            "npm:@melt-ui/svelte@~0.86.6",
-            "npm:@sentry/sveltekit@^10.46.0",
-            "npm:@sveltejs/adapter-static@^3.0.10",
-            "npm:@sveltejs/kit@^2.55.0",
-            "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
-            "npm:@tanstack/query-core@^5.99.0",
-            "npm:@tanstack/svelte-query@^6.1.16",
-            "npm:@tanstack/svelte-table@9.0.0-alpha.10",
-            "npm:@types/deno@2.5.0",
-            "npm:@types/markdown-it@^14.1.2",
-            "npm:@types/papaparse@^5.5.2",
-            "npm:ai@^6.0.158",
-            "npm:dompurify@^3.3.3",
-            "npm:eslint@^10.1.0",
-            "npm:markdown-it@^14.1.1",
-            "npm:papaparse@^5.5.3",
-            "npm:prettier@^3.8.1",
-            "npm:prosemirror-commands@^1.7.1",
-            "npm:prosemirror-dropcursor@^1.8.2",
-            "npm:prosemirror-example-setup@^1.2.3",
-            "npm:prosemirror-gapcursor@^1.4.1",
-            "npm:prosemirror-history@^1.5.0",
-            "npm:prosemirror-inputrules@^1.5.1",
-            "npm:prosemirror-keymap@^1.2.3",
-            "npm:prosemirror-markdown@^1.13.4",
-            "npm:prosemirror-model@^1.25.4",
-            "npm:prosemirror-schema-basic@^1.2.4",
-            "npm:prosemirror-schema-list@^1.5.1",
-            "npm:prosemirror-state@^1.4.4",
-            "npm:prosemirror-view@^1.41.7",
-            "npm:shiki@^4.0.2",
-            "npm:svelte-check@^4.4.6",
-            "npm:svelte-exmarkdown@^5.0.2",
-            "npm:svelte@^5.55.4",
-            "npm:typescript@^5.9.3",
-            "npm:vite@^7.3.1",
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
           ]
         }
       },

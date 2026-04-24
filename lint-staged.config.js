@@ -51,10 +51,15 @@ export default {
     // Return empty — formatting/linting handled by the specific globs below
     return [];
   },
-  "*.{ts,tsx,js,jsx,json,jsonc,css,md}": [
-    "deno run -A npm:@biomejs/biome format --write --files-ignore-unknown=true --no-errors-on-unmatched",
-    "deno run -A npm:@biomejs/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched",
-  ],
+  "*.{ts,tsx,js,jsx,json,jsonc,css,md}": (files) => {
+    const active = files.filter((f) => !f.includes("/deprecated/"));
+    if (active.length === 0) return [];
+    const args = active.map((f) => `"${f}"`).join(" ");
+    return [
+      `deno run -A npm:@biomejs/biome format --write --files-ignore-unknown=true --no-errors-on-unmatched ${args}`,
+      `deno run -A npm:@biomejs/biome check --write --files-ignore-unknown=true --no-errors-on-unmatched ${args}`,
+    ];
+  },
   "*.{ts,tsx,js,jsx}": (files) => {
     // Exclude files in directories that deno.json excludes from linting —
     // passing only excluded files causes `deno lint` to fail with "No target files found".
@@ -63,6 +68,7 @@ export default {
       "/apps/atlas-auth-ui/src/",
       "/packages/ui/src/",
       "/tools/agent-playground/src/",
+      "/deprecated/",
     ];
     const filtered = files.filter(
       (f) =>

@@ -8,11 +8,8 @@ import { getDefaultProviderOpts, type PlatformModels, temporalGroundingMessage }
 import { createLogger } from "@atlas/logger";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { getCapabilitiesSection } from "../../system/agents/conversation/capabilities.ts";
-import {
-  fetchLinkSummary,
-  formatIntegrationsSection,
-} from "../../system/agents/conversation/link-context.ts";
+import { getCapabilitiesSection } from "../../system/agents/capabilities.ts";
+import { fetchLinkSummary, formatIntegrationsSection } from "../../system/agents/link-context.ts";
 import type { Agent, Signal } from "../types.ts";
 
 const logger = createLogger({ component: "proto-planner" });

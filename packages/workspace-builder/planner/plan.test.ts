@@ -46,11 +46,11 @@ vi.mock("@atlas/logger", () => ({
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),
 }));
 
-vi.mock("../../system/agents/conversation/capabilities.ts", () => ({
+vi.mock("../../system/agents/capabilities.ts", () => ({
   getCapabilitiesSection: vi.fn(() => "mock capabilities"),
 }));
 
-vi.mock("../../system/agents/conversation/link-context.ts", () => ({
+vi.mock("../../system/agents/link-context.ts", () => ({
   fetchLinkSummary: vi.fn(() => null),
   formatIntegrationsSection: vi.fn(() => ""),
 }));

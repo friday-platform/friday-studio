@@ -126,16 +126,14 @@ vi.mock("@atlas/skills", () => ({
   resolveVisibleSkills: mockResolveVisibleSkills,
 }));
 
-vi.mock("../conversation/link-context.ts", () => ({
+vi.mock("../link-context.ts", () => ({
   fetchLinkSummary: mockFetchLinkSummary,
   formatIntegrationsSection: mockFormatIntegrationsSection,
 }));
 
-vi.mock("../conversation/user-identity.ts", () => ({
-  fetchUserIdentitySection: mockFetchUserIdentitySection,
-}));
+vi.mock("../user-identity.ts", () => ({ fetchUserIdentitySection: mockFetchUserIdentitySection }));
 
-vi.mock("../conversation/tools/connect-service.ts", () => ({
+vi.mock("../tools/connect-service.ts", () => ({
   createConnectServiceTool: mockCreateConnectServiceTool,
 }));
 

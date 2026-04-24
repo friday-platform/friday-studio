@@ -13,7 +13,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { createLogger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
-import { displayArtifact } from "../../conversation/tools/display-artifact.ts";
+import { displayArtifact } from "./display-artifact.ts";
 
 const logger = createLogger({ name: "workspace-chat-artifacts" });
 
