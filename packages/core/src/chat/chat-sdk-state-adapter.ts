@@ -17,7 +17,7 @@ export class ChatSdkStateAdapter implements StateAdapter {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly threadSources = new Map<
     string,
-    "atlas" | "slack" | "discord" | "telegram" | "whatsapp"
+    "atlas" | "slack" | "discord" | "telegram" | "whatsapp" | "teams"
   >();
 
   constructor(opts: { userId: string; workspaceId: string }) {
@@ -28,7 +28,7 @@ export class ChatSdkStateAdapter implements StateAdapter {
   /** Pre-set the source for a thread before subscribe creates the chat. */
   setSource(
     threadId: string,
-    source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp",
+    source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp" | "teams",
   ): void {
     this.threadSources.set(threadId, source);
   }

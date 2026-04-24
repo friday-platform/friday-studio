@@ -1,4 +1,13 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { validateAtlasUIMessages } from "@atlas/agent-sdk";
@@ -7,8 +16,8 @@ import {
   ColorSchema,
   fail,
   isErrnoException,
-  type Result,
   randomColor,
+  type Result,
   stringifyError,
   success,
 } from "@atlas/utils";
@@ -23,6 +32,16 @@ const SystemPromptContextSchema = z.object({
   systemMessages: z.array(z.string()),
 });
 
+const ChatSourceSchema = z.enum([
+  "atlas",
+  "slack",
+  "discord",
+  "telegram",
+  "whatsapp",
+  "teams",
+]);
+type ChatSource = z.infer<typeof ChatSourceSchema>;
+
 /**
  * Chat structure on disk.
  * Messages validated separately via validateAtlasUIMessages (allows partial reads).
@@ -31,7 +50,7 @@ const StoredChatSchema = z.object({
   id: z.string().min(1),
   userId: z.string().min(1),
   workspaceId: z.string().min(1),
-  source: z.enum(["atlas", "slack", "discord", "telegram", "whatsapp"]),
+  source: ChatSourceSchema,
   color: ColorSchema.optional(),
   title: z.string().optional(),
   createdAt: z.iso.datetime(),
@@ -41,7 +60,9 @@ const StoredChatSchema = z.object({
   contentFilteredMessageIds: z.array(z.string()).optional(),
 });
 
-type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & { messages: AtlasUIMessage[] };
+type Chat = Omit<z.infer<typeof StoredChatSchema>, "messages"> & {
+  messages: AtlasUIMessage[];
+};
 
 /** System workspace IDs that use global (non-prefixed) chat filenames */
 const GLOBAL_WORKSPACE_IDS = new Set(["friday-conversation", "system"]);
@@ -56,22 +77,35 @@ function getChatDir(): string {
   return join(getAtlasHome(), "chats");
 }
 
-/**
- * Chat file path for given ID.
- * Workspace chats: {workspaceId}/{chatId}.json (subdirectory per workspace)
- * Global chats: {chatId}.json
- */
+// POSIX NAME_MAX caps individual filename components at 255 bytes (APFS, ext4,
+// tmpfs all enforce this). Teams thread IDs (base64 conv id + base64 service
+// URL) routinely exceed 300 chars; any chatId whose `<id>.json` rendering
+// exceeds the limit gets hashed. Using byte length — not `String#length`
+// (UTF-16 code units) — so a future adapter emitting non-ASCII doesn't
+// silently trip ENAMETOOLONG. The chat JSON body still carries the original
+// id, so listing/reads only depend on this transform being deterministic.
+const MAX_FILENAME_BYTES = 255;
+
+function chatIdToFilename(chatId: string): string {
+  const name = `${chatId}.json`;
+  if (Buffer.byteLength(name, "utf8") <= MAX_FILENAME_BYTES) return name;
+  const hash = createHash("sha256").update(chatId).digest("hex");
+  return `_h_${hash}.json`;
+}
+
 function getChatFile(chatId: string, workspaceId?: string): string {
+  const filename = chatIdToFilename(chatId);
   if (workspaceId && isWorkspaceScoped(workspaceId)) {
-    return join(getChatDir(), workspaceId, `${chatId}.json`);
+    return join(getChatDir(), workspaceId, filename);
   }
-  return join(getChatDir(), `${chatId}.json`);
+  return join(getChatDir(), filename);
 }
 
 /** Create chats directory (and workspace subdirectory) if missing */
 async function ensureChatDir(workspaceId?: string): Promise<void> {
-  const dir =
-    workspaceId && isWorkspaceScoped(workspaceId) ? join(getChatDir(), workspaceId) : getChatDir();
+  const dir = workspaceId && isWorkspaceScoped(workspaceId)
+    ? join(getChatDir(), workspaceId)
+    : getChatDir();
   await mkdir(dir, { recursive: true });
 }
 
@@ -97,7 +131,7 @@ async function createChat(input: {
   chatId: string;
   userId: string;
   workspaceId: string;
-  source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp";
+  source: ChatSource;
 }): Promise<Result<Chat, string>> {
   try {
     await ensureChatDir(input.workspaceId);
@@ -144,9 +178,11 @@ async function createChat(input: {
  *
  * Returns null if not found.
  * Returns error if corrupted (parse/validation fails).
- *
  */
-async function getChat(chatId: string, workspaceId?: string): Promise<Result<Chat | null, string>> {
+async function getChat(
+  chatId: string,
+  workspaceId?: string,
+): Promise<Result<Chat | null, string>> {
   try {
     const chat = await readAndValidateChat(getChatFile(chatId, workspaceId));
     return success(chat);
@@ -215,7 +251,9 @@ interface ListChatsResult {
  * When cursor provided, returns chats with mtime < cursor.
  * Returns chat metadata without messages for efficiency.
  */
-async function listChats(options?: ListChatsOptions): Promise<Result<ListChatsResult, string>> {
+async function listChats(
+  options?: ListChatsOptions,
+): Promise<Result<ListChatsResult, string>> {
   const limit = options?.limit ?? 25;
   const cursor = options?.cursor;
 
@@ -264,11 +302,18 @@ async function listChats(options?: ListChatsOptions): Promise<Result<ListChatsRe
         chats.push(chatWithoutMessages);
         lastMtime = mtime;
       } catch (error) {
-        logger.warn("Failed to read chat file, skipping", { path, error: stringifyError(error) });
+        logger.warn("Failed to read chat file, skipping", {
+          path,
+          error: stringifyError(error),
+        });
       }
     }
 
-    return success({ chats, nextCursor: hasMore && lastMtime ? lastMtime : null, hasMore });
+    return success({
+      chats,
+      nextCursor: hasMore && lastMtime ? lastMtime : null,
+      hasMore,
+    });
   } catch (error) {
     return fail(stringifyError(error));
   }
@@ -328,11 +373,18 @@ async function listChatsByWorkspace(
         chats.push(chatWithoutMessages);
         lastMtime = mtime;
       } catch (error) {
-        logger.warn("Failed to read chat file, skipping", { path, error: stringifyError(error) });
+        logger.warn("Failed to read chat file, skipping", {
+          path,
+          error: stringifyError(error),
+        });
       }
     }
 
-    return success({ chats, nextCursor: hasMore && lastMtime ? lastMtime : null, hasMore });
+    return success({
+      chats,
+      nextCursor: hasMore && lastMtime ? lastMtime : null,
+      hasMore,
+    });
   } catch (error) {
     return fail(stringifyError(error));
   }
@@ -378,7 +430,10 @@ async function updateChatTitle(
  *
  * Removes the chat file from disk.
  */
-async function deleteChat(chatId: string, workspaceId?: string): Promise<Result<void, string>> {
+async function deleteChat(
+  chatId: string,
+  workspaceId?: string,
+): Promise<Result<void, string>> {
   try {
     const chatFile = getChatFile(chatId, workspaceId);
     await rm(chatFile);
@@ -409,7 +464,10 @@ async function setSystemPromptContext(
       if (chat.systemPromptContext) {
         return; // Already set, skip
       }
-      chat.systemPromptContext = { timestamp: new Date().toISOString(), ...context };
+      chat.systemPromptContext = {
+        timestamp: new Date().toISOString(),
+        ...context,
+      };
       chat.updatedAt = new Date().toISOString();
       await writeFile(chatFile, JSON.stringify(chat, null, 2), "utf-8");
     });

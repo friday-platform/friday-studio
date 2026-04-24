@@ -120,13 +120,18 @@ describe("ChatStorage", () => {
         ],
       };
 
-      const setResult = await ChatStorage.setSystemPromptContext(chatId, context);
+      const setResult = await ChatStorage.setSystemPromptContext(
+        chatId,
+        context,
+      );
       expect.assert(setResult.ok);
 
       const getResult = await ChatStorage.getChat(chatId);
       expect.assert(getResult.ok && getResult.data);
       expect(getResult.data.systemPromptContext).toBeDefined();
-      expect(getResult.data.systemPromptContext?.systemMessages).toEqual(context.systemMessages);
+      expect(getResult.data.systemPromptContext?.systemMessages).toEqual(
+        context.systemMessages,
+      );
     });
 
     it("setSystemPromptContext is idempotent", async () => {
@@ -141,7 +146,9 @@ describe("ChatStorage", () => {
 
       const result = await ChatStorage.getChat(chatId);
       expect.assert(result.ok && result.data);
-      expect(result.data.systemPromptContext?.systemMessages).toEqual(["First prompt"]);
+      expect(result.data.systemPromptContext?.systemMessages).toEqual([
+        "First prompt",
+      ]);
     });
   });
 
@@ -150,7 +157,11 @@ describe("ChatStorage", () => {
       const chatId = crypto.randomUUID();
       await createTestChat(chatId);
 
-      const ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+      const ids = [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+      ];
       for (const id of ids) {
         await ChatStorage.appendMessage(chatId, {
           id,
@@ -199,7 +210,11 @@ describe("ChatStorage", () => {
 
       const largeText = "x".repeat(500000);
       const [message] = await validateAtlasUIMessages([
-        { id: crypto.randomUUID(), role: "assistant", parts: [{ type: "text", text: largeText }] },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          parts: [{ type: "text", text: largeText }],
+        },
       ]);
       if (!message) throw new Error("Message validation failed");
 
@@ -259,7 +274,10 @@ describe("ChatStorage", () => {
   });
 
   describe("Validation", () => {
-    const testValidation = async (_description: string, corruptData: object) => {
+    const testValidation = async (
+      _description: string,
+      corruptData: object,
+    ) => {
       const chatId = crypto.randomUUID();
       await createTestChat(chatId);
       await corruptChatFile(chatId, corruptData);
@@ -272,7 +290,9 @@ describe("ChatStorage", () => {
     };
 
     it("rejects completely corrupted data", async () => {
-      await testValidation("Should reject invalid structure", { corrupted: "data" });
+      await testValidation("Should reject invalid structure", {
+        corrupted: "data",
+      });
     });
 
     it("rejects invalid datetime format", async () => {
@@ -337,7 +357,10 @@ describe("ChatStorage", () => {
       const appendResult = await ChatStorage.appendMessage(chatId, message);
       expect.assert(appendResult.ok);
 
-      const titleResult = await ChatStorage.updateChatTitle(chatId, "Important Chat");
+      const titleResult = await ChatStorage.updateChatTitle(
+        chatId,
+        "Important Chat",
+      );
       expect.assert(titleResult.ok);
 
       const result2 = await createTestChat(chatId);
@@ -383,7 +406,10 @@ describe("ChatStorage", () => {
       const assistantMsg1: AtlasUIMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        parts: [{ type: "text", text: "I've noted your secret number is 4123." }],
+        parts: [{
+          type: "text",
+          text: "I've noted your secret number is 4123.",
+        }],
       };
       await ChatStorage.appendMessage(chatId, assistantMsg1);
 
@@ -400,7 +426,9 @@ describe("ChatStorage", () => {
       expect.assert(finalChat.ok && finalChat.data);
       expect(finalChat.data.messages.length).toEqual(3);
       const hasSecretNumber = finalChat.data.messages.some((msg) =>
-        msg.parts?.some((part) => part.type === "text" && part.text?.includes("4123")),
+        msg.parts?.some((part) =>
+          part.type === "text" && part.text?.includes("4123")
+        )
       );
       expect(hasSecretNumber).toBe(true);
     });
@@ -430,7 +458,9 @@ describe("ChatStorage", () => {
       await createTestChat(chatId);
 
       const msgId = crypto.randomUUID();
-      const result = await ChatStorage.addContentFilteredMessageIds(chatId, [msgId]);
+      const result = await ChatStorage.addContentFilteredMessageIds(chatId, [
+        msgId,
+      ]);
       expect.assert(result.ok);
 
       const chat = await ChatStorage.getChat(chatId);
@@ -451,11 +481,16 @@ describe("ChatStorage", () => {
       const chat = await ChatStorage.getChat(chatId);
       expect.assert(chat.ok && chat.data);
       expect(chat.data.contentFilteredMessageIds).toHaveLength(2);
-      expect(new Set(chat.data.contentFilteredMessageIds)).toEqual(new Set([msgId1, msgId2]));
+      expect(new Set(chat.data.contentFilteredMessageIds)).toEqual(
+        new Set([msgId1, msgId2]),
+      );
     });
 
     it("returns error for non-existent chat", async () => {
-      const result = await ChatStorage.addContentFilteredMessageIds("nonexistent", ["msg-1"]);
+      const result = await ChatStorage.addContentFilteredMessageIds(
+        "nonexistent",
+        ["msg-1"],
+      );
       expect(result.ok).toBe(false);
     });
 
@@ -466,7 +501,9 @@ describe("ChatStorage", () => {
       const msg = createMessage("Important message");
       await ChatStorage.appendMessage(chatId, msg);
 
-      await ChatStorage.addContentFilteredMessageIds(chatId, [crypto.randomUUID()]);
+      await ChatStorage.addContentFilteredMessageIds(chatId, [
+        crypto.randomUUID(),
+      ]);
 
       const chat = await ChatStorage.getChat(chatId);
       expect.assert(chat.ok && chat.data);
@@ -532,7 +569,12 @@ describe("ChatStorage", () => {
     const wsId = "analytics-workspace";
 
     const createWsChat = (chatId: string) =>
-      ChatStorage.createChat({ chatId, userId: "test-user", workspaceId: wsId, source: "atlas" });
+      ChatStorage.createChat({
+        chatId,
+        userId: "test-user",
+        workspaceId: wsId,
+        source: "atlas",
+      });
 
     it("stores workspace chats in subdirectory", async () => {
       const chatId = crypto.randomUUID();
@@ -554,7 +596,11 @@ describe("ChatStorage", () => {
         workspaceId: wsA,
         source: "atlas",
       });
-      await ChatStorage.appendMessage(chatId, createMessage("Secret A data"), wsA);
+      await ChatStorage.appendMessage(
+        chatId,
+        createMessage("Secret A data"),
+        wsA,
+      );
 
       const fromB = await ChatStorage.getChat(chatId, wsB);
       expect.assert(fromB.ok);
@@ -604,6 +650,54 @@ describe("ChatStorage", () => {
       const result = await ChatStorage.getChat(chatId);
       expect.assert(result.ok);
       expect(result.data).toBeNull();
+    });
+  });
+
+  describe("Long chat IDs (Teams thread IDs, etc.)", () => {
+    // Teams thread IDs are `teams:<base64url(convId)>:<base64url(serviceUrl)>` —
+    // routinely 300+ chars, over the POSIX 255-byte NAME_MAX limit. Storage
+    // hashes anything that would exceed the limit so the filename stays valid
+    // while the chat JSON body retains the original id. The byte-length guard
+    // (not `.length`) also protects against a future adapter piping non-ASCII
+    // into the chatId.
+    const longAsciiId = `teams:${"A".repeat(180)}:${"B".repeat(180)}`;
+    const nonAsciiId = `chat-${"a".repeat(100)}${"\u{1F4A9}".repeat(50)}`; // .length 200, UTF-8 bytes 300
+
+    it("persists and retrieves a chat with an oversized ASCII id", async () => {
+      const createResult = await createTestChat(longAsciiId);
+      expect.assert(createResult.ok);
+      expect(createResult.data.id).toEqual(longAsciiId);
+
+      const getResult = await ChatStorage.getChat(longAsciiId);
+      expect.assert(getResult.ok && getResult.data);
+      expect(getResult.data.id).toEqual(longAsciiId);
+    });
+
+    it("persists a chat whose id is ≤255 chars but >255 UTF-8 bytes", async () => {
+      // Regression: earlier implementation used `chatId.length` (UTF-16 code
+      // units) and would have written this filename directly → ENAMETOOLONG.
+      const createResult = await createTestChat(nonAsciiId);
+      expect.assert(createResult.ok);
+      expect(createResult.data.id).toEqual(nonAsciiId);
+
+      const getResult = await ChatStorage.getChat(nonAsciiId);
+      expect.assert(getResult.ok && getResult.data);
+      expect(getResult.data.id).toEqual(nonAsciiId);
+    });
+
+    it("appending to a long-id chat survives a round-trip", async () => {
+      await createTestChat(longAsciiId);
+      const appendResult = await ChatStorage.appendMessage(
+        longAsciiId,
+        createMessage("hello"),
+      );
+      expect.assert(appendResult.ok);
+
+      const getResult = await ChatStorage.getChat(longAsciiId);
+      expect.assert(getResult.ok && getResult.data);
+      const messages = await validateAtlasUIMessages(getResult.data.messages);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]?.parts[0]).toEqual({ type: "text", text: "hello" });
     });
   });
 });
