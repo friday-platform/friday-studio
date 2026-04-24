@@ -1,6 +1,7 @@
 <script lang="ts">
   import { DropdownMenu, markdownToHTML } from "@atlas/ui";
   import { tick } from "svelte";
+  import ConnectService from "./connect-service.svelte";
   import { jsonHighlighter } from "./json-highlighter";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
@@ -36,6 +37,8 @@
       messageId: string,
       proposal?: ScheduleProposal,
     ) => void;
+    /** Called when the user successfully connects a credential via an inline connect_service card. */
+    onCredentialConnected?: (provider: string) => void;
     /**
      * When true, renders a placeholder assistant bubble with animated
      * dots at the bottom of the list — for the "submitted, no response
@@ -45,7 +48,7 @@
     thinking?: boolean;
   }
 
-  const { messages, onScheduleAction, thinking = false }: Props = $props();
+  const { messages, onScheduleAction, onCredentialConnected, thinking = false }: Props = $props();
 
   let containerEl: HTMLDivElement | undefined = $state();
 
@@ -524,7 +527,22 @@
 {/snippet}
 
 {#snippet toolCard(call: ToolCallDisplay)}
-  {#if call.children && call.children.length > 0}
+  {@const provider =
+    call.toolName === "connect_service" &&
+    call.input != null &&
+    typeof call.input === "object" &&
+    "provider" in call.input &&
+    typeof call.input.provider === "string"
+      ? call.input.provider
+      : null}
+  {#if provider != null}
+    <div class="tool-card connect-service">
+      <ConnectService
+        {provider}
+        onConnected={() => onCredentialConnected?.(provider)}
+      />
+    </div>
+  {:else if call.children && call.children.length > 0}
     <!--
       Delegate card: wrap the header in <summary> so clicking it toggles
       visibility of the reconstructed children. Auto-expand while any child
@@ -1118,6 +1136,12 @@
   .tool-card.error {
     border-color: light-dark(hsl(10 80% 70%), color-mix(in srgb, var(--color-error), transparent 50%));
     background-color: light-dark(hsl(10 80% 95%), color-mix(in srgb, var(--color-error), transparent 90%));
+  }
+
+  .tool-card.connect-service {
+    background: transparent;
+    border: none;
+    padding: 0;
   }
 
   /* Delegate cards reuse `.tool-card` chrome but render as a <details> so

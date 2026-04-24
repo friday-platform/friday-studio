@@ -584,6 +584,7 @@
   type QueuedMessageParts = Array<
     | { type: "text"; text: string }
     | { type: "file"; mediaType: string; url: string; filename?: string }
+    | { type: "data-credential-linked"; data: { provider: string; displayName: string } }
   >;
   let queuedMessages: QueuedMessageParts[] = $state([]);
 
@@ -644,7 +645,7 @@
    */
   function extractText(msg: AtlasUIMessage): string {
     if (!Array.isArray(msg.parts)) return "";
-    return msg.parts
+    const textParts = msg.parts
       .filter(
         (p): p is { type: "text"; text: string } =>
           typeof p === "object" &&
@@ -654,8 +655,24 @@
           "text" in p &&
           typeof p.text === "string",
       )
-      .map((p) => p.text)
-      .join("");
+      .map((p) => p.text);
+
+    const credentialParts = msg.parts
+      .filter(
+        (p): p is { type: "data-credential-linked"; data: { provider: string; displayName: string } } =>
+          typeof p === "object" &&
+          p !== null &&
+          "type" in p &&
+          p.type === "data-credential-linked" &&
+          "data" in p &&
+          typeof p.data === "object" &&
+          p.data !== null &&
+          "displayName" in p.data &&
+          typeof p.data.displayName === "string",
+      )
+      .map((p) => `Connected ${p.data.displayName}.`);
+
+    return [...textParts, ...credentialParts].join(" ");
   }
 
   /**
@@ -945,6 +962,27 @@
       metadata: { timestamp: new Date().toISOString() },
     });
   }
+
+  /**
+   * Called when the user successfully connects a credential via an inline
+   * connect_service card. Sends a lightweight user message so the agent
+   * retries on its next turn with the updated <integrations> state.
+   */
+  function handleCredentialConnected(provider: string): void {
+    if (!chat) return;
+    const parts: QueuedMessageParts = [
+      { type: "data-credential-linked", data: { provider, displayName: provider } },
+    ];
+    if (streaming) {
+      queuedMessages = [...queuedMessages, parts];
+      return;
+    }
+    void chat.sendMessage({
+      role: "user",
+      parts,
+      metadata: { timestamp: new Date().toISOString() },
+    });
+  }
 </script>
 
 <svelte:window onkeydown={handleGlobalKeydown} />
@@ -999,6 +1037,7 @@
       <ChatMessageList
         messages={displayedMessages}
         onScheduleAction={handleScheduleAction}
+        onCredentialConnected={handleCredentialConnected}
         {thinking}
       />
 
