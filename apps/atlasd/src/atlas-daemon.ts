@@ -87,6 +87,7 @@ import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
+import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 import type { PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
 import {
   type ChatSdkInstance,
@@ -98,6 +99,7 @@ import {
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
 import { NatsManager } from "./nats-manager.ts";
+import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
@@ -149,6 +151,8 @@ export class AtlasDaemon {
   private platformModels: PlatformModels | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
   private natsManager: NatsManager | null = null;
+  private capabilityRegistry: CapabilityHandlerRegistry | null = null;
+  private processAgentExecutor: ProcessAgentExecutor | null = null;
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private resourceStorage: ResourceStorageAdapter | null = null;
@@ -298,8 +302,13 @@ export class AtlasDaemon {
     // Start NATS server and establish daemon connection
     logger.info("Starting NATS...");
     this.natsManager = new NatsManager();
-    await this.natsManager.start();
+    const nc = await this.natsManager.start();
     logger.info("NATS ready");
+
+    // Start capability handlers (wildcard subscribers for agent back-channel)
+    this.capabilityRegistry = new CapabilityHandlerRegistry();
+    await this.capabilityRegistry.start(nc);
+    this.processAgentExecutor = new ProcessAgentExecutor(nc, this.capabilityRegistry);
 
     // Create WorkspaceManager (initialize later once registrars and watcher are ready)
     logger.info("Creating WorkspaceManager...");
@@ -1282,6 +1291,7 @@ export class AtlasDaemon {
           resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
           activityStorage: this.getActivityAdapter(), // Share activity storage for feed items
           platformModels: this.getPlatformModels(),
+          agentExecutor: this.processAgentExecutor ?? undefined,
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
           invokeImprover: this.createImproverCallback(workspace.id),
@@ -2228,7 +2238,12 @@ export class AtlasDaemon {
       this.cronManager = null;
     }
 
-    // Stop NATS (drain connection, then kill nats-server subprocess)
+    // Stop capability handlers then NATS
+    if (this.capabilityRegistry) {
+      this.capabilityRegistry.stop();
+      this.capabilityRegistry = null;
+    }
+    this.processAgentExecutor = null;
     if (this.natsManager) {
       await this.natsManager.stop();
       this.natsManager = null;

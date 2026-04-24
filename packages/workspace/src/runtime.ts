@@ -110,7 +110,7 @@ import {
   takeMountContext,
 } from "../../core/src/mount-context-registry.ts";
 import { createBashTool } from "./bash-tool.ts";
-import { CodeAgentExecutor } from "./code-agent-executor.ts";
+import { CodeAgentExecutor, type CodeAgentExecutorOptions } from "./code-agent-executor.ts";
 import type { MemoryMount } from "./config-schema.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
@@ -264,6 +264,14 @@ interface WorkspaceRuntimeOptions {
   kernelWorkspaceId?: string;
   /** Platform model resolver — required for session summarization and other platform LLM calls */
   platformModels: PlatformModels;
+  /** Injectable agent executor. Defaults to CodeAgentExecutor (WASM). Injected by daemon as ProcessAgentExecutor (NATS). */
+  agentExecutor?: {
+    execute(
+      agentPath: string,
+      prompt: string,
+      options: CodeAgentExecutorOptions,
+    ): Promise<AgentResult>;
+  };
 }
 
 interface FSMJob {
@@ -1976,8 +1984,9 @@ export class WorkspaceRuntime {
       };
     }
 
+    const executor = this.options.agentExecutor ?? this.codeAgentExecutor;
     try {
-      return await this.codeAgentExecutor.execute(sourceLocation, prompt, {
+      return await executor.execute(sourceLocation, prompt, {
         env: opts.agentEnv
           ? await resolveEnvValues(opts.agentEnv, logger)
           : Object.fromEntries(
