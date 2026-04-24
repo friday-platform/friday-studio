@@ -43,6 +43,7 @@
     "npm:@bytecodealliance/preview2-shim@~0.17.8": "0.17.8",
     "npm:@chat-adapter/discord@4.26.0": "4.26.0",
     "npm:@chat-adapter/slack@4.25.0": "4.25.0",
+    "npm:@chat-adapter/teams@4.26.0": "4.26.0",
     "npm:@chat-adapter/telegram@4.26.0": "4.26.0",
     "npm:@chat-adapter/whatsapp@4.26.0": "4.26.0",
     "npm:@codemirror/lang-markdown@^6.5.0": "6.5.0",
@@ -1099,7 +1100,7 @@
         "@azure/core-util",
         "@azure/logger",
         "@azure/msal-browser",
-        "@azure/msal-node",
+        "@azure/msal-node@5.1.2",
         "open@10.2.0",
         "tslib"
       ]
@@ -1114,16 +1115,27 @@
     "@azure/msal-browser@5.6.3": {
       "integrity": "sha512-sTjMtUm+bJpENU/1WlRzHEsgEHppZDZ1EtNyaOODg/sQBtMxxJzGB+MOCM+T2Q5Qe1fKBrdxUmjyRxm0r7Ez9w==",
       "dependencies": [
-        "@azure/msal-common"
+        "@azure/msal-common@16.4.1"
       ]
+    },
+    "@azure/msal-common@15.17.0": {
+      "integrity": "sha512-VQ5/gTLFADkwue+FohVuCqlzFPUq4xSrX8jeZe+iwZuY6moliNC8xt86qPVNYdtbQfELDf2Nu6LI+demFPHGgw=="
     },
     "@azure/msal-common@16.4.1": {
       "integrity": "sha512-Bl8f+w37xkXsYh7QRkAKCFGYtWMYuOVO7Lv+BxILrvGz3HbIEF22Pt0ugyj0QPOl6NLrHcnNUQ9yeew98P/5iw=="
     },
+    "@azure/msal-node@3.8.10": {
+      "integrity": "sha512-0Hz7Kx4hs70KZWep/Rd7aw/qOLUF92wUOhn7ZsOuB5xNR/06NL1E2RAI9+UKH1FtvN8nD6mFjH7UKSjv6vOWvQ==",
+      "dependencies": [
+        "@azure/msal-common@15.17.0",
+        "jsonwebtoken",
+        "uuid"
+      ]
+    },
     "@azure/msal-node@5.1.2": {
       "integrity": "sha512-DoeSJ9U5KPAIZoHsPywvfEj2MhBniQe0+FSpjLUTdWoIkI999GB5USkW6nNEHnIaLVxROHXvprWA1KzdS1VQ4A==",
       "dependencies": [
-        "@azure/msal-common",
+        "@azure/msal-common@16.4.1",
         "jsonwebtoken",
         "uuid"
       ]
@@ -1379,6 +1391,17 @@
         "@chat-adapter/shared@4.25.0",
         "@slack/web-api",
         "chat@4.25.0"
+      ]
+    },
+    "@chat-adapter/teams@4.26.0": {
+      "integrity": "sha512-Hg7TzN7Y/G/PcJr7VWKnv26XBDjP8+KDoe1gp62BAN7Y2MXCPdhsZLSR3cWQ5AH7nw0oz3vPZ38UilWUIhCxFg==",
+      "dependencies": [
+        "@chat-adapter/shared@4.26.0",
+        "@microsoft/teams.api",
+        "@microsoft/teams.apps",
+        "@microsoft/teams.cards",
+        "@microsoft/teams.graph-endpoints",
+        "chat@4.26.0"
       ]
     },
     "@chat-adapter/telegram@4.26.0": {
@@ -2279,6 +2302,49 @@
         "svelte"
       ]
     },
+    "@microsoft/teams.api@2.0.8": {
+      "integrity": "sha512-N13idaRZNnfL7aefzsn2rhPtujqke1QVM81bNWq1XeK+5yeXod3aLTmBY701DEKkZUXiSG0AogvzkNwVnBw4+g==",
+      "dependencies": [
+        "@microsoft/teams.cards",
+        "@microsoft/teams.common",
+        "jwt-decode",
+        "qs"
+      ]
+    },
+    "@microsoft/teams.apps@2.0.8": {
+      "integrity": "sha512-6YBOxnQSoEPu841zMa1SDBdwH3gsuzrz0LCONuaGOHJ3Kmv2S+7ih1DqEx4Ak3iAYHeCvxnWGqjcYSBhgeiuMQ==",
+      "dependencies": [
+        "@azure/msal-node@3.8.10",
+        "@microsoft/teams.api",
+        "@microsoft/teams.common",
+        "@microsoft/teams.graph",
+        "axios",
+        "cors",
+        "express",
+        "jsonwebtoken",
+        "jwks-rsa",
+        "reflect-metadata"
+      ]
+    },
+    "@microsoft/teams.cards@2.0.8": {
+      "integrity": "sha512-WrGAgkDKqhvFhnsKPwFeKTkhAXu/fbySxq5+uIOqY1ffdgiEdEoj6c0cjyQJy0HJ9B5u/0SQ4hO2KUc6jlZSZw=="
+    },
+    "@microsoft/teams.common@2.0.8": {
+      "integrity": "sha512-nkolOYX9qCpfK2uitiuAYm3EvMleHer5P3OCx3IBOp2gxkkFvNNOcOIDXuPZ6BtiENt47FPn4fYMMgJrawCHcA==",
+      "dependencies": [
+        "axios"
+      ]
+    },
+    "@microsoft/teams.graph-endpoints@2.0.8": {
+      "integrity": "sha512-KjDhMWn8ZcwTjDOw1hL0By/HvHEXe5+Bzy8tmEOsqPGUc/1HfwtBZAYsr8FUVBSBe0CObLYs2Pkh0wiHqWNNPw=="
+    },
+    "@microsoft/teams.graph@2.0.8": {
+      "integrity": "sha512-M/skUNJFD+lIVNa+ng0iy8t3sFmki6NOiWpGwnWOBAKFgTYBTJVtPfWm6SNdGFTCUsV9rjep4s9S5zTKUg2HJg==",
+      "dependencies": [
+        "@microsoft/teams.common",
+        "qs"
+      ]
+    },
     "@mixmark-io/domino@2.2.0": {
       "integrity": "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="
     },
@@ -2296,7 +2362,7 @@
         "express",
         "express-rate-limit",
         "hono",
-        "jose",
+        "jose@6.2.2",
         "json-schema-typed",
         "pkce-challenge",
         "raw-body",
@@ -2318,7 +2384,7 @@
         "express",
         "express-rate-limit",
         "hono",
-        "jose",
+        "jose@6.2.2",
         "json-schema-typed",
         "pkce-challenge",
         "raw-body",
@@ -4351,6 +4417,13 @@
     "@types/json-schema@7.0.15": {
       "integrity": "sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA=="
     },
+    "@types/jsonwebtoken@9.0.10": {
+      "integrity": "sha512-asx5hIG9Qmf/1oStypjanR7iKTv0gXQ1Ov/jfrX6kS/EO0OFni8orbmGCn0672NHR3kXHwpAwR+B368ZGN/2rA==",
+      "dependencies": [
+        "@types/ms",
+        "@types/node"
+      ]
+    },
     "@types/linkify-it@5.0.0": {
       "integrity": "sha512-sVDA58zAw4eWAffKOaQH5/5j3XeayukzDk+ewSsnv3p4yJEZHCCzMDiZM8e0OUrRvmpGZ85jf4yDHkHsgBNr9Q=="
     },
@@ -6265,6 +6338,9 @@
       "integrity": "sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==",
       "bin": true
     },
+    "jose@4.15.9": {
+      "integrity": "sha512-1vUQX+IdDMVPj4k8kOxgUqlcK518yluMuGZwqlr44FS1ppZB/5GWh4rZG89erpOBOJjU/OBsnCVFfapsRz6nEA=="
+    },
     "jose@6.2.2": {
       "integrity": "sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ=="
     },
@@ -6362,12 +6438,25 @@
         "safe-buffer"
       ]
     },
+    "jwks-rsa@3.2.2": {
+      "integrity": "sha512-BqTyEDV+lS8F2trk3A+qJnxV5Q9EqKCBJOPti3W97r7qTympCZjb7h2X6f2kc+0K3rsSTY1/6YG2eaXKoj497w==",
+      "dependencies": [
+        "@types/jsonwebtoken",
+        "debug",
+        "jose@4.15.9",
+        "limiter",
+        "lru-memoizer"
+      ]
+    },
     "jws@4.0.1": {
       "integrity": "sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==",
       "dependencies": [
         "jwa",
         "safe-buffer"
       ]
+    },
+    "jwt-decode@4.0.0": {
+      "integrity": "sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA=="
     },
     "keyv@4.5.4": {
       "integrity": "sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==",
@@ -6427,6 +6516,9 @@
     "lilconfig@2.1.0": {
       "integrity": "sha512-utWOt/GHzuUxnLKxB6dk81RoOeoNeHgbrXiuGk4yyF5qlRz+iIVWu56E2fqGHFrXz0QNUhLB/8nKqvRH66JKGQ=="
     },
+    "limiter@1.1.5": {
+      "integrity": "sha512-FWWMIEOxz3GwUI4Ts/IvgVy6LPvoMPgjMdQ185nN6psJyBJ4yOpzqm695/h5umdLJg2vW3GR5iG11MAkR2AzJA=="
+    },
     "linkify-it@5.0.0": {
       "integrity": "sha512-5aHCbzQRADcdP+ATqnDuhhJ/MRIqDkZX5pyjFHRRysS8vZ5AbqGEoFIb6pYHPZ+L/OC2Lc+xT8uHVVR5CAK/wQ==",
       "dependencies": [
@@ -6464,6 +6556,9 @@
       "dependencies": [
         "p-locate"
       ]
+    },
+    "lodash.clonedeep@4.5.0": {
+      "integrity": "sha512-H5ZhCF25riFd9uB5UCkVKo61m3S/xZk1x4wA6yp/L3RFP6Z/eHH1ymQcGLo7J3GMPfm0V/7m1tryHuGVxpqEBQ=="
     },
     "lodash.includes@4.3.0": {
       "integrity": "sha512-W3Bx6mdkRTGtlJISOvVD/lbqjTlPPUDTMnlXZFnVwi9NKJ6tiAk6LVdlhZMm17VZisqhKcgzpO5Wz91PCt5b0w=="
@@ -6529,6 +6624,19 @@
       "integrity": "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==",
       "dependencies": [
         "yallist@3.1.1"
+      ]
+    },
+    "lru-cache@6.0.0": {
+      "integrity": "sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==",
+      "dependencies": [
+        "yallist@4.0.0"
+      ]
+    },
+    "lru-memoizer@2.3.0": {
+      "integrity": "sha512-GXn7gyHAMhO13WSKrIiNfztwxodVsP8IoZ3XfrJV4yH2x0/OeTO/FIaAHTY5YekdGgW94njfuKmyyt1E0mR6Ug==",
+      "dependencies": [
+        "lodash.clonedeep",
+        "lru-cache@6.0.0"
       ]
     },
     "luxon@3.7.2": {
@@ -7637,6 +7745,9 @@
     "readdirp@5.0.0": {
       "integrity": "sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ=="
     },
+    "reflect-metadata@0.2.2": {
+      "integrity": "sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q=="
+    },
     "regex-recursion@6.0.2": {
       "integrity": "sha512-0YCaSCq2VRIebiaUviZNs0cBz1kg5kVS2UKUfNIx8YVs1cN3AV7NTctO5FOKBA+UT2BPJIWZauYHPqJODG50cg==",
       "dependencies": [
@@ -8660,6 +8771,9 @@
     "yallist@3.1.1": {
       "integrity": "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g=="
     },
+    "yallist@4.0.0": {
+      "integrity": "sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A=="
+    },
     "yallist@5.0.0": {
       "integrity": "sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw=="
     },
@@ -8813,6 +8927,7 @@
           "dependencies": [
             "npm:@chat-adapter/discord@4.26.0",
             "npm:@chat-adapter/slack@4.25.0",
+            "npm:@chat-adapter/teams@4.26.0",
             "npm:@chat-adapter/telegram@4.26.0",
             "npm:@chat-adapter/whatsapp@4.26.0",
             "npm:@hono/mcp@~0.2.5",

@@ -8,6 +8,7 @@
 import { createLogger } from "@atlas/logger";
 import { createDiscordAdapter } from "@chat-adapter/discord";
 import { SlackAdapter } from "@chat-adapter/slack";
+import { createTeamsAdapter } from "@chat-adapter/teams";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { Adapter } from "chat";
@@ -27,10 +28,17 @@ export type PlatformCredentials =
       phoneNumberId: string;
       verifyToken: string;
     }
-  | { kind: "discord"; botToken: string; publicKey: string; applicationId: string };
+  | { kind: "discord"; botToken: string; publicKey: string; applicationId: string }
+  | {
+      kind: "teams";
+      appId: string;
+      appPassword: string;
+      appTenantId?: string;
+      appType?: "MultiTenant" | "SingleTenant";
+    };
 
 /** Supported chat-capable platform providers. */
-export const CHAT_PROVIDERS = ["slack", "telegram", "whatsapp", "discord"] as const;
+export const CHAT_PROVIDERS = ["slack", "telegram", "whatsapp", "discord", "teams"] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 
 export interface ChatSdkAdapterConfig {
@@ -59,6 +67,13 @@ function buildAdapter(creds: PlatformCredentials): Adapter {
         publicKey: creds.publicKey,
         applicationId: creds.applicationId,
         logger: toDiscordLogger(logger.child({ component: "discord" })),
+      });
+    case "teams":
+      return createTeamsAdapter({
+        appId: creds.appId,
+        appPassword: creds.appPassword,
+        appTenantId: creds.appTenantId,
+        appType: creds.appType,
       });
   }
 }

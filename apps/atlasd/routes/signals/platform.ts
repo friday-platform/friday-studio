@@ -7,17 +7,90 @@
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import type { Chat } from "chat";
+import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
 
 const logger = createLogger({ component: "platform-signal-route" });
 
+type PlatformProvider =
+  | "slack"
+  | "discord"
+  | "telegram"
+  | "whatsapp"
+  | "teams";
+
+const PROVIDER_LABELS: Record<PlatformProvider, string> = {
+  slack: "Slack",
+  discord: "Discord",
+  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+  teams: "Teams",
+};
+
+/**
+ * Resolve the workspace's Chat SDK instance, check it exposes a webhook for
+ * `provider`, and forward the (already-cloned) raw request. Centralizes the
+ * 500/404/500 error tail repeated across every platform route.
+ */
+async function delegateToWebhook(
+  c: Context,
+  daemon: AtlasDaemon,
+  provider: PlatformProvider,
+  workspaceId: string,
+  request: Request,
+  logContext: Record<string, unknown> = {},
+): Promise<Response> {
+  let chat: Chat;
+  try {
+    chat = (await daemon.getOrCreateChatSdkInstance(workspaceId)).chat;
+  } catch (error) {
+    logger.error(`${provider}_chat_sdk_instance_failed`, {
+      error,
+      workspaceId,
+      ...logContext,
+    });
+    return c.json({ error: "Failed to initialize Chat SDK" }, 500);
+  }
+
+  const webhook = chat.webhooks[provider];
+  if (!webhook) {
+    logger.warn(`${provider}_no_adapter_for_workspace`, {
+      workspaceId,
+      ...logContext,
+    });
+    return c.json(
+      {
+        error:
+          `No ${PROVIDER_LABELS[provider]} adapter configured for this workspace`,
+      },
+      404,
+    );
+  }
+
+  try {
+    return await webhook(request);
+  } catch (error) {
+    logger.error(`${provider}_webhook_handler_failed`, {
+      error,
+      workspaceId,
+      ...logContext,
+    });
+    return new Response("Internal error", { status: 500 });
+  }
+}
+
 const SlackAppIdSchema = z.object({ api_app_id: z.string() });
 
 const SlackUrlVerificationSchema = z.object({
   type: z.literal("url_verification"),
   challenge: z.string(),
+});
+
+/** Minimal shape of a Teams activity payload used for workspace routing. */
+const TeamsRoutingPayloadSchema = z.object({
+  recipient: z.object({ id: z.string() }),
 });
 
 /** Minimal shape of a WhatsApp webhook POST payload used for workspace routing. */
@@ -29,7 +102,10 @@ const WhatsAppWebhookPayloadSchema = z.object({
           .array(
             z.object({
               value: z
-                .object({ metadata: z.object({ phone_number_id: z.string() }).optional() })
+                .object({
+                  metadata: z.object({ phone_number_id: z.string() })
+                    .optional(),
+                })
                 .optional(),
             }),
           )
@@ -52,7 +128,9 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     try {
       parsed = JSON.parse(rawBody);
     } catch {
-      logger.warn("slack_signal_invalid_json", { bodyPreview: rawBody.slice(0, 200) });
+      logger.warn("slack_signal_invalid_json", {
+        bodyPreview: rawBody.slice(0, 200),
+      });
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
@@ -74,37 +152,28 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     try {
       appId = SlackAppIdSchema.parse(parsed).api_app_id;
     } catch {
-      logger.warn("slack_signal_missing_app_id", { bodyPreview: rawBody.slice(0, 200) });
+      logger.warn("slack_signal_missing_app_id", {
+        bodyPreview: rawBody.slice(0, 200),
+      });
       return c.json({ error: "Missing api_app_id in payload" }, 400);
     }
 
     logger.info("slack_signal_received", { appId });
 
-    const workspaceId = await findWorkspaceByProvider(daemon, "slack", "app_id", appId);
+    const workspaceId = await findWorkspaceByProvider(
+      daemon,
+      "slack",
+      "app_id",
+      appId,
+    );
     if (!workspaceId) {
       logger.warn("slack_no_workspace_for_app_id", { appId });
       return c.json({ error: "No workspace configured for this app_id" }, 404);
     }
 
-    let chat: Chat;
-    try {
-      chat = (await daemon.getOrCreateChatSdkInstance(workspaceId)).chat;
-    } catch (error) {
-      logger.error("slack_chat_sdk_instance_failed", { error, workspaceId, appId });
-      return c.json({ error: "Failed to initialize Chat SDK" }, 500);
-    }
-
-    if (!chat.webhooks.slack) {
-      logger.warn("slack_no_adapter_for_workspace", { workspaceId, appId });
-      return c.json({ error: "No Slack adapter configured for this workspace" }, 404);
-    }
-
-    try {
-      return await chat.webhooks.slack(slackRequest);
-    } catch (error) {
-      logger.error("slack_webhook_handler_failed", { error, workspaceId, appId });
-      return new Response("Internal error", { status: 500 });
-    }
+    return delegateToWebhook(c, daemon, "slack", workspaceId, slackRequest, {
+      appId,
+    });
   });
 
   // ─── Discord ───────────────────────────────────────────────────────
@@ -141,25 +210,7 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
 
     logger.info("discord_signal_received", { workspaceId });
 
-    let chat: Chat;
-    try {
-      chat = (await daemon.getOrCreateChatSdkInstance(workspaceId)).chat;
-    } catch (error) {
-      logger.error("discord_chat_sdk_instance_failed", { error, workspaceId });
-      return c.json({ error: "Failed to initialize Chat SDK" }, 500);
-    }
-
-    if (!chat.webhooks.discord) {
-      logger.warn("discord_no_adapter_for_workspace", { workspaceId });
-      return c.json({ error: "No Discord adapter configured for this workspace" }, 404);
-    }
-
-    try {
-      return await chat.webhooks.discord(discordRequest);
-    } catch (error) {
-      logger.error("discord_webhook_handler_failed", { error, workspaceId });
-      return new Response("Internal error", { status: 500 });
-    }
+    return delegateToWebhook(c, daemon, "discord", workspaceId, discordRequest);
   });
 
   // ─── Telegram ──────────────────────────────────────────────────────
@@ -178,8 +229,9 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     // Suffix is computed on the fly from each workspace's resolved bot_token
     // rather than a stashed config field, so it survives config reloads and
     // doesn't rely on credential-resolution side-effects.
-    const workspaceId =
-      (tokenSuffix ? await findTelegramWorkspaceBySuffix(daemon, tokenSuffix) : null) ??
+    const workspaceId = (tokenSuffix
+      ? await findTelegramWorkspaceBySuffix(daemon, tokenSuffix)
+      : null) ??
       (await findWorkspaceByProvider(daemon, "telegram"));
     if (!workspaceId) {
       logger.warn("telegram_no_workspace", { tokenSuffix });
@@ -188,25 +240,14 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
 
     logger.info("telegram_signal_received", { workspaceId, tokenSuffix });
 
-    let chat: Chat;
-    try {
-      chat = (await daemon.getOrCreateChatSdkInstance(workspaceId)).chat;
-    } catch (error) {
-      logger.error("telegram_chat_sdk_instance_failed", { error, workspaceId });
-      return c.json({ error: "Failed to initialize Chat SDK" }, 500);
-    }
-
-    if (!chat.webhooks.telegram) {
-      logger.warn("telegram_no_adapter_for_workspace", { workspaceId });
-      return c.json({ error: "No Telegram adapter configured for this workspace" }, 404);
-    }
-
-    try {
-      return await chat.webhooks.telegram(telegramRequest);
-    } catch (error) {
-      logger.error("telegram_webhook_handler_failed", { error, workspaceId });
-      return new Response("Internal error", { status: 500 });
-    }
+    return delegateToWebhook(
+      c,
+      daemon,
+      "telegram",
+      workspaceId,
+      telegramRequest,
+      { tokenSuffix },
+    );
   });
 
   // ─── WhatsApp ─────────────────────────────────────────────────────
@@ -244,7 +285,10 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
           // With multiple whatsapp workspaces and no explicit verify_token
           // pinning, the first-match routing is non-deterministic. Log loudly
           // so the operator knows to add per-workspace verify_token fields.
-          logger.warn("whatsapp_verify_ambiguous_fallback", { candidates: all, picked: all[0] });
+          logger.warn("whatsapp_verify_ambiguous_fallback", {
+            candidates: all,
+            picked: all[0],
+          });
         }
         workspaceId = all[0] ?? null;
       }
@@ -256,7 +300,10 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
       try {
         chat = (await daemon.getOrCreateChatSdkInstance(workspaceId)).chat;
       } catch (error) {
-        logger.error("whatsapp_chat_sdk_instance_failed", { error, workspaceId });
+        logger.error("whatsapp_chat_sdk_instance_failed", {
+          error,
+          workspaceId,
+        });
         return c.json({ error: "Failed to initialize Chat SDK" }, 500);
       }
       if (!chat.webhooks.whatsapp) {
@@ -277,16 +324,24 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     let phoneNumberId: string | null = null;
     try {
       const parsed = WhatsAppWebhookPayloadSchema.parse(JSON.parse(rawBody));
-      phoneNumberId = parsed.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id ?? null;
+      phoneNumberId =
+        parsed.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id ??
+          null;
     } catch {
-      logger.warn("whatsapp_webhook_invalid_payload", { bodyPreview: rawBody.slice(0, 200) });
+      logger.warn("whatsapp_webhook_invalid_payload", {
+        bodyPreview: rawBody.slice(0, 200),
+      });
       return c.json({ error: "Invalid payload" }, 400);
     }
 
-    const workspaceId =
-      (phoneNumberId
-        ? await findWorkspaceByProvider(daemon, "whatsapp", "phone_number_id", phoneNumberId)
-        : null) ?? (await findWorkspaceByProvider(daemon, "whatsapp"));
+    const workspaceId = (phoneNumberId
+      ? await findWorkspaceByProvider(
+        daemon,
+        "whatsapp",
+        "phone_number_id",
+        phoneNumberId,
+      )
+      : null) ?? (await findWorkspaceByProvider(daemon, "whatsapp"));
 
     if (!workspaceId) {
       logger.warn("whatsapp_no_workspace", { phoneNumberId });
@@ -295,25 +350,86 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
 
     logger.info("whatsapp_signal_received", { workspaceId, phoneNumberId });
 
-    let chat: Chat;
+    return delegateToWebhook(
+      c,
+      daemon,
+      "whatsapp",
+      workspaceId,
+      whatsappRequest,
+      { phoneNumberId },
+    );
+  });
+
+  // ─── Microsoft Teams ──────────────────────────────────────────────
+  // Azure Bot messaging endpoint: https://<tunnel>/platform/teams → /signals/teams.
+  // The adapter validates JWTs against login.botframework.com internally, so
+  // atlasd just routes by `activity.recipient.id` (formatted "28:<botAppId>")
+  // and forwards the raw request. No GET handshake, no signature header check.
+  app.post("/teams", async (c) => {
+    // Clone before consuming — the adapter needs the raw body for JWT validation
+    const teamsRequest = c.req.raw.clone();
+    const rawBody = await c.req.text();
+
+    let parsed: unknown;
     try {
-      chat = (await daemon.getOrCreateChatSdkInstance(workspaceId)).chat;
-    } catch (error) {
-      logger.error("whatsapp_chat_sdk_instance_failed", { error, workspaceId });
-      return c.json({ error: "Failed to initialize Chat SDK" }, 500);
+      parsed = JSON.parse(rawBody);
+    } catch {
+      logger.warn("teams_signal_invalid_json", {
+        bodyPreview: rawBody.slice(0, 200),
+      });
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    if (!chat.webhooks.whatsapp) {
-      logger.warn("whatsapp_no_adapter_for_workspace", { workspaceId, phoneNumberId });
-      return c.json({ error: "No WhatsApp adapter configured for this workspace" }, 404);
+    const routing = TeamsRoutingPayloadSchema.safeParse(parsed);
+    if (!routing.success) {
+      logger.warn("teams_signal_missing_recipient", {
+        bodyPreview: rawBody.slice(0, 200),
+      });
+      return c.json({ error: "Missing recipient.id in payload" }, 400);
     }
 
-    try {
-      return await chat.webhooks.whatsapp(whatsappRequest);
-    } catch (error) {
-      logger.error("whatsapp_webhook_handler_failed", { error, workspaceId });
-      return new Response("Internal error", { status: 500 });
+    const recipientId = routing.data.recipient.id;
+    const appId = recipientId.startsWith("28:")
+      ? recipientId.slice(3)
+      : recipientId;
+
+    let workspaceId = await findWorkspaceByProvider(
+      daemon,
+      "teams",
+      "app_id",
+      appId,
+    );
+    if (!workspaceId) {
+      // Env-only fallback: a workspace with a teams signal but no `app_id` in
+      // workspace.yml reads TEAMS_APP_ID from env and is a valid delivery
+      // target for any Teams activity. Workspaces that DID pin `app_id` are
+      // not candidates — if they pinned X and the activity carries Y, a
+      // silent delivery would mask the operator's config typo. Fail closed.
+      const envOnlyCandidates = await listWorkspacesByProviderWithoutConfigKey(
+        daemon,
+        "teams",
+        "app_id",
+      );
+      if (envOnlyCandidates.length > 1) {
+        logger.warn("teams_env_only_ambiguous_fallback", {
+          appId,
+          candidates: envOnlyCandidates,
+          picked: envOnlyCandidates[0],
+        });
+      }
+      workspaceId = envOnlyCandidates[0] ?? null;
     }
+
+    if (!workspaceId) {
+      logger.warn("teams_no_workspace_for_app_id", { appId });
+      return c.json({ error: "No workspace configured for this app_id" }, 404);
+    }
+
+    logger.info("teams_signal_received", { workspaceId, appId });
+
+    return delegateToWebhook(c, daemon, "teams", workspaceId, teamsRequest, {
+      appId,
+    });
   });
 
   return app;
@@ -358,10 +474,50 @@ async function findWorkspaceByProvider(
 }
 
 /**
+ * Return every workspace id that has a signal with the given provider where
+ * the signal's config does NOT set `configKey`. Used for env-only fallback:
+ * a workspace that omits `app_id`/`bot_token`/etc. from workspace.yml reads
+ * the value from env and is a legitimate wildcard match when incoming-event
+ * routing misses the exact-match lookup.
+ */
+async function listWorkspacesByProviderWithoutConfigKey(
+  daemon: AtlasDaemon,
+  provider: string,
+  configKey: string,
+): Promise<string[]> {
+  const workspaces = await daemon.getWorkspaceManager().list();
+  const matches: string[] = [];
+
+  for (const ws of workspaces) {
+    const config = await daemon.getWorkspaceManager().getWorkspaceConfig(ws.id);
+    const signals = config?.workspace.signals;
+    if (!signals) continue;
+
+    for (const signal of Object.values(signals)) {
+      if (signal?.provider !== provider) continue;
+      const cfg = "config" in signal ? signal.config : undefined;
+      const rawValue = cfg && typeof cfg === "object"
+        ? Reflect.get(cfg, configKey)
+        : undefined;
+      const hasKey = typeof rawValue === "string" && rawValue.length > 0;
+      if (!hasKey) {
+        matches.push(ws.id);
+        break;
+      }
+    }
+  }
+
+  return matches;
+}
+
+/**
  * Return every workspace id that has at least one signal with the given
  * provider. Used for fallback/ambiguity detection in webhook routing.
  */
-async function listWorkspacesByProvider(daemon: AtlasDaemon, provider: string): Promise<string[]> {
+async function listWorkspacesByProvider(
+  daemon: AtlasDaemon,
+  provider: string,
+): Promise<string[]> {
   const workspaces = await daemon.getWorkspaceManager().list();
   const matches: string[] = [];
 
@@ -397,12 +553,11 @@ async function findTelegramWorkspaceBySuffix(
     for (const signal of Object.values(signals)) {
       if (signal?.provider !== "telegram") continue;
       const cfg = "config" in signal ? signal.config : undefined;
-      const cfgToken =
-        cfg && typeof cfg === "object" && "bot_token" in cfg
-          ? (cfg as Record<string, unknown>).bot_token
-          : undefined;
-      const botToken =
-        (typeof cfgToken === "string" ? cfgToken : null) ?? process.env.TELEGRAM_BOT_TOKEN;
+      const cfgToken = cfg && typeof cfg === "object" && "bot_token" in cfg
+        ? (cfg as Record<string, unknown>).bot_token
+        : undefined;
+      const botToken = (typeof cfgToken === "string" ? cfgToken : null) ??
+        process.env.TELEGRAM_BOT_TOKEN;
       if (typeof botToken !== "string" || !botToken.includes(":")) continue;
       if (botToken.split(":")[1] === tokenSuffix) return ws.id;
     }

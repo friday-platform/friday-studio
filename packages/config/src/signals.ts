@@ -100,6 +100,25 @@ export const DiscordProviderConfigSchema = z.strictObject({
 });
 export type DiscordProviderConfig = z.infer<typeof DiscordProviderConfigSchema>;
 
+export const TeamsProviderConfigSchema = z.strictObject({
+  app_id: z.string().optional().describe("Azure Bot App ID. Falls back to TEAMS_APP_ID env var."),
+  app_password: z
+    .string()
+    .optional()
+    .describe("Azure Bot client secret. Falls back to TEAMS_APP_PASSWORD env var."),
+  app_tenant_id: z
+    .string()
+    .optional()
+    .describe(
+      "Azure AD tenant ID. Required for SingleTenant apps. Falls back to TEAMS_APP_TENANT_ID env var.",
+    ),
+  app_type: z
+    .enum(["MultiTenant", "SingleTenant"])
+    .optional()
+    .describe("Azure Bot app type. Defaults to MultiTenant."),
+});
+export type TeamsProviderConfig = z.infer<typeof TeamsProviderConfigSchema>;
+
 export const WhatsAppProviderConfigSchema = z.strictObject({
   access_token: z
     .string()
@@ -166,6 +185,11 @@ export const DiscordSignalConfigSchema = BaseSignalConfigSchema.extend({
   config: DiscordProviderConfigSchema,
 });
 
+export const TeamsSignalConfigSchema = BaseSignalConfigSchema.extend({
+  provider: z.literal("teams"),
+  config: TeamsProviderConfigSchema,
+});
+
 export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   HTTPSignalConfigSchema,
   ScheduleSignalConfigSchema,
@@ -175,6 +199,7 @@ export const WorkspaceSignalConfigSchema = z.discriminatedUnion("provider", [
   TelegramSignalConfigSchema,
   WhatsAppSignalConfigSchema,
   DiscordSignalConfigSchema,
+  TeamsSignalConfigSchema,
 ]);
 
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
@@ -189,6 +214,7 @@ export type SlackSignalConfig = z.infer<typeof SlackSignalConfigSchema>;
 export type TelegramSignalConfig = z.infer<typeof TelegramSignalConfigSchema>;
 export type WhatsAppSignalConfig = z.infer<typeof WhatsAppSignalConfigSchema>;
 export type DiscordSignalConfig = z.infer<typeof DiscordSignalConfigSchema>;
+export type TeamsSignalConfig = z.infer<typeof TeamsSignalConfigSchema>;
 
 export const SignalTriggerRequestSchema = z.strictObject({
   payload: z

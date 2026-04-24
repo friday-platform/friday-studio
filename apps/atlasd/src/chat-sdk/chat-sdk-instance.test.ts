@@ -25,14 +25,23 @@ import type { Message, Thread } from "chat";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import { StreamRegistry } from "../stream-registry.ts";
-import { createMessageHandler, resolvePlatformCredentials } from "./chat-sdk-instance.ts";
+import {
+  createMessageHandler,
+  resolvePlatformCredentials,
+} from "./chat-sdk-instance.ts";
 
 function makeMessage(overrides?: Partial<Message>): Message {
   return {
     id: "msg-1",
     text: "Hello Friday",
     threadId: "chat-123",
-    author: { userId: "user-1", userName: "user-1", fullName: "User", isBot: false, isMe: false },
+    author: {
+      userId: "user-1",
+      userName: "user-1",
+      fullName: "User",
+      isBot: false,
+      isMe: false,
+    },
     raw: {},
     formatted: { type: "root", children: [] },
     metadata: { dateSent: new Date(), edited: false },
@@ -102,13 +111,23 @@ describe("createMessageHandler", () => {
 
     await handler(
       thread,
-      makeMessage({ id: "m-1", text: "Hi", threadId: "chat-abc", raw: { datetime } }),
+      makeMessage({
+        id: "m-1",
+        text: "Hi",
+        threadId: "chat-abc",
+        raw: { datetime },
+      }),
     );
 
     expect(thread.subscribe).toHaveBeenCalled();
     expect(mockAppendMessage).toHaveBeenCalledWith(
       "chat-abc",
-      { id: "m-1", role: "user", parts: [{ type: "text", text: "Hi" }], metadata: {} },
+      {
+        id: "m-1",
+        role: "user",
+        parts: [{ type: "text", text: "Hi" }],
+        metadata: {},
+      },
       "ws-test",
     );
     expect(triggerFn).toHaveBeenCalledWith(
@@ -172,7 +191,11 @@ describe("createMessageHandler", () => {
         { type: "text" as const, text: "analyze this" },
         {
           type: "data-artifact-attached" as const,
-          data: { artifactIds: ["a-1"], filenames: ["sales.csv"], mimeTypes: ["text/csv"] },
+          data: {
+            artifactIds: ["a-1"],
+            filenames: ["sales.csv"],
+            mimeTypes: ["text/csv"],
+          },
         },
       ],
       metadata: {},
@@ -191,7 +214,11 @@ describe("createMessageHandler", () => {
     // The stashed uiMessage is persisted verbatim — NOT the text-only rebuild
     // that toAtlasUIMessage would produce. This preserves data-artifact-attached
     // for downstream consumers (expandArtifactAttachedParts, UI history).
-    expect(mockAppendMessage).toHaveBeenCalledWith("chat-multipart", preValidated, "ws-test");
+    expect(mockAppendMessage).toHaveBeenCalledWith(
+      "chat-multipart",
+      preValidated,
+      "ws-test",
+    );
   });
 
   it("clears the pre-set source when thread.subscribe fails on a slack thread", async () => {
@@ -208,18 +235,25 @@ describe("createMessageHandler", () => {
     );
 
     const thread = makeThread("slack-thread-1");
-    (thread as unknown as { adapter: { name: string } }).adapter = { name: "slack" };
-    (thread as unknown as { subscribe: ReturnType<typeof vi.fn> }).subscribe = vi
-      .fn()
-      .mockRejectedValue(new Error("subscribe failed"));
+    (thread as unknown as { adapter: { name: string } }).adapter = {
+      name: "slack",
+    };
+    (thread as unknown as { subscribe: ReturnType<typeof vi.fn> }).subscribe =
+      vi
+        .fn()
+        .mockRejectedValue(new Error("subscribe failed"));
 
-    await expect(handler(thread, makeMessage({ threadId: "slack-thread-1" }))).rejects.toThrow(
-      "subscribe failed",
-    );
+    await expect(handler(thread, makeMessage({ threadId: "slack-thread-1" })))
+      .rejects.toThrow(
+        "subscribe failed",
+      );
 
     // Source was pre-set BEFORE subscribe, then cleared in the catch — without
     // this, the threadSources map would leak one entry per failed slack subscribe.
-    expect(stateAdapter.setSource).toHaveBeenCalledWith("slack-thread-1", "slack");
+    expect(stateAdapter.setSource).toHaveBeenCalledWith(
+      "slack-thread-1",
+      "slack",
+    );
     expect(stateAdapter.clearSource).toHaveBeenCalledWith("slack-thread-1");
   });
 
@@ -239,9 +273,10 @@ describe("createMessageHandler", () => {
       .mockRejectedValue(new Error("Slack API down"));
     registry.createStream("chat-err");
 
-    await expect(handler(thread, makeMessage({ threadId: "chat-err" }))).rejects.toThrow(
-      "Slack API down",
-    );
+    await expect(handler(thread, makeMessage({ threadId: "chat-err" }))).rejects
+      .toThrow(
+        "Slack API down",
+      );
     expect(mockAppendMessage).toHaveBeenCalled();
     // finally block ran even though post threw
     expect(registry.getStream("chat-err")?.active).toBe(false);
@@ -257,9 +292,15 @@ describe("createMessageHandler — kernel filtering", () => {
   it("filters KERNEL_WORKSPACE_ID from foregroundWorkspaceIds when exposeKernel is false", async () => {
     const registry = new StreamRegistry();
     const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
-    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
-      exposeKernel: false,
-    });
+    const handler = createMessageHandler(
+      "ws-1",
+      triggerFn,
+      registry,
+      undefined,
+      {
+        exposeKernel: false,
+      },
+    );
 
     const thread = makeThread("chat-kernel-1");
     registry.createStream("chat-kernel-1");
@@ -291,9 +332,15 @@ describe("createMessageHandler — kernel filtering", () => {
   it("passes KERNEL_WORKSPACE_ID through when exposeKernel is true", async () => {
     const registry = new StreamRegistry();
     const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
-    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
-      exposeKernel: true,
-    });
+    const handler = createMessageHandler(
+      "ws-1",
+      triggerFn,
+      registry,
+      undefined,
+      {
+        exposeKernel: true,
+      },
+    );
 
     const thread = makeThread("chat-kernel-2");
     registry.createStream("chat-kernel-2");
@@ -307,13 +354,18 @@ describe("createMessageHandler — kernel filtering", () => {
       thread,
       makeMessage({
         threadId: "chat-kernel-2",
-        raw: { uiMessage: preValidated, foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID] },
+        raw: {
+          uiMessage: preValidated,
+          foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID],
+        },
       }),
     );
 
     expect(triggerFn).toHaveBeenCalledWith(
       "chat",
-      expect.objectContaining({ foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID] }),
+      expect.objectContaining({
+        foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID],
+      }),
       "chat-kernel-2",
       expect.any(Function),
     );
@@ -322,9 +374,15 @@ describe("createMessageHandler — kernel filtering", () => {
   it("passes undefined foregroundWorkspaceIds through as undefined", async () => {
     const registry = new StreamRegistry();
     const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
-    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
-      exposeKernel: false,
-    });
+    const handler = createMessageHandler(
+      "ws-1",
+      triggerFn,
+      registry,
+      undefined,
+      {
+        exposeKernel: false,
+      },
+    );
 
     const thread = makeThread("chat-kernel-3");
     registry.createStream("chat-kernel-3");
@@ -337,9 +395,15 @@ describe("createMessageHandler — kernel filtering", () => {
   it("keeps empty foregroundWorkspaceIds array as empty", async () => {
     const registry = new StreamRegistry();
     const triggerFn = makeTriggerFn([{ type: "text-delta", delta: "ok" }]);
-    const handler = createMessageHandler("ws-1", triggerFn, registry, undefined, {
-      exposeKernel: false,
-    });
+    const handler = createMessageHandler(
+      "ws-1",
+      triggerFn,
+      registry,
+      undefined,
+      {
+        exposeKernel: false,
+      },
+    );
 
     const thread = makeThread("chat-kernel-4");
     registry.createStream("chat-kernel-4");
@@ -384,7 +448,10 @@ describe("resolvePlatformCredentials", () => {
   });
 
   const tgSignal = {
-    "telegram-chat": { provider: "telegram", config: { bot_token: "111:secret" } },
+    "telegram-chat": {
+      provider: "telegram",
+      config: { bot_token: "111:secret" },
+    },
   };
   const waSignal = {
     "whatsapp-chat": {
@@ -422,13 +489,16 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("resolves BOTH when telegram + whatsapp signals coexist", async () => {
-    const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...waSignal });
+    const result = await resolvePlatformCredentials("ws-1", {
+      ...tgSignal,
+      ...waSignal,
+    });
     const kinds = result.map((r) => r.credentials.kind).sort();
     expect(kinds).toEqual(["telegram", "whatsapp"]);
   });
 
   it("resolves empty array when no signals and Slack lookup fails", async () => {
-    const result = await resolvePlatformCredentials("ws-1", undefined);
+    const result = await resolvePlatformCredentials("ws-1", {});
     expect(result).toEqual([]);
   });
 
@@ -505,7 +575,10 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("slack signal coexists with telegram signal (no cross-provider shadow)", async () => {
-    const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...slackSignal });
+    const result = await resolvePlatformCredentials("ws-1", {
+      ...tgSignal,
+      ...slackSignal,
+    });
     const kinds = result.map((r) => r.credentials.kind).sort();
     expect(kinds).toEqual(["slack", "telegram"]);
   });
@@ -520,23 +593,28 @@ describe("resolvePlatformCredentials", () => {
     expect(kinds).toEqual(["slack", "telegram", "whatsapp"]);
   });
 
-  const discordSignal = {
-    "discord-chat": { provider: "discord", config: {} },
-  };
-  const discordEnvKeys = ["DISCORD_BOT_TOKEN", "DISCORD_PUBLIC_KEY", "DISCORD_APPLICATION_ID"];
-
-  function withDiscordEnv(
-    overrides: Partial<Record<(typeof discordEnvKeys)[number], string | undefined>>,
+  /**
+   * Save env values for `keys`, apply `overrides`, and return a restore fn.
+   * Keys not named in `overrides` are cleared (deleted) for the test duration
+   * so env-fallback paths see a clean slate.
+   */
+  function withEnv<K extends string>(
+    keys: readonly K[],
+    overrides: Partial<Record<K, string | undefined>>,
   ): () => void {
     const saved: Record<string, string | undefined> = {};
-    for (const key of discordEnvKeys) {
+    for (const key of keys) {
       saved[key] = process.env[key];
-      const next = key in overrides ? overrides[key as keyof typeof overrides] : "default";
-      if (next === undefined) delete process.env[key];
-      else process.env[key] = next;
+      if (key in overrides) {
+        const next = overrides[key];
+        if (next === undefined) delete process.env[key];
+        else process.env[key] = next;
+      } else {
+        delete process.env[key];
+      }
     }
     return () => {
-      for (const key of discordEnvKeys) {
+      for (const key of keys) {
         const original = saved[key];
         if (original === undefined) delete process.env[key];
         else process.env[key] = original;
@@ -544,8 +622,17 @@ describe("resolvePlatformCredentials", () => {
     };
   }
 
+  const discordSignal = {
+    "discord-chat": { provider: "discord", config: {} },
+  };
+  const discordEnvKeys = [
+    "DISCORD_BOT_TOKEN",
+    "DISCORD_PUBLIC_KEY",
+    "DISCORD_APPLICATION_ID",
+  ] as const;
+
   it("resolves discord when all three env vars are present", async () => {
-    const restore = withDiscordEnv({
+    const restore = withEnv(discordEnvKeys, {
       DISCORD_BOT_TOKEN: "bot-token-xyz",
       DISCORD_PUBLIC_KEY: "public-key-xyz",
       DISCORD_APPLICATION_ID: "app-123",
@@ -566,7 +653,7 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("resolves discord entirely from signal config with env empty", async () => {
-    const restore = withDiscordEnv({
+    const restore = withEnv(discordEnvKeys, {
       DISCORD_BOT_TOKEN: undefined,
       DISCORD_PUBLIC_KEY: undefined,
       DISCORD_APPLICATION_ID: undefined,
@@ -596,7 +683,7 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("returns null when only bot_token is in config and env is empty (all-or-nothing)", async () => {
-    const restore = withDiscordEnv({
+    const restore = withEnv(discordEnvKeys, {
       DISCORD_BOT_TOKEN: undefined,
       DISCORD_PUBLIC_KEY: undefined,
       DISCORD_APPLICATION_ID: undefined,
@@ -615,7 +702,7 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("resolves discord from mixed config + env (per-field fallback)", async () => {
-    const restore = withDiscordEnv({
+    const restore = withEnv(discordEnvKeys, {
       DISCORD_BOT_TOKEN: undefined,
       DISCORD_PUBLIC_KEY: "env-pub",
       DISCORD_APPLICATION_ID: undefined,
@@ -640,7 +727,7 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("config wins over env when both are set", async () => {
-    const restore = withDiscordEnv({
+    const restore = withEnv(discordEnvKeys, {
       DISCORD_BOT_TOKEN: "env-bot",
       DISCORD_PUBLIC_KEY: "env-pub",
       DISCORD_APPLICATION_ID: "env-app",
@@ -672,33 +759,39 @@ describe("resolvePlatformCredentials", () => {
     ["DISCORD_BOT_TOKEN" as const],
     ["DISCORD_PUBLIC_KEY" as const],
     ["DISCORD_APPLICATION_ID" as const],
-  ])("returns null when %s is missing (no partial discord creds)", async (missingKey) => {
-    const restore = withDiscordEnv({
-      DISCORD_BOT_TOKEN: "bot-token-xyz",
-      DISCORD_PUBLIC_KEY: "public-key-xyz",
-      DISCORD_APPLICATION_ID: "app-123",
-      [missingKey]: undefined,
-    });
-    try {
-      const result = await resolvePlatformCredentials("ws-1", discordSignal);
-      // No Discord creds, and Link is unreachable in the test env → empty array.
-      // Guards against a partial creds object reaching createDiscordAdapter,
-      // whose constructor throws ValidationError synchronously and would crash
-      // the daemon on workspace init.
-      expect(result).toEqual([]);
-    } finally {
-      restore();
-    }
-  });
+  ])(
+    "returns null when %s is missing (no partial discord creds)",
+    async (missingKey) => {
+      const restore = withEnv(discordEnvKeys, {
+        DISCORD_BOT_TOKEN: "bot-token-xyz",
+        DISCORD_PUBLIC_KEY: "public-key-xyz",
+        DISCORD_APPLICATION_ID: "app-123",
+        [missingKey]: undefined,
+      });
+      try {
+        const result = await resolvePlatformCredentials("ws-1", discordSignal);
+        // No Discord creds, and Link is unreachable in the test env → empty array.
+        // Guards against a partial creds object reaching createDiscordAdapter,
+        // whose constructor throws ValidationError synchronously and would crash
+        // the daemon on workspace init.
+        expect(result).toEqual([]);
+      } finally {
+        restore();
+      }
+    },
+  );
 
   it("discord signal coexists with telegram signal (no cross-provider shadow)", async () => {
-    const restore = withDiscordEnv({
+    const restore = withEnv(discordEnvKeys, {
       DISCORD_BOT_TOKEN: "bot-token-xyz",
       DISCORD_PUBLIC_KEY: "public-key-xyz",
       DISCORD_APPLICATION_ID: "app-123",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...discordSignal });
+      const result = await resolvePlatformCredentials("ws-1", {
+        ...tgSignal,
+        ...discordSignal,
+      });
       const kinds = result.map((r) => r.credentials.kind).sort();
       expect(kinds).toEqual(["discord", "telegram"]);
     } finally {
@@ -715,5 +808,225 @@ describe("resolvePlatformCredentials", () => {
     const result = await resolvePlatformCredentials("ws-1", slackSignal);
     expect(result).toHaveLength(1);
     expect(result[0]?.credentials.kind).toBe("slack");
+  });
+
+  const teamsEnvKeys = [
+    "TEAMS_APP_ID",
+    "TEAMS_APP_PASSWORD",
+    "TEAMS_APP_TENANT_ID",
+    "TEAMS_APP_TYPE",
+  ] as const;
+
+  it("resolves teams from signal config (all four fields inline)", async () => {
+    const restore = withEnv(teamsEnvKeys, {});
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": {
+          provider: "teams",
+          config: {
+            app_id: "sig-app-id",
+            app_password: "sig-password",
+            app_tenant_id: "sig-tenant",
+            app_type: "SingleTenant",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "teams",
+        appId: "sig-app-id",
+        appPassword: "sig-password",
+        appTenantId: "sig-tenant",
+        appType: "SingleTenant",
+      });
+      expect(result[0]?.credentialId).toBe("teams:sig-app-id");
+    } finally {
+      restore();
+    }
+  });
+
+  it("falls back to TEAMS_* env vars when signal config is empty", async () => {
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+      TEAMS_APP_PASSWORD: "env-password",
+      TEAMS_APP_TENANT_ID: "env-tenant",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": { provider: "teams", config: {} },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "teams",
+        appId: "env-app-id",
+        appPassword: "env-password",
+        appTenantId: "env-tenant",
+      });
+      expect(result[0]?.credentialId).toBe("teams:env-app-id");
+    } finally {
+      restore();
+    }
+  });
+
+  it("returns null when app_id is missing (neither signal nor env)", async () => {
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_PASSWORD: "env-password",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": { provider: "teams", config: {} },
+      });
+      expect(result).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("returns null when app_password is missing (neither signal nor env)", async () => {
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": { provider: "teams", config: {} },
+      });
+      expect(result).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("returns null on SingleTenant with no tenant_id (signal + env both empty)", async () => {
+    // Guards the fail-fast: a SingleTenant app without app_tenant_id passed to
+    // the adapter would start up but every outbound call would 401 at Azure —
+    // much noisier than refusing to construct the adapter at all.
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+      TEAMS_APP_PASSWORD: "env-password",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": {
+          provider: "teams",
+          config: { app_type: "SingleTenant" },
+        },
+      });
+      expect(result).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("resolves MultiTenant without tenant_id", async () => {
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+      TEAMS_APP_PASSWORD: "env-password",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": {
+          provider: "teams",
+          config: { app_type: "MultiTenant" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "teams",
+        appId: "env-app-id",
+        appPassword: "env-password",
+        appType: "MultiTenant",
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("honors TEAMS_APP_TYPE env fallback (SingleTenant via env only)", async () => {
+    // Env-only SingleTenant bots: without this fallback, appType silently
+    // defaulted to MultiTenant and JWT validation hit the wrong issuer.
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+      TEAMS_APP_PASSWORD: "env-password",
+      TEAMS_APP_TENANT_ID: "env-tenant",
+      TEAMS_APP_TYPE: "SingleTenant",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": { provider: "teams", config: {} },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "teams",
+        appId: "env-app-id",
+        appPassword: "env-password",
+        appTenantId: "env-tenant",
+        appType: "SingleTenant",
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("signal app_type wins over TEAMS_APP_TYPE env", async () => {
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+      TEAMS_APP_PASSWORD: "env-password",
+      TEAMS_APP_TYPE: "MultiTenant",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": {
+          provider: "teams",
+          config: { app_type: "SingleTenant", app_tenant_id: "sig-tenant" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toMatchObject({
+        kind: "teams",
+        appType: "SingleTenant",
+        appTenantId: "sig-tenant",
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("ignores invalid TEAMS_APP_TYPE env value", async () => {
+    // Malformed env var should not poison the config. Falls through to
+    // undefined (the MultiTenant default inside the adapter).
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+      TEAMS_APP_PASSWORD: "env-password",
+      TEAMS_APP_TYPE: "typo",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        "teams-chat": { provider: "teams", config: {} },
+      });
+      expect(result).toHaveLength(1);
+      const creds = result[0]?.credentials;
+      expect(creds).toMatchObject({ kind: "teams", appId: "env-app-id" });
+      expect(creds && "appType" in creds ? creds.appType : undefined)
+        .toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+
+  it("teams + slack signals coexist (no cross-provider shadow)", async () => {
+    const restore = withEnv(teamsEnvKeys, {
+      TEAMS_APP_ID: "env-app-id",
+      TEAMS_APP_PASSWORD: "env-password",
+    });
+    try {
+      const result = await resolvePlatformCredentials("ws-1", {
+        ...slackSignal,
+        "teams-chat": { provider: "teams", config: {} },
+      });
+      const kinds = result.map((r) => r.credentials.kind).sort();
+      expect(kinds).toEqual(["slack", "teams"]);
+    } finally {
+      restore();
+    }
   });
 });
