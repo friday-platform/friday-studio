@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mcpServersRegistry } from "./registry-consolidated.ts";
+import { MCPServerMetadataSchema } from "./schemas.ts";
 
 describe("mcpServersRegistry", () => {
   it("has valid structure for all servers", () => {
@@ -83,7 +84,58 @@ describe("mcpServersRegistry", () => {
   it("has Record structure for O(1) lookup", () => {
     // Test that we can directly access servers by ID
     expect(mcpServersRegistry.servers.github?.id).toEqual("github");
-    expect(mcpServersRegistry.servers.stripe?.id).toEqual("stripe");
-    expect(mcpServersRegistry.servers.azure?.id).toEqual("azure");
+    expect(mcpServersRegistry.servers.time?.id).toEqual("time");
+  });
+
+  describe("Google Workspace entries", () => {
+    const googleIds = [
+      "google-calendar",
+      "google-gmail",
+      "google-drive",
+      "google-docs",
+      "google-sheets",
+    ];
+
+    it.each(googleIds)("parses '%s' through MCPServerMetadataSchema", (id) => {
+      const server = mcpServersRegistry.servers[id];
+      expect(server).toBeDefined();
+      const parsed = MCPServerMetadataSchema.safeParse(server);
+      expect(parsed.success).toBe(true);
+    });
+
+    it.each(googleIds)("'%s' has startup config with command, args, and env", (id) => {
+      const server = mcpServersRegistry.servers[id];
+      const startup = server.configTemplate.startup;
+      expect(startup).toBeDefined();
+      expect(startup!.type).toBe("command");
+      expect(startup!.command).toBe("uvx");
+      expect(startup!.args).toEqual(
+        expect.arrayContaining(["workspace-mcp", "--tools", "--transport", "streamable-http"]),
+      );
+      expect(startup!.env).toBeDefined();
+      expect(startup!.env).toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
+      expect(startup!.env).toHaveProperty("GOOGLE_OAUTH_CLIENT_SECRET");
+      expect(startup!.env).toHaveProperty("MCP_ENABLE_OAUTH21");
+      expect(startup!.env).toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
+      expect(startup!.env).toHaveProperty("WORKSPACE_MCP_PORT");
+    });
+
+    it.each(googleIds)("'%s' ready_url matches transport URL", (id) => {
+      const server = mcpServersRegistry.servers[id];
+      const transportUrl =
+        server.configTemplate.transport.type === "http" ? server.configTemplate.transport.url : "";
+      expect(server.configTemplate.startup!.ready_url).toBe(transportUrl);
+    });
+
+    it.each(googleIds)("'%s' startup env uses plain strings or Link refs", (id) => {
+      const server = mcpServersRegistry.servers[id];
+      const env = server.configTemplate.startup!.env!;
+      for (const [_key, value] of Object.entries(env)) {
+        const isValid =
+          typeof value === "string" ||
+          (typeof value === "object" && value !== null && "from" in value && value.from === "link");
+        expect(isValid).toBe(true);
+      }
+    });
   });
 });
