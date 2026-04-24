@@ -24,7 +24,11 @@
       "entitlements": "entitlements.plist"
     },
     "windows": {
-      "nsis": { "installMode": "currentUser", "startMenuFolder": "Friday", "languages": ["en-US"] },
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "Friday",
+        "languages": ["English"]
+      },
       "webviewInstallMode": { "type": "embedBootstrapper" }
     }
   },
