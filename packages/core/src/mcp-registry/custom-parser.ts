@@ -39,6 +39,13 @@ export type ParseError = { success: false; reason: string };
 export type ParseResult = ParseSuccess | ParseError;
 
 /**
+ * Type guard: value is a non-null, non-array object usable as a record.
+ */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
  * Parse a raw JSON string containing a custom MCP server configuration.
  *
  * @param rawJson - The raw JSON string pasted by the user.
@@ -52,20 +59,20 @@ export function parseCustomMCPConfig(rawJson: string): ParseResult {
     return { success: false, reason: "Invalid JSON. Please provide valid JSON configuration." };
   }
 
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (!isPlainObject(parsed)) {
     return { success: false, reason: "Config must be a JSON object, not an array or primitive." };
   }
 
-  const record = parsed as Record<string, unknown>;
+  const record = parsed;
 
   // ── Claude Desktop wrapper shape ─────────────────────────────────────────
   if ("mcpServers" in record) {
     const mcpServers = record.mcpServers;
-    if (typeof mcpServers !== "object" || mcpServers === null || Array.isArray(mcpServers)) {
+    if (!isPlainObject(mcpServers)) {
       return { success: false, reason: "`mcpServers` must be an object mapping names to configs." };
     }
 
-    const servers = mcpServers as Record<string, unknown>;
+    const servers = mcpServers;
     const names = Object.keys(servers);
 
     if (names.length === 0) {
@@ -79,14 +86,21 @@ export function parseCustomMCPConfig(rawJson: string): ParseResult {
       return { success: false, reason: `Paste one server at a time. Found: ${names.join(", ")}.` };
     }
 
-    const suggestedName = names[0]!;
+    const [suggestedName] = names;
+    if (!suggestedName) {
+      return {
+        success: false,
+        reason: "Config must include either `command` (stdio) or `url` (http).",
+      };
+    }
+
     const serverConfig = servers[suggestedName];
 
-    if (typeof serverConfig !== "object" || serverConfig === null || Array.isArray(serverConfig)) {
+    if (!isPlainObject(serverConfig)) {
       return { success: false, reason: `Server "${suggestedName}" config must be an object.` };
     }
 
-    const inner = parseBareConfig(serverConfig as Record<string, unknown>);
+    const inner = parseBareConfig(serverConfig);
     if (!inner.success) return inner;
 
     return { ...inner, suggestedName };
