@@ -1,3 +1,4 @@
+import process from "node:process";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { LocalMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
@@ -33,10 +34,14 @@ vi.mock("@atlas/core/mcp-registry/upstream-client", () => ({
 beforeAll(async () => {
   testKv = await Deno.openKv(":memory:");
   testAdapter = new LocalMCPRegistryAdapter(testKv);
+  process.env.LINK_SERVICE_URL = "http://localhost:3100";
+  process.env.ATLAS_KEY = "test-atlas-key";
 });
 
 afterAll(() => {
   testKv.close();
+  delete process.env.LINK_SERVICE_URL;
+  delete process.env.ATLAS_KEY;
 });
 
 beforeEach(() => {
@@ -75,6 +80,38 @@ function createNpmStdioUpstreamEntry(name: string, version: string): UpstreamSer
           identifier: `@test/${name.split("/").pop()}`,
           version,
           transport: { type: "stdio" },
+        },
+      ],
+    },
+    _meta: {
+      "io.modelcontextprotocol.registry/official": {
+        status: "active",
+        statusChangedAt: "2025-06-15T12:00:00.000000Z",
+        publishedAt: "2025-06-15T12:00:00.000000Z",
+        updatedAt: "2025-06-15T12:00:00.000000Z",
+        isLatest: true,
+      },
+    },
+  };
+}
+
+/** Create a valid npm stdio upstream entry with env vars (produces linkProvider) */
+function createNpmStdioUpstreamEntryWithEnv(name: string, version: string): UpstreamServerEntry {
+  return {
+    server: {
+      $schema: "https://registry.modelcontextprotocol.io/v0.1/schema.json",
+      name,
+      description: `Test server ${name}`,
+      version,
+      packages: [
+        {
+          registryType: "npm",
+          identifier: `@test/${name.split("/").pop()}`,
+          version,
+          transport: { type: "stdio" },
+          environmentVariables: [
+            { name: "API_KEY", description: "API key for the server", isRequired: true },
+          ],
         },
       ],
     },
@@ -198,6 +235,7 @@ const InstallResponseSchema = z.object({
         .optional(),
     })
     .passthrough(),
+  warning: z.string().optional(),
 });
 
 /** Schema for install error response */
@@ -577,6 +615,122 @@ describe("MCP Registry Routes", () => {
       expect(res.status).toBe(404);
       const body = z.object({ error: z.string() }).parse(await res.json());
       expect(body.error).toContain("not found");
+    });
+
+    it("auto-creates Link provider when translation produces one", async () => {
+      const canonicalName = "io.github.test/with-env";
+      const upstreamEntry = createNpmStdioUpstreamEntryWithEnv(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              ok: true,
+              provider: { id: "io-github-test-with-env", type: "apikey" },
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = InstallResponseSchema.parse(await res.json());
+      expect(body.warning).toBeUndefined();
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchSpy.mock.calls[0]!;
+      expect(url).toBe("http://localhost:3100/v1/providers");
+      expect(init?.method).toBe("POST");
+      if (!init || typeof init.body !== "string") throw new Error("expected string body");
+      const requestBody = z
+        .object({ provider: z.object({ type: z.string(), id: z.string() }) })
+        .parse(JSON.parse(init.body));
+      expect(requestBody.provider.type).toBe("apikey");
+      expect(requestBody.provider.id).toBe("io-github-test-with-env");
+
+      fetchSpy.mockRestore();
+    });
+
+    it("returns 201 without warning when Link provider already exists (409)", async () => {
+      const canonicalName = "io.github.test/with-env-409";
+      const upstreamEntry = createNpmStdioUpstreamEntryWithEnv(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ok: false, error: "already exists" }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = InstallResponseSchema.parse(await res.json());
+      expect(body.warning).toBeUndefined();
+
+      fetchSpy.mockRestore();
+    });
+
+    it("returns 201 with warning when Link provider creation fails", async () => {
+      const canonicalName = "io.github.test/with-env-fail";
+      const upstreamEntry = createNpmStdioUpstreamEntryWithEnv(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ok: false, error: "internal error" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      const body = InstallResponseSchema.parse(await res.json());
+      expect(body.warning).toContain("Link provider creation failed");
+
+      fetchSpy.mockRestore();
+    });
+
+    it("does not call Link when translation produces no linkProvider", async () => {
+      const canonicalName = "io.github.test/no-link-provider";
+      const upstreamEntry = createNpmStdioUpstreamEntry(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValue(upstreamEntry);
+
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+      const res = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+
+      expect(res.status).toBe(201);
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      fetchSpy.mockRestore();
     });
   });
 

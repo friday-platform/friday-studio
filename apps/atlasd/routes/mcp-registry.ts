@@ -1,3 +1,4 @@
+import process from "node:process";
 import { fetchReadme } from "@atlas/core/mcp-registry/readme-fetcher";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
@@ -193,7 +194,49 @@ export const mcpRegistryRouter = daemonFactory
       // Persist the entry
       await adapter.add(entry);
 
-      return c.json({ server: entry }, 201);
+      let warning: string | undefined;
+
+      // Auto-create Link provider when translator produced one
+      if (translateResult.linkProvider) {
+        const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+        const url = `${linkServiceUrl}/v1/providers`;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const atlasKey = process.env.ATLAS_KEY;
+        if (atlasKey) {
+          headers.Authorization = `Bearer ${atlasKey}`;
+        }
+
+        try {
+          const linkRes = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ provider: translateResult.linkProvider }),
+          });
+
+          if (linkRes.status === 409) {
+            logger.debug("link provider already exists", {
+              providerId: translateResult.linkProvider.id,
+            });
+          } else if (!linkRes.ok) {
+            const body = await linkRes.text().catch(() => "");
+            logger.warn("link provider creation failed", {
+              status: linkRes.status,
+              providerId: translateResult.linkProvider.id,
+              body,
+            });
+            warning = `Link provider creation failed: ${linkRes.status}`;
+          }
+        } catch (error) {
+          logger.warn("link provider creation request failed", {
+            error,
+            providerId: translateResult.linkProvider.id,
+          });
+          warning = "Link provider creation failed: network error";
+        }
+      }
+
+      const response = warning ? { server: entry, warning } : { server: entry };
+      return c.json(response, 201);
     } catch (error) {
       logger.error("install failed", { error, registryName });
       if (error instanceof Error && error.message.includes("not found")) {
