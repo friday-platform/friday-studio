@@ -23,7 +23,7 @@ export type RequiredConfigField = z.infer<typeof RequiredConfigFieldSchema>;
 /**
  * MCP Source - where the server was discovered
  */
-export const MCPSourceSchema = z.enum(["agents", "static", "web", "registry"]);
+export const MCPSourceSchema = z.enum(["agents", "static", "web", "registry", "workspace"]);
 export type MCPSource = z.infer<typeof MCPSourceSchema>;
 
 /**
