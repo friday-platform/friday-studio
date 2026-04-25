@@ -10,11 +10,17 @@
     verifyDownload,
   } from "../lib/installer.ts";
 
+  // Phase the wizard moves through so the body text matches the actual work
+  // happening. Without explicit phases the user saw "99% ETA 0s" linger for
+  // 10s+ while SHA verify ran, with no indication that download had finished
+  // and we'd moved on to checksum.
+  type Phase = "downloading" | "verifying" | "verified";
+
   let platform = $state("");
   let downloadUrl = $state("");
   let sha256 = $state("");
   let resolveError = $state<string | null>(null);
-  let verifying = $state(false);
+  let phase = $state<Phase>("downloading");
 
   onMount(async () => {
     try {
@@ -39,19 +45,24 @@
       store.totalBytes = entry.size;
 
       await startDownload(downloadUrl, sha256, platform);
+      if (store.downloadError !== null) return;
 
       // SHA-256 verification before extract — refuse to advance on mismatch.
       // Without this a corrupted or tampered archive would be unpacked silently
       // and break in confusing ways at first launch.
-      if (store.downloadError === null) {
-        verifying = true;
-        const ok = await verifyDownload(store.downloadPath, sha256);
-        verifying = false;
-        if (!ok) {
-          store.downloadError =
-            "Downloaded file is corrupted (SHA-256 mismatch). Please try again.";
-        }
+      phase = "verifying";
+      const ok = await verifyDownload(store.downloadPath, sha256);
+      if (!ok) {
+        store.downloadError =
+          "Downloaded file is corrupted (SHA-256 mismatch). Please try again.";
+        return;
       }
+
+      phase = "verified";
+      // Hand off to extract only after verify passes — otherwise the user
+      // saw the wizard advance the moment progress hit 100%, with verify
+      // racing in the background against extract.
+      advanceStep();
     } catch (err) {
       store.downloadError = err instanceof Error ? err.message : String(err);
     }
@@ -59,6 +70,7 @@
 
   async function handleRetry() {
     resolveError = null;
+    phase = "downloading";
     await retryDownload();
   }
 
@@ -69,13 +81,6 @@
       .replace(/^HTTP request failed:\s*/, "")
       .replace(/^builder error$/, "Could not connect to the download server.");
   }
-
-  // Auto-advance when download completes successfully
-  $effect(() => {
-    if (store.progressPercent === 100 && store.downloadError === null) {
-      advanceStep();
-    }
-  });
 </script>
 
 <div class="screen">
@@ -84,8 +89,10 @@
     <p class="subtitle">
       {#if store.downloadError !== null || resolveError !== null}
         Download failed. Check your connection and try again.
-      {:else if store.progressPercent === 100}
-        Download complete!
+      {:else if phase === "verifying"}
+        Verifying download integrity…
+      {:else if phase === "verified"}
+        Download verified.
       {:else}
         Downloading the latest version…
       {/if}
@@ -104,11 +111,16 @@
         <p class="error-detail">{friendlyError(store.downloadError)}</p>
       </div>
     {:else}
-      <div class="progress-container" role="progressbar" aria-valuenow={store.progressPercent} aria-valuemin={0} aria-valuemax={100}>
-        <div class="progress-bar" style:width="{store.progressPercent}%"></div>
+      {@const displayPercent = phase === "downloading" ? store.progressPercent : 100}
+      <div class="progress-container" role="progressbar" aria-valuenow={displayPercent} aria-valuemin={0} aria-valuemax={100}>
+        <div class="progress-bar" style:width="{displayPercent}%"></div>
       </div>
 
-      {#if store.isRetrying}
+      {#if phase !== "downloading"}
+        <div class="stats">
+          <span class="percent">{phase === "verifying" ? "Verifying SHA-256…" : "Verified ✓"}</span>
+        </div>
+      {:else if store.isRetrying}
         <div class="retry-banner">
           <span class="retry-label">Attempt {store.retryAttempt} of {store.retryMax} failed — retrying in {store.retryDelaySecs}s</span>
         </div>

@@ -20,13 +20,17 @@ fn write_pid(name: &str, pid: u32) -> Result<(), String> {
         .map_err(|e| format!("Failed to write pid file for {name}: {e}"))
 }
 
+fn log_path_for(name: &str) -> std::path::PathBuf {
+    friday_home().join(format!("{name}.log"))
+}
+
 fn spawn_process(install_dir: &str, name: &str, friday_home_path: &str) -> Result<Child, String> {
     #[cfg(unix)]
     let binary = format!("{install_dir}/{name}");
     #[cfg(windows)]
     let binary = format!("{install_dir}\\{name}.exe");
 
-    let log_path = friday_home().join(format!("{name}.log"));
+    let log_path = log_path_for(name);
     let log_file = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -37,7 +41,13 @@ fn spawn_process(install_dir: &str, name: &str, friday_home_path: &str) -> Resul
         .try_clone()
         .map_err(|e| format!("Failed to clone log handle: {e}"))?;
 
+    // Pin every spawned process's data + memory dirs under the install root
+    // so the bundled Friday Studio can't collide with a separate `atlas`
+    // dev daemon the user already runs out of `~/.atlas`. ATLAS_HOME is the
+    // env var the compiled binary actually reads (FRIDAY_HOME is kept for
+    // any in-tree code paths that look at it).
     Command::new(&binary)
+        .env("ATLAS_HOME", friday_home_path)
         .env("FRIDAY_HOME", friday_home_path)
         .stdout(log_file)
         .stderr(log_err)
@@ -45,12 +55,32 @@ fn spawn_process(install_dir: &str, name: &str, friday_home_path: &str) -> Resul
         .map_err(|e| format!("Failed to spawn {name}: {e}"))
 }
 
+/// Reads the last few KB of `<friday_home>/<name>.log` so error toasts can
+/// surface the actual reason a service exited (port-in-use is the common
+/// case on a dev box). Best-effort — returns empty string if anything fails.
+fn tail_log(name: &str, max_bytes: usize) -> String {
+    let path = log_path_for(name);
+    let Ok(bytes) = fs::read(&path) else { return String::new(); };
+    let start = bytes.len().saturating_sub(max_bytes);
+    String::from_utf8_lossy(&bytes[start..]).trim().to_string()
+}
+
 fn check_immediate_exit(child: &mut Child, name: &str) -> Result<(), String> {
     std::thread::sleep(Duration::from_millis(100));
     match child.try_wait() {
         Ok(Some(status)) => {
             let code = status.code().unwrap_or(-1);
-            Err(format!("Failed to start {name}: exited with code {code}"))
+            let tail = tail_log(name, 1024);
+            let log = log_path_for(name).display().to_string();
+            if tail.is_empty() {
+                Err(format!(
+                    "Failed to start {name}: exited with code {code}. See log: {log}"
+                ))
+            } else {
+                Err(format!(
+                    "Failed to start {name}: exited with code {code}.\n\nLast log lines:\n{tail}\n\nFull log: {log}"
+                ))
+            }
         }
         Ok(None) => Ok(()),
         Err(e) => Err(format!("Failed to check {name} status: {e}")),
@@ -117,20 +147,36 @@ pub fn launch_studio(install_dir: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to create pids dir: {e}"))?;
 
     // ── Phase 1: backends ────────────────────────────────────────────────────
+    // Daemon binary ships as `friday` (user-visible name); internal codebase
+    // still uses "atlas". Health-poll error includes the log tail so the user
+    // can see the underlying cause (typically port-already-in-use).
 
-    let mut atlas = spawn_process(&install_dir, "atlas", &home_str)?;
-    check_immediate_exit(&mut atlas, "atlas")?;
-    write_pid("atlas", atlas.id())?;
+    let mut friday = spawn_process(&install_dir, "friday", &home_str)?;
+    check_immediate_exit(&mut friday, "friday")?;
+    write_pid("friday", friday.id())?;
 
     let mut link = spawn_process(&install_dir, "link", &home_str)?;
     check_immediate_exit(&mut link, "link")?;
     write_pid("link", link.id())?;
 
-    // Health check backends
-    poll_http_health("http://localhost:8080/health", 30)
-        .map_err(|_| "atlas did not become healthy within 30s".to_string())?;
-    poll_http_health("http://localhost:3100/health", 30)
-        .map_err(|_| "link did not become healthy within 30s".to_string())?;
+    poll_http_health("http://localhost:8080/health", 30).map_err(|_| {
+        let tail = tail_log("friday", 1024);
+        let log = log_path_for("friday").display().to_string();
+        if tail.is_empty() {
+            format!("Friday daemon did not become healthy within 30s. See log: {log}")
+        } else {
+            format!("Friday daemon did not become healthy within 30s.\n\nLast log lines:\n{tail}\n\nFull log: {log}")
+        }
+    })?;
+    poll_http_health("http://localhost:3100/health", 30).map_err(|_| {
+        let tail = tail_log("link", 1024);
+        let log = log_path_for("link").display().to_string();
+        if tail.is_empty() {
+            format!("Link service did not become healthy within 30s. See log: {log}")
+        } else {
+            format!("Link service did not become healthy within 30s.\n\nLast log lines:\n{tail}\n\nFull log: {log}")
+        }
+    })?;
 
     // ── Phase 2: frontends ───────────────────────────────────────────────────
     // Binary names match the entries we tar into the studio archive (see

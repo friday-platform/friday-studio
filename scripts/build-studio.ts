@@ -96,7 +96,9 @@ const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
 
 const DENO_BINARIES = [
   {
-    name: "atlas",
+    // Ships as `friday` — the user-visible CLI name. The internal codebase
+    // still uses "atlas" everywhere; only the compiled binary is renamed.
+    name: "friday",
     entry: "apps/atlas-cli/src/otel-bootstrap.ts",
     flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
     include: [] as string[],

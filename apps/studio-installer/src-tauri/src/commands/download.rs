@@ -25,7 +25,11 @@ pub enum DownloadEvent {
     },
 }
 
-const CHUNK_REPORT_BYTES: u64 = 256 * 1024; // 256 KB between progress events
+// Throttle progress events to ~2/sec — at multi-MB/s download speeds the
+// per-chunk report rate produced 100+ events/sec, so the speed/ETA labels
+// flickered too fast for the user to read. The progress bar still updates
+// smoothly because every event includes the absolute downloaded byte count.
+const PROGRESS_INTERVAL_MS: u128 = 500;
 const MAX_RETRIES: u32 = 5;
 
 #[tauri::command]
@@ -113,7 +117,6 @@ async fn attempt_download(
         .map_err(|e| format!("Failed to open destination file: {e}"))?;
 
     let mut downloaded = existing_size;
-    let mut bytes_since_last_report = 0u64;
     let mut stream = response.bytes_stream();
     let start = Instant::now();
     let mut last_report_time = start;
@@ -127,10 +130,9 @@ async fn attempt_download(
 
         let chunk_len = chunk.len() as u64;
         downloaded += chunk_len;
-        bytes_since_last_report += chunk_len;
         bytes_since_speed_calc += chunk_len;
 
-        if bytes_since_last_report >= CHUNK_REPORT_BYTES {
+        if last_report_time.elapsed().as_millis() >= PROGRESS_INTERVAL_MS {
             let elapsed = last_report_time.elapsed().as_secs_f64().max(0.001);
             let bytes_per_sec = (bytes_since_speed_calc as f64 / elapsed) as u64;
 
@@ -140,7 +142,6 @@ async fn attempt_download(
                 bytes_per_sec,
             });
 
-            bytes_since_last_report = 0;
             bytes_since_speed_calc = 0;
             last_report_time = Instant::now();
         }
@@ -150,7 +151,9 @@ async fn attempt_download(
         .await
         .map_err(|e| format!("Flush error: {e}"))?;
 
-    // Final progress event
+    // Final progress event — pin total to the real downloaded byte count so
+    // a content-length / actual-bytes mismatch (e.g. transparent gzip) can
+    // never leave the bar at 99%. Done is the next event the wizard sees.
     let total_elapsed = start.elapsed().as_secs_f64().max(0.001);
     let bytes_per_sec = (downloaded as f64 / total_elapsed) as u64;
     let _ = on_progress.send(DownloadEvent::Progress {
