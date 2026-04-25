@@ -117,9 +117,11 @@ jobs:
           app=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
           echo "app_path=$app" >> "$GITHUB_OUTPUT"
           echo "app_name=$(basename "$app")" >> "$GITHUB_OUTPUT"
-          # Output zip lives next to the .app for notarization + distribution.
+          # Version goes in the filename so each release becomes a new URL —
+          # otherwise the CDN's immutable cache pins the first build forever.
+          version=$(python3 -c 'import json; print(json.load(open("apps/studio-installer/src-tauri/tauri.conf.json"))["version"])')
           echo "zip_path=${app%.app}.zip" >> "$GITHUB_OUTPUT"
-          echo "zip_name=FridayStudioInstaller_${{ matrix.target }}.zip" >> "$GITHUB_OUTPUT"
+          echo "zip_name=FridayStudioInstaller_${version}_${{ matrix.target }}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Locate NSIS installer (Windows)
         if: matrix.bundle_ext == 'exe'
