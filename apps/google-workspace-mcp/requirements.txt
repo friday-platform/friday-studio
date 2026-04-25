@@ -190,6 +190,8 @@ pyjwt==2.12.0
     #   workspace-mcp
 pyparsing==3.3.2
     # via httplib2
+pypdf==6.10.2
+    # via workspace-mcp
 pyperclip==1.11.0
     # via fastmcp
 python-dotenv==1.2.1
@@ -268,7 +270,7 @@ watchfiles==1.1.1
     # via fastmcp
 websockets==16.0
     # via fastmcp
-workspace-mcp==1.18.0
+workspace-mcp==1.20.0
     # via -r requirements.in
 zipp==3.23.0
     # via importlib-metadata
