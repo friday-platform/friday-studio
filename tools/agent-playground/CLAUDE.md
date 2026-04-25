@@ -10,7 +10,9 @@ deno task playground    # from monorepo root (http://localhost:5200)
 deno task sim "prompt"  # headless CLI for workspace pipeline
 ```
 
-Always run in dev mode. No build step needed — this is a local dev tool.
+The playground also ships as a compiled binary in Friday Studio — the static
+SvelteKit build is served alongside the Hono `/api/*` router from a single
+Deno entry point that gets `deno compile`'d into a `playground` binary.
 
 ## Architecture
 

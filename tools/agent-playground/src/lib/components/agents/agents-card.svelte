@@ -205,8 +205,7 @@
   .card-header {
     display: flex;
     flex-direction: column;
-    gap: var(--s
-    ize-1);
+    gap: var(--size-1);
   }
 
   .card-title {

@@ -2,9 +2,18 @@ import { readFileSync } from "node:fs";
 
 const SKILL_ROOT = new URL("../../../../.claude/skills/agent-browser/references/", import.meta.url);
 
+// Lazy + memoized. Reading the skill files at module top-level causes the
+// import to crash if `import.meta.url` doesn't resolve to the source location
+// — which happens after bundling (SvelteKit's analyse phase, deno compile
+// in some configs). Defer the read until the prompt is actually built.
+const cache = new Map<string, string>();
 function loadSkillRef(filename: string): string {
+  const cached = cache.get(filename);
+  if (cached !== undefined) return cached;
   try {
-    return readFileSync(new URL(filename, SKILL_ROOT), "utf8");
+    const content = readFileSync(new URL(filename, SKILL_ROOT), "utf8");
+    cache.set(filename, content);
+    return content;
   } catch (cause) {
     throw new Error(
       `[web agent] Failed to load skill reference "${filename}" from ${SKILL_ROOT.href}. ` +
@@ -13,10 +22,6 @@ function loadSkillRef(filename: string): string {
     );
   }
 }
-
-const commandsRef = loadSkillRef("commands.md");
-const snapshotRef = loadSkillRef("snapshot-refs.md");
-const sessionRef = loadSkillRef("session-management.md");
 
 interface WebAgentPromptOptions {
   hasSearch: boolean;
@@ -84,11 +89,11 @@ When \`AGENT_BROWSER_AUTO_CONNECT=1\` is set, \`browse\` attaches to the user's 
 
 The reference material below documents the full command surface, the ref-based snapshot model, and session isolation semantics.
 
-${commandsRef}
+${loadSkillRef("commands.md")}
 
-${snapshotRef}
+${loadSkillRef("snapshot-refs.md")}
 
-${sessionRef}
+${loadSkillRef("session-management.md")}
 
 # Stuck Detection (Critical)
 

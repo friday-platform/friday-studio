@@ -6,6 +6,7 @@
   "scripts": {
     "prepare": "svelte-kit sync || echo ''",
     "sync": "svelte-kit sync",
+    "build": "svelte-kit sync && vite build",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write ."
