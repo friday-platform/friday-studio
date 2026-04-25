@@ -158,7 +158,12 @@ jobs:
           # & + wait the whole step finishes in roughly the slowest single
           # binary's time.
           PIDS=()
-          for f in atlas link playground webhook-tunnel gh cloudflared; do
+          # Binary names match the staging output of build-studio.ts —
+          # `friday` is the renamed atlas daemon, `link` / `playground` /
+          # `webhook-tunnel` are unchanged, `gh` / `cloudflared` are bundled
+          # external CLIs. Keep this list in sync with DENO_BINARIES +
+          # EXTERNAL_CLIS in scripts/build-studio.ts.
+          for f in friday link playground webhook-tunnel gh cloudflared; do
             (
               codesign --force --options runtime --timestamp \
                 --entitlements "$ENTITLEMENTS" \
