@@ -17,8 +17,38 @@ permissions:
   id-token: write
 
 jobs:
+  version:
+    name: Determine release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compute next semver patch from published manifest
+        id: compute
+        run: |
+          set -euo pipefail
+          MANIFEST_URL="https://download.fridayplatform.io/installer/manifest.json"
+          # Seed version is what tauri.conf.json says — used only on first ever build
+          # (no manifest published yet). Subsequent builds bump the patch from the
+          # last published release.
+          SEED=$(python3 -c "import json; print(json.load(open('apps/studio-installer/src-tauri/tauri.conf.json'))['version'])")
+          PREV=$(curl -sf "$MANIFEST_URL" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
+          if [ -z "$PREV" ]; then
+            echo "No published manifest; seeding from tauri.conf.json: $SEED"
+            NEXT="$SEED"
+          else
+            MAJOR=$(echo "$PREV" | cut -d. -f1)
+            MINOR=$(echo "$PREV" | cut -d. -f2)
+            PATCH=$(echo "$PREV" | cut -d. -f3 | sed 's/[^0-9].*//')
+            NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+            echo "Bumping ${PREV} -> ${NEXT}"
+          fi
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build (${{ matrix.platform }})
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +68,8 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v6
@@ -119,9 +151,10 @@ jobs:
           echo "app_name=$(basename "$app")" >> "$GITHUB_OUTPUT"
           # Version goes in the filename so each release becomes a new URL —
           # otherwise the CDN's immutable cache pins the first build forever.
-          version=$(python3 -c 'import json; print(json.load(open("apps/studio-installer/src-tauri/tauri.conf.json"))["version"])')
+          # Version is computed by the upstream `version` job and threaded
+          # through here as RELEASE_VERSION (also written into tauri.conf.json).
           echo "zip_path=${app%.app}.zip" >> "$GITHUB_OUTPUT"
-          echo "zip_name=FridayStudioInstaller_${version}_${{ matrix.target }}.zip" >> "$GITHUB_OUTPUT"
+          echo "zip_name=FridayStudioInstaller_${RELEASE_VERSION}_${{ matrix.target }}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Locate NSIS installer (Windows)
         if: matrix.bundle_ext == 'exe'
@@ -130,7 +163,11 @@ jobs:
         run: |
           $f = Get-ChildItem "apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*-setup.exe" | Select-Object -First 1
           "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
-          "name=$($f.Name)" >> $env:GITHUB_OUTPUT
+          # The on-disk Tauri filename embeds tauri.conf.json's static version
+          # ("Friday Studio Installer_0.1.0_x64-setup.exe"), which would
+          # collide across releases at the URL layer. Rename for upload only —
+          # the binary on disk is unchanged.
+          "name=FridayStudioInstaller_${env:RELEASE_VERSION}_x64-setup.exe" >> $env:GITHUB_OUTPUT
 
       - name: Sign NSIS installer (Windows)
         if: matrix.bundle_ext == 'exe'
@@ -234,11 +271,13 @@ jobs:
 
   publish-manifest:
     name: Publish installer/manifest.json
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Download all manifest entries
         uses: actions/download-artifact@v7
@@ -252,11 +291,9 @@ jobs:
         run: |
           # Combine per-platform entries into the schema the studio-installer's
           # fetch_manifest.rs already understands: { version, platforms{...} }.
-          # Version is derived from src-tauri/tauri.conf.json on the source ref.
-          version=$(curl -sf \
-            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/apps/studio-installer/src-tauri/tauri.conf.json" \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
-          python3 - <<'PY' "$version" entries > installer-manifest.json
+          # Version comes from the upstream `version` job (semver patch bump
+          # over the previously-published manifest).
+          python3 - <<'PY' "$RELEASE_VERSION" entries > installer-manifest.json
           import json, os, sys
           version, dirpath = sys.argv[1], sys.argv[2]
           platforms = {}
