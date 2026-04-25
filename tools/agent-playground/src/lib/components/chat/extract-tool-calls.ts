@@ -108,7 +108,7 @@ type ChildAccumulator = Map<string, ToolCallDisplay>;
  * touch the `ToolCallDisplay` shape. `finish` chunks are dropped upstream
  * by the proxy writer, so we don't need to filter them here.
  *
- * IDs may be multi-segment (`delegate::agent::fetch`) when bundled
+ * IDs may be multi-segment (`delegate-agent-fetch`) when bundled
  * agents namespace their inner tool calls. The accumulator is flat
  * (keyed by the full namespaced string); tree construction happens
  * afterwards in {@link buildNestedChildren}.
@@ -213,9 +213,9 @@ function interruptSubtree(child: ToolCallDisplay): void {
  * Build a tree of `ToolCallDisplay` entries from a flat accumulator of
  * namespaced `toolCallId`s.
  *
- * An entry `parentId::childId` is a direct child of `parentId`.
- * An entry `parentId::childId::grandchildId` is a direct child of
- * `parentId::childId`. This recurses so the UI can render arbitrary
+ * An entry `parentId-childId` is a direct child of `parentId`.
+ * An entry `parentId-childId-grandchildId` is a direct child of
+ * `parentId-childId`. This recurses so the UI can render arbitrary
  * nesting depth (e.g. delegate → agent_web → fetch).
  *
  * Orphaned descendants whose intermediate parent is missing in the flat
@@ -225,13 +225,13 @@ function buildNestedChildren(
   flat: Map<string, ToolCallDisplay>,
   parentId: string,
 ): ToolCallDisplay[] {
-  const prefix = `${parentId}::`;
+  const prefix = `${parentId}-`;
   const children: ToolCallDisplay[] = [];
 
   for (const [id, display] of flat) {
     if (!id.startsWith(prefix)) continue;
     const suffix = id.slice(prefix.length);
-    if (suffix.includes("::")) continue; // not a direct child — recurse below
+    if (suffix.includes("-")) continue; // not a direct child — recurse below
     const nested = buildNestedChildren(flat, id);
     children.push(nested.length > 0 ? { ...display, children: nested } : display);
   }
@@ -382,7 +382,7 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
 
   // Collect `data-delegate-ledger` parts to attach server-reported
   // `durationMs` to reconstructed tool-call entries.
-  // Keys are `${delegateToolCallId}::${originalToolCallId}` to match the
+  // Keys are `${delegateToolCallId}-${originalToolCallId}` to match the
   // namespaced ids stored in the accumulator.
   const durationMap = new Map<string, number>();
   for (const part of msg.parts) {
@@ -402,7 +402,7 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
       const dur =
         "durationMs" in entry && typeof entry.durationMs === "number" ? entry.durationMs : undefined;
       if (delegateToolCallId && childId && dur !== undefined && dur > 0) {
-        durationMap.set(`${delegateToolCallId}::${childId}`, dur);
+        durationMap.set(`${delegateToolCallId}-${childId}`, dur);
       }
     }
   }

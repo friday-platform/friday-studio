@@ -12,7 +12,12 @@ import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { AGENT_TOOL_META, type CreateAgentToolDeps, createAgentTool, rebindAgentTool } from "./bundled-agent-tools.ts";
+import {
+  AGENT_TOOL_META,
+  type CreateAgentToolDeps,
+  createAgentTool,
+  rebindAgentTool,
+} from "./bundled-agent-tools.ts";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -250,7 +255,7 @@ describe("createAgentTool — execute (happy path)", () => {
     expect(deps.writeFn).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "tool-input-available",
-        toolCallId: "tc-1::inner-fetch-1",
+        toolCallId: "tc-1-inner-fetch-1",
         toolName: "fetch",
       }),
     );
@@ -366,7 +371,7 @@ describe("createAgentTool — metadata & rebind", () => {
     expect(newWriteFn).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "tool-output-available",
-        toolCallId: "tc-1::inner-1",
+        toolCallId: "tc-1-inner-1",
         output: { ok: true },
       }),
     );

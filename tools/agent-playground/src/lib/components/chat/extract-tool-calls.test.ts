@@ -12,7 +12,7 @@ import { extractToolCalls } from "./extract-tool-calls.ts";
 // the full generic. The reducer itself never trusts the discriminator tag
 // and re-narrows each field with `in` checks.
 //
-// Child toolCallIds are namespaced `${delegateToolCallId}::${childId}` —
+// Child toolCallIds are namespaced `${delegateToolCallId}-${childId}` —
 // that matches how the proxy writer emits them (see
 // `packages/system/agents/conversation/tools/delegate/proxy-writer.ts`).
 // The reducer preserves the namespaced string verbatim; it does not strip
@@ -142,11 +142,11 @@ describe("extractToolCalls", () => {
       //   - `run_code`  (mid-stream: start → input-available, no output yet)
       const msg = makeMessage([
         delegatePart("d1", "input-available", { goal: "research", handoff: "..." }),
-        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "https://example.com" })),
-        envelope("d1", toolOutputAvailable("d1::c1", { status: 200, body: "..." })),
-        envelope("d1", toolInputStart("d1::c2", "run_code")),
-        envelope("d1", toolInputAvailable("d1::c2", "run_code", { code: "print(1)" })),
+        envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "https://example.com" })),
+        envelope("d1", toolOutputAvailable("d1-c1", { status: 200, body: "..." })),
+        envelope("d1", toolInputStart("d1-c2", "run_code")),
+        envelope("d1", toolInputAvailable("d1-c2", "run_code", { code: "print(1)" })),
       ]);
 
       const [parent] = extractToolCalls(msg);
@@ -156,12 +156,12 @@ describe("extractToolCalls", () => {
 
       // Child order mirrors wire order — Map insertion preserves it.
       const [c1, c2] = parent?.children ?? [];
-      expect(c1?.toolCallId).toBe("d1::c1");
+      expect(c1?.toolCallId).toBe("d1-c1");
       expect(c1?.toolName).toBe("web_fetch");
       expect(c1?.state).toBe("output-available");
       expect(c1?.output).toEqual({ status: 200, body: "..." });
 
-      expect(c2?.toolCallId).toBe("d1::c2");
+      expect(c2?.toolCallId).toBe("d1-c2");
       expect(c2?.toolName).toBe("run_code");
       expect(c2?.state).toBe("input-available");
       expect(c2?.output).toBeUndefined();
@@ -170,9 +170,9 @@ describe("extractToolCalls", () => {
     it("promotes a child to output-error when the wrapped chunk is tool-output-error", () => {
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
-        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "https://bad" })),
-        envelope("d1", toolOutputError("d1::c1", "DNS failure")),
+        envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "https://bad" })),
+        envelope("d1", toolOutputError("d1-c1", "DNS failure")),
       ]);
       const [parent] = extractToolCalls(msg);
       const [child] = parent?.children ?? [];
@@ -215,7 +215,7 @@ describe("extractToolCalls", () => {
       // part — reducer leaves the only top-level entry untouched.
       const msg = makeMessage([
         staticToolPart("web_fetch", "call-1", "output-available"),
-        envelope("d-missing", toolInputStart("d-missing::orphan", "run_code")),
+        envelope("d-missing", toolInputStart("d-missing-orphan", "run_code")),
       ]);
       const calls = extractToolCalls(msg);
       expect(calls).toHaveLength(1);
@@ -230,7 +230,7 @@ describe("extractToolCalls", () => {
       // tool (toolName === "delegate") to accept children.
       const msg = makeMessage([
         staticToolPart("web_fetch", "shared-id", "output-available"),
-        envelope("shared-id", toolInputStart("shared-id::c1", "run_code")),
+        envelope("shared-id", toolInputStart("shared-id-c1", "run_code")),
       ]);
       const calls = extractToolCalls(msg);
       expect(calls).toHaveLength(1);
@@ -239,37 +239,37 @@ describe("extractToolCalls", () => {
       expect(only?.children).toBeUndefined();
     });
 
-    it("preserves namespaced ${delegateToolCallId}::${childId} form on reconstructed children", () => {
+    it("preserves namespaced ${delegateToolCallId}-${childId} form on reconstructed children", () => {
       // Documented choice: the reducer keeps the namespaced string verbatim
       // as emitted by the proxy writer. Stripping the prefix would require
       // re-tracking provenance for downstream callers and provides no UI
       // benefit — the rendered chip can slice the prefix cosmetically.
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
-        envelope("d1", toolInputStart("d1::inner-1", "web_search")),
-        envelope("d1", toolInputAvailable("d1::inner-1", "web_search", { q: "friday" })),
+        envelope("d1", toolInputStart("d1-inner1", "web_search")),
+        envelope("d1", toolInputAvailable("d1-inner1", "web_search", { q: "friday" })),
       ]);
       const [parent] = extractToolCalls(msg);
       const [child] = parent?.children ?? [];
-      expect(child?.toolCallId).toBe("d1::inner-1");
+      expect(child?.toolCallId).toBe("d1-inner1");
     });
 
     it("handles multiple concurrent delegates without cross-pollination", () => {
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
         delegatePart("d2", "input-available"),
-        envelope("d1", toolInputStart("d1::a", "web_fetch")),
-        envelope("d2", toolInputStart("d2::b", "run_code")),
-        envelope("d1", toolInputAvailable("d1::a", "web_fetch", { url: "x" })),
-        envelope("d2", toolInputAvailable("d2::b", "run_code", { code: "y" })),
+        envelope("d1", toolInputStart("d1-a", "web_fetch")),
+        envelope("d2", toolInputStart("d2-b", "run_code")),
+        envelope("d1", toolInputAvailable("d1-a", "web_fetch", { url: "x" })),
+        envelope("d2", toolInputAvailable("d2-b", "run_code", { code: "y" })),
       ]);
       const [first, second] = extractToolCalls(msg);
       expect(first?.toolCallId).toBe("d1");
       const [firstChild] = first?.children ?? [];
-      expect(firstChild?.toolCallId).toBe("d1::a");
+      expect(firstChild?.toolCallId).toBe("d1-a");
       expect(second?.toolCallId).toBe("d2");
       const [secondChild] = second?.children ?? [];
-      expect(secondChild?.toolCallId).toBe("d2::b");
+      expect(secondChild?.toolCallId).toBe("d2-b");
     });
 
     it("ignores malformed envelopes (missing data, non-string delegateToolCallId)", () => {
@@ -305,20 +305,20 @@ describe("extractToolCalls", () => {
       // c2 (cleanly completed). The terminator must only touch c1.
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
-        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
-        envelope("d1", toolInputStart("d1::c2", "run_code")),
-        envelope("d1", toolInputAvailable("d1::c2", "run_code", { code: "y" })),
-        envelope("d1", toolOutputAvailable("d1::c2", { ok: true })),
-        delegateEndEnvelope("d1", ["d1::c1"]),
+        envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "x" })),
+        envelope("d1", toolInputStart("d1-c2", "run_code")),
+        envelope("d1", toolInputAvailable("d1-c2", "run_code", { code: "y" })),
+        envelope("d1", toolOutputAvailable("d1-c2", { ok: true })),
+        delegateEndEnvelope("d1", ["d1-c1"]),
       ]);
 
       const [parent] = extractToolCalls(msg);
       const [c1, c2] = parent?.children ?? [];
-      expect(c1?.toolCallId).toBe("d1::c1");
+      expect(c1?.toolCallId).toBe("d1-c1");
       expect(c1?.state).toBe("output-error");
       expect(c1?.errorText).toBe("interrupted");
-      expect(c2?.toolCallId).toBe("d1::c2");
+      expect(c2?.toolCallId).toBe("d1-c2");
       expect(c2?.state).toBe("output-available");
       expect(c2?.errorText).toBeUndefined();
     });
@@ -328,10 +328,10 @@ describe("extractToolCalls", () => {
       // already reached output-available. Trust the terminal state.
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
-        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
-        envelope("d1", toolOutputAvailable("d1::c1", { ok: true })),
-        delegateEndEnvelope("d1", ["d1::c1"]),
+        envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "x" })),
+        envelope("d1", toolOutputAvailable("d1-c1", { ok: true })),
+        delegateEndEnvelope("d1", ["d1-c1"]),
       ]);
       const [parent] = extractToolCalls(msg);
       const [c1] = parent?.children ?? [];
@@ -343,11 +343,11 @@ describe("extractToolCalls", () => {
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
         delegatePart("d2", "input-available"),
-        envelope("d1", toolInputStart("d1::a", "web_fetch")),
-        envelope("d1", toolInputAvailable("d1::a", "web_fetch", { url: "x" })),
-        envelope("d2", toolInputStart("d2::b", "run_code")),
-        envelope("d2", toolInputAvailable("d2::b", "run_code", { code: "y" })),
-        delegateEndEnvelope("d1", ["d1::a"]),
+        envelope("d1", toolInputStart("d1-a", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1-a", "web_fetch", { url: "x" })),
+        envelope("d2", toolInputStart("d2-b", "run_code")),
+        envelope("d2", toolInputAvailable("d2-b", "run_code", { code: "y" })),
+        delegateEndEnvelope("d1", ["d1-a"]),
       ]);
       const [first, second] = extractToolCalls(msg);
       const [d1Child] = first?.children ?? [];
@@ -364,10 +364,10 @@ describe("extractToolCalls", () => {
       const msg = makeMessage(
         [
           delegatePart("d1", "input-available"),
-          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+          envelope("d1", toolInputStart("d1-c1", "web_fetch")),
           // c1 stuck at input-streaming (no input-available)
-          envelope("d1", toolInputStart("d1::c2", "run_code")),
-          envelope("d1", toolInputAvailable("d1::c2", "run_code", { code: "y" })),
+          envelope("d1", toolInputStart("d1-c2", "run_code")),
+          envelope("d1", toolInputAvailable("d1-c2", "run_code", { code: "y" })),
           // c2 stuck at input-available (no output)
         ],
         { state: "done" },
@@ -386,9 +386,9 @@ describe("extractToolCalls", () => {
       const msg = makeMessage(
         [
           delegatePart("d1", "input-available"),
-          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
-          envelope("d1", toolOutputAvailable("d1::c1", { ok: true })),
+          envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "x" })),
+          envelope("d1", toolOutputAvailable("d1-c1", { ok: true })),
         ],
         { state: "done" },
       );
@@ -406,11 +406,11 @@ describe("extractToolCalls", () => {
         [
           delegatePart("dA", "input-available"),
           delegatePart("dB", "input-available"),
-          envelope("dA", toolInputStart("dA::c1", "web_fetch")),
-          envelope("dA", toolInputAvailable("dA::c1", "web_fetch", { url: "x" })),
-          envelope("dB", toolInputStart("dB::c1", "run_code")),
-          envelope("dB", toolInputAvailable("dB::c1", "run_code", { code: "y" })),
-          delegateEndEnvelope("dA", ["dA::c1"]),
+          envelope("dA", toolInputStart("dA-c1", "web_fetch")),
+          envelope("dA", toolInputAvailable("dA-c1", "web_fetch", { url: "x" })),
+          envelope("dB", toolInputStart("dB-c1", "run_code")),
+          envelope("dB", toolInputAvailable("dB-c1", "run_code", { code: "y" })),
+          delegateEndEnvelope("dA", ["dA-c1"]),
         ],
         { state: "done" },
       );
@@ -430,9 +430,9 @@ describe("extractToolCalls", () => {
       const msg = makeMessage(
         [
           delegatePart("d1", "input-available"),
-          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
-          envelope("d1", toolOutputAvailable("d1::c1", { ok: true })),
+          envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "x" })),
+          envelope("d1", toolOutputAvailable("d1-c1", { ok: true })),
           delegateEndEnvelope("d1", []),
         ],
         { state: "done" },
@@ -449,8 +449,8 @@ describe("extractToolCalls", () => {
       const msg = makeMessage(
         [
           delegatePart("d1", "input-available"),
-          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+          envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "x" })),
           {
             type: "data-delegate-ledger",
             data: {
@@ -481,8 +481,8 @@ describe("extractToolCalls", () => {
       const msg = makeMessage(
         [
           delegatePart("d1", "input-available"),
-          envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-          envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "x" })),
+          envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+          envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "x" })),
           {
             type: "data-delegate-chunk",
             data: {
@@ -507,14 +507,14 @@ describe("extractToolCalls", () => {
       const msg = makeMessage([
         delegatePart("d1", "input-available", { goal: "research", handoff: "..." }),
         // agent_web as a direct child of delegate
-        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
-        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go to craigslist" })),
+        envelope("d1", toolInputStart("d1-aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1-aw1", "agent_web", { prompt: "go to craigslist" })),
         // fetch nested under agent_web
-        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
-        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://..." })),
-        envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
+        envelope("d1", toolInputStart("d1-aw1-f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1-aw1-f1", "fetch", { url: "https://..." })),
+        envelope("d1", toolOutputAvailable("d1-aw1-f1", { status: 200 })),
         // agent_web completes
-        envelope("d1", toolOutputAvailable("d1::aw1", { response: "found 3 items" })),
+        envelope("d1", toolOutputAvailable("d1-aw1", { response: "found 3 items" })),
       ]);
 
       const [parent] = extractToolCalls(msg);
@@ -523,13 +523,13 @@ describe("extractToolCalls", () => {
       expect(parent?.children).toHaveLength(1);
 
       const [aw1] = parent?.children ?? [];
-      expect(aw1?.toolCallId).toBe("d1::aw1");
+      expect(aw1?.toolCallId).toBe("d1-aw1");
       expect(aw1?.toolName).toBe("agent_web");
       expect(aw1?.state).toBe("output-available");
       expect(aw1?.children).toHaveLength(1);
 
       const [f1] = aw1?.children ?? [];
-      expect(f1?.toolCallId).toBe("d1::aw1::f1");
+      expect(f1?.toolCallId).toBe("d1-aw1-f1");
       expect(f1?.toolName).toBe("fetch");
       expect(f1?.state).toBe("output-available");
       expect(f1?.children).toBeUndefined();
@@ -538,37 +538,37 @@ describe("extractToolCalls", () => {
     it("handles multiple fetches under the same agent_web", () => {
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
-        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
-        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "search" })),
-        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
-        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://a" })),
-        envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
-        envelope("d1", toolInputStart("d1::aw1::f2", "fetch")),
-        envelope("d1", toolInputAvailable("d1::aw1::f2", "fetch", { url: "https://b" })),
-        envelope("d1", toolOutputAvailable("d1::aw1::f2", { status: 200 })),
-        envelope("d1", toolOutputAvailable("d1::aw1", { response: "done" })),
+        envelope("d1", toolInputStart("d1-aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1-aw1", "agent_web", { prompt: "search" })),
+        envelope("d1", toolInputStart("d1-aw1-f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1-aw1-f1", "fetch", { url: "https://a" })),
+        envelope("d1", toolOutputAvailable("d1-aw1-f1", { status: 200 })),
+        envelope("d1", toolInputStart("d1-aw1-f2", "fetch")),
+        envelope("d1", toolInputAvailable("d1-aw1-f2", "fetch", { url: "https://b" })),
+        envelope("d1", toolOutputAvailable("d1-aw1-f2", { status: 200 })),
+        envelope("d1", toolOutputAvailable("d1-aw1", { response: "done" })),
       ]);
 
       const [parent] = extractToolCalls(msg);
       const [aw1] = parent?.children ?? [];
       expect(aw1?.children).toHaveLength(2);
       const [f1, f2] = aw1?.children ?? [];
-      expect(f1?.toolCallId).toBe("d1::aw1::f1");
-      expect(f2?.toolCallId).toBe("d1::aw1::f2");
+      expect(f1?.toolCallId).toBe("d1-aw1-f1");
+      expect(f2?.toolCallId).toBe("d1-aw1-f2");
     });
 
     it("interrupts the entire subtree when delegate-end lists a parent agent tool", () => {
       // agent_web started but never completed; fetch also never got output.
-      // delegate-end lists d1::aw1 as pending. Both aw1 and its child f1
+      // delegate-end lists d1-aw1 as pending. Both aw1 and its child f1
       // should be marked output-error.
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
-        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
-        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go" })),
-        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
-        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://..." })),
+        envelope("d1", toolInputStart("d1-aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1-aw1", "agent_web", { prompt: "go" })),
+        envelope("d1", toolInputStart("d1-aw1-f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1-aw1-f1", "fetch", { url: "https://..." })),
         // No output for f1 or aw1 — still in-flight.
-        delegateEndEnvelope("d1", ["d1::aw1"]),
+        delegateEndEnvelope("d1", ["d1-aw1"]),
       ]);
 
       const [parent] = extractToolCalls(msg);
@@ -585,12 +585,12 @@ describe("extractToolCalls", () => {
       const msg = makeMessage(
         [
           delegatePart("d1", "input-available"),
-          envelope("d1", toolInputStart("d1::aw1", "agent_web")),
-          envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go" })),
-          envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
-          envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://..." })),
+          envelope("d1", toolInputStart("d1-aw1", "agent_web")),
+          envelope("d1", toolInputAvailable("d1-aw1", "agent_web", { prompt: "go" })),
+          envelope("d1", toolInputStart("d1-aw1-f1", "fetch")),
+          envelope("d1", toolInputAvailable("d1-aw1-f1", "fetch", { url: "https://..." })),
           // fetch completed, agent_web did not
-          envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
+          envelope("d1", toolOutputAvailable("d1-aw1-f1", { status: 200 })),
         ],
         { state: "done" },
       );
@@ -611,7 +611,7 @@ describe("extractToolCalls", () => {
         delegatePart("d1", "input-available"),
         envelope("d1", { type: "reasoning-delta", id: "r1", delta: "Let me check " }),
         envelope("d1", { type: "reasoning-delta", id: "r1", delta: "the weather..." }),
-        envelope("d1", toolInputStart("d1::c1", "web_search")),
+        envelope("d1", toolInputStart("d1-c1", "web_search")),
       ]);
 
       const [parent] = extractToolCalls(msg);
@@ -630,7 +630,7 @@ describe("extractToolCalls", () => {
           type: "data-tool-progress",
           data: { toolName: "agent_web", content: "Synthesizing..." },
         }),
-        envelope("d1", toolInputStart("d1::c1", "fetch")),
+        envelope("d1", toolInputStart("d1-c1", "fetch")),
       ]);
 
       const [parent] = extractToolCalls(msg);
@@ -641,9 +641,9 @@ describe("extractToolCalls", () => {
     it("attaches durationMs from data-delegate-ledger to reconstructed entries", () => {
       const msg = makeMessage([
         delegatePart("d1", "output-available"),
-        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "https://x" })),
-        envelope("d1", toolOutputAvailable("d1::c1", { status: 200 })),
+        envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "https://x" })),
+        envelope("d1", toolOutputAvailable("d1-c1", { status: 200 })),
         {
           type: "data-delegate-ledger",
           data: {
@@ -670,7 +670,7 @@ describe("extractToolCalls", () => {
     it("ignores ledger entries with zero or missing durationMs", () => {
       const msg = makeMessage([
         delegatePart("d1", "output-available"),
-        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
+        envelope("d1", toolInputStart("d1-c1", "web_fetch")),
         {
           type: "data-delegate-ledger",
           data: {
@@ -697,10 +697,10 @@ describe("extractToolCalls", () => {
     it("attaches durationMs from data-tool-timing to reconstructed entries", () => {
       const msg = makeMessage([
         delegatePart("d1", "output-available"),
-        envelope("d1", toolInputStart("d1::c1", "web_fetch")),
-        envelope("d1", toolInputAvailable("d1::c1", "web_fetch", { url: "https://x" })),
-        envelope("d1", toolTiming("d1::c1", 5230)),
-        envelope("d1", toolOutputAvailable("d1::c1", { status: 200 })),
+        envelope("d1", toolInputStart("d1-c1", "web_fetch")),
+        envelope("d1", toolInputAvailable("d1-c1", "web_fetch", { url: "https://x" })),
+        envelope("d1", toolTiming("d1-c1", 5230)),
+        envelope("d1", toolOutputAvailable("d1-c1", { status: 200 })),
       ]);
 
       const [parent] = extractToolCalls(msg);
@@ -711,13 +711,13 @@ describe("extractToolCalls", () => {
     it("attaches data-tool-timing durationMs to nested grandchildren", () => {
       const msg = makeMessage([
         delegatePart("d1", "output-available"),
-        envelope("d1", toolInputStart("d1::aw1", "agent_web")),
-        envelope("d1", toolInputAvailable("d1::aw1", "agent_web", { prompt: "go" })),
-        envelope("d1", toolInputStart("d1::aw1::f1", "fetch")),
-        envelope("d1", toolInputAvailable("d1::aw1::f1", "fetch", { url: "https://x" })),
-        envelope("d1", toolTiming("d1::aw1::f1", 1890)),
-        envelope("d1", toolOutputAvailable("d1::aw1::f1", { status: 200 })),
-        envelope("d1", toolOutputAvailable("d1::aw1", { response: "done" })),
+        envelope("d1", toolInputStart("d1-aw1", "agent_web")),
+        envelope("d1", toolInputAvailable("d1-aw1", "agent_web", { prompt: "go" })),
+        envelope("d1", toolInputStart("d1-aw1-f1", "fetch")),
+        envelope("d1", toolInputAvailable("d1-aw1-f1", "fetch", { url: "https://x" })),
+        envelope("d1", toolTiming("d1-aw1-f1", 1890)),
+        envelope("d1", toolOutputAvailable("d1-aw1-f1", { status: 200 })),
+        envelope("d1", toolOutputAvailable("d1-aw1", { response: "done" })),
       ]);
 
       const [parent] = extractToolCalls(msg);
@@ -729,7 +729,7 @@ describe("extractToolCalls", () => {
     it("ignores data-tool-timing when no matching accumulator entry exists", () => {
       const msg = makeMessage([
         delegatePart("d1", "output-available"),
-        envelope("d1", toolTiming("d1::missing", 1234)),
+        envelope("d1", toolTiming("d1-missing", 1234)),
       ]);
 
       const [parent] = extractToolCalls(msg);

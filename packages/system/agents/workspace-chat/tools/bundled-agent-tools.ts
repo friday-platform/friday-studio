@@ -154,7 +154,7 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
             typeof event.toolCallId === "string" &&
             event.toolCallId.length > 0
           ) {
-            event = { ...event, toolCallId: `${toolCallId}::${event.toolCallId}` };
+            event = { ...event, toolCallId: `${toolCallId}-${event.toolCallId}` };
           }
           // Data events (e.g. data-tool-timing) carry toolCallId inside `data`
           // rather than at the top level — namespace those too so downstream
@@ -171,7 +171,7 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
           ) {
             event = {
               ...event,
-              data: { ...event.data, toolCallId: `${toolCallId}::${event.data.toolCallId}` },
+              data: { ...event.data, toolCallId: `${toolCallId}-${event.data.toolCallId}` },
             };
           }
           deps.writer.write(event);
@@ -230,12 +230,7 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
   });
 
   Object.defineProperty(toolObj, AGENT_TOOL_META, {
-    value: {
-      atlasAgent,
-      deps,
-      toolName,
-      inputSchema: declaredSchema,
-    } satisfies AgentToolMeta,
+    value: { atlasAgent, deps, toolName, inputSchema: declaredSchema } satisfies AgentToolMeta,
     writable: false,
     enumerable: false,
     configurable: false,
