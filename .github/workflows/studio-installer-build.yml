@@ -288,54 +288,21 @@ jobs:
       - name: Compose manifest
         id: compose
         run: |
-          # Build the new manifest by:
-          #   1. Reading per-platform entries this build uploaded (`entries/`).
-          #   2. Fetching the currently-published manifest and prepending its
-          #      latest entry into `history` so every release is preserved.
-          #
-          # Schema:
-          #   {
-          #     "version":   "<latest>",            // current/latest release
-          #     "platforms": { <platform>: {url, sha256, size}, ... },
-          #     "history":   [ {version, platforms}, ... ]   // newest-first
-          #   }
-          #
-          # Top-level `version`/`platforms` keep the existing single-version
-          # consumer contract (studio-artifact's redirect handler reads
-          # `platforms[<p>].url`); `history` is additive — clients that don't
-          # know about it ignore it.
+          # Combine per-platform entries into the schema the studio-installer's
+          # fetch_manifest.rs already understands: { version, platforms{...} }.
+          # Version comes from the upstream `version` job (semver patch bump
+          # over the previously-published manifest).
           python3 - <<'PY' "$RELEASE_VERSION" entries > manifest.json
-          import json, os, sys, urllib.request
-
+          import json, os, sys
           version, dirpath = sys.argv[1], sys.argv[2]
-
-          # Collect this build's per-platform entries.
           platforms = {}
           for fname in sorted(os.listdir(dirpath)):
               if not fname.endswith(".json"):
                   continue
-              platforms[fname[:-len(".json")]] = json.load(open(os.path.join(dirpath, fname)))
-
-          # Carry forward history from the previously-published manifest.
-          history = []
-          try:
-              with urllib.request.urlopen(
-                  "https://download.fridayplatform.io/installer/manifest.json",
-                  timeout=10,
-              ) as r:
-                  prev = json.load(r)
-              if prev.get("version") and prev.get("platforms"):
-                  history.append({"version": prev["version"], "platforms": prev["platforms"]})
-              for entry in prev.get("history", []):
-                  history.append(entry)
-          except Exception as e:
-              print(f"No previous manifest history (first build?): {e}", file=sys.stderr)
-
-          json.dump(
-              {"version": version, "platforms": platforms, "history": history},
-              sys.stdout,
-              indent=2,
-          )
+              platform = fname[:-len(".json")]
+              with open(os.path.join(dirpath, fname)) as f:
+                  platforms[platform] = json.load(f)
+          json.dump({"version": version, "platforms": platforms}, sys.stdout, indent=2)
           PY
           cat manifest.json
 
