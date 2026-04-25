@@ -43,7 +43,14 @@ contributor and that entity.
 
 - **"You"** means the individual or legal entity Submitting a
   Contribution. If You are an individual Submitting on behalf of a
-  legal entity, "You" includes that entity.
+  legal entity, "You" includes that entity. For a legal entity, "You"
+  also includes any other entity that controls, is controlled by, or
+  is under common control with that entity. For purposes of this
+  definition, **"control"** means (i) the power, direct or indirect,
+  to cause the direction or management of such entity, whether by
+  contract or otherwise, (ii) ownership of fifty percent (50%) or
+  more of the outstanding shares, or (iii) beneficial ownership of
+  such entity.
 
 - **"Project"** means Friday Studio, including its source code,
   documentation, and any related software or materials made available
@@ -108,9 +115,12 @@ You represent and warrant that:
 (b) Each Contribution is Your original creation, or You have obtained
     all necessary permissions from the third-party rights holders. You
     will identify any third-party-licensed material in the Submission
-    in any reasonable form (for example, in the pull request
-    description, in a `THIRD_PARTY_LICENSES` file, or following the
-    procedure documented in the Project's `CONTRIBUTING.md`).
+    in any reasonable form — for example, in the pull request
+    description, in a `THIRD_PARTY_LICENSES` file, by following the
+    procedure documented in the Project's `CONTRIBUTING.md`, or by
+    marking the Submission with the trailer
+    `Submitted-on-behalf-of-third-party: <Name>` and identifying the
+    license of the third-party material.
 
 (c) Your Contribution does not violate any applicable law or
     regulation.
@@ -120,6 +130,10 @@ You represent and warrant that:
     on behalf of that employer, (ii) had Your employer waive such
     rights for Your Contribution, or (iii) had Your employer accept
     this Agreement.
+
+You agree to notify the Company of any facts or circumstances of
+which You become aware that would make any of the representations
+above inaccurate in any respect.
 
 ## 6. Disclaimer
 
@@ -174,29 +188,14 @@ effect at the time of each Submission. Commits without a valid
 If You do not agree to this Agreement, do not Submit any
 Contribution.
 
-## 8. Notice of Material Changes
-
-The Company may amend this Agreement from time to time. **The Company
-will publish material changes at least 30 days before they take
-effect**, by updating this `CLA.md` file on the Project's main branch
-and announcing the change in the Project's release notes or in a
-public communication channel maintained by the Project. Your
-Submissions made on or after the effective date of an amendment are
-governed by the amended version; Your prior Submissions remain
-governed by the version in effect when each was Submitted.
-
-Non-material changes (typo fixes, formatting, clarifications that
-do not alter substantive rights or obligations) may take effect
-immediately upon publication.
-
-## 9. Successors and Assigns
+## 8. Successors and Assigns
 
 This Agreement is binding upon, and inures to the benefit of, the
 Company and its successors and assigns, including any entity
 acquiring all or substantially all of the Company's assets or
 business.
 
-## 10. Governing Law and Venue
+## 9. Governing Law and Venue
 
 This Agreement is governed by, and construed in accordance with, the
 laws of the State of Delaware, United States, without regard to its
@@ -205,7 +204,7 @@ Wilmington, Delaware have exclusive jurisdiction over any dispute
 arising out of or relating to this Agreement, and You consent to the
 personal jurisdiction of such courts.
 
-## 11. Electronic Acceptance
+## 10. Electronic Acceptance
 
 You agree that Your acceptance of this Agreement via the
 `Signed-off-by:` mechanism in Section 7, or via any other electronic
@@ -215,7 +214,7 @@ Electronic Signatures in Global and National Commerce Act (E-SIGN),
 the Uniform Electronic Transactions Act (UETA), and any equivalent
 statute, and is admissible as evidence of Your assent.
 
-## 12. Miscellaneous
+## 11. Miscellaneous
 
 This Agreement applies separately to each Contribution. Different
 Contributions may be governed by different versions of this Agreement
