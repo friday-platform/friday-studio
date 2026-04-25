@@ -26,11 +26,11 @@ jobs:
           - platform: macos-arm
             os: macos-latest-xlarge
             target: aarch64-apple-darwin
-            bundle_ext: dmg
+            bundle_ext: zip
           - platform: macos-intel
             os: macos-latest-large
             target: x86_64-apple-darwin
-            bundle_ext: dmg
+            bundle_ext: zip
           - platform: windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -61,7 +61,7 @@ jobs:
           cache-on-failure: true
 
       - name: Import Apple Developer ID certificate (macOS)
-        if: matrix.bundle_ext == 'dmg'
+        if: matrix.bundle_ext == 'zip'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -98,7 +98,7 @@ jobs:
           cd / && npm ci --prefix "$GITHUB_WORKSPACE/apps/studio-installer"
 
       - name: Build Tauri app (macOS)
-        if: matrix.bundle_ext == 'dmg'
+        if: matrix.bundle_ext == 'zip'
         working-directory: apps/studio-installer
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -109,14 +109,17 @@ jobs:
         working-directory: apps/studio-installer
         run: npm run build -- --target ${{ matrix.target }}
 
-      - name: Locate DMG (macOS)
-        if: matrix.bundle_ext == 'dmg'
+      - name: Locate .app bundle (macOS)
+        if: matrix.bundle_ext == 'zip'
         id: mac-artifact
         shell: bash
         run: |
-          path=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/dmg -name "*.dmg" | head -1)
-          echo "path=$path" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename "$path")" >> "$GITHUB_OUTPUT"
+          app=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          echo "app_path=$app" >> "$GITHUB_OUTPUT"
+          echo "app_name=$(basename "$app")" >> "$GITHUB_OUTPUT"
+          # Output zip lives next to the .app for notarization + distribution.
+          echo "zip_path=${app%.app}.zip" >> "$GITHUB_OUTPUT"
+          echo "zip_name=FridayStudioInstaller_${{ matrix.target }}.zip" >> "$GITHUB_OUTPUT"
 
       - name: Locate NSIS installer (Windows)
         if: matrix.bundle_ext == 'exe'
@@ -140,26 +143,33 @@ jobs:
             /t http://timestamp.digicert.com `
             "${{ steps.win-artifact.outputs.path }}"
 
-      - name: Notarize and staple DMG (macOS)
-        if: matrix.bundle_ext == 'dmg'
+      - name: Notarize and staple .app (macOS)
+        if: matrix.bundle_ext == 'zip'
         env:
           APPLE_API_KEY_PATH: /tmp/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          APP_PATH: ${{ steps.mac-artifact.outputs.app_path }}
+          ZIP_PATH: ${{ steps.mac-artifact.outputs.zip_path }}
         run: |
           echo "${{ secrets.APPLE_API_KEY }}" > "$APPLE_API_KEY_PATH"
-          xcrun notarytool submit "${{ steps.mac-artifact.outputs.path }}" \
+          # Zip the .app for notarization upload (notarytool accepts zip/dmg/pkg, not bare .app).
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+          xcrun notarytool submit "$ZIP_PATH" \
             --key "$APPLE_API_KEY_PATH" \
             --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
             --issuer "${{ secrets.APPLE_API_ISSUER }}" \
             --wait
-          xcrun stapler staple "${{ steps.mac-artifact.outputs.path }}"
+          # Staple the ticket to the .app, then re-zip so the distributed bundle includes the staple.
+          xcrun stapler staple "$APP_PATH"
+          rm "$ZIP_PATH"
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
           rm "$APPLE_API_KEY_PATH"
 
       - name: Upload GitHub artifact (macOS)
-        if: matrix.bundle_ext == 'dmg'
+        if: matrix.bundle_ext == 'zip'
         uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.platform }}
-          path: ${{ steps.mac-artifact.outputs.path }}
+          path: ${{ steps.mac-artifact.outputs.zip_path }}
           retention-days: 30
 
       - name: Upload GitHub artifact (Windows)
@@ -180,12 +190,12 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Upload to GCS (macOS)
-        if: matrix.bundle_ext == 'dmg'
+        if: matrix.bundle_ext == 'zip'
         run: |
-          gsutil cp "${{ steps.mac-artifact.outputs.path }}" \
-            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/${{ steps.mac-artifact.outputs.name }}"
-          gsutil cp "${{ steps.mac-artifact.outputs.path }}" \
-            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/FridayStudioInstaller-latest.dmg"
+          gsutil cp "${{ steps.mac-artifact.outputs.zip_path }}" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/${{ steps.mac-artifact.outputs.zip_name }}"
+          gsutil cp "${{ steps.mac-artifact.outputs.zip_path }}" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/FridayStudioInstaller-latest.zip"
 
       - name: Upload to GCS (Windows)
         if: matrix.bundle_ext == 'exe'
