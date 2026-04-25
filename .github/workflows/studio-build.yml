@@ -1,24 +1,10 @@
 name: studio-build
 
 on:
-  push:
-    branches:
-      # `declaw` stays in the trigger list while v0.0.1 is being shaken out so
-      # CI runs from the integration branch the team works on. Drop once the
-      # studio-build pipeline is on main.
-      - main
-      - declaw
-    paths:
-      - 'apps/atlasd/**'
-      - 'apps/atlas-cli/**'
-      - 'apps/link/**'
-      - 'apps/webhook-tunnel/**'
-      - 'tools/agent-playground/**'
-      - 'packages/**'
-      - 'scripts/build-studio.ts'
-      - 'deno.json'
-      - 'deno.lock'
-      - '.github/workflows/studio-build.yml'
+  # Manual dispatch only. Each release is a paid native-runner build; we
+  # don't want it firing on every push to a heavy-traffic source path.
+  # Run via `gh workflow run studio-build.yml --ref <branch>` or the
+  # Actions tab.
   workflow_dispatch:
 
 env:
