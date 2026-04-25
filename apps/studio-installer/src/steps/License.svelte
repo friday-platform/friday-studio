@@ -67,7 +67,7 @@
 
   .license-scroll {
     flex: 1;
-    overflow-y: scroll;
+    overflow: auto; /* allow horizontal scroll if window narrower than 76ch */
     margin: 0 32px;
     border: 1px solid #2a2a2a;
     border-radius: 8px;
@@ -76,12 +76,15 @@
   }
 
   .license-text {
-    font-family: monospace;
-    font-size: 12px;
-    line-height: 1.6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 11px;
+    line-height: 1.55;
     color: #aaa;
-    white-space: pre-wrap;
-    word-break: break-word;
+    /* Source LICENSE hard-wraps at ~76 chars and uses indented continuation
+       blocks (Parameters table). Use `pre` (no soft-wrap) so the rendered
+       layout matches the source exactly — no orphaned words from CSS
+       wrapping at narrower-than-source widths. */
+    white-space: pre;
   }
 
   .footer {
