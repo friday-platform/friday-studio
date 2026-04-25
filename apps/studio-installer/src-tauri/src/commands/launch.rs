@@ -1,0 +1,178 @@
+use std::fs;
+use std::net::TcpStream;
+use std::path::PathBuf;
+use std::process::{Child, Command};
+use std::time::{Duration, Instant};
+
+fn friday_home() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(".friday")
+        .join("local")
+}
+
+fn write_pid(name: &str, pid: u32) -> Result<(), String> {
+    let pids_dir = friday_home().join("pids");
+    fs::create_dir_all(&pids_dir)
+        .map_err(|e| format!("Failed to create pids dir: {e}"))?;
+    let pid_file = pids_dir.join(format!("{name}.pid"));
+    fs::write(&pid_file, pid.to_string().as_bytes())
+        .map_err(|e| format!("Failed to write pid file for {name}: {e}"))
+}
+
+fn spawn_process(install_dir: &str, name: &str, friday_home_path: &str) -> Result<Child, String> {
+    #[cfg(unix)]
+    let binary = format!("{install_dir}/{name}");
+    #[cfg(windows)]
+    let binary = format!("{install_dir}\\{name}.exe");
+
+    let log_path = friday_home().join(format!("{name}.log"));
+    let log_file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("Failed to open log file for {name}: {e}"))?;
+
+    let log_err = log_file
+        .try_clone()
+        .map_err(|e| format!("Failed to clone log handle: {e}"))?;
+
+    Command::new(&binary)
+        .env("FRIDAY_HOME", friday_home_path)
+        .stdout(log_file)
+        .stderr(log_err)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn {name}: {e}"))
+}
+
+fn check_immediate_exit(child: &mut Child, name: &str) -> Result<(), String> {
+    std::thread::sleep(Duration::from_millis(100));
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            let code = status.code().unwrap_or(-1);
+            Err(format!("Failed to start {name}: exited with code {code}"))
+        }
+        Ok(None) => Ok(()),
+        Err(e) => Err(format!("Failed to check {name} status: {e}")),
+    }
+}
+
+fn poll_http_health(url: &str, timeout_secs: u64) -> Result<(), String> {
+    // Use a blocking reqwest via tokio's block_in_place — we're already in an async context
+    // but this command is called from Tauri, so we use std-based polling.
+    let start = Instant::now();
+    let deadline = Duration::from_secs(timeout_secs);
+
+    // Extract host:port from URL for TCP check first, then do HTTP
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .map_err(|e| format!("Failed to build health client: {e}"))?;
+
+    loop {
+        if start.elapsed() >= deadline {
+            return Err(format!("{url} did not become healthy within {timeout_secs}s"));
+        }
+
+        match client.get(url).send() {
+            Ok(resp) if resp.status().is_success() => return Ok(()),
+            _ => {}
+        }
+
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+fn poll_tcp_port(port: u16, timeout_secs: u64) -> Result<(), String> {
+    let addr = format!("127.0.0.1:{port}");
+    let start = Instant::now();
+
+    loop {
+        if start.elapsed() >= Duration::from_secs(timeout_secs) {
+            return Err(format!(
+                "Port {port} did not become available within {timeout_secs}s"
+            ));
+        }
+
+        if TcpStream::connect_timeout(
+            &addr.parse().map_err(|e| format!("Invalid addr: {e}"))?,
+            Duration::from_secs(1),
+        )
+        .is_ok()
+        {
+            return Ok(());
+        }
+
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+#[tauri::command]
+pub fn launch_studio(install_dir: String) -> Result<(), String> {
+    let home = friday_home();
+    let home_str = home.to_string_lossy().to_string();
+
+    fs::create_dir_all(&home).map_err(|e| format!("Failed to create FRIDAY_HOME: {e}"))?;
+    fs::create_dir_all(home.join("pids"))
+        .map_err(|e| format!("Failed to create pids dir: {e}"))?;
+
+    // ── Phase 1: backends ────────────────────────────────────────────────────
+
+    let mut atlas = spawn_process(&install_dir, "atlas", &home_str)?;
+    check_immediate_exit(&mut atlas, "atlas")?;
+    write_pid("atlas", atlas.id())?;
+
+    let mut link = spawn_process(&install_dir, "link", &home_str)?;
+    check_immediate_exit(&mut link, "link")?;
+    write_pid("link", link.id())?;
+
+    // Health check backends
+    poll_http_health("http://localhost:8080/health", 30)
+        .map_err(|_| "atlas did not become healthy within 30s".to_string())?;
+    poll_http_health("http://localhost:3100/health", 30)
+        .map_err(|_| "link did not become healthy within 30s".to_string())?;
+
+    // ── Phase 2: frontends ───────────────────────────────────────────────────
+
+    let mut playground = spawn_process(&install_dir, "agent-playground", &home_str)?;
+    check_immediate_exit(&mut playground, "agent-playground")?;
+    write_pid("agent-playground", playground.id())?;
+
+    let mut pty = spawn_process(&install_dir, "pty-server", &home_str)?;
+    check_immediate_exit(&mut pty, "pty-server")?;
+    write_pid("pty-server", pty.id())?;
+
+    let mut tunnel = spawn_process(&install_dir, "webhook-tunnel", &home_str)?;
+    check_immediate_exit(&mut tunnel, "webhook-tunnel")?;
+    write_pid("webhook-tunnel", tunnel.id())?;
+
+    // Wait for Studio UI port
+    poll_tcp_port(5200, 30)?;
+
+    // Open browser
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("http://localhost:5200")
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {e}"))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "", "http://localhost:5200"])
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {e}"))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg("http://localhost:5200")
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {e}"))?;
+    }
+
+    Ok(())
+}

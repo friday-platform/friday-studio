@@ -1846,22 +1846,25 @@ export class AtlasDaemon {
   }
 
   /**
-   * Destroy a workspace runtime
+   * Destroy a workspace runtime. The chat SDK cache is evicted regardless of
+   * whether a live runtime exists — a workspace can have a cached chat SDK
+   * (built by an inbound Slack/Teams/etc. event) while its runtime has been
+   * idle-reaped. The config-change path must still flush those creds so the
+   * next message rebuilds the adapter from the current workspace.yml.
    */
   async destroyWorkspaceRuntime(workspaceId: string) {
     const runtime = this.runtimes.get(workspaceId);
-    if (!runtime) return;
-
-    try {
-      await runtime.shutdown();
-    } catch (error) {
-      logger.error("Error shutting down workspace runtime", {
-        error,
-        workspaceId,
-      });
+    if (runtime) {
+      try {
+        await runtime.shutdown();
+      } catch (error) {
+        logger.error("Error shutting down workspace runtime", {
+          error,
+          workspaceId,
+        });
+      }
+      this.runtimes.delete(workspaceId);
     }
-
-    this.runtimes.delete(workspaceId);
 
     await this.evictChatSdkInstance(workspaceId);
 
@@ -2033,7 +2036,8 @@ export class AtlasDaemon {
     const resolved = await this.resolveDiscordGatewayCredentials();
     if (!resolved) {
       logger.info("discord_gateway_not_configured", {
-        hint: "Set DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID or declare a discord signal with bot_token/public_key/application_id in workspace.yml",
+        hint:
+          "Set DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID or declare a discord signal with bot_token/public_key/application_id in workspace.yml",
       });
       return;
     }
@@ -2047,11 +2051,13 @@ export class AtlasDaemon {
     await service.start();
   }
 
-  private async resolveDiscordGatewayCredentials(): Promise<{
-    botToken: string;
-    publicKey: string;
-    applicationId: string;
-  } | null> {
+  private async resolveDiscordGatewayCredentials(): Promise<
+    {
+      botToken: string;
+      publicKey: string;
+      applicationId: string;
+    } | null
+  > {
     const manager = this.workspaceManager;
     const workspaceResolved: {
       workspaceId: string;
@@ -2064,7 +2070,9 @@ export class AtlasDaemon {
         const config = await manager.getWorkspaceConfig(workspace.id);
         const signals = config?.workspace.signals;
         if (!signals) continue;
-        const hasDiscord = Object.values(signals).some((s) => s.provider === "discord");
+        const hasDiscord = Object.values(signals).some((s) =>
+          s.provider === "discord"
+        );
         if (!hasDiscord) continue;
 
         const creds = resolveDiscordCredentials(signals);
@@ -2090,7 +2098,8 @@ export class AtlasDaemon {
         logger.warn("discord_gateway_multi_workspace_conflict", {
           selectedWorkspaceId: first.workspaceId,
           conflictingWorkspaceId: conflict.workspaceId,
-          hint: "Only one Discord bot listener is started per daemon. To run multiple bots, run multiple daemons.",
+          hint:
+            "Only one Discord bot listener is started per daemon. To run multiple bots, run multiple daemons.",
         });
       }
       return first.creds;

@@ -1,0 +1,205 @@
+name: studio-installer-build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/studio-installer/**'
+  workflow_dispatch:
+
+env:
+  GCS_BUCKET: friday-production-studio-artifact
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm
+            os: macos-latest-xlarge
+            target: aarch64-apple-darwin
+            bundle_ext: zip
+          - platform: macos-intel
+            os: macos-latest-large
+            target: x86_64-apple-darwin
+            bundle_ext: zip
+          - platform: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle_ext: exe
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/studio-installer/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/studio-installer/src-tauri
+          cache-on-failure: true
+
+      - name: Import Apple Developer ID certificate (macOS)
+        if: matrix.bundle_ext == 'zip'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+          security create-keychain -p "" build.keychain
+          security import /tmp/certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          security list-keychain -d user -s build.keychain
+          rm /tmp/certificate.p12
+
+      - name: Create self-signed certificate (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Subject "CN=Friday Studio, O=Tempest Labs, C=US" `
+            -Type CodeSigning `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -HashAlgorithm SHA256 `
+            -NotAfter (Get-Date).AddYears(1)
+          $pfxPath = "$env:RUNNER_TEMP\selfsigned.pfx"
+          $pwd = ConvertTo-SecureString -String "selfsigned" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
+          echo "WIN_CERT_PATH=$pfxPath" >> $env:GITHUB_ENV
+          echo "WIN_CERT_PASSWORD=selfsigned" >> $env:GITHUB_ENV
+          echo "WIN_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+
+      - name: Install npm dependencies
+        shell: bash
+        run: |
+          # Run from / so npm finds no parent workspace package.json
+          cd / && npm ci --prefix "$GITHUB_WORKSPACE/apps/studio-installer"
+
+      - name: Build Tauri app (macOS)
+        if: matrix.bundle_ext == 'zip'
+        working-directory: apps/studio-installer
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: npm run build -- --target ${{ matrix.target }}
+
+      - name: Build Tauri app (Windows)
+        if: matrix.bundle_ext == 'exe'
+        working-directory: apps/studio-installer
+        run: npm run build -- --target ${{ matrix.target }}
+
+      - name: Locate .app bundle (macOS)
+        if: matrix.bundle_ext == 'zip'
+        id: mac-artifact
+        shell: bash
+        run: |
+          app=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          echo "app_path=$app" >> "$GITHUB_OUTPUT"
+          echo "app_name=$(basename "$app")" >> "$GITHUB_OUTPUT"
+          # Output zip lives next to the .app for notarization + distribution.
+          echo "zip_path=${app%.app}.zip" >> "$GITHUB_OUTPUT"
+          echo "zip_name=FridayStudioInstaller_${{ matrix.target }}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Locate NSIS installer (Windows)
+        if: matrix.bundle_ext == 'exe'
+        id: win-artifact
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem "apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*-setup.exe" | Select-Object -First 1
+          "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($f.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Sign NSIS installer (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign `
+            /fd SHA256 `
+            /f "$env:WIN_CERT_PATH" `
+            /p "$env:WIN_CERT_PASSWORD" `
+            /t http://timestamp.digicert.com `
+            "${{ steps.win-artifact.outputs.path }}"
+
+      - name: Notarize and staple .app (macOS)
+        if: matrix.bundle_ext == 'zip'
+        env:
+          APPLE_API_KEY_PATH: /tmp/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          APP_PATH: ${{ steps.mac-artifact.outputs.app_path }}
+          ZIP_PATH: ${{ steps.mac-artifact.outputs.zip_path }}
+        run: |
+          echo "${{ secrets.APPLE_API_KEY }}" > "$APPLE_API_KEY_PATH"
+          # Zip the .app for notarization upload (notarytool accepts zip/dmg/pkg, not bare .app).
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+          xcrun notarytool submit "$ZIP_PATH" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
+            --issuer "${{ secrets.APPLE_API_ISSUER }}" \
+            --wait
+          # Staple the ticket to the .app, then re-zip so the distributed bundle includes the staple.
+          xcrun stapler staple "$APP_PATH"
+          rm "$ZIP_PATH"
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+          rm "$APPLE_API_KEY_PATH"
+
+      - name: Upload GitHub artifact (macOS)
+        if: matrix.bundle_ext == 'zip'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-${{ matrix.platform }}
+          path: ${{ steps.mac-artifact.outputs.zip_path }}
+          retention-days: 30
+
+      - name: Upload GitHub artifact (Windows)
+        if: matrix.bundle_ext == 'exe'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-${{ matrix.platform }}
+          path: ${{ steps.win-artifact.outputs.path }}
+          retention-days: 30
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload to GCS (macOS)
+        if: matrix.bundle_ext == 'zip'
+        run: |
+          gsutil cp "${{ steps.mac-artifact.outputs.zip_path }}" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/${{ steps.mac-artifact.outputs.zip_name }}"
+          gsutil cp "${{ steps.mac-artifact.outputs.zip_path }}" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/FridayStudioInstaller-latest.zip"
+
+      - name: Upload to GCS (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          gsutil cp "${{ steps.win-artifact.outputs.path }}" "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/${{ steps.win-artifact.outputs.name }}"
+          gsutil cp "${{ steps.win-artifact.outputs.path }}" "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/FridayStudioInstaller-latest.exe"
