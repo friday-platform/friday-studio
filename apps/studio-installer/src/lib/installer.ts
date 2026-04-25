@@ -164,7 +164,7 @@ export async function startDownload(url: string, sha256: string, platform: strin
   store.retryDelaySecs = 0;
   store.retryError = null;
 
-  const dest = await getPartialPath(platform, url);
+  const dest = await getPartialPath(platform, url, sha256);
   store.downloadPath = dest;
 
   const channel = new Channel<DownloadEvent>();
@@ -191,10 +191,17 @@ export async function startDownload(url: string, sha256: string, platform: strin
   await invoke("download_file", { url, dest, onProgress: channel });
 }
 
-async function getPartialPath(platform: string, url: string): Promise<string> {
+async function getPartialPath(platform: string, url: string, sha256: string): Promise<string> {
   const tmpDir = await getTmpDir();
   const ext = url.endsWith(".zip") ? ".zip" : ".tar.gz";
-  return `${tmpDir}/friday-studio-${platform}${ext}`;
+  // Include the first 12 chars of the manifest sha so a partial download
+  // from a previous version doesn't collide with a different version's path.
+  // Without this, the resume-from-Range logic would splice old-version bytes
+  // onto the new download and the SHA-256 verify step would reject the
+  // result — exactly what happened the first time we shipped a v0.0.3
+  // installer to a machine that had v0.0.2 partial state on disk.
+  const tag = sha256.slice(0, 12);
+  return `${tmpDir}/friday-studio-${platform}-${tag}${ext}`;
 }
 
 async function getTmpDir(): Promise<string> {
