@@ -1,0 +1,372 @@
+#!/usr/bin/env -S deno run -A
+/**
+ * Builds a Friday Studio platform artifact for one target triple.
+ *
+ * Usage:
+ *   deno run -A scripts/build-studio.ts \
+ *     --target aarch64-apple-darwin \
+ *     --version 0.0.1
+ *
+ * Produces:
+ *   dist/friday-studio_<version>_<target>.<tar.gz|zip>   (the archive)
+ *   dist/friday-studio_<version>_<target>.<ext>.sha256   (sidecar)
+ *   dist/friday-studio_<version>_<target>.json          (manifest entry)
+ *
+ * Targets supported:
+ *   aarch64-apple-darwin       (macOS Apple Silicon, tar.gz)
+ *   x86_64-apple-darwin        (macOS Intel,        tar.gz)
+ *   x86_64-pc-windows-msvc     (Windows x64,        zip)
+ *
+ * For each target the script:
+ *   1. `deno compile`s atlas, link, webhook-tunnel, playground.
+ *   2. Downloads pinned external CLIs (gh, cloudflared) for the target.
+ *   3. Stages everything under dist/<target>/staging/.
+ *   4. Archives the staging dir + emits sha256 + size.
+ *
+ * Codesigning, notarization, and GCS upload are NOT done here — they live in
+ * the surrounding GitHub Actions workflow that calls this script.
+ */
+import { parseArgs } from "jsr:@std/cli@^1.0.6/parse-args";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+interface CliFlags {
+  target: string;
+  version: string;
+  outDir: string;
+  skipCompile: boolean;
+  skipExternal: boolean;
+}
+
+interface ExternalCliPin {
+  name: string;
+  version: string;
+  url: (target: string) => string;
+  /** Path inside the downloaded archive (or "" if it IS the binary). */
+  innerPath: (target: string) => string;
+  /** Final output filename in the staging tree. */
+  outName: (target: string) => string;
+}
+
+const GH_VERSION = "2.78.0";
+const CLOUDFLARED_VERSION = "2025.10.1";
+
+const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
+  {
+    name: "gh",
+    version: GH_VERSION,
+    url: (t) => {
+      const map: Record<string, string> = {
+        "aarch64-apple-darwin": `https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_macOS_arm64.zip`,
+        "x86_64-apple-darwin": `https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_macOS_amd64.zip`,
+        "x86_64-pc-windows-msvc": `https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_windows_amd64.zip`,
+      };
+      const url = map[t];
+      if (!url) throw new Error(`gh: unsupported target ${t}`);
+      return url;
+    },
+    innerPath: (t) => {
+      if (t.endsWith("windows-msvc")) return `gh_${GH_VERSION}_windows_amd64/bin/gh.exe`;
+      const arch = t.startsWith("aarch64") ? "arm64" : "amd64";
+      return `gh_${GH_VERSION}_macOS_${arch}/bin/gh`;
+    },
+    outName: (t) => (t.endsWith("windows-msvc") ? "gh.exe" : "gh"),
+  },
+  {
+    name: "cloudflared",
+    version: CLOUDFLARED_VERSION,
+    url: (t) => {
+      const map: Record<string, string> = {
+        "aarch64-apple-darwin": `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-darwin-arm64.tgz`,
+        "x86_64-apple-darwin": `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-darwin-amd64.tgz`,
+        "x86_64-pc-windows-msvc": `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-windows-amd64.exe`,
+      };
+      const url = map[t];
+      if (!url) throw new Error(`cloudflared: unsupported target ${t}`);
+      return url;
+    },
+    innerPath: (t) => (t.endsWith("windows-msvc") ? "" : "cloudflared"),
+    outName: (t) => (t.endsWith("windows-msvc") ? "cloudflared.exe" : "cloudflared"),
+  },
+];
+
+const DENO_BINARIES = [
+  {
+    name: "atlas",
+    entry: "apps/atlas-cli/src/otel-bootstrap.ts",
+    flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
+    include: [] as string[],
+  },
+  {
+    name: "link",
+    entry: "apps/link/src/index.ts",
+    flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
+    include: [] as string[],
+  },
+  {
+    name: "webhook-tunnel",
+    entry: "apps/webhook-tunnel/src/index.ts",
+    flags: [] as string[],
+    include: [] as string[],
+  },
+  {
+    name: "playground",
+    entry: "tools/agent-playground/static-server.ts",
+    flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
+    include: ["tools/agent-playground/build"],
+  },
+];
+
+function exeExt(target: string): string {
+  return target.endsWith("windows-msvc") ? ".exe" : "";
+}
+
+function archiveExt(target: string): "tar.gz" | "zip" {
+  return target.endsWith("windows-msvc") ? "zip" : "tar.gz";
+}
+
+async function run(
+  cmd: string[],
+  opts: { cwd?: string; env?: Record<string, string> } = {},
+): Promise<void> {
+  console.log(`+ ${cmd.join(" ")}`);
+  const proc = new Deno.Command(cmd[0], {
+    args: cmd.slice(1),
+    cwd: opts.cwd,
+    env: { ...Deno.env.toObject(), ...(opts.env ?? {}) },
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const { code } = await proc.output();
+  if (code !== 0) throw new Error(`Command failed (exit ${code}): ${cmd.join(" ")}`);
+}
+
+async function ensureDir(p: string): Promise<void> {
+  await Deno.mkdir(p, { recursive: true });
+}
+
+async function rmRf(p: string): Promise<void> {
+  try {
+    await Deno.remove(p, { recursive: true });
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+}
+
+async function compileDeno(
+  target: string,
+  bin: (typeof DENO_BINARIES)[number],
+  outPath: string,
+  repoRoot: string,
+): Promise<void> {
+  const args = [
+    "compile",
+    "-A",
+    "--no-check",
+    `--target=${target}`,
+    ...bin.flags,
+    ...bin.include.map((i) => `--include=${i}`),
+    "--output",
+    outPath,
+    bin.entry,
+  ];
+  await run(["deno", ...args], { cwd: repoRoot, env: { RUST_MIN_STACK: "33554432" } });
+}
+
+async function downloadFile(url: string, dest: string): Promise<void> {
+  console.log(`+ download ${url}`);
+  const resp = await fetch(url, { redirect: "follow" });
+  if (!resp.ok) throw new Error(`Download failed: ${url} → ${resp.status}`);
+  const ab = await resp.arrayBuffer();
+  await Deno.writeFile(dest, new Uint8Array(ab));
+}
+
+async function extractArchive(archivePath: string, outDir: string): Promise<void> {
+  await ensureDir(outDir);
+  if (archivePath.endsWith(".zip")) {
+    await run(["unzip", "-q", "-o", archivePath, "-d", outDir]);
+  } else if (archivePath.endsWith(".tgz") || archivePath.endsWith(".tar.gz")) {
+    await run(["tar", "-xzf", archivePath, "-C", outDir]);
+  } else {
+    throw new Error(`Unknown archive type: ${archivePath}`);
+  }
+}
+
+async function bundleExternalCli(
+  target: string,
+  cli: ExternalCliPin,
+  outDir: string,
+  scratch: string,
+): Promise<void> {
+  await ensureDir(outDir);
+  const url = cli.url(target);
+  const fileName = url.split("/").pop()!;
+  const downloadPath = join(scratch, fileName);
+  await downloadFile(url, downloadPath);
+
+  const isArchive =
+    fileName.endsWith(".zip") || fileName.endsWith(".tgz") || fileName.endsWith(".tar.gz");
+  const innerRel = cli.innerPath(target);
+  const dest = join(outDir, cli.outName(target));
+
+  if (!isArchive) {
+    // direct binary download (e.g. cloudflared on Windows)
+    await Deno.copyFile(downloadPath, dest);
+  } else {
+    const extractDir = join(scratch, `${cli.name}-extract`);
+    await rmRf(extractDir);
+    await extractArchive(downloadPath, extractDir);
+    const inner = innerRel ? join(extractDir, innerRel) : extractDir;
+    await Deno.copyFile(inner, dest);
+  }
+  await Deno.chmod(dest, 0o755).catch(() => {}); // no-op on Windows
+}
+
+async function archiveStaging(
+  target: string,
+  stagingDir: string,
+  outArchive: string,
+): Promise<void> {
+  if (archiveExt(target) === "zip") {
+    // PowerShell on Windows; on macOS we don't reach this branch.
+    const isWindows = Deno.build.os === "windows";
+    if (isWindows) {
+      await run([
+        "powershell",
+        "-Command",
+        `Compress-Archive -Path '${stagingDir}\\*' -DestinationPath '${outArchive}' -Force`,
+      ]);
+    } else {
+      // Useful when building Windows artifacts from macOS for local QA.
+      await run(["zip", "-r", "-q", outArchive, "."], { cwd: stagingDir });
+    }
+  } else {
+    await run(["tar", "-czf", outArchive, "-C", stagingDir, "."]);
+  }
+}
+
+async function sha256OfFile(p: string): Promise<string> {
+  const data = await Deno.readFile(p);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function manifestPlatformKey(target: string): string {
+  switch (target) {
+    case "aarch64-apple-darwin":
+      return "macos-arm";
+    case "x86_64-apple-darwin":
+      return "macos-intel";
+    case "x86_64-pc-windows-msvc":
+      return "windows";
+    default:
+      throw new Error(`No manifest key for target: ${target}`);
+  }
+}
+
+async function main(): Promise<void> {
+  const flags = parseArgs(Deno.args, {
+    string: ["target", "version", "out"],
+    boolean: ["skip-compile", "skip-external"],
+    default: { out: "dist", "skip-compile": false, "skip-external": false },
+  }) as unknown as {
+    target?: string;
+    version?: string;
+    out: string;
+    "skip-compile": boolean;
+    "skip-external": boolean;
+  };
+
+  if (!flags.target) throw new Error("--target required (e.g. aarch64-apple-darwin)");
+  if (!flags.version) throw new Error("--version required (e.g. 0.0.1)");
+
+  const opts: CliFlags = {
+    target: flags.target,
+    version: flags.version,
+    outDir: flags.out,
+    skipCompile: flags["skip-compile"],
+    skipExternal: flags["skip-external"],
+  };
+
+  // Worktree-aware repo root: this script lives in <repo>/scripts/.
+  const here = new URL(".", import.meta.url).pathname;
+  const repoRoot = join(here, "..");
+
+  console.log(`[build-studio] target=${opts.target} version=${opts.version}`);
+
+  const targetOut = join(repoRoot, opts.outDir, opts.target);
+  const stagingDir = join(targetOut, "staging");
+  const scratchDir = join(targetOut, "scratch");
+  await rmRf(stagingDir);
+  await rmRf(scratchDir);
+  await ensureDir(stagingDir);
+  await ensureDir(scratchDir);
+
+  // Make sure the playground build artifact exists before deno-compile embeds it.
+  const playgroundBuild = join(repoRoot, "tools/agent-playground/build");
+  if (!existsSync(playgroundBuild)) {
+    console.log("[build-studio] playground build missing — running vite build…");
+    await run(["npm", "run", "build"], { cwd: join(repoRoot, "tools/agent-playground") });
+  }
+
+  if (!opts.skipCompile) {
+    for (const bin of DENO_BINARIES) {
+      const outPath = join(stagingDir, `${bin.name}${exeExt(opts.target)}`);
+      await compileDeno(opts.target, bin, outPath, repoRoot);
+    }
+  } else {
+    console.log("[build-studio] --skip-compile set, skipping deno compile");
+  }
+
+  if (!opts.skipExternal) {
+    for (const cli of EXTERNAL_CLIS) {
+      await bundleExternalCli(opts.target, cli, stagingDir, scratchDir);
+    }
+  } else {
+    console.log("[build-studio] --skip-external set, skipping CLI bundling");
+  }
+
+  const archiveName = `friday-studio_${opts.version}_${opts.target}.${archiveExt(opts.target)}`;
+  const archivePath = join(repoRoot, opts.outDir, archiveName);
+  await rmRf(archivePath);
+
+  await archiveStaging(opts.target, stagingDir, archivePath);
+  const sha = await sha256OfFile(archivePath);
+  const stat = await Deno.stat(archivePath);
+
+  const sidecar = `${archivePath}.sha256`;
+  await Deno.writeTextFile(sidecar, `${sha}  ${archiveName}\n`);
+
+  const platformKey = manifestPlatformKey(opts.target);
+  const entry = {
+    [platformKey]: {
+      url: `https://download.fridayplatform.io/studio/${archiveName}`,
+      sha256: sha,
+      size: stat.size,
+    },
+  };
+
+  const entryPath = join(
+    repoRoot,
+    opts.outDir,
+    `friday-studio_${opts.version}_${opts.target}.json`,
+  );
+  await Deno.writeTextFile(entryPath, JSON.stringify(entry, null, 2));
+
+  console.log("");
+  console.log(
+    `[build-studio] ✓ artifact:   ${archivePath} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`,
+  );
+  console.log(`[build-studio] ✓ sha256:     ${sha}`);
+  console.log(`[build-studio] ✓ entry:      ${entryPath}`);
+  console.log(`[build-studio] ✓ key:        ${platformKey}`);
+
+  // Clean scratch + staging — keep only the archive + sidecar + entry.
+  await rmRf(scratchDir);
+}
+
+if (import.meta.main) {
+  await main();
+}
