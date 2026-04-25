@@ -146,13 +146,29 @@ jobs:
             </dict>
           </plist>
           PLIST
+          # Sign in parallel — Apple's TSA roundtrip dominates each call,
+          # and serial signing of 6 ~250MB binaries took ~25min on the
+          # Intel runner (vs 12s on M2 ARM where TSA was responsive). With
+          # & + wait the whole step finishes in roughly the slowest single
+          # binary's time.
+          PIDS=()
           for f in atlas link playground webhook-tunnel gh cloudflared; do
-            codesign --force --options runtime --timestamp \
-              --entitlements "$ENTITLEMENTS" \
-              --sign "$APPLE_SIGNING_IDENTITY" \
-              "$STAGING/$f"
-            codesign --verify --strict --verbose=2 "$STAGING/$f"
+            (
+              codesign --force --options runtime --timestamp \
+                --entitlements "$ENTITLEMENTS" \
+                --sign "$APPLE_SIGNING_IDENTITY" \
+                "$STAGING/$f" \
+                && codesign --verify --strict --verbose=2 "$STAGING/$f"
+            ) &
+            PIDS+=($!)
           done
+          # Fail loudly if any background sign returned non-zero. Without
+          # this `wait` the loop exits 0 and we ship unsigned binaries.
+          fail=0
+          for pid in "${PIDS[@]}"; do
+            wait "$pid" || fail=1
+          done
+          [ "$fail" -eq 0 ] || exit 1
 
       - name: Notarize archive (macOS)
         if: startsWith(matrix.platform, 'macos')
