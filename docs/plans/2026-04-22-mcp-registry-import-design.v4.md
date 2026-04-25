@@ -191,6 +191,9 @@ UI components and query hooks are not covered by automated tests. The playground
 - **Authentication.** The four new routes are unauthenticated, matching the existing three registry routes. If the daemon gains multi-user auth, all seven routes become gates in the same commit.
 - **Web-client support.** Playground-only for this ship. A web-client catalog + import flow would reuse the same daemon routes but needs separate UI design.
 - **Rate limiting.** Upstream rate limits are undocumented. If 429s become a problem, mitigation is TanStack `staleTime` adjustment and, if needed, a small server-side backoff. Not worth pre-building.
+- **Manual server editing after creation.** Once a custom server is added, the only modification path is delete-and-recreate. No inline edit form or detail-page edit mode.
+- **SSE or WebSocket transport for custom servers.** Only `stdio` and `http` (streamable-http) are supported in the custom paste flow. SSE support is a future enhancement if demand exists.
+- **Auto-detection of transport type from command name.** We do not try to infer whether `uvx`, `npx`, `python`, etc. imply stdio vs http. The pasted JSON determines the transport via the presence of `command`/`args` (stdio) or `url` (http).
 
 ## Further Notes
 
