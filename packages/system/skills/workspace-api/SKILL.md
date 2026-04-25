@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: "Create, list, and manage workspaces via the daemon HTTP API (localhost:8080). Use when the user asks to create or edit a workspace, space, project, or environment; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; or wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp)."
+description: "Create, list, update, delete, and clean up workspaces via the daemon HTTP API (localhost:8080). Use when the user asks to create, edit, delete, or list workspaces, spaces, projects, or environments; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp); or clean up test/scratch workspaces."
 user-invocable: false
 ---
 
@@ -17,6 +17,21 @@ curl -sf http://localhost:8080/health && echo OK
 ```
 
 If that fails, see `friday-cli` for daemon lifecycle.
+
+---
+
+## Tool selection — daemon HTTP operations
+
+**For any HTTP call to the daemon (list, read, update, delete, fire a signal):
+use `run_code` (bash or JavaScript). Do not use `agent_claude-code`.**
+
+`agent_claude-code` runs in an isolated sandbox without access to localhost. It is
+the wrong tool for anything that talks to the daemon API. `run_code` bash + curl is
+always the right call for these operations — it's one command, the output is
+immediate, and errors are obvious.
+
+*Exception:* `workspace_create` is a typed wrapper around `POST /api/workspaces` —
+always use the tool for creation so you get structured validation errors.
 
 ---
 
@@ -468,6 +483,58 @@ overwriting. Pass `force: true` to override the active-session guard (use with c
 
 **Never DELETE+CREATE** — loses the runtime id, kills active sessions, breaks anything
 holding the old id (cron targets, cross-workspace mounts, hardcoded refs).
+
+---
+
+## Deleting a workspace
+
+`DELETE /api/workspaces/:id` — removes the workspace, its config, and its runtime
+entry. The id is the **runtime id** (`layered_ham`-style), not the workspace name.
+
+```bash
+# run_code, language: bash
+curl -sf -X DELETE http://localhost:8080/api/workspaces/layered_ham
+# → {"success": true, "id": "layered_ham"}
+```
+
+**Rejects with 403** for system workspaces (`system`, `user`, `thick_endive`).
+Do not attempt to delete those.
+
+**Resolve name → id first** when you only have the display name:
+
+```bash
+curl -sf http://localhost:8080/api/workspaces | \
+  jq -r '.[] | select(.name == "my-workspace") | .id'
+```
+
+### Batch delete — by name prefix
+
+```bash
+# run_code, language: bash
+curl -sf http://localhost:8080/api/workspaces | \
+  jq -r '.[] | select(.name | startswith("test-")) | .id' | \
+  while read -r id; do
+    result=$(curl -sf -X DELETE "http://localhost:8080/api/workspaces/$id")
+    echo "$id: $result"
+  done
+```
+
+### Batch delete — by explicit id list
+
+```bash
+# run_code, language: bash
+for id in layered_ham smoky_almond ripe_eggplant; do
+  result=$(curl -sf -X DELETE "http://localhost:8080/api/workspaces/$id")
+  echo "$id: $result"
+done
+```
+
+**Dry-run first** — list the names before deleting to confirm you have the right set:
+
+```bash
+curl -sf http://localhost:8080/api/workspaces | \
+  jq -r '.[] | select(.name | startswith("test-")) | "\(.id)  \(.name)"'
+```
 
 ---
 

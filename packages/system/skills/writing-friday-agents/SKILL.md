@@ -107,10 +107,17 @@ Key points: `stream.intent` fires before any blocking work; tool listing and LLM
 | Generate text or structured objects | `ctx.llm.generate` / `ctx.llm.generate_object` | `capabilities.md`, `structured-output.md` |
 | Call an external HTTP API | `ctx.http.fetch` | `capabilities.md` |
 | GitHub/Postgres/Notion/etc. integration | `ctx.tools.call` + `mcp={...}` decorator | `mcp-tools.md` |
+| Web scraping / page fetch | `ctx.http.fetch` — try first; add MCP browser server only when JS rendering is required | `capabilities.md` |
 | Progress to user | `ctx.stream.intent` / `ctx.stream.progress` | `capabilities.md` |
 | API tokens/secrets | `ctx.env["MY_TOKEN"]` + `environment=` decorator | `capabilities.md` |
 
 Reaching for `requests`, `httpx`, `anthropic`, `openai` — stop. Route through `ctx`.
+
+`ctx.tools.call` takes two arguments — the tool name is flat across all declared MCP servers, no server prefix:
+
+```python
+result = ctx.tools.call("read_file", {"path": "/tmp/data.json"})
+```
 
 ## Parsing the prompt
 
@@ -138,6 +145,7 @@ Wrap capability calls — `LlmError`, `HttpError`, `ToolCallError` — and retur
 4. **Returning a raw value.** `return "hi"` fails. Wrap in `ok()`.
 5. **Two `@agent` decorators in one file.** `RuntimeError`. Split into separate files.
 6. **Pydantic schemas for `parse_input`.** Use dataclasses. Pydantic is not installed.
+7. **Adding an MCP browser/fetch server when the workspace already has web tools.** If workspace-chat has `agent_web` or `web_fetch` in scope, prefer those for web research rather than wiring a new MCP server to the agent. Inside the agent, `ctx.http.fetch()` handles plain HTTP; only reach for an MCP browser server when the page requires JavaScript rendering.
 
 ## Registering an agent with Friday
 
@@ -146,8 +154,6 @@ spawns the agent with `ATLAS_VALIDATE_ID`, reads its id/version/description from
 `@agent` decorator via NATS, copies all source files from the same directory to
 `~/.atlas/agents/{id}@{version}/`, and hot-reloads the registry. **No daemon restart
 required.**
-
-**From a terminal or `run_code` (bash):**
 
 ```bash
 curl -X POST http://localhost:8080/api/agents/register \
@@ -158,29 +164,7 @@ curl -X POST http://localhost:8080/api/agents/register \
 
 CLI equivalent: `deno task atlas agent register ./my-agent/` (same HTTP call).
 
-**From chat (`run_code` in JavaScript/Deno — two steps):**
-
-Step 1 — write to a clean subdirectory (the API copies the whole parent dir):
-
-```javascript
-import { writeFileSync, mkdirSync } from "node:fs";
-const dir = "/tmp/my-agent-deploy";
-mkdirSync(dir, { recursive: true });
-writeFileSync(`${dir}/agent.py`, agentSource);  // agentSource is the Python string
-```
-
-Step 2 — register:
-
-```javascript
-const res = await fetch("http://localhost:8080/api/agents/register", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ entrypoint: "/tmp/my-agent-deploy/agent.py" }),
-});
-const result = await res.json();
-console.log(JSON.stringify(result));
-// {"ok": true, "agent": {"id": "my-agent", "version": "0.1.0", "path": "..."}}
-```
+The agent file must be written to disk first — write it to a clean `/tmp/` subdirectory (the API copies the whole parent dir), then POST the entrypoint path.
 
 On failure: `ok: false` + `error` string + `phase`. `phase: "validate"` = agent
 didn't start or NATS handshake timed out (check for Python syntax errors, missing
@@ -204,14 +188,13 @@ When a user asks you to build a workspace with a custom Python agent, load both
 wiring) and follow this sequence:
 
 1. Write the Python agent source using the boilerplate above.
-2. Write it to a clean `/tmp/` subdirectory via `run_code` (JavaScript).
-3. Call `POST /api/agents/register` via `run_code` — confirm `ok: true`.
+2. Write it to a clean `/tmp/` subdirectory.
+3. Call `POST /api/agents/register` — confirm `ok: true`.
 4. Fetch the workspace config, add a `type: user` agent entry and a job FSM that
    invokes it, and write the updated config back to disk.
 
-Steps 3 and 4 can run in the same `run_code` call. The `workspace-api` skill has
-the complete FSM and job schema; the key for custom code agents is `type: user`
-with `agent:` matching the decorator id.
+The `workspace-api` skill has the complete FSM and job schema; the key for custom
+code agents is `type: user` with `agent:` matching the decorator id.
 
 ## When to read a reference
 
