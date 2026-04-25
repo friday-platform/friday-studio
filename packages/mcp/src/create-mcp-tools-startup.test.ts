@@ -125,12 +125,12 @@ describe("connectHttp startup", () => {
     const child = createMockChildProcess();
     const mockSpawn = vi.fn().mockReturnValue(child);
 
-    // URL unreachable on first check, then reachable
+    // URL unreachable on first check (connection refused), then reachable
     let fetchCall = 0;
     const mockFetch = vi.fn().mockImplementation(() => {
       fetchCall++;
       if (fetchCall <= 1) {
-        return Promise.resolve({ status: 404, ok: false } as Response);
+        return Promise.reject(new Error("ECONNREFUSED"));
       }
       return Promise.resolve({ status: 200, ok: true } as Response);
     });
@@ -175,10 +175,10 @@ describe("connectHttp startup", () => {
     expect(result.children).toBeUndefined();
   });
 
-  it("timeout: ready_url never returns 2xx → MCPStartupError(kind: 'timeout')", async () => {
+  it("timeout: ready_url never responds → MCPStartupError(kind: 'timeout')", async () => {
     const child = createMockChildProcess();
     const mockSpawn = vi.fn().mockReturnValue(child);
-    const mockFetch = vi.fn().mockResolvedValue({ status: 404, ok: false } as Response);
+    const mockFetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
 
     const config = makeHttpConfig();
     const error = await connectHttp(config, {}, "timeout-server", fakeLogger, {
@@ -197,13 +197,13 @@ describe("connectHttp startup", () => {
     const child = createMockChildProcess();
     const mockSpawn = vi.fn().mockReturnValue(child);
 
-    // Call 1 = initial check (404). Call 2 = first poll (404).
+    // Call 1 = initial check (rejected). Call 2 = first poll (rejected).
     // Call 3 = re-check after EADDRINUSE detected (200).
     let fetchCall = 0;
     const mockFetch = vi.fn().mockImplementation(() => {
       fetchCall++;
       if (fetchCall <= 2) {
-        return Promise.resolve({ status: 404, ok: false } as Response);
+        return Promise.reject(new Error("ECONNREFUSED"));
       }
       return Promise.resolve({ status: 200, ok: true } as Response);
     });
@@ -235,12 +235,12 @@ describe("connectHttp startup", () => {
     const child = createMockChildProcess();
     const mockSpawn = vi.fn().mockReturnValue(child);
 
-    // URL unreachable initially, then reachable
+    // URL unreachable initially (connection refused), then reachable
     let fetchCall = 0;
     const mockFetch = vi.fn().mockImplementation(() => {
       fetchCall++;
       if (fetchCall <= 1) {
-        return Promise.resolve({ status: 404, ok: false } as Response);
+        return Promise.reject(new Error("ECONNREFUSED"));
       }
       return Promise.resolve({ status: 200, ok: true } as Response);
     });

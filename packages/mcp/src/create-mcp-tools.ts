@@ -273,11 +273,17 @@ async function connectStdio(
   }, RETRY_OPTIONS);
 }
 
-/** Check whether an HTTP URL returns a 2xx response. */
+/**
+ * Check whether an HTTP server is listening on the given URL.
+ * Any successful HTTP response (even 404) means the server is up;
+ * only connection-level errors (ECONNREFUSED, etc.) return false.
+ * MCP HTTP endpoints typically reject GET with 404/405, so requiring
+ * 2xx would falsely report them as unreachable.
+ */
 async function isReachable(url: string, fetchImpl: typeof fetch): Promise<boolean> {
   try {
-    const resp = await fetchImpl(url, { method: "GET" });
-    return resp.status >= 200 && resp.status < 300;
+    await fetchImpl(url, { method: "GET" });
+    return true;
   } catch {
     return false;
   }
@@ -383,11 +389,10 @@ export async function connectHttp(
     }
 
     try {
-      const resp = await _fetch(pollUrl, { method: "GET" });
-      if (resp.status >= 200 && resp.status < 300) {
-        const result = await connectHttpClient(url, headers);
-        return { ...result, children: new Set([child]) };
-      }
+      await _fetch(pollUrl, { method: "GET" });
+      // Server is listening — verify it actually responds to MCP traffic
+      const result = await connectHttpClient(url, headers);
+      return { ...result, children: new Set([child]) };
     } catch {
       // Not ready yet — continue polling
     }
