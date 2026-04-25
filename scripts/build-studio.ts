@@ -28,7 +28,8 @@
  */
 import { parseArgs } from "jsr:@std/cli@^1.0.6/parse-args";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 interface CliFlags {
   target: string;
@@ -153,6 +154,20 @@ async function rmRf(p: string): Promise<void> {
   }
 }
 
+// Exclude tests, fixtures, and dev-only sub-trees from the embedded source.
+// `deno compile` ships the entire reachable file graph as raw TS, including
+// every sibling file in the same directory; excluding tests alone cuts the
+// per-binary footprint by hundreds of MB without touching runtime behavior.
+const COMPILE_EXCLUDES = [
+  "**/*.test.ts",
+  "**/*.spec.ts",
+  "**/__tests__/**",
+  "**/__fixtures__/**",
+  "**/fixtures/**",
+  "**/test-utils/**",
+  "**/*.bench.ts",
+];
+
 async function compileDeno(
   target: string,
   bin: (typeof DENO_BINARIES)[number],
@@ -166,6 +181,7 @@ async function compileDeno(
     `--target=${target}`,
     ...bin.flags,
     ...bin.include.map((i) => `--include=${i}`),
+    ...COMPILE_EXCLUDES.map((e) => `--exclude=${e}`),
     "--output",
     outPath,
     bin.entry,
@@ -292,7 +308,9 @@ async function main(): Promise<void> {
   };
 
   // Worktree-aware repo root: this script lives in <repo>/scripts/.
-  const here = new URL(".", import.meta.url).pathname;
+  // `URL.pathname` returns `/D:/a/.../scripts/` on Windows — invalid as a
+  // filesystem path. fileURLToPath() handles the OS-specific conversion.
+  const here = dirname(fileURLToPath(import.meta.url));
   const repoRoot = join(here, "..");
 
   console.log(`[build-studio] target=${opts.target} version=${opts.version}`);
