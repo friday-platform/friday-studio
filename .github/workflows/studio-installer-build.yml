@@ -29,21 +29,20 @@ jobs:
         run: |
           set -euo pipefail
           MANIFEST_URL="https://download.fridayplatform.io/installer/manifest.json"
-          # Seed version is what tauri.conf.json says — used only on first ever build
-          # (no manifest published yet). Subsequent builds bump the patch from the
-          # last published release.
-          SEED=$(python3 -c "import json; print(json.load(open('apps/studio-installer/src-tauri/tauri.conf.json'))['version'])")
+          # Single source of truth: the published manifest. If it doesn't exist
+          # (first-ever build), seed from 0.0.0 so the first published version
+          # is 0.0.1. After that, every build is a patch bump from whatever's
+          # currently published — no file in the repo controls the version.
           PREV=$(curl -sf "$MANIFEST_URL" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
           if [ -z "$PREV" ]; then
-            echo "No published manifest; seeding from tauri.conf.json: $SEED"
-            NEXT="$SEED"
-          else
-            MAJOR=$(echo "$PREV" | cut -d. -f1)
-            MINOR=$(echo "$PREV" | cut -d. -f2)
-            PATCH=$(echo "$PREV" | cut -d. -f3 | sed 's/[^0-9].*//')
-            NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
-            echo "Bumping ${PREV} -> ${NEXT}"
+            PREV="0.0.0"
+            echo "No published manifest; bootstrapping from $PREV"
           fi
+          MAJOR=$(echo "$PREV" | cut -d. -f1)
+          MINOR=$(echo "$PREV" | cut -d. -f2)
+          PATCH=$(echo "$PREV" | cut -d. -f3 | sed 's/[^0-9].*//')
+          NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "Bumping ${PREV} -> ${NEXT}"
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
 
   build:
