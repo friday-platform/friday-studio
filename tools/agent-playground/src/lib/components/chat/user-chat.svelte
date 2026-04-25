@@ -125,6 +125,8 @@
    * active, so it's a no-op for finished chats.
    */
   let shouldResumeStream = $state(false);
+  /** Set when resumeStream returns 204 and the last loaded message was unanswered. */
+  let wasInterrupted = $state(false);
 
   /**
    * Parallel "local event stream" for playground-specific UI that doesn't
@@ -306,6 +308,7 @@
     localEvents = [];
     initialMessages = [];
     error = null;
+    wasInterrupted = false;
     rehydrationDone = false;
     // Queued sends belong to the old chat's Chat; don't cross-post them
     // into the chat we're switching to.
@@ -358,8 +361,15 @@
     if (chat && shouldResumeStream) {
       shouldResumeStream = false;
       const instance = chat;
+      // Capture before the async boundary — `initialMessages` is stable here
+      // (rehydrateChat already settled), but we can't read it after the await.
+      const hadUnansweredUser =
+        initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
       instance.resumeStream().catch(() => {
-        // Silent: the most common outcome is 204 (no active stream).
+        // The most common outcome is 204 (no active stream). When the session
+        // died mid-response the server has nothing to replay — show an
+        // interrupted indicator so the user knows to resend.
+        if (hadUnansweredUser) wasInterrupted = true;
       });
       // Effect cleanup: when `chat` is re-derived (wsId change, switchToChat,
       // startNewChat) or the component unmounts, abort the old Chat's
@@ -941,6 +951,7 @@
 
     if (!chat) return;
     error = null;
+    wasInterrupted = false;
 
     // Merge images from the input component + any dropped on the chat area
     const allImages = [...inputImages, ...pendingImages];
@@ -1055,6 +1066,20 @@
         onCredentialConnected={handleCredentialConnected}
         {thinking}
       />
+
+      {#if wasInterrupted}
+        <div class="interrupted-banner" role="status">
+          Response was interrupted.
+          <button
+            class="interrupted-retry"
+            onclick={() => {
+              wasInterrupted = false;
+              const lastUser = displayedMessages.findLast((m) => m.role === "user");
+              if (lastUser?.content) void handleSubmit(lastUser.content);
+            }}
+          >Resend</button>
+        </div>
+      {/if}
 
       {#if error}
         <div class="error-banner" role="alert">
@@ -1179,6 +1204,30 @@
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-4);
     text-align: center;
+  }
+
+  .interrupted-banner {
+    align-items: center;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    display: flex;
+    font-size: var(--font-size-2);
+    gap: var(--size-2);
+    justify-content: center;
+    padding: var(--size-2) var(--size-4);
+  }
+
+  .interrupted-retry {
+    background: none;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-1);
+    color: inherit;
+    cursor: pointer;
+    font-size: inherit;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .interrupted-retry:hover {
+    color: var(--color-text);
   }
 
   .error-banner {
