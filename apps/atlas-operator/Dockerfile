@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -a -o atlas-manager ./apps/atlas-operator/cmd/manager
 
 # Runtime stage
-FROM alpine:3.23.3
+FROM alpine:3.23.4
 
 # Install ca-certificates for HTTPS
 RUN apk --no-cache add ca-certificates
