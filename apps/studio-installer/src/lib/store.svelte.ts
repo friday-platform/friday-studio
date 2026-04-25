@@ -4,6 +4,9 @@ export type Step = "welcome" | "license" | "api-keys" | "download" | "extract" |
 // Install mode determined at startup
 export type InstallMode = "fresh" | "update" | "current";
 
+// AI provider — drives env-var name + UX hints in the API Keys step.
+export type ProviderId = "anthropic" | "openai" | "gemini" | "groq";
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -35,9 +38,10 @@ function createStore() {
   let licenseAccepted = $state(false);
   let licenseScrolledToBottom = $state(false);
 
-  // API keys
-  let anthropicKey = $state("");
-  let openaiKey = $state("");
+  // API key — single provider chosen at install time. The full env-var name
+  // (e.g. ANTHROPIC_API_KEY) is derived from `selectedProvider` at write time.
+  let selectedProvider = $state<ProviderId>("anthropic");
+  let apiKey = $state("");
 
   // Download progress
   let downloadedBytes = $state(0);
@@ -107,18 +111,18 @@ function createStore() {
       licenseScrolledToBottom = v;
     },
 
-    get anthropicKey() {
-      return anthropicKey;
+    get selectedProvider() {
+      return selectedProvider;
     },
-    set anthropicKey(v: string) {
-      anthropicKey = v;
+    set selectedProvider(v: ProviderId) {
+      selectedProvider = v;
     },
 
-    get openaiKey() {
-      return openaiKey;
+    get apiKey() {
+      return apiKey;
     },
-    set openaiKey(v: string) {
-      openaiKey = v;
+    set apiKey(v: string) {
+      apiKey = v;
     },
 
     get downloadedBytes() {

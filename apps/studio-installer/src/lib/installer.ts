@@ -223,9 +223,15 @@ export async function runExtract(src: string, dest: string): Promise<void> {
 // ── Write API keys ────────────────────────────────────────────────────────────
 
 export async function writeKeys(): Promise<void> {
-  const anthropicKey = store.anthropicKey.trim() || null;
-  const openaiKey = store.openaiKey.trim() || null;
-  await invoke("write_env_file", { anthropicKey, openaiKey });
+  const trimmed = store.apiKey.trim() || null;
+  // Only the selected provider's key is sent; the other three stay null so
+  // write_env_file leaves any existing values for them in .env untouched.
+  await invoke("write_env_file", {
+    anthropicKey: store.selectedProvider === "anthropic" ? trimmed : null,
+    openaiKey: store.selectedProvider === "openai" ? trimmed : null,
+    geminiKey: store.selectedProvider === "gemini" ? trimmed : null,
+    groqKey: store.selectedProvider === "groq" ? trimmed : null,
+  });
 }
 
 // ── Startup script ────────────────────────────────────────────────────────────

@@ -43,6 +43,8 @@ fn render_env_lines(lines: &[(Option<String>, String)]) -> String {
 pub fn write_env_file(
     anthropic_key: Option<String>,
     openai_key: Option<String>,
+    gemini_key: Option<String>,
+    groq_key: Option<String>,
 ) -> Result<(), String> {
     let path = env_file_path()?;
 
@@ -62,14 +64,17 @@ pub fn write_env_file(
         .collect();
 
     // User-provided API keys (only if not already present)
-    if let Some(ref key) = anthropic_key {
-        if !existing_keys.contains_key("ANTHROPIC_API_KEY") {
-            lines.push((Some("ANTHROPIC_API_KEY".to_string()), key.clone()));
-        }
-    }
-    if let Some(ref key) = openai_key {
-        if !existing_keys.contains_key("OPENAI_API_KEY") {
-            lines.push((Some("OPENAI_API_KEY".to_string()), key.clone()));
+    let provider_keys: [(&str, &Option<String>); 4] = [
+        ("ANTHROPIC_API_KEY", &anthropic_key),
+        ("OPENAI_API_KEY", &openai_key),
+        ("GEMINI_API_KEY", &gemini_key),
+        ("GROQ_API_KEY", &groq_key),
+    ];
+    for (env_var, value) in provider_keys {
+        if let Some(key) = value {
+            if !existing_keys.contains_key(env_var) {
+                lines.push((Some(env_var.to_string()), key.clone()));
+            }
         }
     }
 

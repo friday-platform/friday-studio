@@ -1,13 +1,71 @@
 <script lang="ts">
-  import { store } from "../lib/store.svelte.ts";
+  import { store, type ProviderId } from "../lib/store.svelte.ts";
   import { advanceStep, writeKeys } from "../lib/installer.ts";
+
+  // Provider catalog. `recommended: true` decorates the dropdown option AND
+  // the inline "Recommended" badge on the form. Each provider maps to a
+  // single env-var name on the Rust side via writeKeys().
+  type ProviderConfig = {
+    id: ProviderId;
+    label: string;
+    recommended?: boolean;
+    placeholder: string;
+    keyPrefix: string;
+    consoleUrl: string;
+    consoleLabel: string;
+  };
+
+  const PROVIDERS: ProviderConfig[] = [
+    {
+      id: "anthropic",
+      label: "Anthropic",
+      recommended: true,
+      placeholder: "sk-ant-api03-…",
+      keyPrefix: "sk-ant-",
+      consoleUrl: "https://console.anthropic.com/settings/keys",
+      consoleLabel: "console.anthropic.com",
+    },
+    {
+      id: "openai",
+      label: "OpenAI",
+      placeholder: "sk-…",
+      keyPrefix: "sk-",
+      consoleUrl: "https://platform.openai.com/api-keys",
+      consoleLabel: "platform.openai.com",
+    },
+    {
+      id: "gemini",
+      label: "Google Gemini",
+      placeholder: "AIza…",
+      keyPrefix: "AIza",
+      consoleUrl: "https://aistudio.google.com/app/apikey",
+      consoleLabel: "aistudio.google.com",
+    },
+    {
+      id: "groq",
+      label: "Groq",
+      placeholder: "gsk_…",
+      keyPrefix: "gsk_",
+      consoleUrl: "https://console.groq.com/keys",
+      consoleLabel: "console.groq.com",
+    },
+  ];
+
+  const providerById = new Map(PROVIDERS.map((p) => [p.id, p]));
 
   let saving = $state(false);
   let saveError = $state<string | null>(null);
 
-  const canContinue = $derived(
-    store.anthropicKey.trim().length > 0 || store.openaiKey.trim().length > 0,
+  const current = $derived(providerById.get(store.selectedProvider) ?? PROVIDERS[0]);
+
+  // Soft-validate: warn when the key doesn't match the provider's prefix,
+  // but don't block submission — providers occasionally rotate formats.
+  const trimmedKey = $derived(store.apiKey.trim());
+  const prefixMismatch = $derived(
+    trimmedKey.length > 0 && !trimmedKey.startsWith(current.keyPrefix),
   );
+
+  const canContinue = $derived(trimmedKey.length > 0 && !saving);
 
   async function handleContinue() {
     saving = true;
@@ -21,57 +79,71 @@
       saving = false;
     }
   }
+
+  async function handleSkip() {
+    const previous = store.apiKey;
+    store.apiKey = "";
+    saving = true;
+    saveError = null;
+    try {
+      await writeKeys();
+      advanceStep();
+    } catch (err) {
+      saveError = err instanceof Error ? err.message : String(err);
+      store.apiKey = previous;
+    } finally {
+      saving = false;
+    }
+  }
 </script>
 
 <div class="screen">
   <div class="header">
-    <h2>API Keys</h2>
+    <h2>API Key</h2>
     <p class="subtitle">
-      Add at least one API key to power Friday Studio's AI features. Keys are
-      stored locally on your device and never sent to Friday servers.
+      Pick an AI provider and paste your API key. The key is stored locally
+      on your device and never sent to Friday servers.
     </p>
   </div>
 
   <div class="form">
     <div class="field">
-      <label for="anthropic-key">
-        Anthropic API Key
-        <span class="badge">Recommended</span>
-      </label>
-      <input
-        id="anthropic-key"
-        type="password"
-        placeholder="sk-ant-…"
-        bind:value={store.anthropicKey}
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <p class="field-hint">
-        Get your key at <a
-          href="https://console.anthropic.com/settings/keys"
-          target="_blank"
-          rel="noreferrer">console.anthropic.com</a
-        >
-      </p>
+      <label for="provider">Provider</label>
+      <div class="select-wrap">
+        <select id="provider" bind:value={store.selectedProvider}>
+          {#each PROVIDERS as p (p.id)}
+            <option value={p.id}>
+              {p.label}{p.recommended ? "  (Recommended)" : ""}
+            </option>
+          {/each}
+        </select>
+      </div>
     </div>
 
     <div class="field">
-      <label for="openai-key">OpenAI API Key</label>
+      <label for="api-key">
+        {current.label} API Key
+        {#if current.recommended}<span class="badge">Recommended</span>{/if}
+      </label>
       <input
-        id="openai-key"
+        id="api-key"
         type="password"
-        placeholder="sk-…"
-        bind:value={store.openaiKey}
+        placeholder={current.placeholder}
+        bind:value={store.apiKey}
         autocomplete="off"
         spellcheck="false"
       />
       <p class="field-hint">
-        Get your key at <a
-          href="https://platform.openai.com/api-keys"
-          target="_blank"
-          rel="noreferrer">platform.openai.com</a
-        >
+        Get your key at <a href={current.consoleUrl} target="_blank" rel="noreferrer">
+          {current.consoleLabel}
+        </a>
       </p>
+      {#if prefixMismatch}
+        <p class="warn">
+          Heads up: keys for {current.label} usually start with
+          <code>{current.keyPrefix}</code>. Continue if you're sure.
+        </p>
+      {/if}
     </div>
 
     {#if saveError !== null}
@@ -80,21 +152,10 @@
   </div>
 
   <div class="footer">
-    <button
-      class="primary"
-      disabled={!canContinue || saving}
-      onclick={handleContinue}
-    >
+    <button class="primary" disabled={!canContinue} onclick={handleContinue}>
       {saving ? "Saving…" : "Continue"}
     </button>
-    <button
-      class="skip"
-      onclick={() => {
-        store.anthropicKey = "__skip__";
-        void handleContinue();
-        store.anthropicKey = "";
-      }}
-    >
+    <button class="skip" disabled={saving} onclick={handleSkip}>
       Skip for now
     </button>
   </div>
@@ -155,25 +216,53 @@
     letter-spacing: 0.5px;
   }
 
-  input {
+  input,
+  select {
     background: #1a1a1a;
     border: 1px solid #2e2e2e;
     border-radius: 7px;
     color: #f0f0f0;
     font-size: 13px;
-    font-family: monospace;
     padding: 9px 12px;
     outline: none;
     transition: border-color 0.15s;
     width: 100%;
   }
 
-  input:focus {
+  input {
+    font-family: monospace;
+  }
+
+  input:focus,
+  select:focus {
     border-color: #6b72f0;
   }
 
   input::placeholder {
     color: #444;
+  }
+
+  /* Custom dropdown chevron via background image (CSS-only, no JS) */
+  .select-wrap {
+    position: relative;
+  }
+  .select-wrap::after {
+    content: "";
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-right: 1.5px solid #888;
+    border-bottom: 1.5px solid #888;
+    transform: translateY(-70%) rotate(45deg);
+    pointer-events: none;
+  }
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 32px;
+    cursor: pointer;
   }
 
   .field-hint {
@@ -188,6 +277,23 @@
 
   .field-hint a:hover {
     text-decoration: underline;
+  }
+
+  .warn {
+    font-size: 12px;
+    color: #d4a52a;
+    background: rgba(212, 165, 42, 0.08);
+    border: 1px solid rgba(212, 165, 42, 0.25);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-top: 4px;
+  }
+
+  .warn code {
+    font-family: monospace;
+    background: rgba(212, 165, 42, 0.15);
+    padding: 1px 5px;
+    border-radius: 3px;
   }
 
   .error {
@@ -236,7 +342,12 @@
     padding: 10px 0;
   }
 
-  .skip:hover {
+  .skip:hover:not(:disabled) {
     color: #888;
+  }
+
+  .skip:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 </style>
