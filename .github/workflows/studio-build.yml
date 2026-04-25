@@ -54,7 +54,13 @@ jobs:
             target: aarch64-apple-darwin
             archive_ext: tar.gz
           - platform: macos-intel
-            os: macos-latest-large
+            # macos-latest-large (Intel) takes 20+ min for `codesign --timestamp`
+            # against Apple's TSA on these large binaries — cross-compile from
+            # the ARM runner instead, where the same step finishes in seconds.
+            # `deno compile --target=x86_64-apple-darwin` does not require an
+            # Intel host, and `codesign` can sign Mach-O binaries for any
+            # architecture from any host.
+            os: macos-latest-xlarge
             target: x86_64-apple-darwin
             archive_ext: tar.gz
           - platform: windows
