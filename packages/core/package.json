@@ -52,7 +52,7 @@
     "@atlas/mcp": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/schemas": "workspace:*",
-    "@modelcontextprotocol/sdk": "~1.28.0",
+    "@modelcontextprotocol/sdk": "~1.29.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
