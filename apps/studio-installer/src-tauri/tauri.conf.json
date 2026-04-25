@@ -11,7 +11,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "licenseFile": "../LICENSE",
+    "licenseFile": "../../../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -29,7 +29,7 @@
         "installMode": "currentUser",
         "startMenuFolder": "Friday",
         "languages": ["English"],
-        "license": "../LICENSE"
+        "license": "../../../LICENSE"
       },
       "webviewInstallMode": { "type": "embedBootstrapper" }
     }
