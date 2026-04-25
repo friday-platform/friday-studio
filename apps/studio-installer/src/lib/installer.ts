@@ -264,4 +264,21 @@ export function fetchManifest(): Promise<Manifest> {
   return invoke<Manifest>("fetch_manifest", { url: MANIFEST_URL });
 }
 
+// ── Platform / install dir helpers ────────────────────────────────────────────
+
+/**
+ * Returns the platform key for this machine — must match a key the build
+ * pipeline emits in `studio/manifest.json` (`macos-arm` / `macos-intel` /
+ * `windows`). Computed in Rust via `cfg!(target_os/_arch)` so we get the
+ * binary's actual compile target, not the JS-runtime guess.
+ */
+export function currentPlatform(): Promise<string> {
+  return invoke<string>("current_platform");
+}
+
+/** Resolves the install root (`~/.friday/local`) without expansion logic in JS. */
+export function installDir(): Promise<string> {
+  return invoke<string>("install_dir");
+}
+
 export type { Manifest, PlatformEntry };

@@ -1,21 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "../lib/store.svelte.ts";
-  import { runExtract, advanceStep } from "../lib/installer.ts";
-  import { type } from "@tauri-apps/plugin-os"; // used for install dest path
+  import { runExtract, advanceStep, installDir } from "../lib/installer.ts";
 
   let extracting = $state(true);
 
   onMount(async () => {
-    const osType = type();
     const src = store.downloadPath;
-
-    const dest =
-      osType === "macos"
-        ? "/Applications/"
-        : `${globalThis.location?.href ?? ""}`.includes("win")
-          ? "%LOCALAPPDATA%\\Programs\\"
-          : "/usr/local/";
+    // Single source of truth for the install path lives in Rust
+    // (commands/platform.rs::install_dir → ~/.friday/local). Keep all
+    // platform-specific %LOCALAPPDATA% etc. logic out of the JS side.
+    const dest = await installDir();
 
     try {
       await runExtract(src, dest);

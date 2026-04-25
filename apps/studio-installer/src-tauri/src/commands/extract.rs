@@ -99,38 +99,44 @@ fn extract_zip(src: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Backs up an existing install by renaming `<dest>` to `<dest>.bak` (sibling),
+/// extracts the new archive into `<dest>`, then either commits (deletes bak)
+/// or rolls back (restores bak). Treats `<dest>` itself as the install root —
+/// the studio archive expands flat (atlas, link, playground, webhook-tunnel,
+/// gh, cloudflared at the top level).
 #[tauri::command]
 pub fn extract_archive(src: String, dest: String) -> Result<(), String> {
     let src_path = PathBuf::from(&src);
     let dest_path = PathBuf::from(&dest);
 
-    // Determine format
     let is_tar_gz = src.ends_with(".tar.gz") || src.ends_with(".tgz");
     let is_zip = src.ends_with(".zip");
-
     if !is_tar_gz && !is_zip {
         return Err(format!(
             "Unknown archive format for: {src}. Expected .tar.gz or .zip"
         ));
     }
 
-    // Handle update: backup existing install directory
-    // Find the top-level app directory inside dest
-    let app_dir = dest_path.join("Friday Studio.app");
-    let bak_dir = dest_path.join("Friday Studio.app.bak");
+    let bak_path = dest_path.with_extension("bak");
 
-    // Clean stale backup
-    if bak_dir.exists() {
-        fs::remove_dir_all(&bak_dir)
+    // Clean any stale backup from a prior failed run.
+    if bak_path.exists() {
+        fs::remove_dir_all(&bak_path)
             .map_err(|e| format!("Failed to remove stale backup: {e}"))?;
     }
 
-    // Terminate any running studio processes before extraction
-    if app_dir.exists() {
+    // Stop any running studio processes before mutating the install dir —
+    // overwriting a running binary mid-execution is a portability minefield
+    // (Linux silently swaps inode, macOS Gatekeeper revalidates, Windows
+    // outright refuses with sharing violation).
+    if dest_path.exists() {
         terminate_studio_processes();
-        fs::rename(&app_dir, &bak_dir)
+        fs::rename(&dest_path, &bak_path)
             .map_err(|e| format!("Failed to backup existing install: {e}"))?;
     }
+
+    fs::create_dir_all(&dest_path)
+        .map_err(|e| format!("Failed to create install dir: {e}"))?;
 
     let result = if is_tar_gz {
         extract_tar_gz(&src_path, &dest_path)
@@ -140,19 +146,16 @@ pub fn extract_archive(src: String, dest: String) -> Result<(), String> {
 
     match result {
         Ok(()) => {
-            // Remove backup on success
-            if bak_dir.exists() {
-                let _ = fs::remove_dir_all(&bak_dir);
+            if bak_path.exists() {
+                let _ = fs::remove_dir_all(&bak_path);
             }
             Ok(())
         }
         Err(e) => {
-            // Restore backup on failure
-            if bak_dir.exists() {
-                if app_dir.exists() {
-                    let _ = fs::remove_dir_all(&app_dir);
-                }
-                let _ = fs::rename(&bak_dir, &app_dir);
+            // Roll back: drop the partial new install and restore the backup.
+            if bak_path.exists() {
+                let _ = fs::remove_dir_all(&dest_path);
+                let _ = fs::rename(&bak_path, &dest_path);
             }
             Err(e)
         }

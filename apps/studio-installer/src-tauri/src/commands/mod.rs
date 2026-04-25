@@ -7,5 +7,6 @@ pub mod extract;
 pub mod fetch_manifest;
 pub mod installed_marker;
 pub mod launch;
+pub mod platform;
 pub mod startup;
 pub mod verify;

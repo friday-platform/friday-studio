@@ -1,21 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "../lib/store.svelte.ts";
-  import { runLaunch } from "../lib/installer.ts";
-  import { type } from "@tauri-apps/plugin-os";
+  import { runLaunch, installDir } from "../lib/installer.ts";
 
   let launching = $state(true);
   let launched = $state(false);
 
   onMount(async () => {
-    const osType = type();
-    const installDir =
-      osType === "macos"
-        ? "/Applications/Friday Studio.app/Contents/MacOS"
-        : `%LOCALAPPDATA%\\Programs\\Friday Studio`;
-
     try {
-      await runLaunch(installDir);
+      // installDir() resolves to ~/.friday/local on every supported platform —
+      // that's where Extract.svelte just unpacked the binaries.
+      const dir = await installDir();
+      await runLaunch(dir);
       launching = false;
       launched = true;
     } catch {

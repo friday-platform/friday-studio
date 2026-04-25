@@ -5,20 +5,28 @@
     startDownload,
     retryDownload,
     advanceStep,
+    currentPlatform,
     fetchManifest,
+    verifyDownload,
   } from "../lib/installer.ts";
-  import { type } from "@tauri-apps/plugin-os";
 
   let platform = $state("");
   let downloadUrl = $state("");
   let sha256 = $state("");
   let resolveError = $state<string | null>(null);
+  let verifying = $state(false);
 
   onMount(async () => {
     try {
-      const osType = type();
-      platform =
-        osType === "macos" ? "macos" : osType === "windows" ? "windows" : osType;
+      // current_platform() returns the manifest key matching the binary's
+      // compile target ("macos-arm" / "macos-intel" / "windows") — must agree
+      // with the keys studio-build.yml emits, otherwise the wizard pulls
+      // binaries for the wrong arch.
+      platform = await currentPlatform();
+      if (platform === "unsupported") {
+        resolveError = "This OS/architecture is not supported by Friday Studio.";
+        return;
+      }
 
       const manifest = await fetchManifest();
       const entry = manifest.platforms[platform];
@@ -31,6 +39,19 @@
       store.totalBytes = entry.size;
 
       await startDownload(downloadUrl, sha256, platform);
+
+      // SHA-256 verification before extract — refuse to advance on mismatch.
+      // Without this a corrupted or tampered archive would be unpacked silently
+      // and break in confusing ways at first launch.
+      if (store.downloadError === null) {
+        verifying = true;
+        const ok = await verifyDownload(store.downloadPath, sha256);
+        verifying = false;
+        if (!ok) {
+          store.downloadError =
+            "Downloaded file is corrupted (SHA-256 mismatch). Please try again.";
+        }
+      }
     } catch (err) {
       store.downloadError = err instanceof Error ? err.message : String(err);
     }

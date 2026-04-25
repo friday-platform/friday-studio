@@ -200,7 +200,8 @@ async function bundleExternalCli(
 ): Promise<void> {
   await ensureDir(outDir);
   const url = cli.url(target);
-  const fileName = url.split("/").pop()!;
+  const fileName = url.split("/").pop();
+  if (!fileName) throw new Error(`${cli.name}: cannot derive filename from URL: ${url}`);
   const downloadPath = join(scratch, fileName);
   await downloadFile(url, downloadPath);
 

@@ -10,6 +10,7 @@ use commands::{
     fetch_manifest::fetch_manifest,
     installed_marker::{read_installed, write_installed},
     launch::launch_studio,
+    platform::{current_platform, install_dir},
     startup::create_startup_script,
     verify::verify_sha256,
 };
@@ -33,6 +34,8 @@ pub fn run() {
             write_env_file,
             create_startup_script,
             launch_studio,
+            current_platform,
+            install_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

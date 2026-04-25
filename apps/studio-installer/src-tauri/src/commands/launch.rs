@@ -133,14 +133,13 @@ pub fn launch_studio(install_dir: String) -> Result<(), String> {
         .map_err(|_| "link did not become healthy within 30s".to_string())?;
 
     // ── Phase 2: frontends ───────────────────────────────────────────────────
+    // Binary names match the entries we tar into the studio archive (see
+    // scripts/build-studio.ts::DENO_BINARIES). pty-server was dropped from
+    // the v0.0.1 ship list — leave the launcher silent on it.
 
-    let mut playground = spawn_process(&install_dir, "agent-playground", &home_str)?;
-    check_immediate_exit(&mut playground, "agent-playground")?;
-    write_pid("agent-playground", playground.id())?;
-
-    let mut pty = spawn_process(&install_dir, "pty-server", &home_str)?;
-    check_immediate_exit(&mut pty, "pty-server")?;
-    write_pid("pty-server", pty.id())?;
+    let mut playground = spawn_process(&install_dir, "playground", &home_str)?;
+    check_immediate_exit(&mut playground, "playground")?;
+    write_pid("playground", playground.id())?;
 
     let mut tunnel = spawn_process(&install_dir, "webhook-tunnel", &home_str)?;
     check_immediate_exit(&mut tunnel, "webhook-tunnel")?;
