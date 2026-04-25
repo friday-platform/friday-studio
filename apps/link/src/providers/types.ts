@@ -22,10 +22,10 @@ export type OAuthConfig =
       revocationEndpoint?: string;
       /** OAuth client ID */
       clientId: string;
-      /** OAuth client secret */
-      clientSecret: string;
+      /** OAuth client secret (optional for PKCE / public clients) */
+      clientSecret?: string;
       /** Client authentication method for token requests */
-      clientAuthMethod?: "client_secret_basic" | "client_secret_post";
+      clientAuthMethod?: "client_secret_basic" | "client_secret_post" | "none";
       /** Default scopes to request during authorization */
       scopes?: string[];
       /** Additional query parameters for authorization endpoint */

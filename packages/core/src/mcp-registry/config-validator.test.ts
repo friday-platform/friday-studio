@@ -144,25 +144,25 @@ describe("validateWorkspaceConfig", () => {
   });
 
   it("skips resolver check for blessed MCP servers (fast path)", async () => {
-    // stripe is in registry-consolidated.ts. Even if a misconfigured resolver
-    // would report 404 for @stripe/mcp, the blessed-registry short-circuit
-    // must prevent the network call entirely.
+    // `time` is a blessed stdio entry in registry-consolidated.ts. Even if a
+    // misconfigured resolver would report 404 for `mcp-server-time`, the
+    // blessed-registry short-circuit must prevent the network call entirely.
     const config = makeConfig({
       tools: {
         mcp: {
           servers: {
-            stripe: {
+            time: {
               transport: {
                 type: "stdio",
-                command: "npx",
-                args: ["-y", "@stripe/mcp", "--tools=all"],
+                command: "uvx",
+                args: ["mcp-server-time", "--local-timezone"],
               },
             },
           },
         },
       },
     } as never);
-    const resolvers = [stubResolver("npx", { "@stripe/mcp": "not_found" })];
+    const resolvers = [stubResolver("uvx", { "mcp-server-time": "not_found" })];
     const report = await validateWorkspaceConfig(config, makeCtx({ resolvers }));
     expect(report.status).toBe("ok");
   });

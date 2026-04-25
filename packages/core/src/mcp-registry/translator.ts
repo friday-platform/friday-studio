@@ -291,7 +291,12 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
       };
     }
 
-    // http remote without env vars → DynamicOAuthProviderInput
+    // http remote without env vars → OAuth via Link provider
+    const tokenEnvKey = `${id.toUpperCase()}_ACCESS_TOKEN`;
+    const oauthEnv: Record<string, string | LinkCredentialRef> = {
+      [tokenEnvKey]: { from: "link", provider: effectiveProviderId, key: "access_token" },
+    };
+
     const entry: MCPServerMetadata = {
       id,
       name: displayName,
@@ -303,7 +308,18 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
         version: server.version,
         updatedAt: _meta["io.modelcontextprotocol.registry/official"].updatedAt,
       },
-      configTemplate: { transport: { type: "http", url: urlResult.url } },
+      configTemplate: {
+        transport: { type: "http", url: urlResult.url },
+        env: oauthEnv,
+        auth: { type: "bearer", token_env: tokenEnvKey },
+      },
+      requiredConfig: [
+        {
+          key: tokenEnvKey,
+          description: `OAuth access token for ${displayName} from Link`,
+          type: "string",
+        },
+      ],
     };
 
     return {

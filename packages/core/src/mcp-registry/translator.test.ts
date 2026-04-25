@@ -8,7 +8,11 @@ import type { UpstreamServerEntry } from "./upstream-client.ts";
  */
 function isSuccess(
   result: TranslateResult,
-): result is { success: true; entry: MCPServerMetadata; linkProvider?: import("./translator.ts").DynamicProviderInput } {
+): result is {
+  success: true;
+  entry: MCPServerMetadata;
+  linkProvider?: import("./translator.ts").DynamicProviderInput;
+} {
   return result.success === true;
 }
 
@@ -218,9 +222,25 @@ describe("translate", () => {
         type: "http",
         url: "https://mcp.example.com/v1/mcp",
       });
-      // HTTP transport has no env vars by default
-      expect(result.entry.configTemplate.env).toBeUndefined();
-      expect(result.entry.requiredConfig).toBeUndefined();
+      // OAuth wiring: env holds Link ref for access token, auth consumes it
+      expect(result.entry.configTemplate.env).toEqual({
+        "IO-GITHUB-EXAMPLE-HTTP-SERVER_ACCESS_TOKEN": {
+          from: "link",
+          provider: "io-github-example-http-server",
+          key: "access_token",
+        },
+      });
+      expect(result.entry.configTemplate.auth).toEqual({
+        type: "bearer",
+        token_env: "IO-GITHUB-EXAMPLE-HTTP-SERVER_ACCESS_TOKEN",
+      });
+      expect(result.entry.requiredConfig).toEqual([
+        {
+          key: "IO-GITHUB-EXAMPLE-HTTP-SERVER_ACCESS_TOKEN",
+          description: "OAuth access token for io.github.example.http-server from Link",
+          type: "string",
+        },
+      ]);
 
       // Check linkProvider is DynamicOAuthProviderInput
       expect(result.linkProvider).toEqual({
@@ -294,16 +314,8 @@ describe("translate", () => {
               version: "1.0.0",
               transport: { type: "stdio" },
               environmentVariables: [
-                {
-                  name: "API_KEY",
-                  description: "API key for authentication",
-                  isRequired: true,
-                },
-                {
-                  name: "ENDPOINT",
-                  description: "Custom endpoint",
-                  isRequired: false,
-                },
+                { name: "API_KEY", description: "API key for authentication", isRequired: true },
+                { name: "ENDPOINT", description: "Custom endpoint", isRequired: false },
               ],
             },
           ],

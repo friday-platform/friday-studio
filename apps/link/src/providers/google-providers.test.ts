@@ -1,4 +1,3 @@
-import process from "node:process";
 import { describe, expect, it } from "vitest";
 
 // Import all provider factories from consolidated module
@@ -20,24 +19,29 @@ const PROVIDERS = [
 ] as const;
 
 describe("Google providers", () => {
-  it("return undefined when env not configured", () => {
-    // Save and clear env vars
-    const original = {
-      id: process.env.GOOGLE_CLIENT_ID_FILE,
-      secret: process.env.GOOGLE_CLIENT_SECRET_FILE,
-    };
-    delete process.env.GOOGLE_CLIENT_ID_FILE;
-    delete process.env.GOOGLE_CLIENT_SECRET_FILE;
+  it("return configured OAuth providers with correct metadata", () => {
+    for (const { factory, id, scope } of PROVIDERS) {
+      const provider = factory();
+      expect(provider, `${id} should be defined`).toBeDefined();
+      expect(provider.type, `${id} should be oauth type`).toBe("oauth");
+      expect(provider.id, `${id} id mismatch`).toBe(id);
+      expect(provider.oauthConfig.mode, `${id} should be static mode`).toBe("static");
 
-    try {
-      for (const { factory, id } of PROVIDERS) {
-        const provider = factory();
-        expect(provider, `${id} should return undefined without env`).toBeUndefined();
-      }
-    } finally {
-      // Restore env vars
-      if (original.id) process.env.GOOGLE_CLIENT_ID_FILE = original.id;
-      if (original.secret) process.env.GOOGLE_CLIENT_SECRET_FILE = original.secret;
+      // Desktop app client — PKCE provides real security but Google still requires
+      // client_secret present for Desktop app clients at the token endpoint.
+      expect(provider.oauthConfig.clientAuthMethod, `${id} should use client_secret_post`).toBe(
+        "client_secret_post",
+      );
+      expect(provider.oauthConfig.clientSecret, `${id} should have client_secret`).toBeDefined();
+
+      // Scopes should include openid, email, and the service scope
+      const scopes = provider.oauthConfig.scopes ?? [];
+      expect(scopes, `${id} should include openid`).toContain("openid");
+      expect(scopes, `${id} should include email`).toContain("email");
+      expect(
+        scopes.some((s) => s.includes(scope)),
+        `${id} should include ${scope} scope`,
+      ).toBe(true);
     }
   });
 });

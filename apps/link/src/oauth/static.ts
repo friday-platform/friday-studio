@@ -28,6 +28,19 @@ export function buildStaticAuthServer(
 }
 
 /**
+ * Client auth that sends client_id with an empty client_secret.
+ * Google Desktop app OAuth clients may require the client_secret parameter
+ * to be present even though PKCE provides the security. Sending an empty
+ * string satisfies Google's form validation without shipping a real secret.
+ */
+function EmptyClientSecretPost(clientId: string): oauth.ClientAuth {
+  return (_as, client, body, _headers) => {
+    body.set("client_id", client.client_id || clientId);
+    body.set("client_secret", "");
+  };
+}
+
+/**
  * Get the appropriate client authentication method for token requests.
  * Maps static config clientAuthMethod to oauth4webapi ClientAuth.
  *
@@ -37,6 +50,14 @@ export function buildStaticAuthServer(
 export function getStaticClientAuth(
   config: Extract<OAuthConfig, { mode: "static" }>,
 ): oauth.ClientAuth {
+  if (config.clientAuthMethod === "none") {
+    // Google Desktop app clients may require client_secret to be present
+    // even though PKCE provides the actual security. Send empty string.
+    return EmptyClientSecretPost(config.clientId);
+  }
+  if (!config.clientSecret) {
+    return oauth.None();
+  }
   return config.clientAuthMethod === "client_secret_basic"
     ? oauth.ClientSecretBasic(config.clientSecret)
     : oauth.ClientSecretPost(config.clientSecret);

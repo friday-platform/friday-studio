@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
 
-// Google OAuth client credentials (public, not sensitive).
-const GCLOUD_CLIENT_ID = "406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com";
-const GCLOUD_CLIENT_SECRET = "kSmqreRr0qwBWJgbf5Y-PjSU";
+// Google OAuth desktop app client ID (shipped with app, not sensitive).
+// PKCE provides the real security; Google still requires client_secret present
+// for Desktop app clients at the token endpoint.
+const GCLOUD_CLIENT_ID = "121686085713-m7b2u1sari8j9l07ep3fodes3b85a1pm.apps.googleusercontent.com";
+const GCLOUD_CLIENT_SECRET = "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";
 
 /**
  * Google API scopes for each Workspace service.
@@ -26,7 +28,7 @@ type GoogleService = keyof typeof GOOGLE_SCOPES;
 
 /**
  * Factory function for creating Google OAuth providers.
- * Uses well-known gcloud client credentials (public, not sensitive).
+ * Uses shipped desktop app client ID with PKCE (no client_secret).
  *
  * Note: openid scope required - identify() uses userinfo endpoint
  * which needs openid to return subject ID for user identification.
