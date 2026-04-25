@@ -18,6 +18,8 @@ export default defineConfig(() => ({
       // 3. tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+    // Permit reading repo-root LICENSE via `?raw` import in License.svelte.
+    fs: { allow: ["..", "../.."] },
   },
   // 3. to access the Tauri environment variables set by the CLI with information about the current target
   envPrefix: ["VITE_", "TAURI_ENV_"],

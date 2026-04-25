@@ -1,55 +1,7 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte.ts";
   import { advanceStep } from "../lib/installer.ts";
-
-  const LICENSE_TEXT = `FRIDAY STUDIO SOFTWARE LICENSE AGREEMENT
-
-Last updated: 2026-01-01
-
-PLEASE READ THIS LICENSE AGREEMENT CAREFULLY BEFORE INSTALLING OR USING FRIDAY STUDIO.
-
-1. GRANT OF LICENSE
-
-Tempest Labs, Inc. ("Tempest") grants you a limited, non-exclusive, non-transferable, revocable license to install and use Friday Studio solely for your personal, non-commercial purposes on devices that you own or control.
-
-2. RESTRICTIONS
-
-You may not:
-(a) copy, modify, or distribute Friday Studio;
-(b) reverse engineer, decompile, disassemble, or attempt to derive the source code of Friday Studio;
-(c) sell, transfer, assign, or sublicense your rights in Friday Studio to any other party;
-(d) remove or alter any proprietary notices or labels on Friday Studio;
-(e) use Friday Studio for any unlawful purpose or in violation of any applicable laws or regulations.
-
-3. INTELLECTUAL PROPERTY
-
-Friday Studio and all copies thereof are proprietary to Tempest and title thereto remains in Tempest. All rights in Friday Studio not specifically granted herein are reserved to Tempest.
-
-4. PRIVACY
-
-Friday Studio processes your AI API keys locally on your device. Your keys are stored in your local home directory (~/.friday/local/.env) and are not transmitted to Tempest servers.
-
-5. DISCLAIMER OF WARRANTIES
-
-FRIDAY STUDIO IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. TO THE MAXIMUM EXTENT PERMITTED BY LAW, TEMPEST DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
-
-6. LIMITATION OF LIABILITY
-
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL TEMPEST BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR PUNITIVE DAMAGES ARISING OUT OF OR RELATED TO YOUR USE OF OR INABILITY TO USE FRIDAY STUDIO.
-
-7. TERMINATION
-
-This license is effective until terminated. Your rights under this license will terminate automatically without notice from Tempest if you fail to comply with any of its terms.
-
-8. GOVERNING LAW
-
-This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware, without giving effect to any principles of conflicts of law.
-
-9. ENTIRE AGREEMENT
-
-This Agreement constitutes the entire agreement between you and Tempest relating to Friday Studio and supersedes all prior or contemporaneous oral or written communications, proposals, and representations with respect to Friday Studio.
-
-By clicking "Accept", you acknowledge that you have read this Agreement, understand it, and agree to be bound by its terms.`;
+  import LICENSE_TEXT from "../../../../LICENSE?raw";
 
   function onScroll(e: Event) {
     const el = e.target as HTMLDivElement;
