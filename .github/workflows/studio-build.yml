@@ -85,6 +85,17 @@ jobs:
         # build (npm run build) below can find vite + plugins.
         run: deno install
 
+      - name: Generate svelte-kit tsconfigs (workspace)
+        # `npm install` runs `prepare: svelte-kit sync` for each SvelteKit
+        # package and generates `.svelte-kit/tsconfig.json`, which is what
+        # `packages/ui/tsconfig.json` extends. `deno install` skips lifecycle
+        # scripts, so without an explicit sync step the playground vite build
+        # fails with `failed to resolve "extends":"./.svelte-kit/tsconfig.json"`.
+        shell: bash
+        run: |
+          cd packages/ui && npx svelte-kit sync
+          cd ../../tools/agent-playground && npx svelte-kit sync
+
       - name: Build playground static UI
         working-directory: tools/agent-playground
         run: npm run build
