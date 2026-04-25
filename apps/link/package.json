@@ -18,7 +18,7 @@
     "@octokit/request": "^10.0.8",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@std/async": "npm:@jsr/std__async@1.0.15",
-    "hono": "4.12.12",
+    "hono": "4.12.15",
     "nanoid": "5.1.7",
     "oauth4webapi": "3.8.5",
     "postgres": "3.4.7",
