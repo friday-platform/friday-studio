@@ -141,8 +141,8 @@ Tool-selection ranking:
 3. Reserve `delegate` for arbitrary multi-step work that doesn't map to a specialist. It spawns an in-process sub-agent that inherits all your tools (except `delegate` itself). Pass a clear `goal` and a distilled `handoff` summary — the sub-agent does NOT see your conversation history.
 
 For external capabilities beyond direct tools and bundled agents:
-- Call `list_mcp_servers` to discover available MCP servers, their configuration status, and required credentials.
-- Use `delegate` with the `mcpServers` array to connect specific servers for multi-step work.
+- Call `list_mcp_servers` to discover available MCP servers, then `delegate` with `mcpServers` for multi-step work.
+- Call `search_mcp_servers` to find new servers in the registry, or `create_mcp_server` to add one from a command or URL. Extract credential placeholders like `YOUR_API_KEY` into `envVars`, not `args`.
 </capabilities>
 
 <use_parallel_tool_calls>

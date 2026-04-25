@@ -285,14 +285,26 @@ export const mcpRegistryRouter = daemonFactory
         );
       }
 
-      // Fetch README from the upstream repository (best-effort, non-blocking on failure)
+      // Fetch README from the upstream repository (best-effort, non-blocking on failure).
+      // Truncate to 30 KB to stay within Deno KV's 64 KB atomic-write limit.
       const repoUrl = upstreamEntry.server.repository?.url;
       const subfolder = upstreamEntry.server.repository?.subfolder;
       if (repoUrl) {
         try {
           const readme = await fetchReadme(repoUrl, subfolder);
           if (readme) {
-            entry.readme = readme;
+            const MAX_README_BYTES = 30_000;
+            if (readme.length > MAX_README_BYTES) {
+              logger.debug("readme truncated for storage", {
+                registryName,
+                originalLength: readme.length,
+                truncatedTo: MAX_README_BYTES,
+              });
+              entry.readme =
+                readme.slice(0, MAX_README_BYTES) + "\n\n[README truncated for storage]";
+            } else {
+              entry.readme = readme;
+            }
           }
         } catch {
           logger.debug("readme fetch failed, continuing without", { registryName, repoUrl });

@@ -49,12 +49,15 @@ import { artifactTools } from "./tools/artifact-tools.ts";
 import { createAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
+import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDelegateTool } from "./tools/delegate/index.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
+import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListMCPServersTool } from "./tools/list-mcp-servers.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
+import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
 import { createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
@@ -591,6 +594,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           logger,
         );
 
+        // MCP registry search + install tools
+        const searchMcpServersTool = createSearchMcpServersTool(logger);
+        const installMcpServerTool = createInstallMcpServerTool(logger);
+        const createMcpServerTool = createCreateMcpServerTool(logger);
+
         // Job tools
         const jobTools = createJobTools(
           workspaceId,
@@ -708,6 +716,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...fileIOTools,
           ...createWorkspaceOpsTools(logger),
           ...listMcpServersTool,
+          ...searchMcpServersTool,
+          ...installMcpServerTool,
+          ...createMcpServerTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };
