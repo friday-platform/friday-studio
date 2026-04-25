@@ -28,8 +28,7 @@
       "nsis": {
         "installMode": "currentUser",
         "startMenuFolder": "Friday",
-        "languages": ["English"],
-        "license": "../../../LICENSE"
+        "languages": ["English"]
       },
       "webviewInstallMode": { "type": "embedBootstrapper" }
     }
