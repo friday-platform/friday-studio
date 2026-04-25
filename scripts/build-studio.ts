@@ -67,7 +67,10 @@ const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
       return url;
     },
     innerPath: (t) => {
-      if (t.endsWith("windows-msvc")) return `gh_${GH_VERSION}_windows_amd64/bin/gh.exe`;
+      // Layout differs between zips: macOS releases nest under
+      // `gh_<v>_macOS_<arch>/`, Windows releases unzip flat with just
+      // `bin/gh.exe` at the root.
+      if (t.endsWith("windows-msvc")) return "bin/gh.exe";
       const arch = t.startsWith("aarch64") ? "arm64" : "amd64";
       return `gh_${GH_VERSION}_macOS_${arch}/bin/gh`;
     },
