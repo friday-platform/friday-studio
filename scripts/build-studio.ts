@@ -94,6 +94,28 @@ const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
   },
 ];
 
+// Pure-Go binaries built from the repo's go.mod. Cross-compile via GOOS/GOARCH;
+// CGO stays off so we don't drag in a per-target C toolchain in CI.
+interface GoBinary {
+  name: string;
+  pkg: string;
+}
+
+const GO_BINARIES: readonly GoBinary[] = [{ name: "pty-server", pkg: "./tools/pty-server" }];
+
+function goEnvForTarget(target: string): { GOOS: string; GOARCH: string } {
+  switch (target) {
+    case "aarch64-apple-darwin":
+      return { GOOS: "darwin", GOARCH: "arm64" };
+    case "x86_64-apple-darwin":
+      return { GOOS: "darwin", GOARCH: "amd64" };
+    case "x86_64-pc-windows-msvc":
+      return { GOOS: "windows", GOARCH: "amd64" };
+    default:
+      throw new Error(`Go: unsupported target ${target}`);
+  }
+}
+
 const DENO_BINARIES = [
   {
     // Ships as `friday` — the user-visible CLI name. The internal codebase
@@ -192,6 +214,22 @@ async function compileDeno(
     bin.entry,
   ];
   await run(["deno", ...args], { cwd: repoRoot, env: { RUST_MIN_STACK: "33554432" } });
+}
+
+async function compileGo(
+  target: string,
+  bin: GoBinary,
+  outPath: string,
+  repoRoot: string,
+): Promise<void> {
+  const env = goEnvForTarget(target);
+  // CGO off — pty-server is pure Go (creack/pty + ConPTY syscalls), no C deps,
+  // and CGO would force a per-target cross-toolchain in CI.
+  // -trimpath + ldflags strip debug/path info to shrink the binary slightly.
+  await run(["go", "build", "-trimpath", "-ldflags=-s -w", "-o", outPath, bin.pkg], {
+    cwd: repoRoot,
+    env: { ...env, CGO_ENABLED: "0" },
+  });
 }
 
 async function downloadFile(url: string, dest: string): Promise<void> {
@@ -340,8 +378,12 @@ async function main(): Promise<void> {
       const outPath = join(stagingDir, `${bin.name}${exeExt(opts.target)}`);
       await compileDeno(opts.target, bin, outPath, repoRoot);
     }
+    for (const bin of GO_BINARIES) {
+      const outPath = join(stagingDir, `${bin.name}${exeExt(opts.target)}`);
+      await compileGo(opts.target, bin, outPath, repoRoot);
+    }
   } else {
-    console.log("[build-studio] --skip-compile set, skipping deno compile");
+    console.log("[build-studio] --skip-compile set, skipping deno + go compile");
   }
 
   if (!opts.skipExternal) {

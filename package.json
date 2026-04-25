@@ -2,13 +2,7 @@
   "name": "atlas",
   "version": "1.0.0",
   "type": "module",
-  "workspaces": [
-    "./apps/*",
-    "./packages/*",
-    "./tools/evals",
-    "./tools/agent-playground",
-    "./tools/pty-server"
-  ],
+  "workspaces": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
   "dependencies": {
     "@atlas/activity": "workspace:*",
     "@atlas/agent-sdk": "workspace:*",

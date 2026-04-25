@@ -1,13 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "version": "1.0.0",
-  "workspace": [
-    "./apps/*",
-    "./packages/*",
-    "./tools/evals",
-    "./tools/agent-playground",
-    "./tools/pty-server"
-  ],
+  "workspace": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
   "compilerOptions": {
     "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
     "types": ["./reset.d.ts"],
@@ -74,7 +68,7 @@
     "compile": "./scripts/compile.sh",
     "evals": "deno run --allow-all tools/evals/run.ts",
     "sync:svelte": "deno task -f @atlas/ui sync && deno task -f @atlas/agent-playground sync && deno task -f @atlas/web-client sync",
-    "playground": "deno task sync:svelte && deno run -A npm:concurrently -n playground,pty -c magenta,cyan 'cd tools/agent-playground && VITE_EXTERNAL_DAEMON_URL=http://localhost:8080 VITE_EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev' 'deno task -f @atlas/pty-server start'"
+    "playground": "deno task sync:svelte && (cd tools/pty-server && go build -o ../../target/pty-server .) && deno run -A npm:concurrently -n playground,pty -c magenta,cyan 'cd tools/agent-playground && VITE_EXTERNAL_DAEMON_URL=http://localhost:8080 VITE_EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev' './target/pty-server'"
   },
   "lint": {
     "rules": { "tags": ["recommended"] },
@@ -116,7 +110,6 @@
     "npm:esbuild@0.27.2",
     "npm:esbuild@0.27.3",
     "npm:fsevents@2.3.3",
-    "npm:node-pty@1.1.0",
     "npm:protobufjs@7.5.4",
     "npm:protobufjs@8.0.0"
   ]

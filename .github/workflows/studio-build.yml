@@ -86,6 +86,14 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup Go (pty-server build)
+        # pty-server is a pure-Go binary built per-target by build-studio.ts.
+        # Pin the same minor as go.mod to avoid silent toolchain drift.
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
       - name: Install JS deps (Deno workspace)
         # `deno install` materializes node_modules so the SvelteKit static
         # build (npm run build) below can find vite + plugins.
@@ -160,10 +168,11 @@ jobs:
           PIDS=()
           # Binary names match the staging output of build-studio.ts —
           # `friday` is the renamed atlas daemon, `link` / `playground` /
-          # `webhook-tunnel` are unchanged, `gh` / `cloudflared` are bundled
-          # external CLIs. Keep this list in sync with DENO_BINARIES +
-          # EXTERNAL_CLIS in scripts/build-studio.ts.
-          for f in friday link playground webhook-tunnel gh cloudflared; do
+          # `webhook-tunnel` are Deno binaries, `pty-server` is the Go
+          # rewrite (PR #3012), `gh` / `cloudflared` are bundled external
+          # CLIs. Keep this list in sync with DENO_BINARIES + GO_BINARIES
+          # + EXTERNAL_CLIS in scripts/build-studio.ts.
+          for f in friday link playground webhook-tunnel pty-server gh cloudflared; do
             (
               codesign --force --options runtime --timestamp \
                 --entitlements "$ENTITLEMENTS" \
