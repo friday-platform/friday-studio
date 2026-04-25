@@ -23,7 +23,7 @@ def execute(prompt, ctx):
 
 Search order: balanced-brace JSON → fenced code block → whole prompt as JSON. Unknown keys dropped; required fields validated. Raises `ValueError` if nothing parses or required fields missing.
 
-**Schema must be `@dataclass`, not Pydantic.** Pydantic imports `pydantic-core` (Rust extension, blocked).
+**Schema must be `@dataclass`, not Pydantic.** Pydantic is not installed in the agent environment.
 
 Free-text prompt with no required JSON:
 

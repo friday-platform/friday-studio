@@ -290,8 +290,8 @@ describe("createDelegateTool", () => {
       .map((c) => extractInnerToolCallId(c))
       .filter((v): v is string => v !== undefined);
     // `web_search` chunks get namespaced; `finish` chunks are dropped.
-    expect(envelopedToolCallIds).toContain("del-call-1::child-1");
-    expect(envelopedToolCallIds.every((id) => !id.endsWith("::finish-id"))).toBe(true);
+    expect(envelopedToolCallIds).toContain("del-call-1-child-1");
+    expect(envelopedToolCallIds.every((id) => !id.endsWith("-finish-id"))).toBe(true);
   });
 
   it("falls back to final streamed text when child does not call finish", async () => {
@@ -746,7 +746,7 @@ describe("createDelegateTool", () => {
       .map((c) => extractDelegateEndPending(c))
       .filter((p): p is string[] => p !== undefined);
     expect(terminators).toHaveLength(1);
-    expect(terminators[0]).toEqual(["del-call-1::c1"]);
+    expect(terminators[0]).toEqual(["del-call-1-c1"]);
 
     // (c) data-delegate-ledger event was written with the partial ledger.
     const ledgerWrites = writer.writes
@@ -850,7 +850,7 @@ describe("createDelegateTool", () => {
       })
       .filter((p): p is unknown[] => p !== undefined);
     expect(reloadedTerminators).toHaveLength(1);
-    expect(reloadedTerminators[0]).toEqual(["del-call-1::c2"]);
+    expect(reloadedTerminators[0]).toEqual(["del-call-1-c2"]);
 
     // Ledger present after reload, listing both children.
     const ledgerParts = reloaded.parts.filter((p) => p.type === "data-delegate-ledger");
@@ -1287,11 +1287,12 @@ function reconstructFromEnvelopes(
     const innerType = inner.type;
     const namespacedId = inner.toolCallId;
     if (typeof innerType !== "string" || typeof namespacedId !== "string") continue;
-    // Strip the `${delegateToolCallId}::` prefix to get back to the original
+    // Strip the `${delegateToolCallId}-` prefix to get back to the original
     // child toolCallId for direct comparison with the ledger.
-    const childId = namespacedId.includes("::")
-      ? (namespacedId.split("::")[1] ?? namespacedId)
-      : namespacedId;
+    const delegateId = (data as { delegateToolCallId?: unknown }).delegateToolCallId;
+    const prefix = typeof delegateId === "string" ? `${delegateId}-` : null;
+    const childId =
+      prefix && namespacedId.startsWith(prefix) ? namespacedId.slice(prefix.length) : namespacedId;
     if (innerType === "tool-input-available") {
       const toolName =
         "toolName" in inner && typeof inner.toolName === "string" ? inner.toolName : "";

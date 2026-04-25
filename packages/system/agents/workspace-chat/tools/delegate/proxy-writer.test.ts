@@ -112,7 +112,7 @@ describe("createDelegateProxyWriter", () => {
     if (!env || typeof env !== "object" || !("type" in env)) throw new Error("bad envelope");
     expect(env.type).toBe("data-delegate-chunk");
     const inner = (env as { data: { chunk: { toolCallId: string } } }).data.chunk;
-    expect(inner.toolCallId).toBe("del-1::child-x");
+    expect(inner.toolCallId).toBe("del-1-child-x");
   });
 
   it("merge() forwards a stream of chunks envelope-wrapped in emission order", async () => {
@@ -151,7 +151,7 @@ describe("createDelegateProxyWriter", () => {
     expect(innerTypes).toEqual(["text-start", "tool-input-available", "tool-output-available"]);
     // The middle chunk's toolCallId got namespaced.
     const second = out[1] as { data: { chunk: { toolCallId?: string } } } | undefined;
-    expect(second?.data.chunk.toolCallId).toBe("del-2::child-1");
+    expect(second?.data.chunk.toolCallId).toBe("del-2-child-1");
   });
 
   it("closed state — late write() and merge() silently drop input, no throw, debug logged", async () => {
@@ -267,6 +267,6 @@ describe("createDelegateProxyWriter", () => {
     const out = parent.merged[0] ? await drain(parent.merged[0]) : [];
     expect(out).toHaveLength(1);
     const inner = (out[0] as { data: { chunk: { toolCallId?: string } } }).data.chunk;
-    expect(inner.toolCallId).toBe("del-5::child-7");
+    expect(inner.toolCallId).toBe("del-5-child-7");
   });
 });

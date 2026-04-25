@@ -59,6 +59,13 @@
   /** Next run ID, derived from the highest existing run number. */
   let nextRunId = $state(runs.length > 0 ? Math.max(...runs.map((r) => r.id)) + 1 : 1);
 
+  // Scrub stale "running" runs from previous sessions on mount.
+  runs = runs.map((r) =>
+    r.status === "running"
+      ? { ...r, status: "error" as const, events: [...r.events, { type: "error" as const, data: { error: "Interrupted" } }] }
+      : r,
+  );
+
   /** Green when no required credentials are disconnected. */
   const healthy = $derived(!credentials.some((c) => c.required && c.status === "disconnected"));
 
@@ -150,20 +157,11 @@
     execution = { state: "cancelled" };
   }
 
-  /**
-   * Update the active (first) run record in the runs array.
-   * Triggers reactivity by replacing the array.
-   */
-  function updateActiveRun(updater: (run: RunRecord) => RunRecord): void {
-    const active = runs[0];
-    if (!active) return;
-    runs = [updater(active), ...runs.slice(1)];
+  /** Update a specific run record by ID. */
+  function updateRunById(id: number, updater: (run: RunRecord) => RunRecord): void {
+    runs = runs.map((r) => (r.id === id ? updater(r) : r));
   }
 
-  /**
-   * Derive final status from the events accumulated in a run.
-   * Called when the stream ends or errors.
-   */
   function deriveStatus(run: RunRecord, wasCancelled: boolean): RunRecord["status"] {
     if (wasCancelled) return "cancelled";
     if (run.events.some((e) => e.type === "error")) return "error";
@@ -171,16 +169,16 @@
   }
 
   /**
-   * Consume an SSE stream, accumulating parsed events into the active run record.
-   * Uses the shared `parseSSEEvents` parser for wire-level buffering and JSON parsing.
+   * Consume an SSE stream for a specific run, accumulating events into that run's record.
+   * Captures runId so background completions always update the correct entry.
    */
-  async function consumeSSEStream(body: ReadableStream<Uint8Array>) {
+  async function consumeSSEStream(body: ReadableStream<Uint8Array>, runId: number) {
     try {
       for await (const msg of parseSSEEvents(body)) {
         const parsed = SSEEventSchema.safeParse({ type: msg.event, data: msg.data });
         if (!parsed.success) continue;
         const event: SSEEvent = parsed.data;
-        updateActiveRun((run) => {
+        updateRunById(runId, (run) => {
           const updatedEvents = [...run.events, event];
           const updates: Partial<RunRecord> = { events: updatedEvents };
           if (event.type === "result") {
@@ -195,14 +193,14 @@
       }
     } catch {
       if (execution.state !== "cancelled") {
-        updateActiveRun((run) => ({
+        updateRunById(runId, (run) => ({
           ...run,
           events: [...run.events, { type: "error", data: { error: "Connection lost" } }],
         }));
       }
     } finally {
       const wasCancelled = execution.state === "cancelled";
-      updateActiveRun((run) => ({ ...run, status: deriveStatus(run, wasCancelled) }));
+      updateRunById(runId, (run) => ({ ...run, status: deriveStatus(run, wasCancelled) }));
       if (!wasCancelled) {
         execution = { state: "complete" };
       }
@@ -267,7 +265,7 @@
 
       if (!res.ok) {
         const text = await res.text();
-        updateActiveRun((run) => ({
+        updateRunById(runId, (run) => ({
           ...run,
           events: [{ type: "error", data: { error: `HTTP ${res.status}: ${text}` } }],
           status: "error",
@@ -277,7 +275,7 @@
         return;
       }
       if (!res.body) {
-        updateActiveRun((run) => ({
+        updateRunById(runId, (run) => ({
           ...run,
           events: [{ type: "error", data: { error: "No response body" } }],
           status: "error",
@@ -288,10 +286,10 @@
       }
 
       execution = { state: "running", stream: res.body };
-      consumeSSEStream(res.body);
+      consumeSSEStream(res.body, runId);
     } catch {
       if (execution.state !== "cancelled") {
-        updateActiveRun((run) => ({
+        updateRunById(runId, (run) => ({
           ...run,
           events: [...run.events, { type: "error", data: { error: "Connection lost" } }],
           status: "error",
@@ -318,7 +316,9 @@
         <span class="health-dot" class:healthy class:unhealthy={!healthy}></span>
         <h1 class="agent-name">{agent.displayName}</h1>
         <span class="version">{agent.version}</span>
-        <InlineBadge variant="success">BUILT-IN</InlineBadge>
+        <InlineBadge variant={agent.source === "user" ? "info" : "success"}>
+          {agent.source === "user" ? "USER" : "BUILT-IN"}
+        </InlineBadge>
       </div>
     </header>
 

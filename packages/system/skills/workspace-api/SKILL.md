@@ -227,7 +227,6 @@ with `id`, `initial`, and `states`. Each state is either:
 
 **Entry action types:**
 - `{ type: agent, agentId, outputTo, outputType, prompt }` — invoke a declared agent
-- `{ type: code, function: 'fnName' }` — call a named function from the FSM's code module
 - `{ type: emit, event: 'EVENT_NAME' }` — fire an event routed by this state's `on` map
 
 Minimal FSM job (one agent, triggered by a signal):
@@ -272,11 +271,11 @@ schema exposed as MCP tool params), `context.files` (glob patterns +
 
 ### `agents` — per-workspace agent definitions
 
-Keyed by stable kebab-case id. Discriminated on `type`:
+Keyed by stable kebab-case id. Discriminated on `type` — three options:
 
 ```yaml
 agents:
-  summarizer:                   # type: llm — most common
+  summarizer:                   # type: llm — inline LLM agent (most common)
     type: llm
     description: "Summarizes incoming docs"
     config:
@@ -289,21 +288,24 @@ agents:
       tool_choice: "auto"                         # "auto" | "required" | "none"
       tools: ["fetch_mcp_tool_name"]              # resolves via tools.mcp.servers.*
 
-  kb-chat:                      # type: system — built-in platform agent
-    type: system
-    agent: "conversation-agent"                   # platform agent id
-    config:                                       # optional overrides
-      model: "claude-sonnet-4-6"
-      prompt: "Override system prompt"
-      tools: [...]
-
-  my-code-agent:                # type: user — Python WASM via `atlas agent build`
+  my-code-agent:                # type: user — SDK agent (Python/TS, registered via POST /api/agents/register)
     type: user
-    agent: "my-code-agent"                        # matches build output id
+    agent: "my-code-agent"                        # matches registered agent id
     prompt: "Additional workspace context"        # optional
     env:                                          # strings OR credential refs
       GITHUB_TOKEN: { credentialId: "cred_abc123" }
       STATIC_VAR: "literal-value"
+    # To register the agent before referencing it here, see the `writing-friday-agents` skill.
+
+  kb-agent:                     # type: atlas — agent from the Atlas registry
+    type: atlas
+    agent: "kb-agent"                             # Atlas Agent ID from registry
+    description: "Knowledge base agent"
+    prompt: "You are a knowledge base assistant..."
+    config:                                       # agent-specific config (optional)
+      some_setting: "value"
+    env:
+      API_KEY: { credentialId: "cred_abc123" }
 ```
 
 ### `memory` — corpora and cross-workspace mounts
@@ -432,24 +434,30 @@ For other servers, search the MCP registry. Validator flags `npm_package_not_fou
 
 ## Updating an existing workspace
 
-**Default:** edit `workspace.yml` on disk via `run_code` with an absolute
-path. The file watcher hashes new content, validates against the schema,
-destroys the runtime, and recreates it on the next signal — runtime id,
-sessions, memory, and scratchpad are all preserved. If a session is active,
-the reload defers until idle.
+**Default: `POST /api/workspaces/:id/update`** — validates the full config, writes
+`workspace.yml`, and destroys the runtime so it rebuilds on the next signal. The
+disk file does not auto-reload a live workspace; this endpoint is the correct path.
 
 ```javascript
-// run_code, language: javascript — Deno has @std/yaml built in
-import { stringify } from "jsr:@std/yaml";
-import { writeFileSync } from "node:fs";
+// run_code, language: javascript
+const id = "layered_ham";   // runtime id, not the workspace name
+const cfg = await fetch(`http://localhost:8080/api/workspaces/${id}/config`).then(r => r.json());
 
-const cfg = await fetch("http://localhost:8080/api/workspaces/<id>/config").then(r => r.json());
-// mutate cfg...
-writeFileSync("/Users/you/.atlas/workspaces/my-space/workspace.yml", stringify(cfg));
+// mutate cfg.config ...
+
+const res = await fetch(`http://localhost:8080/api/workspaces/${id}/update`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ config: cfg.config }),
+});
+console.log(JSON.stringify(await res.json()));
+// → { success: true, workspace: {...}, runtimeReloaded: true }
 ```
 
-**Escape hatches** — use only when exactly one of these fits and the on-disk
-path doesn't:
+Pass `backup: true` to preserve a timestamped `workspace.yml.backup-<ts>` before
+overwriting. Pass `force: true` to override the active-session guard (use with care).
+
+**Surgical endpoints** — prefer these over a full update when only one thing changes:
 
 | Change | Endpoint |
 |---|---|
@@ -458,14 +466,8 @@ path doesn't:
 | Swap a credential reference | `PUT /api/workspaces/:id/config/credentials/:path` |
 | Rename / recolor metadata | `PATCH /api/workspaces/:id/metadata` |
 
-**There is no full-replace endpoint** — `POST /api/workspaces/:id/config` 404s.
-
-**Never DELETE+CREATE** unless all of the above fail. Delete-then-create loses
-the runtime id, kills active sessions, and breaks anything holding the old id
-(cron targets, cross-workspace mounts, hardcoded refs).
-
-Full three-path guide with worked examples:
-`references/updating-workspaces.md`.
+**Never DELETE+CREATE** — loses the runtime id, kills active sessions, breaks anything
+holding the old id (cron targets, cross-workspace mounts, hardcoded refs).
 
 ---
 

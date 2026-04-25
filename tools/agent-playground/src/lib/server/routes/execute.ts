@@ -7,11 +7,13 @@ import { logger } from "@atlas/logger/console";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { getAtlasHome } from "@atlas/utils/paths.server";
+import { parseSSEEvents } from "@atlas/utils/sse";
 import { createBashTool } from "@atlas/workspace/bash-tool";
 import { CodeAgentExecutor } from "@atlas/workspace/code-agent-executor";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+const DAEMON_BASE_URL = "http://localhost:8080";
 import { PlaygroundContextAdapter } from "../lib/context.ts";
 import { createSSEStream } from "../lib/sse.ts";
 import { userAgentExists } from "../lib/user-agents.ts";
@@ -32,11 +34,33 @@ const ExecuteBody = z.object({
 export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody), async (c) => {
   const { agentId, input, env } = c.req.valid("json");
 
-  // User (WASM code) agents — execute directly via CodeAgentExecutor
+  // User agents: subprocess agents (NATS protocol) proxy to daemon; legacy WASM agents run locally
   if (await userAgentExists(agentId)) {
+    const adapter = new UserAdapter(join(getAtlasHome(), "agents"));
+    const agentSource = await adapter.loadAgent(agentId);
+
+    if (agentSource.metadata.entrypoint) {
+      // New-style NATS subprocess agent — relay SSE events from daemon via createSSEStream.
+      // Raw Response passthrough is silently buffered by Hono before reaching the client.
+      return createSSEStream(async (emitter, signal) => {
+        const res = await fetch(`${DAEMON_BASE_URL}/api/agents/${agentId}/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input, env }),
+          signal,
+        });
+        if (!res.ok || !res.body) {
+          const text = await res.text().catch(() => `HTTP ${res.status}`);
+          throw new Error(text);
+        }
+        for await (const msg of parseSSEEvents(res.body)) {
+          emitter.send(msg.event ?? "message", msg.data);
+        }
+      });
+    }
+
+    // Legacy WASM code agent
     return createSSEStream(async (emitter, signal) => {
-      const adapter = new UserAdapter(join(getAtlasHome(), "agents"));
-      const agentSource = await adapter.loadAgent(agentId);
       const sourceLocation = join(agentSource.metadata.sourceLocation, "agent-js");
 
       const mcpConfigs: Record<string, MCPServerConfig> = {

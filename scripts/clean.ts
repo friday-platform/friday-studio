@@ -15,6 +15,18 @@ const PRESERVED_ENTRIES = new Set([".env", "bin"]);
 // OAuth credentials written by setup-secrets.sh (e.g. google_client_id, hubspot_client_secret)
 const PRESERVED_SUFFIXES = ["_client_id", "_client_secret"];
 
+async function cleanAgents() {
+  const atlasHome = getAtlasHome();
+  const agentsDir = join(atlasHome, "agents");
+  try {
+    await rm(agentsDir, { recursive: true, force: true });
+    console.log("Agents directory cleared.");
+  } catch (error) {
+    console.error(`Error clearing agents directory: ${stringifyError(error)}`);
+    process.exit(1);
+  }
+}
+
 async function clean() {
   const atlasHome = getAtlasHome();
 
@@ -49,5 +61,10 @@ async function clean() {
 
 // Run the clean function
 if (import.meta.main) {
-  await clean();
+  const agentsOnly = process.argv.includes("--agents");
+  if (agentsOnly) {
+    await cleanAgents();
+  } else {
+    await clean();
+  }
 }

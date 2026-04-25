@@ -644,6 +644,11 @@ export class AtlasDaemon {
     return this.natsManager.connection;
   }
 
+  /** Get the ProcessAgentExecutor (available after NATS initializes). */
+  public getProcessAgentExecutor(): ProcessAgentExecutor | null {
+    return this.processAgentExecutor;
+  }
+
   /**
    * Create the SESSIONS JetStream stream if it doesn't already exist.
    * The stream retains events for 24 hours so SSE clients can reconnect

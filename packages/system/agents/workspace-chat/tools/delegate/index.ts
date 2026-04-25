@@ -364,7 +364,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         const pendingToolCallIds: string[] = [];
         for (const childId of startedAt.keys()) {
           if (!terminated.has(childId)) {
-            pendingToolCallIds.push(`${toolCallId}::${childId}`);
+            pendingToolCallIds.push(`${toolCallId}-${childId}`);
           }
         }
 

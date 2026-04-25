@@ -15,7 +15,7 @@ import { z } from "zod";
 import type { SearchResult } from "./search.ts";
 
 const RerankResponseSchema = z.object({
-  rankings: z.array(z.object({ index: z.number().int().min(0), score: z.number().min(0).max(10) })),
+  rankings: z.array(z.object({ index: z.number().int(), score: z.number() })),
 });
 
 export interface RerankResult {

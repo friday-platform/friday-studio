@@ -35,7 +35,7 @@
     { label: "Chat", href: "/platform/user/chat", icon: IconLarge.SpeechBubble },
     { label: "Memory", href: "/memory", icon: IconLarge.Write },
     { label: "Improvements", href: "/improvements", icon: IconLarge.Target },
-    { label: "Agent Tester", href: "/agents/built-in", icon: IconLarge.Chip },
+    { label: "Agent Tester", href: "/agents", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
     { label: "MCP Servers", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },

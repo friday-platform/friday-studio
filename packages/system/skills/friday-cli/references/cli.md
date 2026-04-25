@@ -170,9 +170,8 @@ Use the `debugging-friday` skill for deeper log forensics (GCS, correlation).
 ### `agent list`
 `agent list [-w <workspace>] [--user] [--json]`
 
-Agents in a workspace. `--user` lists user-built agents in `~/.atlas/agents/`
-(Python WASM). Falls back to `--user` mode if you're outside a workspace
-directory.
+Agents in a workspace. `--user` lists user-built agents in `~/.atlas/agents/`.
+Falls back to `--user` mode if you're outside a workspace directory.
 
 ### `agent describe`
 `agent describe -n <name> [-w <workspace>]`
@@ -181,12 +180,12 @@ Alias: `agent show`, `agent get`
 
 Full agent config as JSON (type, prompt, model, tools, integrations).
 
-### `agent build`
-`agent build <dir> [--sdk-path <p>] [--wit-dir <p>] [--entry-point agent]`
+### `agent register`
+`agent register <dir> [--entry-point agent]`
 
-Builds a Python WASM agent. Runs componentize-py + jco. Writes to
-`~/.atlas/agents/`. The daemon auto-registers built agents on next restart
-when `AGENT_SOURCE_DIR` is set.
+Registers an SDK agent (a NATS client). Copies source files to `~/.atlas/agents/`
+and reloads the registry. No compilation step — the agent process is spawned per
+invocation and communicates via NATS request/reply.
 
 ### `agent exec`
 `agent exec <agent> -i <input> [--url http://localhost:5200] [--env K=V,K2=V2] [--json] [--stream]`

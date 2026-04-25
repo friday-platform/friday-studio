@@ -5,22 +5,27 @@
  * Execution model:
  *   1. Register session context in CapabilityHandlerRegistry
  *   2. Subscribe to sessions.{sessionId}.events to forward stream events
- *   3. Spawn: python3 agentPath (inherits env + NATS_URL + ATLAS_SESSION_ID)
- *   4. nc.request agents.{sessionId}.execute → get result
- *   5. Cleanup: unregister, kill process, unsubscribe stream sub
+ *   3. Subscribe to agents.{sessionId}.ready (before spawn to avoid race)
+ *   4. Spawn: runtime agentPath (inherits full env + NATS_URL + ATLAS_SESSION_ID)
+ *   5. Wait for agents.{sessionId}.ready — agent publishes this after subscribing
+ *   6. nc.request agents.{sessionId}.execute → get result
+ *   7. Cleanup: unregister, kill process, unsubscribe subs
  */
 
 import { spawn } from "node:child_process";
+import process from "node:process";
 import type { AgentExecutionSuccess, AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { logger as rootLogger } from "@atlas/logger";
 import type { CodeAgentExecutorOptions } from "@atlas/workspace/code-agent-executor";
 import { serializeAgentContext } from "@atlas/workspace/code-agent-executor";
 import type { NatsConnection } from "nats";
 import { StringCodec } from "nats";
+
 import type { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 
 const sc = StringCodec();
 const DEFAULT_TIMEOUT_MS = 180_000;
+const READY_TIMEOUT_MS = 30_000;
 
 function buildSpawnArgs(agentPath: string): [string, string[]] {
   if (agentPath.endsWith(".py")) return ["python3", [agentPath]];
@@ -54,26 +59,38 @@ export class ProcessAgentExecutor {
       abortSignal: undefined,
     });
 
-    // 2. Subscribe to stream events from the agent (bridging to streamEmitter until Phase 5)
+    // 2. Subscribe to stream events from the agent
     const streamSub = this.nc.subscribe(`sessions.${sessionId}.events`);
     const streamForward = (async () => {
       for await (const msg of streamSub) {
         try {
           const chunk = JSON.parse(sc.decode(msg.data)) as AtlasUIMessageChunk;
-          options.streamEmitter?.emit({
-            type: chunk.type,
-            data: (chunk as Record<string, unknown>).data as Record<string, unknown>,
-          });
+          options.streamEmitter?.emit(chunk);
         } catch {
           // Skip malformed events
         }
       }
     })();
 
-    // 3. Spawn agent subprocess (polyglot: infer runtime from file extension)
+    // 3. Subscribe to ready signal BEFORE spawning — agent publishes this once it has
+    //    subscribed to the execute subject. Must be set up first to avoid the race where
+    //    the agent starts and publishes ready before we listen.
+    const readySub = this.nc.subscribe(`agents.${sessionId}.ready`);
+    const readyPromise = (async () => {
+      for await (const _ of readySub) {
+        return;
+      }
+    })();
+
+    // 4. Spawn agent subprocess (polyglot: infer runtime from file extension)
     const [cmd, args] = buildSpawnArgs(agentPath);
     const proc = spawn(cmd, args, {
-      env: { ...options.env, NATS_URL: "nats://localhost:4222", ATLAS_SESSION_ID: sessionId },
+      env: {
+        ...process.env,
+        ...options.env,
+        NATS_URL: "nats://localhost:4222",
+        ATLAS_SESSION_ID: sessionId,
+      },
       stdio: "pipe",
     });
 
@@ -87,12 +104,26 @@ export class ProcessAgentExecutor {
     });
 
     try {
-      // 4. Send execute request — agent subscribes, handles, responds, exits
-      const response = await this.nc.request(
-        `agents.${sessionId}.execute`,
-        sc.encode(JSON.stringify({ prompt, context: JSON.parse(serializeAgentContext(options)) })),
-        { timeout: timeoutMs },
+      // 5. Wait for the agent to signal it's ready (subscribed and ready to receive execute).
+      //    This replaces the 503-retry loop, which breaks when any wildcard NATS subscriber
+      //    (e.g. `nats sub ">"`) is present — wildcard subs prevent 503 from firing.
+      await Promise.race([
+        readyPromise,
+        new Promise<void>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`Agent did not signal ready within ${READY_TIMEOUT_MS}ms`)),
+            READY_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+
+      // 6. Agent is subscribed — send the execute request
+      const payload = sc.encode(
+        JSON.stringify({ prompt, context: JSON.parse(serializeAgentContext(options)) }),
       );
+      const response = await this.nc.request(`agents.${sessionId}.execute`, payload, {
+        timeout: timeoutMs,
+      });
 
       const result = JSON.parse(sc.decode(response.data)) as { tag: string; val: string };
       const durationMs = performance.now() - startTime;
@@ -155,8 +186,9 @@ export class ProcessAgentExecutor {
         durationMs,
       };
     } finally {
-      // 5. Cleanup
+      // 7. Cleanup
       this.capabilityRegistry.unregister(sessionId);
+      readySub.unsubscribe();
       streamSub.unsubscribe();
       await streamForward.catch(() => {}); // drain loop
 

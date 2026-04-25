@@ -35,7 +35,6 @@ export interface EntryAction {
  * Extracts typed action descriptors from an FSM state's entry array.
  *
  * Maps each FSM action to a compact descriptor suitable for filmstrip rendering:
- * - `code` actions: name is the `function` field
  * - `agent` actions: name is the `agentId`, includes `outputTo`
  * - `llm` actions: name is `{provider}/{model}`, includes `outputTo` and `outputType`
  * - `emit` actions: name is the `event` field

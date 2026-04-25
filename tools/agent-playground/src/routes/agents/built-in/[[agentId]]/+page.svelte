@@ -54,7 +54,7 @@
   }
 
   function handleBack() {
-    goto("/agents/built-in");
+    goto("/agents");
   }
 </script>
 

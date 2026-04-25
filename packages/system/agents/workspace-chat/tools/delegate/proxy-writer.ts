@@ -4,7 +4,7 @@
  * Wraps every chunk written by a delegate's child sub-agent in a
  * `data-delegate-chunk` envelope before forwarding to the parent writer.
  * Namespaces any embedded `toolCallId` field as
- * `${delegateToolCallId}::${childToolCallId}` to prevent collisions with
+ * `${delegateToolCallId}-${childToolCallId}` to prevent collisions with
  * sibling tool calls under the parent.
  *
  * `finish` tool chunks are filtered out — the delegate consumes `finish` from
@@ -74,7 +74,7 @@ export function createDelegateProxyWriter(deps: ProxyDeps): DelegateProxyWriter 
     ) {
       outChunk = {
         ...chunk,
-        toolCallId: `${delegateToolCallId}::${chunk.toolCallId}`,
+        toolCallId: `${delegateToolCallId}-${chunk.toolCallId}`,
       } as AtlasUIMessageChunk;
     }
     // Data events (e.g. data-tool-timing) may carry the toolCallId inside
@@ -90,10 +90,7 @@ export function createDelegateProxyWriter(deps: ProxyDeps): DelegateProxyWriter 
     ) {
       outChunk = {
         ...outChunk,
-        data: {
-          ...outChunk.data,
-          toolCallId: `${delegateToolCallId}::${outChunk.data.toolCallId}`,
-        },
+        data: { ...outChunk.data, toolCallId: `${delegateToolCallId}-${outChunk.data.toolCallId}` },
       } as AtlasUIMessageChunk;
     }
     return { type: "data-delegate-chunk", data: { delegateToolCallId, chunk: outChunk } };

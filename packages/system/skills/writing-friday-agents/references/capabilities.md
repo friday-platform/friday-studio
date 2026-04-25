@@ -1,8 +1,8 @@
 # Capabilities (`ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`)
 
-All external I/O goes through the host. `AgentContext` exposes four capabilities. Each is sync from the agent's view — WASM JSPI suspends and resumes. Never write `async`/`await` in the handler.
+All external I/O goes through the host via NATS. `AgentContext` exposes four capabilities backed by NATS request/reply subjects.
 
-Any capability can be `None` (test harness, missing config, unsupported context). Check first; return `err()`.
+Capabilities are always initialized — they raise `RuntimeError` if called outside the host (e.g. in unit tests without a mock). They are never `None`.
 
 ## `ctx.llm` — LLM generation
 
@@ -53,7 +53,7 @@ Constraints:
 - 5 MB response body cap (host-enforced)
 - 30s default timeout, override with `timeout_ms`
 - `body` is a string — use `json.dumps(...)` for JSON
-- `requests`/`httpx` blocked (both need the `ssl` module). `ctx.http.fetch` is the only egress.
+- Use `ctx.http.fetch`, not `requests`/`httpx` — route all HTTP through the host
 
 **Errors**: raises `HttpError` on transport failure. Non-2xx statuses return normally — check `response.status`.
 
@@ -82,7 +82,7 @@ ctx.stream.emit("custom-event", {"key": "value"})
 
 Emit before expensive ops (LLM, HTTP, slow tools), at phase boundaries, after milestones. Skip tight loops, sub-100ms work, per-item progress ("1/50, 2/50..."). Keep messages 50–100 chars.
 
-`intent` = phase. `progress` = detail. Emits are no-ops when capability is `None`.
+`intent` = phase. `progress` = detail. `stream` emits fire-and-forget over NATS (does not block the handler).
 
 ## Other `ctx` fields
 

@@ -64,7 +64,7 @@
   /** Auto-scroll to bottom when new events arrive. */
   $effect(() => {
     if (events.length > 0 && streamEnd) {
-      streamEnd.scrollIntoView({ behavior: "smooth" });
+      streamEnd.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   });
 

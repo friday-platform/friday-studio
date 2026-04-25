@@ -294,7 +294,7 @@ async function validateWithLLM(
 ): Promise<LLMValidationResult> {
   const ValidationSchema = z.object({
     valid: z.boolean(),
-    confidence: z.number().min(0).max(1),
+    confidence: z.number(),
     issues: z.array(z.string()),
   });
 

@@ -1,59 +1,48 @@
-# Sandbox constraints
+# Agent constraints
 
-Friday agents compile to WebAssembly via `componentize-py`. The runtime is sandboxed CPython — no OS, no native extensions, no network of its own.
+Friday agents run as short-lived Python subprocesses. The host spawns `python agent.py`, the agent handles one NATS request, then exits. This is a real Python environment — but I/O still goes through `ctx`.
 
 ## Mental model
 
-An agent is a pure function `execute(prompt, ctx) -> ok|err`:
-- Called once per request, fresh module state each time
-- No filesystem, no network, no threads, no subprocesses
-- Reaches outside only through `ctx.llm`, `ctx.http`, `ctx.tools`, `ctx.stream`
-- Sync from its own view (JSPI bridges async invisibly)
+An agent is a function `execute(prompt, ctx) -> ok|err`:
+- Spawned once per invocation, fresh process each time
+- Real Python: stdlib + `friday_agent_sdk` (NATS is an internal SDK dependency — not a separately importable package)
+- All LLM, HTTP, and MCP I/O goes through `ctx` — not `requests`, not `anthropic`
+- Handler can be sync or async
+- State does not persist between calls (new process each time)
 
-Treat it as a stateless pure function with four capability hooks. That model predicts every constraint below.
-
-## What's blocked
+## What to avoid
 
 | Want to | Use instead |
 |---|---|
 | `import anthropic` / `openai` | `ctx.llm.generate(...)` |
 | `import requests` / `httpx` | `ctx.http.fetch(...)` |
-| `import pydantic` | `@dataclass` + `parse_input` |
-| `import numpy` / `pandas` | No alternative — rework the problem |
-| `open(path)` / `pathlib` | No filesystem |
-| `threading.Thread` / `multiprocessing` | Single-threaded. Sequential only. |
-| `asyncio.run(...)` / `async def execute` | Handler is sync. Capabilities too. |
-| `subprocess.run(...)` | Use an MCP tool |
-| Module-level state across calls | Fresh import each invocation |
+| `import pydantic` | `@dataclass` + `parse_input` — pydantic not installed |
+| Module-level state across calls | Fresh process each invocation — persist via MCP tools or returned data |
 | Two `@agent` in one file | `RuntimeError` at import |
 
-Root cause: most blocked packages depend on C extensions (`pydantic-core`, `ssl`, `numpy`) or OS features the sandbox lacks.
+Root cause for routing through `ctx`: the host enforces rate limiting, credential injection, audit logging, and capability access control. Bypassing `ctx` also breaks portability — agents don't know which LLM provider or API keys the workspace is configured with.
 
-## What's allowed
+## Entry point
 
-- Python stdlib, minus OS/network/threading modules
-- `dataclasses`, `json`, `re`, `textwrap`, `datetime`, `collections`, `enum`, `typing`, `math`, etc.
-- `friday_agent_sdk`
-- Pure-Python deps you vendor (rare, almost never worth it)
-
-## Non-obvious conventions
-
-### `_bridge` import
+Every agent file needs:
 
 ```python
-from friday_agent_sdk._bridge import Agent  # noqa: F401
+if __name__ == "__main__":
+    from friday_agent_sdk import run
+    run()
 ```
 
-componentize-py discovers `Agent` through this import. Unused at runtime. Removing it breaks the build cryptically. Keep the `noqa`.
+The host spawns `python agent.py`. Without this block, the process exits immediately without connecting to NATS.
 
-### One agent per module
+## One agent per module
 
-Module-level registry; second `@agent` raises `RuntimeError`. Each file compiles to one WASM component. Two agents → two files.
+Module-level registry; second `@agent` raises `RuntimeError`. Two agents → two files.
 
-### Stateless
+## Stateless
 
 ```python
-# BROKEN — counter resets every call
+# BROKEN — counter resets every call (new process)
 counter = 0
 
 @agent(...)
@@ -63,9 +52,9 @@ def execute(prompt, ctx):
     return ok({"count": counter})
 ```
 
-Every call re-imports. Counter is always 1. Persist through MCP tools or return data for the host.
+Every call spawns a new process. Counter is always 1. Persist through MCP tools or return data for the host.
 
-### Strict return type
+## Strict return type
 
 Handler must return `OkResult` or `ErrResult`:
 
@@ -76,30 +65,18 @@ return ok({"text": "hi"})    # right
 return ok("hi")              # right — data is any JSON-serializable value
 ```
 
-### JSON at the WIT boundary
+## JSON at the result boundary
 
-Return values, errors, tool args, tool results — all serialize to JSON strings. Non-serializable fields (file handles, lambdas, custom classes without `__dict__`) fail. Dataclasses, dicts, lists, primitives, `None` are safe.
+Return values, errors, tool args, tool results — all serialize to JSON. Non-serializable fields (file handles, lambdas, custom classes without `__dict__`) fail. Dataclasses, dicts, lists, primitives, `None` are safe.
 
-### String errors
+## String errors
 
-`err("message")` takes a plain string. No structured envelope across WIT. Encode type in the string (`err("validation: max_length out of range")`) or return `ok` with a status field.
-
-### Capability null checks
-
-`ctx.llm`, `ctx.http`, `ctx.tools`, `ctx.stream` can be `None`. Check and return `err()`:
-
-```python
-if ctx.llm is None:
-    return err("LLM capability not available in this context")
-```
-
-`ctx.stream` emits no-op when absent, but null-checking is still good hygiene for branching logic.
+`err("message")` takes a plain string. Encode type in the string (`err("validation: max_length out of range")`) or return `ok` with a status field.
 
 ## Short form
 
-1. Pure sync function.
-2. No packages beyond `friday_agent_sdk` + stdlib.
-3. `ctx.*` for all I/O.
-4. Return `ok(...)` / `err(...)`.
-5. Keep the `_bridge` import.
-6. One agent per file.
+1. Pure function — sync or async both fine.
+2. Use `ctx.*` for all LLM, HTTP, and MCP I/O.
+3. Return `ok(...)` / `err(...)`.
+4. One `@agent` per file.
+5. Always include `if __name__ == "__main__": run()`.

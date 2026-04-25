@@ -4,6 +4,7 @@ import { getAgent } from "./get.ts";
 import { listAgents } from "./list.ts";
 import { getAgentPreflight } from "./preflight.ts";
 import { registerAgentRoute } from "./register.ts";
+import { runAgentRoute } from "./run.ts";
 
 export const agents = new Hono();
 
@@ -12,3 +13,4 @@ agents.route("/", listAgents);
 agents.route("/", getAgent);
 agents.route("/", getAgentExpertise);
 agents.route("/", getAgentPreflight);
+agents.route("/", runAgentRoute);

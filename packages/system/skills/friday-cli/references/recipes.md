@@ -14,7 +14,7 @@ End-to-end patterns for driving Friday via CLI + HTTP. Copy + adapt.
 - Cancel stuck session
 - Publish updated skill
 - Assign skill to workspace (scoping)
-- Build + register Python WASM agent
+- Deploy + register SDK agent
 - Update env vars in daemon config
 - Send a prompt + follow up
 - Delete workspace (hard)
@@ -149,26 +149,18 @@ curl -s -X POST http://localhost:8080/api/skills/scoping/$SKILL_ID/assignments \
   -d "{\"workspaceIds\":[\"$WS_ID\"]}"
 ```
 
-## Build + register Python WASM agent
+## Deploy + register SDK agent
+
+An SDK agent is a NATS client — any language that can connect to NATS and speak
+the request/reply protocol. The Python SDK (`friday_agent_sdk`) is the current
+reference implementation.
 
 **Full authoring workflow: use the `writing-friday-agents` skill.**
-It covers `@agent` decorator, `ctx.*` APIs, `ok()`/`err()`, JSON Schema strict
-mode gotchas, and file structure.
 
-Build step once agent.py ready:
+Register via HTTP (no build step — agent process is spawned per invocation):
 
 ```bash
-deno task atlas agent build ./agents/my-new-agent --sdk-path /path/to/agent-sdk
-```
-
-Writes to `~/.atlas/agents/`. Daemon auto-registers on next restart when
-`AGENT_SOURCE_DIR` points at source dir.
-
-Register without restart via HTTP:
-
-```bash
-# Multipart: upload source files, daemon builds + reloads registry.
-curl -X POST http://localhost:8080/api/agents/build \
+curl -X POST http://localhost:8080/api/agents/register \
   -F "files=@agents/my-new-agent/agent.py" \
   -F "entry_point=agent"
 ```

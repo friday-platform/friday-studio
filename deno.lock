@@ -176,6 +176,7 @@
     "npm:minimatch@^10.2.5": "10.2.5",
     "npm:nanoid@5.1.7": "5.1.7",
     "npm:nanoid@^5.1.6": "5.1.7",
+    "npm:nats@2": "2.29.3",
     "npm:nats@^2.29.3": "2.29.3",
     "npm:node-pty@1": "1.1.0",
     "npm:oauth4webapi@3.8.5": "3.8.5",

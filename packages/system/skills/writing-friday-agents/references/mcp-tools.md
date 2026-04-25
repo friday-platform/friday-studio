@@ -109,4 +109,18 @@ except ToolCallError as e:
 
 ## Testing
 
-Mock by passing a fake `call_tool` / `list_tools` to a `Tools` instance. See SDK `tests/test_tools.py` — it mocks the WIT functions (not the wrapper) and uses a dataclass mimicking componentize-py's `_Err` for failures.
+Mock by passing fake callables to a `Tools` instance directly:
+
+```python
+from friday_agent_sdk import AgentContext, ToolCallError
+from friday_agent_sdk._types import Tools
+
+def fake_call(name, args_json):
+    if name == "get_current_time":
+        return '{"time": "2026-01-01T00:00:00Z"}'
+    raise ToolCallError(f"unknown tool: {name}")
+
+ctx = AgentContext(tools=Tools(call_tool=fake_call, list_tools=lambda: []))
+```
+
+See SDK `tests/test_tools.py` for working examples.
