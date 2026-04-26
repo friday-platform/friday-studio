@@ -1,9 +1,9 @@
 /**
  * Unit tests for the delegate proxy writer.
  *
- * Covers the three-state lifecycle (open / merging / closed), envelope
- * wrapping for both `write()` and `merge()`, and the silent-drop behavior
- * after `close()`.
+ * Covers envelope wrapping for both `write()` and `merge()`, pass-through
+ * of `nested-chunk` envelopes, `finish` tool drop behaviour, and the silent
+ * drop after `close()`.
  */
 
 import type { AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
@@ -92,7 +92,7 @@ describe("createDelegateProxyWriter", () => {
     expect(inner.type).toBe("data-tool-progress");
   });
 
-  it("write() namespaces toolCallId fields and wraps in envelope", () => {
+  it("write() wraps raw tool chunks without namespacing toolCallId", () => {
     const parent = makeWriter();
     const proxy = createDelegateProxyWriter({
       parent,
@@ -112,10 +112,49 @@ describe("createDelegateProxyWriter", () => {
     if (!env || typeof env !== "object" || !("type" in env)) throw new Error("bad envelope");
     expect(env.type).toBe("data-delegate-chunk");
     const inner = (env as { data: { chunk: { toolCallId: string } } }).data.chunk;
-    expect(inner.toolCallId).toBe("del-1-child-x");
+    // Must NOT be namespaced.
+    expect(inner.toolCallId).toBe("child-x");
   });
 
-  it("merge() forwards a stream of chunks envelope-wrapped in emission order", async () => {
+  it("write() double-wraps a data-nested-chunk envelope without mutating inner ids", () => {
+    const parent = makeWriter();
+    const proxy = createDelegateProxyWriter({
+      parent,
+      delegateToolCallId: "del-1",
+      logger: makeLogger(),
+    });
+
+    proxy.write({
+      type: "data-nested-chunk",
+      data: {
+        parentToolCallId: "inner-parent",
+        chunk: {
+          type: "tool-input-available",
+          toolCallId: "deep-child",
+          toolName: "fetch",
+          input: { url: "https://example.com" },
+        } as unknown as AtlasUIMessageChunk,
+      },
+    });
+
+    expect(parent.writes).toHaveLength(1);
+    const env = parent.writes[0]?.chunk;
+    if (!env || typeof env !== "object" || !("type" in env)) throw new Error("bad envelope");
+    expect(env.type).toBe("data-delegate-chunk");
+
+    const outer = env as {
+      data: {
+        delegateToolCallId: string;
+        chunk: { type: string; data: { parentToolCallId: string; chunk: { toolCallId: string } } };
+      };
+    };
+    expect(outer.data.delegateToolCallId).toBe("del-1");
+    expect(outer.data.chunk.type).toBe("data-nested-chunk");
+    expect(outer.data.chunk.data.parentToolCallId).toBe("inner-parent");
+    expect(outer.data.chunk.data.chunk.toolCallId).toBe("deep-child");
+  });
+
+  it("merge() forwards a stream of chunks envelope-wrapped in emission order without namespacing", async () => {
     const parent = makeWriter();
     const proxy = createDelegateProxyWriter({
       parent,
@@ -149,9 +188,9 @@ describe("createDelegateProxyWriter", () => {
       .map((c) => (c as { data: { chunk: { type: string } } }).data.chunk.type)
       .filter((t): t is string => typeof t === "string");
     expect(innerTypes).toEqual(["text-start", "tool-input-available", "tool-output-available"]);
-    // The middle chunk's toolCallId got namespaced.
+    // The middle chunk's toolCallId must NOT be namespaced.
     const second = out[1] as { data: { chunk: { toolCallId?: string } } } | undefined;
-    expect(second?.data.chunk.toolCallId).toBe("del-2-child-1");
+    expect(second?.data.chunk.toolCallId).toBe("child-1");
   });
 
   it("closed state — late write() and merge() silently drop input, no throw, debug logged", async () => {
@@ -193,52 +232,6 @@ describe("createDelegateProxyWriter", () => {
     expect(debugMock.mock.calls).toHaveLength(2);
   });
 
-  it("state getter reports open / merging / closed correctly", async () => {
-    const parent = makeWriter();
-    const proxy = createDelegateProxyWriter({
-      parent,
-      delegateToolCallId: "del-4",
-      logger: makeLogger(),
-    });
-
-    expect(proxy.state).toBe("open");
-
-    // Inject a never-finishing source so we can observe `merging` state mid-flight.
-    let controllerRef: ReadableStreamDefaultController<AtlasUIMessageChunk> | undefined;
-    const blocker = new ReadableStream<AtlasUIMessageChunk>({
-      start(controller) {
-        controllerRef = controller;
-      },
-    });
-    proxy.merge(blocker);
-    // Force the consumer (parent.merged stream's reader) to start pulling from
-    // the proxy's transform — without this, the transform never wires up to
-    // the source and `state` would still report "open".
-    if (parent.merged[0]) {
-      const reader = parent.merged[0].getReader();
-      // Poke the reader so the pipeThrough installs its source-pull plumbing,
-      // then immediately release without consuming chunks.
-      const pending = reader.read();
-      // Surrender event-loop turn so the transform runs.
-      await new Promise((r) => setTimeout(r, 0));
-      expect(proxy.state).toBe("merging");
-      // Close the source so the transform's flush runs and merge counter drops.
-      controllerRef?.close();
-      await pending;
-      // Drain remaining chunks (none) so flush fires.
-      while (true) {
-        const { done } = await reader.read();
-        if (done) break;
-      }
-      reader.releaseLock();
-    }
-    // After flush, back to open.
-    expect(proxy.state).toBe("open");
-
-    proxy.close();
-    expect(proxy.state).toBe("closed");
-  });
-
   it("filters out finish tool chunks even via merge()", async () => {
     const parent = makeWriter();
     const proxy = createDelegateProxyWriter({
@@ -267,6 +260,6 @@ describe("createDelegateProxyWriter", () => {
     const out = parent.merged[0] ? await drain(parent.merged[0]) : [];
     expect(out).toHaveLength(1);
     const inner = (out[0] as { data: { chunk: { toolCallId?: string } } }).data.chunk;
-    expect(inner.toolCallId).toBe("del-5-child-7");
+    expect(inner.toolCallId).toBe("child-7");
   });
 });
