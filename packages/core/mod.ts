@@ -50,6 +50,15 @@ export type {
   RequiredConfigField,
 } from "./src/mcp-registry/schemas.ts";
 export type {
+  EnrichedMCPServer,
+  ServerReference,
+  WorkspaceMCPStatus,
+} from "./src/mcp-registry/workspace-mcp.ts";
+export {
+  findServerReferences,
+  getWorkspaceMCPStatus,
+} from "./src/mcp-registry/workspace-mcp.ts";
+export type {
   MountConsumer,
   MountSource,
 } from "./src/mount-registry/mod.ts";
