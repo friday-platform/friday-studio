@@ -28,7 +28,7 @@
  * @module
  */
 
-import type { AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { accumulateChunks } from "./chunk-accumulator.ts";
 import { buildToolCallTree } from "./tree-builder.ts";
 import type { ToolCallDisplay } from "./types.ts";
@@ -291,7 +291,7 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   // Pass 3a: Accumulate top-level nested-chunk groups.
   const nestedFlat = new Map<string, ToolCallDisplay & { parentToolCallId?: string }>();
   for (const [parentToolCallId, chunks] of nestedChunksByParent) {
-    const acc = accumulateChunks(chunks as AtlasUIMessageChunk[], parentToolCallId);
+    const acc = accumulateChunks(chunks, parentToolCallId);
     for (const [k, v] of acc) {
       nestedFlat.set(k, v);
     }
@@ -302,7 +302,7 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   for (const [delegateToolCallId, parentMap] of delegateChunksByParent) {
     const flat = new Map<string, ToolCallDisplay & { parentToolCallId?: string }>();
     for (const [parentToolCallId, chunks] of parentMap) {
-      const acc = accumulateChunks(chunks as AtlasUIMessageChunk[], parentToolCallId);
+      const acc = accumulateChunks(chunks, parentToolCallId);
       for (const [k, v] of acc) {
         flat.set(k, v);
       }

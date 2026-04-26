@@ -1,5 +1,5 @@
 /**
- * Pure accumulation module that folds an array of {@link AtlasUIMessageChunk}s
+ * Pure accumulation module that folds an array of stream chunks
  * into a flat {@link Map} of {@link ToolCallDisplay} entries.
  *
  * This is the extracted, testable core of the chunk-reducer previously
@@ -10,7 +10,6 @@
  * @module
  */
 
-import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { ToolCallDisplay } from "./types.ts";
 
 function stringOr<T>(value: unknown, fallback: T): string | T {
@@ -114,7 +113,7 @@ function applyChunk(
  * @returns Map preserving insertion order (wire order of first appearance).
  */
 export function accumulateChunks(
-  chunks: AtlasUIMessageChunk[],
+  chunks: unknown[],
   parentToolCallId?: string,
 ): Map<string, AccumulatedEntry> {
   const acc = new Map<string, AccumulatedEntry>();
