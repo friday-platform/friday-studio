@@ -34,6 +34,21 @@ vi.mock("@atlas/core/mcp-registry/upstream-client", () => ({
   },
 }));
 
+// Mock createMCPTools for tool probe tests
+type MockTool = { description?: string };
+const mockCreateMCPTools =
+  vi.fn<
+    (
+      configs: Record<string, unknown>,
+      logger: unknown,
+      options?: { signal?: AbortSignal; toolPrefix?: string },
+    ) => Promise<{ tools: Record<string, MockTool>; dispose: () => Promise<void> }>
+  >();
+
+vi.mock("@atlas/mcp", () => ({
+  createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
+}));
+
 beforeAll(async () => {
   testKv = await Deno.openKv(":memory:");
   testAdapter = new LocalMCPRegistryAdapter(testKv);
@@ -50,6 +65,7 @@ afterAll(() => {
 beforeEach(() => {
   mockFetchLatest.mockReset();
   mockSearch.mockReset();
+  mockCreateMCPTools.mockReset();
 });
 
 // Import AFTER mock setup (vi.mock is hoisted, but this makes intent clear)
@@ -315,6 +331,19 @@ const UpdateResponseSchema = z.object({
       upstream: z.object({ version: z.string(), updatedAt: z.string() }).optional(),
     })
     .passthrough(),
+});
+
+/** Schema for tool probe success response */
+const ToolProbeSuccessSchema = z.object({
+  ok: z.literal(true),
+  tools: z.array(z.object({ name: z.string(), description: z.string().optional() })),
+});
+
+/** Schema for tool probe error response */
+const ToolProbeErrorSchema = z.object({
+  ok: z.literal(false),
+  error: z.string(),
+  phase: z.enum(["dns", "connect", "auth", "tools"]),
 });
 
 describe("MCP Registry Routes", () => {
@@ -1848,6 +1877,164 @@ describe("MCP Registry Routes", () => {
         .parse(await secondRes.json());
       expect(secondBody.server.id).not.toBe(firstId);
       expect(secondBody.server.id).toMatch(/^collision-server-/);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // GET /:id/tools — MCP tool probe
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("GET /:id/tools", () => {
+    it("returns tools on successful probe", async () => {
+      const entry = createTestEntry("probe-success");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockResolvedValue({
+        tools: {
+          "fetch-data": { description: "Fetch data from the server" },
+          "send-data": { description: "Send data to the server" },
+        },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeSuccessSchema.parse(await res.json());
+      expect(body.ok).toBe(true);
+      expect(body.tools).toHaveLength(2);
+      expect(body.tools[0]).toEqual({
+        name: "fetch-data",
+        description: "Fetch data from the server",
+      });
+      expect(body.tools[1]).toEqual({ name: "send-data", description: "Send data to the server" });
+    });
+
+    it("returns 404 for unknown server", async () => {
+      const res = await mcpRegistryRouter.request("/nonexistent-server/tools");
+      expect(res.status).toBe(404);
+      const body = z.object({ error: z.string() }).parse(await res.json());
+      expect(body.error).toContain("not found");
+    });
+
+    it("classifies DNS errors with phase dns", async () => {
+      const entry = createTestEntry("probe-dns");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockRejectedValue(
+        new Error("getaddrinfo ENOTFOUND nonexistent.example.com"),
+      );
+
+      const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeErrorSchema.parse(await res.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("dns");
+    });
+
+    it("classifies auth errors with phase auth", async () => {
+      const entry = createTestEntry("probe-auth");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const { LinkCredentialNotFoundError } = await import(
+        "@atlas/core/mcp-registry/credential-resolver"
+      );
+      mockCreateMCPTools.mockRejectedValue(new LinkCredentialNotFoundError("provider-1"));
+
+      const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeErrorSchema.parse(await res.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("auth");
+    });
+
+    it("classifies connection errors with phase connect", async () => {
+      const entry = createTestEntry("probe-connect");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockRejectedValue(new Error("ECONNREFUSED 127.0.0.1:8080"));
+
+      const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeErrorSchema.parse(await res.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("connect");
+    });
+
+    it("classifies tools timeout with phase tools", async () => {
+      const entry = createTestEntry("probe-tools");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockRejectedValue(new Error("Tool listing timed out"));
+
+      const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeErrorSchema.parse(await res.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("tools");
+    });
+
+    it("works for a blessed static server", async () => {
+      const blessedId = Object.keys(mcpServersRegistry.servers)[0];
+      if (!blessedId) throw new Error("expected at least one blessed server");
+
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "static-tool": { description: "A static tool" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const res = await mcpRegistryRouter.request(`/${blessedId}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeSuccessSchema.parse(await res.json());
+      expect(body.ok).toBe(true);
+      expect(body.tools).toHaveLength(1);
+      expect(body.tools[0]).toEqual({ name: "static-tool", description: "A static tool" });
+    });
+
+    it("handles tools without descriptions gracefully", async () => {
+      const entry = createTestEntry("probe-no-desc");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "bare-tool": {} },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeSuccessSchema.parse(await res.json());
+      expect(body.tools).toHaveLength(1);
+      expect(body.tools[0]).toEqual({ name: "bare-tool", description: undefined });
     });
   });
 });

@@ -1,6 +1,11 @@
 import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import {
+  LinkCredentialExpiredError,
+  LinkCredentialNotFoundError,
+  NoDefaultCredentialError,
+} from "@atlas/core/mcp-registry/credential-resolver";
+import {
   getOfficialOverride,
   isOfficialCanonicalName,
 } from "@atlas/core/mcp-registry/official-servers";
@@ -15,6 +20,7 @@ import {
 } from "@atlas/core/mcp-registry/translator";
 import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
 import { createLogger } from "@atlas/logger";
+import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
@@ -30,6 +36,77 @@ function deriveId(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 64);
+}
+
+/**
+ * Classify an MCP tool probe error into a user-facing phase.
+ */
+function classifyProbeError(error: unknown): {
+  error: string;
+  phase: "dns" | "connect" | "auth" | "tools";
+} {
+  if (
+    error instanceof LinkCredentialNotFoundError ||
+    error instanceof LinkCredentialExpiredError ||
+    error instanceof NoDefaultCredentialError
+  ) {
+    return { error: error instanceof Error ? error.message : String(error), phase: "auth" };
+  }
+
+  if (
+    error instanceof Error &&
+    error.name === "MCPStartupError" &&
+    "kind" in error &&
+    typeof error.kind === "string"
+  ) {
+    const msg = error.message + (error.cause instanceof Error ? ` ${error.cause.message}` : "");
+    if (isDnsPattern(msg)) {
+      return { error: error.message, phase: "dns" };
+    }
+    return { error: error.message, phase: "connect" };
+  }
+
+  if (error instanceof Error) {
+    const msg = error.message + (error.cause instanceof Error ? ` ${error.cause.message}` : "");
+    if (isDnsPattern(msg)) {
+      return { error: error.message, phase: "dns" };
+    }
+    if (isConnectPattern(msg)) {
+      return { error: error.message, phase: "connect" };
+    }
+    if (
+      msg.toLowerCase().includes("tool") &&
+      (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("timed out"))
+    ) {
+      return { error: error.message, phase: "tools" };
+    }
+    return { error: error.message, phase: "connect" };
+  }
+
+  return { error: String(error), phase: "connect" };
+}
+
+function isDnsPattern(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("enotfound") ||
+    lower.includes("getaddrinfo") ||
+    lower.includes("eai_again") ||
+    lower.includes("eai_nodata") ||
+    lower.includes("name or service not known")
+  );
+}
+
+function isConnectPattern(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("econnrefused") ||
+    lower.includes("econnreset") ||
+    lower.includes("etimedout") ||
+    lower.includes("connection refused") ||
+    lower.includes("connect etimedout") ||
+    lower.includes("network is unreachable")
+  );
 }
 
 /**
@@ -594,6 +671,57 @@ export const mcpRegistryRouter = daemonFactory
 
       await adapter.delete(id);
       return new Response(null, { status: 204 });
+    },
+  )
+  .get(
+    "/:id/tools",
+    zValidator(
+      "param",
+      z.object({
+        id: z
+          .string()
+          .regex(/^[a-z0-9-]+$/)
+          .max(64),
+      }),
+    ),
+    async (c) => {
+      const { id } = c.req.valid("param");
+
+      const staticServer = mcpServersRegistry.servers[id];
+      let server = staticServer;
+      if (!server) {
+        const adapter = await getMCPRegistryAdapter();
+        server = (await adapter.get(id)) ?? undefined;
+      }
+
+      if (!server) {
+        return c.json({ error: "Server not found" }, 404);
+      }
+
+      try {
+        const result = await createMCPTools({ [id]: server.configTemplate }, logger, {
+          signal: AbortSignal.timeout(5000),
+        });
+
+        const tools = Object.entries(result.tools).map(([name, tool]) => ({
+          name,
+          description:
+            typeof (tool as Record<string, unknown>).description === "string"
+              ? (tool as Record<string, unknown>).description
+              : undefined,
+        }));
+
+        await result.dispose();
+        return c.json({ ok: true as const, tools });
+      } catch (error) {
+        const classified = classifyProbeError(error);
+        logger.warn("MCP tool probe failed", {
+          serverId: id,
+          phase: classified.phase,
+          error: classified.error,
+        });
+        return c.json({ ok: false as const, error: classified.error, phase: classified.phase });
+      }
     },
   )
   .get(
