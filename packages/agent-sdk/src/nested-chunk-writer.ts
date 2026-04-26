@@ -28,7 +28,7 @@ export function createNestedChunkWriter(
       writer.write({
         type: "data-nested-chunk",
         data: { parentToolCallId, chunk },
-      } as AtlasUIMessageChunk);
+      });
     },
   };
 }
