@@ -53,16 +53,14 @@ jobs:
             os: macos-latest-xlarge
             target: aarch64-apple-darwin
             archive_ext: tar.gz
-          - platform: macos-intel
-            # macos-latest-large (Intel) takes 20+ min for `codesign --timestamp`
-            # against Apple's TSA on these large binaries — cross-compile from
-            # the ARM runner instead, where the same step finishes in seconds.
-            # `deno compile --target=x86_64-apple-darwin` does not require an
-            # Intel host, and `codesign` can sign Mach-O binaries for any
-            # architecture from any host.
-            os: macos-latest-xlarge
-            target: x86_64-apple-darwin
-            archive_ext: tar.gz
+          # macos-intel temporarily disabled while iterating on
+          # friday-launcher integration — cross-codesign+notarize on the
+          # ARM runner adds ~30min per build with no incremental value
+          # for the QA cycle. Re-enable before merging by uncommenting.
+          # - platform: macos-intel
+          #   os: macos-latest-xlarge
+          #   target: x86_64-apple-darwin
+          #   archive_ext: tar.gz
           - platform: windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -91,10 +89,15 @@ jobs:
         # v1.103.0 declares go 1.26). Atlas root go.mod is on 1.25.4 but
         # 1.26 toolchain compiles 1.25 syntax fine. Cannot use
         # go-version-file: go.mod (would pick up the older 1.25.4).
+        # cache: true so the process-compose dep tree (gin/swag/tcell/
+        # tview/gopsutil — ~200MB) survives across runs.
         uses: actions/setup-go@v6
         with:
           go-version: '1.26'
-          cache: false
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/friday-launcher/go.sum
 
       - name: Install JS deps (Deno workspace)
         # `deno install` materializes node_modules so the SvelteKit static
