@@ -7,8 +7,8 @@ import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@a
 import { createAnalyticsClient } from "@atlas/analytics";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
-  AgentRegistry as CoreAgentRegistry,
   AtlasAgentsMCPServer,
+  AgentRegistry as CoreAgentRegistry,
   convertLLMToAgent,
   LocalSessionHistoryAdapter,
   SessionFailedError,
@@ -76,6 +76,7 @@ import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
+import { mcpRoutes } from "../routes/workspaces/mcp.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 import type { PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
 import {
@@ -711,6 +712,7 @@ export class AtlasDaemon {
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
     this.app.route("/api/workspaces/:workspaceId/integrations", integrationRoutes);
+    this.app.route("/api/workspaces/:workspaceId/mcp", mcpRoutes);
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
