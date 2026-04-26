@@ -21,3 +21,14 @@ export type {
   WorkspaceSummary,
   WorkspaceWithJobs,
 } from "./workspace-queries.ts";
+export {
+  testChatEventStream,
+  useDisableMCPServer,
+  useEnableMCPServer,
+  workspaceMcpQueries,
+} from "./workspace-mcp-queries.ts";
+export type {
+  EnrichedMCPServer,
+  TestChatEvent,
+  WorkspaceMCPStatus,
+} from "./workspace-mcp-queries.ts";

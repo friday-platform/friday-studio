@@ -31,6 +31,8 @@ const logger = createLogger({ component: "workspace-mcp-routes" });
 
 const ServerIdParamSchema = z.object({ serverId: z.string().min(1) });
 
+const DeleteQuerySchema = z.object({ force: z.literal("true").optional() });
+
 // =============================================================================
 // SHARED GUARDS
 // =============================================================================
@@ -316,7 +318,12 @@ const mcpRoutes = daemonFactory
   .createApp()
   .get("/", handleGetMCPStatus)
   .put("/:serverId", zValidator("param", ServerIdParamSchema), handleEnableMCPServer)
-  .delete("/:serverId", zValidator("param", ServerIdParamSchema), handleDisableMCPServer);
+  .delete(
+    "/:serverId",
+    zValidator("param", ServerIdParamSchema),
+    zValidator("query", DeleteQuerySchema),
+    handleDisableMCPServer,
+  );
 
 export { mcpRoutes };
 export type WorkspaceMCPRoutes = typeof mcpRoutes;
