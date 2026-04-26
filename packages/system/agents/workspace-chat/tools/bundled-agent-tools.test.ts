@@ -2,6 +2,7 @@ import type {
   AgentEnvironmentConfig,
   AgentSessionData,
   AtlasAgent,
+  AtlasTool,
   AtlasUIMessage,
   AtlasUIMessageChunk,
 } from "@atlas/agent-sdk";
@@ -213,7 +214,7 @@ describe("createAgentTool — execute (happy path)", () => {
     expect(call[0]).toEqual(payload);
   });
 
-  it("bridges context.stream.emit to deps.writer.write with no transformation for non-tool chunks", async () => {
+  it("wraps all emitted chunks in nested-chunk envelopes with the parent toolCallId", async () => {
     const event: AtlasUIMessageChunk = {
       type: "data-tool-progress",
       data: { toolName: "Test", content: "working..." },
@@ -230,10 +231,13 @@ describe("createAgentTool — execute (happy path)", () => {
     await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
 
     expect(deps.writeFn).toHaveBeenCalledOnce();
-    expect(deps.writeFn).toHaveBeenCalledWith(event);
+    expect(deps.writeFn).toHaveBeenCalledWith({
+      type: "data-nested-chunk",
+      data: { parentToolCallId: "tc-1", chunk: event },
+    });
   });
 
-  it("namespaces inner tool-call toolCallId with the agent tool's toolCallId", async () => {
+  it("emits inner tool calls as nested-chunk envelopes with no mangled IDs", async () => {
     const innerChunk: AtlasUIMessageChunk = {
       type: "tool-input-available",
       toolCallId: "inner-fetch-1",
@@ -252,13 +256,44 @@ describe("createAgentTool — execute (happy path)", () => {
     await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
 
     expect(deps.writeFn).toHaveBeenCalledOnce();
-    expect(deps.writeFn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "tool-input-available",
-        toolCallId: "tc-1-inner-fetch-1",
-        toolName: "fetch",
-      }),
-    );
+    expect(deps.writeFn).toHaveBeenCalledWith({
+      type: "data-nested-chunk",
+      data: { parentToolCallId: "tc-1", chunk: innerChunk },
+    });
+  });
+
+  it("produces nested-chunk envelopes for tool-input-start and tool-output-available with correct parentToolCallId", async () => {
+    const startChunk: AtlasUIMessageChunk = {
+      type: "tool-input-start",
+      toolCallId: "child-1",
+      toolName: "search",
+    };
+    const outputChunk: AtlasUIMessageChunk = {
+      type: "tool-output-available",
+      toolCallId: "child-1",
+      output: { results: [] },
+    };
+
+    const executeMock = vi.fn<AtlasAgent["execute"]>((_input, ctx) => {
+      ctx.stream?.emit(startChunk);
+      ctx.stream?.emit(outputChunk);
+      return Promise.resolve(ok({ response: "done" }));
+    });
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const deps = makeDeps();
+
+    const tools = createAgentTool(agent, deps);
+    await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
+
+    expect(deps.writeFn).toHaveBeenCalledTimes(2);
+    expect(deps.writeFn).toHaveBeenNthCalledWith(1, {
+      type: "data-nested-chunk",
+      data: { parentToolCallId: "tc-1", chunk: startChunk },
+    });
+    expect(deps.writeFn).toHaveBeenNthCalledWith(2, {
+      type: "data-nested-chunk",
+      data: { parentToolCallId: "tc-1", chunk: outputChunk },
+    });
   });
 });
 
@@ -318,7 +353,7 @@ describe("createAgentTool — metadata & rebind", () => {
     expect(result).toBe(fakeTool);
   });
 
-  it("rebindAgentTool routes events to the new writer", async () => {
+  it("rebindAgentTool routes nested-chunk envelopes to the new writer", async () => {
     const executeMock = vi.fn<AtlasAgent["execute"]>((_input, ctx) => {
       ctx.stream?.emit({
         type: "data-tool-progress",
@@ -338,15 +373,16 @@ describe("createAgentTool — metadata & rebind", () => {
 
     expect(originalDeps.writeFn).not.toHaveBeenCalled();
     expect(newWriteFn).toHaveBeenCalledOnce();
-    expect(newWriteFn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "data-tool-progress",
-        data: { toolName: "Test", content: "rebound!" },
-      }),
-    );
+    expect(newWriteFn).toHaveBeenCalledWith({
+      type: "data-nested-chunk",
+      data: {
+        parentToolCallId: "tc-1",
+        chunk: { type: "data-tool-progress", data: { toolName: "Test", content: "rebound!" } },
+      },
+    });
   });
 
-  it("rebindAgentTool namespaces inner tool calls before routing to the new writer", async () => {
+  it("rebindAgentTool preserves original inner tool-call IDs in nested-chunk envelopes", async () => {
     const innerChunk: AtlasUIMessageChunk = {
       type: "tool-output-available",
       toolCallId: "inner-1",
@@ -368,16 +404,13 @@ describe("createAgentTool — metadata & rebind", () => {
     await getExecute(rebound)({ prompt: "hi" }, callOpts);
 
     expect(newWriteFn).toHaveBeenCalledOnce();
-    expect(newWriteFn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "tool-output-available",
-        toolCallId: "tc-1-inner-1",
-        output: { ok: true },
-      }),
-    );
+    expect(newWriteFn).toHaveBeenCalledWith({
+      type: "data-nested-chunk",
+      data: { parentToolCallId: "tc-1", chunk: innerChunk },
+    });
   });
 
-  it("emits reasoning from AgentExtras as a data-tool-progress event after execute completes", async () => {
+  it("emits reasoning from AgentExtras as a nested-chunk data-tool-progress event after execute completes", async () => {
     const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
       Promise.resolve(ok({ response: "done" }, { reasoning: "I thought about it" })),
     );
@@ -392,15 +425,21 @@ describe("createAgentTool — metadata & rebind", () => {
         typeof call[0] === "object" &&
         call[0] !== null &&
         "type" in call[0] &&
-        call[0].type === "data-tool-progress",
+        call[0].type === "data-nested-chunk",
     )?.[0];
     expect(progressEvent).toEqual({
-      type: "data-tool-progress",
-      data: { toolName: "test", content: "I thought about it" },
+      type: "data-nested-chunk",
+      data: {
+        parentToolCallId: "tc-1",
+        chunk: {
+          type: "data-tool-progress",
+          data: { toolName: "test", content: "I thought about it" },
+        },
+      },
     });
   });
 
-  it("emits AgentExtras.toolCalls as data-inner-tool-call events after execute completes", async () => {
+  it("does not emit post-hoc data-inner-tool-call events", async () => {
     const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
       Promise.resolve(
         ok(
@@ -410,7 +449,13 @@ describe("createAgentTool — metadata & rebind", () => {
               { type: "tool-call", toolCallId: "tc-1", toolName: "fetch", input: { url: "x" } },
             ],
             toolResults: [
-              { type: "tool-result", toolCallId: "tc-1", toolName: "fetch", output: "y" },
+              {
+                type: "tool-result",
+                toolCallId: "tc-1",
+                toolName: "fetch",
+                input: { url: "x" },
+                output: "y",
+              },
             ],
           },
         ),
@@ -429,9 +474,6 @@ describe("createAgentTool — metadata & rebind", () => {
         "type" in call[0] &&
         call[0].type === "data-inner-tool-call",
     )?.[0];
-    expect(innerCallEvent).toEqual({
-      type: "data-inner-tool-call",
-      data: { toolName: "fetch", status: "completed", input: '{"url":"x"}', result: '"y"' },
-    });
+    expect(innerCallEvent).toBeUndefined();
   });
 });

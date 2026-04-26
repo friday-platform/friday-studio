@@ -38,6 +38,7 @@ import type {
   AtlasTools,
   AtlasUIMessage,
 } from "@atlas/agent-sdk";
+import { createNestedChunkWriter } from "@atlas/agent-sdk";
 import type { PlatformModels } from "@atlas/agent-sdk/types";
 import { CallbackStreamEmitter } from "@atlas/core/streaming";
 import type { Logger } from "@atlas/logger";
@@ -64,15 +65,6 @@ export interface CreateAgentToolDeps {
 
 /** Symbol key used to store agent-tool metadata for delegate re-binding. */
 export const AGENT_TOOL_META = Symbol.for("atlas.agent-tool-meta");
-
-/** JSON-stringify with a safe fallback for circular / non-serializable values. */
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
 
 interface AgentToolMeta {
   atlasAgent: AtlasAgent;
@@ -145,37 +137,9 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
     description: atlasAgent.metadata.description,
     inputSchema,
     execute: async (input, { toolCallId }) => {
+      const nestedWriter = createNestedChunkWriter(toolCallId, deps.writer);
       const stream = new CallbackStreamEmitter(
-        (event) => {
-          if (
-            typeof event === "object" &&
-            event !== null &&
-            "toolCallId" in event &&
-            typeof event.toolCallId === "string" &&
-            event.toolCallId.length > 0
-          ) {
-            event = { ...event, toolCallId: `${toolCallId}-${event.toolCallId}` };
-          }
-          // Data events (e.g. data-tool-timing) carry toolCallId inside `data`
-          // rather than at the top level — namespace those too so downstream
-          // reducers can correlate timing with reconstructed tool calls.
-          if (
-            typeof event === "object" &&
-            event !== null &&
-            "data" in event &&
-            typeof event.data === "object" &&
-            event.data !== null &&
-            "toolCallId" in event.data &&
-            typeof event.data.toolCallId === "string" &&
-            event.data.toolCallId.length > 0
-          ) {
-            event = {
-              ...event,
-              data: { ...event.data, toolCallId: `${toolCallId}-${event.data.toolCallId}` },
-            };
-          }
-          deps.writer.write(event);
-        },
+        (event) => nestedWriter.write(event),
         () => {},
         (_err) => {},
       );
@@ -198,7 +162,7 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
         context,
       );
       if (payload.ok) {
-        // Emit structured extras (reasoning, tool history) as data events so
+        // Emit structured extras (reasoning) as data events so
         // the chat UI can display them without depending on the compact result
         // payload that the parent LLM sees.
         if (payload.reasoning && payload.reasoning.length > 0) {
@@ -206,22 +170,6 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
             type: "data-tool-progress",
             data: { toolName: atlasAgent.metadata.id, content: payload.reasoning },
           });
-        }
-        if (payload.toolCalls && payload.toolCalls.length > 0) {
-          for (const tc of payload.toolCalls) {
-            const resultEntry = payload.toolResults?.find(
-              (tr: { toolCallId: string }) => tr.toolCallId === tc.toolCallId,
-            );
-            stream.emit({
-              type: "data-inner-tool-call",
-              data: {
-                toolName: tc.toolName,
-                status: resultEntry ? "completed" : "failed",
-                input: safeJson(tc.input),
-                result: resultEntry ? safeJson(resultEntry.output) : undefined,
-              },
-            });
-          }
         }
         return payload.data;
       }
