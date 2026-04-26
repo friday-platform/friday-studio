@@ -1,4 +1,6 @@
-mod commands;
+// Public so integration tests under tests/ can call commands directly
+// (specifically launch_studio in tests/launcher_handoff.rs).
+pub mod commands;
 
 use commands::{
     check_running::check_running_processes,

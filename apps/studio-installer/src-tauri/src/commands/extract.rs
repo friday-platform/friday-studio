@@ -1,55 +1,61 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
+/// Stops any running launcher before we mutate the install dir.
+/// Per the v8 plan installer↔launcher contract, the installer only
+/// touches `launcher.pid` (NOT every supervised binary's pid file —
+/// those are owned by the launcher). The launcher's own onExit handler
+/// drives the orderly shutdown of the 5 supervised processes; we just
+/// need to TERM the launcher and wait for its pid file to disappear.
 fn terminate_studio_processes() {
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => return,
     };
-    let pids_dir = home.join(".friday").join("local").join("pids");
-
-    if !pids_dir.exists() {
+    let pid_file = home.join(".friday").join("local").join("pids").join("launcher.pid");
+    if !pid_file.exists() {
         return;
     }
 
-    let entries = match fs::read_dir(&pids_dir) {
-        Ok(e) => e,
+    // pid file format: "<pid> <start_time_unix>"
+    let contents = match fs::read_to_string(&pid_file) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let trimmed = contents.trim();
+    let pid_str = match trimmed.split_whitespace().next() {
+        Some(s) => s,
+        None => return,
+    };
+    let pid: u32 = match pid_str.parse() {
+        Ok(p) => p,
         Err(_) => return,
     };
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("pid") {
-            continue;
-        }
-        let pid_str = match fs::read_to_string(&path) {
-            Ok(s) => s.trim().to_string(),
-            Err(_) => continue,
-        };
-        let pid: u32 = match pid_str.parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-
-        #[cfg(unix)]
-        {
-            // SIGTERM
-            libc_kill(pid as i32, 15);
-        }
-
-        #[cfg(windows)]
-        {
-            // Use taskkill as it doesn't require windows_sys as a dep
-            let _ = std::process::Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/F"])
-                .output();
-        }
+    #[cfg(unix)]
+    libc_kill(pid as i32, 15); // SIGTERM
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output();
     }
 
-    // Wait up to 10s for processes to exit
-    for _ in 0..10 {
-        std::thread::sleep(std::time::Duration::from_secs(1));
+    // Wait up to 35s for the launcher to exit. The launcher's
+    // ShutDownProject deadline is 30s; add 5s of jitter for the
+    // launcher's own teardown after that.
+    let deadline = Duration::from_secs(35);
+    let start = Instant::now();
+    while start.elapsed() < deadline {
+        if !pid_file.exists() {
+            return; // launcher's onExit removed the pid file → clean exit
+        }
+        std::thread::sleep(Duration::from_millis(250));
     }
+    // Launcher didn't exit in time. Fall through to extraction anyway —
+    // the worst case is that file replacement races with a stuck
+    // launcher, which is no worse than the prior behavior.
 }
 
 #[cfg(unix)]
