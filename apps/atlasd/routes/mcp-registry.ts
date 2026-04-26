@@ -1,10 +1,13 @@
 import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
+import { client, parseResult } from "@atlas/client/v2";
+import { injectSlackAppCredentialId } from "@atlas/core/agent-context";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   NoDefaultCredentialError,
 } from "@atlas/core/mcp-registry/credential-resolver";
+import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import {
   getOfficialOverride,
   isOfficialCanonicalName,
@@ -22,6 +25,7 @@ import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
 import { createLogger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
+import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
@@ -722,6 +726,154 @@ export const mcpRegistryRouter = daemonFactory
         });
         return c.json({ ok: false as const, error: classified.error, phase: classified.phase });
       }
+    },
+  )
+  .post(
+    "/:id/test-chat",
+    zValidator(
+      "param",
+      z.object({
+        id: z
+          .string()
+          .regex(/^[a-z0-9-]+$/)
+          .max(64),
+      }),
+    ),
+    zValidator("query", z.object({ workspaceId: z.string().optional() })),
+    zValidator("json", z.object({ message: z.string().min(1) })),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const { workspaceId } = c.req.valid("query");
+      const { message } = c.req.valid("json");
+
+      const staticServer = mcpServersRegistry.servers[id];
+      let server = staticServer;
+      if (!server) {
+        const adapter = await getMCPRegistryAdapter();
+        server = (await adapter.get(id)) ?? undefined;
+      }
+
+      if (!server) {
+        return c.json({ error: "Server not found" }, 404);
+      }
+
+      let workspaceConfig: import("@atlas/config").WorkspaceConfig | undefined;
+      let linkSummary: LinkSummary | undefined;
+
+      if (workspaceId) {
+        const ctx = c.get("app");
+        const manager = ctx.daemon.getWorkspaceManager();
+        const mergedConfig = await manager.getWorkspaceConfig(workspaceId);
+        if (!mergedConfig) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        workspaceConfig = mergedConfig.workspace;
+
+        try {
+          const result = await parseResult(client.link.v1.summary.$get({ query: {} }));
+          if (result.ok && "providers" in result.data) {
+            linkSummary = result.data as LinkSummary;
+          }
+        } catch {
+          // Ignore — unconfigured Link-backed servers will fail with auth error later
+        }
+      }
+
+      const ctx = c.get("app");
+      const model = ctx.platformModels.get("conversational");
+
+      const encoder = new TextEncoder();
+      let closed = false;
+
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          function enqueue(event: string, data: unknown): void {
+            if (closed) return;
+            controller.enqueue(
+              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+            );
+          }
+
+          let mcpResult: Awaited<ReturnType<typeof createMCPTools>> | undefined;
+
+          try {
+            let resolvedConfig = server.configTemplate;
+            if (workspaceId && workspaceConfig) {
+              const candidates = await discoverMCPServers(
+                workspaceId,
+                workspaceConfig,
+                linkSummary,
+              );
+              const candidate = candidates.find((c) => c.metadata.id === id);
+              if (candidate) {
+                resolvedConfig = candidate.mergedConfig;
+              }
+              await injectSlackAppCredentialId({ [id]: resolvedConfig }, workspaceId);
+            }
+
+            mcpResult = await createMCPTools({ [id]: resolvedConfig }, logger, {
+              signal: AbortSignal.timeout(30000),
+            });
+
+            const result = streamText({
+              model,
+              system: `You have access to ${server.name} via MCP tools. Answer the user's question using the available tools.`,
+              messages: [{ role: "user", content: message }],
+              tools: mcpResult.tools,
+              stopWhen: [stepCountIs(5)],
+              abortSignal: AbortSignal.timeout(60000),
+            });
+
+            for await (const chunk of result.fullStream) {
+              if (chunk.type === "text-delta") {
+                const text = (chunk as unknown as Record<string, string>).delta ?? "";
+                enqueue("chunk", { text });
+              } else if (chunk.type === "tool-call") {
+                enqueue("tool_call", {
+                  toolCallId: chunk.toolCallId,
+                  toolName: chunk.toolName,
+                  input: chunk.input,
+                });
+              } else if (chunk.type === "tool-result") {
+                enqueue("tool_result", { toolCallId: chunk.toolCallId, output: chunk.output });
+              }
+            }
+
+            enqueue("done", {});
+          } catch (error) {
+            if (!mcpResult) {
+              const classified = classifyProbeError(error);
+              logger.warn("MCP test-chat failed", {
+                serverId: id,
+                phase: classified.phase,
+                error: classified.error,
+              });
+              enqueue("error", { error: classified.error, phase: classified.phase });
+            } else {
+              const errMsg = error instanceof Error ? error.message : String(error);
+              logger.warn("Test chat stream failed", { serverId: id, error: errMsg });
+              enqueue("error", { error: errMsg });
+            }
+          } finally {
+            closed = true;
+            if (mcpResult) {
+              await mcpResult.dispose().catch(() => {});
+            }
+            controller.close();
+          }
+        },
+        cancel() {
+          closed = true;
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
     },
   )
   .get(

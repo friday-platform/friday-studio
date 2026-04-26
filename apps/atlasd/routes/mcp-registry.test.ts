@@ -3,6 +3,8 @@ import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidat
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { LocalMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import type { UpstreamServerEntry } from "@atlas/core/mcp-registry/upstream-client";
+import { createStubPlatformModels } from "@atlas/llm";
+import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -49,6 +51,14 @@ vi.mock("@atlas/mcp", () => ({
   createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
 }));
 
+// Mock streamText from ai for test-chat tests
+const mockStreamText = vi.hoisted(() => vi.fn());
+
+vi.mock("ai", async () => {
+  const actual = await vi.importActual<typeof import("ai")>("ai");
+  return { ...actual, streamText: mockStreamText };
+});
+
 beforeAll(async () => {
   testKv = await Deno.openKv(":memory:");
   testAdapter = new LocalMCPRegistryAdapter(testKv);
@@ -66,10 +76,23 @@ beforeEach(() => {
   mockFetchLatest.mockReset();
   mockSearch.mockReset();
   mockCreateMCPTools.mockReset();
+  mockStreamText.mockReset();
 });
 
 // Import AFTER mock setup (vi.mock is hoisted, but this makes intent clear)
 const { mcpRegistryRouter } = await import("./mcp-registry.ts");
+
+/** Build a Hono app that wraps the MCP registry router with a partial mock app context. */
+function createWrappedRouter(context: Record<string, unknown>) {
+  const app = new Hono();
+  app.use("*", async (c, next) => {
+    // @ts-expect-error - partial mock for tests
+    c.set("app", context);
+    await next();
+  });
+  app.route("/", mcpRegistryRouter);
+  return app;
+}
 
 /** Create a valid test entry with unique ID */
 function createTestEntry(
@@ -2035,6 +2058,298 @@ describe("MCP Registry Routes", () => {
       const body = ToolProbeSuccessSchema.parse(await res.json());
       expect(body.tools).toHaveLength(1);
       expect(body.tools[0]).toEqual({ name: "bare-tool", description: undefined });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // POST /:id/test-chat — MCP test-chat SSE stream
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("POST /:id/test-chat", () => {
+    const stubPlatformModels = createStubPlatformModels();
+
+    function makeMockStreamTextResult(chunks: unknown[]) {
+      const fullStream = (async function* () {
+        for (const chunk of chunks) {
+          yield chunk;
+        }
+      })();
+
+      return {
+        fullStream,
+        text: Promise.resolve("hello world"),
+        finishReason: Promise.resolve("stop" as const),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 5 }),
+        totalUsage: Promise.resolve({ promptTokens: 10, completionTokens: 5 }),
+        steps: Promise.resolve([]),
+        toolCalls: Promise.resolve([]),
+        toolResults: Promise.resolve([]),
+      };
+    }
+
+    /** Decode SSE stream body into array of { event, data } objects. */
+    async function decodeSseEvents(
+      body: ReadableStream<Uint8Array> | null,
+    ): Promise<Array<{ event: string; data: unknown }>> {
+      if (!body) return [];
+      const decoder = new TextDecoder();
+      let text = "";
+      const reader = body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+
+      const events: Array<{ event: string; data: unknown }> = [];
+      for (const block of text.split("\n\n")) {
+        const lines = block.split("\n");
+        const eventLine = lines.find((l) => l.startsWith("event:"));
+        const dataLine = lines.find((l) => l.startsWith("data:"));
+        if (eventLine && dataLine) {
+          const event = eventLine.slice("event:".length).trim();
+          const data = JSON.parse(dataLine.slice("data:".length).trim());
+          events.push({ event, data });
+        }
+      }
+      return events;
+    }
+
+    it("returns 404 for unknown server", async () => {
+      const res = await mcpRegistryRouter.request("/nonexistent-server/test-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      });
+
+      expect(res.status).toBe(404);
+      const body = z.object({ error: z.string() }).parse(await res.json());
+      expect(body.error).toContain("not found");
+    });
+
+    it("streams SSE events: chunk, tool_call, tool_result, done", async () => {
+      const entry = createTestEntry("test-chat-success");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "fetch-data": { description: "Fetch data" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+
+      mockStreamText.mockReturnValue(
+        makeMockStreamTextResult([
+          { type: "text-delta", delta: "Hello " },
+          { type: "text-delta", delta: "world" },
+          {
+            type: "tool-call",
+            toolCallId: "tc-1",
+            toolName: "fetch-data",
+            input: { url: "https://example.com" },
+          },
+          { type: "tool-result", toolCallId: "tc-1", output: "fetched content" },
+        ]),
+      );
+
+      const app = createWrappedRouter({ platformModels: stubPlatformModels });
+      const res = await app.request(`/${entry.id}/test-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+
+      const events = await decodeSseEvents(res.body);
+      expect(events.map((e) => e.event)).toEqual([
+        "chunk",
+        "chunk",
+        "tool_call",
+        "tool_result",
+        "done",
+      ]);
+      expect(events[0]).toEqual({ event: "chunk", data: { text: "Hello " } });
+      expect(events[1]).toEqual({ event: "chunk", data: { text: "world" } });
+      expect(events[2]).toEqual({
+        event: "tool_call",
+        data: { toolCallId: "tc-1", toolName: "fetch-data", input: { url: "https://example.com" } },
+      });
+      expect(events[3]).toEqual({
+        event: "tool_result",
+        data: { toolCallId: "tc-1", output: "fetched content" },
+      });
+      expect(events[4]).toEqual({ event: "done", data: {} });
+
+      // Verify model resolution
+      const streamCall = mockStreamText.mock.calls[0];
+      expect(streamCall).toBeDefined();
+      const expectedModel = stubPlatformModels.get("conversational");
+      expect(streamCall![0].model.modelId).toBe(expectedModel.modelId);
+      expect(streamCall![0].model.provider).toBe(expectedModel.provider);
+      expect(streamCall![0].system).toContain(entry.name);
+    });
+
+    it("returns SSE error event when MCP connection fails", async () => {
+      const entry = createTestEntry("test-chat-mcp-fail");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockRejectedValue(
+        new Error("getaddrinfo ENOTFOUND nonexistent.example.com"),
+      );
+
+      const app = createWrappedRouter({ platformModels: stubPlatformModels });
+      const res = await app.request(`/${entry.id}/test-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+
+      const events = await decodeSseEvents(res.body);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({
+        event: "error",
+        data: { error: expect.stringContaining("ENOTFOUND"), phase: "dns" },
+      });
+    });
+
+    it("returns SSE error event when stream fails", async () => {
+      const entry = createTestEntry("test-chat-stream-fail");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "fetch-data": { description: "Fetch data" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+
+      mockStreamText.mockReturnValue(
+        makeMockStreamTextResult([
+          { type: "text-delta", delta: "partial" },
+          // Simulate an error thrown during iteration by making the generator throw
+        ]),
+      );
+
+      // Override the generator to throw after first chunk
+      const errorStream = (async function* () {
+        yield { type: "text-delta", delta: "partial" };
+        throw new Error("Stream broke");
+      })();
+
+      mockStreamText.mockReturnValue({
+        fullStream: errorStream,
+        text: Promise.resolve("partial"),
+        finishReason: Promise.resolve("error" as const),
+        usage: Promise.resolve({ promptTokens: 5, completionTokens: 1 }),
+        totalUsage: Promise.resolve({ promptTokens: 5, completionTokens: 1 }),
+        steps: Promise.resolve([]),
+        toolCalls: Promise.resolve([]),
+        toolResults: Promise.resolve([]),
+      });
+
+      const app = createWrappedRouter({ platformModels: stubPlatformModels });
+      const res = await app.request(`/${entry.id}/test-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      });
+
+      expect(res.status).toBe(200);
+      const events = await decodeSseEvents(res.body);
+      expect(events[0]).toEqual({ event: "chunk", data: { text: "partial" } });
+      expect(events[1]).toEqual({ event: "error", data: { error: "Stream broke" } });
+    });
+
+    it("returns 404 when workspaceId is provided but workspace not found", async () => {
+      const entry = createTestEntry("test-chat-ws-missing");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const app = createWrappedRouter({
+        platformModels: stubPlatformModels,
+        daemon: {
+          getWorkspaceManager: () => ({ getWorkspaceConfig: vi.fn().mockResolvedValue(null) }),
+        },
+      });
+
+      const res = await app.request(`/${entry.id}/test-chat?workspaceId=ws-missing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      });
+
+      expect(res.status).toBe(404);
+      const body = z.object({ error: z.string() }).parse(await res.json());
+      expect(body.error).toContain("Workspace not found");
+    });
+
+    it("uses workspace-scoped config when workspaceId is provided", async () => {
+      const entry = createTestEntry("test-chat-ws-scope");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const workspaceOverride = { transport: { type: "stdio", command: "overridden-echo" } };
+
+      const mockWorkspaceManager = {
+        getWorkspaceConfig: vi
+          .fn()
+          .mockResolvedValue({
+            workspace: { tools: { mcp: { servers: { [entry.id]: workspaceOverride } } } },
+          }),
+      };
+
+      mockCreateMCPTools.mockResolvedValue({
+        tools: { "fetch-data": { description: "Fetch data" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+
+      mockStreamText.mockReturnValue(
+        makeMockStreamTextResult([{ type: "text-delta", delta: "ok" }]),
+      );
+
+      const app = createWrappedRouter({
+        platformModels: stubPlatformModels,
+        daemon: { getWorkspaceManager: () => mockWorkspaceManager },
+      });
+
+      const res = await app.request(`/${entry.id}/test-chat?workspaceId=ws-1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "hello" }),
+      });
+
+      expect(res.status).toBe(200);
+      const events = await decodeSseEvents(res.body);
+      expect(events.some((e) => e.event === "done")).toBe(true);
+
+      // Verify workspace config was fetched
+      expect(mockWorkspaceManager.getWorkspaceConfig).toHaveBeenCalledWith("ws-1");
+
+      // Verify createMCPTools was called for the requested server
+      const createCall = mockCreateMCPTools.mock.calls[0];
+      expect(createCall).toBeDefined();
+      const passedConfig = createCall![0] as Record<string, unknown>;
+      expect(passedConfig).toHaveProperty(entry.id);
     });
   });
 });
