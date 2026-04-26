@@ -16,8 +16,8 @@
     "minimatch": "^10.2.5",
     "papaparse": "^5.5.3",
     "turndown": "7.2.2",
-    "vitest": "^4.1.0",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "zod": "^4.3.5"
-  }
+  },
+  "devDependencies": { "vitest": "^4.1.0" }
 }

@@ -125,3 +125,6 @@ scripts/ralph/PRD.json
 
 # opensrc - source code for packages
 opensrc/
+
+# friday-launcher build artifact (use go build -o /tmp/...)
+tools/friday-launcher/friday-launcher

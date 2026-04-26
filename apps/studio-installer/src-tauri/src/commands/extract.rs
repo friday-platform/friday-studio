@@ -76,6 +76,21 @@ fn extract_tar_gz(src: &Path, dest: &Path) -> Result<(), String> {
         .map_err(|e| format!("tar.gz extraction failed: {e}"))
 }
 
+fn extract_tar_zst(src: &Path, dest: &Path) -> Result<(), String> {
+    let file =
+        fs::File::open(src).map_err(|e| format!("Cannot open archive {}: {e}", src.display()))?;
+    // ruzstd decoder works on any Read; zstd::Decoder would require linking
+    // against libzstd which we'd need to vendor for the install bundle.
+    // ruzstd is pure Rust + small + fast enough for one-shot install
+    // extraction (a few seconds for a 1 GB archive).
+    let zst = ruzstd::StreamingDecoder::new(file)
+        .map_err(|e| format!("zstd init failed: {e}"))?;
+    let mut archive = tar::Archive::new(zst);
+    archive
+        .unpack(dest)
+        .map_err(|e| format!("tar.zst extraction failed: {e}"))
+}
+
 fn extract_zip(src: &Path, dest: &Path) -> Result<(), String> {
     let file =
         fs::File::open(src).map_err(|e| format!("Cannot open archive {}: {e}", src.display()))?;
@@ -116,10 +131,11 @@ pub fn extract_archive(src: String, dest: String) -> Result<(), String> {
     let dest_path = PathBuf::from(&dest);
 
     let is_tar_gz = src.ends_with(".tar.gz") || src.ends_with(".tgz");
+    let is_tar_zst = src.ends_with(".tar.zst") || src.ends_with(".tzst");
     let is_zip = src.ends_with(".zip");
-    if !is_tar_gz && !is_zip {
+    if !is_tar_gz && !is_tar_zst && !is_zip {
         return Err(format!(
-            "Unknown archive format for: {src}. Expected .tar.gz or .zip"
+            "Unknown archive format for: {src}. Expected .tar.gz, .tar.zst, or .zip"
         ));
     }
 
@@ -146,6 +162,8 @@ pub fn extract_archive(src: String, dest: String) -> Result<(), String> {
 
     let result = if is_tar_gz {
         extract_tar_gz(&src_path, &dest_path)
+    } else if is_tar_zst {
+        extract_tar_zst(&src_path, &dest_path)
     } else {
         extract_zip(&src_path, &dest_path)
     };

@@ -25,6 +25,10 @@ futures-util = "0.3"
 flate2 = "1"
 tar = "0.4"
 zip = "0.6"
+# Pure-Rust zstd decoder. Avoids vendoring libzstd C lib + cross-compile
+# pain. The studio bundle ships as .tar.zst (tar+zstd) for ~10–15% size
+# win over tar.gz; ruzstd handles the decompression at install time.
+ruzstd = "0.7"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }

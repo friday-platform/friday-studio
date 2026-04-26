@@ -16,7 +16,7 @@
     "ai": "^6.0.158",
     "ai-sdk-provider-claude-code": "^3.4.4",
     "undici": "^7.24.6",
-    "vitest": "^4.1.0",
     "zod": "^4.3.5"
-  }
+  },
+  "devDependencies": { "vitest": "^4.1.0" }
 }
