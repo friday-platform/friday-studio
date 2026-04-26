@@ -14,6 +14,7 @@ import type {
   SkillsRoutes,
   WorkspaceChatRoutes,
   WorkspaceConfigRoutes,
+  WorkspaceMCPRoutes,
   WorkspaceRoutes,
 } from "@atlas/atlasd";
 import type { LinkRoutes } from "@atlas/link";
@@ -52,6 +53,8 @@ export const client = {
     hc<WorkspaceConfigRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/config`),
   workspaceIntegrations: (workspaceId: string) =>
     hc<IntegrationRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/integrations`),
+  workspaceMcp: (workspaceId: string) =>
+    hc<WorkspaceMCPRoutes>(`${baseUrl}/api/workspaces/${workspaceId}/mcp`),
   mcpRegistry: hc<MCPRegistryRoutes>(`${baseUrl}/api/mcp-registry`),
 };
 

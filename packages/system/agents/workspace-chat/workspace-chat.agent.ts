@@ -51,6 +51,8 @@ import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDelegateTool } from "./tools/delegate/index.ts";
+import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
+import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import { createJobTools } from "./tools/job-tools.ts";
@@ -60,6 +62,7 @@ import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resou
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
+import { createGetWorkspaceMcpStatusTool } from "./tools/workspace-mcp-status.ts";
 import { createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
@@ -599,6 +602,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const installMcpServerTool = createInstallMcpServerTool(logger);
         const createMcpServerTool = createCreateMcpServerTool(logger);
 
+        // Workspace-scoped MCP management tools
+        const getWorkspaceMcpStatusTool = createGetWorkspaceMcpStatusTool(workspaceId, logger);
+        const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
+        const disableMcpServerTool = createDisableMcpServerTool(workspaceId, logger);
+
         // Job tools
         const jobTools = createJobTools(
           workspaceId,
@@ -719,6 +727,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...searchMcpServersTool,
           ...installMcpServerTool,
           ...createMcpServerTool,
+          ...getWorkspaceMcpStatusTool,
+          ...enableMcpServerTool,
+          ...disableMcpServerTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };
