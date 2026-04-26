@@ -138,7 +138,11 @@ export async function materializeImportedMemory(opts: {
   try {
     await stat(targetRoot);
     // Target exists — sideload instead of clobbering.
-    const sideload = join(opts.atlasHome, "memory", `${opts.newWorkspaceId}.imported-${Date.now()}`);
+    const sideload = join(
+      opts.atlasHome,
+      "memory",
+      `${opts.newWorkspaceId}.imported-${Date.now()}`,
+    );
     await mkdir(dirname(sideload), { recursive: true });
     await rename(srcDir, sideload);
     return {
@@ -153,4 +157,3 @@ export async function materializeImportedMemory(opts: {
     return { kind: "moved", path: targetRoot };
   }
 }
-

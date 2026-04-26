@@ -1,86 +1,85 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { store } from "../lib/store.svelte.ts";
-  import {
-    startDownload,
-    retryDownload,
-    advanceStep,
-    currentPlatform,
-    fetchManifest,
-    verifyDownload,
-  } from "../lib/installer.ts";
+import { onMount } from "svelte";
+import { store } from "../lib/store.svelte.ts";
+import {
+  startDownload,
+  retryDownload,
+  advanceStep,
+  currentPlatform,
+  fetchManifest,
+  verifyDownload,
+} from "../lib/installer.ts";
 
-  // Phase the wizard moves through so the body text matches the actual work
-  // happening. Without explicit phases the user saw "99% ETA 0s" linger for
-  // 10s+ while SHA verify ran, with no indication that download had finished
-  // and we'd moved on to checksum.
-  type Phase = "downloading" | "verifying" | "verified";
+// Phase the wizard moves through so the body text matches the actual work
+// happening. Without explicit phases the user saw "99% ETA 0s" linger for
+// 10s+ while SHA verify ran, with no indication that download had finished
+// and we'd moved on to checksum.
+type Phase = "downloading" | "verifying" | "verified";
 
-  let platform = $state("");
-  let downloadUrl = $state("");
-  let sha256 = $state("");
-  let resolveError = $state<string | null>(null);
-  let phase = $state<Phase>("downloading");
+let platform = $state("");
+let downloadUrl = $state("");
+let sha256 = $state("");
+let resolveError = $state<string | null>(null);
+let phase = $state<Phase>("downloading");
 
-  onMount(async () => {
-    try {
-      // current_platform() returns the manifest key matching the binary's
-      // compile target ("macos-arm" / "macos-intel" / "windows") — must agree
-      // with the keys studio-build.yml emits, otherwise the wizard pulls
-      // binaries for the wrong arch.
-      platform = await currentPlatform();
-      if (platform === "unsupported") {
-        resolveError = "This OS/architecture is not supported by Friday Studio.";
-        return;
-      }
-
-      const manifest = await fetchManifest();
-      const entry = manifest.platforms[platform];
-      if (!entry) {
-        resolveError = `No download available for platform: ${platform}`;
-        return;
-      }
-      downloadUrl = entry.url;
-      sha256 = entry.sha256;
-      store.totalBytes = entry.size;
-
-      await startDownload(downloadUrl, sha256, platform);
-      if (store.downloadError !== null) return;
-
-      // SHA-256 verification before extract — refuse to advance on mismatch.
-      // Without this a corrupted or tampered archive would be unpacked silently
-      // and break in confusing ways at first launch.
-      phase = "verifying";
-      const ok = await verifyDownload(store.downloadPath, sha256);
-      if (!ok) {
-        store.downloadError =
-          "Downloaded file is corrupted (SHA-256 mismatch). Please try again.";
-        return;
-      }
-
-      phase = "verified";
-      // Hand off to extract only after verify passes — otherwise the user
-      // saw the wizard advance the moment progress hit 100%, with verify
-      // racing in the background against extract.
-      advanceStep();
-    } catch (err) {
-      store.downloadError = err instanceof Error ? err.message : String(err);
+onMount(async () => {
+  try {
+    // current_platform() returns the manifest key matching the binary's
+    // compile target ("macos-arm" / "macos-intel" / "windows") — must agree
+    // with the keys studio-build.yml emits, otherwise the wizard pulls
+    // binaries for the wrong arch.
+    platform = await currentPlatform();
+    if (platform === "unsupported") {
+      resolveError = "This OS/architecture is not supported by Friday Studio.";
+      return;
     }
-  });
 
-  async function handleRetry() {
-    resolveError = null;
-    phase = "downloading";
-    await retryDownload();
-  }
+    const manifest = await fetchManifest();
+    const entry = manifest.platforms[platform];
+    if (!entry) {
+      resolveError = `No download available for platform: ${platform}`;
+      return;
+    }
+    downloadUrl = entry.url;
+    sha256 = entry.sha256;
+    store.totalBytes = entry.size;
 
-  function friendlyError(msg: string | null): string {
-    if (!msg) return "";
-    return msg
-      .replace(/^Download failed after \d+ attempts:\s*/, "")
-      .replace(/^HTTP request failed:\s*/, "")
-      .replace(/^builder error$/, "Could not connect to the download server.");
+    await startDownload(downloadUrl, sha256, platform);
+    if (store.downloadError !== null) return;
+
+    // SHA-256 verification before extract — refuse to advance on mismatch.
+    // Without this a corrupted or tampered archive would be unpacked silently
+    // and break in confusing ways at first launch.
+    phase = "verifying";
+    const ok = await verifyDownload(store.downloadPath, sha256);
+    if (!ok) {
+      store.downloadError = "Downloaded file is corrupted (SHA-256 mismatch). Please try again.";
+      return;
+    }
+
+    phase = "verified";
+    // Hand off to extract only after verify passes — otherwise the user
+    // saw the wizard advance the moment progress hit 100%, with verify
+    // racing in the background against extract.
+    advanceStep();
+  } catch (err) {
+    store.downloadError = err instanceof Error ? err.message : String(err);
   }
+});
+
+async function handleRetry() {
+  resolveError = null;
+  phase = "downloading";
+  await retryDownload();
+}
+
+function friendlyError(msg: string | null): string {
+  if (!msg) return "";
+  return msg
+    .replace(/^Download failed after \d+ attempts:\s*/, "")
+    .replace(/^HTTP request failed:\s*/, "")
+    .replace(/^builder error$/, "Could not connect to the download server.");
+}
 </script>
 
 <div class="screen">

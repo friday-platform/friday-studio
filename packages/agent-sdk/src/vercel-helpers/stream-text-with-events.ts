@@ -95,5 +95,14 @@ export async function streamTextWithEvents({
     result.toolResults,
   ]);
 
-  return { text, finishReason, usage, totalUsage, steps, toolCalls, toolResults, reasoning: reasoningAccumulator };
+  return {
+    text,
+    finishReason,
+    usage,
+    totalUsage,
+    steps,
+    toolCalls,
+    toolResults,
+    reasoning: reasoningAccumulator,
+  };
 }

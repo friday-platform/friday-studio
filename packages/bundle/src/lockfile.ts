@@ -4,10 +4,7 @@ import { z } from "zod";
 
 const HashStringSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 
-const PrimitivePinSchema = z.object({
-  hash: HashStringSchema,
-  path: z.string().min(1),
-});
+const PrimitivePinSchema = z.object({ hash: HashStringSchema, path: z.string().min(1) });
 
 const SnapshotPinSchema = z.object({
   backend: z.string().min(1),
@@ -15,10 +12,7 @@ const SnapshotPinSchema = z.object({
   path: z.string().min(1),
 });
 
-const ResourcePinSchema = z.object({
-  digest: HashStringSchema,
-  path: z.string().min(1),
-});
+const ResourcePinSchema = z.object({ digest: HashStringSchema, path: z.string().min(1) });
 
 const PlatformDepsSchema = z.object({
   daemon: z.string().optional(),
@@ -26,10 +20,7 @@ const PlatformDepsSchema = z.object({
   modelProviders: z.array(z.string()).optional(),
 });
 
-const WorkspaceIdentitySchema = z.object({
-  name: z.string().min(1),
-  version: z.string().min(1),
-});
+const WorkspaceIdentitySchema = z.object({ name: z.string().min(1), version: z.string().min(1) });
 
 export const LockfileSchema = z
   .object({

@@ -1,21 +1,20 @@
 <script lang="ts">
-  import type { InstallMode } from "../lib/store.svelte.ts";
-  import { advanceStep } from "../lib/installer.ts";
+import type { InstallMode } from "../lib/store.svelte.ts";
+import { advanceStep } from "../lib/installer.ts";
 
-  interface Props {
-    mode: InstallMode;
-    installedVersion: string | null;
-    availableVersion: string;
-    studioRunning: boolean;
-  }
+interface Props {
+  mode: InstallMode;
+  installedVersion: string | null;
+  availableVersion: string;
+  studioRunning: boolean;
+}
 
-  const { mode, installedVersion, availableVersion, studioRunning }: Props =
-    $props();
+const { mode, installedVersion, availableVersion, studioRunning }: Props = $props();
 
-  async function openStudio(): Promise<void> {
-    const { default: opener } = await import("@tauri-apps/plugin-opener");
-    await opener.open("http://localhost:5200");
-  }
+async function openStudio(): Promise<void> {
+  const { default: opener } = await import("@tauri-apps/plugin-opener");
+  await opener.open("http://localhost:5200");
+}
 </script>
 
 <div class="screen">

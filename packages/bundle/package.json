@@ -10,7 +10,5 @@
     "jszip": "^3.10.1",
     "zod": "^4.3.5"
   },
-  "devDependencies": {
-    "vitest": "^4.1.0"
-  }
+  "devDependencies": { "vitest": "^4.1.0" }
 }

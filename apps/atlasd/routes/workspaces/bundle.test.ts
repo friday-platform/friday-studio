@@ -53,34 +53,40 @@ function createApp(opts: {
   registeredWorkspace?: { id: string; name: string; path: string };
 }): { app: Hono<AppVariables>; registerSpy: ReturnType<typeof vi.fn> } {
   const workspaceId = opts.workspaceId ?? "ws-demo";
-  const registerSpy = vi.fn().mockImplementation(async (path: string) => ({
-    workspace: {
-      id: opts.registeredWorkspace?.id ?? "ws-imported",
-      name: opts.registeredWorkspace?.name ?? "demo-space",
-      path: opts.registeredWorkspace?.path ?? path,
-    },
-    created: true,
-  }));
+  const registerSpy = vi
+    .fn()
+    .mockImplementation(async (path: string) => ({
+      workspace: {
+        id: opts.registeredWorkspace?.id ?? "ws-imported",
+        name: opts.registeredWorkspace?.name ?? "demo-space",
+        path: opts.registeredWorkspace?.path ?? path,
+      },
+      created: true,
+    }));
 
   const mockManager = {
-    find: vi.fn().mockResolvedValue({
-      id: workspaceId,
-      name: "demo-space",
-      path: opts.workspaceDir,
-      configPath: join(opts.workspaceDir, "workspace.yml"),
-      status: "inactive",
-      createdAt: new Date().toISOString(),
-      lastSeen: new Date().toISOString(),
-      metadata: {},
-    }),
-    getWorkspaceConfig: vi.fn().mockResolvedValue({
-      atlas: null,
-      workspace: {
+    find: vi
+      .fn()
+      .mockResolvedValue({
         id: workspaceId,
-        version: "1.0",
-        workspace: { id: workspaceId, name: "demo-space" },
-      },
-    }),
+        name: "demo-space",
+        path: opts.workspaceDir,
+        configPath: join(opts.workspaceDir, "workspace.yml"),
+        status: "inactive",
+        createdAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+        metadata: {},
+      }),
+    getWorkspaceConfig: vi
+      .fn()
+      .mockResolvedValue({
+        atlas: null,
+        workspace: {
+          id: workspaceId,
+          version: "1.0",
+          workspace: { id: workspaceId, name: "demo-space" },
+        },
+      }),
     registerWorkspace: registerSpy,
     list: vi.fn().mockResolvedValue([]),
     deleteWorkspace: vi.fn(),
@@ -175,16 +181,14 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     });
 
     expect(importResponse.status).toBe(200);
-    const body = await importResponse.json() as {
+    const body = (await importResponse.json()) as {
       workspaceId: string;
       path: string;
       primitives: { kind: string; name: string }[];
     };
     expect(body.workspaceId).toBe("ws-new");
     expect(body.path).toContain(homeDir);
-    expect(body.primitives).toEqual([
-      { kind: "skill", name: "hello", path: "skills/hello" },
-    ]);
+    expect(body.primitives).toEqual([{ kind: "skill", name: "hello", path: "skills/hello" }]);
 
     expect(registerSpy).toHaveBeenCalledTimes(1);
     const registeredPath = registerSpy.mock.calls[0]?.[0] as string;
@@ -208,7 +212,7 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     const response = await importApp.request("/import-bundle", { method: "POST", body: form });
 
     expect(response.status).toBe(500);
-    const body = await response.json() as { error: string };
+    const body = (await response.json()) as { error: string };
     expect(body.error).toMatch(/integrity check failed/);
   });
 });

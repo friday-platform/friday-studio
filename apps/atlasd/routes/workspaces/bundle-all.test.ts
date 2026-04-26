@@ -35,10 +35,7 @@ vi.mock("@atlas/utils/paths.server", async (importOriginal) => ({
 }));
 
 async function seedWorkspaceDir(dir: string, name: string): Promise<void> {
-  await writeFile(
-    join(dir, "workspace.yml"),
-    `version: '1.0'\nworkspace:\n  name: ${name}\n`,
-  );
+  await writeFile(join(dir, "workspace.yml"), `version: '1.0'\nworkspace:\n  name: ${name}\n`);
   await mkdir(join(dir, "agents", "hello-bot"), { recursive: true });
   await writeFile(join(dir, "agents", "hello-bot", "agent.py"), "# hello\n");
 }
@@ -58,10 +55,7 @@ function createAppMulti(opts: {
   const registerSpy = vi.fn().mockImplementation(async (path: string, meta: { name: string }) => {
     const id = opts.registeredId ? opts.registeredId(callCount) : `imported-${callCount}`;
     callCount += 1;
-    return {
-      workspace: { id, name: meta.name, path },
-      created: true,
-    };
+    return { workspace: { id, name: meta.name, path }, created: true };
   });
 
   const byId = new Map(opts.workspaces.map((w) => [w.id, w]));
@@ -77,21 +71,20 @@ function createAppMulti(opts: {
     getWorkspaceConfig: vi.fn().mockImplementation(async (id: string) => {
       const w = byId.get(id);
       if (!w) return null;
-      return {
-        atlas: null,
-        workspace: { id, version: "1.0", workspace: { id, name: w.name } },
-      };
+      return { atlas: null, workspace: { id, version: "1.0", workspace: { id, name: w.name } } };
     }),
     registerWorkspace: registerSpy,
-    list: vi.fn().mockResolvedValue(
-      opts.workspaces.map((w) => ({
-        ...w,
-        status: "inactive",
-        createdAt: "",
-        lastSeen: "",
-        metadata: {},
-      })),
-    ),
+    list: vi
+      .fn()
+      .mockResolvedValue(
+        opts.workspaces.map((w) => ({
+          ...w,
+          status: "inactive",
+          createdAt: "",
+          lastSeen: "",
+          metadata: {},
+        })),
+      ),
     deleteWorkspace: vi.fn(),
   } as unknown as WorkspaceManager;
 

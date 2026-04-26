@@ -1,27 +1,27 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { store } from "./lib/store.svelte.ts";
-  import { detectInstallState } from "./lib/installer.ts";
+import { onMount } from "svelte";
+import { store } from "./lib/store.svelte.ts";
+import { detectInstallState } from "./lib/installer.ts";
 
-  import Welcome from "./steps/Welcome.svelte";
-  import License from "./steps/License.svelte";
-  import ApiKeys from "./steps/ApiKeys.svelte";
-  import Download from "./steps/Download.svelte";
-  import Extract from "./steps/Extract.svelte";
-  import Launch from "./steps/Launch.svelte";
+import Welcome from "./steps/Welcome.svelte";
+import License from "./steps/License.svelte";
+import ApiKeys from "./steps/ApiKeys.svelte";
+import Download from "./steps/Download.svelte";
+import Extract from "./steps/Extract.svelte";
+import Launch from "./steps/Launch.svelte";
 
-  let detecting = $state(true);
-  let detectError = $state<string | null>(null);
+let detecting = $state(true);
+let detectError = $state<string | null>(null);
 
-  onMount(async () => {
-    try {
-      await detectInstallState();
-    } catch (err) {
-      detectError = err instanceof Error ? err.message : String(err);
-    } finally {
-      detecting = false;
-    }
-  });
+onMount(async () => {
+  try {
+    await detectInstallState();
+  } catch (err) {
+    detectError = err instanceof Error ? err.message : String(err);
+  } finally {
+    detecting = false;
+  }
+});
 </script>
 
 <main class="installer">

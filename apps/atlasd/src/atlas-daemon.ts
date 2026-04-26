@@ -1,15 +1,9 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
-import {
-  type ActivityStorageAdapter,
-  createActivityLedgerClient,
-} from "@atlas/activity";
+import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/activity";
 import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
-import type {
-  AgentRegistry as AgentRegistryType,
-  AtlasUIMessageChunk,
-} from "@atlas/agent-sdk";
+import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { createAnalyticsClient } from "@atlas/analytics";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
@@ -24,11 +18,7 @@ import {
 } from "@atlas/core";
 import { CronManager } from "@atlas/cron";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
-import {
-  createPlatformModels,
-  type PlatformModels,
-  prewarmCatalog,
-} from "@atlas/llm";
+import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
@@ -136,16 +126,13 @@ export class AtlasDaemon {
   > = new Map();
 
   // Track stream metadata separately to persist after clients disconnect
-  public sseStreams: Map<
-    string,
-    { createdAt: number; lastActivity: number; lastEmit: number }
-  > = new Map();
+  public sseStreams: Map<string, { createdAt: number; lastActivity: number; lastEmit: number }> =
+    new Map();
   // Private properties
   private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private isShuttingDown = false;
   private server: Deno.HttpServer | null = null;
-  private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> =
-    [];
+  private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
   private platformModels: PlatformModels | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
@@ -161,8 +148,7 @@ export class AtlasDaemon {
   public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
   private chatSdkInstances = new Map<string, Promise<ChatSdkInstance>>();
   private sseHealthCheckInterval: ReturnType<typeof setInterval> | null = null;
-  private agentSessionCleanupInterval: ReturnType<typeof setInterval> | null =
-    null;
+  private agentSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
   // Store per-session MCP servers and transports
   private agentSessions = new Map<
     string,
@@ -192,9 +178,7 @@ export class AtlasDaemon {
       lastUsed: number;
     }
   >();
-  private platformSessionCleanupInterval:
-    | ReturnType<typeof setInterval>
-    | null = null;
+  private platformSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
   // Platform session limits
   private readonly MAX_PLATFORM_SESSIONS = 100;
   private readonly PLATFORM_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -205,9 +189,7 @@ export class AtlasDaemon {
   constructor(options: AtlasDaemonOptions = {}) {
     // Read CORS origins from environment or options
     // Environment variable takes precedence for production deployments
-    const envCorsOrigins = env.CORS_ALLOWED_ORIGINS?.split(",").map((s) =>
-      s.trim()
-    );
+    const envCorsOrigins = env.CORS_ALLOWED_ORIGINS?.split(",").map((s) => s.trim());
     const corsOrigins = envCorsOrigins ?? options.cors;
 
     this.options = {
@@ -268,9 +250,7 @@ export class AtlasDaemon {
 
   public getWorkspaceManager(): WorkspaceManager {
     if (!this.workspaceManager) {
-      throw new Error(
-        "WorkspaceManager not initialized. Call initialize() first.",
-      );
+      throw new Error("WorkspaceManager not initialized. Call initialize() first.");
     }
     return this.workspaceManager;
   }
@@ -288,10 +268,7 @@ export class AtlasDaemon {
     // Runs eager validation — throws on malformed config or missing credentials.
     // ATLAS_CONFIG_PATH can override the search directory (set by --atlas-config CLI flag).
     const configDir = process.env.ATLAS_CONFIG_PATH ?? process.cwd();
-    logger.info("Loading platform config", {
-      configDir,
-      configFile: `${configDir}/friday.yml`,
-    });
+    logger.info("Loading platform config", { configDir, configFile: `${configDir}/friday.yml` });
     const atlasConfigSource = new FilesystemAtlasConfigSource(configDir);
     const atlasConfig = await atlasConfigSource.load();
     this.platformModels = createPlatformModels(atlasConfig);
@@ -320,20 +297,15 @@ export class AtlasDaemon {
     this.workspaceManager = new WorkspaceManager(registry);
 
     // Wire up runtime invalidation callback so file watcher changes clear both maps
-    this.workspaceManager.setRuntimeInvalidateCallback(
-      this.destroyWorkspaceRuntime.bind(this),
-    );
+    this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
 
     // Initialize LibraryStorage with hybrid storage
     logger.info("Initializing LibraryStorage...");
-    this.libraryStorage = await createLibraryStorage(
-      StorageConfigs.defaultKV(),
-      {
-        // Use XDG-compliant default location, but allow environment override
-        contentDir: env.ATLAS_LIBRARY_DIR,
-        organizeByDate: true,
-      },
-    );
+    this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
+      // Use XDG-compliant default location, but allow environment override
+      contentDir: env.ATLAS_LIBRARY_DIR,
+      organizeByDate: true,
+    });
 
     // Initialize CronManager with KV storage
     logger.info("Initializing CronManager...");
@@ -400,10 +372,7 @@ export class AtlasDaemon {
     const fsRegistrar = new FsWatchSignalRegistrar(wakeupCallback);
     const cronRegistrar = new CronSignalRegistrar(this.cronManager);
 
-    const signalRegistrars: WorkspaceSignalRegistrar[] = [
-      fsRegistrar,
-      cronRegistrar,
-    ];
+    const signalRegistrars: WorkspaceSignalRegistrar[] = [fsRegistrar, cronRegistrar];
 
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
@@ -411,9 +380,7 @@ export class AtlasDaemon {
     // Bootstrap @atlas/* system skills before any workspace chat gets a chance
     // to ask for them. Idempotent — only republishes on content-hash mismatch.
     try {
-      const { ensureSystemSkills } = await import(
-        "@atlas/system/skills/bootstrap"
-      );
+      const { ensureSystemSkills } = await import("@atlas/system/skills/bootstrap");
       await ensureSystemSkills();
     } catch (error) {
       logger.error("Failed to bootstrap @atlas system skills", { error });
@@ -423,12 +390,8 @@ export class AtlasDaemon {
     // persisted timer pointing at a deleted workspace (e.g. one removed
     // outside the manager via direct rm) is pruned before the tick loop
     // can fire WorkspaceNotFoundError every cron interval.
-    const knownWorkspaces = await this.workspaceManager.list({
-      includeSystem: true,
-    });
-    await this.cronManager.start({
-      knownWorkspaceIds: new Set(knownWorkspaces.map((w) => w.id)),
-    });
+    const knownWorkspaces = await this.workspaceManager.list({ includeSystem: true });
+    await this.cronManager.start({ knownWorkspaceIds: new Set(knownWorkspaces.map((w) => w.id)) });
 
     // Prewarm the model catalog so the Settings page dropdown renders
     // instantly on first open. Fire-and-forget: failures here shouldn't
@@ -470,9 +433,7 @@ export class AtlasDaemon {
         }
         return count;
       });
-      AtlasMetrics.registerUptimeProvider(() =>
-        Math.floor((Date.now() - this.startTime) / 1000)
-      );
+      AtlasMetrics.registerUptimeProvider(() => Math.floor((Date.now() - this.startTime) / 1000));
       logger.info("OTEL metrics providers registered");
     }
 
@@ -490,9 +451,7 @@ export class AtlasDaemon {
    */
   private async getOrCreateAgentSession(
     sessionId: string,
-  ): Promise<
-    { server: AtlasAgentsMCPServer; transport: StreamableHTTPTransport }
-  > {
+  ): Promise<{ server: AtlasAgentsMCPServer; transport: StreamableHTTPTransport }> {
     const existing = this.agentSessions.get(sessionId);
     if (existing) {
       existing.lastUsed = Date.now();
@@ -567,9 +526,7 @@ export class AtlasDaemon {
    */
   private async getOrCreatePlatformSession(
     sessionId: string,
-  ): Promise<
-    { server: PlatformMCPServer; transport: StreamableHTTPTransport }
-  > {
+  ): Promise<{ server: PlatformMCPServer; transport: StreamableHTTPTransport }> {
     const existing = this.platformMcpSessions.get(sessionId);
     if (existing) {
       existing.lastUsed = Date.now();
@@ -583,9 +540,7 @@ export class AtlasDaemon {
     const transport = new StreamableHTTPTransport({
       sessionIdGenerator: () => sessionId,
       onsessioninitialized: (sid: string) => {
-        logger.info("[Daemon] Platform session initialized", {
-          sessionId: sid,
-        });
+        logger.info("[Daemon] Platform session initialized", { sessionId: sid });
       },
     });
 
@@ -595,12 +550,10 @@ export class AtlasDaemon {
       daemonUrl,
       logger: logger.child({ component: "platform-mcp-server", sessionId }),
       workspaceProvider: {
-        getOrCreateRuntime: (id: string) =>
-          this.getOrCreateWorkspaceRuntime(id),
+        getOrCreateRuntime: (id: string) => this.getOrCreateWorkspaceRuntime(id),
       },
       workspaceConfigProvider: {
-        getWorkspaceConfig: (id: string) =>
-          this.getWorkspaceManager().getWorkspaceConfig(id),
+        getWorkspaceConfig: (id: string) => this.getWorkspaceManager().getWorkspaceConfig(id),
       },
     });
 
@@ -676,9 +629,7 @@ export class AtlasDaemon {
    */
   getPlatformModels(): PlatformModels {
     if (!this.platformModels) {
-      throw new Error(
-        "Platform models not initialized. Call initialize() first.",
-      );
+      throw new Error("Platform models not initialized. Call initialize() first.");
     }
     return this.platformModels;
   }
@@ -686,9 +637,7 @@ export class AtlasDaemon {
   /** Get activity storage adapter (constructed during initialize). */
   public getActivityAdapter(): ActivityStorageAdapter {
     if (!this.activityAdapter) {
-      throw new Error(
-        "Activity adapter not initialized — call initialize() first",
-      );
+      throw new Error("Activity adapter not initialized — call initialize() first");
     }
     return this.activityAdapter;
   }
@@ -745,13 +694,7 @@ export class AtlasDaemon {
       if (path === "/health") return;
 
       const message = `HTTP ${method} ${path}`;
-      const context = {
-        method,
-        path,
-        status,
-        duration: `${duration}ms`,
-        component: "http",
-      };
+      const context = { method, path, status, duration: `${duration}ms`, component: "http" };
 
       if (status >= 500) {
         logger.error(message, context);
@@ -765,15 +708,9 @@ export class AtlasDaemon {
     this.app.route("/health", healthRoutes);
     this.app.route("/api/workspaces", workspacesRoutes);
     // Mount workspace config routes for partial updates (separate from workspacesRoutes to avoid circular deps)
-    this.app.route(
-      "/api/workspaces/:workspaceId/config",
-      workspaceConfigRoutes,
-    );
+    this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
-    this.app.route(
-      "/api/workspaces/:workspaceId/integrations",
-      integrationRoutes,
-    );
+    this.app.route("/api/workspaces/:workspaceId/integrations", integrationRoutes);
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
@@ -801,11 +738,7 @@ export class AtlasDaemon {
 
     // Global error handler - catches all uncaught errors from all routes
     this.app.onError((err, c) => {
-      logger.error("API error", {
-        error: err,
-        path: c.req.path,
-        method: c.req.method,
-      });
+      logger.error("API error", { error: err, path: c.req.path, method: c.req.method });
       return c.json({ error: "Internal server error" }, 500);
     });
 
@@ -825,14 +758,10 @@ export class AtlasDaemon {
           // For new sessions (no session ID on POST), generate one
           if (!sessionId && c.req.method === "POST") {
             const newSessionId = crypto.randomUUID();
-            logger.info("Creating new Platform MCP session", {
-              sessionId: newSessionId,
-            });
+            logger.info("Creating new Platform MCP session", { sessionId: newSessionId });
 
             // Create and store the session
-            const { transport } = await this.getOrCreatePlatformSession(
-              newSessionId,
-            );
+            const { transport } = await this.getOrCreatePlatformSession(newSessionId);
 
             // Handle the request - this will set the Mcp-Session-Id header
             const response = await transport.handleRequest(c);
@@ -848,9 +777,7 @@ export class AtlasDaemon {
             return response;
           } else if (sessionId) {
             // Existing session - get or create
-            const { transport } = await this.getOrCreatePlatformSession(
-              sessionId,
-            );
+            const { transport } = await this.getOrCreatePlatformSession(sessionId);
 
             // Handle DELETE specially - clean up after processing
             if (c.req.method === "DELETE") {
@@ -864,19 +791,13 @@ export class AtlasDaemon {
             return transport.handleRequest(c);
           } else {
             // No session ID and not a POST request - this is an error
-            logger.error(
-              "[Daemon] Invalid request - no session ID for non-POST",
-              {
-                method: c.req.method,
-              },
-            );
+            logger.error("[Daemon] Invalid request - no session ID for non-POST", {
+              method: c.req.method,
+            });
             return c.json(
               {
                 jsonrpc: "2.0",
-                error: {
-                  code: -32000,
-                  message: "Session ID required for non-initialize requests",
-                },
+                error: { code: -32000, message: "Session ID required for non-initialize requests" },
                 id: null,
               },
               400,
@@ -914,14 +835,10 @@ export class AtlasDaemon {
           // without a pre-existing Atlas Session ID.
           if (!sessionId && c.req.method === "POST") {
             const newSessionId = crypto.randomUUID();
-            logger.info("Creating new SSE session for Agent Server", {
-              sessionId: newSessionId,
-            });
+            logger.info("Creating new SSE session for Agent Server", { sessionId: newSessionId });
 
             // Create and store the session
-            const { transport } = await this.getOrCreateAgentSession(
-              newSessionId,
-            );
+            const { transport } = await this.getOrCreateAgentSession(newSessionId);
 
             // Handle the request - this will set the Mcp-Session-Id header
             const response = await transport.handleRequest(c);
@@ -941,17 +858,13 @@ export class AtlasDaemon {
 
             // Track SSE connections for GET requests
             if (c.req.method === "GET") {
-              logger.info("Establishing SSE connection to Agent Server", {
-                sessionId,
-              });
+              logger.info("Establishing SSE connection to Agent Server", { sessionId });
               this.agentSSEConnections.add(sessionId);
             }
 
             // Handle DELETE specially - clean up after processing
             if (c.req.method === "DELETE") {
-              logger.info("Terminating Agent Server SSE session", {
-                sessionId,
-              });
+              logger.info("Terminating Agent Server SSE session", { sessionId });
               const response = await transport.handleRequest(c);
               await this.cleanupAgentSession(sessionId);
               return response;
@@ -961,19 +874,13 @@ export class AtlasDaemon {
             return transport.handleRequest(c);
           } else {
             // No session ID and not a POST request - this is an error
-            logger.error(
-              "[Daemon] Invalid request - no session ID for non-POST",
-              {
-                method: c.req.method,
-              },
-            );
+            logger.error("[Daemon] Invalid request - no session ID for non-POST", {
+              method: c.req.method,
+            });
             return c.json(
               {
                 jsonrpc: "2.0",
-                error: {
-                  code: -32000,
-                  message: "Session ID required for non-initialize requests",
-                },
+                error: { code: -32000, message: "Session ID required for non-initialize requests" },
                 id: null,
               },
               400,
@@ -997,17 +904,13 @@ export class AtlasDaemon {
   /**
    * Get or create a workspace runtime on-demand
    */
-  async getOrCreateWorkspaceRuntime(
-    workspaceId: string,
-  ): Promise<WorkspaceRuntime> {
+  async getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime> {
     try {
       logger.debug("getOrCreateWorkspaceRuntime called", { workspaceId });
 
       // Ensure daemon is properly initialized before creating runtimes
       if (!this.isInitialized) {
-        throw new Error(
-          "Atlas daemon not fully initialized - cannot create workspace runtime",
-        );
+        throw new Error("Atlas daemon not fully initialized - cannot create workspace runtime");
       }
 
       // Check if runtime already exists
@@ -1042,24 +945,17 @@ export class AtlasDaemon {
 
       // Check concurrent workspace limit
       if (this.runtimes.size >= (this.options.maxConcurrentWorkspaces ?? 10)) {
-        logger.warn(
-          "Maximum concurrent workspaces reached, attempting eviction",
-          {
-            maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-          },
-        );
+        logger.warn("Maximum concurrent workspaces reached, attempting eviction", {
+          maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
+        });
         // Find the oldest idle workspace to evict
         const oldestWorkspace = this.findOldestIdleWorkspace();
         if (oldestWorkspace) {
-          logger.info("Evicting oldest idle workspace", {
-            workspaceId: oldestWorkspace,
-          });
+          logger.info("Evicting oldest idle workspace", { workspaceId: oldestWorkspace });
           await this.destroyWorkspaceRuntime(oldestWorkspace);
         } else {
           const error = "Maximum concurrent workspaces reached";
-          logger.error(error, {
-            maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-          });
+          logger.error(error, { maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces });
           throw new Error(`${error} (${this.options.maxConcurrentWorkspaces})`);
         }
       }
@@ -1067,8 +963,8 @@ export class AtlasDaemon {
       // Find workspace in registry (if not already found)
       logger.debug("Looking up workspace in registry", { workspaceId });
       if (!workspace) {
-        workspace = (await manager.find({ id: workspaceId })) ||
-          (await manager.find({ name: workspaceId }));
+        workspace =
+          (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
       }
 
       if (!workspace) {
@@ -1088,15 +984,10 @@ export class AtlasDaemon {
         try {
           const pathStat = await stat(workspace.path);
           if (!pathStat.isDirectory()) {
-            throw new Error(
-              `Workspace path is not a directory: ${workspace.path}`,
-            );
+            throw new Error(`Workspace path is not a directory: ${workspace.path}`);
           }
         } catch (error) {
-          logger.error("Failed to access workspace path", {
-            error,
-            workspacePath: workspace.path,
-          });
+          logger.error("Failed to access workspace path", { error, workspacePath: workspace.path });
           throw new Error(`Workspace path does not exist: ${workspace.path}`);
         }
       } else {
@@ -1106,9 +997,7 @@ export class AtlasDaemon {
       // Load configuration using the new WorkspaceManager
       const mergedConfig = await manager.getWorkspaceConfig(workspace.id);
       if (!mergedConfig) {
-        throw new Error(
-          `Failed to load workspace configuration: ${workspace.id}`,
-        );
+        throw new Error(`Failed to load workspace configuration: ${workspace.id}`);
       }
 
       logger.debug("Workspace configuration loaded", {
@@ -1127,16 +1016,10 @@ export class AtlasDaemon {
       for (const [agentId, agentConfig] of Object.entries(workspaceAgents)) {
         if (agentConfig.type === "llm") {
           try {
-            logger.debug("Registering workspace LLM agent", {
-              workspaceId: workspace.id,
-              agentId,
-            });
+            logger.debug("Registering workspace LLM agent", { workspaceId: workspace.id, agentId });
             const agent = convertLLMToAgent(agentConfig, agentId, logger);
             await this.agentRegistry?.registerAgent(agent);
-            logger.info("Registered workspace LLM agent", {
-              workspaceId: workspace.id,
-              agentId,
-            });
+            logger.info("Registered workspace LLM agent", { workspaceId: workspace.id, agentId });
           } catch (error) {
             logger.error("Failed to register workspace LLM agent", {
               workspaceId: workspace.id,
@@ -1153,9 +1036,7 @@ export class AtlasDaemon {
             });
 
             // Get the bundled agent from registry
-            const baseAgent = await this.agentRegistry?.getAgent(
-              agentConfig.agent,
-            );
+            const baseAgent = await this.agentRegistry?.getAgent(agentConfig.agent);
             if (!baseAgent) {
               throw new Error(`Base agent not found: ${agentConfig.agent}`);
             }
@@ -1189,18 +1070,14 @@ export class AtlasDaemon {
 
       logger.debug("Creating WorkspaceRuntime", {
         workspaceId: workspace.id,
-        signals: mergedConfig.workspace?.signals
-          ? Object.keys(mergedConfig.workspace.signals)
-          : [],
+        signals: mergedConfig.workspace?.signals ? Object.keys(mergedConfig.workspace.signals) : [],
       });
 
       // Determine workspace path
       let workspacePath: string | undefined;
       if (workspace.metadata?.system) {
         // System workspaces are in packages/system/workspaces/{workspace-name}/
-        workspacePath =
-          new URL(`../../../packages/system/workspaces`, import.meta.url)
-            .pathname;
+        workspacePath = new URL(`../../../packages/system/workspaces`, import.meta.url).pathname;
       } else {
         workspacePath = workspace.path;
       }
@@ -1224,13 +1101,8 @@ export class AtlasDaemon {
           invokeImprover: this.createImproverCallback(workspace.id),
           hasPendingRevision: !!workspace.metadata?.pendingRevision,
           createSessionStream: (sessionId) =>
-            this.sessionStreamRegistry.create(
-              sessionId,
-              this.sessionHistoryAdapter,
-            ),
-          onSessionFinished: async (
-            { workspaceId, sessionId, status, finishedAt, summary },
-          ) => {
+            this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
+          onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
             // Record session completion metric
             // "skipped" = user config error (OAuth not connected, missing env vars) - NOT a platform failure
             AtlasMetrics.recordSession(status);
@@ -1243,12 +1115,7 @@ export class AtlasDaemon {
               await mgr.updateWorkspaceStatus(workspaceId, "stopped", {
                 metadata: {
                   ...ws?.metadata,
-                  lastFinishedSession: {
-                    id: sessionId,
-                    status,
-                    finishedAt,
-                    summary,
-                  },
+                  lastFinishedSession: { id: sessionId, status, finishedAt, summary },
                 },
               });
 
@@ -1294,14 +1161,11 @@ export class AtlasDaemon {
                 }
               }
             } catch (error) {
-              logger.warn(
-                "Failed to persist lastFinishedSession or update status",
-                {
-                  workspaceId,
-                  sessionId,
-                  error,
-                },
-              );
+              logger.warn("Failed to persist lastFinishedSession or update status", {
+                workspaceId,
+                sessionId,
+                error,
+              });
             }
           },
         },
@@ -1309,15 +1173,11 @@ export class AtlasDaemon {
       logger.debug("WorkspaceRuntime created", { workspaceId: workspace.id });
 
       this.runtimes.set(workspace.id, runtime);
-      logger.debug("Runtime stored in daemon registry", {
-        workspaceId: workspace.id,
-      });
+      logger.debug("Runtime stored in daemon registry", { workspaceId: workspace.id });
 
       // Register runtime with WorkspaceManager
       await manager.registerRuntime(workspace.id, runtime);
-      logger.debug("Runtime registered with WorkspaceManager", {
-        workspaceId: workspace.id,
-      });
+      logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
 
       // Subscribe to NATS signal subjects for this workspace
       this.subscribeWorkspaceToSignals(workspace.id, runtime);
@@ -1328,44 +1188,31 @@ export class AtlasDaemon {
       this.resetIdleTimeout(workspace.id);
       logger.debug("Idle timeout set", { workspaceId: workspace.id });
 
-      logger.info("Runtime created", {
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-      });
+      logger.info("Runtime created", { workspaceId: workspace.id, workspaceName: workspace.name });
 
       return runtime;
     } catch (error) {
-      logger.error("Failed to create workspace runtime", {
-        error,
-        workspaceId,
-      });
+      logger.error("Failed to create workspace runtime", { error, workspaceId });
 
       // Clean up on failure to prevent inconsistent state
       try {
         // Remove runtime from local registry if it was added
         if (this.runtimes.has(workspaceId)) {
           this.runtimes.delete(workspaceId);
-          logger.debug("Removed failed runtime from daemon registry", {
-            workspaceId,
-          });
+          logger.debug("Removed failed runtime from daemon registry", { workspaceId });
         }
 
         // Unregister from WorkspaceManager and revert status to stopped
         try {
           const mgr = this.getWorkspaceManager();
           await mgr.unregisterRuntime(workspaceId);
-          logger.debug("Unregistered failed runtime from WorkspaceManager", {
-            workspaceId,
-          });
+          logger.debug("Unregistered failed runtime from WorkspaceManager", { workspaceId });
         } catch (unregisterError) {
           // Runtime might not have been registered yet
-          logger.debug(
-            "Could not unregister runtime (may not have been registered)",
-            {
-              workspaceId,
-              error: unregisterError,
-            },
-          );
+          logger.debug("Could not unregister runtime (may not have been registered)", {
+            workspaceId,
+            error: unregisterError,
+          });
         }
 
         // Clear idle timeout if it was set
@@ -1373,15 +1220,10 @@ export class AtlasDaemon {
         if (timeoutId) {
           clearTimeout(timeoutId);
           this.idleTimeouts.delete(workspaceId);
-          logger.debug("Cleared idle timeout for failed workspace", {
-            workspaceId,
-          });
+          logger.debug("Cleared idle timeout for failed workspace", { workspaceId });
         }
       } catch (cleanupError) {
-        logger.error("Error during failed workspace cleanup", {
-          workspaceId,
-          cleanupError,
-        });
+        logger.error("Error during failed workspace cleanup", { workspaceId, cleanupError });
       }
 
       throw error;
@@ -1404,9 +1246,7 @@ export class AtlasDaemon {
     return promise;
   }
 
-  private async buildChatSdkInstance(
-    workspaceId: string,
-  ): Promise<ChatSdkInstance> {
+  private async buildChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
     const manager = this.getWorkspaceManager();
     const config = await manager.getWorkspaceConfig(workspaceId);
     if (!config) {
@@ -1427,20 +1267,14 @@ export class AtlasDaemon {
         credentials = resolved.map((r) => r.credentials);
       }
     } catch (error) {
-      logger.warn("chat_sdk_credential_resolution_failed", {
-        workspaceId,
-        error,
-      });
+      logger.warn("chat_sdk_credential_resolution_failed", { workspaceId, error });
     }
 
     const instanceConfig: ChatSdkInstanceConfig = {
       workspaceId,
       userId,
       signals: config.workspace?.signals as
-        | Record<
-          string,
-          { provider?: string; config?: Record<string, unknown> }
-        >
+        | Record<string, { provider?: string; config?: Record<string, unknown> }>
         | undefined,
       streamRegistry: this.streamRegistry,
       exposeKernel: process.env.ATLAS_EXPOSE_KERNEL === "1",
@@ -1580,16 +1414,13 @@ export class AtlasDaemon {
 
     if (!session) {
       // Session not found - might have been cleaned up already
-      logger.debug("Session not found (may have been cleaned up)", {
-        workspaceId,
-        sessionId,
-      });
+      logger.debug("Session not found (may have been cleaned up)", { workspaceId, sessionId });
       return false;
     }
 
     // Create timeout promise that rejects after specified duration
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("timeout")), timeoutMs)
+      setTimeout(() => reject(new Error("timeout")), timeoutMs),
     );
 
     // Wait for session to reach terminal state (completed, failed, cancelled) or timeout
@@ -1686,15 +1517,10 @@ export class AtlasDaemon {
 
     // Check for active agent executions in the orchestrator
     let hasActiveExecutions = false;
-    let activeExecutions: Array<
-      { agentId: string; sessionId: string; durationMs: number }
-    > = [];
+    let activeExecutions: Array<{ agentId: string; sessionId: string; durationMs: number }> = [];
 
     // WorkspaceRuntimeFSM has getOrchestrator() method
-    if (
-      "getOrchestrator" in runtime &&
-      typeof runtime.getOrchestrator === "function"
-    ) {
+    if ("getOrchestrator" in runtime && typeof runtime.getOrchestrator === "function") {
       const orchestrator = runtime.getOrchestrator();
       hasActiveExecutions = orchestrator.hasActiveExecutions();
       if (hasActiveExecutions) {
@@ -1723,13 +1549,10 @@ export class AtlasDaemon {
     } else {
       // Still has active sessions or executions, reset timeout
       if (hasActiveExecutions) {
-        logger.debug(
-          "Workspace has active agent executions, resetting idle timeout",
-          {
-            workspaceId,
-            activeExecutionsCount: activeExecutions.length,
-          },
-        );
+        logger.debug("Workspace has active agent executions, resetting idle timeout", {
+          workspaceId,
+          activeExecutionsCount: activeExecutions.length,
+        });
       }
       this.resetIdleTimeout(workspaceId);
     }
@@ -1750,19 +1573,13 @@ export class AtlasDaemon {
 
       const agent = await registry.getAgent("workspace-improver");
       if (!agent) {
-        return {
-          ok: false,
-          error: "workspace-improver agent not found in registry",
-        };
+        return { ok: false, error: "workspace-improver agent not found in registry" };
       }
 
       // workspace-improver agent accepts JSON string input (parses internally)
       const payload = await agent.execute(JSON.stringify(input), {
         tools: {},
-        session: {
-          sessionId: `improver-${workspaceId}-${Date.now()}`,
-          workspaceId,
-        },
+        session: { sessionId: `improver-${workspaceId}-${Date.now()}`, workspaceId },
         env: {},
         stream: undefined,
         logger: logger.child({ component: "workspace-improver", workspaceId }),
@@ -1774,19 +1591,16 @@ export class AtlasDaemon {
         const errorPayload = payload.error;
         return {
           ok: false,
-          error: typeof errorPayload === "object" && errorPayload !== null &&
-              "reason" in errorPayload
-            ? String(errorPayload.reason)
-            : String(errorPayload),
+          error:
+            typeof errorPayload === "object" && errorPayload !== null && "reason" in errorPayload
+              ? String(errorPayload.reason)
+              : String(errorPayload),
         };
       }
 
       const parsed = ImproverResultDataSchema.safeParse(payload.data);
       if (!parsed.success) {
-        return {
-          ok: false,
-          error: `Unexpected agent result shape: ${parsed.error.message}`,
-        };
+        return { ok: false, error: `Unexpected agent result shape: ${parsed.error.message}` };
       }
 
       return { ok: true, data: parsed.data };
@@ -1806,10 +1620,7 @@ export class AtlasDaemon {
       try {
         await runtime.shutdown();
       } catch (error) {
-        logger.error("Error shutting down workspace runtime", {
-          error,
-          workspaceId,
-        });
+        logger.error("Error shutting down workspace runtime", { error, workspaceId });
       }
       this.runtimes.delete(workspaceId);
     }
@@ -1831,10 +1642,7 @@ export class AtlasDaemon {
     try {
       await manager.updateWorkspaceStatus(workspaceId, "stopped");
     } catch (error) {
-      logger.warn("Failed to set workspace stopped after destroy", {
-        workspaceId,
-        error,
-      });
+      logger.warn("Failed to set workspace stopped after destroy", { workspaceId, error });
     }
 
     // Clear idle timeout
@@ -1945,10 +1753,7 @@ export class AtlasDaemon {
       if (this.isShuttingDown) return;
       this.isShuttingDown = true;
 
-      logger.info("Daemon received signal, shutting down gracefully", {
-        daemonId,
-        signal,
-      });
+      logger.info("Daemon received signal, shutting down gracefully", { daemonId, signal });
 
       // Handle async shutdown in a promise to ensure proper cleanup
       // Add a timeout to prevent hanging indefinitely
@@ -2082,8 +1887,7 @@ export class AtlasDaemon {
     const resolved = await this.resolveDiscordGatewayCredentials();
     if (!resolved) {
       logger.info("discord_gateway_not_configured", {
-        hint:
-          "Set DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID or declare a discord signal with bot_token/public_key/application_id in workspace.yml",
+        hint: "Set DISCORD_BOT_TOKEN, DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID or declare a discord signal with bot_token/public_key/application_id in workspace.yml",
       });
       return;
     }
@@ -2097,13 +1901,11 @@ export class AtlasDaemon {
     await service.start();
   }
 
-  private async resolveDiscordGatewayCredentials(): Promise<
-    {
-      botToken: string;
-      publicKey: string;
-      applicationId: string;
-    } | null
-  > {
+  private async resolveDiscordGatewayCredentials(): Promise<{
+    botToken: string;
+    publicKey: string;
+    applicationId: string;
+  } | null> {
     const manager = this.workspaceManager;
     const workspaceResolved: {
       workspaceId: string;
@@ -2116,9 +1918,7 @@ export class AtlasDaemon {
         const config = await manager.getWorkspaceConfig(workspace.id);
         const signals = config?.workspace.signals;
         if (!signals) continue;
-        const hasDiscord = Object.values(signals).some((s) =>
-          s.provider === "discord"
-        );
+        const hasDiscord = Object.values(signals).some((s) => s.provider === "discord");
         if (!hasDiscord) continue;
 
         const creds = resolveDiscordCredentials(signals);
@@ -2144,8 +1944,7 @@ export class AtlasDaemon {
         logger.warn("discord_gateway_multi_workspace_conflict", {
           selectedWorkspaceId: first.workspaceId,
           conflictingWorkspaceId: conflict.workspaceId,
-          hint:
-            "Only one Discord bot listener is started per daemon. To run multiple bots, run multiple daemons.",
+          hint: "Only one Discord bot listener is started per daemon. To run multiple bots, run multiple daemons.",
         });
       }
       return first.creds;
@@ -2185,9 +1984,9 @@ export class AtlasDaemon {
     shutdownChunkedUpload();
 
     // Shutdown all workspace runtimes
-    const shutdownPromises = Array.from(this.runtimes.keys()).map((
-      workspaceId,
-    ) => this.destroyWorkspaceRuntime(workspaceId));
+    const shutdownPromises = Array.from(this.runtimes.keys()).map((workspaceId) =>
+      this.destroyWorkspaceRuntime(workspaceId),
+    );
     await Promise.all(shutdownPromises);
 
     // Shutdown StreamRegistry
@@ -2226,10 +2025,7 @@ export class AtlasDaemon {
         try {
           client.controller.close();
         } catch (error) {
-          logger.debug("Error closing SSE client for session", {
-            error,
-            sessionId,
-          });
+          logger.debug("Error closing SSE client for session", { error, sessionId });
         }
       }
     }
@@ -2252,10 +2048,7 @@ export class AtlasDaemon {
       try {
         this.cleanupPlatformSession(sessionId);
       } catch (error) {
-        logger.debug("Error cleaning up platform session", {
-          error,
-          sessionId,
-        });
+        logger.debug("Error cleaning up platform session", { error, sessionId });
       }
     }
     this.platformMcpSessions.clear();
@@ -2374,9 +2167,7 @@ export class AtlasDaemon {
 
     // Remove disconnected clients
     if (disconnectedClients.length > 0) {
-      const remainingClients = clients.filter((c) =>
-        !disconnectedClients.includes(c)
-      );
+      const remainingClients = clients.filter((c) => !disconnectedClients.includes(c));
       if (remainingClients.length === 0) {
         this.sseClients.delete(sessionId);
       } else {
@@ -2404,9 +2195,7 @@ export class AtlasDaemon {
       this.options.sseHeartbeatIntervalMs ?? 30 * 1000,
     );
 
-    logger.info("SSE health check started", {
-      intervalMs: this.options.sseHeartbeatIntervalMs,
-    });
+    logger.info("SSE health check started", { intervalMs: this.options.sseHeartbeatIntervalMs });
   }
 
   /**
@@ -2461,10 +2250,7 @@ export class AtlasDaemon {
         (a, b) => a[1].lastUsed - b[1].lastUsed,
       );
 
-      const toEvict = sortedSessions.slice(
-        0,
-        this.agentSessions.size - this.MAX_AGENT_SESSIONS,
-      );
+      const toEvict = sortedSessions.slice(0, this.agentSessions.size - this.MAX_AGENT_SESSIONS);
 
       logger.warn("Evicting LRU agent sessions due to limit", {
         evictionCount: toEvict.length,
@@ -2526,10 +2312,9 @@ export class AtlasDaemon {
 
     // Enforce session limit (LRU eviction)
     if (this.platformMcpSessions.size > this.MAX_PLATFORM_SESSIONS) {
-      const sortedSessions = Array.from(this.platformMcpSessions.entries())
-        .sort(
-          (a, b) => a[1].lastUsed - b[1].lastUsed,
-        );
+      const sortedSessions = Array.from(this.platformMcpSessions.entries()).sort(
+        (a, b) => a[1].lastUsed - b[1].lastUsed,
+      );
 
       const toEvict = sortedSessions.slice(
         0,
@@ -2553,8 +2338,7 @@ export class AtlasDaemon {
    */
   private performSSEHealthCheck(): void {
     const now = Date.now();
-    const clientTimeoutMs = this.options.sseConnectionTimeoutMs ??
-      5 * 60 * 1000;
+    const clientTimeoutMs = this.options.sseConnectionTimeoutMs ?? 5 * 60 * 1000;
     const streamInactivityMs = 5 * 60 * 1000; // 5 minutes for stream inactivity
     let totalClients = 0;
     let prunedClients = 0;
@@ -2615,14 +2399,9 @@ export class AtlasDaemon {
         } else {
           // Send heartbeat to active clients
           try {
-            const heartbeat = {
-              type: "heartbeat",
-              data: { timestamp: new Date().toISOString() },
-            };
+            const heartbeat = { type: "heartbeat", data: { timestamp: new Date().toISOString() } };
             client.controller.enqueue(
-              new TextEncoder().encode(
-                `data: ${JSON.stringify(heartbeat)}\n\n`,
-              ),
+              new TextEncoder().encode(`data: ${JSON.stringify(heartbeat)}\n\n`),
             );
             client.lastActivity = now;
             activeClients.push(client);
@@ -2635,10 +2414,7 @@ export class AtlasDaemon {
               // Ignore close errors
             }
             prunedClients++;
-            logger.debug("Pruned disconnected SSE client during heartbeat", {
-              sessionId,
-              error,
-            });
+            logger.debug("Pruned disconnected SSE client during heartbeat", { sessionId, error });
           }
         }
       }

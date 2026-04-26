@@ -10,12 +10,7 @@ function makeDefinitionLockfile(): Lockfile {
     mode: "definition",
     workspace: { name: "test-space", version: "1.0.0" },
     primitives: {
-      skills: {
-        "@tempest/example": {
-          hash: "sha256:" + "a".repeat(64),
-          path: "skills/example",
-        },
-      },
+      skills: { "@tempest/example": { hash: "sha256:" + "a".repeat(64), path: "skills/example" } },
       agents: {},
     },
   };
@@ -51,7 +46,10 @@ describe("LockfileSchema", () => {
   });
 
   it("rejects definition-mode lockfile with snapshots section", () => {
-    const bad = { ...makeDefinitionLockfile(), snapshots: { memory: {}, resources: {}, history: null } };
+    const bad = {
+      ...makeDefinitionLockfile(),
+      snapshots: { memory: {}, resources: {}, history: null },
+    };
     const result = LockfileSchema.safeParse(bad);
     expect(result.success).toBe(false);
     if (!result.success) {

@@ -25,10 +25,7 @@ export function createNestedChunkWriter(
 ): { write(chunk: AtlasUIMessageChunk): void } {
   return {
     write(chunk) {
-      writer.write({
-        type: "data-nested-chunk",
-        data: { parentToolCallId, chunk },
-      });
+      writer.write({ type: "data-nested-chunk", data: { parentToolCallId, chunk } });
     },
   };
 }

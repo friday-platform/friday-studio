@@ -36,7 +36,9 @@ export interface ExportGlobalSkillsResult {
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export async function exportGlobalSkills(
@@ -99,7 +101,10 @@ export async function importGlobalSkills(
 
   const actual = `sha256:${await sha256Hex(dbBytes)}`;
   if (actual !== manifest.source.sha256) {
-    return { manifest, status: { kind: "integrity-failed", expected: manifest.source.sha256, actual } };
+    return {
+      manifest,
+      status: { kind: "integrity-failed", expected: manifest.source.sha256, actual },
+    };
   }
 
   let targetExists = false;
@@ -114,7 +119,10 @@ export async function importGlobalSkills(
     // Non-destructive: write the imported DB alongside and let the user merge manually.
     const sideloadedAs = `${opts.skillsDbPath}.imported-${Date.now()}`;
     await writeFile(sideloadedAs, dbBytes);
-    return { manifest, status: { kind: "skipped-existing", targetPath: opts.skillsDbPath, sideloadedAs } };
+    return {
+      manifest,
+      status: { kind: "skipped-existing", targetPath: opts.skillsDbPath, sideloadedAs },
+    };
   }
 
   await writeFile(opts.skillsDbPath, dbBytes);
@@ -123,7 +131,9 @@ export async function importGlobalSkills(
 
 async function buildManifestYaml(manifest: GlobalSkillsManifest): Promise<string> {
   const { stringify } = await import("@std/yaml");
-  const safe = JSON.parse(JSON.stringify(GlobalSkillsManifestSchema.parse(manifest))) as Record<string, unknown>;
+  const safe = JSON.parse(JSON.stringify(GlobalSkillsManifestSchema.parse(manifest))) as Record<
+    string,
+    unknown
+  >;
   return stringify(safe, { lineWidth: 100 });
 }
-

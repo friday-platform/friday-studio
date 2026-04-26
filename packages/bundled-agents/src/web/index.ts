@@ -87,11 +87,7 @@ export const webAgent = createAgent<string, WebAgentResult>({
           stopWhen: stepCountIs(300),
           maxRetries: 3,
           abortSignal,
-          providerOptions: {
-            anthropic: {
-              thinking: { type: "enabled", budgetTokens: 4000 },
-            },
-          },
+          providerOptions: { anthropic: { thinking: { type: "enabled", budgetTokens: 4000 } } },
         },
         stream,
       });

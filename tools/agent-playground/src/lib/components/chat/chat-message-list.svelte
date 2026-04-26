@@ -1,10 +1,10 @@
 <script lang="ts">
   import { DropdownMenu, markdownToHTML } from "@atlas/ui";
   import { tick } from "svelte";
-  import ConnectService from "./connect-service.svelte";
-  import { jsonHighlighter } from "./json-highlighter";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
+  import ToolCallCard from "./tool-call-card.svelte";
+  import { isError, isInProgress, outputSummary } from "./tool-call-utils";
 
   // Message timestamp for the per-message "…" menu.
   //   • same calendar day → "Today, 12:31 PM"
@@ -100,19 +100,6 @@
     }
   });
 
-  /**
-   * Is this tool call still running? Covers the two in-progress states the
-   * AI SDK v6 stream processor emits before the final `output-available`
-   * or `output-error`.
-   */
-  function isInProgress(state: ToolCallDisplay["state"]): boolean {
-    return state === "input-streaming" || state === "input-available";
-  }
-
-  function isError(state: ToolCallDisplay["state"]): boolean {
-    return state === "output-error" || state === "output-denied";
-  }
-
   /** Threshold above which multi-tool runs collapse into a summary block. */
   const COLLAPSE_THRESHOLD = 3;
 
@@ -138,41 +125,6 @@
   }
 
   /**
-   * Per-delegate latch keyed by the delegate's `toolCallId`. Mirrors the
-   * `userToggledGroups` pattern but scoped to a single delegate card so
-   * one delegate's toggle doesn't affect a sibling delegate in the same
-   * message. Without this, the auto-collapse-when-children-finish behavior
-   * would steamroll a user who manually expanded a completed delegate to
-   * inspect what its sub-agent did.
-   */
-  let userToggledDelegates: Map<string, boolean> = $state(new Map());
-
-  function handleDelegateToggleClick(
-    e: MouseEvent,
-    delegateToolCallId: string,
-    childrenRunning: boolean,
-  ) {
-    e.preventDefault();
-    const prev = userToggledDelegates.get(delegateToolCallId);
-    const currentOpen = prev ?? childrenRunning;
-    const next = new Map(userToggledDelegates);
-    next.set(delegateToolCallId, !currentOpen);
-    userToggledDelegates = next;
-  }
-
-  /**
-   * True iff any reconstructed delegate child (at any nesting depth) is
-   * still mid-execution. Drives the auto-expand behavior on a delegate
-   * `<details>` — open while any descendant is running, collapse once
-   * the entire subtree settles.
-   */
-  function childrenAnyRunning(children: ToolCallDisplay[]): boolean {
-    return children.some(
-      (c) => isInProgress(c.state) || (c.children ? childrenAnyRunning(c.children) : false),
-    );
-  }
-
-  /**
    * Build a short summary for a collapsed tool-call group. Surfaces the
    * total, any errors or running calls, and the most recent tool name so
    * the user knows at a glance what happened without expanding.
@@ -186,84 +138,6 @@
     if (errored > 0) parts.push(`${errored} failed`);
     if (lastName) parts.push(`last: ${lastName}`);
     return parts.join(" · ");
-  }
-
-  /**
-   * Format a millisecond duration as a human-readable string.
-   *   < 1s → "340ms"
-   *   ≥ 1s → "2.3s"
-   */
-  function formatDuration(ms: number): string {
-    if (ms < 1000) return `${Math.round(ms)}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-  }
-
-  /**
-   * Client-side elapsed-time tracking for in-progress tool calls.
-   * Keyed by toolCallId; stores the timestamp when the call entered an
-   * in-progress state. A reactive `tick` re-computes every 500ms so the
-   * UI shows "running… (3.2s)" live.
-   */
-  const callStartTimes = $state(new Map<string, number>());
-  let elapsedTick = $state(0);
-
-  $effect(() => {
-    const anyRunning = messages.some((m) =>
-      m.toolCalls?.some((c) => isInProgress(c.state)),
-    );
-    if (!anyRunning) return;
-    const interval = setInterval(() => {
-      elapsedTick++;
-    }, 500);
-    return () => clearInterval(interval);
-  });
-
-  function getElapsedMs(call: ToolCallDisplay): number | undefined {
-    // Touch elapsedTick so Svelte re-runs this when the interval fires.
-    void elapsedTick;
-    if (!isInProgress(call.state)) return undefined;
-    const existing = callStartTimes.get(call.toolCallId);
-    if (existing) return Date.now() - existing;
-    callStartTimes.set(call.toolCallId, Date.now());
-    return 0;
-  }
-
-  function getDurationStatus(call: ToolCallDisplay): string {
-    const elapsed = getElapsedMs(call);
-    if (elapsed !== undefined) {
-      return `running… (${formatDuration(elapsed)})`;
-    }
-    if (call.durationMs && call.durationMs > 0) {
-      return `${outputSummary(call.toolName, call.output)} · ${formatDuration(call.durationMs)}`;
-    }
-    return outputSummary(call.toolName, call.output);
-  }
-
-  /**
-   * Copy raw JSON/string content to the clipboard, showing a brief
-   * "Copied!" confirmation on the triggering button.
-   */
-  function copyToClipboard(
-    value: unknown,
-    btn: HTMLButtonElement,
-  ) {
-    let text: string;
-    if (typeof value === "string") {
-      text = value;
-    } else {
-      try {
-        text = JSON.stringify(value, null, 2);
-      } catch {
-        text = String(value);
-      }
-    }
-    void navigator.clipboard.writeText(text).then(() => {
-      const original = btn.textContent ?? "Copy";
-      btn.textContent = "Copied!";
-      setTimeout(() => {
-        btn.textContent = original;
-      }, 1500);
-    });
   }
 
   /**
@@ -323,286 +197,10 @@
     };
   }
 
-  /**
-   * Render a tool's input arguments as a short one-liner for the tool
-   * card label. Picks the most informative field per tool so the user
-   * sees "web_fetch(blizzard.com)" instead of "web_fetch" or a full JSON
-   * dump. Unknown tools fall back to the first string-valued arg.
-   */
-  function argPreview(toolName: string, input: unknown): string {
-    if (typeof input !== "object" || input === null) return "";
-    const obj = input as Record<string, unknown>;
-    if (toolName === "web_fetch" && typeof obj.url === "string") {
-      try {
-        return new URL(obj.url).hostname;
-      } catch {
-        return obj.url.slice(0, 40);
-      }
-    }
-    if (toolName === "web_search" && typeof obj.query === "string") {
-      return obj.query.slice(0, 60);
-    }
-    if (toolName === "run_code" && typeof obj.language === "string") {
-      return String(obj.language);
-    }
-    if (
-      (toolName === "read_file" || toolName === "write_file" || toolName === "list_files") &&
-      typeof obj.path === "string"
-    ) {
-      return obj.path;
-    }
-    if (toolName === "delegate" && typeof obj.goal === "string") {
-      return obj.goal.length > 60 ? `${obj.goal.slice(0, 60)}…` : obj.goal;
-    }
-    if (toolName === "load_skill" && typeof obj.name === "string") {
-      return obj.name;
-    }
-    if (toolName === "memory_save" && typeof obj.text === "string") {
-      return obj.text.length > 60 ? `${obj.text.slice(0, 60)}…` : obj.text;
-    }
-    // Generic fallback — first string value.
-    for (const v of Object.values(obj)) {
-      if (typeof v === "string" && v.length > 0) {
-        return v.length > 60 ? `${v.slice(0, 60)}…` : v;
-      }
-    }
-    return "";
-  }
 
-  /**
-   * Short, user-facing description of what a tool did once it finished.
-   * Summarizes the most useful field per tool. Detailed output stays in
-   * the `<details>` drawer for on-demand inspection.
-   */
-  function outputSummary(toolName: string, output: unknown): string {
-    if (typeof output !== "object" || output === null) return "";
-    const obj = output as Record<string, unknown>;
-    // Error shape — every tool returns { error: string } on failure.
-    if (typeof obj.error === "string") return obj.error;
-    if (toolName === "web_fetch") {
-      const url = typeof obj.sourceUrl === "string" ? obj.sourceUrl : "";
-      const fromCache = obj.fromCache === true ? " (cached)" : "";
-      if (url) {
-        try {
-          return `${new URL(url).hostname}${fromCache}`;
-        } catch {
-          return `${url.slice(0, 40)}${fromCache}`;
-        }
-      }
-    }
-    if (toolName === "web_search" && Array.isArray(obj.results)) {
-      return `${obj.results.length} result${obj.results.length === 1 ? "" : "s"}`;
-    }
-    if (toolName === "run_code" && typeof obj.duration_ms === "number") {
-      const exitCode = typeof obj.exit_code === "number" ? obj.exit_code : 0;
-      return exitCode === 0
-        ? `exit 0 · ${obj.duration_ms} ms`
-        : `exit ${exitCode} · ${obj.duration_ms} ms`;
-    }
-    if (toolName === "read_file" && typeof obj.size_bytes === "number") {
-      return `${obj.size_bytes} bytes`;
-    }
-    if (toolName === "write_file" && typeof obj.bytes_written === "number") {
-      return `${obj.bytes_written} bytes written`;
-    }
-    if (toolName === "list_files" && Array.isArray(obj.entries)) {
-      return `${obj.entries.length} entr${obj.entries.length === 1 ? "y" : "ies"}`;
-    }
-    return "done";
-  }
-
-  /** Formatter for the collapsible raw output. Handles strings + JSON. */
-  /** Pretty-print and syntax-highlight JSON for the details panel. */
-  function formatRawOutput(output: unknown): string {
-    let jsonStr: string;
-    if (typeof output === "string") {
-      try {
-        const parsed: unknown = JSON.parse(output);
-        jsonStr = JSON.stringify(parsed, null, 2);
-      } catch {
-        return output.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    } else {
-      try {
-        jsonStr = JSON.stringify(output, null, 2);
-      } catch {
-        return String(output).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      }
-    }
-    return jsonHighlighter.codeToHtml(jsonStr, { lang: "json", theme: "atlas-json" });
-  }
 </script>
 
-<!--
-  Single-card render for a tool call. Extracted so the two surrounding
-  branches (collapsed group vs inline list) can share the same body
-  without duplication. Recurses into `call.children` for delegate cards
-  so a delegate's reconstructed sub-agent tool calls render nested
-  beneath its header.
--->
-{#snippet toolCardHeaderContent(call: ToolCallDisplay)}
-  <span class="tool-card-icon" aria-hidden="true">
-    {#if isInProgress(call.state)}
-      <span class="spinner"></span>
-    {:else if isError(call.state)}
-      ✗
-    {:else}
-      ✓
-    {/if}
-  </span>
-  <span class="tool-card-name">{call.toolName}</span>
-  <span class="tool-card-arg">{argPreview(call.toolName, call.input)}</span>
-  <span class="tool-card-status">
-    {#if isInProgress(call.state)}
-      {getDurationStatus(call)}
-    {:else if call.state === "output-available"}
-      {getDurationStatus(call)}
-    {:else if call.state === "output-error"}
-      {call.errorText ?? "failed"}
-      {#if call.durationMs && call.durationMs > 0}
-        <span class="duration-badge">· {formatDuration(call.durationMs)}</span>
-      {/if}
-    {:else if call.state === "output-denied"}
-      denied
-    {:else if call.state === "approval-requested"}
-      needs approval
-    {:else}
-      {call.state}
-    {/if}
-  </span>
-{/snippet}
 
-{#snippet jsonCopyBlock(label: string, data: unknown)}
-  <div class="json-copy-wrapper">
-    <button
-      class="json-copy-btn"
-      aria-label={`Copy ${label}`}
-      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-    >
-      Copy
-    </button>
-    <pre>{@html formatRawOutput(data)}</pre>
-  </div>
-{/snippet}
-
-{#snippet toolCardOutputDrawer(call: ToolCallDisplay)}
-  {@const hasInput =
-    call.input !== undefined &&
-    typeof call.input === "object" &&
-    call.input !== null &&
-    Object.keys(call.input).length > 0}
-  {@const hasOutput = call.output !== undefined}
-  {@const hasError = call.errorText !== undefined}
-  {#if hasInput || hasOutput || hasError}
-    <div class="tool-card-drawer">
-      {#if hasInput}
-        <details class="tool-card-details">
-          <summary>input</summary>
-          {@render jsonCopyBlock("input", call.input)}
-        </details>
-      {/if}
-      {#if hasOutput}
-        <details class="tool-card-details">
-          <summary>output</summary>
-          {@render jsonCopyBlock("output", call.output)}
-        </details>
-      {/if}
-      {#if hasError}
-        <details class="tool-card-details" open>
-          <summary>error</summary>
-          <div class="json-copy-wrapper">
-            <button
-              class="json-copy-btn"
-              aria-label="Copy error"
-              onclick={(e: MouseEvent) => copyToClipboard(call.errorText, e.currentTarget as HTMLButtonElement)}
-            >
-              Copy
-            </button>
-            <pre class="error-text">{call.errorText}</pre>
-          </div>
-        </details>
-      {/if}
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet toolCard(call: ToolCallDisplay)}
-  {@const provider =
-    call.toolName === "connect_service" &&
-    call.input != null &&
-    typeof call.input === "object" &&
-    "provider" in call.input &&
-    typeof call.input.provider === "string"
-      ? call.input.provider
-      : null}
-  {#if provider != null}
-    <div class="tool-card connect-service">
-      <ConnectService
-        {provider}
-        onConnected={() => onCredentialConnected?.(provider)}
-      />
-    </div>
-  {:else if call.children && call.children.length > 0}
-    <!--
-      Delegate card: wrap the header in <summary> so clicking it toggles
-      visibility of the reconstructed children. Auto-expand while any child
-      is running so the user can watch sub-agent progress live; collapse
-      once all children settle. `userToggledDelegates` latches a manual
-      click so the auto-collapse on completion doesn't slam the drawer
-      shut while the user is reading.
-    -->
-    {@const childrenRunning = childrenAnyRunning(call.children)}
-    {@const userChoice = userToggledDelegates.get(call.toolCallId)}
-    {@const isOpen = userChoice ?? childrenRunning}
-    <details
-      class="tool-card with-children"
-      class:in-progress={isInProgress(call.state)}
-      class:error={isError(call.state)}
-      open={isOpen}
-    >
-      <summary
-        class="tool-card-header"
-        onclick={(e) => handleDelegateToggleClick(e, call.toolCallId, childrenRunning)}
-      >
-        {@render toolCardHeaderContent(call)}
-      </summary>
-      {#if call.reasoning || call.progress}
-        <div class="delegate-ephemeral">
-          {#if call.reasoning}
-            <div class="reasoning-block">
-              <span class="reasoning-label">Reasoning</span>
-              <pre>{call.reasoning}</pre>
-            </div>
-          {/if}
-          {#if call.progress}
-            <div class="progress-list">
-              {#each call.progress as line}
-                <span class="progress-line">{line}</span>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <div class="tool-call-children">
-        {#each call.children as child (child.toolCallId || child.toolName)}
-          {@render toolCard(child)}
-        {/each}
-      </div>
-      {@render toolCardOutputDrawer(call)}
-    </details>
-  {:else}
-    <div
-      class="tool-card"
-      class:in-progress={isInProgress(call.state)}
-      class:error={isError(call.state)}
-    >
-      <div class="tool-card-header">
-        {@render toolCardHeaderContent(call)}
-      </div>
-      {@render toolCardOutputDrawer(call)}
-    </div>
-  {/if}
-{/snippet}
 
 <div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
   {#each messages as message (message.id)}
@@ -645,27 +243,34 @@
                   class="tool-call-group-summary"
                   onclick={(e) => handleGroupToggleClick(e, message.id, anyRunning)}
                 >
-                  <span class="tool-card-icon" aria-hidden="true">
+                  <span class="group-icon" aria-hidden="true">
                     {#if anyRunning}
-                      <span class="spinner"></span>
+                      <span class="group-pulse"></span>
                     {:else if calls.some((c) => isError(c.state))}
-                      ✗
+                      <span class="group-error-mark">✗</span>
                     {:else}
-                      ✓
+                      <span class="group-success-mark">✓</span>
                     {/if}
                   </span>
                   <span class="tool-group-label">{toolGroupSummary(calls)}</span>
+                  <span class="group-chevron" aria-hidden="true">
+                    {#if isOpen}
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
+                    {:else}
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
+                    {/if}
+                  </span>
                 </summary>
                 <div class="tool-call-list">
                   {#each calls as call (call.toolCallId || call.toolName)}
-                    {@render toolCard(call)}
+                    <ToolCallCard {call} {onCredentialConnected} />
                   {/each}
                 </div>
               </details>
             {:else}
               <div class="tool-call-list">
                 {#each calls as call (call.toolCallId || call.toolName)}
-                  {@render toolCard(call)}
+                  <ToolCallCard {call} {onCredentialConnected} />
                 {/each}
               </div>
             {/if}
@@ -1059,7 +664,7 @@
     text-align: center;
   }
 
-  /* ─── Tool-call cards ───────────────────────────────────────────────── */
+  /* ─── Tool-call list ───────────────────────────────────────────────── */
 
   .tool-call-list {
     display: flex;
@@ -1069,18 +674,16 @@
 
   /* Collapsible group wrapper (shown when a message has ≥ 3 tool calls). */
   .tool-call-group {
-    background-color: light-dark(hsl(220 16% 95%), color-mix(in srgb, var(--color-surface-3), transparent 30%));
+    background-color: var(--surface-dark);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
-  }
-
-  .tool-call-group[open] {
-    padding-block-end: var(--size-1-5);
+    overflow: hidden;
   }
 
   .tool-call-group-summary {
     align-items: center;
-    color: var(--color-text);
+    background-color: var(--surface);
+    color: var(--text);
     cursor: pointer;
     display: flex;
     font-size: var(--font-size-1);
@@ -1094,309 +697,71 @@
     display: none;
   }
 
-  .tool-call-group-summary::before {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    content: "▸";
+  .group-icon {
+    display: inline-flex;
     flex-shrink: 0;
-    font-size: 10px;
-    transition: transform 100ms ease;
+    inline-size: 14px;
+    block-size: 14px;
+    justify-content: center;
+    align-items: center;
   }
 
-  .tool-call-group[open] > .tool-call-group-summary::before {
-    transform: rotate(90deg);
+  .group-pulse {
+    animation: group-pulse 1.2s ease-in-out infinite;
+    background-color: var(--blue-primary);
+    border-radius: 50%;
+    display: inline-block;
+    inline-size: 8px;
+    block-size: 8px;
+  }
+
+  @keyframes group-pulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  .group-error-mark {
+    color: var(--red-primary);
+    font-size: 12px;
+    font-weight: var(--font-weight-6);
+  }
+
+  .group-success-mark {
+    color: var(--green-primary);
+    font-size: 12px;
+    font-weight: var(--font-weight-6);
   }
 
   .tool-group-label {
-    color: light-dark(hsl(220 10% 40%), color-mix(in srgb, var(--color-text), transparent 30%));
+    color: var(--text-faded);
+    flex: 1;
     font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-1);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* When nested inside the group, remove redundant outer card styles. */
+  .group-chevron {
+    color: var(--text-faded);
+    display: inline-flex;
+    flex-shrink: 0;
+    inline-size: 12px;
+    block-size: 12px;
+    transition: transform 150ms ease;
+  }
+
+  .tool-call-group[open] > .tool-call-group-summary .group-chevron {
+    transform: rotate(90deg);
+  }
+
   .tool-call-group[open] > .tool-call-list {
     border-block-start: 1px solid var(--color-border-1);
     padding: var(--size-1-5);
   }
 
-  .tool-card {
-    background-color: light-dark(hsl(220 16% 95%), color-mix(in srgb, var(--color-surface-3), transparent 30%));
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    font-size: var(--font-size-1);
-    padding: var(--size-1-5) var(--size-2-5);
-  }
-
-  .tool-card.in-progress {
-    border-color: light-dark(hsl(217 80% 70%), color-mix(in srgb, var(--color-info), transparent 50%));
-    background-color: light-dark(hsl(217 80% 95%), color-mix(in srgb, var(--color-info), transparent 90%));
-  }
-
-  .tool-card.error {
-    border-color: light-dark(hsl(10 80% 70%), color-mix(in srgb, var(--color-error), transparent 50%));
-    background-color: light-dark(hsl(10 80% 95%), color-mix(in srgb, var(--color-error), transparent 90%));
-  }
-
-  .tool-card.connect-service {
-    background: transparent;
-    border: none;
-    padding: 0;
-  }
-
-  /* Delegate cards reuse `.tool-card` chrome but render as a <details> so
-     their reconstructed children can be folded/expanded under the header. */
-  .tool-card.with-children {
-    padding: 0;
-  }
-
-  .tool-card.with-children > summary.tool-card-header {
-    cursor: pointer;
-    list-style: none;
-    padding: var(--size-1-5) var(--size-2-5);
-    user-select: none;
-  }
-
-  .tool-card.with-children > summary.tool-card-header::-webkit-details-marker {
-    display: none;
-  }
-
-  /* Disclosure caret matches the `.tool-call-group-summary` pattern so the
-     two collapsible affordances feel like the same control. */
-  .tool-card.with-children > summary.tool-card-header::before {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    content: "▸";
-    flex-shrink: 0;
-    font-size: 10px;
-    transition: transform 100ms ease;
-  }
-
-  .tool-card.with-children[open] > summary.tool-card-header::before {
-    transform: rotate(90deg);
-  }
-
-  /* Nested children container — indented and bordered on the leading edge
-     so the delegation boundary is visually obvious.
-
-     Chromium's `<details>` does NOT apply a `display: none` UA rule to
-     non-summary children when closed — it relies on shadow-DOM slotting,
-     which our light-DOM-rendered children bypass. Explicitly hide them
-     when the delegate is collapsed so the auto-collapse-after-done
-     behavior is actually visible. */
-  .tool-card.with-children > .tool-call-children {
-    border-inline-start: 2px solid var(--color-border-2, var(--color-border-1));
-    display: none;
-    flex-direction: column;
-    gap: var(--size-1);
-    margin-inline-start: var(--size-3);
-    padding: var(--size-1-5) 0 var(--size-1-5) var(--size-2);
-  }
-  .tool-card.with-children[open] > .tool-call-children {
-    display: flex;
-  }
-
-  .tool-card-header {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-    min-inline-size: 0;
-  }
-
-  .tool-card-icon {
-    display: inline-flex;
-    flex-shrink: 0;
-    inline-size: 14px;
-    justify-content: center;
-  }
-
-  .tool-card-name {
-    color: var(--color-text);
-    flex-shrink: 0;
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-weight: var(--font-weight-5);
-  }
-
-  .tool-card-arg {
-    color: light-dark(hsl(220 10% 40%), color-mix(in srgb, var(--color-text), transparent 35%));
-    flex-shrink: 0;
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    max-inline-size: 40ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .tool-card-status {
-    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
-    flex: 1;
-    font-style: italic;
-    min-inline-size: 0;
-    overflow: hidden;
-    text-align: end;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .tool-card-details {
-    margin-block-start: var(--size-1-5);
-  }
-
-  .tool-card-details > summary {
-    color: light-dark(hsl(220 10% 50%), color-mix(in srgb, var(--color-text), transparent 50%));
-    cursor: pointer;
-    font-size: var(--font-size-0, 11px);
-    user-select: none;
-  }
-
-  /* ─── JSON copy button (tool-card drawer) ─────────────────────────── */
-
-  .json-copy-wrapper {
-    position: relative;
-  }
-
-  .json-copy-wrapper pre {
-    background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 30%));
-    border-radius: var(--radius-1);
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
-    margin-block-start: var(--size-1);
-    max-block-size: 400px;
-    overflow: auto;
-    padding: var(--size-2);
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .json-copy-btn {
-    background-color: light-dark(hsl(220 12% 88%), hsl(220 10% 22%));
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 11px;
-    inset-block-start: var(--size-1);
-    inset-inline-end: var(--size-1);
-    opacity: 0;
-    padding: 2px 8px;
-    position: absolute;
-    transition: opacity 100ms ease, color 100ms ease, background-color 100ms ease;
-    z-index: 1;
-  }
-
-  .json-copy-wrapper:hover .json-copy-btn {
-    opacity: 1;
-  }
-
-  .json-copy-btn:hover {
-    background-color: light-dark(hsl(220 12% 82%), hsl(220 10% 28%));
-    color: var(--color-text);
-  }
-
-  /* ─── Delegate ephemeral (reasoning + progress) ─────────────────────── */
-
-  .delegate-ephemeral {
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1-5);
-    padding: var(--size-2) var(--size-2-5);
-  }
-
-  .reasoning-block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-  }
-
-  .reasoning-label {
-    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-5);
-    text-transform: uppercase;
-  }
-
-  .reasoning-block pre {
-    background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 30%));
-    border-radius: var(--radius-1);
-    color: light-dark(hsl(220 10% 35%), color-mix(in srgb, var(--color-text), transparent 25%));
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-1);
-    line-height: 1.45;
-    margin: 0;
-    max-block-size: 200px;
-    overflow: auto;
-    padding: var(--size-1-5);
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .progress-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-0-5);
-  }
-
-  .progress-line {
-    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
-    font-style: italic;
-  }
-
-  /* ─── Tool card drawer (input/output/error details) ──────────────────── */
-
-  .tool-card-drawer {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-    padding: 0 var(--size-2-5) var(--size-1-5);
-  }
-
-  .tool-card.with-children > .tool-card-drawer {
-    display: none;
-  }
-
-  .tool-card.with-children[open] > .tool-card-drawer {
-    display: flex;
-  }
-
-  .tool-card-drawer pre.error-text {
-    color: var(--color-error);
-  }
-
-  /* ─── Spinner ───────────────────────────────────────────────────────── */
-
-  .spinner {
-    animation: tool-spin 0.8s linear infinite;
-    border: 2px solid light-dark(hsl(217 60% 80%), color-mix(in srgb, var(--color-info), transparent 60%));
-    border-block-start-color: var(--color-info);
-    border-radius: 50%;
-    display: inline-block;
-    inline-size: 10px;
-    block-size: 10px;
-  }
-
-  @keyframes tool-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* ─── Shiki JSON highlighting ────────────────────────────────────────── */
-
-  .tool-card-details :global(pre.shiki) {
-    background: transparent !important;
-    margin: 0;
-  }
-
-  .tool-card-details :global(pre.shiki code) {
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
-  }
-
   /* ─── Inline images ─────────────────────────────────────────────────── */
+
 
   .message-images {
     display: flex;
@@ -1411,15 +776,6 @@
     max-block-size: 300px;
     max-inline-size: 100%;
     object-fit: contain;
-  }
-
-  /* ─── Duration badge ────────────────────────────────────────────────── */
-
-  .duration-badge {
-    color: light-dark(hsl(220 10% 45%), color-mix(in srgb, var(--color-text), transparent 45%));
-    font-variant-numeric: tabular-nums;
-    margin-inline-start: var(--size-1);
-    opacity: 0.75;
   }
 
   /* ─── Empty state ───────────────────────────────────────────────────── */

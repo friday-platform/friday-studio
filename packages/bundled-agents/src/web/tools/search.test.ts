@@ -112,7 +112,12 @@ function setupSuccessPipeline() {
   mockExecuteSearch.mockResolvedValue({
     search_id: "search-1",
     results: [
-      { url: "https://example.com/a", title: "Result A", excerpts: ["Content A"], publish_date: "2026-04-20" },
+      {
+        url: "https://example.com/a",
+        title: "Result A",
+        excerpts: ["Content A"],
+        publish_date: "2026-04-20",
+      },
       { url: "https://example.com/b", title: "Result B", excerpts: ["Content B"] },
     ],
     usage: { totalTokens: 100 },
@@ -168,10 +173,7 @@ describe("createSearchTool", () => {
       url: "https://example.com/a",
       publishDate: "2026-04-20",
     });
-    expect(parsed.sources[1]).toMatchObject({
-      title: "Result B",
-      url: "https://example.com/b",
-    });
+    expect(parsed.sources[1]).toMatchObject({ title: "Result B", url: "https://example.com/b" });
     expect(parsed.usage).toEqual({ totalTokens: 100 });
   });
 

@@ -15,10 +15,7 @@ import { ChatSdkStateAdapter } from "@atlas/core/chat/chat-sdk-state-adapter";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { fetchLinkCredential } from "@atlas/core/mcp-registry/credential-resolver";
 import { createLogger } from "@atlas/logger";
-import {
-  signalToStream,
-  type TriggerFn,
-} from "@atlas/workspace/signal-to-stream";
+import { signalToStream, type TriggerFn } from "@atlas/workspace/signal-to-stream";
 import type { Message, StreamEvent, Thread } from "chat";
 import { Chat } from "chat";
 import { z } from "zod";
@@ -29,20 +26,14 @@ import {
 } from "../services/slack-credentials.ts";
 import { isClientSafeEvent } from "../stream-event-filter.ts";
 import type { StreamRegistry } from "../stream-registry.ts";
-import {
-  buildChatSdkAdapters,
-  type PlatformCredentials,
-} from "./adapter-factory.ts";
+import { buildChatSdkAdapters, type PlatformCredentials } from "./adapter-factory.ts";
 
 const logger = createLogger({ component: "chat-sdk-instance" });
 
 export interface ChatSdkInstanceConfig {
   workspaceId: string;
   userId: string;
-  signals?: Record<
-    string,
-    { provider?: string; config?: Record<string, unknown> }
-  >;
+  signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>;
   streamRegistry: StreamRegistry;
   triggerFn: TriggerFn;
   exposeKernel?: boolean;
@@ -68,10 +59,7 @@ export interface ResolvedCredentials {
  */
 export async function resolvePlatformCredentials(
   workspaceId: string,
-  signals: Record<
-    string,
-    { provider?: string; config?: Record<string, unknown> }
-  >,
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
 ): Promise<ResolvedCredentials[]> {
   const resolved: ResolvedCredentials[] = [];
 
@@ -102,9 +90,7 @@ export async function resolvePlatformCredentials(
   // The outer try/catch is defense-in-depth: even when a slack signal is
   // present, a transient Link 5xx should downgrade to a warn, not disable
   // every chat adapter on the workspace.
-  const hasSlackSignal = Object.values(signals).some((s) =>
-    s?.provider === "slack"
-  );
+  const hasSlackSignal = Object.values(signals).some((s) => s?.provider === "slack");
   if (hasSlackSignal) {
     try {
       const slackLinkCreds = await resolveSlackFromLink(workspaceId);
@@ -121,10 +107,7 @@ export async function resolvePlatformCredentials(
 }
 
 function resolveTelegramCredentials(
-  signals: Record<
-    string,
-    { provider?: string; config?: Record<string, unknown> }
-  >,
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
 ): ResolvedCredentials | null {
   for (const signal of Object.values(signals)) {
     if (signal.provider !== "telegram") continue;
@@ -143,9 +126,7 @@ function resolveTelegramCredentials(
       return null;
     }
 
-    const webhookSecret = parsed.data.webhook_secret ??
-      process.env.TELEGRAM_WEBHOOK_SECRET ??
-      "";
+    const webhookSecret = parsed.data.webhook_secret ?? process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
 
     return {
       credentials: {
@@ -161,10 +142,7 @@ function resolveTelegramCredentials(
 }
 
 function resolveWhatsappCredentials(
-  signals: Record<
-    string,
-    { provider?: string; config?: Record<string, unknown> }
-  >,
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
 ): ResolvedCredentials | null {
   for (const signal of Object.values(signals)) {
     if (signal.provider !== "whatsapp") continue;
@@ -175,13 +153,10 @@ function resolveWhatsappCredentials(
       continue;
     }
 
-    const accessToken = parsed.data.access_token ??
-      process.env.WHATSAPP_ACCESS_TOKEN;
+    const accessToken = parsed.data.access_token ?? process.env.WHATSAPP_ACCESS_TOKEN;
     const appSecret = parsed.data.app_secret ?? process.env.WHATSAPP_APP_SECRET;
-    const phoneNumberId = parsed.data.phone_number_id ??
-      process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const verifyToken = parsed.data.verify_token ??
-      process.env.WHATSAPP_VERIFY_TOKEN;
+    const phoneNumberId = parsed.data.phone_number_id ?? process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const verifyToken = parsed.data.verify_token ?? process.env.WHATSAPP_VERIFY_TOKEN;
 
     if (!accessToken || !appSecret || !phoneNumberId || !verifyToken) {
       const missing: string[] = [];
@@ -196,13 +171,7 @@ function resolveWhatsappCredentials(
     }
 
     return {
-      credentials: {
-        kind: "whatsapp",
-        accessToken,
-        appSecret,
-        phoneNumberId,
-        verifyToken,
-      },
+      credentials: { kind: "whatsapp", accessToken, appSecret, phoneNumberId, verifyToken },
       credentialId: `whatsapp:${phoneNumberId}`,
     };
   }
@@ -229,8 +198,7 @@ export function resolveDiscordCredentials(
 
     const cfg = signal.config ?? {};
     const botToken =
-      (typeof cfg.bot_token === "string" ? cfg.bot_token : null) ??
-      process.env.DISCORD_BOT_TOKEN;
+      (typeof cfg.bot_token === "string" ? cfg.bot_token : null) ?? process.env.DISCORD_BOT_TOKEN;
     const publicKey =
       (typeof cfg.public_key === "string" ? cfg.public_key : null) ??
       process.env.DISCORD_PUBLIC_KEY;
@@ -256,10 +224,7 @@ export function resolveDiscordCredentials(
 }
 
 function resolveTeamsCredentials(
-  signals: Record<
-    string,
-    { provider?: string; config?: Record<string, unknown> }
-  >,
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
 ): ResolvedCredentials | null {
   for (const signal of Object.values(signals)) {
     if (signal.provider !== "teams") continue;
@@ -271,10 +236,8 @@ function resolveTeamsCredentials(
     }
 
     const appId = parsed.data.app_id ?? process.env.TEAMS_APP_ID;
-    const appPassword = parsed.data.app_password ??
-      process.env.TEAMS_APP_PASSWORD;
-    const appTenantId = parsed.data.app_tenant_id ??
-      process.env.TEAMS_APP_TENANT_ID;
+    const appPassword = parsed.data.app_password ?? process.env.TEAMS_APP_PASSWORD;
+    const appTenantId = parsed.data.app_tenant_id ?? process.env.TEAMS_APP_TENANT_ID;
     // appType also has an env fallback so env-only SingleTenant setups work
     // without a workspace.yml config block — otherwise the default
     // (MultiTenant) silently wins and JWT validation fails against the wrong
@@ -296,9 +259,7 @@ function resolveTeamsCredentials(
       if (!appId) missing.push("app_id / TEAMS_APP_ID");
       if (!appPassword) missing.push("app_password / TEAMS_APP_PASSWORD");
       if (requiresTenantId && !appTenantId) {
-        missing.push(
-          "app_tenant_id / TEAMS_APP_TENANT_ID (required for SingleTenant)",
-        );
+        missing.push("app_tenant_id / TEAMS_APP_TENANT_ID (required for SingleTenant)");
       }
       logger.debug("teams_missing_credentials", { missing });
       return null;
@@ -319,10 +280,7 @@ function resolveTeamsCredentials(
 }
 
 function resolveSlackFromSignals(
-  signals: Record<
-    string,
-    { provider?: string; config?: Record<string, unknown> }
-  >,
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
 ): ResolvedCredentials | null {
   for (const signal of Object.values(signals)) {
     if (signal.provider !== "slack") continue;
@@ -341,12 +299,10 @@ function resolveSlackFromSignals(
       return null;
     }
 
-    const signingSecret = parsed.data.signing_secret ??
-      process.env.SLACK_SIGNING_SECRET;
+    const signingSecret = parsed.data.signing_secret ?? process.env.SLACK_SIGNING_SECRET;
     if (!signingSecret) {
       logger.debug("slack_signal_no_signing_secret", {
-        hint:
-          "Set signing_secret in signal config or SLACK_SIGNING_SECRET env var",
+        hint: "Set signing_secret in signal config or SLACK_SIGNING_SECRET env var",
       });
       return null;
     }
@@ -361,14 +317,11 @@ function resolveSlackFromSignals(
   return null;
 }
 
-async function resolveSlackFromLink(
-  workspaceId: string,
-): Promise<ResolvedCredentials | null> {
-  const linkServiceUrl = process.env.LINK_SERVICE_URL ??
-    "http://localhost:3100";
-  const url = `${linkServiceUrl}/internal/v1/slack-apps/by-workspace/${
-    encodeURIComponent(workspaceId)
-  }`;
+async function resolveSlackFromLink(workspaceId: string): Promise<ResolvedCredentials | null> {
+  const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+  const url = `${linkServiceUrl}/internal/v1/slack-apps/by-workspace/${encodeURIComponent(
+    workspaceId,
+  )}`;
 
   const headers: Record<string, string> = {};
   if (process.env.LINK_DEV_MODE !== "true") {
@@ -403,26 +356,18 @@ async function resolveSlackFromLink(
     );
   }
 
-  const { credential_id, app_id } = ByWorkspaceResponseSchema.parse(
-    await res.json(),
-  );
+  const { credential_id, app_id } = ByWorkspaceResponseSchema.parse(await res.json());
 
   const credential = await fetchLinkCredential(credential_id, logger);
   const secret = SlackCredentialSecretSchema.parse(credential.secret);
 
   if (secret.access_token === "pending") {
-    logger.debug("chat_sdk_credential_pending", {
-      workspaceId,
-      credentialId: credential_id,
-    });
+    logger.debug("chat_sdk_credential_pending", { workspaceId, credentialId: credential_id });
     return null;
   }
 
   if (!secret.signing_secret) {
-    logger.warn("chat_sdk_missing_signing_secret", {
-      workspaceId,
-      credentialId: credential_id,
-    });
+    logger.warn("chat_sdk_missing_signing_secret", { workspaceId, credentialId: credential_id });
     return null;
   }
 
@@ -440,9 +385,7 @@ async function resolveSlackFromLink(
 const MAX_LOG_FIELD_BYTES = 512;
 
 function truncateForLog(value: unknown): string {
-  const str = typeof value === "string"
-    ? value
-    : JSON.stringify(value) ?? String(value);
+  const str = typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
   return str.length > MAX_LOG_FIELD_BYTES
     ? `${str.slice(0, MAX_LOG_FIELD_BYTES)}…[truncated]`
     : str;
@@ -488,7 +431,8 @@ export function createMessageHandler(
 ): (thread: Thread, message: Message) => Promise<void> {
   return async (thread: Thread, message: Message): Promise<void> => {
     const adapterName = thread.adapter.name;
-    const sourceWasSet = stateAdapter &&
+    const sourceWasSet =
+      stateAdapter &&
       (adapterName === "slack" ||
         adapterName === "discord" ||
         adapterName === "telegram" ||
@@ -510,14 +454,9 @@ export function createMessageHandler(
     }
 
     if (adapterName === "slack") {
-      thread.adapter.addReaction(thread.id, message.id, "eyes").catch(
-        (err: unknown) => {
-          logger.warn("acknowledgment_reaction_failed", {
-            threadId: thread.id,
-            error: err,
-          });
-        },
-      );
+      thread.adapter.addReaction(thread.id, message.id, "eyes").catch((err: unknown) => {
+        logger.warn("acknowledgment_reaction_failed", { threadId: thread.id, error: err });
+      });
     }
 
     const chatId = thread.id;
@@ -532,11 +471,7 @@ export function createMessageHandler(
       ? preValidated.data.uiMessage
       : toAtlasUIMessage(message);
 
-    const appendResult = await ChatStorage.appendMessage(
-      chatId,
-      storedMessage,
-      workspaceId,
-    );
+    const appendResult = await ChatStorage.appendMessage(chatId, storedMessage, workspaceId);
     if (!appendResult.ok) {
       logger.error("chat_sdk_append_message_failed", {
         chatId,
@@ -545,20 +480,21 @@ export function createMessageHandler(
       });
     }
 
-    const datetime = typeof message.raw === "object" && message.raw !== null &&
-        "datetime" in message.raw
-      ? message.raw.datetime
-      : undefined;
+    const datetime =
+      typeof message.raw === "object" && message.raw !== null && "datetime" in message.raw
+        ? message.raw.datetime
+        : undefined;
 
-    const rawFgPayload = typeof message.raw === "object" &&
-        message.raw !== null &&
-        "foregroundWorkspaceIds" in message.raw
-      ? message.raw.foregroundWorkspaceIds
-      : undefined;
+    const rawFgPayload =
+      typeof message.raw === "object" &&
+      message.raw !== null &&
+      "foregroundWorkspaceIds" in message.raw
+        ? message.raw.foregroundWorkspaceIds
+        : undefined;
     const foregroundWorkspaceIds = Array.isArray(rawFgPayload)
       ? rawFgPayload
-        .filter((id: unknown): id is string => typeof id === "string")
-        .filter((id) => options?.exposeKernel || id !== KERNEL_WORKSPACE_ID)
+          .filter((id: unknown): id is string => typeof id === "string")
+          .filter((id) => options?.exposeKernel || id !== KERNEL_WORKSPACE_ID)
       : undefined;
 
     // signalToStream fans events two ways: the tap pushes ALL client-safe
@@ -596,9 +532,10 @@ export function createMessageHandler(
       // message carries the provider-specific code (e.g. fbtrace_id on
       // Meta, Slack error types) — docs/integrations/<provider>/README.md
       // maps common codes to fixes.
-      const stack = error instanceof Error && error.stack
-        ? error.stack.split("\n").slice(0, 8).join("\n")
-        : undefined;
+      const stack =
+        error instanceof Error && error.stack
+          ? error.stack.split("\n").slice(0, 8).join("\n")
+          : undefined;
       // Axios errors stash the outbound URL + response on the error object.
       // Capture them when present so Teams / Slack 4xx responses carry the
       // provider-side error code (e.g. `ServiceUnavailable`, `MsaUserNotFound`)
@@ -611,9 +548,7 @@ export function createMessageHandler(
       // noise in per-workspace logs and bloats the GCS log archive.
       const axiosDetails: Record<string, unknown> = {};
       if (error && typeof error === "object") {
-        if (
-          "config" in error && error.config && typeof error.config === "object"
-        ) {
+        if ("config" in error && error.config && typeof error.config === "object") {
           if ("url" in error.config) {
             axiosDetails.url = truncateForLog(error.config.url);
           }
@@ -621,10 +556,7 @@ export function createMessageHandler(
             axiosDetails.method = error.config.method;
           }
         }
-        if (
-          "response" in error && error.response &&
-          typeof error.response === "object"
-        ) {
+        if ("response" in error && error.response && typeof error.response === "object") {
           const response = error.response;
           if ("status" in response) axiosDetails.status = response.status;
           if ("statusText" in response) {
@@ -633,13 +565,9 @@ export function createMessageHandler(
           if ("data" in response) {
             axiosDetails.data = truncateForLog(response.data);
           }
-          if (
-            "headers" in response && response.headers &&
-            typeof response.headers === "object"
-          ) {
+          if ("headers" in response && response.headers && typeof response.headers === "object") {
             if ("www-authenticate" in response.headers) {
-              axiosDetails.wwwAuthenticate =
-                response.headers["www-authenticate"];
+              axiosDetails.wwwAuthenticate = response.headers["www-authenticate"];
             }
           }
         }
@@ -647,12 +575,11 @@ export function createMessageHandler(
       logger.error("thread_post_failed", {
         adapterName,
         threadId: chatId,
-        error: error instanceof Error
-          ? { name: error.name, message: error.message, stack }
-          : String(error),
-        ...(Object.keys(axiosDetails).length > 0
-          ? { axios: axiosDetails }
-          : {}),
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message, stack }
+            : String(error),
+        ...(Object.keys(axiosDetails).length > 0 ? { axios: axiosDetails } : {}),
       });
       throw error;
     } finally {
@@ -670,12 +597,7 @@ export async function initializeChatSdkInstance(
 ): Promise<ChatSdkInstance> {
   const { workspaceId, userId, signals, streamRegistry, triggerFn } = config;
 
-  const adapters = buildChatSdkAdapters({
-    workspaceId,
-    signals,
-    credentials,
-    streamRegistry,
-  });
+  const adapters = buildChatSdkAdapters({ workspaceId, signals, credentials, streamRegistry });
 
   const stateAdapter = new ChatSdkStateAdapter({ userId, workspaceId });
 
@@ -688,22 +610,13 @@ export async function initializeChatSdkInstance(
     logger: "silent",
   });
 
-  const handler = createMessageHandler(
-    workspaceId,
-    triggerFn,
-    streamRegistry,
-    stateAdapter,
-    {
-      exposeKernel: config.exposeKernel,
-    },
-  );
+  const handler = createMessageHandler(workspaceId, triggerFn, streamRegistry, stateAdapter, {
+    exposeKernel: config.exposeKernel,
+  });
   chat.onNewMention(handler);
   chat.onSubscribedMessage(handler);
 
-  logger.info("chat_sdk_instance_created", {
-    workspaceId,
-    adapters: Object.keys(adapters),
-  });
+  logger.info("chat_sdk_instance_created", { workspaceId, adapters: Object.keys(adapters) });
 
   return {
     chat,
@@ -711,10 +624,7 @@ export async function initializeChatSdkInstance(
       try {
         await chat.shutdown();
       } catch (error) {
-        logger.error("chat_sdk_instance_teardown_failed", {
-          workspaceId,
-          error,
-        });
+        logger.error("chat_sdk_instance_teardown_failed", { workspaceId, error });
       }
       logger.info("chat_sdk_instance_torn_down", { workspaceId });
     },

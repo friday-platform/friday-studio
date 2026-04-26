@@ -1,100 +1,98 @@
 <script lang="ts">
-  import { store, type ProviderId } from "../lib/store.svelte.ts";
-  import { advanceStep, writeKeys } from "../lib/installer.ts";
+import { store, type ProviderId } from "../lib/store.svelte.ts";
+import { advanceStep, writeKeys } from "../lib/installer.ts";
 
-  // Provider catalog. `recommended: true` decorates the dropdown option AND
-  // the inline "Recommended" badge on the form. Each provider maps to a
-  // single env-var name on the Rust side via writeKeys().
-  type ProviderConfig = {
-    id: ProviderId;
-    label: string;
-    recommended?: boolean;
-    placeholder: string;
-    keyPrefix: string;
-    consoleUrl: string;
-    consoleLabel: string;
-  };
+// Provider catalog. `recommended: true` decorates the dropdown option AND
+// the inline "Recommended" badge on the form. Each provider maps to a
+// single env-var name on the Rust side via writeKeys().
+type ProviderConfig = {
+  id: ProviderId;
+  label: string;
+  recommended?: boolean;
+  placeholder: string;
+  keyPrefix: string;
+  consoleUrl: string;
+  consoleLabel: string;
+};
 
-  const PROVIDERS: ProviderConfig[] = [
-    {
-      id: "anthropic",
-      label: "Anthropic",
-      recommended: true,
-      placeholder: "sk-ant-api03-…",
-      keyPrefix: "sk-ant-",
-      consoleUrl: "https://console.anthropic.com/settings/keys",
-      consoleLabel: "console.anthropic.com",
-    },
-    {
-      id: "openai",
-      label: "OpenAI",
-      placeholder: "sk-…",
-      keyPrefix: "sk-",
-      consoleUrl: "https://platform.openai.com/api-keys",
-      consoleLabel: "platform.openai.com",
-    },
-    {
-      id: "gemini",
-      label: "Google Gemini",
-      placeholder: "AIza…",
-      keyPrefix: "AIza",
-      consoleUrl: "https://aistudio.google.com/app/apikey",
-      consoleLabel: "aistudio.google.com",
-    },
-    {
-      id: "groq",
-      label: "Groq",
-      placeholder: "gsk_…",
-      keyPrefix: "gsk_",
-      consoleUrl: "https://console.groq.com/keys",
-      consoleLabel: "console.groq.com",
-    },
-  ];
+const PROVIDERS: ProviderConfig[] = [
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    recommended: true,
+    placeholder: "sk-ant-api03-…",
+    keyPrefix: "sk-ant-",
+    consoleUrl: "https://console.anthropic.com/settings/keys",
+    consoleLabel: "console.anthropic.com",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    placeholder: "sk-…",
+    keyPrefix: "sk-",
+    consoleUrl: "https://platform.openai.com/api-keys",
+    consoleLabel: "platform.openai.com",
+  },
+  {
+    id: "gemini",
+    label: "Google Gemini",
+    placeholder: "AIza…",
+    keyPrefix: "AIza",
+    consoleUrl: "https://aistudio.google.com/app/apikey",
+    consoleLabel: "aistudio.google.com",
+  },
+  {
+    id: "groq",
+    label: "Groq",
+    placeholder: "gsk_…",
+    keyPrefix: "gsk_",
+    consoleUrl: "https://console.groq.com/keys",
+    consoleLabel: "console.groq.com",
+  },
+];
 
-  const providerById = new Map(PROVIDERS.map((p) => [p.id, p]));
+const providerById = new Map(PROVIDERS.map((p) => [p.id, p]));
 
-  let saving = $state(false);
-  let saveError = $state<string | null>(null);
+let saving = $state(false);
+let saveError = $state<string | null>(null);
 
-  const current = $derived(providerById.get(store.selectedProvider) ?? PROVIDERS[0]);
+const current = $derived(providerById.get(store.selectedProvider) ?? PROVIDERS[0]);
 
-  // Soft-validate: warn when the key doesn't match the provider's prefix,
-  // but don't block submission — providers occasionally rotate formats.
-  const trimmedKey = $derived(store.apiKey.trim());
-  const prefixMismatch = $derived(
-    trimmedKey.length > 0 && !trimmedKey.startsWith(current.keyPrefix),
-  );
+// Soft-validate: warn when the key doesn't match the provider's prefix,
+// but don't block submission — providers occasionally rotate formats.
+const trimmedKey = $derived(store.apiKey.trim());
+const prefixMismatch = $derived(trimmedKey.length > 0 && !trimmedKey.startsWith(current.keyPrefix));
 
-  const canContinue = $derived(trimmedKey.length > 0 && !saving);
+const canContinue = $derived(trimmedKey.length > 0 && !saving);
 
-  async function handleContinue() {
-    saving = true;
-    saveError = null;
-    try {
-      await writeKeys();
-      advanceStep();
-    } catch (err) {
-      saveError = err instanceof Error ? err.message : String(err);
-    } finally {
-      saving = false;
-    }
+async function handleContinue() {
+  saving = true;
+  saveError = null;
+  try {
+    await writeKeys();
+    advanceStep();
+  } catch (err) {
+    saveError = err instanceof Error ? err.message : String(err);
+  } finally {
+    saving = false;
   }
+}
 
-  async function handleSkip() {
-    const previous = store.apiKey;
-    store.apiKey = "";
-    saving = true;
-    saveError = null;
-    try {
-      await writeKeys();
-      advanceStep();
-    } catch (err) {
-      saveError = err instanceof Error ? err.message : String(err);
-      store.apiKey = previous;
-    } finally {
-      saving = false;
-    }
+async function handleSkip() {
+  const previous = store.apiKey;
+  store.apiKey = "";
+  saving = true;
+  saveError = null;
+  try {
+    await writeKeys();
+    advanceStep();
+  } catch (err) {
+    saveError = err instanceof Error ? err.message : String(err);
+    store.apiKey = previous;
+  } finally {
+    saving = false;
   }
+}
 </script>
 
 <div class="screen">

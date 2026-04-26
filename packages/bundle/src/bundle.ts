@@ -37,7 +37,10 @@ export interface ImportResult {
 async function listPrimitiveDirs(dir: string): Promise<string[]> {
   try {
     const entries = await readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
   } catch {
     return [];
   }

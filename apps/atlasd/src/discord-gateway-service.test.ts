@@ -34,11 +34,7 @@ function makeFakeAdapter(start: ReturnType<typeof vi.fn<StartFn>>): DiscordAdapt
   } as unknown as DiscordAdapter;
 }
 
-const credentials = {
-  botToken: "bot-token",
-  publicKey: "public-key",
-  applicationId: "app-123",
-};
+const credentials = { botToken: "bot-token", publicKey: "public-key", applicationId: "app-123" };
 
 describe("DiscordGatewayService", () => {
   it("calls startGatewayListener with the forwardUrl when started", async () => {

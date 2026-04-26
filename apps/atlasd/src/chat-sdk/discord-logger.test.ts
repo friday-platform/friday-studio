@@ -25,15 +25,17 @@ function makeFakeLogger(): FakeLogger {
 }
 
 describe("toDiscordLogger", () => {
-  it.each(["debug", "info", "warn", "error"] as const)(
-    "forwards %s() to the atlas logger with variadic args in context",
-    (level) => {
-      const atlas = makeFakeLogger();
-      const wrapped = toDiscordLogger(atlas);
-      wrapped[level]("hello", { foo: 1 }, "bar");
-      expect(atlas[level]).toHaveBeenCalledWith("hello", { args: [{ foo: 1 }, "bar"] });
-    },
-  );
+  it.each([
+    "debug",
+    "info",
+    "warn",
+    "error",
+  ] as const)("forwards %s() to the atlas logger with variadic args in context", (level) => {
+    const atlas = makeFakeLogger();
+    const wrapped = toDiscordLogger(atlas);
+    wrapped[level]("hello", { foo: 1 }, "bar");
+    expect(atlas[level]).toHaveBeenCalledWith("hello", { args: [{ foo: 1 }, "bar"] });
+  });
 
   it("omits the context object when no extra args are passed", () => {
     const atlas = makeFakeLogger();

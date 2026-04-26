@@ -1,26 +1,26 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { store } from "../lib/store.svelte.ts";
-  import { runExtract, advanceStep, installDir } from "../lib/installer.ts";
+import { onMount } from "svelte";
+import { store } from "../lib/store.svelte.ts";
+import { runExtract, advanceStep, installDir } from "../lib/installer.ts";
 
-  let extracting = $state(true);
+let extracting = $state(true);
 
-  onMount(async () => {
-    const src = store.downloadPath;
-    // Single source of truth for the install path lives in Rust
-    // (commands/platform.rs::install_dir → ~/.friday/local). Keep all
-    // platform-specific %LOCALAPPDATA% etc. logic out of the JS side.
-    const dest = await installDir();
+onMount(async () => {
+  const src = store.downloadPath;
+  // Single source of truth for the install path lives in Rust
+  // (commands/platform.rs::install_dir → ~/.friday/local). Keep all
+  // platform-specific %LOCALAPPDATA% etc. logic out of the JS side.
+  const dest = await installDir();
 
-    try {
-      await runExtract(src, dest);
-      extracting = false;
-      advanceStep();
-    } catch {
-      extracting = false;
-      // store.error is already set by runExtract
-    }
-  });
+  try {
+    await runExtract(src, dest);
+    extracting = false;
+    advanceStep();
+  } catch {
+    extracting = false;
+    // store.error is already set by runExtract
+  }
+});
 </script>
 
 <div class="screen">

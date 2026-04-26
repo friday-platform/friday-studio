@@ -54,11 +54,7 @@ describe("streamTextWithEvents", () => {
           toolName: "fetch",
           input: { url: "https://example.com" },
         },
-        {
-          type: "tool-result",
-          toolCallId: "tc-1",
-          output: "fetched content",
-        },
+        { type: "tool-result", toolCallId: "tc-1", output: "fetched content" },
       ]),
     );
 
@@ -67,7 +63,12 @@ describe("streamTextWithEvents", () => {
 
     expect(result.text).toBe("hello world");
     expect(emitter.events).toEqual([
-      { type: "tool-input-available", toolCallId: "tc-1", toolName: "fetch", input: { url: "https://example.com" } },
+      {
+        type: "tool-input-available",
+        toolCallId: "tc-1",
+        toolName: "fetch",
+        input: { url: "https://example.com" },
+      },
       { type: "data-tool-timing", data: { toolCallId: "tc-1", durationMs: expect.any(Number) } },
       { type: "tool-output-available", toolCallId: "tc-1", output: "fetched content" },
     ]);
@@ -104,11 +105,7 @@ describe("streamTextWithEvents", () => {
           toolName: "fetch",
           input: { url: "https://example.com" },
         },
-        {
-          type: "tool-result",
-          toolCallId: "tc-1",
-          output: "fetched content",
-        },
+        { type: "tool-result", toolCallId: "tc-1", output: "fetched content" },
       ]),
     );
 
@@ -117,20 +114,27 @@ describe("streamTextWithEvents", () => {
 
     expect(result.text).toBe("hello world");
     expect(emitter.events).toEqual([
-      { type: "tool-input-available", toolCallId: "tc-1", toolName: "fetch", input: { url: "https://example.com" } },
+      {
+        type: "tool-input-available",
+        toolCallId: "tc-1",
+        toolName: "fetch",
+        input: { url: "https://example.com" },
+      },
       { type: "data-tool-timing", data: { toolCallId: "tc-1", durationMs: expect.any(Number) } },
       { type: "tool-output-available", toolCallId: "tc-1", output: "fetched content" },
     ]);
-    const timingEvent = emitter.events.find((e) => (e as { type: string }).type === "data-tool-timing");
+    const timingEvent = emitter.events.find(
+      (e) => (e as { type: string }).type === "data-tool-timing",
+    );
     expect(timingEvent).toMatchObject({ data: { durationMs: expect.any(Number) } });
-    expect((timingEvent as { data: { durationMs: number } }).data.durationMs).toBeGreaterThanOrEqual(0);
+    expect(
+      (timingEvent as { data: { durationMs: number } }).data.durationMs,
+    ).toBeGreaterThanOrEqual(0);
   });
 
   it("does not emit or accumulate reasoning when no stream is provided", async () => {
     mockStreamText.mockReturnValue(
-      makeMockStreamTextResult([
-        { type: "reasoning-delta", id: "r-1", text: "ignored" },
-      ]),
+      makeMockStreamTextResult([{ type: "reasoning-delta", id: "r-1", text: "ignored" }]),
     );
 
     const result = await streamTextWithEvents({ params: {} as never, stream: undefined });

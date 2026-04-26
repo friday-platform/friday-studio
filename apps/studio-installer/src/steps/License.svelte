@@ -1,19 +1,19 @@
 <script lang="ts">
-  import { store } from "../lib/store.svelte.ts";
-  import { advanceStep } from "../lib/installer.ts";
-  import LICENSE_TEXT from "../../../../LICENSE?raw";
+import { store } from "../lib/store.svelte.ts";
+import { advanceStep } from "../lib/installer.ts";
+import LICENSE_TEXT from "../../../../LICENSE?raw";
 
-  function onScroll(e: Event) {
-    const el = e.target as HTMLDivElement;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 5) {
-      store.licenseScrolledToBottom = true;
-    }
+function onScroll(e: Event) {
+  const el = e.target as HTMLDivElement;
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 5) {
+    store.licenseScrolledToBottom = true;
   }
+}
 
-  function accept() {
-    store.licenseAccepted = true;
-    advanceStep();
-  }
+function accept() {
+  store.licenseAccepted = true;
+  advanceStep();
+}
 </script>
 
 <div class="screen">

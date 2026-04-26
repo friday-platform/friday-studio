@@ -1,29 +1,29 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { store } from "../lib/store.svelte.ts";
-  import { runLaunch, installDir } from "../lib/installer.ts";
+import { onMount } from "svelte";
+import { store } from "../lib/store.svelte.ts";
+import { runLaunch, installDir } from "../lib/installer.ts";
 
-  let launching = $state(true);
-  let launched = $state(false);
+let launching = $state(true);
+let launched = $state(false);
 
-  onMount(async () => {
-    try {
-      // installDir() resolves to ~/.friday/local on every supported platform —
-      // that's where Extract.svelte just unpacked the binaries.
-      const dir = await installDir();
-      await runLaunch(dir);
-      launching = false;
-      launched = true;
-    } catch {
-      launching = false;
-      // store.error is set by runLaunch
-    }
-  });
-
-  async function openStudio(): Promise<void> {
-    const { default: opener } = await import("@tauri-apps/plugin-opener");
-    await opener.open("http://localhost:5200");
+onMount(async () => {
+  try {
+    // installDir() resolves to ~/.friday/local on every supported platform —
+    // that's where Extract.svelte just unpacked the binaries.
+    const dir = await installDir();
+    await runLaunch(dir);
+    launching = false;
+    launched = true;
+  } catch {
+    launching = false;
+    // store.error is set by runLaunch
   }
+});
+
+async function openStudio(): Promise<void> {
+  const { default: opener } = await import("@tauri-apps/plugin-opener");
+  await opener.open("http://localhost:5200");
+}
 </script>
 
 <div class="screen">

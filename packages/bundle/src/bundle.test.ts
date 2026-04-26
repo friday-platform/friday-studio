@@ -14,10 +14,7 @@ async function seedWorkspace(dir: string) {
     join(dir, "skills", "hello", "SKILL.md"),
     "---\nname: hello\ndescription: say hi\n---\n\n# Hello\n",
   );
-  await writeFile(
-    join(dir, "skills", "hello", "reference.txt"),
-    "ref\n",
-  );
+  await writeFile(join(dir, "skills", "hello", "reference.txt"), "ref\n");
 }
 
 describe("exportBundle + importBundle round-trip", () => {
@@ -47,16 +44,11 @@ describe("exportBundle + importBundle round-trip", () => {
 
     const result = await importBundle({ zipBytes, targetDir: importDir });
 
-    expect(result.primitives).toEqual([
-      { kind: "skill", name: "hello", path: "skills/hello" },
-    ]);
+    expect(result.primitives).toEqual([{ kind: "skill", name: "hello", path: "skills/hello" }]);
     expect(result.lockfile.mode).toBe("definition");
     expect(result.lockfile.workspace.name).toBe("demo");
 
-    const skillBody = await readFile(
-      join(importDir, "skills", "hello", "SKILL.md"),
-      "utf-8",
-    );
+    const skillBody = await readFile(join(importDir, "skills", "hello", "SKILL.md"), "utf-8");
     expect(skillBody).toContain("# Hello");
   });
 
@@ -73,8 +65,9 @@ describe("exportBundle + importBundle round-trip", () => {
     zip.file("skills/hello/SKILL.md", "tampered content\n");
     const tampered = await zip.generateAsync({ type: "uint8array" });
 
-    await expect(importBundle({ zipBytes: tampered, targetDir: importDir }))
-      .rejects.toThrow(/integrity check failed/);
+    await expect(importBundle({ zipBytes: tampered, targetDir: importDir })).rejects.toThrow(
+      /integrity check failed/,
+    );
   });
 
   it("leaves no partial state on tampered import", async () => {
@@ -89,8 +82,7 @@ describe("exportBundle + importBundle round-trip", () => {
     zip.file("skills/hello/SKILL.md", "tampered\n");
     const tampered = await zip.generateAsync({ type: "uint8array" });
 
-    await expect(importBundle({ zipBytes: tampered, targetDir: importDir }))
-      .rejects.toThrow();
+    await expect(importBundle({ zipBytes: tampered, targetDir: importDir })).rejects.toThrow();
 
     const { access } = await import("node:fs/promises");
     await expect(access(importDir)).rejects.toThrow();
@@ -120,10 +112,7 @@ describe("exportBundle + importBundle round-trip", () => {
     });
     await importBundle({ zipBytes, targetDir: importDir });
 
-    await writeFile(
-      join(importDir, "skills", "hello", "SKILL.md"),
-      "altered locally\n",
-    );
+    await writeFile(join(importDir, "skills", "hello", "SKILL.md"), "altered locally\n");
     const result = await verifyWorkspace(importDir);
     expect(result.ok).toBe(false);
     expect(result.mismatches).toEqual(["skill:hello"]);

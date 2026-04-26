@@ -2,10 +2,7 @@ import { SlackAdapter } from "@chat-adapter/slack";
 import { TeamsAdapter } from "@chat-adapter/teams";
 import { describe, expect, it } from "vitest";
 import type { StreamRegistry } from "../stream-registry.ts";
-import type {
-  ChatSdkAdapterConfig,
-  PlatformCredentials,
-} from "./adapter-factory.ts";
+import type { ChatSdkAdapterConfig, PlatformCredentials } from "./adapter-factory.ts";
 import { buildChatSdkAdapters } from "./adapter-factory.ts";
 import { AtlasWebAdapter } from "./atlas-web-adapter.ts";
 
@@ -29,17 +26,9 @@ const whatsappCreds: PlatformCredentials = {
   phoneNumberId: "111",
   verifyToken: "verify",
 };
-const teamsCreds: PlatformCredentials = {
-  kind: "teams",
-  appId: "app-id",
-  appPassword: "app-pw",
-};
-const teamsSignals = {
-  "teams-chat": { provider: "teams", config: { app_id: "app-id" } },
-};
-const slackSignals = {
-  "slack-msgs": { provider: "slack", config: { app_id: "A12345" } },
-};
+const teamsCreds: PlatformCredentials = { kind: "teams", appId: "app-id", appPassword: "app-pw" };
+const teamsSignals = { "teams-chat": { provider: "teams", config: { app_id: "app-id" } } };
+const slackSignals = { "slack-msgs": { provider: "slack", config: { app_id: "A12345" } } };
 const httpSignals = {
   webhook: { provider: "http", config: { path: "/hook" } },
   cron: { provider: "schedule", config: { schedule: "0 * * * *" } },
@@ -60,11 +49,7 @@ function build(overrides: Partial<ChatSdkAdapterConfig> = {}) {
 describe("buildChatSdkAdapters", () => {
   it.each([
     { name: "no signals", config: {}, expected: ["atlas"] },
-    {
-      name: "non-chat signals only",
-      config: { signals: httpSignals },
-      expected: ["atlas"],
-    },
+    { name: "non-chat signals only", config: { signals: httpSignals }, expected: ["atlas"] },
     {
       name: "slack signal without credentials (graceful degradation)",
       config: { signals: slackSignals },
@@ -72,10 +57,7 @@ describe("buildChatSdkAdapters", () => {
     },
     {
       name: "unknown platform provider",
-      config: {
-        signals: { matrix: { provider: "matrix", config: {} } },
-        credentials: slackCreds,
-      },
+      config: { signals: { matrix: { provider: "matrix", config: {} } }, credentials: slackCreds },
       expected: ["atlas"],
     },
     {
@@ -85,27 +67,21 @@ describe("buildChatSdkAdapters", () => {
     },
     {
       name: "telegram + whatsapp signals + both credentials",
-      config: {
-        signals: tgWaSignals,
-        credentials: [telegramCreds, whatsappCreds],
-      },
+      config: { signals: tgWaSignals, credentials: [telegramCreds, whatsappCreds] },
       expected: ["atlas", "telegram", "whatsapp"],
     },
     {
-      name:
-        "telegram + whatsapp signals, only telegram creds (partial resolution)",
+      name: "telegram + whatsapp signals, only telegram creds (partial resolution)",
       config: { signals: tgWaSignals, credentials: [telegramCreds] },
       expected: ["atlas", "telegram"],
     },
     {
-      name:
-        "telegram + whatsapp signals, only whatsapp creds (partial resolution)",
+      name: "telegram + whatsapp signals, only whatsapp creds (partial resolution)",
       config: { signals: tgWaSignals, credentials: [whatsappCreds] },
       expected: ["atlas", "whatsapp"],
     },
     {
-      name:
-        "credentials for provider whose signal is absent (dropped, no adapter)",
+      name: "credentials for provider whose signal is absent (dropped, no adapter)",
       config: { signals: httpSignals, credentials: telegramCreds },
       expected: ["atlas"],
     },
@@ -118,10 +94,7 @@ describe("buildChatSdkAdapters", () => {
       name: "duplicate-kind credentials (last-wins, no crash)",
       config: {
         signals: { "whatsapp-chat": { provider: "whatsapp", config: {} } },
-        credentials: [whatsappCreds, {
-          ...whatsappCreds,
-          phoneNumberId: "222",
-        }],
+        credentials: [whatsappCreds, { ...whatsappCreds, phoneNumberId: "222" }],
       },
       expected: ["atlas", "whatsapp"],
     },

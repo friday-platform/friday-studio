@@ -27,7 +27,10 @@ export interface DiscordGatewayServiceDeps {
    * Injection seam for tests — pass a stub `DiscordAdapter`-shaped object to
    * avoid spinning a real WebSocket. Defaults to `createDiscordAdapter`.
    */
-  adapterFactory?: (creds: DiscordGatewayServiceDeps["credentials"], logger: Logger) => DiscordAdapter;
+  adapterFactory?: (
+    creds: DiscordGatewayServiceDeps["credentials"],
+    logger: Logger,
+  ) => DiscordAdapter;
 }
 
 export class DiscordGatewayService {
@@ -62,9 +65,9 @@ export class DiscordGatewayService {
     // adapter (no handlers, no state adapter) is enough — we never dispatch
     // through this Chat; all routing happens after the forwarded HTTP hop.
     // `state` is required by the Chat config even though we never dispatch
-     // messages through this Chat — every real route happens after the
-     // forwarded HTTP hop reaches the per-workspace adapter. `ChatSdkStateAdapter`
-     // is the least-effort choice: already in the tree, no new deps.
+    // messages through this Chat — every real route happens after the
+    // forwarded HTTP hop reaches the per-workspace adapter. `ChatSdkStateAdapter`
+    // is the least-effort choice: already in the tree, no new deps.
     const chat = new Chat({
       userName: "Friday",
       adapters: { discord: this.adapter },

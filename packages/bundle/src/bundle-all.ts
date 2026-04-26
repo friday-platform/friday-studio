@@ -43,9 +43,9 @@ export const FullManifestSchema = z.object({
   atlasVersion: z.string().min(1).optional(),
   mode: z.enum(["definition", "migration"]),
   entries: z.array(WorkspaceEntrySchema),
-  reserved: z.object({ global: GlobalSlotsSchema }).default({
-    global: { skills: null, memory: null },
-  }),
+  reserved: z
+    .object({ global: GlobalSlotsSchema })
+    .default({ global: { skills: null, memory: null } }),
 });
 export type FullManifest = z.infer<typeof FullManifestSchema>;
 
@@ -70,9 +70,7 @@ export interface ExportAllOptions {
    * flips from null to that path. Old readers ignore the unknown path; new
    * readers materialize it.
    */
-  global?: {
-    skills?: Uint8Array;
-  };
+  global?: { skills?: Uint8Array };
 }
 
 export async function exportAll(opts: ExportAllOptions): Promise<Uint8Array> {
@@ -167,13 +165,20 @@ export async function importAll(opts: ImportAllOptions): Promise<ImportAllResult
     try {
       const inner = outer.file(entry.path);
       if (!inner) {
-        errors.push({ name: entry.name, error: `manifest entry path missing in archive: ${entry.path}` });
+        errors.push({
+          name: entry.name,
+          error: `manifest entry path missing in archive: ${entry.path}`,
+        });
         continue;
       }
       const innerBytes = await inner.async("uint8array");
       const targetDir = join(opts.workspacesRoot, makeSuffix(i, entry.name));
       const result = await importBundle({ zipBytes: innerBytes, targetDir });
-      imported.push({ name: result.lockfile.workspace.name, path: targetDir, primitives: result.primitives });
+      imported.push({
+        name: result.lockfile.workspace.name,
+        path: targetDir,
+        primitives: result.primitives,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       errors.push({ name: entry.name, error: message });
@@ -204,4 +209,3 @@ export async function readFullManifest(zipBytes: Uint8Array): Promise<FullManife
   const yaml = await mf.async("string");
   return FullManifestSchema.parse(parse(yaml));
 }
-

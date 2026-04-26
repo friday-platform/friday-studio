@@ -78,10 +78,7 @@ function makeChatSdkInstance(
     webhooks[webhookKey] = handler;
   }
 
-  return {
-    chat: { webhooks } as unknown as Chat,
-    teardown: vi.fn().mockResolvedValue(undefined),
-  };
+  return { chat: { webhooks } as unknown as Chat, teardown: vi.fn().mockResolvedValue(undefined) };
 }
 
 /** Build a mock daemon for routing tests. */
@@ -90,20 +87,18 @@ function makeDaemon(
   chatSdkResolver?: (workspaceId: string) => Promise<ChatSdkInstance>,
 ) {
   const configMap = new Map(workspaces.map((w) => [w.id, w.config]));
-  const getWorkspaceConfig = vi.fn<WorkspaceManager["getWorkspaceConfig"]>((
-    id: string,
-  ) => Promise.resolve(configMap.get(id) ?? null));
+  const getWorkspaceConfig = vi.fn<WorkspaceManager["getWorkspaceConfig"]>((id: string) =>
+    Promise.resolve(configMap.get(id) ?? null),
+  );
   const list = vi.fn<WorkspaceManager["list"]>(() =>
-    Promise.resolve(workspaces.map((w) => ({ id: w.id }) as WorkspaceEntry))
+    Promise.resolve(workspaces.map((w) => ({ id: w.id }) as WorkspaceEntry)),
   );
 
   const getOrCreateChatSdkInstance = chatSdkResolver
-    ? vi.fn<(id: string) => Promise<ChatSdkInstance>>().mockImplementation(
-      chatSdkResolver,
-    )
+    ? vi.fn<(id: string) => Promise<ChatSdkInstance>>().mockImplementation(chatSdkResolver)
     : vi
-      .fn<(id: string) => Promise<ChatSdkInstance>>()
-      .mockRejectedValue(new Error("No Chat SDK instance"));
+        .fn<(id: string) => Promise<ChatSdkInstance>>()
+        .mockRejectedValue(new Error("No Chat SDK instance"));
 
   const daemon = {
     getWorkspaceManager: () => ({ getWorkspaceConfig, list }),
@@ -119,11 +114,7 @@ function postSlack(
   body: unknown = rawSlackEvent,
   headers: Record<string, string> = slackHeaders,
 ) {
-  return app.request("/slack", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  return app.request("/slack", { method: "POST", headers, body: JSON.stringify(body) });
 }
 
 describe("POST /slack", () => {
@@ -154,13 +145,9 @@ describe("POST /slack", () => {
     expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-target");
     expect(slackHandler).toHaveBeenCalledOnce();
     expect(capturedBody).toBe(JSON.stringify(rawSlackEvent));
-    expect(capturedRequest?.headers.get("x-slack-request-timestamp")).toBe(
-      "1234567890",
-    );
+    expect(capturedRequest?.headers.get("x-slack-request-timestamp")).toBe("1234567890");
     expect(capturedRequest?.headers.get("x-slack-signature")).toBe("v0=abc123");
-    expect(capturedRequest?.headers.get("content-type")).toBe(
-      "application/json",
-    );
+    expect(capturedRequest?.headers.get("content-type")).toBe("application/json");
   });
 
   it.each([
@@ -206,9 +193,7 @@ describe("POST /slack", () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("challenge-xyz-123");
-    expect(res.headers.get("content-type")?.toLowerCase()).toContain(
-      "text/plain",
-    );
+    expect(res.headers.get("content-type")?.toLowerCase()).toContain("text/plain");
   });
 
   it("returns 400 on invalid JSON body", async () => {
@@ -240,10 +225,9 @@ describe("POST /slack", () => {
   });
 
   it("returns 500 when Chat SDK instance creation fails", async () => {
-    const { daemon } = makeDaemon([{
-      id: "ws-abc",
-      config: makeConfig("A012ABCD0A0"),
-    }], () => Promise.reject(new Error("credential resolution failed")));
+    const { daemon } = makeDaemon([{ id: "ws-abc", config: makeConfig("A012ABCD0A0") }], () =>
+      Promise.reject(new Error("credential resolution failed")),
+    );
 
     const app = createPlatformSignalRoutes(daemon);
     const res = await postSlack(app);
@@ -292,11 +276,7 @@ function postDiscord(
   body: unknown = forwardedGatewayBody,
   headers: Record<string, string> = forwardedHeaders,
 ) {
-  return app.request("/discord", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  return app.request("/discord", { method: "POST", headers, body: JSON.stringify(body) });
 }
 
 describe("POST /discord", () => {
@@ -324,19 +304,12 @@ describe("POST /discord", () => {
     expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-discord");
     expect(discordHandler).toHaveBeenCalledOnce();
     expect(capturedBody).toBe(JSON.stringify(forwardedGatewayBody));
-    expect(capturedRequest?.headers.get("x-discord-gateway-token")).toBe(
-      "bot-token",
-    );
-    expect(capturedRequest?.headers.get("content-type")).toBe(
-      "application/json",
-    );
+    expect(capturedRequest?.headers.get("x-discord-gateway-token")).toBe("bot-token");
+    expect(capturedRequest?.headers.get("content-type")).toBe("application/json");
   });
 
   it("returns 404 when no workspace has a discord signal", async () => {
-    const { daemon } = makeDaemon([{
-      id: "ws-other",
-      config: makeNonSlackConfig(),
-    }]);
+    const { daemon } = makeDaemon([{ id: "ws-other", config: makeNonSlackConfig() }]);
     const app = createPlatformSignalRoutes(daemon);
     const res = await postDiscord(app);
 
@@ -346,9 +319,8 @@ describe("POST /discord", () => {
   });
 
   it("returns 404 when the discord workspace has no discord adapter in Chat SDK", async () => {
-    const { daemon } = makeDaemon(
-      [{ id: "ws-discord", config: makeDiscordConfig() }],
-      () => Promise.resolve(makeChatSdkInstance()),
+    const { daemon } = makeDaemon([{ id: "ws-discord", config: makeDiscordConfig() }], () =>
+      Promise.resolve(makeChatSdkInstance()),
     );
     const app = createPlatformSignalRoutes(daemon);
     const res = await postDiscord(app);
@@ -359,10 +331,9 @@ describe("POST /discord", () => {
   });
 
   it("returns 500 when Chat SDK instance creation fails", async () => {
-    const { daemon } = makeDaemon([{
-      id: "ws-discord",
-      config: makeDiscordConfig(),
-    }], () => Promise.reject(new Error("credential resolution failed")));
+    const { daemon } = makeDaemon([{ id: "ws-discord", config: makeDiscordConfig() }], () =>
+      Promise.reject(new Error("credential resolution failed")),
+    );
     const app = createPlatformSignalRoutes(daemon);
     const res = await postDiscord(app);
 
@@ -393,9 +364,7 @@ describe("POST /discord", () => {
 
 // ─── WhatsApp verify handshake (GET) ──────────────────────────────────
 
-function makeWhatsappConfig(
-  overrides: { verify_token?: string } = {},
-): MergedConfig {
+function makeWhatsappConfig(overrides: { verify_token?: string } = {}): MergedConfig {
   return {
     atlas: null,
     workspace: {
@@ -412,10 +381,7 @@ function makeWhatsappConfig(
   };
 }
 
-function getWhatsappVerify(
-  app: ReturnType<typeof createPlatformSignalRoutes>,
-  query: string,
-) {
+function getWhatsappVerify(app: ReturnType<typeof createPlatformSignalRoutes>, query: string) {
   return app.request(`/whatsapp?${query}`, { method: "GET" });
 }
 
@@ -426,14 +392,8 @@ describe("GET /whatsapp (verify handshake)", () => {
       .mockResolvedValue(new Response("challenge-123", { status: 200 }));
     const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
       [
-        {
-          id: "ws-other",
-          config: makeWhatsappConfig({ verify_token: "other-token" }),
-        },
-        {
-          id: "ws-target",
-          config: makeWhatsappConfig({ verify_token: "expected-token" }),
-        },
+        { id: "ws-other", config: makeWhatsappConfig({ verify_token: "other-token" }) },
+        { id: "ws-target", config: makeWhatsappConfig({ verify_token: "expected-token" }) },
       ],
       () => Promise.resolve(makeChatSdkInstance("whatsapp", handler)),
     );
@@ -483,16 +443,10 @@ describe("GET /whatsapp (verify handshake)", () => {
   });
 
   it("returns 400 when hub.verify_token query param is missing", async () => {
-    const { daemon } = makeDaemon([{
-      id: "ws-solo",
-      config: makeWhatsappConfig(),
-    }]);
+    const { daemon } = makeDaemon([{ id: "ws-solo", config: makeWhatsappConfig() }]);
     const app = createPlatformSignalRoutes(daemon);
 
-    const res = await getWhatsappVerify(
-      app,
-      "hub.mode=subscribe&hub.challenge=x",
-    );
+    const res = await getWhatsappVerify(app, "hub.mode=subscribe&hub.challenge=x");
 
     expect(res.status).toBe(400);
   });
@@ -527,20 +481,13 @@ function makeTeamsEnvOnlyConfig(): MergedConfig {
       version: "1.0",
       workspace: { name: "test" },
       signals: {
-        "teams-chat": {
-          provider: "teams" as const,
-          description: "Teams inbound",
-          config: {},
-        },
+        "teams-chat": { provider: "teams" as const, description: "Teams inbound", config: {} },
       },
     },
   };
 }
 
-const teamsHeaders = {
-  "Content-Type": "application/json",
-  Authorization: "Bearer eyJ.jwt.stub",
-};
+const teamsHeaders = { "Content-Type": "application/json", Authorization: "Bearer eyJ.jwt.stub" };
 
 function teamsActivity(appId: string) {
   // Azure Bot formats recipient.id as "28:<botAppId>" on inbound activities.
@@ -559,11 +506,7 @@ function postTeams(
   body: unknown,
   headers: Record<string, string> = teamsHeaders,
 ) {
-  return app.request("/teams", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  return app.request("/teams", { method: "POST", headers, body: JSON.stringify(body) });
 }
 
 describe("POST /teams", () => {
@@ -597,9 +540,7 @@ describe("POST /teams", () => {
     expect(capturedBody).toBe(JSON.stringify(body));
     // Authorization header must reach the adapter so it can validate the Bot
     // Framework JWT — otherwise every activity is rejected.
-    expect(capturedRequest?.headers.get("authorization")).toBe(
-      "Bearer eyJ.jwt.stub",
-    );
+    expect(capturedRequest?.headers.get("authorization")).toBe("Bearer eyJ.jwt.stub");
   });
 
   it("falls back to the env-only workspace when no app_id match exists", async () => {
@@ -652,10 +593,7 @@ describe("POST /teams", () => {
   });
 
   it("returns 400 when recipient is absent", async () => {
-    const { daemon } = makeDaemon([{
-      id: "ws-solo",
-      config: makeTeamsConfig("any"),
-    }]);
+    const { daemon } = makeDaemon([{ id: "ws-solo", config: makeTeamsConfig("any") }]);
     const app = createPlatformSignalRoutes(daemon);
     const res = await postTeams(app, { type: "message", text: "no recipient" });
 
@@ -665,10 +603,7 @@ describe("POST /teams", () => {
   });
 
   it("returns 404 when no workspace has a teams signal", async () => {
-    const { daemon } = makeDaemon([{
-      id: "ws-other",
-      config: makeNonSlackConfig(),
-    }]);
+    const { daemon } = makeDaemon([{ id: "ws-other", config: makeNonSlackConfig() }]);
     const app = createPlatformSignalRoutes(daemon);
     const res = await postTeams(app, teamsActivity("target-app-id"));
 

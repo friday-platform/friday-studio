@@ -6,10 +6,7 @@ import { exportBundle } from "./bundle.ts";
 import { exportAll, FullManifestSchema, importAll, readFullManifest } from "./bundle-all.ts";
 
 async function seedWorkspace(dir: string, name: string, includeAgent = true) {
-  await writeFile(
-    join(dir, "workspace.yml"),
-    `version: '1.0'\nworkspace:\n  name: ${name}\n`,
-  );
+  await writeFile(join(dir, "workspace.yml"), `version: '1.0'\nworkspace:\n  name: ${name}\n`);
   if (includeAgent) {
     await mkdir(join(dir, "agents", "hello-bot"), { recursive: true });
     await writeFile(join(dir, "agents", "hello-bot", "agent.py"), "# hello\n");
@@ -123,7 +120,9 @@ describe("exportAll + importAll round-trip", () => {
   });
 
   it("rejects an archive missing manifest.yml", async () => {
-    const empty = new Uint8Array([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const empty = new Uint8Array([
+      0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
     await expect(readFullManifest(empty)).rejects.toThrow(/missing manifest\.yml/);
   });
 
@@ -152,6 +151,8 @@ describe("exportAll + importAll round-trip", () => {
 
     const result = await importAll({ zipBytes: full, workspacesRoot: targetRoot });
     expect(result.globalSkillsBytes).toBeDefined();
-    expect(Array.from(result.globalSkillsBytes ?? new Uint8Array())).toEqual(Array.from(fakeSkills));
+    expect(Array.from(result.globalSkillsBytes ?? new Uint8Array())).toEqual(
+      Array.from(fakeSkills),
+    );
   });
 });
