@@ -141,6 +141,11 @@
                     isActive: pathname.startsWith(`${base}/skills`),
                   },
                   {
+                    label: "MCP",
+                    href: `${base}/mcp`,
+                    isActive: pathname.startsWith(`${base}/mcp`),
+                  },
+                  {
                     label: "Jobs",
                     href: `${base}/jobs`,
                     isActive: pathname.startsWith(`${base}/jobs`),

@@ -22,6 +22,7 @@ const WorkspaceSummarySchema = z.object({
   metadata: z
     .object({
       color: z.string().optional(),
+      blueprintArtifactId: z.string().optional(),
     })
     .optional(),
 });
