@@ -294,8 +294,18 @@
         </span>
         <span class="tool-card-action" title={actionText}>{actionText}</span>
         <span class="tool-card-spacer"></span>
-        <span class="status-indicator" class:status-blue={status.tone === "blue"} class:status-green={status.tone === "green"} class:status-red={status.tone === "red"}>
-          <span class="status-dot" aria-hidden="true"></span>
+        <span class="status-indicator" class:status-blue={status.tone === "blue"} class:status-green={status.tone === "green"} class:status-red={status.tone === "red"} class:status-yellow={status.tone === "yellow"} class:status-neutral={status.tone === "neutral"}>
+          {#if status.tone === "blue"}
+            <span class="status-dot" aria-hidden="true"></span>
+          {:else if status.tone === "green"}
+            <IconSmall.CheckCircle />
+          {:else if status.tone === "red"}
+            <IconSmall.XCircle />
+          {:else if status.tone === "yellow"}
+            <IconSmall.Clock />
+          {:else}
+            <span class="status-dot" aria-hidden="true"></span>
+          {/if}
           <span class="status-text">{status.text}</span>
         </span>
       </div>
@@ -321,6 +331,7 @@
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
     open={delegateOpen}
+    style="border-left: 3px solid {meta.color}"
   >
     <summary
       class="tool-card-header"
@@ -334,8 +345,18 @@
             </span>
             <span class="tool-card-action">{actionText}</span>
             <span class="tool-card-spacer"></span>
-            <span class="status-indicator" class:status-blue={status.tone === "blue"} class:status-green={status.tone === "green"} class:status-red={status.tone === "red"}>
-              <span class="status-dot" aria-hidden="true"></span>
+            <span class="status-indicator" class:status-blue={status.tone === "blue"} class:status-green={status.tone === "green"} class:status-red={status.tone === "red"} class:status-yellow={status.tone === "yellow"} class:status-neutral={status.tone === "neutral"}>
+              {#if status.tone === "blue"}
+                <span class="status-dot" aria-hidden="true"></span>
+              {:else if status.tone === "green"}
+                <IconSmall.CheckCircle />
+              {:else if status.tone === "red"}
+                <IconSmall.XCircle />
+              {:else if status.tone === "yellow"}
+                <IconSmall.Clock />
+              {:else}
+                <span class="status-dot" aria-hidden="true"></span>
+              {/if}
               <span class="status-text">{status.text}</span>
             </span>
           </div>
@@ -391,6 +412,7 @@
     class="tool-card"
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
+    style="border-left: 3px solid {meta.color}"
   >
     {@render cardBody(call, meta)}
     {@render outputDrawer(call)}
@@ -408,6 +430,11 @@
 
   .tool-card:not(.connect-service):hover {
     border-color: color-mix(in srgb, var(--color-border-1), var(--text-faded) 15%);
+  }
+
+  .tool-card:not(.with-children):not(.connect-service):hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-1);
   }
 
   .tool-card-inner {
@@ -464,7 +491,7 @@
     flex: 1;
   }
 
-  /* ─── Status indicator (tiny dot + text) ─────────────────────────── */
+  /* ─── Status badge (pill with icon + text) ────────────────────────── */
 
   .status-indicator {
     align-items: center;
@@ -473,18 +500,28 @@
     font-size: var(--font-size-0, 11px);
     gap: 5px;
     white-space: nowrap;
+    padding: 2px 7px;
+    border-radius: var(--radius-1);
+    background-color: color-mix(in srgb, var(--indicator-color), transparent 92%);
+    --indicator-color: var(--text-faded);
   }
 
-  .status-indicator.status-blue { color: var(--blue-primary); }
-  .status-indicator.status-green { color: var(--green-primary); }
-  .status-indicator.status-red { color: var(--red-primary); }
+  .status-indicator.status-blue { color: var(--blue-primary); --indicator-color: var(--blue-primary); }
+  .status-indicator.status-green { color: var(--green-primary); --indicator-color: var(--green-primary); }
+  .status-indicator.status-red { color: var(--red-primary); --indicator-color: var(--red-primary); }
+  .status-indicator.status-yellow { color: var(--yellow-primary); --indicator-color: var(--yellow-primary); }
+  .status-indicator.status-neutral { color: var(--text-faded); --indicator-color: var(--text-faded); }
+
+  .status-indicator :global(svg),
+  .status-dot {
+    flex-shrink: 0;
+    inline-size: 12px;
+    block-size: 12px;
+  }
 
   .status-dot {
     border-radius: 50%;
     display: inline-block;
-    flex-shrink: 0;
-    inline-size: 5px;
-    block-size: 5px;
   }
 
   .status-indicator.status-blue .status-dot {
@@ -492,12 +529,9 @@
     animation: status-pulse 1.2s ease-in-out infinite;
   }
 
-  .status-indicator.status-green .status-dot {
-    background-color: var(--green-primary);
-  }
-
-  .status-indicator.status-red .status-dot {
-    background-color: var(--red-primary);
+  .status-indicator.status-neutral .status-dot {
+    background-color: var(--text-faded);
+    opacity: 0.5;
   }
 
   @keyframes status-pulse {
@@ -506,7 +540,7 @@
   }
 
   .status-text {
-    color: var(--text-faded);
+    color: inherit;
     font-variant-numeric: tabular-nums;
   }
 
