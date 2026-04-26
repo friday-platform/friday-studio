@@ -6,33 +6,31 @@
  *   1. First pass collects top-level tool calls from static `tool-<name>`
  *      parts and the `dynamic-tool` fallback, matching what the AI SDK's
  *      native stream processor emits into `msg.parts`.
- *   2. Second pass groups `data-delegate-chunk` envelopes by
- *      `data.delegateToolCallId`, runs a small accumulator over each
- *      group's wrapped chunks to reconstruct child `ToolCallDisplay`
- *      entries, and attaches them to the matching top-level delegate
- *      entry's `children` field.
+ *   2. Second pass processes `data-delegate-chunk` and `data-nested-chunk`
+ *      envelopes.  Delegate envelopes are grouped by `delegateToolCallId`,
+ *      unwrapped recursively (including any double-wrapped `nested-chunk`
+ *      inside), and fed through {@link accumulateChunks} →
+ *      {@link buildToolCallTree}.  Top-level `data-nested-chunk` envelopes
+ *      are accumulated directly with their `parentToolCallId`.
  *
- * After grouping, two reconciliation rules finalize the tree (Task #7):
- *   - **`delegate-end` terminator (authoritative):** if the proxy writer's
- *     synthetic `{ type: "delegate-end", pendingToolCallIds }` chunk is
- *     present for a delegate, every listed (namespaced) child still in a
- *     non-terminal state is promoted to `output-error` with
- *     `errorText: "interrupted"`. Terminal children are never clobbered.
- *   - **`parent.state === "done"` crash fallback:** if the parent message
- *     reached its terminal lifecycle state but no `delegate-end` arrived
- *     for a given delegate (catastrophic crash before the server-side
- *     `finally` could write the terminator), every still-in-progress child
- *     under that delegate is promoted to `output-error` with
- *     `errorText: "interrupted"`. Only applies to delegates without an
- *     explicit terminator — the rule never overrides `delegate-end`.
+ * After grouping, a single reconciliation rule finalises the tree:
+ *   - **`delegate-end` blanket sentinel:** if a delegate's synthetic
+ *     `{ type: "delegate-end" }` chunk is present, every child under that
+ *     delegate still in a non-terminal state is promoted to `output-error`
+ *     with `errorText: "interrupted"`.  Terminal children are never
+ *     clobbered.
  *
  * `data-delegate-ledger` parts are intentionally filtered out — they exist
- * for a future reflection layer, not the UI tree.
+ * for a future reflection layer, not the UI tree.  `durationMap` is scoped
+ * by `delegateToolCallId` so multiple delegates with identically-named
+ * children do not collide.
  *
  * @module
  */
 
-import type { AtlasUIMessage } from "@atlas/agent-sdk";
+import type { AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { accumulateChunks } from "./chunk-accumulator.ts";
+import { buildToolCallTree } from "./tree-builder.ts";
 import type { ToolCallDisplay } from "./types.ts";
 
 const TOOL_CALL_STATES = [
@@ -90,96 +88,8 @@ function toDisplayFromToolPart(part: unknown): ToolCallDisplay | null {
 }
 
 /**
- * State-transition accumulator for child tool calls reconstructed from
- * `data-delegate-chunk` envelopes. Mirrors the shape AI SDK's native
- * stream processor uses when folding `tool-input-start` →
- * `tool-input-available` → `tool-output-available`/`tool-output-error`
- * into `msg.parts` entries.
- *
- * Keyed by (namespaced) `toolCallId`. Insertion order preserved so the
- * rendered children mirror wire order.
- */
-type ChildAccumulator = Map<string, ToolCallDisplay>;
-
-/**
- * Apply a single wrapped chunk to the child accumulator.
- *
- * Unknown chunk types are ignored — only the state-transition chunks
- * touch the `ToolCallDisplay` shape. `finish` chunks are dropped upstream
- * by the proxy writer, so we don't need to filter them here.
- *
- * IDs may be multi-segment (`delegate-agent-fetch`) when bundled
- * agents namespace their inner tool calls. The accumulator is flat
- * (keyed by the full namespaced string); tree construction happens
- * afterwards in {@link buildNestedChildren}.
- */
-function applyChunk(acc: ChildAccumulator, chunk: unknown): void {
-  if (typeof chunk !== "object" || chunk === null || !("type" in chunk)) return;
-  const type = chunk.type;
-  if (typeof type !== "string") return;
-  const toolCallId =
-    "toolCallId" in chunk && typeof chunk.toolCallId === "string" ? chunk.toolCallId : undefined;
-  if (!toolCallId) return;
-
-  switch (type) {
-    case "tool-input-start": {
-      const toolName = "toolName" in chunk ? stringOr(chunk.toolName, "tool") : "tool";
-      acc.set(toolCallId, {
-        toolCallId,
-        toolName,
-        state: "input-streaming",
-        input: undefined,
-      });
-      return;
-    }
-    case "tool-input-available": {
-      const existing = acc.get(toolCallId);
-      const toolName =
-        "toolName" in chunk && typeof chunk.toolName === "string"
-          ? chunk.toolName
-          : (existing?.toolName ?? "tool");
-      acc.set(toolCallId, {
-        ...(existing ?? { toolCallId, toolName, state: "input-streaming" }),
-        toolCallId,
-        toolName,
-        state: "input-available",
-        input: "input" in chunk ? chunk.input : undefined,
-      });
-      return;
-    }
-    case "tool-output-available": {
-      const existing = acc.get(toolCallId);
-      if (!existing) return;
-      acc.set(toolCallId, {
-        ...existing,
-        state: "output-available",
-        output: "output" in chunk ? chunk.output : undefined,
-      });
-      return;
-    }
-    case "tool-output-error": {
-      const existing = acc.get(toolCallId);
-      if (!existing) return;
-      acc.set(toolCallId, {
-        ...existing,
-        state: "output-error",
-        errorText:
-          "errorText" in chunk && typeof chunk.errorText === "string"
-            ? chunk.errorText
-            : existing.errorText,
-      });
-      return;
-    }
-    default:
-      return;
-  }
-}
-
-/**
- * Children whose state is irreversibly resolved. The reconciliation rules
- * never overwrite these — both the explicit `delegate-end` terminator and
- * the `parent.state === "done"` fallback are last-write-wins safety nets,
- * not authority over actual outcome chunks.
+ * Children whose state is irreversibly resolved. The `delegate-end` blanket
+ * rule never overwrites these.
  */
 const TERMINAL_CHILD_STATES = new Set<ToolCallDisplay["state"]>([
   "output-available",
@@ -199,8 +109,6 @@ function interruptChild(child: ToolCallDisplay): void {
 
 /**
  * Recursively interrupt a child and every descendant.
- * Used when a parent is listed in `delegate-end.pendingToolCallIds`
- * — its inner tools were also cut short.
  */
 function interruptSubtree(child: ToolCallDisplay): void {
   interruptChild(child);
@@ -210,54 +118,21 @@ function interruptSubtree(child: ToolCallDisplay): void {
 }
 
 /**
- * Build a tree of `ToolCallDisplay` entries from a flat accumulator of
- * namespaced `toolCallId`s.
- *
- * An entry `parentId-childId` is a direct child of `parentId`.
- * An entry `parentId-childId-grandchildId` is a direct child of
- * `parentId-childId`. This recurses so the UI can render arbitrary
- * nesting depth (e.g. delegate → agent_web → fetch).
- *
- * Orphaned descendants whose intermediate parent is missing in the flat
- * map are promoted to direct children so nothing is silently dropped.
+ * Read a `parentToolCallId` from a `data-nested-chunk` envelope payload
+ * defensively. Returns `undefined` when the shape is malformed.
  */
-function buildNestedChildren(
-  flat: Map<string, ToolCallDisplay>,
-  parentId: string,
-): ToolCallDisplay[] {
-  const prefix = `${parentId}-`;
-  const children: ToolCallDisplay[] = [];
-
-  for (const [id, display] of flat) {
-    if (!id.startsWith(prefix)) continue;
-    const suffix = id.slice(prefix.length);
-    if (suffix.includes("-")) continue; // not a direct child — recurse below
-    const nested = buildNestedChildren(flat, id);
-    children.push(nested.length > 0 ? { ...display, children: nested } : display);
-  }
-
-  return children;
-}
-
-/**
- * Read the parent message's lifecycle state. AI SDK v6's `UIMessage` does
- * not type a top-level `state` field, but downstream layers (chat
- * persistence, hand-built crash-test fixtures) may stamp one — we read
- * defensively. Returns `true` only when the message has explicitly
- * reached its terminal turn.
- */
-function isMessageDone(msg: AtlasUIMessage): boolean {
-  if (typeof msg !== "object" || msg === null) return false;
-  if (!("state" in msg)) return false;
-  const state = (msg as { state?: unknown }).state;
-  return state === "done";
+function readNestedParentId(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const id = "parentToolCallId" in data && typeof data.parentToolCallId === "string"
+    ? data.parentToolCallId
+    : undefined;
+  return id;
 }
 
 /**
  * Extract tool-call parts from an {@link AtlasUIMessage} in stream order,
  * reconstruct any nested delegate children, and reconcile their final
- * states using the `delegate-end` terminator and `parent.state === "done"`
- * crash fallback rules.
+ * states using the `delegate-end` blanket rule.
  *
  * See module doc for pass semantics. `data-delegate-ledger` parts are
  * silently dropped — they surface via a separate reflection-layer path.
@@ -275,121 +150,202 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
     if (display.toolCallId) byToolCallId.set(display.toolCallId, display);
   }
 
-  // Pass 2: group `data-delegate-chunk` envelopes by `delegateToolCallId`.
-  // `delegate-end` chunks are routed to a separate map (the terminator
-  // rule operates on them, not the per-child accumulator).
-  const grouped = new Map<string, ChildAccumulator>();
-  const delegateEndPending = new Map<string, string[]>();
-  // Per-delegate ephemeral accumulators: reasoning text and progress lines.
+  // Pass 2: collect raw chunks from data-delegate-chunk and data-nested-chunk
+  // into per-parent arrays, then run accumulateChunks once per group.
+
+  // Top-level nested-chunk chunks grouped by parentToolCallId.
+  const nestedChunksByParent = new Map<string, unknown[]>();
+
+  // Delegate-chunk chunks grouped by (delegateToolCallId → parentToolCallId → chunks).
+  // Raw tool chunks are keyed under the delegate itself; nested-chunk unwraps
+  // are keyed under their inner parentToolCallId so accumulateChunks stamps
+  // the correct parent.
+  const delegateChunksByParent = new Map<string, Map<string, unknown[]>>();
+
+  // Per-delegate metadata collected during the sweep.
   const delegateReasoning = new Map<string, string>();
   const delegateProgress = new Map<string, string[]>();
+  const delegateTerminated = new Set<string>();
+
   for (const part of msg.parts) {
     if (typeof part !== "object" || part === null || !("type" in part)) continue;
-    if (part.type !== "data-delegate-chunk") continue;
-    if (!("data" in part) || typeof part.data !== "object" || part.data === null) continue;
-    if (!("delegateToolCallId" in part.data) || typeof part.data.delegateToolCallId !== "string") {
+
+    // --- Top-level nested-chunk (direct agent calls) ---
+    if (part.type === "data-nested-chunk") {
+      if (!("data" in part) || typeof part.data !== "object" || part.data === null) continue;
+      const parentToolCallId = readNestedParentId(part.data);
+      if (!parentToolCallId) continue;
+      const chunk = "chunk" in part.data ? part.data.chunk : undefined;
+      if (chunk === undefined) continue;
+
+      const list = nestedChunksByParent.get(parentToolCallId);
+      if (list) {
+        list.push(chunk);
+      } else {
+        nestedChunksByParent.set(parentToolCallId, [chunk]);
+      }
       continue;
     }
-    const delegateToolCallId = part.data.delegateToolCallId;
+
+    // --- Delegate-chunk (only delegates accepted from here) ---
+    if (part.type !== "data-delegate-chunk") continue;
+    if (!("data" in part) || typeof part.data !== "object" || part.data === null) continue;
+    const delegateToolCallId =
+      "delegateToolCallId" in part.data && typeof part.data.delegateToolCallId === "string"
+        ? part.data.delegateToolCallId
+        : undefined;
+    if (!delegateToolCallId) continue;
+
     // Skip orphans: envelope with no matching top-level delegate entry.
     const parent = byToolCallId.get(delegateToolCallId);
     if (!parent || parent.toolName !== "delegate") continue;
-    let acc = grouped.get(delegateToolCallId);
-    if (!acc) {
-      acc = new Map();
-      grouped.set(delegateToolCallId, acc);
-    }
+
     const chunk = "chunk" in part.data ? part.data.chunk : undefined;
+    if (chunk === undefined) continue;
+
+    // Sentinel: delegate-end is a blanket terminator for this delegate.
     if (
       typeof chunk === "object" &&
       chunk !== null &&
       "type" in chunk &&
       chunk.type === "delegate-end"
     ) {
-      // Malformed terminators (missing or non-array `pendingToolCallIds`)
-      // are dropped entirely — better to fall through to the
-      // `parent.state === "done"` rule than to falsely register a
-      // valid-but-empty terminator that suppresses it.
-      if ("pendingToolCallIds" in chunk && Array.isArray(chunk.pendingToolCallIds)) {
-        const pending = chunk.pendingToolCallIds.filter(
-          (id): id is string => typeof id === "string",
-        );
-        delegateEndPending.set(delegateToolCallId, pending);
-      }
+      delegateTerminated.add(delegateToolCallId);
       continue;
     }
-    // Accumulate reasoning deltas, progress events, and tool timings
-    // alongside tool chunks.
+
+    // Accumulate reasoning deltas on the delegate entry itself.
     if (
       typeof chunk === "object" &&
       chunk !== null &&
       "type" in chunk &&
-      typeof chunk.type === "string"
+      typeof chunk.type === "string" &&
+      chunk.type === "reasoning-delta" &&
+      "delta" in chunk &&
+      typeof chunk.delta === "string"
     ) {
-      if (chunk.type === "reasoning-delta" && "delta" in chunk && typeof chunk.delta === "string") {
-        const prev = delegateReasoning.get(delegateToolCallId) ?? "";
-        delegateReasoning.set(delegateToolCallId, prev + chunk.delta);
-        continue;
-      }
-      if (
-        chunk.type === "data-tool-progress" &&
-        "data" in chunk &&
-        typeof chunk.data === "object" &&
-        chunk.data !== null &&
-        "content" in chunk.data &&
-        typeof chunk.data.content === "string"
-      ) {
-        const list = delegateProgress.get(delegateToolCallId) ?? [];
-        list.push(chunk.data.content);
-        delegateProgress.set(delegateToolCallId, list);
-        continue;
-      }
-      if (
-        chunk.type === "data-tool-timing" &&
-        "data" in chunk &&
-        typeof chunk.data === "object" &&
-        chunk.data !== null &&
-        "toolCallId" in chunk.data &&
-        typeof chunk.data.toolCallId === "string" &&
-        "durationMs" in chunk.data &&
-        typeof chunk.data.durationMs === "number"
-      ) {
-        const existing = acc.get(chunk.data.toolCallId);
-        if (existing) {
-          existing.durationMs = chunk.data.durationMs;
-        }
-        continue;
-      }
+      const prev = delegateReasoning.get(delegateToolCallId) ?? "";
+      delegateReasoning.set(delegateToolCallId, prev + chunk.delta);
+      continue;
     }
-    applyChunk(acc, chunk);
+
+    // Accumulate progress lines on the delegate entry itself.
+    if (
+      typeof chunk === "object" &&
+      chunk !== null &&
+      "type" in chunk &&
+      typeof chunk.type === "string" &&
+      chunk.type === "data-tool-progress" &&
+      "data" in chunk &&
+      typeof chunk.data === "object" &&
+      chunk.data !== null &&
+      "content" in chunk.data &&
+      typeof chunk.data.content === "string"
+    ) {
+      const list = delegateProgress.get(delegateToolCallId) ?? [];
+      list.push(chunk.data.content);
+      delegateProgress.set(delegateToolCallId, list);
+      continue;
+    }
+
+    // Unwrap nested-chunk envelopes inside delegate-chunk recursively.
+    if (
+      typeof chunk === "object" &&
+      chunk !== null &&
+      "type" in chunk &&
+      chunk.type === "data-nested-chunk"
+    ) {
+      if (!("data" in chunk) || typeof chunk.data !== "object" || chunk.data === null) continue;
+      const nestedParentId = readNestedParentId(chunk.data);
+      const innerChunk = "chunk" in chunk.data ? chunk.data.chunk : undefined;
+      if (nestedParentId && innerChunk !== undefined) {
+        let parentMap = delegateChunksByParent.get(delegateToolCallId);
+        if (!parentMap) {
+          parentMap = new Map();
+          delegateChunksByParent.set(delegateToolCallId, parentMap);
+        }
+        const list = parentMap.get(nestedParentId);
+        if (list) {
+          list.push(innerChunk);
+        } else {
+          parentMap.set(nestedParentId, [innerChunk]);
+        }
+      }
+      continue;
+    }
+
+    // Raw tool chunk — direct child of the delegate.
+    let parentMap = delegateChunksByParent.get(delegateToolCallId);
+    if (!parentMap) {
+      parentMap = new Map();
+      delegateChunksByParent.set(delegateToolCallId, parentMap);
+    }
+    const list = parentMap.get(delegateToolCallId);
+    if (list) {
+      list.push(chunk);
+    } else {
+      parentMap.set(delegateToolCallId, [chunk]);
+    }
   }
 
-  // Attach reconstructed children, reasoning, and progress to their parent
-  // delegate entries.
-  for (const [delegateToolCallId, acc] of grouped) {
-    const parent = byToolCallId.get(delegateToolCallId);
-    if (!parent) continue;
-    parent.children = buildNestedChildren(acc, delegateToolCallId);
+  // Pass 3a: Accumulate top-level nested-chunk groups.
+  const nestedFlat = new Map<string, ToolCallDisplay & { parentToolCallId?: string }>();
+  for (const [parentToolCallId, chunks] of nestedChunksByParent) {
+    const acc = accumulateChunks(chunks as AtlasUIMessageChunk[], parentToolCallId);
+    for (const [k, v] of acc) {
+      nestedFlat.set(k, v);
+    }
+  }
+
+  // Pass 3b: Accumulate per-delegate / per-parent groups.
+  const delegateFlats = new Map<string, Map<string, ToolCallDisplay & { parentToolCallId?: string }>>();
+  for (const [delegateToolCallId, parentMap] of delegateChunksByParent) {
+    const flat = new Map<string, ToolCallDisplay & { parentToolCallId?: string }>();
+    for (const [parentToolCallId, chunks] of parentMap) {
+      const acc = accumulateChunks(chunks as AtlasUIMessageChunk[], parentToolCallId);
+      for (const [k, v] of acc) {
+        flat.set(k, v);
+      }
+    }
+    delegateFlats.set(delegateToolCallId, flat);
+  }
+
+  // Build global tree from Pass 1 entries + top-level nested-chunk children.
+  const globalFlat = new Map<string, ToolCallDisplay & { parentToolCallId?: string }>();
+  for (const call of calls) {
+    globalFlat.set(call.toolCallId, { ...call, parentToolCallId: undefined });
+  }
+  for (const [k, v] of nestedFlat) {
+    if (!globalFlat.has(k)) {
+      globalFlat.set(k, v);
+    }
+  }
+  const trees = buildToolCallTree(globalFlat);
+
+  // Pass 3c: Build per-delegate subtrees and attach to the matching delegate roots.
+  for (const [delegateToolCallId, flat] of delegateFlats) {
+    const delegateTree = trees.find((t) => t.toolCallId === delegateToolCallId);
+    if (!delegateTree) continue;
+
+    delegateTree.children = buildToolCallTree(flat);
+
     const reasoning = delegateReasoning.get(delegateToolCallId);
     if (reasoning && reasoning.length > 0) {
-      parent.reasoning = reasoning;
+      delegateTree.reasoning = reasoning;
     }
     const progress = delegateProgress.get(delegateToolCallId);
     if (progress && progress.length > 0) {
-      parent.progress = progress;
+      delegateTree.progress = progress;
     }
   }
 
-  // Collect `data-delegate-ledger` parts to attach server-reported
-  // `durationMs` to reconstructed tool-call entries.
-  // Keys are `${delegateToolCallId}-${originalToolCallId}` to match the
-  // namespaced ids stored in the accumulator.
-  const durationMap = new Map<string, number>();
+  // Pass 3d: Collect `data-delegate-ledger` durations scoped per delegate.
+  const durationMap = new Map<string, Map<string, number>>();
   for (const part of msg.parts) {
     if (typeof part !== "object" || part === null || !("type" in part)) continue;
     if (part.type !== "data-delegate-ledger") continue;
     if (!("data" in part) || typeof part.data !== "object" || part.data === null) continue;
-    const delegateToolCallId =
+    const dId =
       "delegateToolCallId" in part.data && typeof part.data.delegateToolCallId === "string"
         ? part.data.delegateToolCallId
         : "";
@@ -401,46 +357,39 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
         "toolCallId" in entry && typeof entry.toolCallId === "string" ? entry.toolCallId : "";
       const dur =
         "durationMs" in entry && typeof entry.durationMs === "number" ? entry.durationMs : undefined;
-      if (delegateToolCallId && childId && dur !== undefined && dur > 0) {
-        durationMap.set(`${delegateToolCallId}-${childId}`, dur);
+      if (dId && childId && dur !== undefined && dur > 0) {
+        let innerMap = durationMap.get(dId);
+        if (!innerMap) {
+          innerMap = new Map();
+          durationMap.set(dId, innerMap);
+        }
+        innerMap.set(childId, dur);
       }
     }
   }
 
-  // Walk every reconstructed tree (including nested) and stamp durationMs
-  // from the ledger where available. Tree ids are already namespaced.
-  function attachDurations(entries: ToolCallDisplay[]): void {
+  // Walk every delegate subtree and stamp scoped durations + apply delegate-end.
+  function walkAndFinalize(entries: ToolCallDisplay[], delegateId: string): void {
     for (const entry of entries) {
-      if (!entry.durationMs && durationMap.has(entry.toolCallId)) {
-        entry.durationMs = durationMap.get(entry.toolCallId);
+      const innerMap = durationMap.get(delegateId);
+      if (!entry.durationMs && innerMap?.has(entry.toolCallId)) {
+        entry.durationMs = innerMap.get(entry.toolCallId);
+      }
+      if (delegateTerminated.has(delegateId)) {
+        interruptSubtree(entry);
       }
       if (entry.children && entry.children.length > 0) {
-        attachDurations(entry.children);
+        walkAndFinalize(entry.children, delegateId);
       }
     }
   }
-  attachDurations(calls);
 
-  // Reconciliation rules. `delegate-end` is checked first; the
-  // parent-state fallback only applies to delegates that did NOT receive
-  // an explicit terminator (even an empty one).
-  const parentDone = isMessageDone(msg);
-  for (const [delegateToolCallId, parent] of byToolCallId) {
-    if (parent.toolName !== "delegate") continue;
-    const children = parent.children;
-    if (!children) continue;
-    if (delegateEndPending.has(delegateToolCallId)) {
-      const pending = delegateEndPending.get(delegateToolCallId) ?? [];
-      const pendingSet = new Set(pending);
-      for (const child of children) {
-        if (pendingSet.has(child.toolCallId)) interruptSubtree(child);
-      }
-      continue;
-    }
-    if (parentDone) {
-      for (const child of children) interruptSubtree(child);
+  for (const tree of trees) {
+    const isDelegate = byToolCallId.has(tree.toolCallId) && tree.toolName === "delegate";
+    if (isDelegate && tree.children) {
+      walkAndFinalize(tree.children, tree.toolCallId);
     }
   }
 
-  return calls;
+  return trees;
 }
