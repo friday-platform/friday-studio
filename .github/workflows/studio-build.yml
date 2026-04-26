@@ -86,12 +86,14 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Setup Go (pty-server build)
-        # pty-server is a pure-Go binary built per-target by build-studio.ts.
-        # Pin the same minor as go.mod to avoid silent toolchain drift.
+      - name: Setup Go (pty-server + friday-launcher builds)
+        # 1.26 required by tools/friday-launcher/go.mod (process-compose
+        # v1.103.0 declares go 1.26). Atlas root go.mod is on 1.25.4 but
+        # 1.26 toolchain compiles 1.25 syntax fine. Cannot use
+        # go-version-file: go.mod (would pick up the older 1.25.4).
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: false
 
       - name: Install JS deps (Deno workspace)
