@@ -353,9 +353,7 @@ describe("createDelegateTool", () => {
 
     // The `finally` block in `execute()` must always emit a delegate-end
     // terminator and a delegate-ledger event, even when result.text rejects.
-    const terminators = writer.writes
-      .map((w) => w.chunk)
-      .filter((c) => extractDelegateEndPending(c) !== undefined);
+    const terminators = writer.writes.map((w) => w.chunk).filter((c) => isDelegateEndTerminator(c));
     expect(terminators).toHaveLength(1);
     const ledgerWrites = writer.writes
       .map((w) => w.chunk)
@@ -739,14 +737,11 @@ describe("createDelegateTool", () => {
     // (a) Child's streamText received the abort signal.
     expect(captured.args?.abortSignal).toBe(ac.signal);
 
-    // (b) Proxy received a delegate-end envelope listing the in-flight
-    // (namespaced) toolCallId.
-    const terminators = writer.writes
-      .map((w) => w.chunk)
-      .map((c) => extractDelegateEndPending(c))
-      .filter((p): p is string[] => p !== undefined);
+    // (b) Proxy received a delegate-end terminator with no payload.
+    // Simplified crash recovery: when delegate-end fires, all non-terminal
+    // children under this delegate are promoted to output-error.
+    const terminators = writer.writes.map((w) => w.chunk).filter((c) => isDelegateEndTerminator(c));
     expect(terminators).toHaveLength(1);
-    expect(terminators[0]).toEqual(["del-call-1-c1"]);
 
     // (c) data-delegate-ledger event was written with the partial ledger.
     const ledgerWrites = writer.writes
@@ -836,21 +831,17 @@ describe("createDelegateTool", () => {
     const reloaded = validated[0];
     if (!reloaded) throw new Error("expected reloaded message");
 
-    // Exactly one delegate-end chunk after reload, and it lists the in-flight
-    // child id (namespaced).
+    // Exactly one delegate-end chunk after reload, with no payload.
+    // Simplified crash recovery promotes all non-terminal children.
     const delegateChunks = reloaded.parts.filter((p) => p.type === "data-delegate-chunk");
-    const reloadedTerminators = delegateChunks
-      .map((p) => {
-        if (p.type !== "data-delegate-chunk") return undefined;
-        const inner = p.data?.chunk;
-        if (typeof inner !== "object" || inner === null) return undefined;
-        if (!("type" in inner) || inner.type !== "delegate-end") return undefined;
-        const pending = (inner as { pendingToolCallIds?: unknown }).pendingToolCallIds;
-        return Array.isArray(pending) ? pending : undefined;
-      })
-      .filter((p): p is unknown[] => p !== undefined);
+    const reloadedTerminators = delegateChunks.filter((p) => {
+      if (p.type !== "data-delegate-chunk") return false;
+      const inner = p.data?.chunk;
+      if (typeof inner !== "object" || inner === null) return false;
+      if (!("type" in inner) || inner.type !== "delegate-end") return false;
+      return !("pendingToolCallIds" in inner);
+    });
     expect(reloadedTerminators).toHaveLength(1);
-    expect(reloadedTerminators[0]).toEqual(["del-call-1-c2"]);
 
     // Ledger present after reload, listing both children.
     const ledgerParts = reloaded.parts.filter((p) => p.type === "data-delegate-ledger");
@@ -890,7 +881,7 @@ describe("createDelegateTool", () => {
     const lastDelegateChunk = allDelegateChunks[allDelegateChunks.length - 1];
     expect(lastDelegateChunk).toBeDefined();
     if (!lastDelegateChunk) throw new Error("expected last delegate chunk");
-    expect(extractDelegateEndPending(lastDelegateChunk)).toEqual([]);
+    expect(isDelegateEndTerminator(lastDelegateChunk)).toBe(true);
   });
 
   it("rejects unknown or unconfigured MCP server IDs with ok=false", async () => {
@@ -1203,21 +1194,20 @@ describe("createDelegateTool", () => {
 // ─── Local helpers (after the test for readability) ─────────────────────────
 
 /**
- * Pull `pendingToolCallIds` out of a `data-delegate-chunk` envelope whose
- * inner chunk is a synthetic `delegate-end` terminator. Returns undefined
- * for any other chunk shape (text deltas, regular tool chunks, ledger).
+ * Returns `true` if the envelope is a `data-delegate-chunk` whose inner chunk
+ * is the synthetic `delegate-end` terminator with no payload. Returns `false`
+ * for any other chunk shape (text deltas, regular tool chunks, ledger, or a
+ * terminator that carries a legacy `pendingToolCallIds` payload).
  */
-function extractDelegateEndPending(envelope: AtlasUIMessageChunk): string[] | undefined {
-  if (typeof envelope !== "object" || envelope === null) return undefined;
-  if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") return undefined;
+function isDelegateEndTerminator(envelope: AtlasUIMessageChunk): boolean {
+  if (typeof envelope !== "object" || envelope === null) return false;
+  if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") return false;
   const data = (envelope as { data?: unknown }).data;
-  if (typeof data !== "object" || data === null) return undefined;
+  if (typeof data !== "object" || data === null) return false;
   const inner = (data as { chunk?: unknown }).chunk;
-  if (typeof inner !== "object" || inner === null) return undefined;
-  if (!("type" in inner) || inner.type !== "delegate-end") return undefined;
-  const pending = (inner as { pendingToolCallIds?: unknown }).pendingToolCallIds;
-  if (!Array.isArray(pending)) return undefined;
-  return pending.filter((id): id is string => typeof id === "string");
+  if (typeof inner !== "object" || inner === null) return false;
+  if (!("type" in inner) || inner.type !== "delegate-end") return false;
+  return !("pendingToolCallIds" in inner);
 }
 
 /**

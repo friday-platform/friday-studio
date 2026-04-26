@@ -12,9 +12,8 @@
  * Alongside the compact result, the delegate emits one `data-delegate-ledger`
  * event from a `finally` block so it always fires — clean finish, abort, or
  * thrown error. The `finally` also writes a single synthetic terminator chunk
- * (`{type: "delegate-end", pendingToolCallIds: string[]}`) listing any child
- * `toolCallId`s that started but never received a terminal chunk, so reducers
- * downstream can recover children stuck in `input-streaming`/`input-available`.
+ * (`{ type: "delegate-end" }`) so reducers downstream can recover any
+ * non-terminal children still stuck in `input-streaming`/`input-available`.
  */
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
@@ -139,12 +138,6 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       // The outline projection (name+outcome) lands in the tool result;
       // the full entries ride on the out-of-band data-delegate-ledger event.
       const ledger = new Map<string, DelegateLedgerEntry>();
-      // Per-call start timestamps (captured from `tool-input-available` chunks).
-      const startedAt = new Map<string, number>();
-      // Per-call terminal arrival flag (`tool-output-available`/`tool-output-error`).
-      // A child id present in `startedAt` but absent here at finally-time is "pending"
-      // and lands in `delegate-end.pendingToolCallIds` (namespaced).
-      const terminated = new Set<string>();
 
       let finishInput: FinishInput | undefined;
       let finalText = "";
@@ -289,7 +282,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         // "delegate-end is the final data-delegate-chunk" invariant.
         const uiStream = result.toUIMessageStream<AtlasUIMessage>();
         const [observerBranch, parentBranch] = uiStream.tee();
-        const observerDone = observeChunkTimings(observerBranch, startedAt, terminated, ledger);
+        const observerDone = observeChunkTimings(observerBranch, ledger);
         const forwardDone = forwardThroughProxy(parentBranch, proxy);
 
         // Resolve steps first so we can populate `toolsUsed` even when
@@ -359,15 +352,6 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           message: executionError.message,
         });
       } finally {
-        // Compute pending child toolCallIds (started but never terminated).
-        // Emit them in namespaced form to match the on-wire envelope shape.
-        const pendingToolCallIds: string[] = [];
-        for (const childId of startedAt.keys()) {
-          if (!terminated.has(childId)) {
-            pendingToolCallIds.push(`${toolCallId}-${childId}`);
-          }
-        }
-
         // If the parent's abortSignal fired, capture a stable reason. We do
         // this here (not in catch) because streamText may not throw on abort —
         // it can simply truncate the stream cleanly.
@@ -382,10 +366,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         // emit it *as*, not what we route it through.
         writer.write({
           type: "data-delegate-chunk",
-          data: {
-            delegateToolCallId: toolCallId,
-            chunk: { type: "delegate-end", pendingToolCallIds },
-          },
+          data: { delegateToolCallId: toolCallId, chunk: { type: "delegate-end" } },
         });
 
         // Full ledger ridealong. Always emitted, even with partial accumulator
@@ -463,15 +444,13 @@ async function forwardThroughProxy(
  *
  * Writes directly into `ledger` so timing is present whether or not the
  * matching step has been walked yet (step walking populates name/input/etc.
- * after this settles). Also marks `terminated` so the delegate's `finally`
- * can compute `pendingToolCallIds` for the synthetic `delegate-end` chunk.
+ * after this settles).
  */
 async function observeChunkTimings(
   stream: ReadableStream<unknown>,
-  startedAt: Map<string, number>,
-  terminated: Set<string>,
   ledger: Map<string, DelegateLedgerEntry>,
 ): Promise<void> {
+  const startedAt = new Map<string, number>();
   const reader = stream.getReader();
   try {
     while (true) {
@@ -485,7 +464,6 @@ async function observeChunkTimings(
       if (type === "tool-input-available") {
         if (!startedAt.has(toolCallId)) startedAt.set(toolCallId, Date.now());
       } else if (type === "tool-output-available" || type === "tool-output-error") {
-        terminated.add(toolCallId);
         const start = startedAt.get(toolCallId);
         if (start === undefined) continue;
         const existing = ledger.get(toolCallId);
