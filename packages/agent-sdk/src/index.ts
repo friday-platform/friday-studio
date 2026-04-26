@@ -37,6 +37,7 @@ export {
   SkillWriteEventSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
+export { createNestedChunkWriter } from "./nested-chunk-writer.ts";
 export { normalizeToUIMessages } from "./normalize-to-ui-messages.ts";
 export { createPlatformTools, PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
 export * from "./resolved-memory.ts";

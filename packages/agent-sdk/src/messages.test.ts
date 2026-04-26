@@ -362,6 +362,33 @@ describe("validateAtlasUIMessages", () => {
     }
   });
 
+  it("validates nested-chunk data event", async () => {
+    const messages = [
+      {
+        id: "1",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-nested-chunk",
+            data: {
+              parentToolCallId: "tc-parent-1",
+              chunk: { type: "text-delta", id: "t1", delta: "hello from child" },
+            },
+          },
+        ],
+        metadata: {},
+      },
+    ];
+    const validated = await validateAtlasUIMessages(messages);
+    expect(validated.length).toEqual(1);
+    const part = validated[0]?.parts[0];
+    expect(part?.type).toEqual("data-nested-chunk");
+    if (part?.type === "data-nested-chunk") {
+      expect(part.data.parentToolCallId).toEqual("tc-parent-1");
+      expect(part.data.chunk).toEqual({ type: "text-delta", id: "t1", delta: "hello from child" });
+    }
+  });
+
   it("validates skill-lint-warning data event", async () => {
     const messages = [
       {

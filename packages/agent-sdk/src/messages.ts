@@ -110,6 +110,12 @@ export const AtlasDataEventSchemas = {
    * union here.
    */
   "delegate-chunk": z.object({ delegateToolCallId: z.string(), chunk: z.unknown() }),
+  /**
+   * Envelope-wrapped chunk from a nested child tool call's stream. `chunk` is
+   * a namespaced AI SDK `UIMessageChunk` — left as `unknown` to avoid
+   * duplicating the entire `UIMessageChunk` tagged union here.
+   */
+  "nested-chunk": z.object({ parentToolCallId: z.string(), chunk: z.unknown() }),
   /** Final ledger of tools used during a delegate sub-agent run. */
   "delegate-ledger": z.object({
     delegateToolCallId: z.string(),
@@ -253,6 +259,7 @@ export type AtlasDataEvents = {
   "inner-tool-call": z.infer<(typeof AtlasDataEventSchemas)["inner-tool-call"]>;
   "delegate-chunk": z.infer<(typeof AtlasDataEventSchemas)["delegate-chunk"]>;
   "delegate-ledger": z.infer<(typeof AtlasDataEventSchemas)["delegate-ledger"]>;
+  "nested-chunk": z.infer<(typeof AtlasDataEventSchemas)["nested-chunk"]>;
   "action-summary": z.infer<(typeof AtlasDataEventSchemas)["action-summary"]>;
   "memory-write": z.infer<(typeof AtlasDataEventSchemas)["memory-write"]>;
   "memory-rollback": z.infer<(typeof AtlasDataEventSchemas)["memory-rollback"]>;
