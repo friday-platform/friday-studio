@@ -19,7 +19,11 @@ export {
   updateBlueprintSignalConfig,
 } from "./blueprint.ts";
 // Credential extraction and mutation
-export type { CredentialPathType, CredentialUsage, ParsedCredentialPath } from "./credentials.ts";
+export type {
+  CredentialPathType,
+  CredentialUsage,
+  ParsedCredentialPath,
+} from "./credentials.ts";
 export {
   extractCredentials,
   parseCredentialPath,
@@ -30,7 +34,11 @@ export {
 } from "./credentials.ts";
 export type { FSMAgentResponse, FSMAgentUpdate } from "./fsm-agents.ts";
 // FSM agent extraction and mutations
-export { extractFSMAgents, FSMAgentUpdateSchema, updateFSMAgent } from "./fsm-agents.ts";
+export {
+  extractFSMAgents,
+  FSMAgentUpdateSchema,
+  updateFSMAgent,
+} from "./fsm-agents.ts";
 // FSM types (re-exported from @atlas/fsm-engine)
 export type {
   FSMAction,
@@ -47,8 +55,20 @@ export type {
   IntegrationsData,
 } from "./integrations.ts";
 export { deriveIntegrations } from "./integrations.ts";
+// MCP server mutations
+export type { ServerReference } from "./mcp-servers.ts";
+export {
+  disableMCPServer,
+  enableMCPServer,
+  findServerReferences,
+} from "./mcp-servers.ts";
 // Signal mutations
-export { createSignal, deleteSignal, patchSignalConfig, updateSignal } from "./signals.ts";
+export {
+  createSignal,
+  deleteSignal,
+  patchSignalConfig,
+  updateSignal,
+} from "./signals.ts";
 // Types
 export type {
   CascadeTarget,

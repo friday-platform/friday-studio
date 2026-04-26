@@ -6,6 +6,7 @@
 
 // Workspace functionality moved to @atlas/workspace package
 
+export { findServerReferences } from "@atlas/config/mutations";
 // Export LLM agent conversion types and functions
 export type { LLMOutput } from "./src/agent-conversion/from-llm.ts";
 export {
@@ -20,10 +21,7 @@ export { convertLLMAgentToSDK } from "./src/agent-conversion/index.ts";
 export { AgentLoader, AgentRegistry } from "./src/agent-loader/index.ts";
 export * from "./src/agent-server/mod.ts";
 // Atlas Configuration
-export {
-  getAtlasBaseUrl,
-  getCredentialsApiUrl,
-} from "./src/atlas-config.ts";
+export { getAtlasBaseUrl, getCredentialsApiUrl } from "./src/atlas-config.ts";
 // Conversation Storage
 export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
@@ -54,14 +52,8 @@ export type {
   ServerReference,
   WorkspaceMCPStatus,
 } from "./src/mcp-registry/workspace-mcp.ts";
-export {
-  findServerReferences,
-  getWorkspaceMCPStatus,
-} from "./src/mcp-registry/workspace-mcp.ts";
-export type {
-  MountConsumer,
-  MountSource,
-} from "./src/mount-registry/mod.ts";
+export { getWorkspaceMCPStatus } from "./src/mcp-registry/workspace-mcp.ts";
+export type { MountConsumer, MountSource } from "./src/mount-registry/mod.ts";
 // Mount Registry
 export {
   buildSourceId,
@@ -146,7 +138,10 @@ export type {
   UnknownErrorCause,
 } from "./src/types/error-causes.ts";
 // Core types
-export type { IWorkspaceSession, IWorkspaceSignal } from "./src/types/legacy.ts";
+export type {
+  IWorkspaceSession,
+  IWorkspaceSignal,
+} from "./src/types/legacy.ts";
 // Outline Reference schemas for standardized agent outline updates
 export {
   type OutlineRef,

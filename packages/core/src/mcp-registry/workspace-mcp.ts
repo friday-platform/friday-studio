@@ -1,15 +1,12 @@
 import type { WorkspaceConfig } from "@atlas/config";
+import { findServerReferences, type ServerReference } from "@atlas/config/mutations";
 import { discoverMCPServers, type LinkSummary } from "./discovery.ts";
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
-/** References to a given MCP server found in workspace configuration. */
-export interface ServerReference {
-  agentIds: string[];
-  jobIds: string[];
-}
+export type { ServerReference };
 
 /** MCP server enriched with workspace-scoped metadata (agent/job assignments). */
 export interface EnrichedMCPServer {
@@ -26,72 +23,6 @@ export interface EnrichedMCPServer {
 export interface WorkspaceMCPStatus {
   enabled: EnrichedMCPServer[];
   available: EnrichedMCPServer[];
-}
-
-// =============================================================================
-// REFERENCE WALKER
-// =============================================================================
-
-/**
- * Find all workspace agents and FSM job steps that reference a given MCP server.
- *
- * Walks:
- * 1. Top-level LLM agents (`config.agents` with `type === "llm"`), checking
- *    their `config.tools` arrays.
- * 2. FSM job actions (`config.jobs[].fsm.states[].entry[]` with `type === "llm"`),
- *    checking their `tools` arrays.
- *
- * @param config - Workspace configuration to search
- * @param serverId - MCP server identifier to look for
- * @returns Agent and job IDs that reference the server
- */
-export function findServerReferences(config: WorkspaceConfig, serverId: string): ServerReference {
-  const agentIdSet = new Set<string>();
-  const jobIdSet = new Set<string>();
-
-  // 1. Top-level LLM agents
-  if (config.agents) {
-    for (const [agentId, agentConfig] of Object.entries(config.agents)) {
-      if (agentConfig.type !== "llm") continue;
-      const tools = agentConfig.config.tools;
-      if (tools && tools.includes(serverId)) {
-        agentIdSet.add(agentId);
-      }
-    }
-  }
-
-  // 2. FSM job actions
-  if (config.jobs) {
-    for (const [jobId, rawJob] of Object.entries(config.jobs)) {
-      const fsm = (rawJob as Record<string, unknown>)?.fsm;
-      if (!fsm || typeof fsm !== "object") continue;
-
-      const states = (fsm as Record<string, unknown>).states;
-      if (!states || typeof states !== "object") continue;
-
-      for (const [, state] of Object.entries(states)) {
-        if (!state || typeof state !== "object") continue;
-        const entry = (state as Record<string, unknown>).entry;
-        if (!Array.isArray(entry)) continue;
-
-        for (const action of entry) {
-          if (
-            action &&
-            typeof action === "object" &&
-            (action as Record<string, unknown>).type === "llm"
-          ) {
-            const tools = (action as Record<string, unknown>).tools;
-            if (Array.isArray(tools) && tools.includes(serverId)) {
-              jobIdSet.add(jobId);
-              break;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return { agentIds: Array.from(agentIdSet), jobIds: Array.from(jobIdSet) };
 }
 
 // =============================================================================

@@ -16,7 +16,8 @@ vi.mock("./discovery.ts", () => ({
 // Import under test
 // ---------------------------------------------------------------------------
 
-import { findServerReferences, getWorkspaceMCPStatus } from "./workspace-mcp.ts";
+import { findServerReferences } from "@atlas/config/mutations";
+import { getWorkspaceMCPStatus } from "./workspace-mcp.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers

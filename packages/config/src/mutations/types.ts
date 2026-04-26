@@ -173,6 +173,14 @@ export function typeChangeError(
 // ==============================================================================
 
 /**
+ * A top-level LLM agent that references the entity being modified/deleted.
+ */
+export interface AgentCascadeTarget {
+  type: "agent";
+  agentId: string;
+}
+
+/**
  * A job that references the entity being modified/deleted.
  * `remainingTriggers` indicates how many triggers would remain after unlinking.
  */
@@ -185,7 +193,7 @@ export interface JobCascadeTarget {
 /**
  * Discriminated union of entities that would be affected by a cascade.
  */
-export type CascadeTarget = JobCascadeTarget;
+export type CascadeTarget = AgentCascadeTarget | JobCascadeTarget;
 
 // ==============================================================================
 // DELETE OPTIONS
