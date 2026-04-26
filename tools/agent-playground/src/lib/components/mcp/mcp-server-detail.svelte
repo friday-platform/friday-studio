@@ -32,6 +32,9 @@
   import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
   import type { SearchResult } from "$lib/queries/mcp-queries";
+  import McpConnectionTest from "./mcp-connection-test.svelte";
+  import McpWorkspaceUsage from "./mcp-workspace-usage.svelte";
+  import McpTestChat from "./mcp-test-chat.svelte";
 
   interface Props {
     server?: MCPServerMetadata | null;
@@ -328,6 +331,15 @@
             configTemplate={server.configTemplate}
           />
         {/if}
+
+        <!-- Connection Test -->
+        <McpConnectionTest serverId={server.id} />
+
+        <!-- Workspace Usage -->
+        <McpWorkspaceUsage serverId={server.id} />
+
+        <!-- Test Chat -->
+        <McpTestChat serverId={server.id} />
 
         <!-- Upstream info -->
         {#if server.upstream}

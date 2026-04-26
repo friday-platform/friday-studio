@@ -39,7 +39,26 @@ const SearchResponseSchema = z.object({
   servers: z.array(SearchResultSchema),
 });
 
+const ToolProbeSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+});
+
+const ToolsProbeSuccessSchema = z.object({
+  ok: z.literal(true),
+  tools: z.array(ToolProbeSchema),
+});
+
+const ToolsProbeFailureSchema = z.object({
+  ok: z.literal(false),
+  error: z.string(),
+  phase: z.enum(["dns", "connect", "auth", "tools"]),
+});
+
+const ToolsProbeResponseSchema = z.union([ToolsProbeSuccessSchema, ToolsProbeFailureSchema]);
+
 export type SearchResult = z.infer<typeof SearchResultSchema>;
+export type ToolsProbeResult = z.infer<typeof ToolsProbeResponseSchema>;
 
 // ==============================================================================
 // QUERY FACTORIES
@@ -96,5 +115,24 @@ export const mcpQueries = {
         return MCPServerMetadataSchema.parse(await res.json());
       },
       staleTime: 60_000,
+    }),
+
+  /**
+   * MCP tool probe — tests whether a server can connect and lists its tools.
+   * Returns success with tool names/descriptions, or failure with error phase.
+   */
+  toolsProbe: (id: string) =>
+    queryOptions({
+      queryKey: ["daemon", "mcp", "tools", id] as const,
+      queryFn: async () => {
+        const client = getDaemonClient();
+        const res = await client.mcp[":id"].tools.$get({ param: { id } });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(`Failed to probe MCP tools: ${res.status} ${JSON.stringify(body)}`);
+        }
+        return ToolsProbeResponseSchema.parse(await res.json());
+      },
+      staleTime: 0,
     }),
 };
