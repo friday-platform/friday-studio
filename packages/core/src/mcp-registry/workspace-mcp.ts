@@ -1,6 +1,7 @@
 import type { WorkspaceConfig } from "@atlas/config";
 import { findServerReferences, type ServerReference } from "@atlas/config/mutations";
 import { discoverMCPServers, type LinkSummary } from "./discovery.ts";
+import type { MCPSource } from "./schemas.ts";
 
 // =============================================================================
 // TYPES
@@ -13,7 +14,7 @@ export interface EnrichedMCPServer {
   id: string;
   name: string;
   description?: string;
-  source: "static" | "registry" | "workspace";
+  source: MCPSource;
   configured: boolean;
   agentIds?: string[];
   jobIds?: string[];
@@ -66,7 +67,7 @@ export async function getWorkspaceMCPStatus(
       if (refs.agentIds.length > 0) enriched.agentIds = refs.agentIds;
       if (refs.jobIds.length > 0) enriched.jobIds = refs.jobIds;
       enabled.push(enriched);
-    } else if (candidate.metadata.source !== "workspace") {
+    } else if (candidate.metadata.source === "static" || candidate.metadata.source === "registry") {
       available.push({
         id: candidate.metadata.id,
         name: candidate.metadata.name,
