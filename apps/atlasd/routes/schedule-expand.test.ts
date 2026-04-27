@@ -1,13 +1,25 @@
+import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
-const mockSmallLLM = vi.hoisted(() =>
-  vi.fn<
-    (params: { system: string; prompt: string; maxOutputTokens?: number }) => Promise<string>
-  >(),
-);
+const { mockSmallLLM, stubPlatformModels } = vi.hoisted(() => {
+  // Inline a minimal PlatformModels stub so the hoisted block has no runtime
+  // imports — vi.mock factories cannot reference module-scope values.
+  const stub = {
+    get() {
+      throw new Error("stub LanguageModelV3 should not be invoked in these tests");
+    },
+  };
+  return {
+    mockSmallLLM:
+      vi.fn<
+        (params: { system: string; prompt: string; maxOutputTokens?: number }) => Promise<string>
+      >(),
+    stubPlatformModels: stub,
+  };
+});
 
 vi.mock("@atlas/llm", () => ({ smallLLM: mockSmallLLM }));
 
@@ -28,13 +40,22 @@ const ErrorResponseSchema = z.object({ error: z.string() });
 
 // ─── Test app setup ──────────────────────────────────────────────────────────
 
+const mockContext = { platformModels: stubPlatformModels };
+
+const testApp = new Hono<{ Variables: { app: typeof mockContext } }>();
+testApp.use("*", async (c, next) => {
+  c.set("app", mockContext);
+  await next();
+});
+testApp.route("/", scheduleExpandRoutes);
+
 function postExpand(body: unknown): Promise<Response> {
   const request = new Request("http://localhost/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return Promise.resolve(scheduleExpandRoutes.fetch(request));
+  return Promise.resolve(testApp.fetch(request));
 }
 
 describe("POST /api/schedule-expand", () => {

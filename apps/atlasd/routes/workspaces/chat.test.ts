@@ -33,7 +33,10 @@ vi.mock("@atlas/core/credentials", () => ({
 
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
 
-vi.mock("@atlas/agent-sdk", () => ({ validateAtlasUIMessages: mockValidateMessages }));
+vi.mock("@atlas/agent-sdk", () => ({
+  validateAtlasUIMessages: mockValidateMessages,
+  normalizeToUIMessages: (message: unknown) => [message],
+}));
 
 // Import the routes after mocks are set up
 import workspaceChatRoutes from "./chat.ts";
