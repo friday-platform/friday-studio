@@ -16,7 +16,7 @@
     "@atlas/workspace-builder": "workspace:*",
     "@faker-js/faker": "^10.4.0",
     "@std/assert": "npm:@jsr/std__assert@^1.0.14",
-    "ai": "^6.0.158",
+    "ai": "^6.0.168",
     "dotenv": "17.4.0",
     "gunshi": "^0.29.3",
     "papaparse": "^5.5.3",

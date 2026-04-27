@@ -10,7 +10,7 @@
     "@atlas/logger": "workspace:*",
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@modelcontextprotocol/sdk": "^1.27.0",
-    "ai": "^6.0.158"
+    "ai": "^6.0.168"
   },
   "devDependencies": { "vitest": "^4.1.0", "zod": "^4.3.5" }
 }
