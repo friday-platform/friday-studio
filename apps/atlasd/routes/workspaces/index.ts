@@ -71,6 +71,7 @@ import {
   materializeImportedMemory,
 } from "./bundle-helpers.ts";
 import { DEFAULT_WORKSPACE_MEMORY } from "./default-workspace-config.ts";
+import { beginDraft, discardDraft, publishDraft, readDraft } from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 import { resourceRoutes } from "./resources.ts";
@@ -2490,6 +2491,109 @@ const workspacesRoutes = daemonFactory
 
       const byJob = entries.filter((e) => e.skills.length > 0);
       return c.json({ byJob });
+    },
+  )
+  // ─── DRAFT FILE FLOW ────────────────────────────────────────────────────
+  .post(
+    "/:workspaceId/draft/begin",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await beginDraft(workspace.path);
+        if (!result.ok) {
+          return c.json({ success: false, error: result.error }, 400);
+        }
+        return c.json({ success: true, draftPath: result.value.draftPath }, 200);
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  .get(
+    "/:workspaceId/draft",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await readDraft(workspace.path);
+        if (!result.ok) {
+          return c.json({ success: false, error: result.error }, 404);
+        }
+        return c.json({ success: true, config: result.value }, 200);
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  .post(
+    "/:workspaceId/draft/publish",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await publishDraft(workspace.path, buildValidationContext(ctx));
+        if (!result.ok) {
+          return c.json({ success: false, error: result.error }, 422);
+        }
+
+        // Reload runtime so the live config is picked up
+        const runtime = ctx.getWorkspaceRuntime(workspace.id);
+        if (runtime) {
+          await ctx.destroyWorkspaceRuntime(workspace.id);
+          return c.json(
+            { success: true, livePath: result.value.livePath, runtimeReloaded: true },
+            200,
+          );
+        }
+
+        return c.json(
+          { success: true, livePath: result.value.livePath, runtimeReloaded: false },
+          200,
+        );
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  .post(
+    "/:workspaceId/draft/discard",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await discardDraft(workspace.path);
+        if (!result.ok) {
+          return c.json({ success: false, error: result.error }, 400);
+        }
+        return c.json({ success: true }, 200);
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
     },
   );
 
