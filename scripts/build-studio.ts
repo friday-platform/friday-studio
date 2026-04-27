@@ -174,16 +174,19 @@ const DENO_BINARIES = [
     name: "friday",
     entry: "apps/atlas-cli/src/otel-bootstrap.ts",
     flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
+    // Liberal include of every packages/ subtree that has runtime
+    // resources (yml templates, SKILL.md walks, worker.ts files
+    // dispatched to new Worker(import.meta.url, ...)). deno compile
+    // doesn't auto-detect any of these — they're runtime string
+    // resolution, not static imports. Whitelisting individual files
+    // turned into whack-a-mole; ~510KB of resource files across
+    // these dirs is 0.05% of the 990MB binary so being liberal is
+    // the right trade.
     include: [
-      "packages/system/workspaces/system.yml",
-      "packages/workspace/src/user-workspace-template.yml",
-      // packages/system/skills/ — system-skill-bootstrap walks this
-      // dir at startup to publish bundled skills (friday-cli,
-      // workspace-api, writing-friday-agents, mcp-workspace-management).
-      // The walker uses readdir+readFile relative to import.meta.url
-      // so deno compile needs the WHOLE tree explicitly. --include on a
-      // dir is recursive.
-      "packages/system/skills",
+      "packages/system", // system.yml + skills/ walker
+      "packages/workspace", // user-workspace-template.yml
+      "packages/fsm-engine", // function-executor.worker.ts via Worker(new URL(...))
+      "packages/workspace-builder", // validation.worker.ts via Worker(new URL(...))
     ] as string[],
   },
   {
