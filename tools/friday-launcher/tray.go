@@ -91,10 +91,16 @@ func (t *trayController) onReady() {
 	systray.SetTitle("")
 	systray.SetTooltip("Friday Studio — starting…")
 
-	// Status text is a disabled (un-clickable) item at the top so users
-	// see the current health state at a glance. Updated by tick().
+	// Status text item at the top so users see the current health
+	// state at a glance. Updated by tick(). NOT calling Disable()
+	// because macOS NSMenu's popUpMenuPositioningItem treats a
+	// disabled-first-item as un-anchorable — it shifts the anchor to
+	// the first enabled item ("Open in browser") and pushes the
+	// disabled item above the menubar, surfacing as a scroll-up
+	// chevron with the status hidden. Leaving it enabled, with no
+	// click handler attached, makes it visually identical to
+	// any other inert label and avoids the layout quirk.
 	t.statusItem = systray.AddMenuItem(bucketAmber.statusText(), "")
-	t.statusItem.Disable()
 	systray.AddSeparator()
 	t.openItem = systray.AddMenuItem("Open in browser", "Open Friday Studio")
 	t.restartItem = systray.AddMenuItem("Restart all", "Stop and start every supervised process")

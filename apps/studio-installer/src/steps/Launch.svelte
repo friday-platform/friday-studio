@@ -21,8 +21,11 @@ onMount(async () => {
 });
 
 async function openStudio(): Promise<void> {
-  const { default: opener } = await import("@tauri-apps/plugin-opener");
-  await opener.open("http://localhost:5200");
+  // Tauri 2 plugin-opener exports openUrl, not a default-export
+  // `open()` method. The previous `opener.open(...)` call was
+  // resolving to `undefined` and silently no-op'ing.
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl("http://localhost:5200");
 }
 </script>
 

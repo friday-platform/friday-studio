@@ -116,8 +116,9 @@ export function advanceStep(): void {
 
 async function launchByOpening(): Promise<void> {
   try {
-    const { default: opener } = await import("@tauri-apps/plugin-opener");
-    await opener.open("http://localhost:5200");
+    // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl("http://localhost:5200");
   } catch {
     // ignore — browser might already be open
   }
