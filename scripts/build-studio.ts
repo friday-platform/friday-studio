@@ -166,10 +166,13 @@ const DENO_BINARIES = [
   {
     // Ships as `friday` — the user-visible CLI name. The internal codebase
     // still uses "atlas" everywhere; only the compiled binary is renamed.
+    // Include packages/system/workspaces/system.yml — read at runtime via
+    // readFileSync(import.meta.url) which deno compile only embeds for
+    // explicitly --included paths (not auto-detected from import graph).
     name: "friday",
     entry: "apps/atlas-cli/src/otel-bootstrap.ts",
     flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
-    include: [] as string[],
+    include: ["packages/system/workspaces/system.yml"] as string[],
   },
   {
     name: "link",
