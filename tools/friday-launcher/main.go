@@ -118,10 +118,21 @@ func main() {
 
 	// Best-effort: clean up orphan supervised processes from a prior
 	// SIGKILL'd launcher (Unix only — Windows Job Object handles it).
+	// Two passes:
+	//   1. Pid-file sweep (the normal case: pids/ has stale entries).
+	//   2. Binary-path sweep — defense-in-depth for the case where
+	//      pid files are MISSING but children are still alive (e.g.
+	//      `rm -rf ~/.friday/local` between SIGKILL and restart, or
+	//      a fresh install over an installation that's still running).
 	if killed, err := processkit.SweepOrphans(pidsDir()); err != nil {
 		log.Warn("SweepOrphans (non-fatal)", "error", err)
 	} else if killed > 0 {
-		log.Info("swept orphaned supervised processes", "killed", killed)
+		log.Info("swept orphaned supervised processes (pid-file)", "killed", killed)
+	}
+	if killed, err := processkit.SweepByBinaryPath(binDir); err != nil {
+		log.Warn("SweepByBinaryPath (non-fatal)", "error", err)
+	} else if killed > 0 {
+		log.Info("swept orphaned supervised processes (binary-path)", "killed", killed)
 	}
 
 	// Hard-kill resilience: assign self to a Job Object on Windows so

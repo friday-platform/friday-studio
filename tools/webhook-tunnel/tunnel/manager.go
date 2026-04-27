@@ -57,6 +57,20 @@ type Manager struct {
 	stopped      atomic.Bool
 	connections  int  // edge-connection count from log parsing
 	urlReady     bool // true once we've seen a URL or first connected event
+
+	// generation increments on every successful connect(). Each Wait()
+	// goroutine captures the gen at spawn time and only triggers a
+	// reconnect if its gen still matches Manager.generation when the
+	// process exits. Without this, a reconnect that succeeds leaves the
+	// previous Wait goroutine alive — when the OLD cmd's pipe finally
+	// closes, the stale Wait goroutine fires another reconnect, racing
+	// the live one and exploding into hundreds of attempts per second.
+	generation atomic.Int64
+	// reconnecting guards scheduleReconnect from running concurrently.
+	// The first Wait goroutine to fire on exit wins; subsequent
+	// triggers (e.g. healthProbe escalating to reconnect at the same
+	// moment) skip silently.
+	reconnecting atomic.Bool
 }
 
 // New creates a Manager. Call Start to spawn cloudflared.
@@ -141,6 +155,12 @@ func (m *Manager) connect(parentCtx context.Context) error {
 		return fmt.Errorf("start cloudflared: %w", err)
 	}
 
+	// Bump generation BEFORE storing cmd. The Wait goroutine spawned
+	// below captures this gen; a stale Wait goroutine from the previous
+	// cmd will see its captured gen != current and silently exit
+	// without firing a reconnect.
+	gen := m.generation.Add(1)
+
 	m.mu.Lock()
 	m.cmd = cmd
 	m.url = ""
@@ -156,7 +176,7 @@ func (m *Manager) connect(parentCtx context.Context) error {
 
 	go m.scan(stdout, events)
 	go m.scan(stderr, events)
-	go m.handleEvents(events, urlCh, cmd)
+	go m.handleEvents(events, urlCh, cmd, gen)
 
 	// Wait for either URL/connection signal or timeout.
 	timer := time.NewTimer(startupURLTimeout)
@@ -213,22 +233,31 @@ func (m *Manager) scan(r io.Reader, events chan<- Event) {
 // handleEvents drains the parser's event channel and updates manager
 // state. urlCh is signaled on the first URL OR (for token tunnels) the
 // first connected event — startup considers either ready.
-func (m *Manager) handleEvents(events <-chan Event, urlCh chan<- string, cmd *exec.Cmd) {
+//
+// gen is the generation number assigned by connect() when this cmd was
+// spawned. The Wait goroutine compares gen to Manager.generation when
+// the process exits — if they don't match, a newer connect() superseded
+// us and the reconnect should be the new gen's responsibility, not ours.
+func (m *Manager) handleEvents(events <-chan Event, urlCh chan<- string, cmd *exec.Cmd, gen int64) {
 	urlSent := false
 
 	// Wait for cmd exit in parallel; surface as a synthetic EventExit.
 	go func() {
 		_ = cmd.Wait()
-		select {
-		case <-m.ctxDone():
+		if m.stopped.Load() {
 			return
-		default:
 		}
-		m.opts.Logger.Warn("cloudflared exited")
+		// Stale-generation check: if the manager has moved on to a
+		// newer cmd, this is the OLD cmd's exit firing late — silently
+		// drop. Without this check, a successful reconnect leaves the
+		// previous Wait goroutine alive; when its pipe finally closes,
+		// it would trigger another reconnect and race the live one.
+		if m.generation.Load() != gen {
+			return
+		}
+		m.opts.Logger.Warn("cloudflared exited", "generation", gen)
 		m.alive.Store(false)
-		if !m.stopped.Load() {
-			go m.scheduleReconnect()
-		}
+		go m.scheduleReconnect()
 	}()
 
 	for ev := range events {
@@ -273,7 +302,18 @@ func (m *Manager) ctxDone() <-chan struct{} {
 
 // scheduleReconnect waits backoffSeconds then tries to reconnect.
 // Increments restartCount on success.
+//
+// Singleton-guarded via m.reconnecting. The first caller wins; any
+// concurrent caller (e.g. healthProbe escalating at the same moment
+// as a Wait-handler firing) silently returns. The guard is cleared
+// when this function exits — either after a successful reconnect or
+// when the loop bottoms out (stopped, or context cancelled).
 func (m *Manager) scheduleReconnect() {
+	if !m.reconnecting.CompareAndSwap(false, true) {
+		return
+	}
+	defer m.reconnecting.Store(false)
+
 	delay := initialBackoff
 	for {
 		if m.stopped.Load() {

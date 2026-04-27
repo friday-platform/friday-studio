@@ -3,6 +3,7 @@ package processkit
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,6 +56,80 @@ func SweepOrphans(pidDir string) (killed int, err error) {
 		_ = os.Remove(path)
 	}
 	return killed, nil
+}
+
+// SweepByBinaryPath kills any process (other than the caller) whose
+// executable path starts with binaryDir. Defense-in-depth for the
+// "pid files missing but child processes still alive" case — e.g.
+// after `rm -rf ~/.friday/local` while the launcher is running, or
+// after a SIGKILL'd launcher whose pid files got truncated. Returns
+// the number of survivors killed.
+//
+// Best-effort: if the OS-specific scan fails (e.g. ps not on PATH),
+// returns 0 + error and the caller carries on with the standard
+// pid-file sweep.
+func SweepByBinaryPath(binaryDir string) (killed int, err error) {
+	binaryDir = filepath.Clean(binaryDir)
+	if binaryDir == "" || binaryDir == "/" {
+		return 0, fmt.Errorf("refusing to sweep dir %q", binaryDir)
+	}
+	pids, err := scanProcessesByBinaryPath(binaryDir)
+	if err != nil {
+		return 0, err
+	}
+	self := os.Getpid()
+	for _, pid := range pids {
+		if pid == self {
+			continue
+		}
+		if !ProcessAlive(pid) {
+			continue
+		}
+		_ = Kill(pid, 0)
+		killed++
+	}
+	return killed, nil
+}
+
+// scanProcessesByBinaryPath returns PIDs whose executable path lies
+// under binaryDir. Implemented via `ps` on Unix; on Windows the
+// Job Object handles this case so this is a no-op stub.
+func scanProcessesByBinaryPath(binaryDir string) ([]int, error) {
+	// `ps -eo pid=,comm=` returns "PID PATH" per line. We compare PATH
+	// (the program path, NOT the full command line) against binaryDir
+	// to avoid false positives from grep-style matches in args.
+	cmd := exec.Command("ps", "-eo", "pid=,comm=")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("ps: %w", err)
+	}
+	prefix := binaryDir
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+	var pids []int
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Split on first whitespace: "<pid> <path>"
+		i := strings.IndexAny(line, " \t")
+		if i <= 0 {
+			continue
+		}
+		pidStr := strings.TrimSpace(line[:i])
+		pathStr := strings.TrimSpace(line[i:])
+		if !strings.HasPrefix(pathStr, prefix) {
+			continue
+		}
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	return pids, nil
 }
 
 // ParsePidFile parses the launcher's pid-file format ("<pid>

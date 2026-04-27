@@ -30,6 +30,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	"github.com/tempestteam/atlas/pkg/logger"
 	"github.com/tempestteam/atlas/tools/webhook-tunnel/cloudflared"
 	"github.com/tempestteam/atlas/tools/webhook-tunnel/forwarder"
@@ -64,24 +66,11 @@ func main() {
 	}
 	fwd = forwarder.New(cfg.AtlasdURL)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handleHealth)
-	mux.HandleFunc("GET /status", handleStatus)
-	mux.HandleFunc("OPTIONS /status", handleStatusCORS)
-	// {$} means "exactly /"; without it, GET / would conflict with the
-	// /platform/{provider} pattern (GET /platform/X matches both).
-	mux.HandleFunc("GET /{$}", handleRoot)
-	mux.HandleFunc("POST /hook/{provider}/{workspaceId}/{signalId}", handleHook)
-	// /platform/{provider}[/{suffix...}] reverse-proxies to atlasd.
-	// The httputil.ReverseProxy automatically strips RFC 7230
-	// hop-by-hop headers — we don't need to do that ourselves.
-	platformHandler := wrapMaxBytes(fwd.ProxyHandler())
-	mux.Handle("/platform/{provider}", platformHandler)
-	mux.Handle("/platform/{provider}/{suffix...}", platformHandler)
+	r := newRouter()
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", cfg.Port),
-		Handler:           mux,
+		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -181,6 +170,39 @@ func performShutdown(srv *http.Server) {
 	log.Info("shutdown complete")
 }
 
+// newRouter wires up the chi router with all webhook-tunnel routes.
+// Extracted so tests reuse the exact same routing as production.
+func newRouter() chi.Router {
+	r := chi.NewRouter()
+	r.Get("/health", handleHealth)
+	// /status: GET returns JSON. CORS allows cross-origin from the
+	// playground (localhost:5200 → :9090). The cors handler on the
+	// route registers an OPTIONS preflight responder automatically.
+	r.With(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	})).Get("/status", handleStatus)
+	r.Options("/status", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Max-Age", "300")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	r.Get("/", handleRoot)
+	r.Post("/hook/{provider}/{workspaceId}/{signalId}", handleHook)
+	// /platform/{provider}[/{suffix...}] reverse-proxies to atlasd.
+	// httputil.ReverseProxy automatically strips RFC 7230 hop-by-hop
+	// headers — we don't need to do that ourselves.
+	platformHandler := wrapMaxBytes(fwd.ProxyHandler())
+	r.Handle("/platform/{provider}", platformHandler)
+	r.Handle("/platform/{provider}/*", platformHandler)
+	return r
+}
+
 // ---------- handlers ----------
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -199,15 +221,7 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func handleStatusCORS(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET,OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "*")
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func handleStatus(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	var url *string
 	var alive, tunnelAlive bool
 	var restartCount int
@@ -259,9 +273,9 @@ func handleRoot(w http.ResponseWriter, _ *http.Request) {
 }
 
 func handleHook(w http.ResponseWriter, r *http.Request) {
-	providerName := r.PathValue("provider")
-	workspaceID := r.PathValue("workspaceId")
-	signalID := r.PathValue("signalId")
+	providerName := chi.URLParam(r, "provider")
+	workspaceID := chi.URLParam(r, "workspaceId")
+	signalID := chi.URLParam(r, "signalId")
 
 	h := provider.Get(providerName)
 	if h == nil {

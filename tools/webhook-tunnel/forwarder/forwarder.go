@@ -19,6 +19,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // Forwarder bundles the atlasd URL + an HTTP client.
@@ -97,8 +99,9 @@ func (f *Forwarder) ProxyHandler() http.Handler {
 	}
 	rp := &httputil.ReverseProxy{
 		Director: func(r *http.Request) {
-			provider := r.PathValue("provider")
-			suffix := r.PathValue("suffix")
+			provider := chi.URLParam(r, "provider")
+			// Chi exposes the wildcard tail as URL param "*".
+			suffix := chi.URLParam(r, "*")
 			if suffix != "" {
 				r.URL.Path = "/signals/" + provider + "/" + suffix
 			} else {

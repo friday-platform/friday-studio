@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestForwardHappyPath(t *testing.T) {
@@ -67,10 +69,10 @@ func TestProxyPathRewrite(t *testing.T) {
 	defer srv.Close()
 
 	f := New(srv.URL)
-	mux := http.NewServeMux()
-	mux.Handle("/platform/{provider}", f.ProxyHandler())
-	mux.Handle("/platform/{provider}/{suffix...}", f.ProxyHandler())
-	clientSrv := httptest.NewServer(mux)
+	r := chi.NewRouter()
+	r.Handle("/platform/{provider}", f.ProxyHandler())
+	r.Handle("/platform/{provider}/*", f.ProxyHandler())
+	clientSrv := httptest.NewServer(r)
 	defer clientSrv.Close()
 
 	// 1. With suffix and query.
@@ -112,9 +114,9 @@ func TestProxyStripsHopByHop(t *testing.T) {
 	defer srv.Close()
 
 	f := New(srv.URL)
-	mux := http.NewServeMux()
-	mux.Handle("/platform/{provider}", f.ProxyHandler())
-	clientSrv := httptest.NewServer(mux)
+	r := chi.NewRouter()
+	r.Handle("/platform/{provider}", f.ProxyHandler())
+	clientSrv := httptest.NewServer(r)
 	defer clientSrv.Close()
 
 	req, _ := http.NewRequest(http.MethodPost, clientSrv.URL+"/platform/raw", strings.NewReader(""))

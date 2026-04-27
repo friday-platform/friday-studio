@@ -32,17 +32,7 @@ func setupTestServer(t *testing.T, atlasdURL string) string {
 	fwd = forwarder.New(atlasdURL)
 	tunMgr = nil
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handleHealth)
-	mux.HandleFunc("GET /status", handleStatus)
-	mux.HandleFunc("OPTIONS /status", handleStatusCORS)
-	mux.HandleFunc("GET /{$}", handleRoot)
-	mux.HandleFunc("POST /hook/{provider}/{workspaceId}/{signalId}", handleHook)
-	platform := wrapMaxBytes(fwd.ProxyHandler())
-	mux.Handle("/platform/{provider}", platform)
-	mux.Handle("/platform/{provider}/{suffix...}", platform)
-
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(newRouter())
 	t.Cleanup(srv.Close)
 	return srv.URL
 }
