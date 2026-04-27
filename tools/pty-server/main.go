@@ -11,17 +11,22 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/tempestteam/atlas/pkg/logger"
 )
+
+// log is the package-level Logger used by main.go and pty.go.
+// Initialized at package-init with default settings so tests (which
+// never call main()) can use the handlers without nil-derefing.
+// main() reassigns it after PTY_LOG_LEVEL → ATLAS_LOG_LEVEL is mapped.
+var log = logger.New("pty-server")
 
 // GitCommit is injected at build time via -ldflags
 // "-X main.GitCommit=$GITHUB_SHA". Used by --version.
@@ -56,29 +61,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLogger(cfg.LogLevel)
+	// PTY_LOG_LEVEL is the legacy knob; pkg/logger reads ATLAS_LOG_LEVEL.
+	// Map the former onto the latter so existing pty-server deployments
+	// keep their configured verbosity without users editing env vars.
+	if cfg.LogLevel != "" {
+		_ = os.Setenv("ATLAS_LOG_LEVEL", cfg.LogLevel)
+	}
+	log = logger.New("pty-server")
 
 	if err := run(cfg); err != nil {
-		slog.Error("server failed", "error", err)
+		log.Error("server failed", "error", err)
 		os.Exit(1)
 	}
-}
-
-func setupLogger(level string) {
-	var lvl slog.Level
-	switch strings.ToLower(level) {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: lvl,
-	})))
 }
 
 func run(cfg Config) error {
@@ -107,7 +101,7 @@ func run(cfg Config) error {
 	}
 	resolvedAddr := ln.Addr().String()
 
-	slog.Info("pty-server listening",
+	log.Info("pty-server listening",
 		"commit", GitCommit,
 		"addr", resolvedAddr,
 		"pid", os.Getpid(),
@@ -128,7 +122,7 @@ func run(cfg Config) error {
 	case err := <-serverErr:
 		return fmt.Errorf("serve: %w", err)
 	case sig := <-stop:
-		slog.Info("shutting down",
+		log.Info("shutting down",
 			"signal", sig.String(),
 			"active_conns", activeConns.Load(),
 		)

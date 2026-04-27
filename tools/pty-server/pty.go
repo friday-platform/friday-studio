@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"os/exec"
@@ -41,7 +40,7 @@ func handlePty(cfg Config) http.HandlerFunc {
 		})
 		if err != nil {
 			//nolint:gosec // G706: structured logging via slog avoids injection.
-			slog.Error("ws accept failed", "remote", r.RemoteAddr, "error", err)
+			log.Error("ws accept failed", "remote", r.RemoteAddr, "error", err)
 			return
 		}
 		conn.SetReadLimit(wsReadLimit)
@@ -67,7 +66,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 		sendError(ctx, conn, err.Error())
 		_ = conn.Close(websocket.StatusPolicyViolation, "invalid cwd")
 		//nolint:gosec // G706: structured logging via slog avoids injection.
-		slog.Warn("cwd validation failed", "remote", r.RemoteAddr, "error", err)
+		log.Warn("cwd validation failed", "remote", r.RemoteAddr, "error", err)
 		return
 	}
 
@@ -77,7 +76,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 	if err != nil {
 		sendError(ctx, conn, fmt.Sprintf("spawn failed: %v", err))
 		_ = conn.Close(websocket.StatusInternalError, "spawn failed")
-		slog.Error("pty spawn failed", "shell", shell, "error", err)
+		log.Error("pty spawn failed", "shell", shell, "error", err)
 		return
 	}
 
@@ -87,7 +86,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 	}
 	connStart := time.Now()
 	//nolint:gosec // G706: structured logging via slog avoids injection.
-	slog.Debug("ws conn accepted",
+	log.Debug("ws conn accepted",
 		"remote", r.RemoteAddr,
 		"shell", shell,
 		"cwd", cwd,
@@ -141,7 +140,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 					benign := errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed)
 					if !benign {
 						//nolint:gosec // G706: structured logging via slog avoids injection.
-						slog.Warn("ping failed", "remote", r.RemoteAddr, "pid", pid, "error", err)
+						log.Warn("ping failed", "remote", r.RemoteAddr, "pid", pid, "error", err)
 					}
 					cancel()
 					return
@@ -184,7 +183,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 		msg, ok := parseClientMessage(raw)
 		if !ok {
 			//nolint:gosec // G706: structured logging via slog avoids injection.
-			slog.Warn("malformed message", "remote", r.RemoteAddr)
+			log.Warn("malformed message", "remote", r.RemoteAddr)
 			continue
 		}
 		switch msg.Type {
@@ -205,7 +204,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 	<-readDone
 
 	//nolint:gosec // G706: structured logging via slog avoids injection.
-	slog.Debug("ws conn closed",
+	log.Debug("ws conn closed",
 		"remote", r.RemoteAddr,
 		"pid", pid,
 		"duration_ms", time.Since(connStart).Milliseconds(),
@@ -224,7 +223,7 @@ func teardown(pt gopty.Pty, cmd *gopty.Cmd, jobObj *jobObject, pid int) {
 	select {
 	case <-closeDone:
 	case <-time.After(ptyCloseDeadline):
-		slog.Warn("pty close timed out", "pid", pid)
+		log.Warn("pty close timed out", "pid", pid)
 	}
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()

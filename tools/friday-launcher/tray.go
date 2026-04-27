@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"fyne.io/systray"
-	"github.com/rs/zerolog/log"
 )
 
 //go:embed assets/tray-green.png
@@ -105,13 +104,13 @@ func (t *trayController) handleClicks() {
 			t.openBrowser("user click")
 		case <-t.restartItem.ClickedCh:
 			if t.sup.SupervisorExited() {
-				log.Warn().Msg("restart-all requested but supervisor exited; ignoring")
+				log.Warn("restart-all requested but supervisor exited; ignoring")
 				continue
 			}
-			log.Info().Msg("Restart all triggered from tray")
+			log.Info("Restart all triggered from tray")
 			go func() {
 				if err := t.sup.RestartAll(); err != nil {
-					log.Err(err).Msg("restart-all failed")
+					log.Error("restart-all failed", "error", err)
 				}
 			}()
 		case <-t.logsItem.ClickedCh:
@@ -119,19 +118,19 @@ func (t *trayController) handleClicks() {
 		case <-t.autostartItem.ClickedCh:
 			if t.autostartItem.Checked() {
 				if err := disableAutostart(); err != nil {
-					log.Err(err).Msg("disableAutostart failed")
+					log.Error("disableAutostart failed", "error", err)
 				} else {
 					t.autostartItem.Uncheck()
 				}
 			} else {
 				if err := enableAutostart(); err != nil {
-					log.Err(err).Msg("enableAutostart failed")
+					log.Error("enableAutostart failed", "error", err)
 				} else {
 					t.autostartItem.Check()
 				}
 			}
 		case <-t.quitItem.ClickedCh:
-			log.Info().Msg("Quit requested from tray")
+			log.Info("Quit requested from tray")
 			systray.Quit()
 			return
 		}
@@ -200,13 +199,13 @@ func (t *trayController) computeBucket() trayBucket {
 
 func (t *trayController) openBrowser(reason string) {
 	if noBrowser {
-		log.Info().Str("reason", reason).Msg("browser-open suppressed by --no-browser")
+		log.Info("browser-open suppressed by --no-browser", "reason", reason)
 		return
 	}
 	const url = "http://localhost:5200"
-	log.Info().Str("reason", reason).Str("url", url).Msg("opening browser")
+	log.Info("opening browser", "reason", reason, "url", url)
 	if err := openURLInBrowser(url); err != nil {
-		log.Err(err).Msg("openBrowser failed")
+		log.Error("openBrowser failed", "error", err)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,11 +18,16 @@ import (
 	"time"
 
 	"fyne.io/systray"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+	"github.com/tempestteam/atlas/pkg/logger"
 	"github.com/tempestteam/atlas/pkg/processkit"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+// log is the package-level Logger used across the launcher's files.
+// Initialized at package-init so tests don't nil-deref before
+// setupLogging runs. main() reassigns it to a writer that fans out
+// to both stderr and a lumberjack-rotated launcher.log.
+var log = logger.New("friday-launcher")
 
 // noBrowser is set from --no-browser; controls the auto-open behavior
 // when all processes report ready. Stored as a package-level var
@@ -93,37 +99,36 @@ func main() {
 	// the running launcher and exit.
 	lock, ok, err := acquirePidLock()
 	if err != nil {
-		log.Fatal().Err(err).Msg("acquirePidLock fatal error")
+		log.Fatal("acquirePidLock fatal error", "error", err)
 	}
 	if !ok {
 		// Another launcher is running. Read its pid + wake it.
 		if pid, _, err := readLauncherPid(); err == nil {
-			log.Info().Int("running_pid", pid).
-				Msg("another launcher detected; sending wake")
+			log.Info("another launcher detected; sending wake", "running_pid", pid)
 			if err := notifyRunningInstance(pid); err != nil {
-				log.Warn().Err(err).Msg("failed to notify running launcher")
+				log.Warn("failed to notify running launcher", "error", err)
 			}
 		}
 		os.Exit(0)
 	}
 	pidLock = lock
 	if err := pidLock.writePid(os.Getpid(), time.Now().Unix()); err != nil {
-		log.Fatal().Err(err).Msg("writePid")
+		log.Fatal("writePid", "error", err)
 	}
 
 	// Best-effort: clean up orphan supervised processes from a prior
 	// SIGKILL'd launcher (Unix only — Windows Job Object handles it).
 	if killed, err := processkit.SweepOrphans(pidsDir()); err != nil {
-		log.Warn().Err(err).Msg("SweepOrphans (non-fatal)")
+		log.Warn("SweepOrphans (non-fatal)", "error", err)
 	} else if killed > 0 {
-		log.Info().Int("killed", killed).Msg("swept orphaned supervised processes")
+		log.Info("swept orphaned supervised processes", "killed", killed)
 	}
 
 	// Hard-kill resilience: assign self to a Job Object on Windows so
 	// children die with us. No-op on Unix.
 	jobHandle, err = processkit.AttachSelfToJob()
 	if err != nil {
-		log.Warn().Err(err).Msg("AttachSelfToJob (non-fatal)")
+		log.Warn("AttachSelfToJob (non-fatal)", "error", err)
 	}
 
 	setupSignalHandlers()
@@ -155,7 +160,6 @@ func parseFlags() (autostart string, uninstall bool) {
 }
 
 func setupLogging() {
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	rotator := &lumberjack.Logger{
 		Filename:   launcherLogPath(),
 		MaxSize:    10, // MB
@@ -164,14 +168,13 @@ func setupLogging() {
 	}
 	// Write to BOTH stderr and the rotated file so dev runs see logs
 	// in the terminal AND production runs persist them.
-	log.Logger = zerolog.New(zerolog.MultiLevelWriter(
-		zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339},
-		rotator,
-	)).With().Timestamp().Logger()
-	log.Info().Str("pid", fmt.Sprintf("%d", os.Getpid())).
-		Str("bin_dir", binDir).
-		Bool("no_browser", noBrowser).
-		Msg("friday-launcher starting")
+	log = logger.NewWithWriter("friday-launcher",
+		io.MultiWriter(os.Stderr, rotator))
+	log.Info("friday-launcher starting",
+		"pid", os.Getpid(),
+		"bin_dir", binDir,
+		"no_browser", noBrowser,
+	)
 }
 
 func setupSignalHandlers() {
@@ -188,7 +191,7 @@ func setupSignalHandlers() {
 		ch := make(chan os.Signal, 4)
 		signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
 		sig := <-ch
-		log.Info().Stringer("signal", sig).Msg("shutdown signal received")
+		log.Info("shutdown signal received", "signal", sig.String())
 		performShutdown("signal:" + sig.String())
 		systray.Quit() // unblocks main; onExit may also fire (idempotent)
 	}()
@@ -207,7 +210,7 @@ func onReady() {
 	// State.json + autostart self-registration + staleness repair.
 	go func() {
 		if err := autostartSelfRegister(); err != nil {
-			log.Warn().Err(err).Msg("autostart self-register (non-fatal)")
+			log.Warn("autostart self-register (non-fatal)", "error", err)
 		}
 	}()
 
@@ -216,7 +219,7 @@ func onReady() {
 	project := newProjectFromSpecs(specs)
 	sup, err := NewSupervisor(project, &shuttingDown)
 	if err != nil {
-		log.Fatal().Err(err).Msg("NewSupervisor")
+		log.Fatal("NewSupervisor", "error", err)
 	}
 	supervisor = sup
 
@@ -256,7 +259,7 @@ func performShutdown(reason string) {
 	if !shutdownStarted.CompareAndSwap(false, true) {
 		return // another caller beat us; let them finish
 	}
-	log.Info().Str("reason", reason).Msg("performShutdown starting")
+	log.Info("performShutdown starting", "reason", reason)
 	shuttingDown.Store(true)
 	if supervisor == nil {
 		releasePidLock()
@@ -268,17 +271,17 @@ func performShutdown(reason string) {
 		context.Background(), 30*time.Second)
 	defer cancel()
 	go func() {
-		log.Info().Msg("ShutDownProject starting")
+		log.Info("ShutDownProject starting")
 		if err := supervisor.Shutdown(); err != nil {
-			log.Err(err).Msg("ShutDownProject")
+			log.Error("ShutDownProject", "error", err)
 		}
 		close(done)
 	}()
 	select {
 	case <-done:
-		log.Info().Msg("ShutDownProject completed")
+		log.Info("ShutDownProject completed")
 	case <-ctx.Done():
-		log.Warn().Msg("ShutDownProject did not complete in 30s; exiting anyway")
+		log.Warn("ShutDownProject did not complete in 30s; exiting anyway")
 	}
 	releasePidLock()
 	closeJob()
@@ -345,8 +348,7 @@ func autostartSelfRegister() error {
 	}
 	state := readState()
 	if !state.AutostartInitialized {
-		log.Info().Str("exe", exe).
-			Msg("first-run autostart self-register")
+		log.Info("first-run autostart self-register", "exe", exe)
 		if err := enableAutostart(); err != nil {
 			return fmt.Errorf("enableAutostart: %w", err)
 		}
@@ -359,8 +361,8 @@ func autostartSelfRegister() error {
 	// Already initialized — staleness repair pass.
 	registered := currentAutostartPath()
 	if registered != "" && registered != exe {
-		log.Info().Str("registered", registered).Str("current", exe).
-			Msg("autostart path stale; rewriting")
+		log.Info("autostart path stale; rewriting",
+			"registered", registered, "current", exe)
 		if err := enableAutostart(); err != nil {
 			return fmt.Errorf("enableAutostart (staleness): %w", err)
 		}
