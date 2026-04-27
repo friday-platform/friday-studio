@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/profiler v0.6.0
 	cloud.google.com/go/secretmanager v1.19.0
 	cloud.google.com/go/storage v1.62.1
-	fyne.io/systray v1.12.0
+	fyne.io/systray v1.12.1-0.20260116103033-9483f6fb4738
 	github.com/aymanbagabas/go-pty v0.2.2
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/coder/websocket v1.8.14
