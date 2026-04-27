@@ -222,10 +222,17 @@ async function compileDeno(
   outPath: string,
   repoRoot: string,
 ): Promise<void> {
+  // --config deno.compile.json overrides nodeModulesDir to "none". The
+  // root deno.json keeps "auto" so the rest of the build pipeline
+  // (npm install, svelte-kit sync, vite build) has a real node_modules/
+  // to read. But `deno compile` invoked with the compile-only config
+  // skips embedding node_modules into the binary — that alone saves
+  // ~70 MB per binary out of an otherwise duplicated 1.1 GB.
   const args = [
     "compile",
     "-A",
     "--no-check",
+    "--config=deno.compile.json",
     `--target=${target}`,
     ...bin.flags,
     ...bin.include.map((i) => `--include=${i}`),

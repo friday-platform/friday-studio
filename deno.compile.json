@@ -36,7 +36,7 @@
     "types"
   ],
   "unstable": ["worker-options", "otel", "kv", "raw-imports"],
-  "nodeModulesDir": "auto",
+  "nodeModulesDir": "none",
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16.4.0",
