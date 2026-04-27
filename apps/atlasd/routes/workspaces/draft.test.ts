@@ -313,4 +313,417 @@ describe("Draft file flow", () => {
     expect(body).toMatchObject({ success: true, runtimeReloaded: true });
     expect(destroySpy).toHaveBeenCalledWith(workspaceId);
   });
+
+  test("read draft returns 409 when no draft exists", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft`, { method: "GET" });
+    expect(res.status).toBe(409);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false, error: "No draft exists" });
+  });
+
+  test("upsert agent into draft", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const agentConfig = {
+      type: "llm",
+      description: "Test agent",
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        prompt: "You are a test agent",
+      },
+    };
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "test-agent", config: agentConfig }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: true });
+
+    const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
+    expect(draft).toContain("test-agent");
+    expect(draft).toContain("You are a test agent");
+  });
+
+  test("upsert signal into draft", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const signalConfig = {
+      provider: "http",
+      description: "Test webhook",
+      config: { path: "/test" },
+    };
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/signal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "test-webhook", config: signalConfig }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: true });
+
+    const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
+    expect(draft).toContain("test-webhook");
+    expect(draft).toContain("/test");
+  });
+
+  test("upsert job into draft", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const jobConfig = {
+      description: "Test job",
+      triggers: [{ signal: "webhook" }],
+      execution: {
+        agents: ["test-agent"],
+      },
+    };
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/job`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "test-job", config: jobConfig }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: true });
+
+    const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
+    expect(draft).toContain("test-job");
+    expect(draft).toContain("test-agent");
+  });
+
+  test("upsert returns 400 for invalid entity config", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "bad-agent", config: { invalid: true } }),
+    });
+    expect(res.status).toBe(400);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false });
+    expect(body.error).toContain("Invalid agent config");
+  });
+
+  test("delete agent from draft", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const agentConfig = {
+      type: "llm",
+      description: "Test agent",
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        prompt: "You are a test agent",
+      },
+    };
+
+    await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "delete-me", config: agentConfig }),
+    });
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent/delete-me`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true });
+    expect(body.diff.removed).toHaveLength(1);
+    expect(body.diff.removed[0].path).toBe("agents.delete-me");
+    expect(body.structural_issues).toBeNull();
+
+    const draftContent = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
+    expect(draftContent).not.toContain("delete-me");
+  });
+
+  test("delete returns 404 when entity not found in draft", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent/missing`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(404);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false });
+    expect(body.error).toContain("missing");
+  });
+
+  test("delete agent with broken references returns structural issues", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    // Add an agent
+    const agentConfig = {
+      type: "llm",
+      description: "Test agent",
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        prompt: "You are a test agent",
+      },
+    };
+    await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "test-agent", config: agentConfig }),
+    });
+
+    // Add a job with an FSM that references the agent
+    const jobConfig = {
+      description: "Test job",
+      fsm: {
+        id: "test-fsm",
+        initial: "step_0",
+        states: {
+          step_0: {
+            entry: [{ type: "agent", agentId: "test-agent" }],
+          },
+        },
+      },
+    };
+    await app.request(`/workspaces/${workspaceId}/draft/items/job`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "test-job", config: jobConfig }),
+    });
+
+    // Delete the agent — draft mode is permissive, should succeed but report issues
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent/test-agent`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true });
+    expect(body.diff.removed).toHaveLength(1);
+    expect(body.diff.removed[0].path).toBe("agents.test-agent");
+    expect(body.structural_issues).not.toBeNull();
+    expect(body.structural_issues.length).toBeGreaterThan(0);
+    expect(body.structural_issues[0].code).toBe("unknown_agent_id");
+  });
+
+  test("validate draft returns report", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/validate`, { method: "POST" });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: true, report: { status: "ok", errors: [], warnings: [] } });
+  });
+
+  test("validate draft returns 409 when no draft exists", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft/validate`, { method: "POST" });
+    expect(res.status).toBe(409);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false, error: "No draft exists" });
+  });
+
+  test("discard draft via DELETE removes draft file", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(true);
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft`, { method: "DELETE" });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: true });
+
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);
+  });
+
+  test("discard draft via DELETE returns 409 when no draft exists", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    const res = await app.request(`/workspaces/${workspaceId}/draft`, { method: "DELETE" });
+    expect(res.status).toBe(409);
+
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false, error: "No draft to discard" });
+  });
+
+  test("full lifecycle: begin → upsert agent → upsert job → upsert signal → validate → publish", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    // 1. Begin draft
+    const beginRes = await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+    expect(beginRes.status).toBe(200);
+
+    // 2. Upsert agent
+    const agentConfig = {
+      type: "llm",
+      description: "Email triager",
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        prompt: "Triage emails",
+        tool_choice: "none",
+      },
+    };
+    const agentRes = await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "email-triager", config: agentConfig }),
+    });
+    expect(agentRes.status).toBe(200);
+
+    // 3. Upsert job referencing the agent
+    const jobConfig = {
+      description: "Review inbox",
+      triggers: [{ signal: "review-inbox" }],
+      fsm: {
+        id: "review-inbox-pipeline",
+        initial: "step_0",
+        states: {
+          step_0: {
+            entry: [
+              { type: "agent", agentId: "email-triager", outputTo: "result", outputType: "triage" },
+            ],
+          },
+        },
+      },
+    };
+    const jobRes = await app.request(`/workspaces/${workspaceId}/draft/items/job`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "review-inbox", config: jobConfig }),
+    });
+    expect(jobRes.status).toBe(200);
+
+    // 4. Upsert signal
+    const signalConfig = {
+      provider: "http",
+      description: "Trigger inbox review",
+      config: { path: "/review-inbox" },
+    };
+    const signalRes = await app.request(`/workspaces/${workspaceId}/draft/items/signal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "review-inbox", config: signalConfig }),
+    });
+    expect(signalRes.status).toBe(200);
+
+    // 5. Validate draft
+    const validateRes = await app.request(`/workspaces/${workspaceId}/draft/validate`, { method: "POST" });
+    expect(validateRes.status).toBe(200);
+    const validateBody = await validateRes.json();
+    expect(validateBody).toMatchObject({ success: true, report: { status: "ok" } });
+
+    // 6. Publish
+    const publishRes = await app.request(`/workspaces/${workspaceId}/draft/publish`, { method: "POST" });
+    expect(publishRes.status).toBe(200);
+    const publishBody = await publishRes.json();
+    expect(publishBody).toMatchObject({ success: true, runtimeReloaded: false });
+
+    // Draft should be gone
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);
+
+    // Live file should contain all three entities
+    const liveContent = await readFile(join(tempDir, "workspace.yml"), "utf-8");
+    expect(liveContent).toContain("email-triager");
+    expect(liveContent).toContain("review-inbox");
+    expect(liveContent).toContain("/review-inbox");
+  });
+
+  test("all draft endpoints return 404 for missing workspace", async () => {
+    const mockManager = {
+      find: vi.fn().mockResolvedValue(null),
+      getWorkspaceConfig: vi.fn().mockResolvedValue({ atlas: null, workspace: createMinimalConfig() }),
+    } as unknown as WorkspaceManager;
+
+    const mockContext: AppContext = {
+      runtimes: new Map(),
+      startTime: Date.now(),
+      sseClients: new Map(),
+      sseStreams: new Map(),
+      getWorkspaceManager: () => mockManager,
+      getOrCreateWorkspaceRuntime: vi.fn(),
+      resetIdleTimeout: vi.fn(),
+      getWorkspaceRuntime: vi.fn(),
+      destroyWorkspaceRuntime: vi.fn().mockResolvedValue(undefined),
+      getLibraryStorage: vi.fn(),
+      daemon: {
+        getWorkspaceManager: () => mockManager,
+        runtimes: new Map(),
+      } as unknown as AppContext["daemon"],
+      streamRegistry: {} as AppContext["streamRegistry"],
+      sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+      sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      getAgentRegistry: vi.fn(),
+      getOrCreateChatSdkInstance: vi.fn(),
+      evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
+      getLedgerAdapter: vi.fn(),
+      getActivityAdapter: vi.fn(),
+      exposeKernel: false,
+      platformModels: { get: vi.fn() },
+    };
+
+    const app = new Hono<AppVariables>();
+    app.use("*", async (c, next) => {
+      c.set("app", mockContext);
+      await next();
+    });
+    app.route("/workspaces", workspacesRoutes);
+
+    const endpoints = [
+      { path: `/workspaces/missing/draft`, method: "GET" },
+      { path: `/workspaces/missing/draft/begin`, method: "POST" },
+      { path: `/workspaces/missing/draft/publish`, method: "POST" },
+      { path: `/workspaces/missing/draft/discard`, method: "POST" },
+      { path: `/workspaces/missing/draft`, method: "DELETE" },
+      { path: `/workspaces/missing/draft/validate`, method: "POST" },
+      {
+        path: `/workspaces/missing/draft/items/agent`,
+        method: "POST",
+        body: JSON.stringify({ id: "a", config: {} }),
+      },
+      { path: `/workspaces/missing/draft/items/agent/a`, method: "DELETE" },
+    ];
+
+    for (const endpoint of endpoints) {
+      const reqInit: RequestInit = { method: endpoint.method };
+      if (endpoint.body) {
+        reqInit.headers = { "Content-Type": "application/json" };
+        reqInit.body = endpoint.body;
+      }
+      const res = await app.request(endpoint.path, reqInit);
+      expect(res.status).toBe(404);
+    }
+  });
 });

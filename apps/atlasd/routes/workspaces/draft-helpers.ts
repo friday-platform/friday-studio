@@ -1,9 +1,18 @@
 import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type WorkspaceConfig, WorkspaceConfigSchema, validateWorkspace } from "@atlas/config";
+import {
+  type Issue,
+  JobSpecificationSchema,
+  type ValidationReport,
+  type WorkspaceConfig,
+  WorkspaceAgentConfigSchema,
+  WorkspaceConfigSchema,
+  WorkspaceSignalConfigSchema,
+  validateWorkspace,
+} from "@atlas/config";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { parse as parseYaml } from "@std/yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 
 const logger = createLogger({ component: "draft-helpers" });
 
@@ -11,6 +20,20 @@ export const DRAFT_FILE_NAME = "workspace.yml.draft" as const;
 export const LIVE_FILE_NAME = "workspace.yml" as const;
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+export type DraftItemKind = "agent" | "signal" | "job";
+
+export interface FieldDiff {
+  removed?: Array<{ path: string; oldValue: unknown }>;
+  added?: Array<{ path: string; newValue: unknown }>;
+  modified?: Array<{ path: string; oldValue: unknown; newValue: unknown }>;
+}
+
+export interface DraftItemResult {
+  ok: boolean;
+  diff: FieldDiff;
+  structuralIssues: Issue[] | null;
+}
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -154,4 +177,151 @@ export async function discardDraft(workspacePath: string): Promise<DraftResult<v
     logger.error("Failed to discard draft", { workspacePath, error: message });
     return { ok: false, error: `Failed to discard draft: ${message}` };
   }
+}
+
+// ==============================================================================
+// DRAFT ITEM MUTATIONS
+// ==============================================================================
+
+function entitySchemaForKind(kind: DraftItemKind) {
+  switch (kind) {
+    case "agent":
+      return WorkspaceAgentConfigSchema;
+    case "signal":
+      return WorkspaceSignalConfigSchema;
+    case "job":
+      return JobSpecificationSchema;
+  }
+}
+
+function configKeyForKind(kind: DraftItemKind): keyof WorkspaceConfig {
+  switch (kind) {
+    case "agent":
+      return "agents";
+    case "signal":
+      return "signals";
+    case "job":
+      return "jobs";
+  }
+}
+
+/**
+ * Write a workspace config to the draft file.
+ */
+export async function writeDraft(
+  workspacePath: string,
+  config: WorkspaceConfig,
+): Promise<DraftResult<void>> {
+  const draftFilePath = draftPath(workspacePath);
+  try {
+    const yaml = stringifyYaml(config);
+    await writeFile(draftFilePath, yaml, "utf-8");
+    return { ok: true, value: undefined };
+  } catch (error) {
+    const message = stringifyError(error);
+    logger.error("Failed to write draft", { workspacePath, error: message });
+    return { ok: false, error: `Failed to write draft: ${message}` };
+  }
+}
+
+/**
+ * Upsert an entity (agent/signal/job) into the draft config.
+ * Validates the entity config against the appropriate schema before writing.
+ */
+export async function upsertDraftItem(
+  workspacePath: string,
+  kind: DraftItemKind,
+  id: string,
+  config: unknown,
+): Promise<DraftResult<void>> {
+  const readResult = await readDraft(workspacePath);
+  if (!readResult.ok) {
+    return readResult;
+  }
+
+  const schema = entitySchemaForKind(kind);
+  const parseResult = schema.safeParse(config);
+  if (!parseResult.success) {
+    return {
+      ok: false,
+      error: `Invalid ${kind} config: ${parseResult.error.message}`,
+    };
+  }
+
+  const key = configKeyForKind(kind);
+  const updated = {
+    ...readResult.value,
+    [key]: {
+      ...(readResult.value[key] as Record<string, unknown> | undefined),
+      [id]: parseResult.data,
+    },
+  };
+
+  const validation = WorkspaceConfigSchema.safeParse(updated);
+  if (!validation.success) {
+    return {
+      ok: false,
+      error: `Draft validation failed after upsert: ${validation.error.message}`,
+    };
+  }
+
+  return writeDraft(workspacePath, validation.data);
+}
+
+/**
+ * Delete an entity (agent/signal/job) from the draft config.
+ * Draft mode is permissive — does NOT check for broken references.
+ * Returns the old entity value and any structural issues in the remaining draft.
+ */
+export async function deleteDraftItem(
+  workspacePath: string,
+  kind: DraftItemKind,
+  id: string,
+): Promise<DraftResult<{ oldValue: unknown; report: ValidationReport }>> {
+  const readResult = await readDraft(workspacePath);
+  if (!readResult.ok) {
+    return readResult;
+  }
+
+  const key = configKeyForKind(kind);
+  const collection = (readResult.value[key] as Record<string, unknown> | undefined) ?? {};
+  if (!(id in collection)) {
+    return { ok: false, error: `${kind} '${id}' not found in draft` };
+  }
+
+  const oldValue = collection[id];
+  const updatedCollection = { ...collection };
+  delete updatedCollection[id];
+
+  const updated: WorkspaceConfig = { ...readResult.value };
+  if (Object.keys(updatedCollection).length === 0) {
+    delete (updated as Record<string, unknown>)[key];
+  } else {
+    (updated as Record<string, unknown>)[key] = updatedCollection;
+  }
+
+  const validation = WorkspaceConfigSchema.safeParse(updated);
+  if (!validation.success) {
+    return {
+      ok: false,
+      error: `Draft validation failed after delete: ${validation.error.message}`,
+    };
+  }
+
+  await writeDraft(workspacePath, validation.data);
+  const report = validateWorkspace(validation.data);
+  return { ok: true, value: { oldValue, report } };
+}
+
+/**
+ * Validate the current draft config and return a report.
+ */
+export async function validateDraft(
+  workspacePath: string,
+): Promise<DraftResult<ValidationReport>> {
+  const readResult = await readDraft(workspacePath);
+  if (!readResult.ok) {
+    return readResult;
+  }
+  return { ok: true, value: validateWorkspace(readResult.value) };
 }

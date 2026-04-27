@@ -71,7 +71,16 @@ import {
   materializeImportedMemory,
 } from "./bundle-helpers.ts";
 import { DEFAULT_WORKSPACE_MEMORY } from "./default-workspace-config.ts";
-import { beginDraft, discardDraft, publishDraft, readDraft } from "./draft-helpers.ts";
+import {
+  beginDraft,
+  deleteDraftItem,
+  discardDraft,
+  publishDraft,
+  readDraft,
+  upsertDraftItem,
+  validateDraft,
+  type DraftItemKind,
+} from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 import { resourceRoutes } from "./resources.ts";
@@ -2530,7 +2539,7 @@ const workspacesRoutes = daemonFactory
         }
         const result = await readDraft(workspace.path);
         if (!result.ok) {
-          return c.json({ success: false, error: result.error }, 404);
+          return c.json({ success: false, error: result.error }, 409);
         }
         return c.json({ success: true, config: result.value }, 200);
       } catch (error) {
@@ -2552,6 +2561,9 @@ const workspacesRoutes = daemonFactory
         }
         const result = await publishDraft(workspace.path);
         if (!result.ok) {
+          if (result.error === "No draft to publish") {
+            return c.json({ success: false, error: result.error }, 409);
+          }
           return c.json({ success: false, error: result.error }, 422);
         }
 
@@ -2588,7 +2600,127 @@ const workspacesRoutes = daemonFactory
         }
         const result = await discardDraft(workspace.path);
         if (!result.ok) {
+          return c.json({ success: false, error: result.error }, 409);
+        }
+        return c.json({ success: true }, 200);
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  // ─── DRAFT CRUD ─────────────────────────────────────────────────────────
+  // Upsert an entity (agent/signal/job) into the draft config
+  .post(
+    "/:workspaceId/draft/items/:kind",
+    zValidator("param", z.object({
+      workspaceId: z.string().min(1),
+      kind: z.enum(["agent", "signal", "job"] as const),
+    })),
+    zValidator("json", z.object({
+      id: z.string().min(1),
+      config: z.record(z.string(), z.unknown()),
+    })),
+    async (c) => {
+      const { workspaceId, kind } = c.req.valid("param");
+      const { id, config } = c.req.valid("json");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await upsertDraftItem(workspace.path, kind as DraftItemKind, id, config);
+        if (!result.ok) {
+          if (result.error === "No draft exists") {
+            return c.json({ success: false, error: result.error }, 409);
+          }
           return c.json({ success: false, error: result.error }, 400);
+        }
+        return c.json({ success: true }, 200);
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  // Delete an entity (agent/signal/job) from the draft config
+  .delete(
+    "/:workspaceId/draft/items/:kind/:id",
+    zValidator("param", z.object({
+      workspaceId: z.string().min(1),
+      kind: z.enum(["agent", "signal", "job"] as const),
+      id: z.string().min(1),
+    })),
+    async (c) => {
+      const { workspaceId, kind, id } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await deleteDraftItem(workspace.path, kind as DraftItemKind, id);
+        if (!result.ok) {
+          if (result.error.includes("not found in draft")) {
+            return c.json({ success: false, error: result.error }, 404);
+          }
+          return c.json({ success: false, error: result.error }, 409);
+        }
+        const structuralIssues = result.value.report.status === "error"
+          ? result.value.report.errors
+          : null;
+        return c.json({
+          ok: true,
+          diff: {
+            removed: [{ path: `${kind}s.${id}`, oldValue: result.value.oldValue }],
+          },
+          structural_issues: structuralIssues,
+        }, 200);
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  // Validate the current draft config
+  .post(
+    "/:workspaceId/draft/validate",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await validateDraft(workspace.path);
+        if (!result.ok) {
+          return c.json({ success: false, error: result.error }, 409);
+        }
+        return c.json({ success: true, report: result.value }, 200);
+      } catch (error) {
+        return c.json({ success: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  // Discard draft via DELETE
+  .delete(
+    "/:workspaceId/draft",
+    zValidator("param", z.object({ workspaceId: z.string().min(1) })),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await discardDraft(workspace.path);
+        if (!result.ok) {
+          return c.json({ success: false, error: result.error }, 409);
         }
         return c.json({ success: true }, 200);
       } catch (error) {
