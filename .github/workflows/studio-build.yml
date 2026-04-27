@@ -52,7 +52,7 @@ jobs:
           - platform: macos-arm
             os: macos-latest-xlarge
             target: aarch64-apple-darwin
-            archive_ext: tar.gz
+            archive_ext: tar.zst
           # macos-intel temporarily disabled while iterating on
           # friday-launcher integration — cross-codesign+notarize on the
           # ARM runner adds ~30min per build with no incremental value
@@ -60,7 +60,7 @@ jobs:
           # - platform: macos-intel
           #   os: macos-latest-xlarge
           #   target: x86_64-apple-darwin
-          #   archive_ext: tar.gz
+          #   archive_ext: tar.zst
           - platform: windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -179,11 +179,27 @@ jobs:
           # + EXTERNAL_CLIS in scripts/build-studio.ts.
           for f in friday link playground webhook-tunnel pty-server friday-launcher gh cloudflared; do
             (
-              codesign --force --options runtime --timestamp \
-                --entitlements "$ENTITLEMENTS" \
-                --sign "$APPLE_SIGNING_IDENTITY" \
-                "$STAGING/$f" \
-                && codesign --verify --strict --verbose=2 "$STAGING/$f"
+              # `gtimeout` (coreutils) caps each codesign call at 5 min.
+              # Apple's TSA can hang for hours under load; without a
+              # bounded wait, the whole job sits idle and burns runner
+              # minutes. 5 min is generous — even slow TSA roundtrips
+              # finish in ~30s normally. brew install coreutils is the
+              # standard way to get gtimeout on macOS runners; fall back
+              # to plain codesign if not available so legacy CI hosts
+              # still work.
+              if command -v gtimeout >/dev/null; then
+                gtimeout 300 codesign --force --options runtime --timestamp \
+                  --entitlements "$ENTITLEMENTS" \
+                  --sign "$APPLE_SIGNING_IDENTITY" \
+                  "$STAGING/$f" \
+                  && codesign --verify --strict --verbose=2 "$STAGING/$f"
+              else
+                codesign --force --options runtime --timestamp \
+                  --entitlements "$ENTITLEMENTS" \
+                  --sign "$APPLE_SIGNING_IDENTITY" \
+                  "$STAGING/$f" \
+                  && codesign --verify --strict --verbose=2 "$STAGING/$f"
+              fi
             ) &
             PIDS+=($!)
           done
@@ -202,10 +218,14 @@ jobs:
         run: |
           set -euo pipefail
           STAGING="dist/${{ matrix.target }}/staging"
-          # Re-build the tar.gz now that binaries are signed (build-studio.ts
-          # made an unsigned one earlier; re-tar from the same staging dir).
-          ARCHIVE="dist/friday-studio_${RELEASE_VERSION}_${{ matrix.target }}.tar.gz"
-          tar -czf "$ARCHIVE" -C "$STAGING" .
+          # Re-build the archive now that binaries are signed
+          # (build-studio.ts made an unsigned one earlier; re-tar from the
+          # same staging dir). Use tar.zst with parallel zstd matching
+          # build-studio.ts's archiveStaging so the published artifact
+          # actually carries the smaller compression. The installer's
+          # extract.rs handles .tar.zst via the ruzstd crate.
+          ARCHIVE="dist/friday-studio_${RELEASE_VERSION}_${{ matrix.target }}.tar.zst"
+          tar --use-compress-program='zstd -T0 -19' -cf "$ARCHIVE" -C "$STAGING" .
 
           # notarytool accepts zip/dmg/pkg — wrap the tar.gz for submission only.
           NOTARY_ZIP="$(mktemp -d)/notary.zip"
