@@ -51,7 +51,9 @@ export function validateWorkspace(parsedConfig: unknown): ValidationReport {
 
   const errors: Issue[] = parseResult.error.issues.map((issue) => ({
     code: issue.code,
-    path: flattenPath(issue.path as (string | number)[]),
+    path: flattenPath(
+      issue.path.filter((p): p is string | number => typeof p === "string" || typeof p === "number"),
+    ),
     message: issue.message,
   }));
 
@@ -69,8 +71,16 @@ export function validateWorkspace(parsedConfig: unknown): ValidationReport {
  *
  * @example
  * ["signals", "review-inbox", "config", "path"] → "signals.review-inbox.config.path"
- * ["memory", "mounts", 0, "source"] → "memory.mounts.0.source"
+ * ["memory", "mounts", 0, "source"] → "memory.mounts[0].source"
  */
 function flattenPath(path: (string | number)[]): string {
-  return path.join(".");
+  let result = "";
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      result += `[${segment}]`;
+    } else {
+      result += result.length > 0 ? `.${segment}` : segment;
+    }
+  }
+  return result;
 }

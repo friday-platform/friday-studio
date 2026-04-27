@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { parse } from "@std/yaml";
 import { describe, expect, it } from "vitest";
 import { validateWorkspace } from "./validate-workspace.ts";
 
@@ -92,16 +93,7 @@ describe("validateWorkspace structural layer", () => {
 
   it("validates Ken's Inbox-Zero workspace as clean", async () => {
     const yaml = await readFile("/Users/ericskram/Desktop/Inbox-Zero/workspace.yml", "utf-8");
-    // Parse YAML to JS object (simple JS eval won't work well with YAML)
-    // We'll use @std/yaml if available, otherwise skip the parse assertion
-    let parsed: unknown;
-    try {
-      const { parse } = await import("@std/yaml");
-      parsed = parse(yaml) as unknown;
-    } catch {
-      // Fallback: if yaml import fails, skip test
-      return;
-    }
+    const parsed: unknown = parse(yaml);
     const result = validateWorkspace(parsed);
     expect(result.status).toBe("ok");
     expect(result.errors).toEqual([]);
