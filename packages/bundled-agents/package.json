@@ -25,7 +25,7 @@
     "@hubspot/api-client": "^13.4.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
-    "ai": "^6.0.158",
+    "ai": "^6.0.168",
     "jira.js": "^5.3.1",
     "markdown-it": "^14.1.1",
     "parallel-web": "0.3.2",
