@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/tempestteam/atlas/pkg/processkit"
 )
 
 // runUninstall removes Friday Launcher's OS-level footprint:
@@ -32,15 +34,15 @@ func runUninstall() {
 
 	// 1. Stop running launcher.
 	pid, _, err := readLauncherPid()
-	if err == nil && pid > 0 && processAlive(pid) {
+	if err == nil && pid > 0 && processkit.ProcessAlive(pid) {
 		fmt.Printf("  · stopping running launcher pid=%d\n", pid)
-		killProcess(pid)
+		_ = processkit.Kill(pid, 0)
 		// Poll for the lock to free (which means the launcher's
 		// onExit ran and removed the pid file). Give it 35 s — same
 		// budget as the launcher's own ShutDownProject deadline.
 		stopped := false
 		for i := 0; i < 35; i++ {
-			if !processAlive(pid) {
+			if !processkit.ProcessAlive(pid) {
 				stopped = true
 				break
 			}

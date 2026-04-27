@@ -19,6 +19,7 @@ import (
 	"fyne.io/systray"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/tempestteam/atlas/pkg/processkit"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -64,7 +65,7 @@ var pidLock *pidFileLock
 // jobHandle (Windows only) keeps the Job Object alive for the
 // lifetime of the launcher; close-on-exit kills every supervised
 // child via KILL_ON_JOB_CLOSE. No-op on Unix.
-var jobHandle *jobObject
+var jobHandle *processkit.JobObject
 
 func main() {
 	autostartCmd, uninstall := parseFlags()
@@ -112,13 +113,17 @@ func main() {
 
 	// Best-effort: clean up orphan supervised processes from a prior
 	// SIGKILL'd launcher (Unix only — Windows Job Object handles it).
-	cleanupOrphanedChildren()
+	if killed, err := processkit.SweepOrphans(pidsDir()); err != nil {
+		log.Warn().Err(err).Msg("SweepOrphans (non-fatal)")
+	} else if killed > 0 {
+		log.Info().Int("killed", killed).Msg("swept orphaned supervised processes")
+	}
 
 	// Hard-kill resilience: assign self to a Job Object on Windows so
 	// children die with us. No-op on Unix.
-	jobHandle, err = attachSelfToJob()
+	jobHandle, err = processkit.AttachSelfToJob()
 	if err != nil {
-		log.Warn().Err(err).Msg("attachSelfToJob (non-fatal)")
+		log.Warn().Err(err).Msg("AttachSelfToJob (non-fatal)")
 	}
 
 	setupSignalHandlers()

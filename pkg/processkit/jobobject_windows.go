@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package processkit
 
 import (
 	"fmt"
@@ -10,20 +10,19 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// jobObject wraps a Win32 Job Object configured with KILL_ON_JOB_CLOSE.
-// We assign the LAUNCHER process itself to the job at startup; child
+// JobObject wraps a Win32 Job Object configured with KILL_ON_JOB_CLOSE.
+// Callers assign their OWN process to the job at startup; child
 // processes spawned via os/exec inherit the job by default. When the
-// launcher process exits — gracefully OR via TerminateProcess — the
-// kernel kills every job member. Lifted from tools/pty-server/
-// jobobject_windows.go (#3012).
-type jobObject struct {
+// parent process exits — gracefully OR via TerminateProcess — the
+// kernel kills every job member.
+type JobObject struct {
 	handle windows.Handle
 }
 
-// attachSelfToJob creates a Job Object and assigns the launcher's
-// own process to it. Returns the job handle (must be kept open for
-// the lifetime of the launcher; closing it terminates all members).
-func attachSelfToJob() (*jobObject, error) {
+// AttachSelfToJob creates a Job Object and assigns the calling
+// process to it. Returns the job (must be kept open for the lifetime
+// of the process; closing it terminates all members).
+func AttachSelfToJob() (*JobObject, error) {
 	h, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create job object: %w", err)
@@ -57,10 +56,13 @@ func attachSelfToJob() (*jobObject, error) {
 		return nil, fmt.Errorf("assign self to job: %w", err)
 	}
 
-	return &jobObject{handle: h}, nil
+	return &JobObject{handle: h}, nil
 }
 
-func (j *jobObject) Close() error {
+// Close releases the Job Object handle. Doing so kills every member
+// process (including the caller, if it didn't fork-and-detach), so this
+// should typically only be called as part of process shutdown.
+func (j *JobObject) Close() error {
 	if j == nil || j.handle == 0 {
 		return nil
 	}

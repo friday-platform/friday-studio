@@ -3,9 +3,7 @@
 package main
 
 import (
-	"fmt"
 	"os"
-	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -61,29 +59,4 @@ func (l *pidFileLock) release() {
 	_ = os.Remove(launcherPidPath())
 }
 
-// processStartUnix returns the start time of a process via
-// GetProcessTimes. On error returns 0.
-func processStartUnix(pid int) (int64, error) {
-	h, err := windows.OpenProcess(
-		windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-	if err != nil {
-		return 0, fmt.Errorf("open pid %d: %w", pid, err)
-	}
-	defer windows.CloseHandle(h)
-	var creation, exit, kernel, user windows.Filetime
-	if err := windows.GetProcessTimes(h,
-		&creation, &exit, &kernel, &user); err != nil {
-		return 0, err
-	}
-	return time.Unix(0, creation.Nanoseconds()).Unix(), nil
-}
 
-func processAlive(pid int) bool {
-	h, err := windows.OpenProcess(
-		windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-	if err != nil {
-		return false
-	}
-	_ = windows.CloseHandle(h)
-	return true
-}

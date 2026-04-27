@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/tempestteam/atlas/pkg/processkit"
 )
 
 // stubProgram is a tiny inline Go program built once per test run. It
@@ -690,7 +692,7 @@ func TestUninstall(t *testing.T) {
 	_ = launcherPid
 
 	// Original launcher must be exited (reaped, not zombie).
-	if processAlive(launcherPid) {
+	if processkit.ProcessAlive(launcherPid) {
 		t.Errorf("launcher pid %d still alive after --uninstall", launcherPid)
 	}
 	// pids/ removed.
