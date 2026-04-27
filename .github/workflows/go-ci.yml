@@ -15,6 +15,7 @@ on:
       - 'go.sum'
       - '.golangci.yml'
   merge_group:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
