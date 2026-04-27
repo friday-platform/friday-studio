@@ -25,9 +25,10 @@ describe("lintSkill — frontmatter", () => {
     expect(result.errors).toEqual([]);
   });
 
-  it("errors when description is missing", () => {
+  it("warns when description is missing", () => {
     const result = lintSkill(mkInput({ frontmatter: {} }), "load");
-    expect(result.errors.map((e) => e.rule)).toContain("description-missing");
+    expect(result.warnings.map((w) => w.rule)).toContain("description-missing");
+    expect(result.errors.map((e) => e.rule)).not.toContain("description-missing");
   });
 
   it("errors when description exceeds 1024 chars", () => {

@@ -139,13 +139,16 @@ export function lintSkill(input: LintInput, mode: LintMode): LintResult {
     (severity === "error" ? errors : warnings).push({ rule, message, severity });
   }
 
-  // Frontmatter schema — defensive re-parse so we don't depend on upstream validation.
+  // Frontmatter schema — defensive re-parse so we don't depend on upstream
+  // validation. Surfaced as a warning, not an error: the publish API accepts
+  // skills with minimal frontmatter (e.g. instructions-only via JSON body),
+  // and per-field rules below already flag missing/invalid pieces explicitly.
   const fmResult = SkillFrontmatterSchema.safeParse(input.frontmatter);
   if (!fmResult.success) {
-    errors.push({
+    warnings.push({
       rule: "frontmatter-schema",
       message: `Invalid frontmatter: ${fmResult.error.message}`,
-      severity: "error",
+      severity: "warn",
     });
   }
   const fm = fmResult.success ? fmResult.data : input.frontmatter;
@@ -171,7 +174,7 @@ export function lintSkill(input: LintInput, mode: LintMode): LintResult {
   // Description rules.
   const description = typeof fm.description === "string" ? fm.description : "";
   if (!description) {
-    warn("description-missing", "Frontmatter is missing a `description` field.", "error");
+    warn("description-missing", "Frontmatter is missing a `description` field.", "warn");
   } else {
     if (description.length > 1024) {
       warn(
