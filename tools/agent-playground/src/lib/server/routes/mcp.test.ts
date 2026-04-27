@@ -140,18 +140,21 @@ describe("POST /tools — validation", () => {
   });
 
   it("returns 400 listing all servers with missing env vars", async () => {
+    // Use two registry-known servers — `stripe` was removed from the
+    // consolidated registry, so the route now short-circuits with
+    // `Unknown server IDs: stripe` before reaching the env-var pass.
     const res = await mcpRoute.request("/tools", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serverIds: ["github", "stripe"], env: {} }),
+      body: JSON.stringify({ serverIds: ["github", "google-gmail"], env: {} }),
     });
     expect(res.status).toBe(400);
 
     const data = (await res.json()) as { error: string };
     expect(data.error).toContain("github");
     expect(data.error).toContain("GH_TOKEN");
-    expect(data.error).toContain("stripe");
-    expect(data.error).toContain("STRIPE_SECRET_KEY");
+    expect(data.error).toContain("google-gmail");
+    expect(data.error).toContain("GOOGLE_GMAIL_ACCESS_TOKEN");
   });
 
   it("passes validation when all required env vars provided", async () => {

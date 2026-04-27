@@ -183,7 +183,8 @@ describe("Mixed Workflows — read inbox + send email", () => {
     const result = classifyAndSnapshot(plan);
     expect(result).toEqual([
       { agentId: "cal-reader", kind: "bundled", bundledId: "google-calendar", mcpTools: undefined },
-      { agentId: "researcher", kind: "bundled", bundledId: "research", mcpTools: undefined },
+      // `research` aliases the canonical `web` bundled agent.
+      { agentId: "researcher", kind: "bundled", bundledId: "web", mcpTools: undefined },
       { agentId: "email-sender", kind: "bundled", bundledId: "email", mcpTools: undefined },
     ]);
   });

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { isClientSafeEvent } from "../stream-event-filter.ts";
 
 describe("isClientSafeEvent", () => {
-  it("filters out data-session-start", () => {
-    expect(isClientSafeEvent({ type: "data-session-start" })).toBe(false);
+  it("passes data-session-start through (the AI SDK uses it to init the assistant message)", () => {
+    expect(isClientSafeEvent({ type: "data-session-start" })).toBe(true);
   });
 
   it("filters out data-session-finish", () => {
