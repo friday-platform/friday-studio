@@ -5,7 +5,7 @@
  * idempotent enable, conflict detection, and runtime teardown.
  */
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import { stringify } from "@std/yaml";
@@ -286,6 +286,64 @@ describe("PUT /mcp/:serverId", () => {
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
     expect(destroyWorkspaceRuntime).toHaveBeenCalledWith("ws-test-id");
   });
+
+  test("writes to draft when draft exists, leaving live unchanged and deferring runtime startup", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const liveConfig = makeWorkspaceConfig({});
+    await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
+    await writeFile(join(testDir, "workspace.yml.draft"), stringify(liveConfig));
+    const { app, destroyWorkspaceRuntime } = createTestApp({
+      workspace,
+      config: createMergedConfig(liveConfig),
+      runtimeActive: true,
+    });
+
+    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
+    // Draft mode must not destroy runtime — startup is deferred until publish
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+
+    const draftContent = await readFile(join(testDir, "workspace.yml.draft"), "utf-8");
+    expect(draftContent).toContain("github");
+    expect(draftContent).toContain("echo");
+
+    const liveContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
+    expect(liveContent).not.toContain("github");
+  });
+
+  test("returns 200 idempotently when server already enabled in draft", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const liveConfig = makeWorkspaceConfig({
+      github: { transport: { type: "stdio", command: "echo" } },
+    });
+    // Draft also has the server enabled
+    const draftConfig = makeWorkspaceConfig({
+      github: { transport: { type: "stdio", command: "echo" } },
+    });
+    await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
+    await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
+    const { app, destroyWorkspaceRuntime } = createTestApp({
+      workspace,
+      config: createMergedConfig(draftConfig),
+      runtimeActive: true,
+    });
+
+    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+  });
 });
 
 // =============================================================================
@@ -436,5 +494,64 @@ describe("DELETE /mcp/:serverId", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.removed).toBe("github");
     expect(destroyWorkspaceRuntime).toHaveBeenCalledWith("ws-test-id");
+  });
+
+  test("writes to draft when draft exists, leaving live unchanged and deferring runtime teardown", async () => {
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+    const liveConfig = {
+      ...makeWorkspaceConfig({ github: { transport: { type: "stdio", command: "echo" } } }),
+      agents: {
+        a1: {
+          type: "llm",
+          description: "A1",
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-6",
+            prompt: "p",
+            tools: ["github"],
+          },
+        },
+      },
+    } as WorkspaceConfig;
+    // Draft has the server enabled; live does too (draft was copied from live)
+    const draftConfig = {
+      ...makeWorkspaceConfig({ github: { transport: { type: "stdio", command: "echo" } } }),
+      agents: {
+        a1: {
+          type: "llm",
+          description: "A1",
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-6",
+            prompt: "p",
+            tools: ["github"],
+          },
+        },
+      },
+    } as WorkspaceConfig;
+    await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
+    await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
+    const { app, destroyWorkspaceRuntime } = createTestApp({
+      workspace,
+      config: createMergedConfig(draftConfig),
+      runtimeActive: true,
+    });
+
+    const res = await app.request("/ws-test-id/mcp/github?force=true", { method: "DELETE" });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body.removed).toBe("github");
+    // Draft mode must not destroy runtime — teardown is deferred until publish
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
+
+    const draftContent = await readFile(join(testDir, "workspace.yml.draft"), "utf-8");
+    expect(draftContent).not.toContain("github");
+    // Agent tools should also be stripped in draft
+    expect(draftContent).not.toContain("tools: [\"github\"]");
+
+    const liveContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
+    expect(liveContent).toContain("github");
   });
 });

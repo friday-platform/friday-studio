@@ -10,9 +10,15 @@ import {
   WorkspaceSignalConfigSchema,
   validateWorkspace,
 } from "@atlas/config";
+import {
+  applyMutation,
+  type ApplyMutationOptions,
+  type MutationResult,
+} from "@atlas/config/mutations";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
+import { z } from "zod";
 
 const logger = createLogger({ component: "draft-helpers" });
 
@@ -32,6 +38,15 @@ export interface DraftItemResult {
   diff: FieldDiff;
   structuralIssues: Issue[] | null;
 }
+
+export type PublishDraftResult =
+  | { ok: true; value: { livePath: string } }
+  | { ok: false; error: string; report?: ValidationReport };
+
+export type RemoveLiveItemResult =
+  | { ok: true; livePath: string }
+  | { ok: false; reason: "error"; error: string }
+  | { ok: false; reason: "referenced"; dependents: string[] };
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -149,11 +164,71 @@ export async function writeLiveConfig(
 }
 
 /**
+ * Get the config that should be used for editing: draft if it exists, live otherwise.
+ */
+export async function getEditableConfig(
+  workspacePath: string,
+): Promise<DraftResult<WorkspaceConfig>> {
+  const draftResult = await readDraft(workspacePath);
+  if (draftResult.ok) return draftResult;
+  return readLiveConfig(workspacePath);
+}
+
+/**
+ * Apply a mutation to draft if it exists, or to live config via applyMutation.
+ * Returns the mutation result and whether the write went to draft.
+ */
+export async function applyDraftAwareMutation(
+  workspacePath: string,
+  mutationFn: (config: WorkspaceConfig) => MutationResult<WorkspaceConfig>,
+  options: ApplyMutationOptions = {},
+): Promise<{ result: MutationResult<WorkspaceConfig>; wroteToDraft: boolean }> {
+  const draftResult = await readDraft(workspacePath);
+  if (draftResult.ok) {
+    const mutationResult = mutationFn(draftResult.value);
+    if (!mutationResult.ok) {
+      return { result: mutationResult, wroteToDraft: true };
+    }
+
+    const validation = WorkspaceConfigSchema.safeParse(mutationResult.value);
+    if (!validation.success) {
+      return {
+        result: {
+          ok: false,
+          error: {
+            type: "validation",
+            message: "Mutated config failed validation",
+            issues: validation.error.issues,
+          },
+        },
+        wroteToDraft: true,
+      };
+    }
+
+    const writeResult = await writeDraft(workspacePath, validation.data);
+    if (!writeResult.ok) {
+      return {
+        result: {
+          ok: false,
+          error: { type: "write", message: writeResult.error },
+        },
+        wroteToDraft: true,
+      };
+    }
+
+    return { result: { ok: true, value: validation.data }, wroteToDraft: true };
+  }
+
+  const result = await applyMutation(workspacePath, mutationFn, options);
+  return { result, wroteToDraft: false };
+}
+
+/**
  * Publish the draft by validating it and then atomically renaming it over the live file.
  */
 export async function publishDraft(
   workspacePath: string,
-): Promise<DraftResult<{ livePath: string }>> {
+): Promise<PublishDraftResult> {
   const draftFilePath = draftPath(workspacePath);
 
   if (!(await fileExists(draftFilePath))) {
@@ -163,13 +238,14 @@ export async function publishDraft(
   // Validate draft content before publishing
   const readResult = await readDraft(workspacePath);
   if (!readResult.ok) {
-    return readResult;
+    return { ok: false, error: readResult.error };
   }
   const report = validateWorkspace(readResult.value);
   if (report.status === "error") {
     return {
       ok: false,
       error: `Validation failed: ${report.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`,
+      report,
     };
   }
 
@@ -502,6 +578,136 @@ export async function deleteDraftItem(
   await writeDraft(workspacePath, validation.data);
   const report = validateWorkspace(validation.data);
   return { ok: true, value: { oldValue, report } };
+}
+
+// ==============================================================================
+// REFERENCE HELPERS
+// ==============================================================================
+
+const FSMStateSchema = z.object({
+  entry: z.array(z.unknown()).optional(),
+});
+
+const FSMAgentActionSchema = z.object({
+  type: z.literal("agent"),
+  agentId: z.string(),
+});
+
+function findDependents(config: WorkspaceConfig, kind: DraftItemKind, id: string): string[] {
+  const dependents: string[] = [];
+
+  if (kind === "agent") {
+    for (const [jobId, rawJob] of Object.entries(config.jobs ?? {})) {
+      const jobResult = JobSpecificationSchema.safeParse(rawJob);
+      if (!jobResult.success) continue;
+      const job = jobResult.data;
+
+      // Check FSM entries
+      if (job.fsm?.states) {
+        for (const rawState of Object.values(job.fsm.states)) {
+          const stateResult = FSMStateSchema.safeParse(rawState);
+          if (!stateResult.success) continue;
+          for (const action of stateResult.data.entry ?? []) {
+            const actionResult = FSMAgentActionSchema.safeParse(action);
+            if (actionResult.success && actionResult.data.agentId === id) {
+              if (!dependents.includes(jobId)) dependents.push(jobId);
+              break;
+            }
+          }
+          if (dependents.includes(jobId)) break;
+        }
+      }
+
+      // Check execution.agents
+      if (job.execution?.agents) {
+        for (const spec of job.execution.agents) {
+          let agentId: string | undefined;
+          if (typeof spec === "string") {
+            agentId = spec;
+          } else if (typeof spec === "object" && spec !== null && "id" in spec && typeof spec.id === "string") {
+            agentId = spec.id;
+          }
+          if (agentId === id && !dependents.includes(jobId)) {
+            dependents.push(jobId);
+          }
+        }
+      }
+    }
+  }
+
+  if (kind === "signal") {
+    for (const [jobId, rawJob] of Object.entries(config.jobs ?? {})) {
+      const jobResult = JobSpecificationSchema.safeParse(rawJob);
+      if (!jobResult.success) continue;
+      const job = jobResult.data;
+
+      for (const trigger of job.triggers ?? []) {
+        if (trigger.signal === id && !dependents.includes(jobId)) {
+          dependents.push(jobId);
+        }
+      }
+    }
+  }
+
+  return dependents;
+}
+
+// ==============================================================================
+// LIVE ITEM REMOVAL
+// ==============================================================================
+
+/**
+ * Remove an entity (agent/signal/job) from the live config.
+ * Refuses the operation if the entity is referenced by other items.
+ */
+export async function removeLiveItem(
+  workspacePath: string,
+  kind: DraftItemKind,
+  id: string,
+): Promise<RemoveLiveItemResult> {
+  const readResult = await readLiveConfig(workspacePath);
+  if (!readResult.ok) {
+    return { ok: false, reason: "error", error: readResult.error };
+  }
+
+  const key = configKeyForKind(kind);
+  const collectionRaw = readResult.value[key];
+  const collectionResult = z.record(z.string(), z.unknown()).safeParse(collectionRaw);
+  const collection = collectionResult.success ? collectionResult.data : {};
+  if (!(id in collection)) {
+    return { ok: false, reason: "error", error: `${kind} '${id}' not found in live config` };
+  }
+
+  const dependents = findDependents(readResult.value, kind, id);
+  if (dependents.length > 0) {
+    return { ok: false, reason: "referenced", dependents };
+  }
+
+  const updatedCollection = { ...collection };
+  delete updatedCollection[id];
+
+  const draft: Record<string, unknown> = { ...readResult.value };
+  if (Object.keys(updatedCollection).length === 0) {
+    delete draft[key];
+  } else {
+    draft[key] = updatedCollection;
+  }
+
+  const validation = WorkspaceConfigSchema.safeParse(draft);
+  if (!validation.success) {
+    return {
+      ok: false,
+      reason: "error",
+      error: `Live config validation failed after delete: ${validation.error.message}`,
+    };
+  }
+
+  const writeResult = await writeLiveConfig(workspacePath, validation.data);
+  if (!writeResult.ok) {
+    return { ok: false, reason: "error", error: writeResult.error };
+  }
+
+  return { ok: true, livePath: await resolveLiveConfigPath(workspacePath) };
 }
 
 /**
