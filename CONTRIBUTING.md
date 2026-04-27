@@ -104,7 +104,7 @@ PR conventions:
 
 ## Reporting bugs
 
-Open a [GitHub issue](https://github.com/tempestteam/atlas/issues). Include:
+Open a [GitHub issue](https://github.com/friday-platform/friday-studio/issues). Include:
 
 - What you did (steps to reproduce)
 - What you expected

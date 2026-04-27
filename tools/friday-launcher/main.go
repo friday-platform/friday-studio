@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"fyne.io/systray"
-	"github.com/tempestteam/atlas/pkg/logger"
-	"github.com/tempestteam/atlas/pkg/processkit"
+	"github.com/friday-platform/friday-studio/pkg/logger"
+	"github.com/friday-platform/friday-studio/pkg/processkit"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 

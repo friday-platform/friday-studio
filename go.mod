@@ -1,4 +1,4 @@
-module github.com/tempestteam/atlas
+module github.com/friday-platform/friday-studio
 
 go 1.26
 

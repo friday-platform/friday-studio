@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/tempestteam/atlas/pkg/processkit"
+	"github.com/friday-platform/friday-studio/pkg/processkit"
 )
 
 // runUninstall removes Friday Launcher's OS-level footprint:

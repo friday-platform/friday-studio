@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tempestteam/atlas/pkg/processkit"
+	"github.com/friday-platform/friday-studio/pkg/processkit"
 )
 
 // stubProgram is a tiny inline Go program built once per test run. It

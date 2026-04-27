@@ -3,13 +3,13 @@
 **Context**: `docs/plans/2026-04-05-claude-code-python-agent-design.v4.md`
 **Branch**: `yaml-custom-agents`
 **Date**: 2026-04-06
-**PR under test**: https://github.com/tempestteam/atlas/pull/2688
+**PR under test**: https://github.com/friday-platform/friday-studio/pull/2688
 
 ## Prerequisites
 
 - [ ] Daemon running: `deno task atlas daemon start --detached`
 - [ ] `ANTHROPIC_API_KEY` configured (env or Link credentials)
-- [ ] `GH_TOKEN` configured with repo access to `tempestteam/atlas`
+- [ ] `GH_TOKEN` configured with repo access to `friday-platform/friday-studio`
 - [ ] Python claude-code agent built and installed:
   ```bash
   deno task atlas agent build packages/sdk-python/tests/fixtures/claude-code-agent/
@@ -70,7 +70,7 @@ deno task atlas prompt --workspace <workspace-id> "Write a Python function that 
 **Trigger**: Same workspace as Case 1. Open the chat in the web UI at
 `http://localhost:1420/spaces/<workspace-id>/chat` and send:
 ```
-Read the README.md in the tempestteam/atlas repo and summarize what the project does.
+Read the README.md in the friday-platform/friday-studio repo and summarize what the project does.
 ```
 
 **Expect**:
@@ -90,7 +90,7 @@ Read the README.md in the tempestteam/atlas repo and summarize what the project 
 
 **Trigger**: Same workspace as Case 1. Send a high-effort prompt:
 ```
-Clone https://github.com/tempestteam/atlas and analyze the architecture of the packages/ directory. Identify the dependency graph between packages and suggest improvements.
+Clone https://github.com/friday-platform/friday-studio and analyze the architecture of the packages/ directory. Identify the dependency graph between packages and suggest improvements.
 ```
 
 **Expect**:
@@ -138,7 +138,7 @@ deno task atlas workspace create examples/claude-code-with-skills/workspace.yml
 
 **Trigger**:
 ```bash
-deno task atlas prompt --workspace <workspace-id> "Review the changes in https://github.com/tempestteam/atlas/pull/2688 using your pr-code-review skill."
+deno task atlas prompt --workspace <workspace-id> "Review the changes in https://github.com/friday-platform/friday-studio/pull/2688 using your pr-code-review skill."
 ```
 
 **Expect**:
@@ -196,7 +196,7 @@ deno task atlas workspace create examples/pr-review-python/workspace.yml
 
 **Trigger**: Fire the review-pr signal:
 ```bash
-deno task atlas signal trigger review-pr --workspace <workspace-id> --data '{"pr_url": "https://github.com/tempestteam/atlas/pull/2688"}'
+deno task atlas signal trigger review-pr --workspace <workspace-id> --data '{"pr_url": "https://github.com/friday-platform/friday-studio/pull/2688"}'
 ```
 
 **Expect**:

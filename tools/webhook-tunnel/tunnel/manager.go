@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tempestteam/atlas/pkg/logger"
-	"github.com/tempestteam/atlas/pkg/processkit"
+	"github.com/friday-platform/friday-studio/pkg/logger"
+	"github.com/friday-platform/friday-studio/pkg/processkit"
 )
 
 // Constants tuned to match the TS implementation. Changing these is a

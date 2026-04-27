@@ -82,7 +82,7 @@ agent commit footers into CLAUDE.md.
 **Prerequisites:** Deno 2.4.0+, Go 1.22+ (for operator/auth/gist services)
 
 ```bash
-git clone https://github.com/tempestteam/atlas && cd atlas
+git clone https://github.com/friday-platform/friday-studio && cd atlas
 deno install                    # Install dependencies
 npx husky                       # Set up git hooks
 ```

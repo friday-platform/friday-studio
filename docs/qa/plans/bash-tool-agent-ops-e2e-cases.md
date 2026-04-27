@@ -586,13 +586,13 @@ summary). 401/403 means credential issue.
 **Trigger**:
 ```bash
 deno task atlas signal trigger run-gh \
-  --data '{"prompt": "{\"operation\": \"clone\", \"pr_url\": \"https://github.com/tempestteam/atlas/pull/2732\"}"}' \
+  --data '{"prompt": "{\"operation\": \"clone\", \"pr_url\": \"https://github.com/friday-platform/friday-studio/pull/2732\"}"}' \
   --workspace <workspace-slug>
 ```
 
 **Expect**: Session completes. Agent output contains:
 - `operation: "clone"`, `success: true`
-- `data.repo: "tempestteam/atlas"`
+- `data.repo: "friday-platform/friday-studio"`
 - `data.pr_number: 2732`
 - `data.branch` — head ref
 - `data.base_branch` — base ref
@@ -615,7 +615,7 @@ credential helper pattern in bash tool env.
 **Trigger**:
 ```bash
 deno task atlas signal trigger run-gh \
-  --data '{"prompt": "{\"operation\": \"pr-review\", \"pr_url\": \"https://github.com/tempestteam/atlas/pull/2732\", \"body\": \"[QA e2e test] Daemon-triggered review comment — safe to ignore\"}"}' \
+  --data '{"prompt": "{\"operation\": \"pr-review\", \"pr_url\": \"https://github.com/friday-platform/friday-studio/pull/2732\", \"body\": \"[QA e2e test] Daemon-triggered review comment — safe to ignore\"}"}' \
   --workspace <workspace-slug>
 ```
 
@@ -634,7 +634,7 @@ auth). Check issues API endpoint: `/repos/{nwo}/issues/{pr_number}/comments`.
 **Trigger**:
 ```bash
 deno task atlas signal trigger run-gh \
-  --data '{"prompt": "{\"operation\": \"pr-inline-review\", \"pr_url\": \"https://github.com/tempestteam/atlas/pull/2732\", \"verdict\": \"COMMENT\", \"summary\": \"[QA e2e test] Automated inline review — safe to ignore\", \"findings\": [{\"severity\": \"info\", \"category\": \"qa-test\", \"file\": \"README.md\", \"line\": 1, \"title\": \"QA Test Finding\", \"description\": \"Automated e2e validation. Safe to ignore.\"}]}"}' \
+  --data '{"prompt": "{\"operation\": \"pr-inline-review\", \"pr_url\": \"https://github.com/friday-platform/friday-studio/pull/2732\", \"verdict\": \"COMMENT\", \"summary\": \"[QA e2e test] Automated inline review — safe to ignore\", \"findings\": [{\"severity\": \"info\", \"category\": \"qa-test\", \"file\": \"README.md\", \"line\": 1, \"title\": \"QA Test Finding\", \"description\": \"Automated e2e validation. Safe to ignore.\"}]}"}' \
   --workspace <workspace-slug>
 ```
 

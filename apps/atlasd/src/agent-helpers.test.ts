@@ -148,12 +148,12 @@ describe("buildFinalAgentPrompt", () => {
       // Bundled agents (like claude-code) don't have agentConfig, so agentConfigPrompt is ""
       // The fsm-workspace-creator sets action.prompt to the agent's description
       const result = buildFinalAgentPrompt(
-        "Clone the tempestteam/atlas repository and implement the feature",
+        "Clone the friday-platform/friday-studio repository and implement the feature",
         "", // No agent config for bundled agents
         documentContext,
       );
 
-      expect(result.startsWith("Clone the tempestteam/atlas repository")).toBe(true);
+      expect(result.startsWith("Clone the friday-platform/friday-studio repository")).toBe(true);
       expect(result).toContain(documentContext);
     });
   });

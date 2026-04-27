@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tempestteam/atlas/pkg/processkit"
+	"github.com/friday-platform/friday-studio/pkg/processkit"
 )
 
 // pidFileContents formats the pid file body. Format is

@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
-	"github.com/tempestteam/atlas/pkg/logger"
+	"github.com/friday-platform/friday-studio/pkg/logger"
 )
 
 // log is the package-level Logger used by main.go and pty.go.

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/forwarder"
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/provider"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/forwarder"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/provider"
 )
 
 // setupTestServer starts the same routes main() does, with NO_TUNNEL=true

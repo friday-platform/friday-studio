@@ -11,7 +11,7 @@ Chat becomes FAST's top-level primitive. A default `user` workspace is created o
 
 ## Context: what PR 2792 already delivered
 
-The recent [Chat SDK per-workspace PR](https://github.com/tempestteam/atlas/pull/2792) (merged) did the foundational work: every workspace gets a lazily-built `ChatSdkInstance` with an `AtlasWebAdapter`, and `POST /api/workspaces/:id/chat` routes through `chat.webhooks.atlas(request)`. `signalToStream` bridges the callback-based `triggerSignalWithSession` API into a `ReadableStream` that both the SSE tap and the Chat SDK's thread consumer read from. The `workspace-chat` agent runs inside that pipeline with workspace-scoped context, skills, and tools.
+The recent [Chat SDK per-workspace PR](https://github.com/friday-platform/friday-studio/pull/2792) (merged) did the foundational work: every workspace gets a lazily-built `ChatSdkInstance` with an `AtlasWebAdapter`, and `POST /api/workspaces/:id/chat` routes through `chat.webhooks.atlas(request)`. `signalToStream` bridges the callback-based `triggerSignalWithSession` API into a `ReadableStream` that both the SSE tap and the Chat SDK's thread consumer read from. The `workspace-chat` agent runs inside that pipeline with workspace-scoped context, skills, and tools.
 
 **What PR 2792 did NOT do:**
 

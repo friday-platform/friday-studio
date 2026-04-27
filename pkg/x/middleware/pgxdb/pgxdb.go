@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/tempestteam/atlas/pkg/x/middleware"
+	"github.com/friday-platform/friday-studio/pkg/x/middleware"
 )
 
 var ErrNotFound = errors.New("pgxdb: nil value in context")

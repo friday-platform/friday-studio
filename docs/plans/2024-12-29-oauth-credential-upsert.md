@@ -2,7 +2,7 @@
 
 **Linear:** [TEM-3400](https://linear.app/tempestteam/issue/TEM-3400/)\
 **Branch:** `replace-oauth-creds`\
-**PR:** [#1213](https://github.com/tempestteam/atlas/pull/1213)\
+**PR:** [#1213](https://github.com/friday-platform/friday-studio/pull/1213)\
 **Status:** Complete
 
 ## Problem
