@@ -12,6 +12,7 @@ import type { WorkspaceConfig } from "@atlas/config";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { stringify } from "@std/yaml";
 import { Hono } from "hono";
+import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
@@ -420,7 +421,7 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(400);
 
-    const body = await res.json();
+    const body = z.object({ success: z.boolean(), error: z.string() }).parse(await res.json());
     expect(body).toMatchObject({ success: false });
     expect(body.error).toContain("Invalid agent config");
   });
@@ -451,10 +452,16 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = await res.json();
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.object({
+        removed: z.array(z.object({ path: z.string() })),
+      }),
+      structural_issues: z.null(),
+    }).parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff.removed).toHaveLength(1);
-    expect(body.diff.removed[0].path).toBe("agents.delete-me");
+    expect(body.diff.removed[0]?.path).toBe("agents.delete-me");
     expect(body.structural_issues).toBeNull();
 
     const draftContent = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
@@ -471,7 +478,7 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(404);
 
-    const body = await res.json();
+    const body = z.object({ success: z.boolean(), error: z.string() }).parse(await res.json());
     expect(body).toMatchObject({ success: false });
     expect(body.error).toContain("missing");
   });
@@ -522,13 +529,19 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = await res.json();
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.object({
+        removed: z.array(z.object({ path: z.string() })),
+      }),
+      structural_issues: z.array(z.object({ code: z.string() })),
+    }).parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff.removed).toHaveLength(1);
-    expect(body.diff.removed[0].path).toBe("agents.test-agent");
+    expect(body.diff.removed[0]?.path).toBe("agents.test-agent");
     expect(body.structural_issues).not.toBeNull();
     expect(body.structural_issues.length).toBeGreaterThan(0);
-    expect(body.structural_issues[0].code).toBe("unknown_agent_id");
+    expect(body.structural_issues[0]?.code).toBe("unknown_agent_id");
   });
 
   test("validate draft returns report", async () => {

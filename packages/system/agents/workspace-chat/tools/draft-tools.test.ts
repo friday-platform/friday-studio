@@ -81,7 +81,7 @@ describe("createBoundDraftTools", () => {
   it("begin_draft description mentions idempotency and safe staging", () => {
     const tools = createBoundDraftTools(logger, "ws-1");
     const desc = tools.begin_draft!.description;
-    expect(desc.toLowerCase()).toContain("idempotent");
+    expect(desc?.toLowerCase()).toContain("idempotent");
     expect(desc).toContain("draft");
   });
 
