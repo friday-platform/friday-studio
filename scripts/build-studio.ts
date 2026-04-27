@@ -144,6 +144,9 @@ const GO_BINARIES: readonly GoBinary[] = [
   // fyne.io/systray needs Cocoa on macOS (Windows backend is pure Win32 —
   // cgo build there is a no-op overhead, fine to keep on for uniformity).
   { name: "friday-launcher", pkg: "./tools/friday-launcher", cgo: true },
+  // webhook-tunnel: chi HTTP server + cloudflared subprocess manager.
+  // Replaces the 997 MB Deno-compiled binary with a ~10 MB pure-Go one.
+  { name: "webhook-tunnel", pkg: "./tools/webhook-tunnel" },
 ];
 
 function goEnvForTarget(target: string): { GOOS: string; GOARCH: string } {
@@ -172,12 +175,6 @@ const DENO_BINARIES = [
     name: "link",
     entry: "apps/link/src/index.ts",
     flags: ["--unstable-worker-options", "--unstable-kv", "--unstable-raw-imports"],
-    include: [] as string[],
-  },
-  {
-    name: "webhook-tunnel",
-    entry: "apps/webhook-tunnel/src/index.ts",
-    flags: [] as string[],
     include: [] as string[],
   },
   {
