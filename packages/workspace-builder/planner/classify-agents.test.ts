@@ -50,8 +50,8 @@ describe("classifyAgents — MCP server lookup", () => {
     },
     { capabilityId: "github", expectedServers: [{ serverId: "github", name: "GitHub" }] },
     {
-      capabilityId: "linear",
-      expectedServers: [{ serverId: "linear", name: "Linear Project Management" }],
+      capabilityId: "google-drive",
+      expectedServers: [{ serverId: "google-drive", name: "Google Drive" }],
     },
   ])("sets mcpServers when capability '$capabilityId' exists in MCP registry", ({
     capabilityId,
@@ -64,13 +64,13 @@ describe("classifyAgents — MCP server lookup", () => {
   });
 
   it("resolves multiple MCP capabilities to multiple servers", () => {
-    const agents = [makeAgent({ capabilities: ["github", "linear"] })];
+    const agents = [makeAgent({ capabilities: ["github", "google-drive"] })];
     classifyAgents(agents);
     expect(agents[0]?.mcpServers).toHaveLength(2);
     expect(agents[0]?.mcpServers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ serverId: "github" }),
-        expect.objectContaining({ serverId: "linear" }),
+        expect.objectContaining({ serverId: "google-drive" }),
       ]),
     );
   });
