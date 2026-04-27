@@ -47,7 +47,10 @@ async function runCLI(
   }
 }
 
-describe("CLI output contract", () => {
+// Each test spawns a `deno run` subprocess that JITs the full CLI graph
+// on first invocation; on a cold runner that overruns vitest's 5s default.
+// Match runCLI's 15s subprocess timeout file-wide.
+describe("CLI output contract", { timeout: 15_000 }, () => {
   it("atlas version → prints version and channel", async () => {
     const { stdout, exitCode } = await runCLI("version");
     expect(exitCode).toBe(0);
@@ -81,11 +84,7 @@ describe("CLI output contract", () => {
     expect(stdout).toMatch(/\S+/); // version string present (dev or semver)
   });
 
-  // The yargs-routed paths (`chat` legacy + bare `atlas`) cold-load the
-  // full daemon import graph before printing help and exiting. That's
-  // measurably slower than the gunshi paths and overruns vitest's 5s
-  // default — bump the timeout to match `runCLI`'s subprocess timeout.
-  it("atlas chat (legacy command) → routes to yargs, not gunshi", { timeout: 15_000 }, async () => {
+  it("atlas chat (legacy command) → routes to yargs, not gunshi", async () => {
     const { stdout, stderr } = await runCLI("chat");
 
     // Yargs handled it — output must NOT be a gunshi/router error
@@ -93,7 +92,7 @@ describe("CLI output contract", () => {
     expect(stderr).not.toContain("Command not found");
   });
 
-  it("atlas (no args) → routes to yargs, exits non-zero", { timeout: 15_000 }, async () => {
+  it("atlas (no args) → routes to yargs, exits non-zero", async () => {
     const { exitCode } = await runCLI();
     expect(exitCode).not.toBe(0);
   });
