@@ -53,6 +53,7 @@ import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDelegateTool } from "./tools/delegate/index.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
+import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
@@ -725,6 +726,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...fileIOTools,
           ...createWorkspaceOpsTools(logger),
           ...createBoundDraftTools(logger, workspaceId),
+          ...createBoundUpsertTools(logger, workspaceId),
           ...listMcpServersTool,
           ...searchMcpServersTool,
           ...installMcpServerTool,
