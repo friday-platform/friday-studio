@@ -59,6 +59,11 @@ updates:
       # Vite 8 reaches stable. See PR #2164 for context.
       - dependency-name: "@sveltejs/vite-plugin-svelte"
         update-types: ["version-update:semver-major"]
+      # TypeScript 6 has new strictness defaults that fail the Deno typecheck
+      # and svelte-check across the monorepo. Hold majors until we deliberately
+      # do a TS 6 migration.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
