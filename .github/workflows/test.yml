@@ -46,6 +46,15 @@ jobs:
       - name: Generate SvelteKit types
         run: deno task --recursive sync
 
+      - name: Install nats-server
+        env:
+          NATS_VERSION: v2.12.8
+        run: |
+          curl -fsSL "https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /tmp "nats-server-${NATS_VERSION}-linux-amd64/nats-server"
+          sudo mv /tmp/nats-server /usr/local/bin/nats-server
+          nats-server --version
+
       - name: Start daemon for integration tests
         env:
           LITELLM_API_KEY: ci-placeholder
