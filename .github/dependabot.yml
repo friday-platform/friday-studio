@@ -78,7 +78,7 @@ updates:
     rebase-strategy: "auto"
     # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
     # when OTEL_DENO=true is baked in at compile time. Affects 2.7.5 and 2.7.6.
-    # See: https://github.com/denoland/deno/pull/32501, #32557
+    # See: https://github.com/denoland/deno/issues/32821
     ignore:
       - dependency-name: "denoland/deno"
         versions: [">= 2.7.5, < 2.8.0"]
@@ -143,7 +143,7 @@ updates:
       - "docker"
     rebase-strategy: "auto"
     # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
-    # See: https://github.com/denoland/deno/pull/32501, #32557
+    # See: https://github.com/denoland/deno/issues/32821
     ignore:
       - dependency-name: "denoland/deno"
         versions: [">= 2.7.5, < 2.8.0"]
