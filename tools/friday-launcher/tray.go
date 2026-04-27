@@ -8,6 +8,18 @@ import (
 	"fyne.io/systray"
 )
 
+// iconFridayTemplate is a pure-black silhouette of the Friday "P" mark.
+// macOS treats it as a template image and auto-tints to match the
+// menubar (white on dark, black on light) — this is the canonical
+// menubar-icon shape and the only way to get crisp visibility against
+// dark menubars without shipping multiple per-mode bitmaps.
+//
+// iconFriday is the colored fallback for non-macOS platforms (Windows
+// renders the bytes as-is; no template-tinting).
+//
+//go:embed assets/tray-friday-template.png
+var iconFridayTemplate []byte
+
 //go:embed assets/tray-friday.png
 var iconFriday []byte
 
@@ -73,7 +85,9 @@ func newTrayController(sup *Supervisor, shuttingDown *atomic.Bool) *trayControll
 }
 
 func (t *trayController) onReady() {
-	systray.SetIcon(iconFriday)
+	// Template icon on macOS auto-tints to menubar color; on Windows
+	// the second arg is used as a regular icon.
+	systray.SetTemplateIcon(iconFridayTemplate, iconFriday)
 	systray.SetTitle("")
 	systray.SetTooltip("Friday Studio — starting…")
 
