@@ -21,7 +21,7 @@
     "hono": "4.12.15",
     "nanoid": "5.1.9",
     "oauth4webapi": "3.8.5",
-    "postgres": "3.4.7",
+    "postgres": "3.4.9",
     "@hubspot/api-client": "^13.5.0",
     "zod": "4.3.6"
   },

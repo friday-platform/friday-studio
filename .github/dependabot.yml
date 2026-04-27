@@ -49,10 +49,6 @@ updates:
         patterns:
           - "@opentelemetry/*"
     ignore:
-      # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
-      # See: https://github.com/porsager/postgres/issues/1143
-      - dependency-name: "postgres"
-        versions: [">= 3.4.8"]
       # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
       # Docker images — rolldown-binding.linux-x64-musl.node not found.
       # Also requires vite-plugin-svelte v7 migration. Block until resolved.
@@ -170,9 +166,3 @@ updates:
       - "npm"
       - "link"
     rebase-strategy: "auto"
-    ignore:
-      # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
-      # See: https://github.com/porsager/postgres/issues/1143
-      - dependency-name: "postgres"
-        versions: [">= 3.4.8"]
-
