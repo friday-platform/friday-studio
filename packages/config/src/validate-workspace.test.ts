@@ -107,6 +107,41 @@ describe("validateWorkspace structural layer", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it("returns structured path for missing signal description", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      signals: {
+        "review-inbox": { provider: "http", config: { path: "/review" } },
+      },
+    });
+    expect(result.status).toBe("error");
+    const err = result.errors.find((e) => e.path === "signals.review-inbox.description");
+    expect(err).toBeDefined();
+    expect(err!.code).toBe("invalid_type");
+    expect(err!.message).not.toBe("expected string, received undefined");
+    expect(err!.message).toMatch(/required|expected string|invalid input/i);
+  });
+
+  it("never emits raw Zod stringification in any issue message", () => {
+    const bad = validateWorkspace({
+      version: 2.0,
+      workspace: { name: "Test" },
+      signals: {
+        "review-inbox": { provider: "http", config: { path: "/review" } },
+      },
+      agents: {
+        orphan: { type: "llm", description: "Orphan", config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" } },
+      },
+    });
+    const allIssues = [...bad.errors, ...bad.warnings];
+    for (const issue of allIssues) {
+      expect(issue.message).not.toContain("[object Object]");
+      expect(issue.message).not.toContain("ZodError");
+      expect(issue.message).not.toContain("JSON.stringify");
+    }
+  });
+
   it("validates Ken's Inbox-Zero workspace as clean", async () => {
     const yaml = await readFile("/Users/ericskram/Desktop/Inbox-Zero/workspace.yml", "utf-8");
     const parsed: unknown = parse(yaml);
