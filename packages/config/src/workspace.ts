@@ -2,6 +2,7 @@ import { z } from "zod";
 import { WorkspaceAgentConfigSchema } from "./agents.ts";
 import { AtlasServerConfigSchema, PlatformModelsSchema, ServerConfigSchema } from "./atlas.ts";
 import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
+import { CommunicatorConfigSchema } from "./communicators.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
 import { NotificationConfigSchema } from "./notifications.ts";
@@ -142,6 +143,7 @@ export const WorkspaceConfigSchema = z.strictObject({
   tools: ToolsConfigSchema.optional(),
   skills: z.array(SkillEntrySchema).optional(),
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
+  communicators: z.record(z.string(), CommunicatorConfigSchema).optional(),
   jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
   resources: z.array(ConfigResourceDeclarationSchema).optional(),

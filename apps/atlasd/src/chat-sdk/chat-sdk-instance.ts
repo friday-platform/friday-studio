@@ -26,7 +26,12 @@ import {
 } from "../services/slack-credentials.ts";
 import { isClientSafeEvent } from "../stream-event-filter.ts";
 import type { StreamRegistry } from "../stream-registry.ts";
-import { buildChatSdkAdapters, type PlatformCredentials } from "./adapter-factory.ts";
+import {
+  buildChatSdkAdapters,
+  type CommunicatorEntry,
+  type PlatformCredentials,
+} from "./adapter-factory.ts";
+import { ChatSdkNotifier } from "./chat-sdk-notifier.ts";
 
 const logger = createLogger({ component: "chat-sdk-instance" });
 
@@ -34,6 +39,7 @@ export interface ChatSdkInstanceConfig {
   workspaceId: string;
   userId: string;
   signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>;
+  communicators?: Record<string, CommunicatorEntry>;
   streamRegistry: StreamRegistry;
   triggerFn: TriggerFn;
   exposeKernel?: boolean;
@@ -41,6 +47,9 @@ export interface ChatSdkInstanceConfig {
 
 export interface ChatSdkInstance {
   chat: Chat;
+  notifier: ChatSdkNotifier;
+  /** Map keyed by adapter kind ("slack" | "telegram" | ...) → platform-native default destination. */
+  broadcastDestinations: Record<string, string>;
   teardown: () => Promise<void>;
 }
 
@@ -50,48 +59,117 @@ export interface ResolvedCredentials {
 }
 
 /**
+ * Picks the config object for a given chat-adapter kind, preferring the
+ * top-level `communicators` map over signals. When the kind is declared in
+ * both, the communicators entry wins. The duplicate-declaration warn fires
+ * once per workspace at adapter-factory startup (see `findChatProviders`
+ * → `platform_adapter_duplicate_declaration`); we deliberately don't repeat
+ * the warn here because this helper is called multiple times per workspace
+ * (credential resolver + broadcast destination collector + per-platform
+ * lookups), and re-warning each time would spam logs without surfacing new
+ * info. Returns `null` when the kind is not declared anywhere.
+ */
+function pickConfigForKind(
+  kind: string,
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+  communicators: Record<string, CommunicatorEntry> | undefined,
+): Record<string, unknown> | null {
+  if (communicators) {
+    for (const entry of Object.values(communicators)) {
+      if (entry?.kind === kind) {
+        const { kind: _kind, ...rest } = entry;
+        return rest;
+      }
+    }
+  }
+  for (const signal of Object.values(signals)) {
+    if (signal?.provider === kind) {
+      return signal.config ?? {};
+    }
+  }
+  return null;
+}
+
+/**
+ * Build the per-kind default-destination map for the broadcast hook. Walks
+ * the same precedence path as `pickConfigForKind` (communicators wins, signals
+ * fall back) for each chat provider and pulls out `default_destination` when
+ * present. Kinds without a destination are simply absent from the map; the
+ * broadcaster skips them at send time.
+ */
+function collectBroadcastDestinations(
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }> | undefined,
+  communicators: Record<string, CommunicatorEntry> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const kind of ["slack", "telegram", "discord", "teams", "whatsapp"] as const) {
+    const config = pickConfigForKind(kind, signals ?? {}, communicators);
+    const dest = config && typeof config.default_destination === "string"
+      ? config.default_destination
+      : null;
+    if (dest) out[kind] = dest;
+  }
+  return out;
+}
+
+/**
  * Resolve every platform credential a workspace has wired. Each provider is
- * resolved independently from workspace.yml signal config + env vars — so a
- * workspace with any combination of Slack, Telegram, WhatsApp signals gets all
- * three adapters. Signal-based (BYO) credentials are the authoritative source;
- * the Link service is consulted only for Slack and only when no slack signal
- * credentials resolved, as a fallback for managed/OAuth-installed Slack apps.
+ * resolved independently from a single config block — drawn from the top-level
+ * `communicators` map first, then from a matching signal's `config` — plus env
+ * vars. The Link service is consulted only for Slack and only when no slack
+ * communicator/signal config produced credentials, as a fallback for
+ * managed/OAuth-installed Slack apps.
  */
 export async function resolvePlatformCredentials(
   workspaceId: string,
   signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+  communicators?: Record<string, CommunicatorEntry>,
 ): Promise<ResolvedCredentials[]> {
   const resolved: ResolvedCredentials[] = [];
 
-  const telegramCreds = resolveTelegramCredentials(signals);
-  if (telegramCreds) resolved.push(telegramCreds);
+  const telegramConfig = pickConfigForKind("telegram", signals, communicators);
+  if (telegramConfig) {
+    const creds = resolveTelegramCredentials(telegramConfig);
+    if (creds) resolved.push(creds);
+  }
 
-  const whatsappCreds = resolveWhatsappCredentials(signals);
-  if (whatsappCreds) resolved.push(whatsappCreds);
+  const whatsappConfig = pickConfigForKind("whatsapp", signals, communicators);
+  if (whatsappConfig) {
+    const creds = resolveWhatsappCredentials(whatsappConfig);
+    if (creds) resolved.push(creds);
+  }
 
-  const discordCreds = resolveDiscordCredentials(signals);
-  if (discordCreds) resolved.push(discordCreds);
+  const discordConfig = pickConfigForKind("discord", signals, communicators);
+  if (discordConfig) {
+    const creds = resolveDiscordCredentials(discordConfig);
+    if (creds) resolved.push(creds);
+  }
 
-  const teamsCreds = resolveTeamsCredentials(signals);
-  if (teamsCreds) resolved.push(teamsCreds);
+  const teamsConfig = pickConfigForKind("teams", signals, communicators);
+  if (teamsConfig) {
+    const creds = resolveTeamsCredentials(teamsConfig);
+    if (creds) resolved.push(creds);
+  }
 
-  const slackSignalCreds = resolveSlackFromSignals(signals);
-  if (slackSignalCreds) {
-    resolved.push(slackSignalCreds);
-    return resolved;
+  const slackConfig = pickConfigForKind("slack", signals, communicators);
+  if (slackConfig) {
+    const slackInlineCreds = resolveSlackFromConfig(slackConfig);
+    if (slackInlineCreds) {
+      resolved.push(slackInlineCreds);
+      return resolved;
+    }
   }
 
   // Only consult Link for a Slack credential if the workspace actually
-  // declares a slack signal. A workspace with only teams / discord / telegram /
-  // whatsapp signals has no business pinging Link — it's a pointless HTTP
-  // round-trip, and a Link 5xx here would drop the already-resolved creds
-  // from the other providers on the floor.
+  // declares slack via communicators or signals. A workspace with only
+  // teams / discord / telegram / whatsapp has no business pinging Link — it's
+  // a pointless HTTP round-trip, and a Link 5xx here would drop the
+  // already-resolved creds from the other providers on the floor.
   //
-  // The outer try/catch is defense-in-depth: even when a slack signal is
-  // present, a transient Link 5xx should downgrade to a warn, not disable
-  // every chat adapter on the workspace.
-  const hasSlackSignal = Object.values(signals).some((s) => s?.provider === "slack");
-  if (hasSlackSignal) {
+  // The outer try/catch is defense-in-depth: even when slack is declared,
+  // a transient Link 5xx should downgrade to a warn, not disable every chat
+  // adapter on the workspace.
+  if (slackConfig) {
     try {
       const slackLinkCreds = await resolveSlackFromLink(workspaceId);
       if (slackLinkCreds) resolved.push(slackLinkCreds);
@@ -106,76 +184,60 @@ export async function resolvePlatformCredentials(
   return resolved;
 }
 
-function resolveTelegramCredentials(
-  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
-): ResolvedCredentials | null {
-  for (const signal of Object.values(signals)) {
-    if (signal.provider !== "telegram") continue;
-
-    const parsed = TelegramProviderConfigSchema.safeParse(signal.config ?? {});
-    if (!parsed.success) {
-      logger.debug("telegram_invalid_config", { error: parsed.error.message });
-      continue;
-    }
-
-    const botToken = parsed.data.bot_token ?? process.env.TELEGRAM_BOT_TOKEN;
-    if (!botToken) {
-      logger.debug("telegram_no_bot_token", {
-        hint: "Set bot_token in signal config or TELEGRAM_BOT_TOKEN env var",
-      });
-      return null;
-    }
-
-    const webhookSecret = parsed.data.webhook_secret ?? process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
-
-    return {
-      credentials: {
-        kind: "telegram",
-        botToken,
-        secretToken: webhookSecret,
-        appId: botToken.split(":")[0] ?? "",
-      },
-      credentialId: `telegram:${botToken.split(":")[0]}`,
-    };
+function resolveTelegramCredentials(config: Record<string, unknown>): ResolvedCredentials | null {
+  const parsed = TelegramProviderConfigSchema.safeParse(config);
+  if (!parsed.success) {
+    logger.debug("telegram_invalid_config", { error: parsed.error.message });
+    return null;
   }
-  return null;
+
+  const botToken = parsed.data.bot_token ?? process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    logger.debug("telegram_no_bot_token", {
+      hint: "Set bot_token in config or TELEGRAM_BOT_TOKEN env var",
+    });
+    return null;
+  }
+
+  const webhookSecret = parsed.data.webhook_secret ?? process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
+
+  return {
+    credentials: {
+      kind: "telegram",
+      botToken,
+      secretToken: webhookSecret,
+      appId: botToken.split(":")[0] ?? "",
+    },
+    credentialId: `telegram:${botToken.split(":")[0]}`,
+  };
 }
 
-function resolveWhatsappCredentials(
-  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
-): ResolvedCredentials | null {
-  for (const signal of Object.values(signals)) {
-    if (signal.provider !== "whatsapp") continue;
-
-    const parsed = WhatsAppProviderConfigSchema.safeParse(signal.config ?? {});
-    if (!parsed.success) {
-      logger.debug("whatsapp_invalid_config", { error: parsed.error.message });
-      continue;
-    }
-
-    const accessToken = parsed.data.access_token ?? process.env.WHATSAPP_ACCESS_TOKEN;
-    const appSecret = parsed.data.app_secret ?? process.env.WHATSAPP_APP_SECRET;
-    const phoneNumberId = parsed.data.phone_number_id ?? process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const verifyToken = parsed.data.verify_token ?? process.env.WHATSAPP_VERIFY_TOKEN;
-
-    if (!accessToken || !appSecret || !phoneNumberId || !verifyToken) {
-      const missing: string[] = [];
-      if (!accessToken) missing.push("access_token / WHATSAPP_ACCESS_TOKEN");
-      if (!appSecret) missing.push("app_secret / WHATSAPP_APP_SECRET");
-      if (!phoneNumberId) {
-        missing.push("phone_number_id / WHATSAPP_PHONE_NUMBER_ID");
-      }
-      if (!verifyToken) missing.push("verify_token / WHATSAPP_VERIFY_TOKEN");
-      logger.debug("whatsapp_missing_credentials", { missing });
-      return null;
-    }
-
-    return {
-      credentials: { kind: "whatsapp", accessToken, appSecret, phoneNumberId, verifyToken },
-      credentialId: `whatsapp:${phoneNumberId}`,
-    };
+function resolveWhatsappCredentials(config: Record<string, unknown>): ResolvedCredentials | null {
+  const parsed = WhatsAppProviderConfigSchema.safeParse(config);
+  if (!parsed.success) {
+    logger.debug("whatsapp_invalid_config", { error: parsed.error.message });
+    return null;
   }
-  return null;
+
+  const accessToken = parsed.data.access_token ?? process.env.WHATSAPP_ACCESS_TOKEN;
+  const appSecret = parsed.data.app_secret ?? process.env.WHATSAPP_APP_SECRET;
+  const phoneNumberId = parsed.data.phone_number_id ?? process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const verifyToken = parsed.data.verify_token ?? process.env.WHATSAPP_VERIFY_TOKEN;
+
+  if (!accessToken || !appSecret || !phoneNumberId || !verifyToken) {
+    const missing: string[] = [];
+    if (!accessToken) missing.push("access_token / WHATSAPP_ACCESS_TOKEN");
+    if (!appSecret) missing.push("app_secret / WHATSAPP_APP_SECRET");
+    if (!phoneNumberId) missing.push("phone_number_id / WHATSAPP_PHONE_NUMBER_ID");
+    if (!verifyToken) missing.push("verify_token / WHATSAPP_VERIFY_TOKEN");
+    logger.debug("whatsapp_missing_credentials", { missing });
+    return null;
+  }
+
+  return {
+    credentials: { kind: "whatsapp", accessToken, appSecret, phoneNumberId, verifyToken },
+    credentialId: `whatsapp:${phoneNumberId}`,
+  };
 }
 
 /**
@@ -186,135 +248,116 @@ function resolveWhatsappCredentials(
  * that's the daemon-scoped `DiscordGatewayService`'s job.
  *
  * Credentials are resolved config-first, env-fallback — matching the Telegram
- * / Slack / WhatsApp pattern. A workspace with all three fields set inline in
- * `workspace.yml` needs no `DISCORD_*` env vars; an empty `config: {}` pulls
- * from env; partial config falls back field-by-field.
+ * / Slack / WhatsApp pattern. A config with all three fields set inline in
+ * `workspace.yml` needs no `DISCORD_*` env vars; an empty config pulls from
+ * env; partial config falls back field-by-field.
  */
 export function resolveDiscordCredentials(
-  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+  config: Record<string, unknown>,
 ): ResolvedCredentials | null {
-  for (const signal of Object.values(signals)) {
-    if (signal.provider !== "discord") continue;
+  const botToken =
+    (typeof config.bot_token === "string" ? config.bot_token : null) ??
+    process.env.DISCORD_BOT_TOKEN;
+  const publicKey =
+    (typeof config.public_key === "string" ? config.public_key : null) ??
+    process.env.DISCORD_PUBLIC_KEY;
+  const applicationId =
+    (typeof config.application_id === "string" ? config.application_id : null) ??
+    process.env.DISCORD_APPLICATION_ID;
 
-    const cfg = signal.config ?? {};
-    const botToken =
-      (typeof cfg.bot_token === "string" ? cfg.bot_token : null) ?? process.env.DISCORD_BOT_TOKEN;
-    const publicKey =
-      (typeof cfg.public_key === "string" ? cfg.public_key : null) ??
-      process.env.DISCORD_PUBLIC_KEY;
-    const applicationId =
-      (typeof cfg.application_id === "string" ? cfg.application_id : null) ??
-      process.env.DISCORD_APPLICATION_ID;
-
-    if (!botToken || !publicKey || !applicationId) {
-      const missing: string[] = [];
-      if (!botToken) missing.push("bot_token / DISCORD_BOT_TOKEN");
-      if (!publicKey) missing.push("public_key / DISCORD_PUBLIC_KEY");
-      if (!applicationId) missing.push("application_id / DISCORD_APPLICATION_ID");
-      logger.debug("discord_missing_credentials", { missing });
-      return null;
-    }
-
-    return {
-      credentials: { kind: "discord", botToken, publicKey, applicationId },
-      credentialId: `discord:${applicationId}`,
-    };
+  if (!botToken || !publicKey || !applicationId) {
+    const missing: string[] = [];
+    if (!botToken) missing.push("bot_token / DISCORD_BOT_TOKEN");
+    if (!publicKey) missing.push("public_key / DISCORD_PUBLIC_KEY");
+    if (!applicationId) missing.push("application_id / DISCORD_APPLICATION_ID");
+    logger.debug("discord_missing_credentials", { missing });
+    return null;
   }
-  return null;
+
+  return {
+    credentials: { kind: "discord", botToken, publicKey, applicationId },
+    credentialId: `discord:${applicationId}`,
+  };
 }
 
-function resolveTeamsCredentials(
-  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
-): ResolvedCredentials | null {
-  for (const signal of Object.values(signals)) {
-    if (signal.provider !== "teams") continue;
-
-    const parsed = TeamsProviderConfigSchema.safeParse(signal.config ?? {});
-    if (!parsed.success) {
-      logger.debug("teams_invalid_config", { error: parsed.error.message });
-      continue;
-    }
-
-    const appId = parsed.data.app_id ?? process.env.TEAMS_APP_ID;
-    const appPassword = parsed.data.app_password ?? process.env.TEAMS_APP_PASSWORD;
-    const appTenantId = parsed.data.app_tenant_id ?? process.env.TEAMS_APP_TENANT_ID;
-    // appType also has an env fallback so env-only SingleTenant setups work
-    // without a workspace.yml config block — otherwise the default
-    // (MultiTenant) silently wins and JWT validation fails against the wrong
-    // issuer. Only log when TEAMS_APP_TYPE is set-but-invalid (unset is the
-    // normal case and would otherwise spam debug logs on every workspace load).
-    const rawEnvAppType = process.env.TEAMS_APP_TYPE;
-    let envAppType: "MultiTenant" | "SingleTenant" | undefined;
-    if (rawEnvAppType === "MultiTenant" || rawEnvAppType === "SingleTenant") {
-      envAppType = rawEnvAppType;
-    } else if (rawEnvAppType !== undefined) {
-      logger.debug("teams_invalid_env_app_type", { value: rawEnvAppType });
-    }
-    const appType = parsed.data.app_type ?? envAppType;
-
-    const requiresTenantId = appType === "SingleTenant";
-
-    if (!appId || !appPassword || (requiresTenantId && !appTenantId)) {
-      const missing: string[] = [];
-      if (!appId) missing.push("app_id / TEAMS_APP_ID");
-      if (!appPassword) missing.push("app_password / TEAMS_APP_PASSWORD");
-      if (requiresTenantId && !appTenantId) {
-        missing.push("app_tenant_id / TEAMS_APP_TENANT_ID (required for SingleTenant)");
-      }
-      logger.debug("teams_missing_credentials", { missing });
-      return null;
-    }
-
-    return {
-      credentials: {
-        kind: "teams",
-        appId,
-        appPassword,
-        ...(appTenantId ? { appTenantId } : {}),
-        ...(appType ? { appType } : {}),
-      },
-      credentialId: `teams:${appId}`,
-    };
+function resolveTeamsCredentials(config: Record<string, unknown>): ResolvedCredentials | null {
+  const parsed = TeamsProviderConfigSchema.safeParse(config);
+  if (!parsed.success) {
+    logger.debug("teams_invalid_config", { error: parsed.error.message });
+    return null;
   }
-  return null;
+
+  const appId = parsed.data.app_id ?? process.env.TEAMS_APP_ID;
+  const appPassword = parsed.data.app_password ?? process.env.TEAMS_APP_PASSWORD;
+  const appTenantId = parsed.data.app_tenant_id ?? process.env.TEAMS_APP_TENANT_ID;
+  // appType also has an env fallback so env-only SingleTenant setups work
+  // without a workspace.yml config block — otherwise the default
+  // (MultiTenant) silently wins and JWT validation fails against the wrong
+  // issuer. Only log when TEAMS_APP_TYPE is set-but-invalid (unset is the
+  // normal case and would otherwise spam debug logs on every workspace load).
+  const rawEnvAppType = process.env.TEAMS_APP_TYPE;
+  let envAppType: "MultiTenant" | "SingleTenant" | undefined;
+  if (rawEnvAppType === "MultiTenant" || rawEnvAppType === "SingleTenant") {
+    envAppType = rawEnvAppType;
+  } else if (rawEnvAppType !== undefined) {
+    logger.debug("teams_invalid_env_app_type", { value: rawEnvAppType });
+  }
+  const appType = parsed.data.app_type ?? envAppType;
+
+  const requiresTenantId = appType === "SingleTenant";
+
+  if (!appId || !appPassword || (requiresTenantId && !appTenantId)) {
+    const missing: string[] = [];
+    if (!appId) missing.push("app_id / TEAMS_APP_ID");
+    if (!appPassword) missing.push("app_password / TEAMS_APP_PASSWORD");
+    if (requiresTenantId && !appTenantId) {
+      missing.push("app_tenant_id / TEAMS_APP_TENANT_ID (required for SingleTenant)");
+    }
+    logger.debug("teams_missing_credentials", { missing });
+    return null;
+  }
+
+  return {
+    credentials: {
+      kind: "teams",
+      appId,
+      appPassword,
+      ...(appTenantId ? { appTenantId } : {}),
+      ...(appType ? { appType } : {}),
+    },
+    credentialId: `teams:${appId}`,
+  };
 }
 
-function resolveSlackFromSignals(
-  signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
-): ResolvedCredentials | null {
-  for (const signal of Object.values(signals)) {
-    if (signal.provider !== "slack") continue;
-
-    const parsed = SlackProviderConfigSchema.safeParse(signal.config ?? {});
-    if (!parsed.success) {
-      logger.debug("slack_invalid_config", { error: parsed.error.message });
-      continue;
-    }
-
-    const botToken = parsed.data.bot_token ?? process.env.SLACK_BOT_TOKEN;
-    if (!botToken) {
-      logger.debug("slack_signal_no_bot_token", {
-        hint: "Set bot_token in signal config or SLACK_BOT_TOKEN env var",
-      });
-      return null;
-    }
-
-    const signingSecret = parsed.data.signing_secret ?? process.env.SLACK_SIGNING_SECRET;
-    if (!signingSecret) {
-      logger.debug("slack_signal_no_signing_secret", {
-        hint: "Set signing_secret in signal config or SLACK_SIGNING_SECRET env var",
-      });
-      return null;
-    }
-
-    const appId = parsed.data.app_id ?? process.env.SLACK_APP_ID ?? "";
-
-    return {
-      credentials: { kind: "slack", botToken, signingSecret, appId },
-      credentialId: appId ? `slack:${appId}` : `slack:${botToken.slice(-8)}`,
-    };
+function resolveSlackFromConfig(config: Record<string, unknown>): ResolvedCredentials | null {
+  const parsed = SlackProviderConfigSchema.safeParse(config);
+  if (!parsed.success) {
+    logger.debug("slack_invalid_config", { error: parsed.error.message });
+    return null;
   }
-  return null;
+
+  const botToken = parsed.data.bot_token ?? process.env.SLACK_BOT_TOKEN;
+  if (!botToken) {
+    logger.debug("slack_no_bot_token", {
+      hint: "Set bot_token in config or SLACK_BOT_TOKEN env var",
+    });
+    return null;
+  }
+
+  const signingSecret = parsed.data.signing_secret ?? process.env.SLACK_SIGNING_SECRET;
+  if (!signingSecret) {
+    logger.debug("slack_no_signing_secret", {
+      hint: "Set signing_secret in config or SLACK_SIGNING_SECRET env var",
+    });
+    return null;
+  }
+
+  const appId = parsed.data.app_id ?? process.env.SLACK_APP_ID ?? "";
+
+  return {
+    credentials: { kind: "slack", botToken, signingSecret, appId },
+    credentialId: appId ? `slack:${appId}` : `slack:${botToken.slice(-8)}`,
+  };
 }
 
 async function resolveSlackFromLink(workspaceId: string): Promise<ResolvedCredentials | null> {
@@ -595,9 +638,15 @@ export async function initializeChatSdkInstance(
   config: ChatSdkInstanceConfig,
   credentials?: PlatformCredentials | PlatformCredentials[],
 ): Promise<ChatSdkInstance> {
-  const { workspaceId, userId, signals, streamRegistry, triggerFn } = config;
+  const { workspaceId, userId, signals, communicators, streamRegistry, triggerFn } = config;
 
-  const adapters = buildChatSdkAdapters({ workspaceId, signals, credentials, streamRegistry });
+  const adapters = buildChatSdkAdapters({
+    workspaceId,
+    signals,
+    communicators,
+    credentials,
+    streamRegistry,
+  });
 
   const stateAdapter = new ChatSdkStateAdapter({ userId, workspaceId });
 
@@ -610,16 +659,25 @@ export async function initializeChatSdkInstance(
     logger: "silent",
   });
 
+  const notifier = new ChatSdkNotifier(adapters);
+  const broadcastDestinations = collectBroadcastDestinations(signals, communicators);
+
   const handler = createMessageHandler(workspaceId, triggerFn, streamRegistry, stateAdapter, {
     exposeKernel: config.exposeKernel,
   });
   chat.onNewMention(handler);
   chat.onSubscribedMessage(handler);
 
-  logger.info("chat_sdk_instance_created", { workspaceId, adapters: Object.keys(adapters) });
+  logger.info("chat_sdk_instance_created", {
+    workspaceId,
+    adapters: Object.keys(adapters),
+    broadcastDestinations: Object.keys(broadcastDestinations),
+  });
 
   return {
     chat,
+    notifier,
+    broadcastDestinations,
     teardown: async () => {
       try {
         await chat.shutdown();

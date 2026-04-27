@@ -613,12 +613,15 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
         const disableMcpServerTool = createDisableMcpServerTool(workspaceId, logger);
 
-        // Job tools
+        // Job tools — pass session.streamId so nested job sessions inherit
+        // the chat thread ID. The daemon's broadcast hook reads it to skip
+        // the originating chat communicator (no echo back to Discord/Slack/etc).
         const jobTools = createJobTools(
           workspaceId,
           wsConfig?.jobs ?? {},
           wsConfig?.signals ?? {},
           logger,
+          session.streamId,
         );
 
         // Compose resources from primary + foreground workspaces
@@ -752,6 +755,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             fg.config?.jobs ?? {},
             fg.config?.signals ?? {},
             logger,
+            session.streamId,
           ),
         }));
         const allTools = composeTools(primaryTools, foregroundToolSets);

@@ -53,12 +53,20 @@ const DEFAULT_INPUT_SCHEMA = {
  * Each job becomes a tool that triggers the job's signal via the daemon's
  * signal endpoint (JSON mode) and blocks until completion.
  * The `handle-chat` job is excluded to prevent self-referential invocation.
+ *
+ * `parentStreamId` is the chat's streamId — when passed, it's forwarded as
+ * the inner job session's streamId so downstream side-effects (notably the
+ * broadcast hook) can correlate the inner session with its originating chat
+ * thread and skip the source platform as a broadcast target. The daemon
+ * hook recovers the source from the streamId prefix (`discord:` / `slack:`
+ * / etc.), so we don't need to forward it as a separate field.
  */
 export function createJobTools(
   workspaceId: string,
   jobs: Record<string, JobSpecification>,
   signals: Record<string, WorkspaceSignalConfig>,
   logger: Logger,
+  parentStreamId?: string,
 ): AtlasTools {
   const tools: AtlasTools = {};
 
@@ -88,10 +96,14 @@ export function createJobTools(
           signalId: triggerSignal,
         });
 
+        // Forward `parentStreamId` as the top-level `streamId` field — the
+        // runtime merges it into `signal.data.streamId` so the inner job
+        // session inherits the chat thread ID, and the broadcast hook reads
+        // its prefix (e.g. `discord:`) to skip the source platform.
         const result = await parseResult(
           client.workspace[":workspaceId"].signals[":signalId"].$post({
             param: { workspaceId, signalId: triggerSignal },
-            json: { payload: input },
+            json: parentStreamId ? { payload: input, streamId: parentStreamId } : { payload: input },
           }),
         );
 

@@ -41,9 +41,18 @@ export type PlatformCredentials =
 export const CHAT_PROVIDERS = ["slack", "telegram", "whatsapp", "discord", "teams"] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 
+/**
+ * Top-level workspace.yml `communicators` declaration. Same shape as
+ * `CommunicatorConfig` from `@atlas/config` (kept structural here to avoid a
+ * circular runtime dep) — the discriminator is `kind`, all platform fields
+ * are optional and fall through to env vars / Link at resolve time.
+ */
+export type CommunicatorEntry = { kind?: string } & Record<string, unknown>;
+
 export interface ChatSdkAdapterConfig {
   workspaceId: string;
   signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>;
+  communicators?: Record<string, CommunicatorEntry>;
   credentials?: PlatformCredentials | PlatformCredentials[];
   streamRegistry: StreamRegistry;
 }
@@ -86,7 +95,7 @@ export function buildChatSdkAdapters(config: ChatSdkAdapterConfig): Record<strin
     }),
   };
 
-  const providers = findChatProviders(config.signals);
+  const providers = findChatProviders(config.signals, config.communicators, config.workspaceId);
   if (providers.length === 0) return adapters;
 
   const credsList = config.credentials
@@ -125,16 +134,47 @@ function isChatProvider(value: string): value is ChatProvider {
   return (CHAT_PROVIDERS as readonly string[]).includes(value);
 }
 
+/**
+ * Walk both the new top-level `communicators` map and the existing per-signal
+ * `provider` field, deduplicating by chat-adapter kind. Top-level
+ * `communicators` declarations always win for adapter discovery; when a kind
+ * is also declared under signals we emit a warn so operators can clean up the
+ * dead config.
+ */
 function findChatProviders(
-  signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>,
+  signals: Record<string, { provider?: string; config?: Record<string, unknown> }> | undefined,
+  communicators: Record<string, CommunicatorEntry> | undefined,
+  workspaceId: string,
 ): ChatProvider[] {
-  if (!signals) return [];
-  const seen = new Set<ChatProvider>();
-  for (const signal of Object.values(signals)) {
-    const provider = signal?.provider;
-    if (provider && isChatProvider(provider)) {
-      seen.add(provider);
+  const fromCommunicators = new Set<ChatProvider>();
+  if (communicators) {
+    for (const entry of Object.values(communicators)) {
+      const kind = entry?.kind;
+      if (typeof kind === "string" && isChatProvider(kind)) {
+        fromCommunicators.add(kind);
+      }
     }
   }
-  return [...seen];
+
+  const fromSignals = new Set<ChatProvider>();
+  if (signals) {
+    for (const signal of Object.values(signals)) {
+      const provider = signal?.provider;
+      if (provider && isChatProvider(provider)) {
+        fromSignals.add(provider);
+      }
+    }
+  }
+
+  for (const kind of fromCommunicators) {
+    if (fromSignals.has(kind)) {
+      logger.warn("platform_adapter_duplicate_declaration", {
+        workspaceId,
+        kind,
+        source: "communicators_wins",
+      });
+    }
+  }
+
+  return [...new Set<ChatProvider>([...fromCommunicators, ...fromSignals])];
 }

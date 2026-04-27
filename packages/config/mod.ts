@@ -12,6 +12,8 @@ export * from "./src/atlas.ts";
 export type { AtlasConfigSource } from "./src/atlas-source.ts";
 // Base types and enums
 export * from "./src/base.ts";
+// Communicator schemas (top-level workspace.yml communicators map)
+export * from "./src/communicators.ts";
 // Configuration loader
 export * from "./src/config-loader.ts";
 // Configuration adapter interface
