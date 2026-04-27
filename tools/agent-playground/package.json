@@ -12,7 +12,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@ai-sdk/svelte": "^4.0.141",
+    "@ai-sdk/svelte": "^4.0.168",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/atlasd": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
