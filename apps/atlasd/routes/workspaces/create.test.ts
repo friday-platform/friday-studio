@@ -200,7 +200,25 @@ function createTestApp() {
       return Promise.resolve({ workspace: ws, created: true });
     });
 
-  const find = vi.fn();
+  // The default workspace config baseline mounts narrative stores from the
+  // `user` workspace; the route validator (`workspaceList.has`) refuses
+  // creation if a referenced workspace is unknown. Resolve `user` here so
+  // tests don't trip the `unknown_mount_workspace` hard_fail.
+  const find = vi.fn().mockImplementation(({ id }: { id: string }) => {
+    if (id === "user") {
+      return Promise.resolve({
+        id: "user",
+        name: "Personal",
+        path: "/tmp/user-ws",
+        configPath: "/tmp/user-ws/workspace.yml",
+        status: "inactive" as const,
+        createdAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+        metadata: {},
+      });
+    }
+    return Promise.resolve(null);
+  });
   const getWorkspaceConfig = vi.fn();
   const handleWorkspaceConfigChange = vi.fn().mockResolvedValue(undefined);
 

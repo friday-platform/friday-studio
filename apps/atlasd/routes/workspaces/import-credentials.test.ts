@@ -74,8 +74,26 @@ function createImportTestApp() {
       created: true,
     });
 
+  // The default workspace config baseline mounts narrative stores from the
+  // `user` workspace; the route validator refuses creation if the referenced
+  // workspace is unknown. Resolve `user` here so tests don't trip the
+  // `unknown_mount_workspace` hard_fail.
   const mockWorkspaceManager = {
-    find: vi.fn().mockResolvedValue(null),
+    find: vi.fn().mockImplementation(({ id }: { id: string }) => {
+      if (id === "user") {
+        return Promise.resolve({
+          id: "user",
+          name: "Personal",
+          path: "/tmp/user-ws",
+          configPath: "/tmp/user-ws/workspace.yml",
+          status: "inactive" as const,
+          createdAt: new Date().toISOString(),
+          lastSeen: new Date().toISOString(),
+          metadata: {},
+        });
+      }
+      return Promise.resolve(null);
+    }),
     getWorkspaceConfig: vi.fn().mockResolvedValue(null),
     list: vi.fn().mockResolvedValue([]),
     registerWorkspace: mockRegisterWorkspace,
@@ -127,7 +145,34 @@ function mountRoutes(app: Hono<AppVariables>) {
 }
 
 function makeConfig(overrides: Record<string, unknown> = {}) {
-  return { version: "1.0", workspace: { name: "Imported Workspace" }, ...overrides };
+  // The validator now hard-fails on `unreachable_agent` — every declared
+  // agent must be invoked from at least one job. Auto-wire any agents
+  // declared in the override into a minimal pass-through job so tests can
+  // keep focusing on credential resolution rather than FSM plumbing.
+  const config: Record<string, unknown> = {
+    version: "1.0",
+    workspace: { name: "Imported Workspace" },
+    ...overrides,
+  };
+  const agents = config.agents as Record<string, unknown> | undefined;
+  const agentIds = agents ? Object.keys(agents) : [];
+  if (agentIds.length > 0 && !config.jobs) {
+    config.signals = {
+      ...((config.signals as Record<string, unknown>) ?? {}),
+      "auto-test": {
+        provider: "http",
+        description: "Auto-generated test trigger",
+        config: { path: "/auto-test" },
+      },
+    };
+    config.jobs = {
+      "auto-test-job": {
+        triggers: [{ signal: "auto-test" }],
+        execution: { strategy: "sequential", agents: agentIds },
+      },
+    };
+  }
+  return config;
 }
 
 /** Extract a credential ref from the written YAML config. */
