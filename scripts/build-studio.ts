@@ -177,6 +177,13 @@ const DENO_BINARIES = [
     include: [
       "packages/system/workspaces/system.yml",
       "packages/workspace/src/user-workspace-template.yml",
+      // packages/system/skills/ — system-skill-bootstrap walks this
+      // dir at startup to publish bundled skills (friday-cli,
+      // workspace-api, writing-friday-agents, mcp-workspace-management).
+      // The walker uses readdir+readFile relative to import.meta.url
+      // so deno compile needs the WHOLE tree explicitly. --include on a
+      // dir is recursive.
+      "packages/system/skills",
     ] as string[],
   },
   {
