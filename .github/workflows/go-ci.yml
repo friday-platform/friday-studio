@@ -19,7 +19,7 @@ permissions:
 jobs:
   lint:
     name: Go lint
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -37,7 +37,7 @@ jobs:
 
   test:
     name: Go tests
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
