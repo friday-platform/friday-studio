@@ -139,15 +139,10 @@ interface GoBinary {
 
 const GO_BINARIES: readonly GoBinary[] = [
   { name: "pty-server", pkg: "./tools/pty-server" },
-  // friday-launcher is the post-install supervisor + tray app. It
-  // imports process-compose as a Go library so its dep graph is large
-  // (gin, swag, tcell, tview, gopsutil come along for the ride);
-  // hosting it in its own go.mod (tools/friday-launcher/go.mod) keeps
-  // those deps out of the atlas root module. The build pipeline runs
-  // `go build` from the package's directory, so the separate module
-  // is transparent here. cgo:true because fyne.io/systray needs Cocoa
-  // on macOS (Windows backend is pure Win32 — cgo build there is a
-  // no-op overhead, fine to keep on for uniformity).
+  // friday-launcher is the post-install supervisor + tray app. Lives in
+  // the root Go module like every other tools/* binary. cgo:true because
+  // fyne.io/systray needs Cocoa on macOS (Windows backend is pure Win32 —
+  // cgo build there is a no-op overhead, fine to keep on for uniformity).
   { name: "friday-launcher", pkg: "./tools/friday-launcher", cgo: true },
 ];
 
@@ -282,18 +277,6 @@ async function compileGo(
   repoRoot: string,
 ): Promise<void> {
   const env = goEnvForTarget(target);
-  // CGO off — pty-server is pure Go (creack/pty + ConPTY syscalls), no C deps,
-  // and CGO would force a per-target cross-toolchain in CI.
-  // -trimpath + ldflags strip debug/path info to shrink the binary slightly.
-  //
-  // friday-launcher has its OWN go.mod (process-compose deps would conflict
-  // with atlas root). When the package directory has a go.mod, cd into it
-  // and build "." instead of using the package import path from repo root.
-  const pkgPath = `${repoRoot}/${bin.pkg.replace(/^\.\//, "")}`;
-  const hasOwnModule = await Deno.stat(`${pkgPath}/go.mod`).then(
-    (s) => s.isFile,
-    () => false,
-  );
   // CGO is enabled per-target only when (a) the binary opts in via
   // bin.cgo AND (b) the target needs a C runtime. fyne.io/systray's
   // darwin backend talks to Cocoa via cgo (CGO required); its
@@ -301,19 +284,13 @@ async function compileGo(
   // toolchain in CI for no benefit). Linux is similar to darwin
   // (gtk/dbus via cgo) — handled here for forward-compat even though
   // we don't ship Linux today.
+  // -trimpath + ldflags strip debug/path info to shrink the binary slightly.
   const targetNeedsCgo = env.GOOS === "darwin" || env.GOOS === "linux";
   const cgo = bin.cgo && targetNeedsCgo ? "1" : "0";
-  if (hasOwnModule) {
-    await run(["go", "build", "-trimpath", "-ldflags=-s -w", "-o", outPath, "."], {
-      cwd: pkgPath,
-      env: { ...env, CGO_ENABLED: cgo },
-    });
-  } else {
-    await run(["go", "build", "-trimpath", "-ldflags=-s -w", "-o", outPath, bin.pkg], {
-      cwd: repoRoot,
-      env: { ...env, CGO_ENABLED: cgo },
-    });
-  }
+  await run(["go", "build", "-trimpath", "-ldflags=-s -w", "-o", outPath, bin.pkg], {
+    cwd: repoRoot,
+    env: { ...env, CGO_ENABLED: cgo },
+  });
 }
 
 async function downloadFile(url: string, dest: string): Promise<void> {
