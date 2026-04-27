@@ -468,6 +468,9 @@
   }
 
   .row-action {
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
     background-color: transparent;
     border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
     border-radius: var(--radius-2);
