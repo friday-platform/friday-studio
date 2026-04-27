@@ -20,9 +20,6 @@ var osGetenv = os.Getenv
 // anyway and uses taskkill /F.
 const signalSIGTERM = 15
 
-// signalSIGKILL is sent on hard-kill paths (timeout exceeded).
-const signalSIGKILL = 9
-
 // stopOrder is the REVERSE-dependency order; processes are stopped in
 // this order so that consumers (e.g. playground) go down before the
 // services they depend on.
@@ -32,11 +29,15 @@ var stopOrder = []string{
 	"webhook-tunnel",
 	"friday",
 	"link",
+	"nats-server",
 }
 
 // startOrder is the dependency order; processes are started in this
-// order so that producers come up first.
+// order so that producers come up first. nats-server must come up
+// before `friday` so atlasd's NatsManager tcpProbe finds an external
+// NATS on :4222 and reuses it instead of trying to spawn its own.
 var startOrder = []string{
+	"nats-server",
 	"friday",
 	"link",
 	"pty-server",
@@ -48,11 +49,12 @@ var startOrder = []string{
 // supervised binary. Used to drive both the actual ProcessConfig
 // build AND tests that exercise restart-all order.
 type processSpec struct {
-	name        string
-	binary      string  // executable path resolved at boot time
-	args        []string
-	healthPort  string
-	healthPath  string
+	name       string
+	binary     string // executable path resolved at boot time
+	args       []string
+	env        []string // KEY=VALUE pairs added to the child's env
+	healthPort string
+	healthPath string
 }
 
 // supervisedProcesses returns the launcher's view of the 5 platform
@@ -67,9 +69,34 @@ type processSpec struct {
 // ports.
 func supervisedProcesses(binDir string) []processSpec {
 	specs := []processSpec{
+		// `nats-server` MUST start before `friday` — atlasd's
+		// NatsManager probes 127.0.0.1:4222 at boot and reuses an
+		// external NATS if found, otherwise it tries to spawn its
+		// own (which fails on installs that don't bundle nats-server
+		// at the embedded location). Bundling + supervising it here
+		// gives a single source of truth for the NATS lifecycle.
+		//
+		// --jetstream enables persistent streams (required by atlas
+		// session/event flows). --http_port 8222 exposes /healthz on
+		// the monitoring HTTP server so process-compose can probe
+		// readiness via the same HttpProbe machinery used by everyone
+		// else (NATS itself doesn't speak HTTP on the protocol port).
+		{name: "nats-server", binary: filepath.Join(binDir, "nats-server"),
+			args:       []string{"--port", "4222", "--jetstream", "--http_port", "8222"},
+			healthPort: "8222", healthPath: "/healthz"},
+		// `friday` is the atlas-cli daemon binary. Without an explicit
+		// subcommand it errors with "No command specified" and exits;
+		// `daemon start` runs the workspace server in foreground (we
+		// own background-ness via process-compose, so no --detached).
 		{name: "friday", binary: filepath.Join(binDir, "friday"),
+			args:       []string{"daemon", "start"},
 			healthPort: "8080", healthPath: "/health"},
+		// `link` requires LINK_DEV_MODE=true to skip the
+		// POSTGRES_CONNECTION check on the platform-route + slack-app
+		// repos. Local installs don't have Postgres; the dev-mode
+		// in-memory NoOp repos are correct.
 		{name: "link", binary: filepath.Join(binDir, "link"),
+			env:        []string{"LINK_DEV_MODE=true"},
 			healthPort: "3100", healthPath: "/health"},
 		{name: "pty-server", binary: filepath.Join(binDir, "pty-server"),
 			healthPort: "7681", healthPath: "/health"},
@@ -117,6 +144,7 @@ func newProjectFromSpecs(specs []processSpec) *types.Project {
 			Replicas:    1,
 			Executable:  s.binary,
 			Args:        s.args,
+			Environment: types.Environment(s.env),
 			LogLocation: processLogPath(s.name),
 			RestartPolicy: types.RestartPolicyConfig{
 				Restart:        types.RestartPolicyAlways,

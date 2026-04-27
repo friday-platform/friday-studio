@@ -51,6 +51,7 @@ interface ExternalCliPin {
 
 const GH_VERSION = "2.78.0";
 const CLOUDFLARED_VERSION = "2025.10.1";
+const NATS_SERVER_VERSION = "2.12.7";
 
 const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
   {
@@ -91,6 +92,36 @@ const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
     },
     innerPath: (t) => (t.endsWith("windows-msvc") ? "" : "cloudflared"),
     outName: (t) => (t.endsWith("windows-msvc") ? "cloudflared.exe" : "cloudflared"),
+  },
+  {
+    // friday-launcher supervises nats-server as a sibling process so
+    // atlasd can connect to it via tcpProbe rather than spawning its
+    // own internal copy. ~6 MB per platform; native release tarballs
+    // from nats-io/nats-server. macOS releases nest the binary under
+    // `nats-server-v<version>-darwin-<arch>/nats-server`; Windows zip
+    // does the same with `\nats-server-v<version>-windows-amd64\nats-server.exe`.
+    name: "nats-server",
+    version: NATS_SERVER_VERSION,
+    url: (t) => {
+      const map: Record<string, string> = {
+        "aarch64-apple-darwin": `https://github.com/nats-io/nats-server/releases/download/v${NATS_SERVER_VERSION}/nats-server-v${NATS_SERVER_VERSION}-darwin-arm64.tar.gz`,
+        "x86_64-apple-darwin": `https://github.com/nats-io/nats-server/releases/download/v${NATS_SERVER_VERSION}/nats-server-v${NATS_SERVER_VERSION}-darwin-amd64.tar.gz`,
+        "x86_64-pc-windows-msvc": `https://github.com/nats-io/nats-server/releases/download/v${NATS_SERVER_VERSION}/nats-server-v${NATS_SERVER_VERSION}-windows-amd64.zip`,
+      };
+      const url = map[t];
+      if (!url) throw new Error(`nats-server: unsupported target ${t}`);
+      return url;
+    },
+    innerPath: (t) => {
+      if (t === "aarch64-apple-darwin")
+        return `nats-server-v${NATS_SERVER_VERSION}-darwin-arm64/nats-server`;
+      if (t === "x86_64-apple-darwin")
+        return `nats-server-v${NATS_SERVER_VERSION}-darwin-amd64/nats-server`;
+      if (t === "x86_64-pc-windows-msvc")
+        return `nats-server-v${NATS_SERVER_VERSION}-windows-amd64/nats-server.exe`;
+      throw new Error(`nats-server: unsupported target ${t}`);
+    },
+    outName: (t) => (t.endsWith("windows-msvc") ? "nats-server.exe" : "nats-server"),
   },
 ];
 

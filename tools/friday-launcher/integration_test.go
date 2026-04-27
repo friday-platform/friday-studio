@@ -93,6 +93,7 @@ func buildLauncherAndStubs(t *testing.T) (launcherPath, binDir string) {
 
 	// Per-name wrappers — one shell script per supervised binary.
 	wrappers := map[string]struct{ port, healthPath string }{
+		"nats-server":    {"18222", "/healthz"},
 		"friday":         {"18080", "/health"},
 		"link":           {"13100", "/health"},
 		"pty-server":     {"17681", "/health"},
@@ -119,6 +120,7 @@ func writeWrapper(t *testing.T, binDir, name, stubBin, port, healthPath, extra s
 // portEnv returns the FRIDAY_PORT_<name> env vars.
 func portEnv() []string {
 	return []string{
+		"FRIDAY_PORT_nats_server=18222",
 		"FRIDAY_PORT_friday=18080",
 		"FRIDAY_PORT_link=13100",
 		"FRIDAY_PORT_pty_server=17681",
@@ -180,6 +182,7 @@ func waitHealthy(t *testing.T, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	urls := []string{
+		"http://127.0.0.1:18222/healthz",
 		"http://127.0.0.1:18080/health",
 		"http://127.0.0.1:13100/health",
 		"http://127.0.0.1:17681/health",
@@ -453,10 +456,10 @@ func TestRestartAllOrder(t *testing.T) {
 		t.Skip("integration test")
 	}
 	expectedStopOrder := []string{
-		"playground", "pty-server", "webhook-tunnel", "friday", "link",
+		"playground", "pty-server", "webhook-tunnel", "friday", "link", "nats-server",
 	}
 	expectedStartOrder := []string{
-		"friday", "link", "pty-server", "webhook-tunnel", "playground",
+		"nats-server", "friday", "link", "pty-server", "webhook-tunnel", "playground",
 	}
 	if !slicesEqual(stopOrder, expectedStopOrder) {
 		t.Errorf("stopOrder mismatch:\n want %q\n  got %q",
