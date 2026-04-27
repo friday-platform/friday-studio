@@ -279,7 +279,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Download all manifest entries
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: manifest-entry-*
           path: entries
