@@ -34,6 +34,9 @@ export * from "./src/signals.ts";
 export * from "./src/skills.ts";
 export * from "./src/topology.ts";
 export * from "./src/workspace.ts";
+// Workspace structural validator
+export { validateWorkspace } from "./src/validate-workspace.ts";
+export type { Issue, ValidationReport } from "./src/validate-workspace.ts";
 
 // ==============================================================================
 // HELPER FUNCTIONS
