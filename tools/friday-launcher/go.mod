@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
-	fyne.io/systray v1.12.0 // indirect
+	fyne.io/systray v1.12.1-0.20260116103033-9483f6fb4738 // indirect
 	github.com/InVisionApp/go-logger v1.0.1 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
