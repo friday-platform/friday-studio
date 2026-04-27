@@ -8,19 +8,13 @@ import (
 	"fyne.io/systray"
 )
 
-//go:embed assets/tray-green.png
-var iconGreen []byte
+//go:embed assets/tray-friday.png
+var iconFriday []byte
 
-//go:embed assets/tray-amber.png
-var iconAmber []byte
-
-//go:embed assets/tray-red.png
-var iconRed []byte
-
-//go:embed assets/tray-grey.png
-var iconGrey []byte
-
-// trayBucket is the rendered tray-icon color.
+// trayBucket represents the rendered status — used for the menu's
+// status text + tooltip. The tray *icon* itself is always the Friday
+// logo regardless of state; status is conveyed in the first menu
+// item's text instead.
 type trayBucket int
 
 const (
@@ -30,16 +24,16 @@ const (
 	bucketGrey // shutting down
 )
 
-func (b trayBucket) iconBytes() []byte {
+func (b trayBucket) statusText() string {
 	switch b {
 	case bucketGreen:
-		return iconGreen
+		return "Status: Running"
 	case bucketRed:
-		return iconRed
+		return "Status: Error"
 	case bucketGrey:
-		return iconGrey
+		return "Status: Shutting down…"
 	default:
-		return iconAmber
+		return "Status: Starting…"
 	}
 }
 
@@ -64,11 +58,12 @@ type trayController struct {
 	openedBrowserOnce atomic.Bool
 
 	// menu items kept around so we can update labels / disable / enable
-	openItem     *systray.MenuItem
-	restartItem  *systray.MenuItem
-	logsItem     *systray.MenuItem
+	statusItem    *systray.MenuItem
+	openItem      *systray.MenuItem
+	restartItem   *systray.MenuItem
+	logsItem      *systray.MenuItem
 	autostartItem *systray.MenuItem
-	quitItem     *systray.MenuItem
+	quitItem      *systray.MenuItem
 
 	currentBucket trayBucket
 }
@@ -78,10 +73,15 @@ func newTrayController(sup *Supervisor, shuttingDown *atomic.Bool) *trayControll
 }
 
 func (t *trayController) onReady() {
-	systray.SetIcon(iconAmber)
+	systray.SetIcon(iconFriday)
 	systray.SetTitle("")
 	systray.SetTooltip("Friday Studio — starting…")
 
+	// Status text is a disabled (un-clickable) item at the top so users
+	// see the current health state at a glance. Updated by tick().
+	t.statusItem = systray.AddMenuItem(bucketAmber.statusText(), "")
+	t.statusItem.Disable()
+	systray.AddSeparator()
 	t.openItem = systray.AddMenuItem("Open in browser", "Open Friday Studio")
 	t.restartItem = systray.AddMenuItem("Restart all", "Stop and start every supervised process")
 	t.logsItem = systray.AddMenuItem("View logs", "Open ~/.friday/local/logs in your file browser")
@@ -137,14 +137,12 @@ func (t *trayController) handleClicks() {
 	}
 }
 
-// pollLoop reads supervisor state every 2s and updates the tray icon.
-// Includes: cold-start grace window (always amber for first 30s),
-// supervisor-exit watchdog (RED + tooltip), shutting-down state (grey).
+// pollLoop reads supervisor state every 2s and updates the tooltip +
+// status text. The tray icon itself is always the Friday logo; status
+// is conveyed via menu text + tooltip so the icon stays brand-stable.
 func (t *trayController) pollLoop() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	// Kick once immediately so the icon doesn't sit on amber for a
-	// full tick when state is already green (e.g. fast-start tests).
 	t.tick()
 	for range ticker.C {
 		t.tick()
@@ -154,8 +152,10 @@ func (t *trayController) pollLoop() {
 func (t *trayController) tick() {
 	bucket := t.computeBucket()
 	if bucket != t.currentBucket {
-		systray.SetIcon(bucket.iconBytes())
 		systray.SetTooltip(bucket.tooltip())
+		if t.statusItem != nil {
+			t.statusItem.SetTitle(bucket.statusText())
+		}
 		t.currentBucket = bucket
 	}
 	if bucket == bucketGreen {
