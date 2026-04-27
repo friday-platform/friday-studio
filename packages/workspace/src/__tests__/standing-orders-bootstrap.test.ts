@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import process from "node:process";
 import type { AgentResult, NarrativeStore } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -138,6 +139,7 @@ async function withTestRuntime(
       lazy: true,
       memoryAdapter: options.memoryAdapter as import("@atlas/agent-sdk").MemoryAdapter | undefined,
       memoryMounts: options.memoryMounts,
+      platformModels: createStubPlatformModels(),
     });
 
     await runtime.initialize();

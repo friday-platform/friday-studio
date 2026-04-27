@@ -7,7 +7,7 @@ import { z } from "zod";
 
 const workspaceYmlPath = resolve(
   import.meta.dirname ?? ".",
-  "../../../../workspaces/system/workspace.yml",
+  "../../../../packages/system/workspaces/system.yml",
 );
 
 const ExtendWorkspacePayloadSchema = z.strictObject({

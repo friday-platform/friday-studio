@@ -84,7 +84,11 @@ describe("ensureDefaultUserWorkspace", () => {
     expect(first?.createdAt).toBe(second?.createdAt);
   });
 
-  it("is a no-op when other non-system workspaces exist", async () => {
+  it("still creates 'user' when other non-system workspaces exist", async () => {
+    // Earlier behavior bailed out whenever any non-system workspace was
+    // present, but that left `POST /api/chat` referencing a missing `user`
+    // workspace whenever FAST kernels were already registered. The current
+    // contract: only skip if `user` itself already exists.
     const { ensureDefaultUserWorkspace, USER_WORKSPACE_ID } = await import(
       "../first-run-bootstrap.ts"
     );
@@ -101,7 +105,8 @@ describe("ensureDefaultUserWorkspace", () => {
     await ensureDefaultUserWorkspace(manager);
 
     const found = await manager.find({ id: USER_WORKSPACE_ID });
-    expect(found).toBeNull();
+    expect(found).not.toBeNull();
+    expect(found?.id).toBe("user");
   });
 
   it("writes workspace.yml that parses through WorkspaceConfigSchema", async () => {
@@ -118,7 +123,11 @@ describe("ensureDefaultUserWorkspace", () => {
     expect(result.success).toBe(true);
   });
 
-  it("creates workspace with user-profile, notes, scratchpad in memory.own", async () => {
+  it("creates workspace with two-corpus memory baseline (notes + memory)", async () => {
+    // Template was simplified from the three-corpus (user-profile, notes,
+    // scratchpad) layout to the two-corpus (notes short_term + memory
+    // long_term) layout in 5d9f4dbe9 — keep the test aligned with the
+    // template so a regression there is caught here.
     const { ensureDefaultUserWorkspace, USER_WORKSPACE_ID } = await import(
       "../first-run-bootstrap.ts"
     );
@@ -130,9 +139,8 @@ describe("ensureDefaultUserWorkspace", () => {
 
     const own = config?.workspace.memory?.own ?? [];
     const names = own.map((e) => e.name);
-    expect(names).toContain("user-profile");
     expect(names).toContain("notes");
-    expect(names).toContain("scratchpad");
+    expect(names).toContain("memory");
   });
 });
 
