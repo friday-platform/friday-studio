@@ -45,8 +45,14 @@ function compareSemver(a: string, b: string): number {
 
 // ── Detect install state ──────────────────────────────────────────────────────
 
-const MANIFEST_URL =
-  "https://storage.googleapis.com/friday-production-studio-artifact/studio/manifest.json";
+// Manifest is fetched through download.fridayplatform.io (Cloudflare →
+// atlas-traefik → friday-studio-artifact pod) — NOT direct GCS. The pod
+// uses an authenticated GCS client, so it always reads the live object
+// without GCS's anonymous-edge cache (which serves public objects with
+// max-age=3600 by default and caused v0.0.7→v0.0.8 cutover to lag for
+// users on 2026-04-27). Cloudflare in front of studio-artifact has
+// max-age=60 set on this path so propagation is bounded.
+const MANIFEST_URL = "https://download.fridayplatform.io/studio/manifest.json";
 
 export async function detectInstallState(): Promise<void> {
   const [manifest, installed, running] = await Promise.all([

@@ -351,5 +351,14 @@ jobs:
           # uploaded in the build job (before this), then the manifest is
           # uploaded last. A CDN that fetches the manifest after this step
           # always sees URLs that resolve.
-          gsutil -h "Content-Type:application/json" cp manifest.json \
+          #
+          # Cache-Control: no-cache forces GCS's anonymous edge CDN to
+          # revalidate every fetch — the bucket default of max-age=3600
+          # caused installers to keep downloading the old version for an
+          # hour after publish on 2026-04-27 (v0.0.7 → v0.0.8 cutover).
+          # Manifests must always reflect the current truth; tarball
+          # objects are immutable so they keep the bucket-default cache.
+          gsutil -h "Content-Type:application/json" \
+                 -h "Cache-Control:no-cache, max-age=0, must-revalidate" \
+                 cp manifest.json \
             "gs://${{ env.GCS_BUCKET }}/studio/manifest.json"
