@@ -23,10 +23,10 @@ var iconFridayTemplate []byte
 //go:embed assets/tray-friday.png
 var iconFriday []byte
 
-// trayBucket represents the rendered status — used for the menu's
-// status text + tooltip. The tray *icon* itself is always the Friday
-// logo regardless of state; status is conveyed in the first menu
-// item's text instead.
+// trayBucket represents the rendered status — used for the menubar
+// title text + tooltip. The tray *icon* itself is always the Friday
+// logo regardless of state; status is conveyed via title text next
+// to the icon (always visible, doesn't fight NSMenu's chevron).
 type trayBucket int
 
 const (
@@ -36,16 +36,26 @@ const (
 	bucketGrey // shutting down
 )
 
-func (b trayBucket) statusText() string {
+// titleText returns the text shown next to the menubar icon. We
+// surface status here (instead of as the first menu item) because
+// macOS NSMenu's popUpMenuPositioningItem can clip the first menu
+// row behind a scroll-up chevron, hiding the status text. Title text
+// is in the menubar itself and is always visible — no menu open
+// required, no NSMenu layout quirks.
+//
+// Green is empty so the menubar stays clean while everything is
+// healthy; non-green states announce themselves so the user notices
+// at a glance.
+func (b trayBucket) titleText() string {
 	switch b {
 	case bucketGreen:
-		return "Status: Running"
+		return ""
 	case bucketRed:
-		return "Status: Error"
+		return " Error"
 	case bucketGrey:
-		return "Status: Shutting down…"
+		return " Stopping…"
 	default:
-		return "Status: Starting…"
+		return " Starting…"
 	}
 }
 
@@ -70,7 +80,6 @@ type trayController struct {
 	openedBrowserOnce atomic.Bool
 
 	// menu items kept around so we can update labels / disable / enable
-	statusItem    *systray.MenuItem
 	openItem      *systray.MenuItem
 	restartItem   *systray.MenuItem
 	logsItem      *systray.MenuItem
@@ -88,20 +97,12 @@ func (t *trayController) onReady() {
 	// Template icon on macOS auto-tints to menubar color; on Windows
 	// the second arg is used as a regular icon.
 	systray.SetTemplateIcon(iconFridayTemplate, iconFriday)
-	systray.SetTitle("")
-	systray.SetTooltip("Friday Studio — starting…")
+	// Initial title shows "Starting…" next to the icon. tick() keeps
+	// it in sync with bucket changes; green clears it back to "" so
+	// the menubar stays clean while everything is healthy.
+	systray.SetTitle(bucketAmber.titleText())
+	systray.SetTooltip(bucketAmber.tooltip())
 
-	// Status text item at the top so users see the current health
-	// state at a glance. Updated by tick(). NOT calling Disable()
-	// because macOS NSMenu's popUpMenuPositioningItem treats a
-	// disabled-first-item as un-anchorable — it shifts the anchor to
-	// the first enabled item ("Open in browser") and pushes the
-	// disabled item above the menubar, surfacing as a scroll-up
-	// chevron with the status hidden. Leaving it enabled, with no
-	// click handler attached, makes it visually identical to
-	// any other inert label and avoids the layout quirk.
-	t.statusItem = systray.AddMenuItem(bucketAmber.statusText(), "")
-	systray.AddSeparator()
 	t.openItem = systray.AddMenuItem("Open in browser", "Open Friday Studio")
 	t.restartItem = systray.AddMenuItem("Restart all", "Stop and start every supervised process")
 	t.logsItem = systray.AddMenuItem("View logs", "Open ~/.friday/local/logs in your file browser")
@@ -173,9 +174,7 @@ func (t *trayController) tick() {
 	bucket := t.computeBucket()
 	if bucket != t.currentBucket {
 		systray.SetTooltip(bucket.tooltip())
-		if t.statusItem != nil {
-			t.statusItem.SetTitle(bucket.statusText())
-		}
+		systray.SetTitle(bucket.titleText())
 		t.currentBucket = bucket
 	}
 	if bucket == bucketGreen {

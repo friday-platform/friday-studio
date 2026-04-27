@@ -95,6 +95,21 @@ async fn attempt_download(
         .await
         .map_err(|e| format!("HTTP request failed: {e}"))?;
 
+    // 416 Range Not Satisfiable: local partial is at-or-past the
+    // server's content length. Common path is "previous run already
+    // downloaded the whole file"; rather than infinite-retrying the
+    // same dead Range, treat as complete and let the caller SHA-verify.
+    // If the verify succeeds, install proceeds; if it fails, the user's
+    // retry button calls delete_partial then starts a clean download.
+    if response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        let _ = on_progress.send(DownloadEvent::Progress {
+            downloaded: existing_size,
+            total: existing_size,
+            bytes_per_sec: 0,
+        });
+        return Ok(());
+    }
+
     if !response.status().is_success()
         && response.status() != reqwest::StatusCode::PARTIAL_CONTENT
     {

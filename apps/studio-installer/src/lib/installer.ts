@@ -147,13 +147,9 @@ export function canProceed(): boolean {
 
 // ── Download ──────────────────────────────────────────────────────────────────
 
-let _downloadUrl = "";
-let _downloadSha256 = "";
 let _downloadPlatform = "";
 
 export async function startDownload(url: string, sha256: string, platform: string): Promise<void> {
-  _downloadUrl = url;
-  _downloadSha256 = sha256;
   _downloadPlatform = platform;
 
   store.downloadedBytes = 0;
@@ -223,8 +219,20 @@ async function getTmpDir(): Promise<string> {
 }
 
 export async function retryDownload(): Promise<void> {
+  // Re-fetch the manifest before retrying — never reuse the URL/sha
+  // captured at the first startDownload(). If the user opened the
+  // installer before a newer version was published, the captured URL
+  // points at a now-dead version and every retry is doomed; refetching
+  // gives us the live version each time. Caller's startDownload then
+  // owns the partial-cleanup via delete_partial.
   await invoke("delete_partial", { platform: _downloadPlatform });
-  await startDownload(_downloadUrl, _downloadSha256, _downloadPlatform);
+  const manifest = await fetchManifest();
+  const entry = manifest.platforms[_downloadPlatform];
+  if (!entry) {
+    store.downloadError = `No download available for platform: ${_downloadPlatform}`;
+    return;
+  }
+  await startDownload(entry.url, entry.sha256, _downloadPlatform);
 }
 
 // ── Extract ───────────────────────────────────────────────────────────────────
