@@ -11,6 +11,7 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 import { jsonSchema, tool } from "ai";
+import { z } from "zod";
 
 const WORKSPACE_CREATE_INPUT_SCHEMA = {
   type: "object" as const,
@@ -36,8 +37,45 @@ const WORKSPACE_CREATE_INPUT_SCHEMA = {
   required: ["config"],
 };
 
+const WORKSPACE_DELETE_INPUT_SCHEMA = z.object({
+  workspaceId: z
+    .string()
+    .describe("Unique identifier of the workspace to permanently remove from the system"),
+  force: z
+    .boolean()
+    .optional()
+    .describe(
+      "Bypass safety checks and force deletion even if workspace is canonical or has active sessions",
+    ),
+});
+
 export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
   return {
+    workspace_delete: tool({
+      description:
+        "Delete a workspace permanently. Calls DELETE /api/workspaces/:id directly — " +
+        "do NOT spawn a claude-code sub-agent for this simple API operation.",
+      inputSchema: WORKSPACE_DELETE_INPUT_SCHEMA,
+      execute: async ({ workspaceId, force }) => {
+        logger.info("workspace_delete tool invoked", { workspaceId, force });
+
+        const result = await parseResult(
+          client.workspace[":workspaceId"].$delete({
+            param: { workspaceId },
+            query: force ? { force: "true" } : {},
+          }),
+        );
+
+        if (!result.ok) {
+          logger.warn("workspace_delete failed", { workspaceId, error: result.error });
+          return { success: false, error: result.error };
+        }
+
+        logger.info("workspace_delete succeeded", { workspaceId });
+        return { success: true, message: result.data.message };
+      },
+    }),
+
     workspace_create: tool({
       description:
         "Create a new workspace from a full config object in a single call. " +

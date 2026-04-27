@@ -245,6 +245,34 @@ describe("validateWorkspace semantic warnings", () => {
     expect(warn!.path).toBe("agents.orphan");
   });
 
+  it("produces no orphan_agent warning when every agent is referenced by a job", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      agents: {
+        triager: { type: "llm", description: "Triager", config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" } },
+      },
+      jobs: {
+        my_job: {
+          triggers: [{ signal: "s1" }],
+          fsm: {
+            id: "fsm1",
+            initial: "step1",
+            states: {
+              step1: {
+                entry: [{ type: "agent", agentId: "triager", outputTo: "out" }],
+              },
+            },
+          },
+        },
+      },
+      signals: {
+        s1: { provider: "http", description: "S1", config: { path: "/s1" } },
+      },
+    });
+    expect(result.warnings.find((w) => w.code === "orphan_agent")).toBeUndefined();
+  });
+
   it("warns cron_parse_failed for invalid schedule", () => {
     const result = validateWorkspace({
       version: "1.0",
