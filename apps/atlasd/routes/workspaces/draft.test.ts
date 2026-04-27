@@ -347,8 +347,14 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = await res.json();
-    expect(body).toMatchObject({ success: true });
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.record(z.string(), z.unknown()),
+      structural_issues: z.null(),
+    }).parse(await res.json());
+    expect(body).toMatchObject({ ok: true });
+    expect(body.diff).toHaveProperty("type");
+    expect(body.diff["type"]).toEqual({ to: "llm" });
 
     const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
     expect(draft).toContain("test-agent");
@@ -373,8 +379,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = await res.json();
-    expect(body).toMatchObject({ success: true });
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.record(z.string(), z.unknown()),
+      structural_issues: z.null(),
+    }).parse(await res.json());
+    expect(body).toMatchObject({ ok: true });
+    expect(body.diff).toHaveProperty("provider");
 
     const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
     expect(draft).toContain("test-webhook");
@@ -401,8 +412,12 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = await res.json();
-    expect(body).toMatchObject({ success: true });
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.record(z.string(), z.unknown()),
+      structural_issues: z.null(),
+    }).parse(await res.json());
+    expect(body).toMatchObject({ ok: true });
 
     const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
     expect(draft).toContain("test-job");
@@ -421,9 +436,127 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(400);
 
-    const body = z.object({ success: z.boolean(), error: z.string() }).parse(await res.json());
-    expect(body).toMatchObject({ success: false });
+    const body = z.object({ ok: z.boolean(), error: z.string() }).parse(await res.json());
+    expect(body).toMatchObject({ ok: false });
     expect(body.error).toContain("Invalid agent config");
+  });
+
+  test("direct upsert agent into live config when no draft exists", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    const agentConfig = {
+      type: "llm",
+      description: "Live agent",
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        prompt: "You are a live agent",
+      },
+    };
+
+    const res = await app.request(`/workspaces/${workspaceId}/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "live-agent", config: agentConfig }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.record(z.string(), z.unknown()),
+      structural_issues: z.null(),
+      runtimeReloaded: z.boolean(),
+    }).parse(await res.json());
+    expect(body).toMatchObject({ ok: true, runtimeReloaded: false });
+
+    const liveContent = await readFile(join(tempDir, "workspace.yml"), "utf-8");
+    expect(liveContent).toContain("live-agent");
+    expect(liveContent).toContain("You are a live agent");
+  });
+
+  test("direct upsert refuses when structural issues exist", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    // Add a job with an FSM that references a non-existent agent
+    const jobConfig = {
+      description: "Broken job",
+      fsm: {
+        id: "broken-fsm",
+        initial: "step_0",
+        states: {
+          step_0: {
+            entry: [{ type: "agent", agentId: "nonexistent-agent" }],
+          },
+        },
+      },
+    };
+    const res = await app.request(`/workspaces/${workspaceId}/items/job`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "broken-job", config: jobConfig }),
+    });
+    expect(res.status).toBe(422);
+
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.record(z.string(), z.unknown()),
+      structural_issues: z.array(z.object({ code: z.string() })),
+    }).parse(await res.json());
+    expect(body).toMatchObject({ ok: false });
+    expect(body.structural_issues.length).toBeGreaterThan(0);
+    expect(body.structural_issues[0]?.code).toBe("unknown_agent_id");
+
+    // Live file should NOT contain the broken job
+    const liveContent = await readFile(join(tempDir, "workspace.yml"), "utf-8");
+    expect(liveContent).not.toContain("broken-job");
+  });
+
+  test("draft upsert returns diff for modified entity", async () => {
+    const { app } = createApp({ workspaceDir: tempDir, workspaceId });
+
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+
+    const agentConfig = {
+      type: "llm",
+      description: "Original agent",
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        prompt: "Original prompt",
+      },
+    };
+    await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "evolving-agent", config: agentConfig }),
+    });
+
+    const updatedConfig = {
+      type: "llm",
+      description: "Updated agent",
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        prompt: "Updated prompt",
+      },
+    };
+    const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "evolving-agent", config: updatedConfig }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = z.object({
+      ok: z.boolean(),
+      diff: z.record(z.string(), z.unknown()),
+      structural_issues: z.null(),
+    }).parse(await res.json());
+    expect(body).toMatchObject({ ok: true });
+    expect(body.diff).toHaveProperty("description");
+    expect(body.diff["description"]).toEqual({ from: "Original agent", to: "Updated agent" });
+    expect(body.diff).toHaveProperty("config.prompt");
+    expect(body.diff["config.prompt"]).toEqual({ from: "Original prompt", to: "Updated prompt" });
   });
 
   test("delete agent from draft", async () => {

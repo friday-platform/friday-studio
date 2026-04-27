@@ -78,6 +78,7 @@ import {
   publishDraft,
   readDraft,
   upsertDraftItem,
+  upsertLiveItem,
   validateDraft,
   type DraftItemKind,
 } from "./draft-helpers.ts";
@@ -2608,6 +2609,54 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
+  // ─── DIRECT ITEM UPSERT (live config) ───────────────────────────────────
+  // Upsert an entity (agent/signal/job) into the live config.
+  // Refuses the write if structural validation errors exist.
+  .post(
+    "/:workspaceId/items/:kind",
+    zValidator("param", z.object({
+      workspaceId: z.string().min(1),
+      kind: z.enum(["agent", "signal", "job"] as const),
+    })),
+    zValidator("json", z.object({
+      id: z.string().min(1),
+      config: z.record(z.string(), z.unknown()),
+    })),
+    async (c) => {
+      const { workspaceId, kind } = c.req.valid("param");
+      const { id, config } = c.req.valid("json");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await upsertLiveItem(workspace.path, kind as DraftItemKind, id, config);
+        if (!result.ok) {
+          return c.json({ ok: false, error: result.error }, 500);
+        }
+        const value = result.value;
+        const responseBody = {
+          ok: value.ok,
+          diff: value.diff,
+          structural_issues: value.structuralIssues,
+        };
+        if (!value.ok) {
+          return c.json(responseBody, 422);
+        }
+        // Reload runtime so the live config is picked up
+        const runtime = ctx.getWorkspaceRuntime(workspace.id);
+        if (runtime) {
+          await ctx.destroyWorkspaceRuntime(workspace.id);
+          return c.json({ ...responseBody, runtimeReloaded: true }, 200);
+        }
+        return c.json({ ...responseBody, runtimeReloaded: false }, 200);
+      } catch (error) {
+        return c.json({ ok: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
   // ─── DRAFT CRUD ─────────────────────────────────────────────────────────
   // Upsert an entity (agent/signal/job) into the draft config
   .post(
@@ -2633,11 +2682,15 @@ const workspacesRoutes = daemonFactory
         const result = await upsertDraftItem(workspace.path, kind as DraftItemKind, id, config);
         if (!result.ok) {
           if (result.error === "No draft exists") {
-            return c.json({ success: false, error: result.error }, 409);
+            return c.json({ ok: false, error: result.error }, 409);
           }
-          return c.json({ success: false, error: result.error }, 400);
+          return c.json({ ok: false, error: result.error }, 400);
         }
-        return c.json({ success: true }, 200);
+        return c.json({
+          ok: result.value.ok,
+          diff: result.value.diff,
+          structural_issues: result.value.structuralIssues,
+        }, 200);
       } catch (error) {
         return c.json({ success: false, error: stringifyError(error) }, 500);
       }

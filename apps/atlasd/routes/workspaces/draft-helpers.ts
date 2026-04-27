@@ -24,9 +24,7 @@ export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string
 export type DraftItemKind = "agent" | "signal" | "job";
 
 export interface FieldDiff {
-  removed?: Array<{ path: string; oldValue: unknown }>;
-  added?: Array<{ path: string; newValue: unknown }>;
-  modified?: Array<{ path: string; oldValue: unknown; newValue: unknown }>;
+  [field: string]: { from?: unknown; to?: unknown } | { added?: unknown[]; removed?: unknown[] };
 }
 
 export interface DraftItemResult {
@@ -111,6 +109,46 @@ export async function readDraft(workspacePath: string): Promise<DraftResult<Work
 }
 
 /**
+ * Read the current live config file as parsed YAML.
+ */
+export async function readLiveConfig(
+  workspacePath: string,
+): Promise<DraftResult<WorkspaceConfig>> {
+  try {
+    const livePath = await resolveLiveConfigPath(workspacePath);
+    const content = await readFile(livePath, "utf-8");
+    const parsed: unknown = parseYaml(content);
+    const validation = WorkspaceConfigSchema.safeParse(parsed);
+    if (!validation.success) {
+      return { ok: false, error: `Live config validation failed: ${validation.error.message}` };
+    }
+    return { ok: true, value: validation.data };
+  } catch (error) {
+    const message = stringifyError(error);
+    return { ok: false, error: `Failed to read live config: ${message}` };
+  }
+}
+
+/**
+ * Write a workspace config to the live file.
+ */
+export async function writeLiveConfig(
+  workspacePath: string,
+  config: WorkspaceConfig,
+): Promise<DraftResult<void>> {
+  try {
+    const livePath = await resolveLiveConfigPath(workspacePath);
+    const yaml = stringifyYaml(config);
+    await writeFile(livePath, yaml, "utf-8");
+    return { ok: true, value: undefined };
+  } catch (error) {
+    const message = stringifyError(error);
+    logger.error("Failed to write live config", { workspacePath, error: message });
+    return { ok: false, error: `Failed to write live config: ${message}` };
+  }
+}
+
+/**
  * Publish the draft by validating it and then atomically renaming it over the live file.
  */
 export async function publishDraft(
@@ -180,6 +218,65 @@ export async function discardDraft(workspacePath: string): Promise<DraftResult<v
 }
 
 // ==============================================================================
+// DIFF HELPERS
+// ==============================================================================
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Compute a flat field-level diff between two objects.
+ * Nested keys use dot notation (e.g. "config.provider").
+ * Array fields show added/removed elements.
+ */
+function computeFlatDiff(
+  oldObj: Record<string, unknown>,
+  newObj: Record<string, unknown>,
+  prefix = "",
+): FieldDiff {
+  const diff: FieldDiff = {};
+  const allKeys = new Set([...Object.keys(oldObj), ...Object.keys(newObj)]);
+
+  for (const key of allKeys) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    const hasOld = Object.prototype.hasOwnProperty.call(oldObj, key);
+    const hasNew = Object.prototype.hasOwnProperty.call(newObj, key);
+    const oldVal = oldObj[key];
+    const newVal = newObj[key];
+
+    if (!hasOld && hasNew) {
+      diff[fullKey] = { to: newVal };
+    } else if (hasOld && !hasNew) {
+      diff[fullKey] = { from: oldVal };
+    } else if (!valuesEqual(oldVal, newVal)) {
+      if (Array.isArray(oldVal) && Array.isArray(newVal)) {
+        const removed = oldVal.filter(
+          (x) => !newVal.some((y) => valuesEqual(x, y)),
+        );
+        const added = newVal.filter(
+          (x) => !oldVal.some((y) => valuesEqual(x, y)),
+        );
+        if (removed.length > 0 || added.length > 0) {
+          diff[fullKey] = { added, removed };
+        }
+      } else if (isPlainObject(oldVal) && isPlainObject(newVal)) {
+        const nested = computeFlatDiff(oldVal, newVal, fullKey);
+        Object.assign(diff, nested);
+      } else {
+        diff[fullKey] = { from: oldVal, to: newVal };
+      }
+    }
+  }
+
+  return diff;
+}
+
+// ==============================================================================
 // DRAFT ITEM MUTATIONS
 // ==============================================================================
 
@@ -227,16 +324,17 @@ export async function writeDraft(
 /**
  * Upsert an entity (agent/signal/job) into the draft config.
  * Validates the entity config against the appropriate schema before writing.
+ * Returns field-level diff and any structural issues from validateWorkspace.
  */
 export async function upsertDraftItem(
   workspacePath: string,
   kind: DraftItemKind,
   id: string,
   config: unknown,
-): Promise<DraftResult<void>> {
+): Promise<DraftResult<DraftItemResult>> {
   const readResult = await readDraft(workspacePath);
   if (!readResult.ok) {
-    return readResult;
+    return { ok: false, error: readResult.error };
   }
 
   const schema = entitySchemaForKind(kind);
@@ -249,10 +347,13 @@ export async function upsertDraftItem(
   }
 
   const key = configKeyForKind(kind);
+  const oldCollection = (readResult.value[key] as Record<string, unknown> | undefined) ?? {};
+  const oldValue = (oldCollection[id] as Record<string, unknown> | undefined) ?? {};
+
   const updated = {
     ...readResult.value,
     [key]: {
-      ...(readResult.value[key] as Record<string, unknown> | undefined),
+      ...oldCollection,
       [id]: parseResult.data,
     },
   };
@@ -265,7 +366,97 @@ export async function upsertDraftItem(
     };
   }
 
-  return writeDraft(workspacePath, validation.data);
+  const writeResult = await writeDraft(workspacePath, validation.data);
+  if (!writeResult.ok) {
+    return { ok: false, error: writeResult.error };
+  }
+
+  const report = validateWorkspace(validation.data);
+  const structuralIssues = report.status === "error" ? report.errors : null;
+
+  const diff = computeFlatDiff(
+    oldValue,
+    parseResult.data as Record<string, unknown>,
+  );
+
+  return {
+    ok: true,
+    value: { ok: true, diff, structuralIssues },
+  };
+}
+
+/**
+ * Upsert an entity (agent/signal/job) into the live config.
+ * Validates the entity config and the full workspace. If structural errors
+ * exist, the write is refused and issues are returned. Otherwise writes
+ * to the live workspace.yml and returns the diff.
+ */
+export async function upsertLiveItem(
+  workspacePath: string,
+  kind: DraftItemKind,
+  id: string,
+  config: unknown,
+): Promise<DraftResult<DraftItemResult>> {
+  const readResult = await readLiveConfig(workspacePath);
+  if (!readResult.ok) {
+    return { ok: false, error: readResult.error };
+  }
+
+  const schema = entitySchemaForKind(kind);
+  const parseResult = schema.safeParse(config);
+  if (!parseResult.success) {
+    return {
+      ok: false,
+      error: `Invalid ${kind} config: ${parseResult.error.message}`,
+    };
+  }
+
+  const key = configKeyForKind(kind);
+  const oldCollection = (readResult.value[key] as Record<string, unknown> | undefined) ?? {};
+  const oldValue = (oldCollection[id] as Record<string, unknown> | undefined) ?? {};
+
+  const updated = {
+    ...readResult.value,
+    [key]: {
+      ...oldCollection,
+      [id]: parseResult.data,
+    },
+  };
+
+  const validation = WorkspaceConfigSchema.safeParse(updated);
+  if (!validation.success) {
+    return {
+      ok: false,
+      error: `Live config validation failed after upsert: ${validation.error.message}`,
+    };
+  }
+
+  const report = validateWorkspace(validation.data);
+  if (report.status === "error") {
+    const diff = computeFlatDiff(
+      oldValue,
+      parseResult.data as Record<string, unknown>,
+    );
+    return {
+      ok: true,
+      value: { ok: false, diff, structuralIssues: report.errors },
+    };
+  }
+
+  const writeResult = await writeLiveConfig(workspacePath, validation.data);
+  if (!writeResult.ok) {
+    return { ok: false, error: writeResult.error };
+  }
+
+  const diff = computeFlatDiff(
+    oldValue,
+    parseResult.data as Record<string, unknown>,
+  );
+
+  return {
+    ok: true,
+    value: { ok: true, diff, structuralIssues: null },
+  };
 }
 
 /**
