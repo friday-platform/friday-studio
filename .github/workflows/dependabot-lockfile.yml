@@ -1,7 +1,12 @@
 name: Update Deno lockfile for Dependabot PRs
 
+# Use pull_request_target so the workflow runs with the default token's
+# write permissions (the regular `pull_request` event from Dependabot only
+# gets a read-only token). The `github.actor == 'dependabot[bot]'` gate
+# below is what makes this safe — we never run untrusted PR code, only
+# checkout + `deno install` + commit the lockfile.
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - "**/package.json"
 
@@ -24,8 +29,8 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.head_ref }}
-          token: ${{ secrets.DEPENDABOT_PAT }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
 
       - name: Setup Deno
@@ -41,6 +46,6 @@ jobs:
         with:
           commit_message: "chore: update deno.lock [dependabot skip]"
           file_pattern: "deno.lock"
-          commit_user_name: "Lukasz Jagiello"
-          commit_user_email: "lukasz@tempest.team"
-          push_options: '--force-with-lease'
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
+          push_options: "--force-with-lease"
