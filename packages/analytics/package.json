@@ -5,9 +5,9 @@
   "exports": { ".": "./mod.ts", "./ga4": "./src/ga4/mod.ts" },
   "main": "./mod.ts",
   "dependencies": {
-    "@opentelemetry/api-logs": "^0.214.0",
-    "@opentelemetry/sdk-logs": "^0.214.0",
-    "@opentelemetry/exporter-logs-otlp-http": "^0.214.0"
+    "@opentelemetry/api-logs": "^0.215.0",
+    "@opentelemetry/sdk-logs": "^0.215.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.215.0"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }
