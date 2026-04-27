@@ -193,7 +193,18 @@ export async function startDownload(url: string, sha256: string, platform: strin
 
 async function getPartialPath(platform: string, url: string, sha256: string): Promise<string> {
   const tmpDir = await getTmpDir();
-  const ext = url.endsWith(".zip") ? ".zip" : ".tar.gz";
+  // Preserve the URL's archive extension on the local file. The Rust
+  // extract_archive dispatches on the local file name, so saving a
+  // .tar.zst URL as ".tar.gz" makes the gz reader fail with "failed to
+  // iterate over archive". Three formats supported today: zip
+  // (Windows), tar.zst (macOS/Linux post-bundle-size-reduction), and
+  // tar.gz (legacy). New formats land here AND in extract.rs.
+  let ext: string;
+  if (url.endsWith(".zip")) ext = ".zip";
+  else if (url.endsWith(".tar.zst")) ext = ".tar.zst";
+  else if (url.endsWith(".tzst")) ext = ".tzst";
+  else if (url.endsWith(".tgz")) ext = ".tgz";
+  else ext = ".tar.gz";
   // Include the first 12 chars of the manifest sha so a partial download
   // from a previous version doesn't collide with a different version's path.
   // Without this, the resume-from-Range logic would splice old-version bytes

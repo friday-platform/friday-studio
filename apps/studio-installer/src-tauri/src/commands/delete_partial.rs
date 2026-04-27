@@ -24,8 +24,13 @@ pub fn delete_partial(platform: String) -> Result<(), String> {
             continue;
         }
         // Only sweep our own archive shapes — never blanket-delete in /tmp.
+        // Keep this list in sync with the extensions getPartialPath
+        // produces in installer.ts.
         let lower = name_str.to_ascii_lowercase();
         let matches_ext = lower.ends_with(".tar.gz")
+            || lower.ends_with(".tgz")
+            || lower.ends_with(".tar.zst")
+            || lower.ends_with(".tzst")
             || lower.ends_with(".zip")
             || lower.ends_with(".partial")
             || lower.ends_with(".complete");
