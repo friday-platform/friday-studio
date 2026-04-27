@@ -8,7 +8,7 @@ export default defineConfig({
     reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
     coverage: { provider: "v8" },
     include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"],
-    exclude: ["**/node_modules/**", "apps/friday-website/**", "opensrc/**"],
+    exclude: ["**/node_modules/**", "opensrc/**"],
     update: process.env.CI ? "none" : "new",
   },
 });

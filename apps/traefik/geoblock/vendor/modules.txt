@@ -1,3 +1,0 @@
-# github.com/oschwald/maxminddb-golang v1.13.1
-## explicit; go 1.21
-github.com/oschwald/maxminddb-golang

@@ -32,7 +32,6 @@ COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json apps/atlasd/package.json* ./apps/atlasd/
 COPY apps/atlas-cli/deno.json apps/atlas-cli/package.json* ./apps/atlas-cli/
 COPY apps/link/deno.json apps/link/package.json* ./apps/link/
-COPY apps/ledger/deno.json apps/ledger/package.json* ./apps/ledger/
 COPY apps/webhook-tunnel/deno.json apps/webhook-tunnel/package.json ./apps/webhook-tunnel/
 COPY tools/agent-playground/deno.json tools/agent-playground/package.json ./tools/agent-playground/
 COPY tools/evals/deno.json tools/evals/package.json ./tools/evals/

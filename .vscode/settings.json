@@ -5,9 +5,6 @@
   "[json]": { "editor.defaultFormatter": "biomejs.biome" },
   "[markdown]": { "editor.defaultFormatter": "denoland.vscode-deno" },
   "editor.codeActionsOnSave": { "source.organizeImports.biome": "explicit" },
-  "eslint.workingDirectories": [
-    { "directory": "apps/web-client", "changeProcessCWD": true },
-    { "directory": "apps/atlas-auth-ui", "changeProcessCWD": true }
-  ],
+  "eslint.workingDirectories": [{ "directory": "apps/web-client", "changeProcessCWD": true }],
   "eslint.validate": ["javascript", "typescript", "svelte"]
 }

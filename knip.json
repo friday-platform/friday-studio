@@ -73,28 +73,6 @@
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
     },
     "apps/atlasd": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
-    "apps/atlas-auth-ui": {
-      "entry": ["src/app.html!", "src/routes/**/*.svelte!"],
-      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],
-      "paths": {
-        "$lib": ["./src/lib"],
-        "$lib/*": ["./src/lib/*"],
-        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
-        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"],
-        "$env/*": ["../../node_modules/@sveltejs/kit/src/runtime/env/*"]
-      }
-    },
-    "apps/friday-website": {
-      "entry": ["src/app.html!", "src/routes/**/*.svelte!", "src/**/*.spec.ts"],
-      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],
-      "ignoreDependencies": ["gsap"],
-      "paths": {
-        "$lib": ["./src/lib"],
-        "$lib/*": ["./src/lib/*"],
-        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
-        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
-      }
-    },
     "tools/evals": {
       "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]

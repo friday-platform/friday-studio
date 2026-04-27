@@ -61,13 +61,9 @@ apps/
   atlas-cli/           CLI — HTTP client to daemon
   atlasd/              Daemon — HTTP API, workspace lifecycle
   web-client/          Svelte web UI (primary deployment target)
-  bounce/              Auth service (Go)
-  gist/                File service (Go)
-  atlas-operator/      K8s operator for multi-tenant deployment (Go)
-  signal-gateway/      External signal ingestion — Slack, Discord (Go)
-  gateway/             API gateway (Go)
-  cortex/              Storage backend service (Go)
-  atlas-auth-ui/       Auth flow UI (Svelte)
+  link/                Credential management and OAuth orchestration
+  webhook-tunnel/      Webhook tunneling for local development
+  studio-installer/    Tauri-based desktop installer
 
 packages/
   @atlas/config        YAML config loading + Zod schemas
@@ -337,30 +333,19 @@ Friday deploys primarily as a **web application**. The daemon (`atlasd`) runs as
 a service, the web client (`web-client`) serves the UI, and Go services handle
 auth, storage, and signal ingestion.
 
-- **Multi-tenant**: The `atlas-operator` (Go, K8s operator) watches for user
-  additions and creates per-user ArgoCD Applications. Each user gets an isolated
-  deployment.
 - **Local development**: The daemon runs on `localhost:8080` with file-based
   storage. No K8s required.
+
 ## Go Services
 
 Friday's Go services handle concerns that benefit from Go's deployment model
 (single binary, low memory, strong concurrency):
 
-- **bounce** (`apps/bounce/`) — Authentication service. OAuth provider
-  integration (Google, GitHub), JWT token generation and validation, user session
-  management.
 - **gist** (`apps/gist/`) — File service. Upload/download, presigned URL
   generation for S3/GCS, artifact storage.
-- **atlas-operator** (`apps/atlas-operator/`) — Kubernetes operator. Watches
-  PostgreSQL for user changes, creates/destroys ArgoCD Applications per user.
-  Supports multi-organization tenancy.
 - **signal-gateway** (`apps/signal-gateway/`) — External signal ingestion.
   Receives events from Slack, Discord, and other platforms, routes them to the
   appropriate workspace via the daemon API.
-- **gateway** (`apps/gateway/`) — API gateway. Request routing and middleware.
-- **cortex** (`apps/cortex/`) — Storage backend service. Provides the remote
-  storage adapter that production deployments use instead of local flat files.
 
 These services share common Go packages under `pkg/` for TLS, metrics,
 analytics, and profiling.

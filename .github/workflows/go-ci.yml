@@ -51,27 +51,3 @@ jobs:
       - name: Run tests
         run: go test -v ./...
 
-  build:
-    name: Go build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache: true
-
-      - name: Build bounce service
-        run: go build -v ./apps/bounce
-
-      - name: Build cypher service
-        run: go build -v ./apps/cypher
-
-      - name: Build signal-gateway service
-        run: go build -v ./apps/signal-gateway
-
-      - name: Build gateway service
-        run: go build -v ./apps/gateway

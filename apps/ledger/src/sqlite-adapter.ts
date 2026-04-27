@@ -210,7 +210,7 @@ function toResourceVersion(row: Record<string, unknown>): ResourceVersion {
 
 /**
  * SQLite implementation of ResourceStorageAdapter.
- * Scoped by workspace_id only — user_id isolation is deferred to the Postgres adapter (RLS).
+ * Scoped by workspace_id only — user_id is stored but not enforced. Single-tenant only.
  */
 export class SQLiteAdapter implements ResourceStorageAdapter {
   private db: Database;

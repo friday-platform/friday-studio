@@ -1,10 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildPostgresSkillText, POSTGRES_SKILL_TEXT } from "./postgres-skill.ts";
 import { buildSqliteSkillText, SQLITE_SKILL_TEXT } from "./sqlite-skill.ts";
-
-// ---------------------------------------------------------------------------
-// Shared test suite parametrized over engine
-// ---------------------------------------------------------------------------
 
 const engines = [
   {
@@ -12,12 +7,6 @@ const engines = [
     build: buildSqliteSkillText,
     fullText: SQLITE_SKILL_TEXT,
     aggFn: "json_group_array()",
-  },
-  {
-    name: "postgres",
-    build: buildPostgresSkillText,
-    fullText: POSTGRES_SKILL_TEXT,
-    aggFn: "jsonb_agg()",
   },
 ];
 

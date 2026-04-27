@@ -1,4 +1,0 @@
-Contact: mailto:security@hellofriday.ai
-Contact: https://docs.hellofriday.ai/security
-Expires: 2027-02-07T00:00:00.000Z
-Preferred-Languages: en

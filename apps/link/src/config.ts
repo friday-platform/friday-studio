@@ -22,10 +22,6 @@ async function loadEnv(): Promise<void> {
   }
 }
 
-/**
- * PostgreSQL pool configuration matching Go services (cypher).
- * See: apps/cypher/service/service.go Init()
- */
 const postgresPoolConfig = {
   max: 10,
   /** Go: MaxConnIdleTime = 5 min */

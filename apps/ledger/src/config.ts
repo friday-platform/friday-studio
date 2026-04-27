@@ -22,21 +22,6 @@ async function loadEnv(): Promise<void> {
   }
 }
 
-/**
- * PostgreSQL pool configuration matching Link service / Go services (cypher).
- * See: apps/link/src/config.ts, apps/cypher/service/service.go Init()
- */
-const postgresPoolConfig = {
-  /** Max number of connections in pool */
-  max: 10,
-  /** Idle connection timeout in seconds (Go: MaxConnIdleTime = 5 min) */
-  idle_timeout: 5 * 60,
-  /** Max connection lifetime in seconds (Go: MaxConnLifetime = 15 min) */
-  max_lifetime: 15 * 60,
-  /** Connection timeout in seconds */
-  connect_timeout: 30,
-} as const;
-
 /** Reads configuration from environment variables. */
 export function readConfig() {
   return {
@@ -51,12 +36,6 @@ export function readConfig() {
 
     /** Path to SQLite database file */
     sqlitePath: process.env.SQLITE_PATH,
-
-    /** PostgreSQL connection string. When set, Ledger uses Postgres instead of SQLite. */
-    postgresConnection: process.env.POSTGRES_CONNECTION,
-
-    /** PostgreSQL pool settings */
-    postgresPool: postgresPoolConfig,
   } as const;
 }
 

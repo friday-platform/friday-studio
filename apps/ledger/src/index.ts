@@ -11,21 +11,15 @@ import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
 import { routePath } from "hono/route";
 import { trimTrailingSlash } from "hono/trailing-slash";
-import { ActivityPostgresAdapter } from "./activity-postgres-adapter.ts";
 import { createActivityRoutes } from "./activity-routes.ts";
 import { config, readConfig } from "./config.ts";
 import { factory } from "./factory.ts";
 import { getMetrics, recordRequest } from "./metrics.ts";
-import { createPostgresAdapter, PostgresAdapter } from "./postgres-adapter.ts";
 import { createResourceRoutes } from "./routes.ts";
 import { createSQLiteAdapter } from "./sqlite-adapter.ts";
 import { ClientError, type ResourceStorageAdapter } from "./types.ts";
 
-/**
- * Factory function that produces a per-request adapter.
- * SQLite: returns the shared instance (no per-request state).
- * Postgres: creates a lightweight adapter scoped to the request's userId for RLS.
- */
+/** Factory function that produces a per-request adapter. Returns the shared SQLite instance. */
 export type AdapterFactory = (userId: string) => ResourceStorageAdapter;
 
 /** Factory function for per-request activity adapter. Same pattern as AdapterFactory. */
@@ -195,36 +189,17 @@ async function shutdown(signal: string, adapter: ResourceStorageAdapter): Promis
 if (import.meta.main) {
   initSentry();
 
-  let lifecycleAdapter: ResourceStorageAdapter;
-  let adapterFactory: AdapterFactory;
-  let activityAdapterFactory: ActivityAdapterFactory;
-
-  if (config.postgresConnection) {
-    const pgAdapter = createPostgresAdapter(config.postgresConnection, config.postgresPool);
-    await pgAdapter.init();
-    lifecycleAdapter = pgAdapter;
-    adapterFactory = (userId) => new PostgresAdapter(pgAdapter.sql, userId);
-    activityAdapterFactory = (userId) => new ActivityPostgresAdapter(pgAdapter.sql, userId);
-    logger.info("Ledger started with Postgres adapter", {
-      postgres: config.postgresConnection.split("@")[1]?.split("/")[0] ?? "configured",
-      pool: config.postgresPool,
-    });
-  } else {
-    if (!config.devMode) {
-      logger.warn("POSTGRES_CONNECTION not set — falling back to SQLite");
-    }
-    const dbPath = config.sqlitePath ?? join(getAtlasHome(), "ledger.db");
-    const sqliteAdapter = await createSQLiteAdapter(dbPath);
-    await sqliteAdapter.init();
-    lifecycleAdapter = sqliteAdapter;
-    adapterFactory = () => sqliteAdapter;
-    const activityDbPath = config.sqlitePath
-      ? join(config.sqlitePath, "..", "activity.db")
-      : join(getAtlasHome(), "activity.db");
-    const sharedActivityAdapter = new LocalActivityAdapter(activityDbPath);
-    activityAdapterFactory = () => sharedActivityAdapter;
-    logger.info("Ledger started with SQLite adapter", { path: dbPath });
-  }
+  const dbPath = config.sqlitePath ?? join(getAtlasHome(), "ledger.db");
+  const sqliteAdapter = await createSQLiteAdapter(dbPath);
+  await sqliteAdapter.init();
+  const lifecycleAdapter: ResourceStorageAdapter = sqliteAdapter;
+  const adapterFactory: AdapterFactory = () => sqliteAdapter;
+  const activityDbPath = config.sqlitePath
+    ? join(config.sqlitePath, "..", "activity.db")
+    : join(getAtlasHome(), "activity.db");
+  const sharedActivityAdapter = new LocalActivityAdapter(activityDbPath);
+  const activityAdapterFactory: ActivityAdapterFactory = () => sharedActivityAdapter;
+  logger.info("Ledger started with SQLite adapter", { path: dbPath });
 
   const app = createApp(adapterFactory, activityAdapterFactory);
   logger.info("Ledger service starting", { port: config.port });
