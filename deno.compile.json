@@ -41,7 +41,7 @@
     "dev:playground": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true DEV_MODE=true deno run -A npm:concurrently -n daemon,link,playground,tunnel -c blue,green,magenta,cyan 'deno task atlas:dev daemon start' 'cd apps/link && deno task dev' 'deno task playground' 'deno task webhook-tunnel'",
     "dev:playground:stable": "FAST_DEVELOPMENT=true LINK_DEV_MODE=true DEV_MODE=true deno run -A npm:concurrently -n daemon,link,playground,tunnel -c blue,green,magenta,cyan 'deno task atlas daemon start' 'cd apps/link && deno task dev' 'deno task playground' 'deno task webhook-tunnel'",
     "webhook-tunnel": "deno run --allow-all apps/webhook-tunnel/src/index.ts",
-    "test": "OTEL_DENO=true CORTEX_TEST=true DENO_TESTING=true LINK_DEV_MODE=true DEV_MODE=true vitest run",
+    "test": "OTEL_DENO=true DENO_TESTING=true LINK_DEV_MODE=true DEV_MODE=true vitest run",
     "fmt": "deno run -A npm:@biomejs/biome format --write && deno task -f '@atlas/web-client' fmt",
     "fmt:check": "deno run -A npm:@biomejs/biome format && deno task -f '@atlas/web-client' fmt:check",
     "biome": "deno run -A npm:@biomejs/biome",
