@@ -61,10 +61,7 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
         status: "idle",
         metadata: {},
       }),
-    getWorkspaceConfig: vi.fn().mockImplementation(async (_id: string) => {
-      const configPath = join(opts.workspaceDir, "workspace.yml");
-      const content = await readFile(configPath, "utf-8");
-      const _parsed = JSON.parse(JSON.stringify(stringify(content))) as unknown;
+    getWorkspaceConfig: vi.fn().mockImplementation(async () => {
       // Return a mock merged config
       return { atlas: null, workspace: createMinimalConfig() };
     }),
@@ -93,6 +90,8 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
     evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
+    exposeKernel: false,
+    platformModels: { get: vi.fn() },
   };
 
   const app = new Hono<AppVariables>();
@@ -294,6 +293,8 @@ describe("Draft file flow", () => {
       evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
       getLedgerAdapter: vi.fn(),
       getActivityAdapter: vi.fn(),
+      exposeKernel: false,
+      platformModels: { get: vi.fn() },
     };
 
     const app = new Hono<AppVariables>();
