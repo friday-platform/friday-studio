@@ -1,10 +1,9 @@
 /**
- * Workspace-creation tool for workspace-chat.
+ * Workspace operation tools for workspace-chat.
  *
- * Collapses the 10+ bash/curl round-trips Friday does via the workspace-api skill
- * into a single typed tool call. Friday plans the config in one LLM turn, hands
- * the JSON to `workspace_create`, and gets back either `{ id }` on success or
- * `{ errors }` on validation failure (for one-turn retry).
+ * - create_workspace: creates an empty workspace from name + optional description
+ * - workspace_delete: permanently removes a workspace
+ * - remove_item (bound): deletes an agent/signal/job from the current workspace
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
@@ -13,29 +12,20 @@ import type { Logger } from "@atlas/logger";
 import { jsonSchema, tool } from "ai";
 import { z } from "zod";
 
-const WORKSPACE_CREATE_INPUT_SCHEMA = {
+const CREATE_WORKSPACE_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
-    config: {
-      type: "object" as const,
-      description:
-        "Full workspace configuration (the object that would live inside workspace.yml). " +
-        "Must include a top-level `workspace: { name, description, ... }` block plus " +
-        "any `signals`, `jobs`, `agents`, `mcp_servers`, `resources`, `memory`, `models` " +
-        "that the workspace needs. The daemon validates this against the real schema " +
-        "and the reference-validator (catches hallucinated npm packages, typoed agent " +
-        "ids, bad FSM transitions, etc.) before persisting.",
-      additionalProperties: true,
-    },
-    workspaceName: {
+    name: {
       type: "string" as const,
-      description:
-        "Optional kebab-case directory name. Defaults to a slugified version of " +
-        "config.workspace.name. Conflicts auto-resolve with -2, -3 suffixes.",
+      description: "Human-readable workspace name. Will be slugified for the directory name.",
+    },
+    description: {
+      type: "string" as const,
+      description: "Optional short description of the workspace purpose.",
     },
   },
-  required: ["config"],
-};
+  required: ["name"],
+} as const;
 
 const WORKSPACE_DELETE_INPUT_SCHEMA = z.object({
   workspaceId: z
@@ -48,6 +38,22 @@ const WORKSPACE_DELETE_INPUT_SCHEMA = z.object({
       "Bypass safety checks and force deletion even if workspace is canonical or has active sessions",
     ),
 });
+
+const REMOVE_ITEM_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    kind: {
+      type: "string" as const,
+      enum: ["agent", "signal", "job"] as const,
+      description: "Type of entity to remove",
+    },
+    id: {
+      type: "string" as const,
+      description: "Unique identifier of the entity to remove",
+    },
+  },
+  required: ["kind", "id"],
+} as const;
 
 export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
   return {
@@ -76,63 +82,76 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
       },
     }),
 
-    workspace_create: tool({
+    create_workspace: tool({
       description:
-        "Create a new workspace from a full config object in a single call. " +
-        "Prefer this over shelling out to curl/HTTP — it runs the same validator " +
-        "and returns structured errors you can fix in one retry. On 422 the " +
-        "response contains a `report.issues[]` array with `code`, `path`, `message` " +
-        "for each problem (e.g. npm_package_not_found, unknown_agent_id, " +
-        "fsm_structural_error). Fix every issue and retry with an updated config.\n\n" +
-        "FSM shape (XState-style, the only shape the validator accepts): each " +
-        "state is either `{ entry: [...actions], on: { EVENT: { target: 'next-state' } } }` " +
-        "or `{ type: 'final' }`. Actions: `{type: agent, agentId, outputTo, outputType, prompt}`, " +
-        "`{type: code, function: 'fnName'}`, `{type: emit, event: EVENT_NAME}`. " +
-        "Do NOT use `type: action, action: {...}, next: ...` — that's the legacy " +
-        "shape and it fails with fsm_structural_error. Agent states typically end " +
-        "with `- type: emit, event: ADVANCE` and route via `on.ADVANCE.target`.\n\n" +
-        "Chat ↔ jobs contract: chat reaches your workspace through `jobs` only. " +
-        "Agents and MCP servers are internals of the jobs that wrap them; chat " +
-        "CANNOT call them directly. A declared agent that no job invokes is " +
-        "unreachable and the validator will reject the config with " +
-        "`unreachable_agent`. Three valid shapes:\n" +
-        "  1. Trivial save-and-recall (notes, URLs, quotes, reading list): no " +
-        "     agents, no jobs, no MCP. Just declare `memory.own.notes` — chat " +
-        "     uses `memory_save` and auto-injects recent entries.\n" +
-        "  2. Signal-triggered or structured work: declare signals + jobs + " +
-        "     FSMs; agents live inside the FSM. Chat sees the jobs as tools.\n" +
-        "  3. No agents at all (e.g. pure webhook receiver into memory): jobs " +
-        "     can use `type: code` actions without invoking any agent.\n" +
-        "There is NO valid shape where a workspace has `agents.*` declared but " +
-        "no job references them — that produces a workspace where chat can't " +
-        "reach the agent and nothing works.\n\n" +
-        "MCP stdio paths: use `${ATLAS_HOME}` (expanded at spawn time). NEVER " +
-        "author a literal `/Users/<name>/...` path — guessing usernames fails " +
-        "silently. Example: `args: [mcp-server-sqlite, --db-path, " +
-        '"${ATLAS_HOME}/workspaces/<ws-name>/data.sqlite"]`.',
-      inputSchema: jsonSchema(WORKSPACE_CREATE_INPUT_SCHEMA),
-      execute: async (input: Record<string, unknown>) => {
-        const config = input.config as Record<string, unknown>;
-        const workspaceName =
-          typeof input.workspaceName === "string" ? input.workspaceName : undefined;
+        "Create a new empty workspace with just a name and optional description. " +
+        "The daemon creates the directory, default memory config, and registers the workspace. " +
+        "Returns the new workspace id, name, and path.",
+      inputSchema: jsonSchema(CREATE_WORKSPACE_INPUT_SCHEMA),
+      execute: async ({ name, description }: { name: string; description?: string }) => {
+        logger.info("create_workspace tool invoked", { name, description });
 
-        logger.info("workspace_create tool invoked", { workspaceName, hasConfig: !!config });
+        const config = {
+          version: "1.0" as const,
+          workspace: {
+            name,
+            ...(description !== undefined && { description }),
+          },
+        };
 
         const result = await parseResult(
-          client.workspace.create.$post({ json: { config, workspaceName, ephemeral: false } }),
+          client.workspace.create.$post({
+            json: { config, workspaceName: undefined, ephemeral: false },
+          }),
         );
 
         if (!result.ok) {
-          logger.warn("workspace_create failed", { error: result.error });
-          // parseResult unwraps 4xx/5xx into result.error — for 422 the payload
-          // is a structured ValidationReport that the LLM should fix.
+          logger.warn("create_workspace failed", { name, error: result.error });
           return { success: false, error: result.error };
         }
 
-        logger.info("workspace_create succeeded");
-        // result.data shape: { success, workspace: {id,name,path,...}, workspacePath, filesCreated, ... }
-        // Pass it through opaquely — the LLM only needs success + whatever context it finds useful.
-        return { success: true, result: result.data };
+        logger.info("create_workspace succeeded", { name });
+        return {
+          success: true,
+          workspace: {
+            id: result.data.workspace.id,
+            name: result.data.workspace.name,
+            path: result.data.workspacePath,
+          },
+        };
+      },
+    }),
+  };
+}
+
+export function createBoundWorkspaceOpsTools(logger: Logger, workspaceId: string): AtlasTools {
+  return {
+    remove_item: tool({
+      description:
+        "Remove an agent, signal, or job from the current workspace. " +
+        "Calls DELETE /items/:kind/:id on the live config. " +
+        "Refuses the operation if the item is still referenced by other workspace entities.",
+      inputSchema: jsonSchema(REMOVE_ITEM_INPUT_SCHEMA),
+      execute: async ({ kind, id }: { kind: "agent" | "signal" | "job"; id: string }) => {
+        logger.info("remove_item tool invoked", { workspaceId, kind, id });
+
+        const res = await client.workspace[":workspaceId"].items[":kind"][":id"].$delete({
+          param: { workspaceId, kind, id },
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: "remove_item failed" }));
+          logger.warn("remove_item failed", { workspaceId, kind, id, error: body.error });
+          return { ok: false, error: body.error ?? "remove_item failed" };
+        }
+
+        const data = await res.json();
+        logger.info("remove_item succeeded", { workspaceId, kind, id });
+        return {
+          ok: true,
+          livePath: data.livePath,
+          runtimeReloaded: data.runtimeReloaded,
+        };
       },
     }),
   };

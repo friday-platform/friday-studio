@@ -65,7 +65,10 @@ import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
 import { createGetWorkspaceMcpStatusTool } from "./tools/workspace-mcp-status.ts";
-import { createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
+import {
+  createBoundWorkspaceOpsTools,
+  createWorkspaceOpsTools,
+} from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
 
@@ -725,6 +728,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...runCodeTool,
           ...fileIOTools,
           ...createWorkspaceOpsTools(logger),
+          ...createBoundWorkspaceOpsTools(logger, workspaceId),
           ...createBoundDraftTools(logger, workspaceId),
           ...createBoundUpsertTools(logger, workspaceId),
           ...listMcpServersTool,

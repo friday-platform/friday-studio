@@ -77,6 +77,7 @@ import {
   discardDraft,
   publishDraft,
   readDraft,
+  removeLiveItem,
   upsertDraftItem,
   upsertLiveItem,
   validateDraft,
@@ -2565,7 +2566,7 @@ const workspacesRoutes = daemonFactory
           if (result.error === "No draft to publish") {
             return c.json({ success: false, error: result.error }, 409);
           }
-          return c.json({ success: false, error: result.error }, 422);
+          return c.json({ success: false, error: result.error, report: result.report }, 422);
         }
 
         // Reload runtime so the live config is picked up
@@ -2652,6 +2653,45 @@ const workspacesRoutes = daemonFactory
           return c.json({ ...responseBody, runtimeReloaded: true }, 200);
         }
         return c.json({ ...responseBody, runtimeReloaded: false }, 200);
+      } catch (error) {
+        return c.json({ ok: false, error: stringifyError(error) }, 500);
+      }
+    },
+  )
+  // ─── DIRECT ITEM DELETE (live config) ───────────────────────────────────
+  // Delete an entity (agent/signal/job) from the live config.
+  // Refuses the operation if the entity is referenced by other items.
+  .delete(
+    "/:workspaceId/items/:kind/:id",
+    zValidator("param", z.object({
+      workspaceId: z.string().min(1),
+      kind: z.enum(["agent", "signal", "job"] as const),
+      id: z.string().min(1),
+    })),
+    async (c) => {
+      const { workspaceId, kind, id } = c.req.valid("param");
+      const ctx = c.get("app");
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+        const result = await removeLiveItem(workspace.path, kind as DraftItemKind, id);
+        if (!result.ok) {
+          if (result.reason === "referenced") {
+            return c.json({ ok: false, error: { code: "referenced", dependents: result.dependents } }, 422);
+          }
+          const status = result.error.includes("not found") ? 404 : 500;
+          return c.json({ ok: false, error: result.error }, status);
+        }
+        // Reload runtime so the live config is picked up
+        const runtime = ctx.getWorkspaceRuntime(workspace.id);
+        if (runtime) {
+          await ctx.destroyWorkspaceRuntime(workspace.id);
+          return c.json({ ok: true, livePath: result.livePath, runtimeReloaded: true }, 200);
+        }
+        return c.json({ ok: true, livePath: result.livePath, runtimeReloaded: false }, 200);
       } catch (error) {
         return c.json({ ok: false, error: stringifyError(error) }, 500);
       }
