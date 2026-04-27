@@ -177,7 +177,7 @@ jobs:
           # rewrite (PR #3012), `gh` / `cloudflared` are bundled external
           # CLIs. Keep this list in sync with DENO_BINARIES + GO_BINARIES
           # + EXTERNAL_CLIS in scripts/build-studio.ts.
-          for f in friday link playground webhook-tunnel pty-server gh cloudflared; do
+          for f in friday link playground webhook-tunnel pty-server friday-launcher gh cloudflared; do
             (
               codesign --force --options runtime --timestamp \
                 --entitlements "$ENTITLEMENTS" \
