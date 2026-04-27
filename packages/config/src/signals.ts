@@ -1,5 +1,3 @@
-import { stringifyError } from "@atlas/utils";
-import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
 import { DurationSchema, SchemaObjectSchema } from "./base.ts";
 
@@ -21,17 +19,7 @@ export type HTTPProviderConfig = z.infer<typeof HTTPProviderConfigSchema>;
 export const ScheduleProviderConfigSchema = z.strictObject({
   schedule: z
     .string()
-    .describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)")
-    .superRefine((schedule, ctx) => {
-      try {
-        CronExpressionParser.parse(schedule);
-      } catch (err) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Invalid cron expression: ${stringifyError(err)}`,
-        });
-      }
-    }),
+    .describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)"),
   timezone: z.string().optional().default("UTC").describe("Timezone for the schedule"),
 });
 export type ScheduleProviderConfig = z.infer<typeof ScheduleProviderConfigSchema>;

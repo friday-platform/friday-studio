@@ -5,6 +5,7 @@
  * No side effects - callers are responsible for persistence.
  */
 
+import { CronExpressionParser } from "cron-parser";
 import { produce } from "immer";
 import { type WorkspaceSignalConfig, WorkspaceSignalConfigSchema } from "../signals.ts";
 import type { WorkspaceConfig } from "../workspace.ts";
@@ -110,6 +111,22 @@ export function patchSignalConfig(
       ok: false,
       error: validationError("Invalid signal config after merge", parseResult.error.issues),
     };
+  }
+
+  // Extra validation: schedule signals need a valid cron expression.
+  if (
+    parseResult.data.provider === "schedule" &&
+    parseResult.data.config.schedule
+  ) {
+    try {
+      CronExpressionParser.parse(parseResult.data.config.schedule);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        error: validationError(`Invalid cron expression: ${message}`),
+      };
+    }
   }
 
   return {
