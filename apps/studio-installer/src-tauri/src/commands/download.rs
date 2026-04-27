@@ -160,6 +160,17 @@ async fn attempt_download(
             bytes_since_speed_calc = 0;
             last_report_time = Instant::now();
         }
+
+        // Some HTTP servers keep the connection alive after sending the
+        // last byte instead of returning None promptly — observed on
+        // 2026-04-27 with a fresh download that hit 100% but the wizard
+        // never advanced because stream.next() was still polling.
+        // If we've received every byte we expected, break out: the
+        // outer Done event + SHA verify steps don't need the stream
+        // to emit None to be correct.
+        if total > 0 && downloaded >= total {
+            break;
+        }
     }
 
     file.flush()
