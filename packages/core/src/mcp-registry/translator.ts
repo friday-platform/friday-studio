@@ -11,6 +11,7 @@
 
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
+import { buildBearerAuthConfig } from "./auth-config.ts";
 import { getOfficialOverride } from "./official-servers.ts";
 import type { MCPServerMetadata, RequiredConfigField } from "./schemas.ts";
 import type { UpstreamServer, UpstreamServerEntry } from "./upstream-client.ts";
@@ -292,10 +293,11 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
     }
 
     // http remote without env vars → OAuth via Link provider
-    const tokenEnvKey = `${id.toUpperCase()}_ACCESS_TOKEN`;
-    const oauthEnv: Record<string, string | LinkCredentialRef> = {
-      [tokenEnvKey]: { from: "link", provider: effectiveProviderId, key: "access_token" },
-    };
+    const {
+      auth,
+      env: oauthEnv,
+      requiredConfig: oauthRequiredConfig,
+    } = buildBearerAuthConfig(id, effectiveProviderId);
 
     const entry: MCPServerMetadata = {
       id,
@@ -308,18 +310,8 @@ export function translate(upstreamEntry: UpstreamServerEntry): TranslateResult {
         version: server.version,
         updatedAt: _meta["io.modelcontextprotocol.registry/official"].updatedAt,
       },
-      configTemplate: {
-        transport: { type: "http", url: urlResult.url },
-        env: oauthEnv,
-        auth: { type: "bearer", token_env: tokenEnvKey },
-      },
-      requiredConfig: [
-        {
-          key: tokenEnvKey,
-          description: `OAuth access token for ${displayName} from Link`,
-          type: "string",
-        },
-      ],
+      configTemplate: { transport: { type: "http", url: urlResult.url }, env: oauthEnv, auth },
+      requiredConfig: oauthRequiredConfig,
     };
 
     return {

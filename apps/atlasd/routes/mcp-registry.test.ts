@@ -4,6 +4,7 @@ import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { LocalMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import type { UpstreamServerEntry } from "@atlas/core/mcp-registry/upstream-client";
 import { createStubPlatformModels } from "@atlas/llm";
+import { RetryError } from "@std/async/retry";
 import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -49,6 +50,15 @@ const mockCreateMCPTools =
 
 vi.mock("@atlas/mcp", () => ({
   createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
+  MCPAuthError: class extends Error {
+    readonly serverId: string;
+    readonly url: string;
+    constructor(serverId: string, url: string, message: string) {
+      super(`MCP server "${serverId}" authentication failed (${url}): ${message}`);
+      this.serverId = serverId;
+      this.url = url;
+    }
+  },
 }));
 
 // Mock streamText from ai for test-chat tests
@@ -943,11 +953,21 @@ describe("MCP Registry Routes", () => {
       expect(requestBody.provider.oauthConfig.mode).toBe("discovery");
       expect(requestBody.provider.oauthConfig.serverUrl).toBe("https://api.example.com/mcp");
 
-      // Verify persisted entry has no env (no env vars in this case)
+      // Verify persisted entry has bearer-token env bridge (OAuth via Link)
       const adapter = testAdapter;
       const persisted = await adapter.get(body.server.id);
       expect(persisted).toBeDefined();
-      expect(persisted?.configTemplate.env).toBeUndefined();
+      expect(persisted?.configTemplate.env).toEqual({
+        IO_GITHUB_TEST_HTTP_OAUTH_ACCESS_TOKEN: {
+          from: "link",
+          key: "access_token",
+          provider: "io-github-test-http-oauth",
+        },
+      });
+      expect(persisted?.configTemplate.auth).toEqual({
+        type: "bearer",
+        token_env: "IO_GITHUB_TEST_HTTP_OAUTH_ACCESS_TOKEN",
+      });
 
       fetchSpy.mockRestore();
     });
@@ -2019,6 +2039,27 @@ describe("MCP Registry Routes", () => {
       const body = ToolProbeErrorSchema.parse(await res.json());
       expect(body.ok).toBe(false);
       expect(body.phase).toBe("tools");
+    });
+
+    it("classifies RetryError by unwrapping the underlying cause", async () => {
+      const entry = createTestEntry("probe-retry");
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      mockCreateMCPTools.mockRejectedValue(
+        new RetryError(new Error("getaddrinfo ENOTFOUND sentry.example.com"), 3),
+      );
+
+      const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(res.status).toBe(200);
+
+      const body = ToolProbeErrorSchema.parse(await res.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("dns");
+      expect(body.error).toContain("ENOTFOUND");
     });
 
     it("works for a blessed static server", async () => {

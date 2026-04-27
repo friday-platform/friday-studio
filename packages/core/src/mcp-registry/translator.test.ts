@@ -224,7 +224,7 @@ describe("translate", () => {
       });
       // OAuth wiring: env holds Link ref for access token, auth consumes it
       expect(result.entry.configTemplate.env).toEqual({
-        "IO-GITHUB-EXAMPLE-HTTP-SERVER_ACCESS_TOKEN": {
+        IO_GITHUB_EXAMPLE_HTTP_SERVER_ACCESS_TOKEN: {
           from: "link",
           provider: "io-github-example-http-server",
           key: "access_token",
@@ -232,12 +232,12 @@ describe("translate", () => {
       });
       expect(result.entry.configTemplate.auth).toEqual({
         type: "bearer",
-        token_env: "IO-GITHUB-EXAMPLE-HTTP-SERVER_ACCESS_TOKEN",
+        token_env: "IO_GITHUB_EXAMPLE_HTTP_SERVER_ACCESS_TOKEN",
       });
       expect(result.entry.requiredConfig).toEqual([
         {
-          key: "IO-GITHUB-EXAMPLE-HTTP-SERVER_ACCESS_TOKEN",
-          description: "OAuth access token for io.github.example.http-server from Link",
+          key: "IO_GITHUB_EXAMPLE_HTTP_SERVER_ACCESS_TOKEN",
+          description: "OAuth access token for io-github-example-http-server from Link",
           type: "string",
         },
       ]);

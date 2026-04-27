@@ -30,6 +30,13 @@ vi.mock("@ai-sdk/mcp/mcp-stdio", () => ({ Experimental_StdioMCPTransport: MockSt
 
 vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   StreamableHTTPClientTransport: MockHTTPTransport,
+  StreamableHTTPError: class extends Error {
+    readonly code: number | undefined;
+    constructor(code: number | undefined, message: string | undefined) {
+      super(message);
+      this.code = code;
+    }
+  },
 }));
 
 vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => {
@@ -39,20 +46,32 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 });
 
 // Strip retry backoff delays — retry logic is @std/async's responsibility, not ours.
-vi.mock("@std/async/retry", () => ({
-  retry: async (fn: () => Promise<unknown>, opts?: { maxAttempts?: number }) => {
-    const maxAttempts = opts?.maxAttempts ?? 3;
-    let lastError: unknown;
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        return await fn();
-      } catch (err) {
-        lastError = err;
-      }
+vi.mock("@std/async/retry", () => {
+  class RetryError extends Error {
+    constructor(
+      public readonly cause: unknown,
+      public readonly attempts: number,
+    ) {
+      super(`Retrying exceeded the maxAttempts (${attempts}).`);
+      this.name = "RetryError";
     }
-    throw lastError;
-  },
-}));
+  }
+  return {
+    RetryError,
+    retry: async (fn: () => Promise<unknown>, opts?: { maxAttempts?: number }) => {
+      const maxAttempts = opts?.maxAttempts ?? 3;
+      let lastError: unknown;
+      for (let i = 0; i < maxAttempts; i++) {
+        try {
+          return await fn();
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw new RetryError(lastError, maxAttempts);
+    },
+  };
+});
 
 // Import after mocks
 const { createMCPTools } = await import("./create-mcp-tools.ts");
@@ -456,6 +475,23 @@ describe("createMCPTools", () => {
     expect((error as Error).message).toContain("broken-http");
     expect((error as Error).message).toContain("https://mcp.example.com");
     expect((error as Error).message).toContain("connection refused");
+  });
+
+  it("throws MCPAuthError when HTTP server returns 401", async () => {
+    const { StreamableHTTPError } = await import(
+      "@modelcontextprotocol/sdk/client/streamableHttp.js"
+    );
+    mockCreateMCPClient.mockRejectedValue(new StreamableHTTPError(401, "invalid token"));
+
+    const configs: Record<string, MCPServerConfig> = {
+      "auth-http": { transport: { type: "http", url: "https://mcp.example.com" } },
+    };
+
+    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf((await import("./create-mcp-tools.ts")).MCPAuthError);
+    expect((error as Error).message).toContain("auth-http");
+    expect((error as Error).message).toContain("https://mcp.example.com");
+    expect((error as Error).message).toContain("invalid token");
   });
 
   it("cleans up already-connected clients when a later server fails", async () => {

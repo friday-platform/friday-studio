@@ -152,7 +152,7 @@ export const mcpServersRegistry: MCPServersRegistry = {
       source: "static",
       securityRating: "high",
       configTemplate: {
-        transport: { type: "stdio", command: "uvx", args: ["mcp-server-time", "--local-timezone"] },
+        transport: { type: "stdio", command: "uvx", args: ["mcp-server-time"] },
         tools: { allow: ["convert_time", "get_current_time"] },
       },
     },

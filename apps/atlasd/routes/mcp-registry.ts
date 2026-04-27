@@ -2,6 +2,7 @@ import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { injectSlackAppCredentialId } from "@atlas/core/agent-context";
+import { buildBearerAuthConfig } from "@atlas/core/mcp-registry/auth-config";
 import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
@@ -23,8 +24,9 @@ import {
 } from "@atlas/core/mcp-registry/translator";
 import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
 import { createLogger } from "@atlas/logger";
-import { createMCPTools } from "@atlas/mcp";
+import { createMCPTools, MCPAuthError } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
+import { RetryError } from "@std/async/retry";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
@@ -49,45 +51,55 @@ function classifyProbeError(error: unknown): {
   error: string;
   phase: "dns" | "connect" | "auth" | "tools";
 } {
+  // Unwrap RetryError so we classify the underlying failure, not the retry wrapper.
+  let inner = error;
+  if (error instanceof RetryError && error.cause) {
+    inner = error.cause;
+  }
+
   if (
-    error instanceof LinkCredentialNotFoundError ||
-    error instanceof LinkCredentialExpiredError ||
-    error instanceof NoDefaultCredentialError
+    inner instanceof LinkCredentialNotFoundError ||
+    inner instanceof LinkCredentialExpiredError ||
+    inner instanceof NoDefaultCredentialError
   ) {
     return { error: error instanceof Error ? error.message : String(error), phase: "auth" };
   }
 
   if (
-    error instanceof Error &&
-    error.name === "MCPStartupError" &&
-    "kind" in error &&
-    typeof error.kind === "string"
+    inner instanceof Error &&
+    inner.name === "MCPStartupError" &&
+    "kind" in inner &&
+    typeof inner.kind === "string"
   ) {
-    const msg = error.message + (error.cause instanceof Error ? ` ${error.cause.message}` : "");
+    const msg = inner.message + (inner.cause instanceof Error ? ` ${inner.cause.message}` : "");
     if (isDnsPattern(msg)) {
-      return { error: error.message, phase: "dns" };
+      return { error: inner.message, phase: "dns" };
     }
-    return { error: error.message, phase: "connect" };
+    return { error: inner.message, phase: "connect" };
   }
 
-  if (error instanceof Error) {
-    const msg = error.message + (error.cause instanceof Error ? ` ${error.cause.message}` : "");
+  if (inner instanceof MCPAuthError) {
+    return { error: inner.message, phase: "auth" };
+  }
+
+  if (inner instanceof Error) {
+    const msg = inner.message + (inner.cause instanceof Error ? ` ${inner.cause.message}` : "");
     if (isDnsPattern(msg)) {
-      return { error: error.message, phase: "dns" };
+      return { error: inner.message, phase: "dns" };
     }
     if (isConnectPattern(msg)) {
-      return { error: error.message, phase: "connect" };
+      return { error: inner.message, phase: "connect" };
     }
     if (
       msg.toLowerCase().includes("tool") &&
       (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("timed out"))
     ) {
-      return { error: error.message, phase: "tools" };
+      return { error: inner.message, phase: "tools" };
     }
-    return { error: error.message, phase: "connect" };
+    return { error: inner.message, phase: "connect" };
   }
 
-  return { error: String(error), phase: "connect" };
+  return { error: String(inner), phase: "connect" };
 }
 
 function isDnsPattern(msg: string): boolean {
@@ -461,7 +473,9 @@ export const mcpRegistryRouter = daemonFactory
     let configTemplate: MCPServerConfig;
 
     if (body.httpUrl) {
-      configTemplate = { transport: { type: "http", url: body.httpUrl } };
+      const { auth, env, requiredConfig: bearerRequiredConfig } = buildBearerAuthConfig(id, id);
+      configTemplate = { transport: { type: "http", url: body.httpUrl }, auth, env };
+      requiredConfig.push(...bearerRequiredConfig);
       linkProvider = {
         type: "oauth",
         id,

@@ -17,8 +17,11 @@ import {
   resolveEnvValues,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { type RetryOptions, retry } from "@std/async/retry";
+import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPError,
+} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { RetryError, type RetryOptions, retry } from "@std/async/retry";
 import type { Tool } from "ai";
 
 /** ai doesn't export the MCPClient type, so we infer it. */
@@ -44,10 +47,30 @@ export class MCPStartupError extends Error {
   }
 }
 
+/** Error thrown when an MCP HTTP server rejects authentication (401). */
+export class MCPAuthError extends Error {
+  constructor(
+    public readonly serverId: string,
+    public readonly url: string,
+    message: string,
+  ) {
+    super(`MCP server "${serverId}" authentication failed (${url}): ${message}`);
+    this.name = "MCPAuthError";
+  }
+}
+
 /** Result of creating MCP tools — tools map + cleanup callback. */
 export interface MCPToolsResult {
   tools: Record<string, Tool>;
   dispose: () => Promise<void>;
+}
+
+/** Unwrap a RetryError so the real underlying error is surfaced. */
+function unwrapError(error: unknown): unknown {
+  if (error instanceof RetryError && error.cause) {
+    return error.cause;
+  }
+  return error;
 }
 
 export interface CreateMCPToolsOptions {
@@ -145,11 +168,22 @@ export async function createMCPTools(
         throw error;
       }
 
+      const actualError = unwrapError(error);
+
+      // HTTP 401 from the transport is an auth failure, not a connection failure.
+      if (
+        config.transport.type === "http" &&
+        actualError instanceof StreamableHTTPError &&
+        actualError.code === 401
+      ) {
+        throw new MCPAuthError(serverId, config.transport.url, actualError.message);
+      }
+
       const command =
         config.transport.type === "stdio"
           ? `${config.transport.command} ${(config.transport.args ?? []).join(" ")}`.trim()
           : config.transport.url;
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = actualError instanceof Error ? actualError.message : String(actualError);
       throw new Error(
         `MCP server "${serverId}" failed to start (${command}): ${reason}. ` +
           `Check that the command is installed and available in the container.`,
@@ -213,7 +247,7 @@ async function connectServer(
   const { transport } = config;
   switch (transport.type) {
     case "stdio":
-      return await connectStdio(transport, resolvedEnv);
+      return await connectStdio(transport, resolvedEnv, serverId, logger);
     case "http":
       return await connectHttp(config, resolvedEnv, serverId, logger);
   }
@@ -241,6 +275,8 @@ function interpolateArg(arg: string): string {
 async function connectStdio(
   transport: Extract<MCPServerConfig["transport"], { type: "stdio" }>,
   resolvedEnv: Record<string, string>,
+  serverId: string,
+  logger: Logger,
 ): Promise<ConnectedServer> {
   const { command, args } = transport;
   const expandedArgs = (args ?? []).map(interpolateArg);
@@ -253,7 +289,17 @@ async function connectStdio(
   );
   const mergedEnv = { ...parentEnv, ...resolvedEnv };
 
+  let attempt = 0;
   return await retry(async () => {
+    attempt++;
+    logger.debug(`MCP stdio connection attempt ${attempt} for "${serverId}"`, {
+      operation: "mcp_connect",
+      serverId,
+      command,
+      args: expandedArgs,
+      attempt,
+    });
+
     const client = await createMCPClient({
       transport: new StdioMCPTransport({ command, args: expandedArgs, env: mergedEnv }),
     });
@@ -264,10 +310,22 @@ async function connectStdio(
     try {
       tools = await client.tools();
     } catch (err) {
+      logger.debug(`MCP stdio tools() failed on attempt ${attempt} for "${serverId}"`, {
+        operation: "mcp_connect",
+        serverId,
+        attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
       // Close the client to kill the orphaned subprocess before retry
       await client.close().catch(() => {});
       throw err;
     }
+
+    logger.debug(`MCP stdio connected on attempt ${attempt} for "${serverId}"`, {
+      operation: "mcp_connect",
+      serverId,
+      attempt,
+    });
 
     return { client, tools };
   }, RETRY_OPTIONS);
@@ -280,12 +338,15 @@ async function connectStdio(
  * MCP HTTP endpoints typically reject GET with 404/405, so requiring
  * 2xx would falsely report them as unreachable.
  */
-async function isReachable(url: string, fetchImpl: typeof fetch): Promise<boolean> {
+async function isReachable(
+  url: string,
+  fetchImpl: typeof fetch,
+): Promise<{ ok: boolean; status?: number }> {
   try {
-    await fetchImpl(url, { method: "GET" });
-    return true;
+    const res = await fetchImpl(url, { method: "GET" });
+    return { ok: true, status: res.status };
   } catch {
-    return false;
+    return { ok: false };
   }
 }
 
@@ -309,13 +370,21 @@ export async function connectHttp(
   const headers = buildAuthHeaders(auth, resolvedEnv);
 
   // If already reachable, connect directly — no spawn needed.
-  if (await isReachable(url, _fetch)) {
-    return connectHttpClient(url, headers);
+  const reachable = await isReachable(url, _fetch);
+  logger.debug(`MCP HTTP reachable check for "${serverId}"`, {
+    operation: "mcp_connect",
+    serverId,
+    url,
+    reachable: reachable.ok,
+    status: reachable.status,
+  });
+  if (reachable.ok) {
+    return connectHttpClient(url, headers, serverId, logger);
   }
 
   // No startup config — try direct connection (will likely fail, matching old behaviour).
   if (!startup) {
-    return connectHttpClient(url, headers);
+    return connectHttpClient(url, headers, serverId, logger);
   }
 
   // Resolve startup.env separately from config.env — bearer tokens must never
@@ -376,8 +445,8 @@ export async function connectHttp(
         stderrAccumulator.includes("address already in use");
       if (eaddrInUse) {
         // Another instance may already be listening — re-check reachability
-        if (await isReachable(url, _fetch)) {
-          return connectHttpClient(url, headers);
+        if ((await isReachable(url, _fetch)).ok) {
+          return connectHttpClient(url, headers, serverId, logger);
         }
       }
       throw new MCPStartupError(
@@ -391,7 +460,7 @@ export async function connectHttp(
     try {
       await _fetch(pollUrl, { method: "GET" });
       // Server is listening — verify it actually responds to MCP traffic
-      const result = await connectHttpClient(url, headers);
+      const result = await connectHttpClient(url, headers, serverId, logger);
       return { ...result, children: new Set([child]) };
     } catch {
       // Not ready yet — continue polling
@@ -411,8 +480,19 @@ export async function connectHttp(
 async function connectHttpClient(
   url: string,
   headers: Record<string, string>,
+  serverId: string,
+  logger: Logger,
 ): Promise<ConnectedServer> {
+  let attempt = 0;
   return await retry(async () => {
+    attempt++;
+    logger.debug(`MCP HTTP connection attempt ${attempt} for "${serverId}"`, {
+      operation: "mcp_connect",
+      serverId,
+      url,
+      attempt,
+    });
+
     const httpTransport = new StreamableHTTPClientTransport(new URL(url), {
       requestInit: { headers },
     });
@@ -423,9 +503,23 @@ async function connectHttpClient(
     try {
       tools = await client.tools();
     } catch (err) {
+      logger.debug(`MCP HTTP tools() failed on attempt ${attempt} for "${serverId}"`, {
+        operation: "mcp_connect",
+        serverId,
+        url,
+        attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
       await client.close().catch(() => {});
       throw err;
     }
+
+    logger.debug(`MCP HTTP connected on attempt ${attempt} for "${serverId}"`, {
+      operation: "mcp_connect",
+      serverId,
+      url,
+      attempt,
+    });
 
     return { client, tools };
   }, RETRY_OPTIONS);
