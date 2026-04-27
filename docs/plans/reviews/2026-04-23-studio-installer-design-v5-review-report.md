@@ -1,8 +1,8 @@
 # Review Report: studio-installer-design v5
 
-**Reviewed:** 2026-04-23  
-**Plan:** `docs/plans/2026-04-23-studio-installer-design.v5.md`  
-**Output:** `docs/plans/2026-04-23-studio-installer-design.v6.md`  
+**Reviewed:** 2026-04-23
+**Plan:** `docs/plans/2026-04-23-studio-installer-design.v5.md`
+**Output:** `docs/plans/2026-04-23-studio-installer-design.v6.md`
 **Reviewer:** /improving-plans
 
 ---

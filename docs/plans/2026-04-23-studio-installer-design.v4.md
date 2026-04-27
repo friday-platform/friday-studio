@@ -242,7 +242,7 @@ Studio reads this file at startup to check for updates against the manifest and 
 
 ### Startup script location
 
-`~/.friday/local/scripts/start-studio.sh` (macOS)  
+`~/.friday/local/scripts/start-studio.sh` (macOS)
 `%USERPROFILE%\.friday\local\scripts\start-studio.bat` (Windows)
 
 Script starts processes in two phases matching `launch.rs`:

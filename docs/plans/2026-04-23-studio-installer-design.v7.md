@@ -267,7 +267,7 @@ The `ATLAS_KEY` JWT uses the literal string `"local"` as its signature component
 
 ### Startup script location
 
-`~/.friday/local/scripts/start-studio.sh` (macOS)  
+`~/.friday/local/scripts/start-studio.sh` (macOS)
 `%USERPROFILE%\.friday\local\scripts\start-studio.bat` (Windows)
 
 Script sets `FRIDAY_HOME` then starts processes in two phases matching `launch.rs`:

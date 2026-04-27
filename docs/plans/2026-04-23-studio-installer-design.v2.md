@@ -207,7 +207,7 @@ Studio reads this file at startup to check for updates against the manifest and 
 
 ### Startup script location
 
-`~/.friday/local/scripts/start-studio.sh` (macOS)  
+`~/.friday/local/scripts/start-studio.sh` (macOS)
 `%USERPROFILE%\.friday\local\scripts\start-studio.bat` (Windows)
 
 Script starts processes in order: `link` → `atlas` → `pty-server` → `webhook-tunnel` → `agent-playground`. PIDs written to `~/.friday/local/pids/`. Script polls `http://localhost:5200` (TCP connect, up to 30s) before opening browser. All paths in the script are quoted to handle the `Friday Studio` space in the install directory name.
