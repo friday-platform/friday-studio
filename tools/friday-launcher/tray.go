@@ -212,7 +212,11 @@ func (t *trayController) computeBucket() trayBucket {
 }
 
 func (t *trayController) openBrowser(reason string) {
-	if noBrowser {
+	// --no-browser only suppresses the auto-open on first-healthy
+	// transition. User-initiated actions (tray click, second-instance
+	// wake-up) always open — otherwise the menu item silently does
+	// nothing, which is worse than honoring the flag would buy us.
+	if noBrowser && reason == "first healthy" {
 		log.Info("browser-open suppressed by --no-browser", "reason", reason)
 		return
 	}
