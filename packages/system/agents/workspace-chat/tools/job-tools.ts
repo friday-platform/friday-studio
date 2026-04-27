@@ -8,10 +8,37 @@
  */
 
 import type { AtlasTools } from "@atlas/agent-sdk";
-import { client, parseResult } from "@atlas/client/v2";
+import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { JobSpecification, WorkspaceSignalConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { jsonSchema, tool } from "ai";
+import { z } from "zod";
+
+/**
+ * The signal-trigger route returns `{ error: string }` on 4xx/5xx. Hono's
+ * RPC client wraps that in DetailedError where `detail.data` holds the
+ * parsed body. Surface the structured `error` field to the chat agent so
+ * it can see the actual failure reason (`Signal '...' session failed:
+ * LLM step failed: {...}`) instead of just the HTTP status.
+ */
+const SignalErrorBodySchema = z.object({ error: z.string() });
+
+function describeJobFailure(err: unknown): { message: string; statusCode?: number } {
+  if (err instanceof DetailedError) {
+    const detail: unknown = err.detail;
+    if (detail !== null && typeof detail === "object" && "data" in detail) {
+      const parsed = SignalErrorBodySchema.safeParse(detail.data);
+      if (parsed.success) {
+        const statusCode = typeof err.statusCode === "number" ? err.statusCode : undefined;
+        return { message: parsed.data.error, statusCode };
+      }
+    }
+    const statusCode = typeof err.statusCode === "number" ? err.statusCode : undefined;
+    return { message: err.message, statusCode };
+  }
+  if (err instanceof Error) return { message: err.message };
+  return { message: String(err) };
+}
 
 /** Default input schema for jobs without an `inputs` definition */
 const DEFAULT_INPUT_SCHEMA = {
@@ -69,8 +96,18 @@ export function createJobTools(
         );
 
         if (!result.ok) {
-          logger.error("Job tool execution failed", { jobName, workspaceId, error: result.error });
-          return { success: false, error: `Failed to execute job: ${result.error}` };
+          const failure = describeJobFailure(result.error);
+          logger.error("Job tool execution failed", {
+            jobName,
+            workspaceId,
+            error: failure.message,
+            statusCode: failure.statusCode,
+          });
+          return {
+            success: false,
+            statusCode: failure.statusCode,
+            error: failure.message,
+          };
         }
 
         const { sessionId, status, output } = result.data;

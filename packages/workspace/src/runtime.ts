@@ -206,6 +206,23 @@ function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
   return null;
 }
 
+/**
+ * Read an FSM's id without letting YAML serialization failures escape.
+ *
+ * `engine.toYAML()` runs `@std/yaml`'s `stringify`, which throws
+ * `TypeError: Cannot stringify undefined` if any value in the definition
+ * is `undefined`. The id is purely diagnostic metadata for one history
+ * event — it must never break session persistence (atlas-yset).
+ */
+function safeReadFsmId(engine: FSMEngine | undefined): string | undefined {
+  if (!engine) return undefined;
+  try {
+    return engine.toYAML().match(/^id:\s*(.+)$/m)?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
 // Stub factory functions for minimal IAtlasScope manager implementations
 function createStubContextManager(): ITempestContextManager {
   return { add: () => {}, remove: () => {}, search: () => [], size: () => 0 };
@@ -2621,18 +2638,17 @@ export class WorkspaceRuntime {
         });
       }
 
-      // Append session-start event
+      // Append session-start event. fsmId metadata is best-effort: if YAML
+      // serialization throws (e.g. an undefined slipped into the FSM
+      // definition), it's just metadata for one event — we shouldn't fail
+      // the entire history persistence over it.
+      const fsmId = safeReadFsmId(job.engine);
       await SessionHistoryStorage.appendSessionEvent({
         sessionId: sessionResult.id,
         emittedBy: "workspace-runtime",
         event: {
           type: "session-start",
-          context: {
-            metadata: {
-              jobName: job.name,
-              fsmId: job.engine?.toYAML().match(/^id:\s*(.+)$/m)?.[1],
-            },
-          },
+          context: { metadata: { jobName: job.name, fsmId } },
           data: { status: historyStatus, message: `Started FSM job: ${job.name}` },
         },
       });
@@ -2730,6 +2746,12 @@ export class WorkspaceRuntime {
     } catch (error) {
       logger.error("Failed to persist session to history", {
         error: stringifyError(error),
+        // Stack trace pinpoints the exact source of synchronous throws
+        // inside this try (e.g. YAML serialization, schema parse) — without
+        // it the caller only sees the message and can't tell which step
+        // failed. Bug atlas-yset surfaced as "Cannot stringify undefined"
+        // with no stack, leaving the actual call site invisible.
+        stack: error instanceof Error ? error.stack : undefined,
         sessionId: sessionResult.id,
         workspaceId: this.workspace.id,
       });

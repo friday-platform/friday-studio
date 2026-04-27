@@ -20,5 +20,11 @@ export function fromYAML(yaml: string): FSMDefinition {
 
 export function toYAML(definition: FSMDefinition): string {
   FSMDefinitionSchema.parse(definition);
-  return stringify({ fsm: definition });
+  // `skipInvalid: true` emits `null` for properties that the YAML library
+  // can't represent (notably `undefined`). Without it, a single stray
+  // undefined inside the FSM definition throws
+  // `TypeError: Cannot stringify undefined` and surfaces as
+  // "Failed to persist session to history" via `engine.toYAML()` calls
+  // on the persistence path (atlas-yset).
+  return stringify({ fsm: definition }, { skipInvalid: true });
 }

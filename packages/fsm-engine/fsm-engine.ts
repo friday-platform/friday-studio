@@ -170,18 +170,49 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
 
 /**
  * Derive inputSnapshot for action execution events.
- * Prefers prepare result when available, falls back to legacy request document lookup
- * for backward compatibility with unrecompiled workspaces.
+ *
+ * Resolution order:
+ * 1. `prepareResult` from a `prepare` code action — most expressive path.
+ * 2. `inputFrom: <docId>` on the action — chain a prior step's `outputTo`
+ *    into this step. Fails loud if the doc doesn't exist (config error).
+ * 3. Legacy `foo_result` ↔ `foo-request` document convention.
  */
 export function getInputSnapshot(
   prepareResult: PrepareResult | undefined,
-  action: { type: string; outputTo?: string },
+  action: { type: string; outputTo?: string; inputFrom?: string },
   documents: Map<string, unknown>,
 ): { task?: string; config?: Record<string, unknown> } | undefined {
   // New path: use prepare result when available
   if (prepareResult) {
     const { task, config } = prepareResult;
     if (task || config) return { task, config };
+  }
+
+  // inputFrom: explicit chain from a prior step's output document.
+  // Fails loud — running with empty context is the bug we're trying to
+  // avoid; if the referenced doc isn't there, the FSM is misconfigured.
+  const inputFrom =
+    action.type === "agent" || action.type === "llm" ? action.inputFrom : undefined;
+  if (inputFrom) {
+    const doc = documents.get(inputFrom);
+    if (!doc) {
+      const available = [...documents.keys()];
+      throw new Error(
+        `inputFrom: document '${inputFrom}' not found. ` +
+          `Available documents: ${available.length ? available.join(", ") : "(none)"}`,
+      );
+    }
+    const data = (doc as { data?: unknown }).data;
+    if (data === undefined || data === null) {
+      throw new Error(`inputFrom: document '${inputFrom}' has no data`);
+    }
+    // Expose as the agent's task (the user-message slot) so the existing
+    // prompt — usually a system-style instruction — operates on the prior
+    // doc without further wiring. Also surface under `config[<inputFrom>]`
+    // for prompts that prefer `{{config.<id>}}` interpolation.
+    const task = typeof data === "string" ? data : JSON.stringify(data);
+    const config: Record<string, unknown> = { [inputFrom]: data };
+    return { task, config };
   }
 
   // Fallback: old-style request document lookup (backward compat)
@@ -800,14 +831,36 @@ export class FSMEngine {
       // Classify the error to determine severity
       const errorCause = createErrorCause(error);
 
+      // The catch fires before the COMMIT PHASE runs, so `this._currentState`
+      // still points at the FROM state of the in-flight transition. Use
+      // `pendingState` (the state whose entry/transition action actually ran)
+      // for accurate attribution. When an entry action of the TO state
+      // throws, this distinguishes "summarize failed entering via ADVANCE
+      // from triage" from the misleading old "error in state triage".
+      const failedState = pendingState;
+      const fromState = this._currentState;
+      const transitionDescriptor =
+        failedState === fromState
+          ? `state ${failedState}`
+          : `state ${failedState} (entered via ${sig.type} from ${fromState})`;
+
       // Budget exceeded is expected when workspace hits spending limit - don't spam Sentry
       if (isAPIErrorCause(errorCause) && errorCause.code === "BUDGET_EXCEEDED") {
-        logger.warn(
-          `FSM error in state ${this._currentState}, signal ${sig.type}: budget exceeded`,
-          { error, errorCode: errorCause.code, statusCode: errorCause.statusCode },
-        );
+        logger.warn(`FSM error in ${transitionDescriptor}, signal ${sig.type}: budget exceeded`, {
+          error,
+          errorCode: errorCause.code,
+          statusCode: errorCause.statusCode,
+          state: failedState,
+          fromState,
+          signalType: sig.type,
+        });
       } else {
-        logger.error(`FSM error in state ${this._currentState}, signal ${sig.type}`, { error });
+        logger.error(`FSM error in ${transitionDescriptor}, signal ${sig.type}`, {
+          error,
+          state: failedState,
+          fromState,
+          signalType: sig.type,
+        });
       }
       throw error;
     }

@@ -14,11 +14,31 @@ const mockParseResult = vi.hoisted(() =>
   vi.fn<(promise: Promise<unknown>) => Promise<Result<unknown, unknown>>>(),
 );
 
+// Match the runtime DetailedError shape so `instanceof DetailedError` checks
+// in the unit-under-test succeed against test fixtures. Wrapped in
+// `vi.hoisted` because `vi.mock` is hoisted to the top of the module.
+const MockDetailedError = vi.hoisted(() => {
+  return class extends Error {
+    override readonly name = "DetailedError";
+    detail?: unknown;
+    statusCode?: number;
+    constructor(
+      message: string,
+      options: { detail?: unknown; statusCode?: number } = {},
+    ) {
+      super(message);
+      this.detail = options.detail;
+      this.statusCode = options.statusCode;
+    }
+  };
+});
+
 vi.mock("@atlas/client/v2", () => ({
   client: {
     workspace: { ":workspaceId": { signals: { ":signalId": { $post: mockSignalPost } } } },
   },
   parseResult: mockParseResult,
+  DetailedError: MockDetailedError,
 }));
 
 function makeLogger(): Logger {
@@ -222,16 +242,69 @@ describe("createJobTools execute", () => {
     const { execute } = buildTool();
     const result = await execute({ prompt: "deploy to prod" }, TOOL_CALL_OPTS);
 
-    expect(result).toEqual({ success: true, sessionId: "sess-1", status: "completed" });
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-1",
+      status: "completed",
+      output: [],
+    });
   });
 
-  it("returns failure when execution endpoint returns error", async () => {
+  it("surfaces structured signal-error body to the chat agent", async () => {
+    // Hono's RPC client wraps non-OK responses in DetailedError with the
+    // parsed body in `detail.data`. Job-tools must extract the structured
+    // `error` field so the chat agent sees the actual failure reason
+    // instead of a generic "DetailedError: 422 Unprocessable Entity".
+    const detailedError = new MockDetailedError("422 Unprocessable Entity", {
+      statusCode: 422,
+      detail: {
+        data: {
+          error:
+            "Signal 'review-inbox' session failed: LLM step failed: {\"reason\":\"No email triage data was provided in the input.\"}",
+        },
+      },
+    });
+    mockParseResult.mockResolvedValueOnce({ ok: false, error: detailedError });
+
+    const { execute } = buildTool();
+    const result = await execute({ prompt: "deploy" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: false,
+      statusCode: 422,
+      error:
+        "Signal 'review-inbox' session failed: LLM step failed: {\"reason\":\"No email triage data was provided in the input.\"}",
+    });
+  });
+
+  it("falls back to error message when body shape is unexpected", async () => {
+    const detailedError = new MockDetailedError("502 Bad Gateway", {
+      statusCode: 502,
+      detail: { data: "not the expected shape" },
+    });
+    mockParseResult.mockResolvedValueOnce({ ok: false, error: detailedError });
+
+    const { execute } = buildTool();
+    const result = await execute({ prompt: "deploy" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: false,
+      statusCode: 502,
+      error: "502 Bad Gateway",
+    });
+  });
+
+  it("handles non-Error rejections gracefully", async () => {
     mockParseResult.mockResolvedValueOnce({ ok: false, error: "workspace not found" });
 
     const { execute } = buildTool();
     const result = await execute({ prompt: "deploy" }, TOOL_CALL_OPTS);
 
-    expect(result).toEqual({ success: false, error: "Failed to execute job: workspace not found" });
+    expect(result).toEqual({
+      success: false,
+      statusCode: undefined,
+      error: "workspace not found",
+    });
   });
 
   it("returns failure when session status is failed", async () => {
@@ -282,6 +355,11 @@ describe("createJobTools execute", () => {
       param: { workspaceId: "ws-test", signalId: "deploy-signal" },
       json: { payload: { target: "production", force: true } },
     });
-    expect(result).toEqual({ success: true, sessionId: "sess-4", status: "completed" });
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-4",
+      status: "completed",
+      output: [],
+    });
   });
 });

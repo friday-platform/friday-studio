@@ -35,6 +35,13 @@ export const LLMActionSchema = z.object({
   outputTo: z.string().optional(),
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType: z.string().optional(),
+  /**
+   * Document id whose `data` becomes the LLM's task input. Used to chain
+   * a prior step's `outputTo` into the next step without writing a
+   * `prepare` action. The engine fails loud if the id is missing at
+   * action execution time.
+   */
+  inputFrom: z.string().optional(),
 });
 
 export const EmitActionSchema = z.object({
@@ -53,6 +60,13 @@ export const AgentActionSchema = z.object({
   prompt: z.string().optional(),
   /** @experimental — see LLMActionSchema.skills. Not enforced at runtime today. */
   skills: z.array(z.string()).optional(),
+  /**
+   * Document id whose `data` becomes the agent's task input. Used to chain
+   * a prior step's `outputTo` into the next step without writing a
+   * `prepare` action. The engine fails loud if the id is missing at
+   * action execution time.
+   */
+  inputFrom: z.string().optional(),
 });
 
 export const ActionSchema = z.discriminatedUnion("type", [
