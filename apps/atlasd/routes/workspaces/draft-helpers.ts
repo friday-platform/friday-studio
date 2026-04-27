@@ -1,15 +1,13 @@
 import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
-import type { ValidationContext } from "@atlas/core/mcp-registry/config-validator";
-import { validateWorkspaceConfig } from "@atlas/core/mcp-registry/config-validator";
+import { type WorkspaceConfig, WorkspaceConfigSchema, validateWorkspace } from "@atlas/config";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { parse as parseYaml } from "@std/yaml";
 
 const logger = createLogger({ component: "draft-helpers" });
 
-export const DRAFT_FILE_NAME = "workspace.draft.yml" as const;
+export const DRAFT_FILE_NAME = "workspace.yml.draft" as const;
 export const LIVE_FILE_NAME = "workspace.yml" as const;
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -39,7 +37,7 @@ function draftPath(workspacePath: string): string {
 }
 
 /**
- * Begin a draft by copying the live workspace.yml to workspace.draft.yml.
+ * Begin a draft by copying the live workspace.yml to workspace.yml.draft.
  * Idempotent: if a draft already exists, returns success without overwriting.
  */
 export async function beginDraft(
@@ -77,7 +75,7 @@ export async function readDraft(workspacePath: string): Promise<DraftResult<Work
 
   try {
     const content = await readFile(draftFilePath, "utf-8");
-    const parsed = parseYaml(content) as unknown;
+    const parsed: unknown = parseYaml(content);
     const validation = WorkspaceConfigSchema.safeParse(parsed);
     if (!validation.success) {
       return { ok: false, error: `Draft validation failed: ${validation.error.message}` };
@@ -94,7 +92,6 @@ export async function readDraft(workspacePath: string): Promise<DraftResult<Work
  */
 export async function publishDraft(
   workspacePath: string,
-  validationContext?: ValidationContext,
 ): Promise<DraftResult<{ livePath: string }>> {
   const draftFilePath = draftPath(workspacePath);
 
@@ -103,18 +100,16 @@ export async function publishDraft(
   }
 
   // Validate draft content before publishing
-  if (validationContext) {
-    const readResult = await readDraft(workspacePath);
-    if (!readResult.ok) {
-      return readResult;
-    }
-    const report = await validateWorkspaceConfig(readResult.value, validationContext);
-    if (report.status === "hard_fail") {
-      return {
-        ok: false,
-        error: `Validation failed: ${report.issues.map((i) => i.message).join(", ")}`,
-      };
-    }
+  const readResult = await readDraft(workspacePath);
+  if (!readResult.ok) {
+    return readResult;
+  }
+  const report = validateWorkspace(readResult.value);
+  if (report.status === "error") {
+    return {
+      ok: false,
+      error: `Validation failed: ${report.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`,
+    };
   }
 
   try {

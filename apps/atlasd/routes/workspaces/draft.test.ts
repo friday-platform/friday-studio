@@ -126,7 +126,7 @@ describe("Draft file flow", () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  test("begin draft creates workspace.draft.yml from live file", async () => {
+  test("begin draft creates workspace.yml.draft from live file", async () => {
     const { app } = createApp({ workspaceDir: tempDir, workspaceId });
 
     const res = await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
@@ -135,7 +135,7 @@ describe("Draft file flow", () => {
     const body = await res.json();
     expect(body).toMatchObject({ success: true });
 
-    const draftPath = join(tempDir, "workspace.draft.yml");
+    const draftPath = join(tempDir, "workspace.yml.draft");
     expect(await fileExists(draftPath)).toBe(true);
 
     const draftContent = await readFile(draftPath, "utf-8");
@@ -151,13 +151,13 @@ describe("Draft file flow", () => {
     expect(res1.status).toBe(200);
 
     // Modify draft to prove idempotency
-    await writeFile(join(tempDir, "workspace.draft.yml"), "modified: true\n", "utf-8");
+    await writeFile(join(tempDir, "workspace.yml.draft"), "modified: true\n", "utf-8");
 
     // Second call should not overwrite
     const res2 = await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
     expect(res2.status).toBe(200);
 
-    const draftContent = await readFile(join(tempDir, "workspace.draft.yml"), "utf-8");
+    const draftContent = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
     expect(draftContent).toBe("modified: true\n");
   });
 
@@ -184,7 +184,7 @@ describe("Draft file flow", () => {
       ...createMinimalConfig(),
       workspace: { ...createMinimalConfig().workspace, name: "Modified Name" },
     };
-    await writeFile(join(tempDir, "workspace.draft.yml"), stringify(modifiedConfig));
+    await writeFile(join(tempDir, "workspace.yml.draft"), stringify(modifiedConfig));
 
     // Publish
     const res = await app.request(`/workspaces/${workspaceId}/draft/publish`, { method: "POST" });
@@ -194,7 +194,7 @@ describe("Draft file flow", () => {
     expect(body).toMatchObject({ success: true, runtimeReloaded: false });
 
     // Draft should be gone
-    expect(await fileExists(join(tempDir, "workspace.draft.yml"))).toBe(false);
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);
 
     // Live file should be updated
     const liveContent = await readFile(join(tempDir, "workspace.yml"), "utf-8");
@@ -208,7 +208,7 @@ describe("Draft file flow", () => {
     await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
 
     // Write invalid config into draft
-    await writeFile(join(tempDir, "workspace.draft.yml"), "invalid: yaml: [", "utf-8");
+    await writeFile(join(tempDir, "workspace.yml.draft"), "invalid: yaml: [", "utf-8");
 
     // Publish should fail validation
     const res = await app.request(`/workspaces/${workspaceId}/draft/publish`, { method: "POST" });
@@ -218,19 +218,19 @@ describe("Draft file flow", () => {
     expect(body).toMatchObject({ success: false });
 
     // Draft should still exist since publish failed
-    expect(await fileExists(join(tempDir, "workspace.draft.yml"))).toBe(true);
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(true);
   });
 
   test("discard draft removes draft file", async () => {
     const { app } = createApp({ workspaceDir: tempDir, workspaceId });
 
     await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
-    expect(await fileExists(join(tempDir, "workspace.draft.yml"))).toBe(true);
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(true);
 
     const res = await app.request(`/workspaces/${workspaceId}/draft/discard`, { method: "POST" });
     expect(res.status).toBe(200);
 
-    expect(await fileExists(join(tempDir, "workspace.draft.yml"))).toBe(false);
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);
   });
 
   test("daemon restart loads live file, not draft", async () => {
@@ -242,10 +242,10 @@ describe("Draft file flow", () => {
       ...createMinimalConfig(),
       workspace: { ...createMinimalConfig().workspace, name: "Draft Only" },
     };
-    await writeFile(join(tempDir, "workspace.draft.yml"), stringify(draftConfig));
+    await writeFile(join(tempDir, "workspace.yml.draft"), stringify(draftConfig));
 
     // Verify draft exists and has the modified name
-    expect(await fileExists(join(tempDir, "workspace.draft.yml"))).toBe(true);
+    expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(true);
 
     // Simulate what the daemon does: load workspace config via manager
     const loaded = await mockManager.getWorkspaceConfig(workspaceId);

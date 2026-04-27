@@ -2550,7 +2550,7 @@ const workspacesRoutes = daemonFactory
         if (!workspace) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
-        const result = await publishDraft(workspace.path, buildValidationContext(ctx));
+        const result = await publishDraft(workspace.path);
         if (!result.ok) {
           return c.json({ success: false, error: result.error }, 422);
         }
