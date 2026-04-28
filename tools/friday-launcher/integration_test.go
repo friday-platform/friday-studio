@@ -1,5 +1,15 @@
+//go:build integration
+
 // Integration tests for friday-launcher. Real subprocesses, no mocks
 // (matching the testing skill's preference for end-to-end coverage).
+//
+// These tests build a fresh launcher binary, spawn six stub services
+// on fixed ports (18080, 13100, 17681, 19090, 15200, 18222), and hit
+// localhost — so they assume nothing else on the host is using those
+// ports. To keep `go test ./...` clean, the file is gated behind the
+// `integration` build tag. Run with:
+//
+//	go test -tags=integration ./tools/friday-launcher/...
 //
 // Each test gets its own throwaway home dir via FRIDAY_LAUNCHER_HOME
 // so they don't interfere with the user's real ~/.friday or with
@@ -137,6 +147,7 @@ func portEnv() []string {
 // lock + write the pid file.
 func startLauncher(t *testing.T, launcherPath, binDir string) (*exec.Cmd, string) {
 	t.Helper()
+	killStaleStubs(t)
 	home := t.TempDir()
 	homeLocal := filepath.Join(home, ".friday", "local")
 	if err := os.MkdirAll(homeLocal, 0o700); err != nil {
@@ -175,6 +186,36 @@ func startLauncher(t *testing.T, launcherPath, binDir string) (*exec.Cmd, string
 		time.Sleep(100 * time.Millisecond)
 	}
 	return cmd, homeLocal
+}
+
+// testStubPorts is the fixed-port set every integration test pins
+// against. Listed once so killStaleStubs and the post-shutdown port
+// assertion stay in sync.
+var testStubPorts = []int{18222, 18080, 13100, 17681, 19090, 15200}
+
+// killStaleStubs frees the test ports before a test starts. Each test
+// runs in its own t.TempDir() bin path; the per-test cleanup only
+// pkills stubs from that path, so a previous interrupted `go test`
+// run can leave old stubs holding the same fixed ports. Without this
+// sweep, TestSIGTERMCleanShutdown sees those orphaned PIDs and fails.
+func killStaleStubs(t *testing.T) {
+	t.Helper()
+	for _, port := range testStubPorts {
+		out, err := exec.Command("lsof", "-i",
+			"tcp:"+strconv.Itoa(port), "-sTCP:LISTEN", "-t").Output()
+		if err != nil || len(out) == 0 {
+			continue
+		}
+		for _, pidStr := range strings.Fields(string(out)) {
+			pid, err := strconv.Atoi(pidStr)
+			if err != nil {
+				continue
+			}
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	}
+	// Give the kernel a beat to release the sockets.
+	time.Sleep(50 * time.Millisecond)
 }
 
 // healthyTimeout caps how long waitHealthy will block before failing
