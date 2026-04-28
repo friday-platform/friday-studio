@@ -39,6 +39,7 @@
     { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
     { label: "MCP Servers", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
+    // { label: "Discover Spaces", href: "/discover", icon: IconLarge.OpenSquare },
     { label: "Settings", href: "/settings", icon: IconLarge.Gear },
   ];
 
@@ -84,6 +85,15 @@
       {/each}
     </ul>
 
+    <ul class="section-list">
+      <li>
+        <a href="/discover" class="nav-item" class:active={isToolActive("/discover")}>
+          <IconLarge.OpenSquare />
+          Discover Spaces
+        </a>
+      </li>
+    </ul>
+
     <Collapsible.Root defaultOpen={true}>
       <div class="section-header">
         <Collapsible.Trigger>
@@ -103,13 +113,6 @@
       </div>
       <Collapsible.Content>
         <ul class="section-list">
-          <li>
-            <a href="/discover" class="nav-item" class:active={pathname.startsWith("/discover")}>
-              <IconLarge.OpenSquare />
-              Discover Spaces
-            </a>
-          </li>
-
           {#each visibleWorkspaces as ws (ws.id)}
             {@const active = activeWorkspaceId === ws.id}
             <li>
@@ -312,6 +315,7 @@
 
   .section-header {
     align-items: center;
+    block-size: var(--size-4);
     display: flex;
     justify-content: space-between;
     padding-inline-end: var(--size-2);
@@ -355,8 +359,6 @@
   .section-list {
     display: flex;
     flex-direction: column;
-    padding-inline: var(--size-1);
-    padding-block-end: var(--size-2);
 
     li {
       inline-size: 100%;
