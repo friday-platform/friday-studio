@@ -437,17 +437,32 @@ async function listWorkspacesByProviderWithoutConfigKey(
 
   for (const ws of workspaces) {
     const config = await daemon.getWorkspaceManager().getWorkspaceConfig(ws.id);
-    const signals = config?.workspace.signals;
-    if (!signals) continue;
+    if (!config) continue;
 
-    for (const signal of Object.values(signals)) {
-      if (signal?.provider !== provider) continue;
-      const cfg = "config" in signal ? signal.config : undefined;
-      const rawValue = cfg && typeof cfg === "object" ? Reflect.get(cfg, configKey) : undefined;
-      const hasKey = typeof rawValue === "string" && rawValue.length > 0;
-      if (!hasKey) {
-        matches.push(ws.id);
-        break;
+    let matched = false;
+    const signals = config.workspace.signals;
+    if (signals) {
+      for (const signal of Object.values(signals)) {
+        if (signal?.provider !== provider) continue;
+        const cfg = "config" in signal ? signal.config : undefined;
+        const rawValue = cfg && typeof cfg === "object" ? Reflect.get(cfg, configKey) : undefined;
+        const hasKey = typeof rawValue === "string" && rawValue.length > 0;
+        if (!hasKey) {
+          matches.push(ws.id);
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    // `communicators` entries carry no inline config, so they always qualify
+    // as "without configKey". Skip if the workspace already matched via signals.
+    if (!matched && config.workspace.communicators) {
+      for (const entry of Object.values(config.workspace.communicators)) {
+        if (entry?.kind === provider) {
+          matches.push(ws.id);
+          break;
+        }
       }
     }
   }
@@ -465,10 +480,23 @@ async function listWorkspacesByProvider(daemon: AtlasDaemon, provider: string): 
 
   for (const ws of workspaces) {
     const config = await daemon.getWorkspaceManager().getWorkspaceConfig(ws.id);
-    const signals = config?.workspace.signals;
-    if (!signals) continue;
-    if (Object.values(signals).some((s) => s?.provider === provider)) {
+    if (!config) continue;
+
+    const signals = config.workspace.signals;
+    if (signals && Object.values(signals).some((s) => s?.provider === provider)) {
       matches.push(ws.id);
+      continue;
+    }
+
+    // Mirror findWorkspaceByProvider: workspaces declared via the new
+    // `communicators` map (no `signals.<provider>` entry) still own the provider.
+    if (config.workspace.communicators) {
+      for (const entry of Object.values(config.workspace.communicators)) {
+        if (entry?.kind === provider) {
+          matches.push(ws.id);
+          break;
+        }
+      }
     }
   }
 
