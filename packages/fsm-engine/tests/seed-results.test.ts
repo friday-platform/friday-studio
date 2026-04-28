@@ -31,9 +31,9 @@ describe("FSMEngine.seedResults", () => {
     });
   });
 
-  it("throws after first signal processed", async () => {
+  it("does not throw between sessions (after signal completes)", async () => {
     const fsm: FSMDefinition = {
-      id: "seed-after-signal",
+      id: "seed-between-sessions",
       initial: "idle",
       states: { idle: { on: { GO: { target: "working" } } }, working: {} },
     };
@@ -41,9 +41,13 @@ describe("FSMEngine.seedResults", () => {
     const { engine } = await createTestEngine(fsm);
     await engine.signal({ type: "GO" });
 
+    // After processing completes, seedResults is allowed again — this is the
+    // multi-turn chat case where __meta must be re-seeded on each new session
+    // without an explicit reset().
     expect(() => {
-      engine.seedResults({ __meta: { repo_root: "/too/late" } });
-    }).toThrow(/cannot be called after a signal has been processed/);
+      engine.seedResults({ __meta: { repo_root: "/between-sessions" } });
+    }).not.toThrow();
+    expect(engine.results["__meta"]).toEqual({ repo_root: "/between-sessions" });
   });
 
   it("merges multiple seedResults calls before first signal", async () => {
@@ -80,7 +84,7 @@ describe("FSMEngine.seedResults", () => {
     await engine.signal({ type: "GO" });
     expect(engine.state).toBe("working");
 
-    // Reset clears _hasProcessedSignal
+    // Reset clears _processing and other engine state
     await engine.reset();
 
     // Should work again after reset

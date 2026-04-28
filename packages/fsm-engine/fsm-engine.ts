@@ -2059,15 +2059,15 @@ export class FSMEngine {
    * Used by WorkspaceRuntime to inject `__meta` (and potentially other
    * seed data) so code actions see it via `context.results`.
    *
-   * Merges entries — calling multiple times before the first signal
-   * accumulates keys. Throws if called after a signal has been processed
-   * to prevent accidental mid-session mutation.
+   * Merges entries — safe to call between sessions (when not actively
+   * processing). Throws if called mid-session to prevent mutation while
+   * the signal queue is draining.
    */
   seedResults(results: Record<string, Record<string, unknown>>): void {
-    if (this._hasProcessedSignal) {
+    if (this._processing) {
       throw new Error(
-        "seedResults() cannot be called after a signal has been processed. " +
-          "Seed data must be injected before the first engine.signal() call.",
+        "seedResults() cannot be called while a signal is being processed. " +
+          "Seed data must be injected before or between engine.signal() calls.",
       );
     }
     for (const [key, value] of Object.entries(results)) {
