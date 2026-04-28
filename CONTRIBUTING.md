@@ -112,8 +112,9 @@ Open a [GitHub issue](https://github.com/friday-platform/friday-studio/issues). 
 - Your environment (OS, version of Friday Studio if installed)
 - Logs if relevant
 
-For security issues, **do not file a public issue.** Email
-security@tempest.team instead.
+For security issues, **do not file a public issue.** See
+[`SECURITY.md`](./SECURITY.md) — preferred channel is a private
+GitHub advisory; email security@hellofriday.ai as a fallback.
 
 ## Code style
 
