@@ -199,10 +199,25 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
   return {
     upsert_agent: tool({
       description:
-        "Upsert an agent into the current workspace. " +
-        "If a draft exists, the agent is staged in the draft; otherwise it writes directly to the live workspace.yml. " +
+        "Upsert an agent into the current workspace's draft (or live config if no draft). " +
+        "The `config` field's shape depends on `config.type`:\n\n" +
+        '- `type: "llm"` — inline LLM agent. Shape: ' +
+        "`{ type, description, config: { provider, model, prompt, tools? } }`. " +
+        'Use when the work is open-ended ("figure out what to do") and no bundled agent fits.\n' +
+        '- `type: "atlas"` — bundled platform agent (web, email, slack, gh, etc.). Shape: ' +
+        "`{ type, agent, description, prompt, config?, env? }`. " +
+        "Discover available `agent` ids by calling `list_capabilities` first. " +
+        "The `prompt` is task-specific context layered on the agent's bundled behavior — " +
+        "describe the user's intent, not the mechanics. " +
+        "Use when a bundled agent fits the task domain — this should be your default for " +
+        "web scraping, email sending, Slack messaging, GitHub ops, image generation, " +
+        "data analysis, and similar.\n" +
+        '- `type: "user"` — registered Python/TS SDK code agent. Shape: ' +
+        "`{ type, agent, prompt?, env? }`. " +
+        "Use when the work is mechanical (parsing, transforming, deterministic routing) " +
+        "or when LLM-loop cost dominates the value. See `writing-friday-agents` skill.\n\n" +
         "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
-        "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
+        "Pass `workspaceId` to target a workspace other than the current session.",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
       execute: ({
         id,
