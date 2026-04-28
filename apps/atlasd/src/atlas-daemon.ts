@@ -43,6 +43,7 @@ import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { type NatsConnection, RetentionPolicy, StorageType, type Subscription } from "nats";
 import { activityRoutes } from "../routes/activity.ts";
+import { cronRoutes } from "../routes/cron.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -282,6 +283,11 @@ export class AtlasDaemon {
       throw new Error("Port not initialized. Call start() first.");
     }
     return this.#port;
+  }
+
+  /** Get the CronManager instance (null before initialize()). */
+  public getCronManager(): CronManager | null {
+    return this.cronManager;
   }
 
   public getWorkspaceManager(): WorkspaceManager {
@@ -769,6 +775,7 @@ export class AtlasDaemon {
     this.app.route("/api/report", reportRoutes);
     this.app.route("/api/memory", memoryNarrativeRoutes);
     this.app.route("/api/schedule-expand", scheduleExpandRoutes);
+    this.app.route("/api/cron", cronRoutes);
 
     // Platform signal routes (Discord/Slack via Signal Gateway)
     this.app.route("/signals", createPlatformSignalRoutes(this));

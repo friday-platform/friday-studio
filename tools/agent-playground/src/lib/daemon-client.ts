@@ -1,5 +1,6 @@
 import type {
   ChatRoutes,
+  CronRoutes,
   HealthRoutes,
   JobsRoutes,
   MCPRegistryRoutes,
@@ -49,6 +50,7 @@ function makeDaemonClient(customFetch: typeof globalThis.fetch) {
     skills: hc<SkillsRoutes>(`${PROXY_BASE}/api/skills`, { fetch: customFetch }),
     jobs: hc<JobsRoutes>(`${PROXY_BASE}/api/jobs`, { fetch: customFetch }),
     mcp: hc<MCPRegistryRoutes>(`${PROXY_BASE}/api/mcp-registry`, { fetch: customFetch }),
+    cron: hc<CronRoutes>(`${PROXY_BASE}/api/cron`, { fetch: customFetch }),
   };
 }
 

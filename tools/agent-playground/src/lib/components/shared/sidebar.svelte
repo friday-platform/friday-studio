@@ -36,6 +36,7 @@
     { label: "Memory", href: "/memory", icon: IconLarge.Write },
     { label: "Agent Tester", href: "/agents", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
+    { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
     { label: "MCP Servers", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
     { label: "Settings", href: "/settings", icon: IconLarge.Gear },

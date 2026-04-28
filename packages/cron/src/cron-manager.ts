@@ -23,6 +23,7 @@ export interface TimerInfo {
   timezone: string;
   nextExecution: Date; // Always present at runtime
   lastExecution?: Date;
+  paused?: boolean;
 }
 
 // Type for registering timers (without computed fields)
@@ -201,6 +202,7 @@ export class CronManager {
     let dueCount = 0;
 
     for (const [timerKey, timer] of this.timers.entries()) {
+      if (timer.paused) continue;
       const executionTime = timer.nextExecution.getTime();
 
       // Execute timer if it's due
@@ -304,6 +306,27 @@ export class CronManager {
   }
 
   /**
+   * Return a snapshot of all registered timers.
+   */
+  listTimers(): TimerInfo[] {
+    return Array.from(this.timers.values());
+  }
+
+  /**
+   * Pause or resume a timer. Returns false if the timer wasn't found.
+   */
+  async setTimerPaused(workspaceId: string, signalId: string, paused: boolean): Promise<boolean> {
+    const timerKey = `${workspaceId}:${signalId}`;
+    const timer = this.timers.get(timerKey);
+    if (!timer) return false;
+
+    timer.paused = paused;
+    await this.persistTimer(timerKey, timer);
+    this.logger.info("Timer pause state updated", { timerKey, paused });
+    return true;
+  }
+
+  /**
    * Get timer statistics (minimal - only used by daemon status)
    */
   getStats(): { totalTimers: number; nextExecution?: Date } {
@@ -396,6 +419,7 @@ export class CronManager {
         timezone: string;
         nextExecution: string;
         lastExecution?: string;
+        paused?: boolean;
       }>([`cron_timers`]);
       let loadedCount = 0;
 
@@ -415,6 +439,7 @@ export class CronManager {
             timezone: value.timezone,
             nextExecution: new Date(value.nextExecution),
             lastExecution: value.lastExecution ? new Date(value.lastExecution) : undefined,
+            paused: value.paused,
           };
 
           this.timers.set(timerKey, timer);
@@ -450,6 +475,7 @@ export class CronManager {
       timezone: timer.timezone,
       nextExecution: timer.nextExecution.toISOString(),
       lastExecution: timer.lastExecution?.toISOString(),
+      paused: timer.paused,
     });
     this.logger.debug("Timer persisted to storage", { timerKey });
   }
