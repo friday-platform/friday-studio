@@ -13,6 +13,7 @@ export { ListDetail } from "./list-detail/index.js";
 export { toast, NotificationPortal } from "./notification/index.js";
 export type { ToastData } from "./notification/index.js";
 export { Page } from "./page/index.js";
+export { PageLayout } from "./page-layout/index.js";
 export { default as Separator } from "./separator.svelte";
 export { default as StatusBadge } from "./status-badge.svelte";
 export { Table } from "./table/index.js";
