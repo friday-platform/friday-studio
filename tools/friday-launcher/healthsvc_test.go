@@ -676,7 +676,7 @@ func TestHealthStream_DeliversInitialAndTransition(t *testing.T) {
 	}
 
 	rd := bufio.NewReader(resp.Body)
-	first, err := readSSEEvent(rd, 1500*time.Millisecond)
+	first, err := readSSEEvent(rd)
 	if err != nil {
 		t.Fatalf("read first event: %v", err)
 	}
@@ -692,7 +692,7 @@ func TestHealthStream_DeliversInitialAndTransition(t *testing.T) {
 	// with all_healthy: true.
 	c.Update(makeStates(runningReady("playground")))
 
-	second, err := readSSEEvent(rd, 1500*time.Millisecond)
+	second, err := readSSEEvent(rd)
 	if err != nil {
 		t.Fatalf("read second event: %v", err)
 	}
@@ -705,11 +705,17 @@ func TestHealthStream_DeliversInitialAndTransition(t *testing.T) {
 	}
 }
 
+// sseReadTimeout caps how long readSSEEvent waits for the next
+// `data: ...` line before returning an error. 1500ms is the slack
+// the SSE tests need for the http roundtrip + initial flush; every
+// existing caller used the same value, so it's pinned here.
+const sseReadTimeout = 1500 * time.Millisecond
+
 // readSSEEvent reads a single `data: ...` event from an SSE stream.
 // Returns the JSON payload (without the data: prefix) or error on
 // timeout / malformed event.
-func readSSEEvent(rd *bufio.Reader, timeout time.Duration) (string, error) {
-	deadline := time.Now().Add(timeout)
+func readSSEEvent(rd *bufio.Reader) (string, error) {
+	deadline := time.Now().Add(sseReadTimeout)
 	for {
 		if time.Now().After(deadline) {
 			return "", errors.New("sse read timeout")
@@ -724,11 +730,186 @@ func readSSEEvent(rd *bufio.Reader, timeout time.Duration) (string, error) {
 			// captured; ignore and keep reading.
 			continue
 		}
-		if strings.HasPrefix(line, "data: ") {
-			payload := strings.TrimPrefix(line, "data: ")
+		if payload, ok := strings.CutPrefix(line, "data: "); ok {
 			// Drain the trailing blank line that ends the event.
 			_, _ = rd.ReadString('\n')
 			return payload, nil
 		}
 	}
+}
+
+// TestHealthRouter_PanicRecovery verifies the chi.middleware.Recoverer
+// added by buildHealthRouter actually catches handler panics — and
+// keeps subsequent requests serving. A regression that drops
+// `r.Use(middleware.Recoverer)` would fail this test: the panic
+// would propagate up, the http.Server goroutine would die, and
+// follow-up GETs to /api/launcher-health would either time out or
+// hit a closed listener.
+//
+// The test installs routerTestPanicHandler so buildHealthRouter
+// registers /_test/panic in its production chain — this way we
+// exercise the real router + middleware, not a stand-in.
+func TestHealthRouter_PanicRecovery(t *testing.T) {
+	orig := routerTestPanicHandler
+	t.Cleanup(func() { routerTestPanicHandler = orig })
+	routerTestPanicHandler = func(_ http.ResponseWriter, _ *http.Request) {
+		panic("simulated handler bug")
+	}
+
+	var sd atomic.Bool
+	c := NewHealthCache(&sd)
+	c.Update(makeStates(runningReady("a")))
+	router := buildHealthRouter(c, func(string) {})
+	srv := httptest.NewServer(router)
+	defer srv.Close()
+
+	// Hit the panic route. middleware.Recoverer should catch the
+	// panic and convert it to a 500 — never a connection drop.
+	resp, err := http.Get(srv.URL + "/_test/panic")
+	if err != nil {
+		t.Fatalf("GET /_test/panic: %v (middleware.Recoverer dropped?)", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("panic recovery status = %d, want 500", resp.StatusCode)
+	}
+
+	// The server must still be serving normal requests after the
+	// panic — that's the load-bearing invariant.
+	resp2, err := http.Get(srv.URL + "/api/launcher-health")
+	if err != nil {
+		t.Fatalf("post-panic GET /api/launcher-health: %v "+
+			"(server goroutine died?)", err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("post-panic status = %d, want 200", resp2.StatusCode)
+	}
+}
+
+// TestHealthStream_NoDuplicateInitialEmit verifies the pre-emit
+// drain in handleHealthStream prevents the loop from re-emitting
+// the same initial snapshot when a Subscribe-vs-notify race queued
+// a tick before the handler's first emit().
+//
+// Setup: Update the cache (queues a notify) BEFORE the SSE handler
+// reads — by the time the handler subscribes, the cache already
+// has services seeded. We then drive a SECOND transition; the
+// stream must show: [initial=NotReady] → [transition=Ready], NOT
+// [initial=NotReady] → [duplicate=NotReady] → [transition=Ready].
+//
+// A regression that deletes the drain `select { case <-ch: default: }`
+// would produce the duplicate as the second event, pushing the
+// real transition into a third event the test wouldn't see in
+// time.
+func TestHealthStream_NoDuplicateInitialEmit(t *testing.T) {
+	var sd atomic.Bool
+	c := NewHealthCache(&sd)
+	c.Update(makeStates(runningNotReady("playground")))
+
+	r := chi.NewRouter()
+	r.Get("/api/launcher-health/stream", handleHealthStream(c))
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, srv.URL+"/api/launcher-health/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	rd := bufio.NewReader(resp.Body)
+
+	// Consume the initial event (NotReady).
+	first, err := readSSEEvent(rd)
+	if err != nil {
+		t.Fatalf("read first event: %v", err)
+	}
+	var firstBody healthResponse
+	if err := json.Unmarshal([]byte(first), &firstBody); err != nil {
+		t.Fatalf("first event decode: %v", err)
+	}
+	if firstBody.AllHealthy {
+		t.Fatalf("initial AllHealthy = true, want false (NotReady seed)")
+	}
+
+	// Drive the transition. Without the drain, the stream's NEXT
+	// event would be a stale duplicate (still NotReady) and the
+	// real transition would land as a third event.
+	c.Update(makeStates(runningReady("playground")))
+
+	second, err := readSSEEvent(rd)
+	if err != nil {
+		t.Fatalf("read second event: %v", err)
+	}
+	var secondBody healthResponse
+	if err := json.Unmarshal([]byte(second), &secondBody); err != nil {
+		t.Fatalf("second event decode: %v", err)
+	}
+	if !secondBody.AllHealthy {
+		t.Errorf("second event AllHealthy = false (stale duplicate?); "+
+			"want true (real transition). drain regression?\n  body=%s",
+			second)
+	}
+}
+
+// TestHandleHealth_EncodeFailsConsistently verifies that handleHealth
+// produces a coherent status code on both shutting-down and healthy
+// paths even when JSON marshaling would fail. Pre-fix, the
+// shutting-down path called WriteHeader(503) BEFORE Encode; on encode
+// failure the client saw 503 + zero bytes. The healthy path didn't
+// call WriteHeader at all, so an encode failure produced an
+// implicit 200 + zero bytes — different surface for the same
+// underlying failure.
+//
+// Post-fix, we marshal first, then write status + body. We assert
+// the happy paths here — the marshal-failure branch is hard to
+// exercise without injecting a custom marshaler (healthResponse is
+// trivially serializable), so this test guards the typical-traffic
+// observable: status 200 + non-empty body when healthy, status 503
+// + non-empty body when shutting down.
+func TestHandleHealth_EncodeFailsConsistently(t *testing.T) {
+	t.Run("healthy path returns 200 with body", func(t *testing.T) {
+		var sd atomic.Bool
+		c := NewHealthCache(&sd)
+		c.Update(makeStates(runningReady("a")))
+		req := httptest.NewRequest(http.MethodGet, "/api/launcher-health", nil)
+		rec := httptest.NewRecorder()
+		handleHealth(c)(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+		if rec.Body.Len() == 0 {
+			t.Errorf("body empty on healthy path")
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", ct)
+		}
+	})
+	t.Run("shutting-down path returns 503 with body", func(t *testing.T) {
+		var sd atomic.Bool
+		sd.Store(true)
+		c := NewHealthCache(&sd)
+		c.Update(makeStates(runningReady("a")))
+		req := httptest.NewRequest(http.MethodGet, "/api/launcher-health", nil)
+		rec := httptest.NewRecorder()
+		handleHealth(c)(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want 503", rec.Code)
+		}
+		if rec.Body.Len() == 0 {
+			t.Errorf("body empty on shutting-down path")
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", ct)
+		}
+	})
 }

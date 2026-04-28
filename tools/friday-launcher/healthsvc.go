@@ -382,6 +382,15 @@ type healthResponse struct {
 // handleHealth returns the GET /api/launcher-health handler.
 // During shutdown returns 503 with shutting_down: true so polling
 // clients see the transition cleanly. Otherwise 200 + JSON.
+//
+// Marshal first, THEN write the status code, THEN the body — so an
+// encoder failure produces the same observable behavior on both
+// the healthy (200) and shutting-down (503) paths. The previous
+// version called WriteHeader(503) before json.Encoder.Encode, which
+// meant a healthy-path encode failure produced an implicit 200 with
+// zero bytes while a shutting-down failure produced an explicit 503
+// with zero bytes — different surfaces for the same underlying
+// failure.
 func handleHealth(c *HealthCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		services, uptime, shuttingDown := c.Snapshot()
@@ -391,14 +400,23 @@ func handleHealth(c *HealthCache) http.HandlerFunc {
 			AllHealthy:   c.AllHealthy(),
 			ShuttingDown: shuttingDown,
 		}
-		w.Header().Set("Content-Type", "application/json")
-		if shuttingDown {
-			w.WriteHeader(http.StatusServiceUnavailable)
+		payload, err := json.Marshal(body)
+		if err != nil {
+			log.Warn("health response marshal failed", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
 		}
-		if err := json.NewEncoder(w).Encode(body); err != nil {
-			// Connection probably already closed by the peer (status
-			// already written). Log and move on.
-			log.Warn("health response encode failed", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		status := http.StatusOK
+		if shuttingDown {
+			status = http.StatusServiceUnavailable
+		}
+		w.WriteHeader(status)
+		if _, err := w.Write(payload); err != nil {
+			// Connection probably already closed by the peer; status
+			// + body bytes already on the wire (or attempted). Log
+			// and move on.
+			log.Warn("health response write failed", "error", err)
 		}
 	}
 }
@@ -463,10 +481,15 @@ func handleHealthStream(c *HealthCache) http.HandlerFunc {
 		// would leave the wizard with a blank checklist on services
 		// that came up before subscribe.
 		//
-		// Drain any tick that arrived between Subscribe and the
-		// initial emit — otherwise the loop below would re-emit the
-		// same snapshot a second time. (`select default` makes this
-		// non-blocking; if no tick is queued we fall through.)
+		// Drain any tick that arrived between Subscribe() and the
+		// initial emit. This NARROWS the double-emit window — it
+		// does not eliminate it, since a notify firing AFTER the
+		// drain but BEFORE emit() returns will still queue a tick
+		// the loop below re-emits. Acceptable in practice because
+		// duplicate emissions are benign (consumers re-render full
+		// state from each event, not deltas). `select default`
+		// makes the drain non-blocking; if no tick is queued we
+		// fall straight through.
 		select {
 		case <-ch:
 		default:
@@ -522,6 +545,40 @@ func handleShutdown(c *HealthCache, perform func(reason string)) http.HandlerFun
 	}
 }
 
+// routerTestPanicHandler is an opt-in test hook. When non-nil,
+// buildHealthRouter registers it at /_test/panic so the
+// panic-recovery test can fire a real panic inside the production
+// router/middleware chain. nil in production — the route doesn't
+// exist. Same shape as openURLInBrowserOverride and
+// healthServerAddrOverride elsewhere in this package.
+var routerTestPanicHandler http.HandlerFunc
+
+// buildHealthRouter wires the chi router with all handlers + the
+// panic-recovery middleware. Extracted from startHealthServer so
+// tests can drive the same routing/middleware chain via httptest
+// without binding a real port.
+//
+// middleware.Recoverer is the load-bearing piece: a future handler
+// bug that panics would otherwise kill the server goroutine and
+// silently make the health endpoint unreachable. Tests assert this
+// contract via TestHealthRouter_PanicRecovery — which sets
+// routerTestPanicHandler so the production router actually
+// includes a panicking route the test can hit.
+func buildHealthRouter(
+	cache *HealthCache,
+	perform func(reason string),
+) http.Handler {
+	r := chi.NewRouter()
+	r.Use(middleware.Recoverer)
+	r.Get("/api/launcher-health", handleHealth(cache))
+	r.Get("/api/launcher-health/stream", handleHealthStream(cache))
+	r.Post("/api/launcher-shutdown", handleShutdown(cache, perform))
+	if routerTestPanicHandler != nil {
+		r.Get("/_test/panic", routerTestPanicHandler)
+	}
+	return r
+}
+
 // startHealthServer binds the loopback HTTP listener, registers
 // handlers, and starts serving in a goroutine. Returns the
 // http.Server so the caller can chain srv.Shutdown(ctx) into the
@@ -536,17 +593,9 @@ func startHealthServer(
 	cache *HealthCache,
 	perform func(reason string),
 ) (*http.Server, error) {
-	r := chi.NewRouter()
-	// Panic recovery so a future handler bug doesn't kill the server
-	// goroutine and leave the health endpoint silently unreachable.
-	r.Use(middleware.Recoverer)
-	r.Get("/api/launcher-health", handleHealth(cache))
-	r.Get("/api/launcher-health/stream", handleHealthStream(cache))
-	r.Post("/api/launcher-shutdown", handleShutdown(cache, perform))
-
 	srv := &http.Server{
 		Addr:              healthServerAddr,
-		Handler:           r,
+		Handler:           buildHealthRouter(cache, perform),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
