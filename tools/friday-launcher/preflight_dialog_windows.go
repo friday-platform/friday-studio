@@ -28,14 +28,7 @@ const downloadsPageURL = "https://download.fridayplatform.io/studio/"
 // "Quit | Open downloads page". We use MB_YESNO with text body
 // asking "Open downloads page?"; YES → open, NO → quit. Less
 // elegant than the macOS variant but native and dependency-free.
-func showMissingBinariesDialog(binDir string, missing []string, errMsg string) {
-	logPath := writeStartupErrorLog("preflight", map[string]string{
-		"bin_dir": binDir,
-		"missing": strings.Join(missing, ", "),
-		"error":   errMsg,
-		"os":      runtime.GOOS + "/" + runtime.GOARCH,
-	})
-
+func showMissingBinariesDialog(binDir string, missing []string, errMsg, logPath string) {
 	var body string
 	if errMsg != "" {
 		body = fmt.Sprintf(

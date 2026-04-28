@@ -70,14 +70,9 @@ const downloadsPageURL = "https://download.fridayplatform.io/studio/"
 //
 // `missing` is the list of binaries by name; empty when the cause
 // is a stat error (the `errMsg` argument carries the OS message).
-func showMissingBinariesDialog(binDir string, missing []string, errMsg string) {
-	logPath := writeStartupErrorLog("preflight", map[string]string{
-		"bin_dir": binDir,
-		"missing": strings.Join(missing, ", "),
-		"error":   errMsg,
-		"os":      runtime.GOOS + "/" + runtime.GOARCH,
-	})
-
+// `logPath` is the diagnostic log path written by `runPreflight`
+// (single source of truth — the dialog only renders, doesn't write).
+func showMissingBinariesDialog(binDir string, missing []string, errMsg, logPath string) {
 	var body string
 	if errMsg != "" {
 		body = fmt.Sprintf(

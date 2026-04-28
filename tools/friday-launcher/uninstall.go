@@ -68,18 +68,17 @@ func runUninstall() {
 		step("autostart entry removed", nil)
 	}
 
-	// 4. Remove the .app bundle from /Applications (Stack 3,
-	// darwin-only). The launcher is currently running from inside
-	// the bundle; the OS holds the executable open until our
-	// process exits, so we can RM the surrounding directory now —
-	// the kernel reference-counts the deleted inode and our exec
-	// stays valid until exit. Best-effort: not all installs land
-	// in /Applications (devs running `go run` against a flat
-	// build; unit tests with FRIDAY_LAUNCHER_HOME set).
-	removeAppBundleIfPresent(step)
-
-	// 5. Remove pids/ + state.json. Logs are preserved.
+	// 4. Remove pids/ + state.json. Logs are preserved.
 	// os.RemoveAll handles ENOENT silently — same idiom for both.
+	//
+	// State removal happens BEFORE .app bundle removal: if .app
+	// removal fails (permission denied on /Applications when the
+	// bundle was sudo-installed by an admin), we still want
+	// state.json + pids/ cleared so a subsequent re-install or
+	// `--uninstall` retry starts from a known-clean home dir.
+	// The .app sitting in /Applications without state is recoverable
+	// (Spotlight finds it; user can drag-to-trash); state.json
+	// referencing a vanished .app is more confusing.
 	if err := os.RemoveAll(statePath()); err != nil {
 		step("remove state.json", err)
 	} else {
@@ -91,6 +90,16 @@ func runUninstall() {
 	} else {
 		step("pids/ directory removed", nil)
 	}
+
+	// 5. Remove the .app bundle from /Applications (Stack 3,
+	// darwin-only). Last step so a permission failure on
+	// /Applications doesn't leave state.json + pids/ in place
+	// (see comment on step 4 ordering). The launcher is currently
+	// running from inside the bundle; the OS holds the executable
+	// open until our process exits, so we can RM the surrounding
+	// directory now — the kernel reference-counts the deleted inode
+	// and our exec stays valid until exit.
+	removeAppBundleIfPresent(step)
 
 	fmt.Println()
 	fmt.Printf("Logs preserved at: %s\n", logsDir())

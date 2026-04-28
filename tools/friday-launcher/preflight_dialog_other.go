@@ -18,13 +18,7 @@ import (
 // showMissingBinariesDialog logs to stderr + diagnostic log on
 // non-darwin/non-windows. Linux build is CI-only today; a real
 // GUI dialog is out-of-scope for v15.
-func showMissingBinariesDialog(binDir string, missing []string, errMsg string) {
-	logPath := writeStartupErrorLog("preflight", map[string]string{
-		"bin_dir": binDir,
-		"missing": strings.Join(missing, ", "),
-		"error":   errMsg,
-		"os":      runtime.GOOS + "/" + runtime.GOARCH,
-	})
+func showMissingBinariesDialog(binDir string, missing []string, errMsg, logPath string) {
 	if errMsg != "" {
 		fmt.Fprintf(os.Stderr,
 			"friday-launcher: cannot start. Could not read bin dir %s: %s. Log: %s\n",
