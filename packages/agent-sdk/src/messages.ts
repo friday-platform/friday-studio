@@ -309,10 +309,19 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
     return { ...m, id: crypto.randomUUID() };
   });
 
-  return await validateUIMessages({
+  const validated = await validateUIMessages({
     messages: withIds,
     metadataSchema: MessageMetadataSchema.optional(),
     dataSchemas: AtlasDataEventSchemas,
+  });
+
+  // The AI SDK validates metadata but discards the parsed result, so unknown
+  // keys (e.g. `part` carrying the full Anthropic request body) survive
+  // validation and persist across turns via mergeObjects. Strip them here.
+  return validated.map((m) => {
+    if (m.metadata == null) return m;
+    const parsed = MessageMetadataSchema.safeParse(m.metadata);
+    return parsed.success ? { ...m, metadata: parsed.data } : m;
   });
 }
 

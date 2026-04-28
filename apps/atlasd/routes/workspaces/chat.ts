@@ -169,9 +169,10 @@ const workspaceChatRoutes = daemonFactory
 
     const { messages, systemPromptContext, ...chat } = chatResult.data;
     const limitedMessages = messages.slice(-100);
+    const sanitized = await validateAtlasUIMessages(limitedMessages);
 
     return c.json(
-      { chat, messages: limitedMessages, systemPromptContext: systemPromptContext ?? null },
+      { chat, messages: sanitized, systemPromptContext: systemPromptContext ?? null },
       200,
     );
   })
