@@ -47,14 +47,14 @@ let _handler: AgentHandler | null = null;
 
 /**
  * Register an agent handler. Auto-runs when env vars are set:
- *   ATLAS_VALIDATE_ID — validation handshake: publish metadata then exit
+ *   FRIDAY_VALIDATE_ID — validation handshake: publish metadata then exit
  *   FRIDAY_SESSION_ID  — normal execution: handle one request then exit
  */
 export function agent(meta: AgentMeta, handler: AgentHandler): void {
   _meta = meta;
   _handler = handler;
 
-  const validateId = process.env.ATLAS_VALIDATE_ID;
+  const validateId = process.env.FRIDAY_VALIDATE_ID;
   if (validateId) {
     void _validate(validateId).catch((err) => {
       process.stderr.write(

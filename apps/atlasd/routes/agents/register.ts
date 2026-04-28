@@ -3,7 +3,7 @@
  *
  * Accepts JSON { entrypoint: string } where entrypoint is the absolute path to the
  * agent's entry file (e.g. /home/user/my-agent/agent.py). Spawns the agent with
- * ATLAS_VALIDATE_ID so it publishes its metadata over NATS, then installs the agent
+ * FRIDAY_VALIDATE_ID so it publishes its metadata over NATS, then installs the agent
  * to ~/.atlas/agents/{id}@{version}/.
  */
 
@@ -77,7 +77,7 @@ registerAgentRoute.post("/register", async (c) => {
 
   const [cmd, args] = buildSpawnArgs(entrypointPath);
   const proc = spawn(cmd, args, {
-    env: { ...process.env, ATLAS_VALIDATE_ID: registerId, NATS_URL: "nats://localhost:4222" },
+    env: { ...process.env, FRIDAY_VALIDATE_ID: registerId, NATS_URL: "nats://localhost:4222" },
     stdio: "pipe",
   });
 

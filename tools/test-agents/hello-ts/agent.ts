@@ -11,7 +11,7 @@ import { connect, StringCodec } from "npm:nats@^2";
 const sc = StringCodec();
 const natsUrl = process.env.NATS_URL ?? "nats://localhost:4222";
 
-const validateId = process.env.ATLAS_VALIDATE_ID;
+const validateId = process.env.FRIDAY_VALIDATE_ID;
 if (validateId) {
   const nc = await connect({ servers: natsUrl });
   nc.publish(

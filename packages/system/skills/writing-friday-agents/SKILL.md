@@ -150,7 +150,7 @@ Wrap capability calls — `LlmError`, `HttpError`, `ToolCallError` — and retur
 ## Registering an agent with Friday
 
 `POST /api/agents/register { "entrypoint": "/abs/path/to/agent.py" }` — the daemon
-spawns the agent with `ATLAS_VALIDATE_ID`, reads its id/version/description from the
+spawns the agent with `FRIDAY_VALIDATE_ID`, reads its id/version/description from the
 `@agent` decorator via NATS, copies all source files from the same directory to
 `~/.atlas/agents/{id}@{version}/`, and hot-reloads the registry. **No daemon restart
 required.**

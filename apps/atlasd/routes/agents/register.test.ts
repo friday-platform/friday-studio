@@ -202,7 +202,7 @@ describe("POST /register", () => {
     expect(body.phase).toBe("validate");
   });
 
-  it("passes ATLAS_VALIDATE_ID and NATS_URL to spawned process", async () => {
+  it("passes FRIDAY_VALIDATE_ID and NATS_URL to spawned process", async () => {
     const app = makeApp({ id: "env-agent", version: "1.0.0", description: "Env test" });
 
     await app.request("/register", {
@@ -214,7 +214,7 @@ describe("POST /register", () => {
     const spawnCall = mockSpawn.mock.calls[0];
     const env = spawnCall?.[2]?.env as Record<string, string>;
     expect(env).toMatchObject({
-      ATLAS_VALIDATE_ID: expect.any(String),
+      FRIDAY_VALIDATE_ID: expect.any(String),
       NATS_URL: "nats://localhost:4222",
     });
   });
