@@ -65,7 +65,7 @@ import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
-import { createGetWorkspaceMcpStatusTool } from "./tools/workspace-mcp-status.ts";
+import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createBoundWorkspaceOpsTools, createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
@@ -609,7 +609,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const listMcpToolsTool = createListMcpToolsTool(logger);
 
         // Workspace-scoped MCP management tools
-        const getWorkspaceMcpStatusTool = createGetWorkspaceMcpStatusTool(workspaceId, logger);
+        const mcpDependenciesTool = createMcpDependenciesTool(workspaceId, logger);
         const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
         const disableMcpServerTool = createDisableMcpServerTool(workspaceId, logger);
 
@@ -743,7 +743,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...searchMcpServersTool,
           ...installMcpServerTool,
           ...createMcpServerTool,
-          ...getWorkspaceMcpStatusTool,
+          ...mcpDependenciesTool,
           ...enableMcpServerTool,
           ...disableMcpServerTool,
           ...listMcpToolsTool,
