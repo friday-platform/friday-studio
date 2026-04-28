@@ -18,7 +18,7 @@
   @component
 -->
 <script lang="ts">
-  import { Button, toast } from "@atlas/ui";
+  import { Button, PageLayout, toast } from "@atlas/ui";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
   import { EXTERNAL_TUNNEL_URL } from "$lib/daemon-url";
@@ -746,334 +746,343 @@
   }
 </script>
 
-<div class="settings-root">
-  <header class="page-header">
-    <h1>Settings</h1>
-    <p class="subtitle">
-      What the daemon resolved at startup. Per-role models come from
-      <code>friday.yml</code>
-      ; environment variables come from
-      <code>~/.atlas/.env</code>
-      . Both take effect on the next daemon restart.
-    </p>
-  </header>
-
-  <!-- ─── Models section ────────────────────────────────────────── -->
-  <section class="section">
-    <div class="section-header-row">
-      <div class="section-header">
-        <h2>Models</h2>
-        <p class="section-sub">
-          Per-role routing with an ordered fallback chain. The daemon tries the primary, then each
-          fallback in turn. Format stored as <code>provider:model</code>
-          in
-          <code>friday.yml</code>
-          .
-        </p>
-      </div>
-      <div class="section-meta">
-        {totalModelCount} models · {connectedProviders}/{catalog.length} connected
-      </div>
-    </div>
-
-    {#if loadingModels || loadingCatalog}
-      <div class="loading">Loading models…</div>
-    {:else if modelsError}
-      <div class="error-banner" role="alert">
-        <pre class="error-text">{modelsError}</pre>
-        <button class="dismiss" onclick={() => (modelsError = null)}>Dismiss</button>
-      </div>
-    {:else}
-      {#if catalogError}
-        <div class="warn-banner">
-          Catalog load failed: {catalogError}. You can still pick from resolved providers.
-        </div>
-      {/if}
-
-      <div class="roles-grid">
-        {#each models as m (m.role)}
-          <div class="role-card">
-            <div class="role-head">
-              <span class="role-name-upper">{m.role}</span>
-              <span class="role-name">{ROLE_TITLES[m.role]}</span>
-              <p class="role-desc">{ROLE_DESCRIPTIONS[m.role]}</p>
+<PageLayout.Root>
+  <PageLayout.Title>Settings</PageLayout.Title>
+  <PageLayout.Body>
+    <PageLayout.Content>
+      <div class="settings-root">
+        <!-- ─── Models section ────────────────────────────────────────── -->
+        <section class="section">
+          <div class="section-header-row">
+            <div class="section-header">
+              <h2>Models</h2>
+              <p class="section-sub">
+                Per-role routing with an ordered fallback chain. The daemon tries the primary, then
+                each fallback in turn. Format stored as <code>provider:model</code>
+                in
+                <code>friday.yml</code>
+                .
+              </p>
             </div>
-            <ModelChain
-              role={m.role}
-              chain={chains[m.role]}
-              resolved={m.resolved}
-              {catalog}
-              onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
-              onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
-              onReorder={(from, to) => handleReorder(m.role, from, to)}
-              onAddFallback={() => handleAddFallback(m.role)}
-              onOverrideDefault={() => handleOverrideDefault(m.role)}
-            />
-          </div>
-        {/each}
-      </div>
-
-      <div class="actions">
-        {#if dirty}
-          <span class="unsaved-indicator">Unsaved changes</span>
-        {:else if successFlash}
-          <span class="success-flash">{successFlash}</span>
-        {/if}
-        <Button variant="secondary" onclick={handleDiscard} disabled={!dirty || savingModels}>
-          Discard
-        </Button>
-        <Button variant="primary" onclick={handleSaveModels} disabled={!dirty || savingModels}>
-          {savingModels ? "Saving…" : "Save models"}
-        </Button>
-      </div>
-    {/if}
-  </section>
-
-  <!-- ─── Tunnel section ─────────────────────────────────────── -->
-  <section class="section">
-    <div class="section-header-row">
-      <div class="section-header">
-        <h2>Webhook tunnel</h2>
-        <p class="section-sub">
-          Public URL of the local Cloudflare tunnel (
-          <code>webhook-tunnel</code>
-          ). Use it as the base for inbound webhooks.
-        </p>
-      </div>
-      <div class="section-meta">
-        {tunnelLoading ? "…" : tunnelUrl ? "active" : "inactive"}
-      </div>
-    </div>
-
-    {#if tunnelLoading}
-      <div class="loading">Checking tunnel…</div>
-    {:else if tunnelUrl}
-      <div class="tunnel-row">
-        <code class="tunnel-url">{tunnelUrl}</code>
-        <Button variant="secondary" onclick={copyTunnelUrl}>Copy</Button>
-      </div>
-    {:else}
-      <div class="warn-banner">
-        {tunnelError ?? "No tunnel URL available — webhook-tunnel may not be running."}
-      </div>
-    {/if}
-  </section>
-
-  <!-- ─── Env vars section ───────────────────────────────────── -->
-  <section class="section">
-    <details class="env-details">
-      <summary class="env-summary">
-        <span class="section-h">Environment variables</span>
-        <span class="env-count">
-          {loadingEnv ? "…" : `${envRows.length} keys`}
-        </span>
-      </summary>
-
-      <div class="env-body">
-        <p class="section-sub">
-          From <code>~/.atlas/.env</code>
-          . Secrets (
-          <em>KEY</em>
-          ,
-          <em>TOKEN</em>
-          ,
-          <em>SECRET</em>
-          ,
-          <em>PASSWORD</em>
-          ) render as password inputs.
-        </p>
-
-        {#if loadingEnv}
-          <div class="loading">Loading environment…</div>
-        {:else if envError}
-          <div class="error-banner" role="alert">
-            <span>{envError}</span>
-            <button class="dismiss" onclick={() => loadEnv()}>Retry</button>
-          </div>
-        {:else}
-          <div class="env-table">
-            <div class="env-table-header">
-              <span class="col-key">Key</span>
-              <span class="col-value">Value</span>
-              <span class="col-action"></span>
+            <div class="section-meta">
+              {totalModelCount} models · {connectedProviders}/{catalog.length} connected
             </div>
-            {#each envRows as row, i (i)}
-              <div class="env-row">
-                <input
-                  class="col-key"
-                  type="text"
-                  bind:value={row.key}
-                  placeholder="VARIABLE_NAME"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <input
-                  class="col-value"
-                  type={isSecretKey(row.key) ? "password" : "text"}
-                  bind:value={row.value}
-                  placeholder="value"
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <button
-                  class="col-action remove"
-                  onclick={() => removeEnvRow(i)}
-                  aria-label="Remove row"
-                >
-                  ✕
-                </button>
+          </div>
+
+          {#if loadingModels || loadingCatalog}
+            <div class="loading">Loading models…</div>
+          {:else if modelsError}
+            <div class="error-banner" role="alert">
+              <pre class="error-text">{modelsError}</pre>
+              <button class="dismiss" onclick={() => (modelsError = null)}>Dismiss</button>
+            </div>
+          {:else}
+            {#if catalogError}
+              <div class="warn-banner">
+                Catalog load failed: {catalogError}. You can still pick from resolved providers.
               </div>
-            {/each}
-            {#if envRows.length === 0}
-              <div class="empty">No settings yet. Add one below.</div>
             {/if}
-          </div>
 
-          <div class="actions">
-            <Button variant="secondary" onclick={addEnvRow} disabled={savingEnv}>
-              Add variable
-            </Button>
-            <Button variant="primary" onclick={saveEnv} disabled={savingEnv}>
-              {savingEnv ? "Saving…" : "Save"}
-            </Button>
-          </div>
-        {/if}
-      </div>
-    </details>
-  </section>
+            <div class="roles-grid">
+              {#each models as m (m.role)}
+                <div class="role-card">
+                  <div class="role-head">
+                    <span class="role-name-upper">{m.role}</span>
+                    <span class="role-name">{ROLE_TITLES[m.role]}</span>
+                    <p class="role-desc">{ROLE_DESCRIPTIONS[m.role]}</p>
+                  </div>
+                  <ModelChain
+                    role={m.role}
+                    chain={chains[m.role]}
+                    resolved={m.resolved}
+                    {catalog}
+                    onEditSlot={(slotIdx) => handleEditSlot(m.role, slotIdx)}
+                    onRemoveSlot={(slotIdx) => handleRemoveSlot(m.role, slotIdx)}
+                    onReorder={(from, to) => handleReorder(m.role, from, to)}
+                    onAddFallback={() => handleAddFallback(m.role)}
+                    onOverrideDefault={() => handleOverrideDefault(m.role)}
+                  />
+                </div>
+              {/each}
+            </div>
 
-  <!-- ─── Backup & restore section ─────────────────────────────── -->
-  <section class="section">
-    <div class="section-header-row">
-      <div class="section-header">
-        <h2>Backup &amp; restore</h2>
-        <p class="section-sub">
-          Export your workspaces as a portable zip, and re-import them on another machine. Imports
-          never overwrite existing data — if a conflict is detected, the incoming copy lands next to
-          the existing one so you can merge manually.
-        </p>
-      </div>
-    </div>
-
-    <div class="backup-grid">
-      <!-- Export -->
-      <div class="backup-card">
-        <h3 class="backup-h">Export all workspaces</h3>
-        <p class="backup-sub">
-          Download every workspace as a single zip you can import on another machine.
-        </p>
-        <label class="backup-check">
-          <input type="checkbox" bind:checked={includeMemory} />
-          <span>Include notes &amp; memory</span>
-        </label>
-        <label class="backup-check">
-          <input type="checkbox" bind:checked={includeGlobalSkills} />
-          <span>Include your skills library</span>
-        </label>
-        <div class="backup-actions">
-          <Button onclick={handleExportAll} disabled={exporting}>
-            {exporting ? "Building…" : "Download full export"}
-          </Button>
-        </div>
-      </div>
-
-      <!-- Import single -->
-      <div class="backup-card">
-        <h3 class="backup-h">Import a workspace</h3>
-        <p class="backup-sub">
-          Pick a zip downloaded from a single workspace. It becomes a new workspace here.
-        </p>
-        <input
-          bind:this={singleFileEl}
-          type="file"
-          accept=".zip,application/zip"
-          class="backup-file"
-        />
-        <div class="backup-actions">
-          <Button onclick={handleImportSingle} disabled={singleBusy}>
-            {singleBusy ? "Importing…" : "Import workspace"}
-          </Button>
-        </div>
-        {#if singleResult}
-          <div class="backup-result" class:err={!singleResult.ok}>
-            {#if singleResult.ok}
-              <div>
-                Imported: <strong>{singleResult.imported[0]?.name ?? "?"}</strong>
-              </div>
-              {#if memoryLabel(singleResult.imported[0]?.memory?.kind)}
-                <div class="muted">{memoryLabel(singleResult.imported[0]?.memory?.kind)}</div>
+            <div class="actions">
+              {#if dirty}
+                <span class="unsaved-indicator">Unsaved changes</span>
+              {:else if successFlash}
+                <span class="success-flash">{successFlash}</span>
               {/if}
-            {:else}
-              {singleResult.message ?? "Failed"}
-            {/if}
-          </div>
-        {/if}
-      </div>
+              <Button variant="secondary" onclick={handleDiscard} disabled={!dirty || savingModels}>
+                Discard
+              </Button>
+              <Button
+                variant="primary"
+                onclick={handleSaveModels}
+                disabled={!dirty || savingModels}
+              >
+                {savingModels ? "Saving…" : "Save models"}
+              </Button>
+            </div>
+          {/if}
+        </section>
 
-      <!-- Import full archive -->
-      <div class="backup-card">
-        <h3 class="backup-h">Import a full archive</h3>
-        <p class="backup-sub">
-          Pick a full-export zip. Every workspace inside gets imported, along with any skills
-          library or memory the archive carried.
-        </p>
-        <input
-          bind:this={fullFileEl}
-          type="file"
-          accept=".zip,application/zip"
-          class="backup-file"
-        />
-        <div class="backup-actions">
-          <Button onclick={handleImportFull} disabled={fullBusy}>
-            {fullBusy ? "Importing…" : "Import full archive"}
-          </Button>
-        </div>
-        {#if fullResult}
-          <div class="backup-result" class:err={!fullResult.ok}>
-            {#if fullResult.ok}
-              <div>
-                <strong>{fullResult.imported.length}</strong>
-                workspace(s) imported
-              </div>
-              {#if fullResult.imported.length > 0}
-                <ul class="backup-list">
-                  {#each fullResult.imported as entry, i (i)}
-                    <li>
-                      <strong>{entry.name ?? "?"}</strong>
-                      {#if memoryLabel(entry.memory?.kind)}
-                        <span class="muted">— {memoryLabel(entry.memory?.kind)}</span>
-                      {/if}
-                    </li>
+        <!-- ─── Tunnel section ─────────────────────────────────────── -->
+        <section class="section">
+          <div class="section-header-row">
+            <div class="section-header">
+              <h2>Webhook tunnel</h2>
+              <p class="section-sub">
+                Public URL of the local Cloudflare tunnel (
+                <code>webhook-tunnel</code>
+                ). Use it as the base for inbound webhooks.
+              </p>
+            </div>
+            <div class="section-meta">
+              {tunnelLoading ? "…" : tunnelUrl ? "active" : "inactive"}
+            </div>
+          </div>
+
+          {#if tunnelLoading}
+            <div class="loading">Checking tunnel…</div>
+          {:else if tunnelUrl}
+            <div class="tunnel-row">
+              <code class="tunnel-url">{tunnelUrl}</code>
+              <Button variant="secondary" onclick={copyTunnelUrl}>Copy</Button>
+            </div>
+          {:else}
+            <div class="warn-banner">
+              {tunnelError ?? "No tunnel URL available — webhook-tunnel may not be running."}
+            </div>
+          {/if}
+        </section>
+
+        <!-- ─── Env vars section ───────────────────────────────────── -->
+        <section class="section">
+          <details class="env-details">
+            <summary class="env-summary">
+              <span class="section-h">Environment variables</span>
+              <span class="env-count">
+                {loadingEnv ? "…" : `${envRows.length} keys`}
+              </span>
+            </summary>
+
+            <div class="env-body">
+              <p class="section-sub">
+                From <code>~/.atlas/.env</code>
+                . Secrets (
+                <em>KEY</em>
+                ,
+                <em>TOKEN</em>
+                ,
+                <em>SECRET</em>
+                ,
+                <em>PASSWORD</em>
+                ) render as password inputs.
+              </p>
+
+              {#if loadingEnv}
+                <div class="loading">Loading environment…</div>
+              {:else if envError}
+                <div class="error-banner" role="alert">
+                  <span>{envError}</span>
+                  <button class="dismiss" onclick={() => loadEnv()}>Retry</button>
+                </div>
+              {:else}
+                <div class="env-table">
+                  <div class="env-table-header">
+                    <span class="col-key">Key</span>
+                    <span class="col-value">Value</span>
+                    <span class="col-action"></span>
+                  </div>
+                  {#each envRows as row, i (i)}
+                    <div class="env-row">
+                      <input
+                        class="col-key"
+                        type="text"
+                        bind:value={row.key}
+                        placeholder="VARIABLE_NAME"
+                        autocomplete="off"
+                        spellcheck="false"
+                      />
+                      <input
+                        class="col-value"
+                        type={isSecretKey(row.key) ? "password" : "text"}
+                        bind:value={row.value}
+                        placeholder="value"
+                        autocomplete="off"
+                        spellcheck="false"
+                      />
+                      <button
+                        class="col-action remove"
+                        onclick={() => removeEnvRow(i)}
+                        aria-label="Remove row"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   {/each}
-                </ul>
-              {/if}
-              {#if globalSkillsLabel(fullResult.globalSkills?.kind)}
-                <div class="muted">
-                  {globalSkillsLabel(fullResult.globalSkills?.kind)}
+                  {#if envRows.length === 0}
+                    <div class="empty">No settings yet. Add one below.</div>
+                  {/if}
+                </div>
+
+                <div class="actions">
+                  <Button variant="secondary" onclick={addEnvRow} disabled={savingEnv}>
+                    Add variable
+                  </Button>
+                  <Button variant="primary" onclick={saveEnv} disabled={savingEnv}>
+                    {savingEnv ? "Saving…" : "Save"}
+                  </Button>
                 </div>
               {/if}
-              {#if fullResult.errors.length > 0}
-                <div class="backup-errors">
-                  <strong>{fullResult.errors.length} error(s):</strong>
-                  <ul class="backup-list">
-                    {#each fullResult.errors as e, i (i)}
-                      <li>
-                        <strong>{e.name ?? "?"}</strong>
-                        : {e.error ?? "?"}
-                      </li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-            {:else}
-              {fullResult.message ?? "Failed"}
-            {/if}
+            </div>
+          </details>
+        </section>
+
+        <!-- ─── Backup & restore section ─────────────────────────────── -->
+        <section class="section">
+          <div class="section-header-row">
+            <div class="section-header">
+              <h2>Backup &amp; restore</h2>
+              <p class="section-sub">
+                Export your workspaces as a portable zip, and re-import them on another machine.
+                Imports never overwrite existing data — if a conflict is detected, the incoming copy
+                lands next to the existing one so you can merge manually.
+              </p>
+            </div>
           </div>
-        {/if}
+
+          <div class="backup-grid">
+            <!-- Export -->
+            <div class="backup-card">
+              <h3 class="backup-h">Export all workspaces</h3>
+              <p class="backup-sub">
+                Download every workspace as a single zip you can import on another machine.
+              </p>
+              <label class="backup-check">
+                <input type="checkbox" bind:checked={includeMemory} />
+                <span>Include notes &amp; memory</span>
+              </label>
+              <label class="backup-check">
+                <input type="checkbox" bind:checked={includeGlobalSkills} />
+                <span>Include your skills library</span>
+              </label>
+              <div class="backup-actions">
+                <Button onclick={handleExportAll} disabled={exporting}>
+                  {exporting ? "Building…" : "Download full export"}
+                </Button>
+              </div>
+            </div>
+
+            <!-- Import single -->
+            <div class="backup-card">
+              <h3 class="backup-h">Import a workspace</h3>
+              <p class="backup-sub">
+                Pick a zip downloaded from a single workspace. It becomes a new workspace here.
+              </p>
+              <input
+                bind:this={singleFileEl}
+                type="file"
+                accept=".zip,application/zip"
+                class="backup-file"
+              />
+              <div class="backup-actions">
+                <Button onclick={handleImportSingle} disabled={singleBusy}>
+                  {singleBusy ? "Importing…" : "Import workspace"}
+                </Button>
+              </div>
+              {#if singleResult}
+                <div class="backup-result" class:err={!singleResult.ok}>
+                  {#if singleResult.ok}
+                    <div>
+                      Imported: <strong>{singleResult.imported[0]?.name ?? "?"}</strong>
+                    </div>
+                    {#if memoryLabel(singleResult.imported[0]?.memory?.kind)}
+                      <div class="muted">{memoryLabel(singleResult.imported[0]?.memory?.kind)}</div>
+                    {/if}
+                  {:else}
+                    {singleResult.message ?? "Failed"}
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
+            <!-- Import full archive -->
+            <div class="backup-card">
+              <h3 class="backup-h">Import a full archive</h3>
+              <p class="backup-sub">
+                Pick a full-export zip. Every workspace inside gets imported, along with any skills
+                library or memory the archive carried.
+              </p>
+              <input
+                bind:this={fullFileEl}
+                type="file"
+                accept=".zip,application/zip"
+                class="backup-file"
+              />
+              <div class="backup-actions">
+                <Button onclick={handleImportFull} disabled={fullBusy}>
+                  {fullBusy ? "Importing…" : "Import full archive"}
+                </Button>
+              </div>
+              {#if fullResult}
+                <div class="backup-result" class:err={!fullResult.ok}>
+                  {#if fullResult.ok}
+                    <div>
+                      <strong>{fullResult.imported.length}</strong>
+                      workspace(s) imported
+                    </div>
+                    {#if fullResult.imported.length > 0}
+                      <ul class="backup-list">
+                        {#each fullResult.imported as entry, i (i)}
+                          <li>
+                            <strong>{entry.name ?? "?"}</strong>
+                            {#if memoryLabel(entry.memory?.kind)}
+                              <span class="muted">— {memoryLabel(entry.memory?.kind)}</span>
+                            {/if}
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                    {#if globalSkillsLabel(fullResult.globalSkills?.kind)}
+                      <div class="muted">
+                        {globalSkillsLabel(fullResult.globalSkills?.kind)}
+                      </div>
+                    {/if}
+                    {#if fullResult.errors.length > 0}
+                      <div class="backup-errors">
+                        <strong>{fullResult.errors.length} error(s):</strong>
+                        <ul class="backup-list">
+                          {#each fullResult.errors as e, i (i)}
+                            <li>
+                              <strong>{e.name ?? "?"}</strong>
+                              : {e.error ?? "?"}
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/if}
+                  {:else}
+                    {fullResult.message ?? "Failed"}
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          </div>
+        </section>
       </div>
-    </div>
-  </section>
-</div>
+    </PageLayout.Content>
+    <PageLayout.Sidebar>
+      <p class="subtitle">
+        Settings are resolved at daemon startup. Per-role models come from
+        <code>friday.yml</code>
+        ; environment variables come from
+        <code>~/.atlas/.env</code>
+        . Both take effect on the next daemon restart.
+      </p>
+    </PageLayout.Sidebar>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 {#if picker && pickerRole}
   <ModelPicker
@@ -1093,16 +1102,6 @@
     display: flex;
     flex-direction: column;
     gap: 28px;
-    margin: 0 auto;
-    max-width: 960px;
-    padding: 40px 28px 120px;
-  }
-
-  .page-header h1 {
-    font-size: 26px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin: 0 0 6px;
   }
 
   .subtitle,
@@ -1404,7 +1403,6 @@
     display: grid;
     gap: 16px;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    padding: 0 20px 20px;
   }
   .backup-card {
     background: var(--color-surface-2);

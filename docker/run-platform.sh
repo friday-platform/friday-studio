@@ -110,7 +110,7 @@ pty-server &
 PTY_PID=$!
 
 echo "[platform] Starting webhook-tunnel on :9090..."
-ATLASD_URL=http://localhost:8080 webhook-tunnel &
+FRIDAYD_URL=http://localhost:8080 webhook-tunnel &
 TUNNEL_PID=$!
 
 wait_for_service "agent-playground" "http://localhost:5200"

@@ -1,5 +1,5 @@
 <!--
-  MCP Catalog Tree — left sidebar for the two-pane catalog layout.
+  MCP Catalog Tree — list of installed servers for the catalog sidebar.
 
   Shows installed servers grouped by source. Search filters installed servers.
   Search query is synced to the URL (?q=) for shareable/bookmarkable filtered views.
@@ -8,24 +8,22 @@
   @component
   @prop selectedServerId - ID of currently selected installed server
   @prop onSelectServer - Called when an installed server is clicked
-  @prop onOpenImport - Called when the "Add" button is clicked
 -->
 
 <script lang="ts">
-  import { Button, IconSmall } from "@atlas/ui";
+  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
+  import { IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import { mcpQueries } from "$lib/queries/mcp-queries";
 
   interface Props {
     selectedServerId?: string | null;
     onSelectServer: (serverId: string) => void;
-    onOpenImport?: () => void;
   }
 
-  let { selectedServerId = null, onSelectServer, onOpenImport }: Props = $props();
+  let { selectedServerId = null, onSelectServer }: Props = $props();
 
   // ---------------------------------------------------------------------------
   // Queries
@@ -110,9 +108,7 @@
     }
   }
 
-  function isOfficialServer(
-    server: (typeof allServers)[number],
-  ): boolean {
+  function isOfficialServer(server: (typeof allServers)[number]): boolean {
     if (server.source === "static") return true;
     if (server.upstream?.canonicalName) {
       return isOfficialCanonicalName(server.upstream.canonicalName);
@@ -122,24 +118,6 @@
 </script>
 
 <div class="catalog-tree">
-  <!-- Header -->
-  <div class="sidebar-header">
-    <h2 class="sidebar-title">MCP Catalog</h2>
-    {#if onOpenImport}
-      <Button
-        variant="secondary"
-        size="small"
-        aria-label="Import from registry"
-        onclick={onOpenImport}
-      >
-        {#snippet prepend()}
-          <IconSmall.Plus />
-        {/snippet}
-        Add
-      </Button>
-    {/if}
-  </div>
-
   <!-- Search -->
   <div class="search-field" class:focused={searchFocused}>
     <span class="search-icon"><IconSmall.Search /></span>
@@ -248,23 +226,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
-    padding: var(--size-4);
-  }
-
-  /* ─── Sidebar header ───────────────────────────────────────────────────── */
-
-  .sidebar-header {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-    justify-content: space-between;
-    padding: 0 var(--size-1);
-  }
-
-  .sidebar-title {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
-    margin: 0;
   }
 
   /* ─── Search field ─────────────────────────────────────────────────────── */
@@ -359,23 +320,25 @@
     color: var(--color-text);
     cursor: pointer;
     display: flex;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-4);
     gap: var(--size-1-5);
     inline-size: 100%;
     opacity: 0.85;
     padding: var(--size-1) var(--size-2);
     text-align: start;
-    transition: background-color 100ms ease, opacity 100ms ease;
+    transition:
+      background-color 100ms ease,
+      opacity 100ms ease;
   }
 
   .tree-item:hover {
-    background-color: color-mix(in srgb, var(--color-surface-2), transparent 50%);
+    background-color: var(--highlight);
     opacity: 1;
   }
 
   .tree-item.active {
-    background-color: var(--color-surface-2);
+    background-color: var(--highlight);
     font-weight: var(--font-weight-5);
     opacity: 1;
   }

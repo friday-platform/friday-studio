@@ -127,11 +127,11 @@
     }
 
     &.variant-secondary {
-      background-color: var(--color-surface-2);
+      background-color: var(--highlight-bright);
       box-shadow: none;
 
       &:hover {
-        background-color: color-mix(in srgb, var(--color-surface-2), var(--color-text) 5%);
+        background-color: color-mix(in srgb, var(--highlight-bright), var(--color-text) 5%);
       }
     }
 
@@ -142,7 +142,7 @@
 
     &[disabled=""],
     &[disabled="true"] {
-      color: var(--text-3);
+      color: var(--text-faded);
       pointer-events: none;
     }
 

@@ -11,20 +11,20 @@
 -->
 
 <script lang="ts">
+  import { Button, IconSmall, ListDetail, toast } from "@atlas/ui";
+  import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { toast } from "@atlas/ui";
-  import { createQuery } from "@tanstack/svelte-query";
   import MCPCatalogTree from "$lib/components/mcp/mcp-catalog-tree.svelte";
   import MCPRegistryImport from "$lib/components/mcp/mcp-registry-import.svelte";
   import MCPServerDetail from "$lib/components/mcp/mcp-server-detail.svelte";
-  import { mcpQueries } from "$lib/queries/mcp-queries";
   import {
     useCheckMCPUpdate,
     useDeleteMCPServer,
     useInstallMCPServer,
     usePullMCPUpdate,
   } from "$lib/queries/mcp";
+  import { mcpQueries } from "$lib/queries/mcp-queries";
 
   // ---------------------------------------------------------------------------
   // Selection from URL param
@@ -41,9 +41,7 @@
   const allServers = $derived(catalogQuery.data?.servers ?? []);
 
   const selectedServer = $derived(
-    selectedServerId
-      ? (allServers.find((s) => s.id === selectedServerId) ?? null)
-      : null,
+    selectedServerId ? (allServers.find((s) => s.id === selectedServerId) ?? null) : null,
   );
 
   // ---------------------------------------------------------------------------
@@ -151,35 +149,42 @@
     }
   }
 
-  const hasUpdate = $derived(
-    selectedServerId ? (updateState[selectedServerId] ?? false) : false,
-  );
+  const hasUpdate = $derived(selectedServerId ? (updateState[selectedServerId] ?? false) : false);
 </script>
 
-<div class="mcp-layout">
-  <aside class="mcp-sidebar">
-    <MCPCatalogTree
-      {selectedServerId}
-      onSelectServer={handleSelectServer}
-      onOpenImport={() => (importDialogOpen = true)}
-    />
-  </aside>
+<ListDetail>
+  {#snippet header()}
+    <h1>MCP Catalog</h1>
+    <Button
+      variant="secondary"
+      size="small"
+      aria-label="Import from registry"
+      onclick={() => (importDialogOpen = true)}
+    >
+      {#snippet prepend()}
+        <IconSmall.Plus />
+      {/snippet}
+      Add
+    </Button>
+  {/snippet}
 
-  <div class="mcp-content">
-    <MCPServerDetail
-      server={selectedServer}
-      onInstall={handleInstall}
-      onCheckUpdate={handleCheckUpdate}
-      onPullUpdate={handlePullUpdate}
-      onDelete={handleDelete}
-      installing={installMut.isPending}
-      checking={checkingId === selectedServerId}
-      pulling={pullingId === selectedServerId}
-      deleting={deletingId === selectedServerId}
-      {hasUpdate}
-    />
-  </div>
-</div>
+  {#snippet sidebar()}
+    <MCPCatalogTree {selectedServerId} onSelectServer={handleSelectServer} />
+  {/snippet}
+
+  <MCPServerDetail
+    server={selectedServer}
+    onInstall={handleInstall}
+    onCheckUpdate={handleCheckUpdate}
+    onPullUpdate={handlePullUpdate}
+    onDelete={handleDelete}
+    installing={installMut.isPending}
+    checking={checkingId === selectedServerId}
+    pulling={pullingId === selectedServerId}
+    deleting={deletingId === selectedServerId}
+    {hasUpdate}
+  />
+</ListDetail>
 
 <MCPRegistryImport
   open={importDialogOpen}
@@ -188,31 +193,3 @@
   installing={installMut.isPending}
 />
 
-<style>
-  .mcp-layout {
-    background: var(--surface-dark);
-    display: flex;
-    block-size: 100%;
-  }
-
-  .mcp-sidebar {
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    inline-size: 300px;
-    overflow-y: auto;
-    scrollbar-width: thin;
-  }
-
-  .mcp-content {
-    background: var(--surface);
-    border-start-start-radius: var(--radius-7);
-    border-end-start-radius: var(--radius-7);
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-inline-size: 0;
-    overflow-y: auto;
-    scrollbar-width: thin;
-  }
-</style>

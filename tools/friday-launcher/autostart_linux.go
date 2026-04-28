@@ -13,9 +13,12 @@ package main
 // `unusedfunc` check stays happy across all targets — Linux doesn't
 // otherwise touch it.
 
-var _ = launchAgentLabel
+var (
+	_ = launchAgentLabel
+	_ = launcherBundleID
+)
 
-func enableAutostart() error       { return nil }
-func disableAutostart() error      { return nil }
-func isAutostartEnabled() bool     { return false }
-func currentAutostartPath() string { return "" }
+func enableAutostart() error   { return nil }
+func disableAutostart() error  { return nil }
+func isAutostartEnabled() bool { return false }
+func isAutostartStale() bool   { return false }

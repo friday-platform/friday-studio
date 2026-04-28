@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { getDaemonClient } from "$lib/daemon-client";
   import { z } from "zod";
@@ -111,94 +112,88 @@
   }
 </script>
 
-<div class="page">
-  <header class="page-header">
-    <h1>Schedules</h1>
-    <p class="subtitle">All cron triggers across every space</p>
-  </header>
+<PageLayout.Root>
+  <PageLayout.Title>Schedules</PageLayout.Title>
+  <PageLayout.Body>
+    <PageLayout.Content>
+      {#if timersQuery.isLoading}
+        <div class="empty-state"><p>Loading schedules…</p></div>
+      {:else if timersQuery.isError}
+        <div class="empty-state"><p>Failed to load schedules</p></div>
+      {:else if timers.length === 0}
+        <div class="empty-state">
+          <p>No scheduled signals found.</p>
+          <span class="empty-hint">
+            Add a signal with <code>provider: schedule</code>
+            to a workspace.
+          </span>
+        </div>
+      {:else}
+        <section class="section">
+          <header class="section-header">
+            <h2>Active</h2>
+            <span class="count">{timers.filter((t) => !t.paused).length}</span>
+          </header>
+          <div class="signal-list">
+            {#each timers as timer (timerKey(timer))}
+              {@const key = timerKey(timer)}
+              {@const busy = toggling.has(key)}
+              <div class="signal-row" class:is-paused={timer.paused}>
+                <a class="row-main" href="/platform/{timer.workspaceId}/signal/{timer.signalId}">
+                  <span class="signal-id">{timer.signalId}</span>
+                  <span class="signal-meta">
+                    <span class="ws-name">{timer.workspaceName}</span>
+                    <span class="sep">·</span>
+                    <span class="cron-human">
+                      {humanizeCron(timer.schedule, timer.timezone)}
+                    </span>
+                  </span>
+                </a>
 
-  {#if timersQuery.isLoading}
-    <div class="empty-state"><p>Loading schedules…</p></div>
-  {:else if timersQuery.isError}
-    <div class="empty-state"><p>Failed to load schedules</p></div>
-  {:else if timers.length === 0}
-    <div class="empty-state">
-      <p>No scheduled signals found.</p>
-      <span class="empty-hint">Add a signal with <code>provider: schedule</code> to a workspace.</span>
-    </div>
-  {:else}
-    <section class="section">
-      <header class="section-header">
-        <h2>Active</h2>
-        <span class="count">{timers.filter((t) => !t.paused).length}</span>
-      </header>
-      <div class="signal-list">
-        {#each timers as timer (timerKey(timer))}
-          {@const key = timerKey(timer)}
-          {@const busy = toggling.has(key)}
-          <div class="signal-row" class:is-paused={timer.paused}>
-            <a class="row-main" href="/platform/{timer.workspaceId}/signal/{timer.signalId}">
-              <span class="signal-id">{timer.signalId}</span>
-              <span class="signal-meta">
-                <span class="ws-name">{timer.workspaceName}</span>
-                <span class="sep">·</span>
-                <span class="cron-human">{humanizeCron(timer.schedule, timer.timezone)}</span>
-              </span>
-            </a>
+                <div class="row-right">
+                  <div class="timing">
+                    <span class="timing-label">next</span>
+                    <span class="timing-value" class:muted={timer.paused}>
+                      {timer.paused ? "—" : formatRelative(timer.nextExecution)}
+                    </span>
+                    {#if timer.lastExecution}
+                      <span class="timing-label">last</span>
+                      <span class="timing-value muted">
+                        {formatRelative(timer.lastExecution)}
+                      </span>
+                    {/if}
+                  </div>
 
-            <div class="row-right">
-              <div class="timing">
-                <span class="timing-label">next</span>
-                <span class="timing-value" class:muted={timer.paused}>
-                  {timer.paused ? "—" : formatRelative(timer.nextExecution)}
-                </span>
-                {#if timer.lastExecution}
-                  <span class="timing-label">last</span>
-                  <span class="timing-value muted">{formatRelative(timer.lastExecution)}</span>
-                {/if}
+                  <span
+                    class="badge"
+                    class:badge-active={!timer.paused}
+                    class:badge-paused={timer.paused}
+                  >
+                    {timer.paused ? "Paused" : "Active"}
+                  </span>
+
+                  <button
+                    class="action-btn"
+                    class:action-resume={timer.paused}
+                    disabled={busy}
+                    onclick={() => togglePause(timer)}
+                  >
+                    {busy ? "…" : timer.paused ? "Resume" : "Pause"}
+                  </button>
+                </div>
               </div>
-
-              <span class="badge" class:badge-active={!timer.paused} class:badge-paused={timer.paused}>
-                {timer.paused ? "Paused" : "Active"}
-              </span>
-
-              <button
-                class="action-btn"
-                class:action-resume={timer.paused}
-                disabled={busy}
-                onclick={() => togglePause(timer)}
-              >
-                {busy ? "…" : timer.paused ? "Resume" : "Pause"}
-              </button>
-            </div>
+            {/each}
           </div>
-        {/each}
-      </div>
-    </section>
-  {/if}
-</div>
+        </section>
+      {/if}
+    </PageLayout.Content>
+    <PageLayout.Sidebar>
+      <p class="subtitle">All cron triggers across every space</p>
+    </PageLayout.Sidebar>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-6);
-    margin-inline: auto;
-    max-inline-size: 860px;
-    padding: var(--size-8) var(--size-10);
-  }
-
-  .page-header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-  }
-
-  h1 {
-    font-size: var(--font-size-6);
-    font-weight: var(--font-weight-6);
-  }
-
   .subtitle {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
     font-size: var(--font-size-2);

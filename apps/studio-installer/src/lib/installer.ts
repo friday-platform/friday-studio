@@ -1,5 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { store } from "./store.svelte.ts";
+import { type ServiceStatus, store } from "./store.svelte.ts";
 
 // ── Types matching Rust command signatures ────────────────────────────────────
 
@@ -222,10 +222,30 @@ export async function retryDownload(): Promise<void> {
 
 // ── Extract ───────────────────────────────────────────────────────────────────
 
+// Per-entry progress event emitted by extract_archive's Channel. The
+// running count drives Extract.svelte's "Unpacking… N files" UI; no
+// total because counting up-front would require a streaming pre-pass.
+type ExtractEvent =
+  | { type: "progress"; entries_done: number }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
 export async function runExtract(src: string, dest: string): Promise<void> {
   store.error = null;
+  store.extractEntriesDone = 0;
+
+  const channel = new Channel<ExtractEvent>();
+  channel.onmessage = (event) => {
+    if (event.type === "progress") {
+      store.extractEntriesDone = event.entries_done;
+    } else if (event.type === "error") {
+      store.error = event.message;
+    }
+    // "done" is implicit when invoke resolves — no UI handler needed.
+  };
+
   try {
-    await invoke("extract_archive", { src, dest });
+    await invoke("extract_archive", { src, dest, onProgress: channel });
   } catch (err) {
     store.error = err instanceof Error ? err.message : String(err);
     throw err;
@@ -285,6 +305,147 @@ export function currentPlatform(): Promise<string> {
 /** Resolves the install root (`~/.friday/local`) without expansion logic in JS. */
 export function installDir(): Promise<string> {
   return invoke<string>("install_dir");
+}
+
+// ── Wait-healthy SSE relay (Stack 2) ──────────────────────────────────────────
+
+// Tagged events from the Rust wait_for_services command. Mirrors the
+// HealthEvent enum in apps/studio-installer/src-tauri/src/commands/wait_health.rs;
+// the `kind` discriminator + serde rename_all=kebab-case keeps the
+// wire format ergonomic on the TS side.
+export type HealthEvent =
+  | { kind: "connecting" }
+  | { kind: "connected" }
+  | {
+      kind: "snapshot";
+      uptime_secs: number;
+      services: ServiceStatus[];
+      all_healthy: boolean;
+      shutting_down: boolean;
+    }
+  | { kind: "soft-deadline" }
+  | { kind: "timeout"; stuck: string[]; playground_healthy: boolean }
+  | { kind: "unreachable"; reason: string }
+  | { kind: "shutting-down" };
+
+// `playground` is the user-facing surface that the browser actually
+// loads; if it's healthy at hard-deadline we still let the user
+// proceed via "Open anyway". Centralizing the name here avoids
+// stringly-typed checks scattered across the UI.
+const PLAYGROUND_SERVICE_NAME = "playground";
+
+/**
+ * Subscribe to the launcher's health stream and update the store as
+ * events land. Returns when the wait-healthy step ends — for any
+ * reason (all-healthy, timeout, unreachable, shutting-down). The
+ * caller (Launch.svelte) reads `store.launchStage` to decide what
+ * UI to render.
+ *
+ * Idempotent: calling `waitForServices` while a previous wait is
+ * active will spawn a second SSE subscription on the Rust side; the
+ * deadline state is mutex-guarded so the second wait simply replaces
+ * the first. In practice the wizard only calls this once per
+ * Launch step entry.
+ */
+export async function waitForServices(): Promise<void> {
+  store.launchStage = "connecting";
+  store.services = [];
+  store.waitElapsedSecs = 0;
+  store.waitDeadlineExtensions = 0;
+  store.stuckServices = [];
+  store.playgroundHealthyAtTimeout = false;
+  store.launchUnreachableReason = null;
+
+  const channel = new Channel<HealthEvent>();
+  channel.onmessage = (event) => {
+    switch (event.kind) {
+      case "connecting":
+        store.launchStage = "connecting";
+        break;
+      case "connected":
+        store.launchStage = "waiting";
+        break;
+      case "snapshot":
+        store.services = event.services;
+        store.waitElapsedSecs = event.uptime_secs;
+        if (event.shutting_down) {
+          store.launchStage = "shutting-down";
+        } else if (event.all_healthy) {
+          store.launchStage = "ready";
+        }
+        // soft-deadline / timeout events drive the long-wait /
+        // timeout transitions; snapshot doesn't override those.
+        break;
+      case "soft-deadline":
+        if (store.launchStage === "waiting") {
+          store.launchStage = "long-wait";
+        }
+        break;
+      case "timeout":
+        store.stuckServices = event.stuck;
+        store.playgroundHealthyAtTimeout = event.playground_healthy;
+        store.launchStage = "timeout";
+        break;
+      case "unreachable":
+        store.launchUnreachableReason = event.reason;
+        store.launchStage = "unreachable";
+        break;
+      case "shutting-down":
+        store.launchStage = "shutting-down";
+        break;
+    }
+  };
+
+  await invoke("wait_for_services", { onEvent: channel });
+}
+
+/**
+ * Push the wait-healthy hard deadline out by 60s. Capped at two
+ * extensions (so the maximum total wait is 90 + 60 + 60 = 210s).
+ * Returns the new deadline (seconds from wait start) or null if
+ * the cap is reached. Updates `waitDeadlineExtensions` for the UI.
+ */
+export async function extendWaitDeadline(): Promise<number | null> {
+  const newDeadline = await invoke<number | null>("extend_wait_deadline");
+  if (newDeadline !== null) {
+    store.waitDeadlineExtensions = store.waitDeadlineExtensions + 1;
+    // Re-arm the long-wait UI: extension means we're back inside
+    // the deadline, so suppress the timeout treatment.
+    if (store.launchStage === "timeout") {
+      store.launchStage = "long-wait";
+    }
+  }
+  return newDeadline;
+}
+
+/**
+ * Returns the playground row from the current snapshot, or undefined
+ * if it hasn't been observed yet. Used by Launch.svelte to decide
+ * whether to expose "Open anyway" alongside the timeout treatment.
+ */
+export function getPlaygroundService(): ServiceStatus | undefined {
+  return store.services.find((s) => s.name === PLAYGROUND_SERVICE_NAME);
+}
+
+/**
+ * Open the playground in the user's browser and close the wizard.
+ * The launcher is detached from the wizard at spawn time, so closing
+ * the wizard window does NOT kill the platform — the launcher keeps
+ * supervising its services. Same close logic for "Open anyway".
+ */
+export async function openPlaygroundAndExit(): Promise<void> {
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl("http://localhost:5200");
+  } catch {
+    // ignore — browser might already be open or plugin unavailable
+  }
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().close();
+  } catch {
+    // ignore — window already closing or API unavailable
+  }
 }
 
 export type { Manifest, PlatformEntry };

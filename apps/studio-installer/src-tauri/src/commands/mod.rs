@@ -10,3 +10,4 @@ pub mod launch;
 pub mod platform;
 pub mod startup;
 pub mod verify;
+pub mod wait_health;

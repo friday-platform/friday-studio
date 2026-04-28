@@ -1,11 +1,15 @@
 /**
- * Creates ephemeral MCP tool connections from server configs.
- * Single function replaces the MCPManager class — no pooling, no sharing, no ref counting.
+ * Creates per-caller MCP tool connections from server configs.
+ *
+ * Stdio MCP children are owned by their transport and die when the client
+ * closes. HTTP-with-startup children (e.g. workspace-mcp on a fixed port)
+ * are owned by the daemon-scoped `sharedMCPProcesses` registry and survive
+ * across `createMCPTools` calls.
  *
  * @module
  */
 
-import { type ChildProcess, spawn as defaultSpawn } from "node:child_process";
+import { spawn as defaultSpawn } from "node:child_process";
 import process from "node:process";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
@@ -23,6 +27,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { RetryError, type RetryOptions, retry } from "@std/async/retry";
 import type { Tool } from "ai";
+import { type PidFileWriter, sharedMCPProcesses } from "./process-registry.ts";
 
 /** ai doesn't export the MCPClient type, so we infer it. */
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
@@ -34,30 +39,9 @@ const RETRY_OPTIONS: RetryOptions = {
   maxTimeout: 3000,
 };
 
-/** Error thrown when an MCP HTTP server fails to start up. */
-export class MCPStartupError extends Error {
-  constructor(
-    public readonly kind: "spawn" | "timeout" | "connect",
-    public readonly serverId: string,
-    public readonly command?: string,
-    override readonly cause?: unknown,
-  ) {
-    super(`MCP server "${serverId}" startup failed (${kind})${command ? `: ${command}` : ""}`);
-    this.name = "MCPStartupError";
-  }
-}
+export { MCPAuthError, MCPStartupError } from "./errors.ts";
 
-/** Error thrown when an MCP HTTP server rejects authentication (401). */
-export class MCPAuthError extends Error {
-  constructor(
-    public readonly serverId: string,
-    public readonly url: string,
-    message: string,
-  ) {
-    super(`MCP server "${serverId}" authentication failed (${url}): ${message}`);
-    this.name = "MCPAuthError";
-  }
-}
+import { MCPAuthError, MCPStartupError } from "./errors.ts";
 
 /** Result of creating MCP tools — tools map + cleanup callback. */
 export interface MCPToolsResult {
@@ -90,7 +74,6 @@ export async function createMCPTools(
   options?: CreateMCPToolsOptions,
 ): Promise<MCPToolsResult> {
   const clients: MCPClient[] = [];
-  const allChildren = new Set<ChildProcess>();
   const allTools: Record<string, Tool> = {};
   let disposed = false;
 
@@ -98,7 +81,7 @@ export async function createMCPTools(
 
   for (const [serverId, config] of Object.entries(configs)) {
     if (signal?.aborted) {
-      await disposeAll(clients, allChildren);
+      await disposeAll(clients);
       throw signal.reason ?? new Error("Aborted");
     }
 
@@ -107,11 +90,6 @@ export async function createMCPTools(
 
       const connected = await connectServer(config, resolvedEnv, serverId, logger);
       clients.push(connected.client);
-      if (connected.children) {
-        for (const child of connected.children) {
-          allChildren.add(child);
-        }
-      }
 
       const filtered = filterTools(connected.tools, config.tools);
       const prefixed = options?.toolPrefix
@@ -141,7 +119,7 @@ export async function createMCPTools(
         error instanceof NoDefaultCredentialError
       ) {
         // Clean up any already-connected clients before re-throwing
-        await disposeAll(clients, allChildren);
+        await disposeAll(clients);
 
         // Enrich with server name if not already set
         if (error instanceof LinkCredentialNotFoundError && !error.serverName) {
@@ -162,7 +140,7 @@ export async function createMCPTools(
       }
 
       // Clean up any already-connected clients before throwing
-      await disposeAll(clients, allChildren);
+      await disposeAll(clients);
 
       if (error instanceof MCPStartupError) {
         throw error;
@@ -196,34 +174,17 @@ export async function createMCPTools(
     dispose: async () => {
       if (disposed) return;
       disposed = true;
-      await disposeAll(clients, allChildren);
+      await disposeAll(clients);
     },
   };
 }
 
-/** Dispose all clients and child processes. */
-async function disposeAll(clients: MCPClient[], children: Set<ChildProcess>): Promise<void> {
-  // Send SIGTERM to all living children
-  for (const child of children) {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGTERM");
-    }
-  }
-
-  // Wait grace period
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  // SIGKILL survivors
-  for (const child of children) {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGKILL");
-    }
-  }
-
-  // Brief pause for SIGKILL to take effect
-  await new Promise((resolve) => setTimeout(resolve, 100));
-
-  // Close MCP clients
+/**
+ * Close MCP clients. Stdio subprocesses are killed by their transport when
+ * the client closes. HTTP-with-startup children are owned by the daemon-scoped
+ * `sharedMCPProcesses` registry and survive across `createMCPTools` calls.
+ */
+async function disposeAll(clients: MCPClient[]): Promise<void> {
   await Promise.allSettled(clients.map((c) => c.close()));
 }
 
@@ -231,7 +192,6 @@ async function disposeAll(clients: MCPClient[], children: Set<ChildProcess>): Pr
 interface ConnectedServer {
   client: MCPClient;
   tools: Record<string, Tool>;
-  children?: Set<ChildProcess>;
 }
 
 /**
@@ -355,7 +315,7 @@ export async function connectHttp(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
-  deps: { spawn?: typeof defaultSpawn; fetch?: typeof fetch } = {},
+  deps: { spawn?: typeof defaultSpawn; fetch?: typeof fetch; pidFile?: PidFileWriter } = {},
 ): Promise<ConnectedServer> {
   const { transport, auth, startup } = config;
   if (transport.type !== "http") {
@@ -404,75 +364,27 @@ export async function connectHttp(
     ),
   };
 
-  const { command, args = [] } = startup;
-  const pollUrl = startup.ready_url ?? url;
-  const timeoutMs = startup.ready_timeout_ms ?? 30000;
-  const intervalMs = startup.ready_interval_ms ?? 500;
-
-  // Spawn the startup command
-  let child: ChildProcess;
-  try {
-    child = _spawn(command, args, {
+  // Delegate spawn + readiness polling to the daemon-scoped process registry.
+  // The registry keeps a single child alive across `createMCPTools` invocations,
+  // eliminating the kernel TIME_WAIT respawn failures that broke FSM workflows
+  // reusing the same MCP server across sequential states. The registry — not
+  // this caller — owns the child's lifetime; `dispose` closes the MCP client
+  // only.
+  await sharedMCPProcesses.acquire(
+    serverId,
+    {
+      command: startup.command,
+      args: startup.args ?? [],
       env: mergedEnv,
-      detached: false,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-  } catch (err) {
-    throw new MCPStartupError("spawn", serverId, command, err);
-  }
+      readyUrl: startup.ready_url ?? url,
+      readyTimeoutMs: startup.ready_timeout_ms ?? 30000,
+      readyIntervalMs: startup.ready_interval_ms ?? 500,
+    },
+    { spawn: _spawn, fetch: _fetch, pidFile: deps.pidFile },
+    logger,
+  );
 
-  // Collect stderr for EADDRINUSE detection
-  let stderrAccumulator = "";
-  child.stderr?.on("data", (data: Uint8Array) => {
-    stderrAccumulator += new TextDecoder().decode(data);
-  });
-
-  let childExited = false;
-  let exitCode: number | null = null;
-  child.on("exit", (code) => {
-    childExited = true;
-    exitCode = code;
-  });
-
-  // Poll until reachable or timeout
-  const startTime = Date.now();
-  while (Date.now() - startTime < timeoutMs) {
-    // If child exited early with error, check for EADDRINUSE fallback
-    if (childExited && exitCode !== 0) {
-      const eaddrInUse =
-        stderrAccumulator.includes("EADDRINUSE") ||
-        stderrAccumulator.includes("address already in use");
-      if (eaddrInUse) {
-        // Another instance may already be listening — re-check reachability
-        if ((await isReachable(url, _fetch)).ok) {
-          return connectHttpClient(url, headers, serverId, logger);
-        }
-      }
-      throw new MCPStartupError(
-        "spawn",
-        serverId,
-        command,
-        new Error(stderrAccumulator || `Process exited with code ${exitCode}`),
-      );
-    }
-
-    try {
-      await _fetch(pollUrl, { method: "GET" });
-      // Server is listening — verify it actually responds to MCP traffic
-      const result = await connectHttpClient(url, headers, serverId, logger);
-      return { ...result, children: new Set([child]) };
-    } catch {
-      // Not ready yet — continue polling
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-
-  // Timeout — terminate the child and throw
-  if (!child.killed) {
-    child.kill("SIGTERM");
-  }
-  throw new MCPStartupError("timeout", serverId, command);
+  return connectHttpClient(url, headers, serverId, logger);
 }
 
 /** Create MCP client over HTTP transport and verify with tools(). */

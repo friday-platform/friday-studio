@@ -93,18 +93,18 @@
             </span>
           {/snippet}
         </Collapsible.Trigger>
-        <button class="add-space-btn" onclick={() => addDialogOpen.set(true)} aria-label="Add space">
+        <button
+          class="add-space-btn"
+          onclick={() => addDialogOpen.set(true)}
+          aria-label="Add space"
+        >
           <IconSmall.Plus />
         </button>
       </div>
       <Collapsible.Content>
         <ul class="section-list">
           <li>
-            <a
-              href="/discover"
-              class="nav-item"
-              class:active={pathname.startsWith("/discover")}
-            >
+            <a href="/discover" class="nav-item" class:active={pathname.startsWith("/discover")}>
               <IconLarge.OpenSquare />
               Discover Spaces
             </a>
@@ -173,7 +173,6 @@
               {/if}
             </li>
           {/each}
-
         </ul>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -246,7 +245,6 @@
 <style>
   .sidebar {
     background-color: var(--surface-dark);
-    border-inline-end: 1px solid var(--surface);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -256,25 +254,13 @@
 
   .sidebar-header {
     align-items: center;
-    background-color: var(--surface-dark);
     display: flex;
     flex-shrink: 0;
     gap: var(--size-2);
     padding-block: var(--size-5) var(--size-1);
     padding-inline: var(--size-5);
-    position: sticky;
     top: 0;
     z-index: 1;
-
-    &::after {
-      background: linear-gradient(to bottom, var(--surface-dark) 0%, transparent 100%);
-      block-size: var(--size-10);
-      content: "";
-      inset-block-start: 100%;
-      inset-inline: 0;
-      pointer-events: none;
-      position: absolute;
-    }
 
     .logo {
       block-size: 20px;
@@ -410,15 +396,11 @@
     }
 
     &.active {
-      background-color: var(--surface);
+      background-color: var(--highlight);
       color: var(--text-bright);
 
       :global(svg) {
         opacity: 1;
-      }
-
-      @media (prefers-color-scheme: light) {
-        background-color: color-mix(in srgb, black 5%, transparent);
       }
     }
   }

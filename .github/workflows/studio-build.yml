@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  GCS_BUCKET: friday-production-studio-artifact
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
 
 permissions:

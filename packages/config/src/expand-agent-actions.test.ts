@@ -236,6 +236,52 @@ describe("expandAgentActions", () => {
     }
   });
 
+  it("preserves inputFrom (string and array) when expanding LLM agent", () => {
+    // Regression: when an LLM-typed workspace agent declared `inputFrom`
+    // on its FSM action, the expansion silently dropped the field. Chains
+    // like `summarizer ← [emails-result, calendar-result]` then fired with
+    // an empty `## Input` section because nothing told the engine where
+    // the chained docs lived.
+    const agents: Record<string, WorkspaceAgentConfig> = {
+      summarizer: llmAgent({ prompt: "Summarize." }),
+    };
+
+    const fsm = makeFSM({
+      idle: { on: { START: { target: "step_summarize" } } },
+      step_summarize: {
+        entry: [
+          {
+            type: "agent",
+            agentId: "summarizer",
+            inputFrom: ["emails-result", "calendar-result"],
+            outputTo: "brief",
+          },
+          {
+            type: "agent",
+            agentId: "summarizer",
+            inputFrom: "single-doc",
+            outputTo: "single-brief",
+          },
+        ],
+      },
+      completed: { type: "final" },
+    });
+
+    const result = expandAgentActions(fsm, agents);
+    const entry = getEntry(result, "step_summarize");
+    const [arrayAction, stringAction] = entry;
+
+    expect(arrayAction?.type).toBe("llm");
+    if (arrayAction?.type === "llm") {
+      expect(arrayAction.inputFrom).toEqual(["emails-result", "calendar-result"]);
+    }
+
+    expect(stringAction?.type).toBe("llm");
+    if (stringAction?.type === "llm") {
+      expect(stringAction.inputFrom).toBe("single-doc");
+    }
+  });
+
   it("handles states with no entry actions", () => {
     const agents: Record<string, WorkspaceAgentConfig> = {};
 

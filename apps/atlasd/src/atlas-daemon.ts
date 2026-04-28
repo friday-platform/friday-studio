@@ -20,6 +20,7 @@ import { CronManager } from "@atlas/cron";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
+import { sharedMCPProcesses } from "@atlas/mcp";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
 import { flush as flushSentry } from "@atlas/sentry";
@@ -2100,6 +2101,16 @@ export class AtlasDaemon {
       this.destroyWorkspaceRuntime(workspaceId),
     );
     await Promise.all(shutdownPromises);
+
+    // SIGTERM (then SIGKILL after grace) any shared MCP subprocesses still
+    // alive — workspace-mcp instances on fixed ports owned by the
+    // daemon-scoped process registry. Done after runtimes shut down so no
+    // new MCP connections can race the kill.
+    try {
+      await sharedMCPProcesses.shutdown();
+    } catch (error) {
+      logger.error("Error shutting down shared MCP processes", { error });
+    }
 
     // Shutdown StreamRegistry
     this.streamRegistry?.shutdown();

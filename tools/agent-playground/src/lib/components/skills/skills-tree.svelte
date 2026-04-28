@@ -145,84 +145,84 @@
             {/snippet}
           </Collapsible.Trigger>
           <Collapsible.Content>
+            {#each group.skills as skill (skill.skillId)}
+              {@const ns = skill.namespace}
+              {@const name = skill.name ?? ""}
+              {@const isExpanded = activeNamespace === ns && activeName === name}
+              {@const src = sourceLabel(skill.source)}
 
-        {#each group.skills as skill (skill.skillId)}
-          {@const ns = skill.namespace}
-          {@const name = skill.name ?? ""}
-          {@const isExpanded = activeNamespace === ns && activeName === name}
-          {@const src = sourceLabel(skill.source)}
-
-          <Tree.Item id={skillId(ns, name)} hasChildren>
-            <button
-              class="skill-trigger"
-              class:expanded={isExpanded}
-              onclick={() => handleSkillClick(ns, name)}
-            >
-              <span class="skill-label">{name}</span>
-              {#if src}
-                <span class="source-badge" title={skill.source}>{src}</span>
-              {/if}
-              {#if skill.disabled}
-                <StatusBadge status="skipped" label="Disabled" />
-              {/if}
-            </button>
-
-            {#if isExpanded}
-              <Tree.Group id={skillId(ns, name)}>
-                <div class="children-container">
-                  <!-- Details (SKILL.md) -->
-                  <Tree.Item id={`details:${ns}/${name}`}>
-                    <button
-                      class="child-entry"
-                      class:child-active={hasActiveSkill && activePath === ""}
-                      onclick={() => handleDetailsClick(ns, name)}
-                    >
-                      <span class="child-label">SKILL.md</span>
-                      {#if dirtyFiles.has("SKILL.md")}
-                        <span class="dirty-dot"></span>
-                      {/if}
-                    </button>
-                  </Tree.Item>
-
-                  <!-- References folder -->
-                  {#if filesQuery.isLoading}
-                    <span class="tree-status tree-status-inline">Loading files...</span>
-                  {:else if referenceFiles.length > 0}
-                    <Tree.Item id={`refs:${ns}/${name}`}>
-                      <button
-                        class="child-entry"
-                        onclick={() => { refsExpanded = !refsExpanded; }}
-                      >
-                        <span class="child-icon"><IconSmall.Folder /></span>
-                        <span class="child-label">References</span>
-                      </button>
-
-                      {#if refsExpanded}
-                        <div class="children-container">
-                          {#each referenceFiles as path (path)}
-                            <Tree.Item id={`file:${ns}/${name}/${path}`}>
-                              <button
-                                class="child-entry"
-                                class:child-active={activePath === path}
-                                onclick={() => handleFileClick(ns, name, path)}
-                              >
-                                <span class="child-label">{fileName(path)}</span>
-                                {#if dirtyFiles.has(path)}
-                                  <span class="dirty-dot"></span>
-                                {/if}
-                              </button>
-                            </Tree.Item>
-                          {/each}
-                        </div>
-                      {/if}
-                    </Tree.Item>
+              <Tree.Item id={skillId(ns, name)} hasChildren>
+                <button
+                  class="skill-trigger"
+                  class:expanded={isExpanded}
+                  onclick={() => handleSkillClick(ns, name)}
+                >
+                  <span class="skill-label">{name}</span>
+                  {#if src}
+                    <span class="source-badge" title={skill.source}>{src}</span>
                   {/if}
-                </div>
-              </Tree.Group>
-            {/if}
-          </Tree.Item>
-        {/each}
+                  {#if skill.disabled}
+                    <StatusBadge status="skipped" label="Disabled" />
+                  {/if}
+                </button>
 
+                {#if isExpanded}
+                  <Tree.Group id={skillId(ns, name)}>
+                    <div class="children-container">
+                      <!-- Details (SKILL.md) -->
+                      <Tree.Item id={`details:${ns}/${name}`}>
+                        <button
+                          class="child-entry"
+                          class:child-active={hasActiveSkill && activePath === ""}
+                          onclick={() => handleDetailsClick(ns, name)}
+                        >
+                          <span class="child-label">SKILL.md</span>
+                          {#if dirtyFiles.has("SKILL.md")}
+                            <span class="dirty-dot"></span>
+                          {/if}
+                        </button>
+                      </Tree.Item>
+
+                      <!-- References folder -->
+                      {#if filesQuery.isLoading}
+                        <span class="tree-status tree-status-inline">Loading files...</span>
+                      {:else if referenceFiles.length > 0}
+                        <Tree.Item id={`refs:${ns}/${name}`}>
+                          <button
+                            class="child-entry"
+                            onclick={() => {
+                              refsExpanded = !refsExpanded;
+                            }}
+                          >
+                            <span class="child-icon"><IconSmall.Folder /></span>
+                            <span class="child-label">References</span>
+                          </button>
+
+                          {#if refsExpanded}
+                            <div class="children-container">
+                              {#each referenceFiles as path (path)}
+                                <Tree.Item id={`file:${ns}/${name}/${path}`}>
+                                  <button
+                                    class="child-entry"
+                                    class:child-active={activePath === path}
+                                    onclick={() => handleFileClick(ns, name, path)}
+                                  >
+                                    <span class="child-label">{fileName(path)}</span>
+                                    {#if dirtyFiles.has(path)}
+                                      <span class="dirty-dot"></span>
+                                    {/if}
+                                  </button>
+                                </Tree.Item>
+                              {/each}
+                            </div>
+                          {/if}
+                        </Tree.Item>
+                      {/if}
+                    </div>
+                  </Tree.Group>
+                {/if}
+              </Tree.Item>
+            {/each}
           </Collapsible.Content>
         </Collapsible.Root>
       {/each}
@@ -304,7 +304,7 @@
     color: var(--color-text);
     cursor: pointer;
     display: flex;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-4);
     gap: var(--size-1);
     inline-size: 100%;
@@ -317,12 +317,12 @@
   }
 
   .skill-trigger:hover {
-    background-color: color-mix(in srgb, var(--color-surface-2), transparent 50%);
+    background-color: var(--highlight);
     opacity: 1;
   }
 
   .skill-trigger.expanded {
-    background-color: var(--color-surface-2);
+    background-color: var(--highlight);
     font-weight: var(--font-weight-5);
     opacity: 1;
   }
@@ -345,8 +345,6 @@
     padding: 1px var(--size-1);
   }
 
-
-
   /* --- Children container with tree lines ------------------------------------ */
 
   .children-container {
@@ -365,9 +363,9 @@
   /* Rounded L-branch — vertical down to branch point, curves into horizontal */
   .children-container > :global(li)::before {
     block-size: 14px;
-    border-block-end: 1px solid var(--color-border-1);
-    border-end-start-radius: 6px;
-    border-inline-start: 1px solid var(--color-border-1);
+    border-block-end: 1px solid var(--border);
+    border-end-start-radius: var(--size-1-5);
+    border-inline-start: 1px solid var(--border);
     content: "";
     inline-size: var(--size-2-5);
     inset-block-start: 0;
@@ -378,11 +376,11 @@
   /* Vertical continuation — 1px background bar that overlaps the curve zone
      to keep the trunk continuous while the branch curves off. */
   .children-container > :global(li)::after {
-    background-color: var(--color-border-1);
-    block-size: calc(100% - 8px);
+    background-color: var(--border);
+    block-size: calc(100% - var(--size-2));
     content: "";
     inline-size: 1px;
-    inset-block-start: 8px;
+    inset-block-start: var(--size-2);
     inset-inline-start: 0;
     position: absolute;
   }
@@ -402,7 +400,7 @@
     color: var(--color-text);
     cursor: pointer;
     display: flex;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     gap: var(--size-1-5);
     inline-size: 100%;
     opacity: 0.6;
@@ -412,12 +410,12 @@
   }
 
   .child-entry:not(.child-active):hover {
-    background-color: color-mix(in srgb, var(--color-surface-2), transparent 50%);
+    background-color: var(--highlight);
     opacity: 0.9;
   }
 
   .child-active {
-    background-color: var(--color-surface-2);
+    background-color: var(--highlight);
     opacity: 0.9;
   }
 
@@ -434,7 +432,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
 
   /* --- Dirty indicator ------------------------------------------------------- */
 

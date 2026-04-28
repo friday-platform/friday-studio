@@ -78,8 +78,8 @@ curl -X POST http://localhost:8080/webhooks/run-code \
 ```
 
 Browse `examples/` for more — `pr-review-github`, `jira-bugfix-labeled`,
-`voices`, and others — each is a self-contained `workspace.yml` you can copy
-and edit.
+`claude-code-with-skills`, and others — each is a self-contained
+`workspace.yml` you can copy and edit.
 
 ### 5. Stop the daemon
 
@@ -106,7 +106,7 @@ tunnel running side by side:
 deno task dev:playground
 ```
 
-Open http://localhost:5173.
+Open http://localhost:5200.
 
 ## Commands
 
@@ -148,7 +148,8 @@ packages/             # @atlas/* libraries — core, agent-sdk, config,
 agents/               # Bundled Python WASM agents (planner, dispatcher,
                       # reflector, skill-author, …)
 examples/             # Self-contained workspace.yml examples
-                      # (claude-code-smoke, pr-review-github, voices, …)
+                      # (claude-code-smoke, pr-review-github,
+                      # jira-bugfix-labeled, …)
 tools/
   agent-playground/   # Svelte dev UI (the active web client)
   evals/              # Eval runner CLI
@@ -157,33 +158,35 @@ tools/
   webhook-tunnel/     # Local webhook receiver (Go)
 ```
 
-Config: `friday.yml` (platform-wide) · `workspace.yml` (per-workspace) ·
-[`CLAUDE.md`](CLAUDE.md) (dev guidelines + hard rules)
+Config: `friday.yml` (platform-wide — see
+[`docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml`](docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml))
+· `workspace.yml` (per-workspace) · [`CLAUDE.md`](CLAUDE.md) (dev guidelines +
+hard rules)
 
 ## AI Workflow
 
 Claude Code skills support a structured planning-to-execution pipeline:
 
-1. **Design** — `/brainstorm` refines a rough idea into a design doc via
+1. **Design** — `/brainstorming` refines a rough idea into a design doc via
    Socratic questioning. Outputs to `docs/plans/`.
 
-2. **Iterate** — `/improve-plan` critiques the design, surfaces gaps, and
+2. **Iterate** — `/improving-plans` critiques the design, surfaces gaps, and
    outputs an improved version. Keep iterating until the questions become
    trivial.
 
-3. **Tasks** — `/make-tasks` converts the validated design into tracked work
-   items with dependency graphs.
+3. **Tasks** — `/creating-tasks` converts the validated design into tracked
+   work items with dependency graphs.
 
-4. **Execute** — `/implement-tasks` spawns parallel agents. Each claims a task,
-   implements, commits, moves on.
+4. **Execute** — `/implementing-tasks` spawns parallel agents. Each claims a
+   task, implements, commits, moves on.
 
-5. **Polish** — `/polish` runs a self-review team (lint, slop, tests, design)
-   before PR.
+5. **Polish** — `/polishing` runs a self-review team (lint, slop, tests,
+   design) before PR.
 
-6. **Ship** — `/open-pr` creates a PR with summary and test plan.
+6. **Ship** — `/opening-pr` creates a PR with summary and test plan.
 
-Post-ship: `/code-review` for reviewing others' PRs. `/remember-learnings` mines
-agent commit footers into CLAUDE.md.
+Post-ship: `/reviewing-code` for reviewing others' PRs. `/remembering-learnings`
+mines agent commit footers into CLAUDE.md.
 
 ## Learn more
 

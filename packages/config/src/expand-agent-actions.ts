@@ -57,6 +57,10 @@ function expandAction(
   };
   if (action.outputTo !== undefined) expanded.outputTo = action.outputTo;
   if (action.outputType !== undefined) expanded.outputType = action.outputType;
+  // inputFrom is shared between AgentAction and LLMAction. Propagate it so
+  // chains like `summarize ← [emails-result, calendar-result]` keep working
+  // after an LLM-typed workspace agent gets expanded into a `type: llm` action.
+  if (action.inputFrom !== undefined) expanded.inputFrom = action.inputFrom;
 
   return expanded;
 }

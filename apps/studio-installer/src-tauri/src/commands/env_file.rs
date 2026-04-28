@@ -86,7 +86,7 @@ pub fn write_env_file(
             "FRIDAY_KEY",
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsb2NhbC11c2VyIn0.local",
         ),
-        ("ATLASD_URL", "http://localhost:8080"),
+        ("FRIDAYD_URL", "http://localhost:8080"),
         ("VITE_EXTERNAL_DAEMON_URL", "http://localhost:8080"),
         ("VITE_EXTERNAL_TUNNEL_URL", "http://localhost:9090"),
     ];

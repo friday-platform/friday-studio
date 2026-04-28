@@ -17,7 +17,7 @@ reliably. Load this skill before authoring or editing any `fsm:` job.
 - [ ] All `agentId` values exist in `agents`
 - [ ] MCP tools use `serverId/toolName` format (not bare names)
 - [ ] `emit` event names match `on` transition keys exactly
-- [ ] Multi-step jobs chain via `outputTo` → `inputFrom`
+- [ ] Multi-step jobs chain via `outputTo` → `inputFrom` (use array form when a step needs >1 prior output)
 
 ## The trigger contract (common silent failure)
 
@@ -148,6 +148,58 @@ Key fields:
 - `outputTo: <doc-id>` — saves the agent's result as a named document
 - `inputFrom: <doc-id>` — feeds a prior step's output into the next agent's task
 - `emit` with `event: DONE` — signals the engine to transition
+
+## Multi-input steps
+
+When a step needs to consume **multiple** prior outputs, pass `inputFrom` as
+an array. The engine concatenates each doc's data labeled by id (`<id>:
+<data>` separated by blank lines) and gives the agent the combined text as
+its task.
+
+```yaml
+fetch-emails:
+  entry:
+    - type: agent
+      agentId: gmail-agent
+      outputTo: emails-result
+    - type: emit
+      event: DONE
+  on:
+    DONE: { target: fetch-calendar }
+
+fetch-calendar:
+  entry:
+    - type: agent
+      agentId: gcal-agent
+      outputTo: calendar-result
+    - type: emit
+      event: DONE
+  on:
+    DONE: { target: summarize }
+
+summarize:
+  entry:
+    - type: agent
+      agentId: summarizer-agent
+      inputFrom: [emails-result, calendar-result]   # <-- both prior results
+      outputTo: brief-result
+      prompt: |
+        Produce a daily brief from the emails and calendar data below.
+        Group by source. Keep it scannable.
+    - type: emit
+      event: DONE
+```
+
+The agent receives:
+```
+emails-result: <emails data>
+
+calendar-result: <calendar data>
+```
+
+Use array `inputFrom` for the simple "combine N prior results" case. Reach
+for a code action only when the data needs transformation, derivation, or
+validation logic the LLM should not see.
 
 ## Conditional branching
 
