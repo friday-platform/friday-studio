@@ -1,10 +1,15 @@
-<script lang="ts" generics="T extends unknown">
-  import { FlexRender, type Row, type Table } from "@tanstack/svelte-table";
+<script lang="ts" generics="T extends import('@tanstack/svelte-table').RowData">
+  import {
+    FlexRender,
+    type Row,
+    type StockFeatures,
+    type Table,
+  } from "@tanstack/svelte-table";
   import TableCell from "./cell.svelte";
   import Header from "./header.svelte";
 
   type Props = {
-    table: Table<T>;
+    table: Table<StockFeatures, T>;
     padded?: boolean;
     rowSize?: "small" | "large" | "medium" | "auto";
     grow?: boolean;
@@ -43,7 +48,15 @@
   }
 </script>
 
-{#snippet row({ item, href, index }: { item: Row<T>; href: string | undefined; index: number })}
+{#snippet row({
+  item,
+  href,
+  index,
+}: {
+  item: Row<StockFeatures, T>;
+  href: string | undefined;
+  index: number;
+})}
   <svelte:element
     this={href !== undefined && !item.getCanExpand() ? "a" : "div"}
     role={href !== undefined && !item.getCanExpand() ? "link" : "row"}
@@ -69,7 +82,7 @@
         size={cell.column.columnDef.meta?.size ?? "regular"}
         inset={cellIndex === 0 ? item.depth : 0}
       >
-        <FlexRender content={cell.column.columnDef.cell} context={cell.getContext()} />
+        <FlexRender cell={cell} />
       </TableCell>
     {/each}
   </svelte:element>
@@ -89,7 +102,7 @@
               maxWidth={header.column.columnDef.meta?.maxWidth}
               width={header.column.columnDef.meta?.width}
             >
-              <FlexRender content={header.column.columnDef.header} context={header.getContext()} />
+              <FlexRender header={header} />
             </Header>
           {/each}
         {/each}
