@@ -448,8 +448,9 @@ pub async fn wait_for_services(
         // (210s) after two extensions would see the loop park
         // indefinitely while the frontend stays in long-wait with
         // no escape (canExtendDeadline=false; View logs is only
-        // shown in the timeout state).
-        if timeout_fired {
+        // shown in the timeout state). See should_reset_timeout_latch
+        // for the unit-tested rule.
+        if should_reset_timeout_latch(timeout_fired, remaining_nanos) {
             timeout_fired = false;
         }
 
@@ -537,28 +538,23 @@ pub async fn wait_for_services(
     }
 }
 
-/// Push the wait deadline out by `EXTENSION_SECS`. Capped at
-/// `MAX_EXTENSIONS` total. Returns the new deadline (seconds from
-/// wait start) so the frontend can render an accurate "wait again"
-/// affordance, or `None` if the cap is reached or no wait is active.
+/// Shared CAS+arithmetic body for `extend_wait_deadline`. Tests call
+/// this directly so they exercise exactly what the production
+/// command does — no mirror-or-die contract. The Tauri command
+/// itself is a 2-line wrapper around this.
 ///
-/// Pings the wait loop's `extend_notify` so a parked timeout wakes
-/// promptly — without it the loop would sit on its STREAM_POLL_CAP
-/// sleep before noticing the deadline atomic moved.
-#[tauri::command]
-pub async fn extend_wait_deadline(
-    deadline_state: State<'_, WaitDeadlineState>,
+/// CAS via fetch_update so two concurrent calls can't both observe
+/// `prior < MAX` and both push the deadline. Without this guard, a
+/// race would let the cap be bypassed (counter=1 but deadline_nanos
+/// pushed by 2 * EXTENSION_SECS). Tauri command dispatch is async;
+/// even if the wizard's button is single-source, a future autoclick
+/// / keyboard repeat / test harness could trigger the race.
+async fn do_extend_wait_deadline(
+    deadline_state: &WaitDeadlineState,
 ) -> Result<Option<u64>, String> {
     let Some(deadline) = deadline_state.current().await else {
         return Ok(None);
     };
-    // CAS via fetch_update so two concurrent extend_wait_deadline
-    // invocations can't both observe `prior < MAX` and both push
-    // the deadline. Without this guard, a race would let the cap
-    // be bypassed (counter=1 but deadline_nanos pushed by 2 *
-    // EXTENSION_SECS). Tauri command dispatch is async; even if
-    // the wizard's button is single-source, a future autoclick /
-    // keyboard repeat / test harness could trigger the race.
     if deadline
         .extensions_used
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
@@ -582,6 +578,33 @@ pub async fn extend_wait_deadline(
     deadline.extend_notify.notify_waiters();
     let new_secs = u64::try_from(new_nanos / 1_000_000_000).unwrap_or(0);
     Ok(Some(new_secs))
+}
+
+/// Push the wait deadline out by `EXTENSION_SECS`. Capped at
+/// `MAX_EXTENSIONS` total. Returns the new deadline (seconds from
+/// wait start) so the frontend can render an accurate "wait again"
+/// affordance, or `None` if the cap is reached or no wait is active.
+///
+/// Pings the wait loop's `extend_notify` so a parked timeout wakes
+/// promptly — without it the loop would sit on its STREAM_POLL_CAP
+/// sleep before noticing the deadline atomic moved. Body lives in
+/// `do_extend_wait_deadline` so tests can drive the same logic
+/// without a Tauri State<> wrapper.
+#[tauri::command]
+pub async fn extend_wait_deadline(
+    deadline_state: State<'_, WaitDeadlineState>,
+) -> Result<Option<u64>, String> {
+    do_extend_wait_deadline(&deadline_state).await
+}
+
+/// Pure helper extracted for testability — answers "should we reset
+/// the timeout-fired latch?" given the current loop state. The reset
+/// is the cycle-2 fix that prevents the wait loop from stranding the
+/// UI in long-wait after the second 60s extension elapses without
+/// all-healthy. A regression dropping the reset re-introduces the
+/// 210s deadlock with no test failure unless this helper is pinned.
+fn should_reset_timeout_latch(timeout_fired: bool, remaining_nanos: i64) -> bool {
+    timeout_fired && remaining_nanos > 0
 }
 
 #[cfg(test)]
@@ -731,59 +754,26 @@ mod tests {
     // ── WaitDeadlineState extension cap ────────────────────────
 
     /// Helper that mirrors the extend_wait_deadline command body
-    /// without the Tauri State<> wrapper. Tests call this directly
-    /// to exercise the actual CAS arithmetic the command uses
-    /// (rather than poking the atomic by hand). Returns Ok(Some(n))
-    /// when extension succeeds, Ok(None) when capped or no active
-    /// wait. Mirrors `extend_wait_deadline` line-for-line; updates
-    /// here MUST be mirrored in the command.
-    async fn extend_wait_deadline_inner(state: &WaitDeadlineState) -> Result<Option<u64>, String> {
-        let Some(deadline) = state.current().await else {
-            return Ok(None);
-        };
-        if deadline
-            .extensions_used
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                if n >= MAX_EXTENSIONS {
-                    None
-                } else {
-                    Some(n + 1)
-                }
-            })
-            .is_err()
-        {
-            return Ok(None);
-        }
-        let added_nanos =
-            i64::try_from(u128::from(EXTENSION_SECS) * 1_000_000_000_u128).unwrap_or(i64::MAX);
-        let new_nanos = deadline
-            .deadline_nanos
-            .fetch_add(added_nanos, Ordering::AcqRel)
-            + added_nanos;
-        deadline.extend_notify.notify_waiters();
-        let new_secs = u64::try_from(new_nanos / 1_000_000_000).unwrap_or(0);
-        Ok(Some(new_secs))
-    }
-
     #[tokio::test]
     async fn extension_cap_pins_at_two() {
-        // Drives the actual CAS path (via extend_wait_deadline_inner)
-        // so a regression in either the cap arithmetic OR the CAS
+        // Drives the production command body (do_extend_wait_deadline)
+        // directly — no test-only helper that could drift from the
+        // command. A regression in the cap arithmetic or the CAS
         // gate fails this test. Pinning the cap protects the v15
         // plan's 210s ceiling against a future drop of the gate.
         let state = WaitDeadlineState::default();
         let _ = state.install(HARD_DEADLINE_SECS).await;
 
         // First extension: 90 + 60 = 150.
-        let r1 = extend_wait_deadline_inner(&state).await.unwrap();
+        let r1 = do_extend_wait_deadline(&state).await.unwrap();
         assert_eq!(r1, Some(150));
 
         // Second extension: 150 + 60 = 210.
-        let r2 = extend_wait_deadline_inner(&state).await.unwrap();
+        let r2 = do_extend_wait_deadline(&state).await.unwrap();
         assert_eq!(r2, Some(210));
 
         // Third extension: capped.
-        let r3 = extend_wait_deadline_inner(&state).await.unwrap();
+        let r3 = do_extend_wait_deadline(&state).await.unwrap();
         assert_eq!(r3, None);
 
         // Atomic-level sanity: counter must equal MAX_EXTENSIONS.
@@ -813,29 +803,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extension_cap_under_concurrent_calls() {
-        // Two concurrent extend_wait_deadline calls must not both
-        // succeed when the prior counter is at MAX-1. Without the
-        // CAS (when the body was load-then-store), both would
-        // observe `prior < MAX`, both increment, both push the
-        // deadline — bypassing the cap. With fetch_update the second
-        // caller sees `n >= MAX` and returns Ok(None).
+    async fn extension_cap_holds_at_boundary() {
+        // Pins the cap arithmetic at the boundary: with the counter
+        // at MAX-1, two consecutive extensions yield exactly one
+        // success (Some(210)) and one None, with deadline_nanos
+        // landing at 210s (90+60+60), not 270s.
+        //
+        // NOTE: this test does NOT genuinely race load-then-store
+        // versus CAS — `do_extend_wait_deadline` has zero `.await`
+        // points between the `current()` lookup and the
+        // `fetch_update`, so two `tokio::spawn`s cannot interleave
+        // between load and store regardless of runtime flavor.
+        // The CAS atomicity is correct by code inspection (the
+        // `fetch_update` closure is the standard pattern). What
+        // this test pins is the cap arithmetic at the boundary —
+        // a regression that drops the cap gate (Some/None branch
+        // in the closure) would still fail this test cleanly.
         let state = WaitDeadlineState::default();
         let _ = state.install(HARD_DEADLINE_SECS).await;
-        // Push the counter to MAX-1 so the next two calls race at
-        // the boundary.
-        let r1 = extend_wait_deadline_inner(&state).await.unwrap();
+        let r1 = do_extend_wait_deadline(&state).await.unwrap();
         assert_eq!(r1, Some(150));
 
-        // Spawn two concurrent extension attempts. With fetch_update,
-        // exactly one should succeed (Some(210)) and the other
-        // should return Ok(None). With the prior load-then-store
-        // body, both could succeed.
         let s = std::sync::Arc::new(state);
         let s1 = s.clone();
         let s2 = s.clone();
-        let h1 = tokio::spawn(async move { extend_wait_deadline_inner(&s1).await });
-        let h2 = tokio::spawn(async move { extend_wait_deadline_inner(&s2).await });
+        let h1 = tokio::spawn(async move { do_extend_wait_deadline(&s1).await });
+        let h2 = tokio::spawn(async move { do_extend_wait_deadline(&s2).await });
         let r1 = h1.await.unwrap().unwrap();
         let r2 = h2.await.unwrap().unwrap();
         let mut results = vec![r1, r2];
@@ -843,7 +836,7 @@ mod tests {
         assert_eq!(
             results,
             vec![None, Some(210)],
-            "exactly one concurrent extension must succeed; got {results:?}"
+            "exactly one extension at the boundary must succeed; got {results:?}"
         );
 
         // And the deadline_nanos must reflect exactly two extensions
@@ -856,5 +849,39 @@ mod tests {
             secs, 210,
             "deadline must equal 90+60+60=210s; got {secs}s (cap bypassed?)"
         );
+    }
+
+    // ── Timeout-fired latch reset (cycle-2 fix) ────────────────
+
+    #[test]
+    fn latch_reset_no_op_when_never_fired() {
+        // Reset should be a no-op on the never-fired path: latch
+        // is false at loop entry; reset stays false. Catches a
+        // regression that toggles instead of conditionally clears.
+        assert!(!should_reset_timeout_latch(false, 0));
+        assert!(!should_reset_timeout_latch(false, 1_000_000_000));
+        assert!(!should_reset_timeout_latch(false, -1));
+    }
+
+    #[test]
+    fn latch_reset_holds_when_remaining_is_zero_or_negative() {
+        // Latch must persist while the deadline is still elapsed —
+        // we're still past the hard deadline, the loop should
+        // remain in parked-Timeout mode without re-firing.
+        assert!(!should_reset_timeout_latch(true, 0));
+        assert!(!should_reset_timeout_latch(true, -1));
+        assert!(!should_reset_timeout_latch(true, i64::MIN));
+    }
+
+    #[test]
+    fn latch_reset_fires_when_extension_pushed_remaining_positive() {
+        // Latch must reset only when an extension landed (deadline
+        // pushed forward, remaining > 0). This is the cycle-2 fix:
+        // without it the wait loop strands the UI in long-wait
+        // after the second 60s extension elapses without all-
+        // healthy at 210s.
+        assert!(should_reset_timeout_latch(true, 1));
+        assert!(should_reset_timeout_latch(true, 60_000_000_000));
+        assert!(should_reset_timeout_latch(true, i64::MAX));
     }
 }
