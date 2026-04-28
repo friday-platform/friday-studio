@@ -6,7 +6,7 @@ import { z } from "zod";
 
 /** Minimal stream emitter for code agents — wiring layer adapts to AtlasUIMessageChunk */
 export interface CodeAgentStreamEmitter {
-  emit: (event: { type: string; data: unknown }) => void;
+  emit: (event: { type: string } & Record<string, unknown>) => void;
 }
 
 /** Host function bindings provided per-execution */
@@ -451,4 +451,3 @@ export function serializeAgentContext(options: CodeAgentExecutorOptions): string
     ...(options.skills && options.skills.length > 0 && { skills: options.skills }),
   });
 }
-

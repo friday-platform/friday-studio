@@ -602,7 +602,7 @@ export const skillsRoutes = daemonFactory
         description: fix.description,
         instructions: fix.instructions,
         frontmatter,
-        archive: skill.archive,
+        archive: skill.archive ?? undefined,
         skillId: skill.skillId,
         descriptionManual: skill.descriptionManual,
       });

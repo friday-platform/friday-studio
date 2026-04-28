@@ -270,6 +270,8 @@ interface WorkspaceRuntimeOptions {
   kernelWorkspaceId?: string;
   /** Platform model resolver — required for session summarization and other platform LLM calls */
   platformModels: PlatformModels;
+  /** Blueprint artifact ID, when this workspace was generated from a blueprint */
+  blueprintArtifactId?: string;
   /** Injectable agent executor. Injected by daemon as ProcessAgentExecutor (NATS). */
   agentExecutor?: {
     execute(

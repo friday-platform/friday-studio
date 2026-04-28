@@ -58,7 +58,9 @@ export function createSearchMcpServersTool(logger: Logger): AtlasTools {
         limit,
       }): Promise<SearchMcpServersSuccess | SearchMcpServersError> => {
         try {
-          const res = await client.mcpRegistry.search.$get({ query: { q: query, limit } });
+          const res = await client.mcpRegistry.search.$get({
+            query: { q: query, limit: String(limit) },
+          });
           const body = await res.json();
 
           if (!res.ok) {

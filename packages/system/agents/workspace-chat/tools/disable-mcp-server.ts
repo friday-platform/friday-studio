@@ -61,7 +61,7 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
             .workspaceMcp(workspaceId)
             [":serverId"].$delete({
               param: { serverId },
-              query: force ? { force: "true" } : undefined,
+              query: force ? { force: "true" as const } : {},
             });
           const body = await res.json();
 

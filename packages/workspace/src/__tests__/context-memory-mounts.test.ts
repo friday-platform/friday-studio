@@ -3,6 +3,7 @@ import type {
   AgentMemoryContext,
   MemoryAdapter,
   NarrativeEntry,
+  PlatformModels,
   StoreMountBinding,
 } from "@atlas/agent-sdk";
 import { describe, expect, it, vi } from "vitest";
@@ -50,6 +51,11 @@ function buildMockContext(): AgentContext {
       child: vi.fn(),
     } as unknown as AgentContext["logger"],
     memory,
+    platformModels: {
+      get: () => {
+        throw new Error("platformModels.get should not be called in this test");
+      },
+    } satisfies PlatformModels,
   };
 }
 
