@@ -16,7 +16,7 @@
  *   });
  *   ```
  *
- * The agent auto-runs when `ATLAS_SESSION_ID` is set in the environment
+ * The agent auto-runs when `FRIDAY_SESSION_ID` is set in the environment
  * (production mode). In tests without the env var, `agent()` is a no-op
  * so handler logic can be exercised independently.
  *
@@ -48,7 +48,7 @@ let _handler: AgentHandler | null = null;
 /**
  * Register an agent handler. Auto-runs when env vars are set:
  *   ATLAS_VALIDATE_ID — validation handshake: publish metadata then exit
- *   ATLAS_SESSION_ID  — normal execution: handle one request then exit
+ *   FRIDAY_SESSION_ID  — normal execution: handle one request then exit
  */
 export function agent(meta: AgentMeta, handler: AgentHandler): void {
   _meta = meta;
@@ -65,7 +65,7 @@ export function agent(meta: AgentMeta, handler: AgentHandler): void {
     return;
   }
 
-  const sessionId = process.env.ATLAS_SESSION_ID;
+  const sessionId = process.env.FRIDAY_SESSION_ID;
   if (sessionId) {
     void _run(sessionId).catch((err) => {
       process.stderr.write(

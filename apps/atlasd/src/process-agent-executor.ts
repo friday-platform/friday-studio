@@ -6,7 +6,7 @@
  *   1. Register session context in CapabilityHandlerRegistry
  *   2. Subscribe to sessions.{sessionId}.events to forward stream events
  *   3. Subscribe to agents.{sessionId}.ready (before spawn to avoid race)
- *   4. Spawn: runtime agentPath (inherits full env + NATS_URL + ATLAS_SESSION_ID)
+ *   4. Spawn: runtime agentPath (inherits full env + NATS_URL + FRIDAY_SESSION_ID)
  *   5. Wait for agents.{sessionId}.ready — agent publishes this after subscribing
  *   6. nc.request agents.{sessionId}.execute → get result
  *   7. Cleanup: unregister, kill process, unsubscribe subs
@@ -89,7 +89,7 @@ export class ProcessAgentExecutor {
         ...process.env,
         ...options.env,
         NATS_URL: "nats://localhost:4222",
-        ATLAS_SESSION_ID: sessionId,
+        FRIDAY_SESSION_ID: sessionId,
       },
       stdio: "pipe",
     });

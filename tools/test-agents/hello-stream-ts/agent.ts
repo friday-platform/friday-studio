@@ -26,7 +26,7 @@ if (validateId) {
   );
   await nc.drain();
 } else {
-  const sessionId = process.env.ATLAS_SESSION_ID;
+  const sessionId = process.env.FRIDAY_SESSION_ID;
   if (!sessionId) process.exit(1);
 
   const nc = await connect({ servers: natsUrl });
