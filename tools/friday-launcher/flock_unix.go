@@ -18,15 +18,15 @@ type pidFileLock struct {
 // nil) if another process holds the lock, or (nil, false, err) on
 // I/O errors.
 func acquirePidLock() (*pidFileLock, bool, error) {
-	if err := os.MkdirAll(pidsDir(), 0o755); err != nil {
+	if err := os.MkdirAll(pidsDir(), 0o750); err != nil {
 		return nil, false, err
 	}
 	f, err := os.OpenFile(launcherPidPath(),
-		os.O_CREATE|os.O_RDWR, 0o644)
+		os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, false, err
 	}
-	if err := syscall.Flock(int(f.Fd()),
+	if err := syscall.Flock(int(f.Fd()), //nolint:gosec // G115: Fd() returns an OS handle, bounded
 		syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
 		if err == syscall.EWOULDBLOCK {
@@ -59,4 +59,3 @@ func (l *pidFileLock) release() {
 	}
 	_ = os.Remove(launcherPidPath())
 }
-

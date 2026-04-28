@@ -135,7 +135,9 @@ func (t *trayController) handleClicks() {
 				}
 			}()
 		case <-t.logsItem.ClickedCh:
-			openInFileBrowser(logsDir())
+			if err := openInFileBrowser(logsDir()); err != nil {
+				log.Error("open logs dir failed", "error", err)
+			}
 		case <-t.autostartItem.ClickedCh:
 			if t.autostartItem.Checked() {
 				if err := disableAutostart(); err != nil {

@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -132,7 +133,8 @@ func TestFatalExits1(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected exit 1, got nil")
 	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	exitErr := &exec.ExitError{}
+	if errors.As(err, &exitErr) {
 		if exitErr.ExitCode() != 1 {
 			t.Errorf("expected exit code 1, got %d", exitErr.ExitCode())
 		}

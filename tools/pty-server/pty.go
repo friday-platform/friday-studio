@@ -39,7 +39,6 @@ func handlePty(cfg Config) http.HandlerFunc {
 			InsecureSkipVerify: true,
 		})
 		if err != nil {
-			//nolint:gosec // G706: structured logging via slog avoids injection.
 			log.Error("ws accept failed", "remote", r.RemoteAddr, "error", err)
 			return
 		}
@@ -65,7 +64,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 	if err != nil {
 		sendError(ctx, conn, err.Error())
 		_ = conn.Close(websocket.StatusPolicyViolation, "invalid cwd")
-		//nolint:gosec // G706: structured logging via slog avoids injection.
+
 		log.Warn("cwd validation failed", "remote", r.RemoteAddr, "error", err)
 		return
 	}
@@ -85,7 +84,7 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 		pid = cmd.Process.Pid
 	}
 	connStart := time.Now()
-	//nolint:gosec // G706: structured logging via slog avoids injection.
+
 	log.Debug("ws conn accepted",
 		"remote", r.RemoteAddr,
 		"shell", shell,
@@ -139,7 +138,6 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 					// exit goroutine closes the conn before cancelling.
 					benign := errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed)
 					if !benign {
-						//nolint:gosec // G706: structured logging via slog avoids injection.
 						log.Warn("ping failed", "remote", r.RemoteAddr, "pid", pid, "error", err)
 					}
 					cancel()
@@ -182,7 +180,6 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 		}
 		msg, ok := parseClientMessage(raw)
 		if !ok {
-			//nolint:gosec // G706: structured logging via slog avoids injection.
 			log.Warn("malformed message", "remote", r.RemoteAddr)
 			continue
 		}
@@ -203,7 +200,6 @@ func runSession(r *http.Request, conn *websocket.Conn, cfg Config) {
 	<-exitDone
 	<-readDone
 
-	//nolint:gosec // G706: structured logging via slog avoids injection.
 	log.Debug("ws conn closed",
 		"remote", r.RemoteAddr,
 		"pid", pid,

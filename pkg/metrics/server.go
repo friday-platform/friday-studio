@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/friday-platform/friday-studio/pkg/server"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // StartServer starts an HTTP server that exposes Prometheus metrics on /metrics.

@@ -5,8 +5,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
+
+// wakePath returns the location of the sentinel touch file the wake
+// path uses on Windows. Lives here (not in paths.go) so it doesn't
+// show as unused on macOS/Linux builds.
+func wakePath() string { return filepath.Join(friendlyHome(), ".wake") }
 
 // installWakeSignal is a no-op on Windows. The wake-up path on Windows
 // uses the sentinel file at ~/.friday/local/.wake — see

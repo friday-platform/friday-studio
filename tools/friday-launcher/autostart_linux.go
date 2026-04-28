@@ -9,15 +9,13 @@ package main
 // shipped today. These no-op stubs satisfy the cross-platform call sites
 // so the package builds on Linux for CI lint/test.
 //
-// We also reference the launchd/wake helpers in paths.go that the
-// macOS/Windows builds use, so the lint's `unusedfunc` check stays happy
-// across all targets.
+// We also reference launchAgentLabel from paths.go so the lint's
+// `unusedfunc` check stays happy across all targets — Linux doesn't
+// otherwise touch it.
 
 var _ = launchAgentLabel
-var _ = wakePath
-var _ = processPidPath
 
-func enableAutostart() error      { return nil }
-func disableAutostart() error     { return nil }
-func isAutostartEnabled() bool    { return false }
+func enableAutostart() error       { return nil }
+func disableAutostart() error      { return nil }
+func isAutostartEnabled() bool     { return false }
 func currentAutostartPath() string { return "" }

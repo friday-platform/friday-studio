@@ -82,7 +82,7 @@ func TestProxyPathRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if capturedPath != "/signals/telegram/abc-token" {
 		t.Errorf("path: want /signals/telegram/abc-token, got %s", capturedPath)
 	}
@@ -98,7 +98,7 @@ func TestProxyPathRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if capturedPath != "/signals/slack" {
 		t.Errorf("path: want /signals/slack, got %s", capturedPath)
 	}
@@ -127,7 +127,7 @@ func TestProxyStripsHopByHop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if got.Get("Connection") != "" {
 		t.Errorf("Connection header should be stripped, got %q", got.Get("Connection"))

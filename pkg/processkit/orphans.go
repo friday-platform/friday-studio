@@ -40,7 +40,7 @@ func SweepOrphans(pidDir string) (killed int, err error) {
 			continue
 		}
 		path := filepath.Join(pidDir, e.Name())
-		data, readErr := os.ReadFile(path)
+		data, readErr := os.ReadFile(path) //nolint:gosec // G304: pidDir is process-internal, not user input
 		if readErr != nil {
 			continue
 		}

@@ -81,29 +81,41 @@ func supervisedProcesses(binDir string) []processSpec {
 		// the monitoring HTTP server so process-compose can probe
 		// readiness via the same HttpProbe machinery used by everyone
 		// else (NATS itself doesn't speak HTTP on the protocol port).
-		{name: "nats-server", binary: filepath.Join(binDir, "nats-server"),
+		{
+			name: "nats-server", binary: filepath.Join(binDir, "nats-server"),
 			args:       []string{"--port", "4222", "--jetstream", "--http_port", "8222"},
-			healthPort: "8222", healthPath: "/healthz"},
+			healthPort: "8222", healthPath: "/healthz",
+		},
 		// `friday` is the atlas-cli daemon binary. Without an explicit
 		// subcommand it errors with "No command specified" and exits;
 		// `daemon start` runs the workspace server in foreground (we
 		// own background-ness via process-compose, so no --detached).
-		{name: "friday", binary: filepath.Join(binDir, "friday"),
+		{
+			name: "friday", binary: filepath.Join(binDir, "friday"),
 			args:       []string{"daemon", "start"},
-			healthPort: "8080", healthPath: "/health"},
+			healthPort: "8080", healthPath: "/health",
+		},
 		// `link` requires LINK_DEV_MODE=true to skip the
 		// POSTGRES_CONNECTION check on the platform-route + slack-app
 		// repos. Local installs don't have Postgres; the dev-mode
 		// in-memory NoOp repos are correct.
-		{name: "link", binary: filepath.Join(binDir, "link"),
+		{
+			name: "link", binary: filepath.Join(binDir, "link"),
 			env:        []string{"LINK_DEV_MODE=true"},
-			healthPort: "3100", healthPath: "/health"},
-		{name: "pty-server", binary: filepath.Join(binDir, "pty-server"),
-			healthPort: "7681", healthPath: "/health"},
-		{name: "webhook-tunnel", binary: filepath.Join(binDir, "webhook-tunnel"),
-			healthPort: "9090", healthPath: "/health"},
-		{name: "playground", binary: filepath.Join(binDir, "playground"),
-			healthPort: "5200", healthPath: "/api/health"},
+			healthPort: "3100", healthPath: "/health",
+		},
+		{
+			name: "pty-server", binary: filepath.Join(binDir, "pty-server"),
+			healthPort: "7681", healthPath: "/health",
+		},
+		{
+			name: "webhook-tunnel", binary: filepath.Join(binDir, "webhook-tunnel"),
+			healthPort: "9090", healthPath: "/health",
+		},
+		{
+			name: "playground", binary: filepath.Join(binDir, "playground"),
+			healthPort: "5200", healthPath: "/api/health",
+		},
 	}
 	for i, s := range specs {
 		if v := portOverride(s.name); v != "" {

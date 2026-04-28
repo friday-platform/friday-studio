@@ -47,12 +47,12 @@ type Event struct {
 // connection-protocol modes (QUIC vs HTTP2 etc.).
 var (
 	// Quick tunnel URL: appears in a banner like
-	// "|  https://random-words.trycloudflare.com  |"
+	// "|  https://random-words.trycloudflare.com  |".
 	quickURLPattern = regexp.MustCompile(`https://[a-zA-Z0-9-]+\.trycloudflare\.com`)
 	// Connection registered: "Registered tunnel connection ..."
 	// Used by both quick AND named (token) tunnels.
 	connectedPattern = regexp.MustCompile(`Registered tunnel connection|Connection .* registered`)
-	// Connection lost: "Lost connection ..." or "Disconnected ..."
+	// Connection lost: "Lost connection ..." or "Disconnected ...".
 	disconnectedPattern = regexp.MustCompile(`Lost connection|Connection terminated|Disconnected`)
 )
 

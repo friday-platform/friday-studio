@@ -58,5 +58,3 @@ func (l *pidFileLock) release() {
 	}
 	_ = os.Remove(launcherPidPath())
 }
-
-

@@ -14,7 +14,7 @@ import (
 // after a crash would break next-startup behavior.
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	if err := os.WriteFile(tmp, data, perm); err != nil {
@@ -44,5 +44,5 @@ func writeState(s launcherState) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(statePath(), data, 0o644)
+	return atomicWriteFile(statePath(), data, 0o600)
 }

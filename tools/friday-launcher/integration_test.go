@@ -61,7 +61,7 @@ func buildLauncherAndStubs(t *testing.T) (launcherPath, binDir string) {
 	tmp := t.TempDir()
 	launcherPath = filepath.Join(tmp, "friday-launcher-test")
 	binDir = filepath.Join(tmp, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,15 +74,15 @@ func buildLauncherAndStubs(t *testing.T) (launcherPath, binDir string) {
 
 	// Build stub.
 	stubSrc := filepath.Join(tmp, "stub")
-	if err := os.MkdirAll(stubSrc, 0o755); err != nil {
+	if err := os.MkdirAll(stubSrc, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(stubSrc, "main.go"),
-		[]byte(stubProgram), 0o644); err != nil {
+		[]byte(stubProgram), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(stubSrc, "go.mod"),
-		[]byte("module stub\ngo 1.26\n"), 0o644); err != nil {
+		[]byte("module stub\ngo 1.26\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	stubBin := filepath.Join(binDir, "_stub")
@@ -114,7 +114,7 @@ func writeWrapper(t *testing.T, binDir, name, stubBin, port, healthPath, extra s
 		" PORT=" + port + " HEALTH_PATH=" + healthPath +
 		" " + extra + " " + stubBin + "\n"
 	if err := os.WriteFile(filepath.Join(binDir, name),
-		[]byte(body), 0o755); err != nil {
+		[]byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -135,11 +135,11 @@ func portEnv() []string {
 // *exec.Cmd (caller MUST kill on test end via t.Cleanup) and the
 // home dir for inspection. Gives launcher up to 5 s to acquire the
 // lock + write the pid file.
-func startLauncher(t *testing.T, launcherPath, binDir string, extraEnv ...string) (*exec.Cmd, string) {
+func startLauncher(t *testing.T, launcherPath, binDir string) (*exec.Cmd, string) {
 	t.Helper()
 	home := t.TempDir()
 	homeLocal := filepath.Join(home, ".friday", "local")
-	if err := os.MkdirAll(homeLocal, 0o755); err != nil {
+	if err := os.MkdirAll(homeLocal, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(launcherPath,
@@ -148,7 +148,6 @@ func startLauncher(t *testing.T, launcherPath, binDir string, extraEnv ...string
 		"FRIDAY_LAUNCHER_HOME="+homeLocal,
 	)
 	env = append(env, portEnv()...)
-	env = append(env, extraEnv...)
 	cmd.Env = env
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -178,11 +177,16 @@ func startLauncher(t *testing.T, launcherPath, binDir string, extraEnv ...string
 	return cmd, homeLocal
 }
 
+// healthyTimeout caps how long waitHealthy will block before failing
+// the test. Every existing caller passes 10s; pinning it to a const
+// removes a ceremonial parameter without losing the bound.
+const healthyTimeout = 10 * time.Second
+
 // waitHealthy polls the 5 stub /health endpoints until all return 200
-// or t.Fatalf if not within timeout.
-func waitHealthy(t *testing.T, timeout time.Duration) {
+// or t.Fatalf if not within healthyTimeout.
+func waitHealthy(t *testing.T) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().Add(healthyTimeout)
 	urls := []string{
 		"http://127.0.0.1:18222/healthz",
 		"http://127.0.0.1:18080/health",
@@ -196,17 +200,17 @@ func waitHealthy(t *testing.T, timeout time.Duration) {
 		for _, u := range urls {
 			resp, err := http.Get(u)
 			if err == nil && resp.StatusCode == 200 {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				ok++
 			} else if resp != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}
 		if ok == len(urls) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("only %d/%d stubs healthy after %s", ok, len(urls), timeout)
+			t.Fatalf("only %d/%d stubs healthy after %s", ok, len(urls), healthyTimeout)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -240,7 +244,7 @@ func TestEndToEndLaunchAndHealthy(t *testing.T) {
 	}
 	launcher, binDir := buildLauncherAndStubs(t)
 	cmd, home := startLauncher(t, launcher, binDir)
-	waitHealthy(t, 10*time.Second)
+	waitHealthy(t)
 	if pid := readPidFile(t, home); pid != cmd.Process.Pid {
 		t.Errorf("pid file says %d, launcher running as %d", pid, cmd.Process.Pid)
 	}
@@ -254,7 +258,7 @@ func TestSIGTERMCleanShutdown(t *testing.T) {
 	}
 	launcher, binDir := buildLauncherAndStubs(t)
 	cmd, home := startLauncher(t, launcher, binDir)
-	waitHealthy(t, 10*time.Second)
+	waitHealthy(t)
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +297,7 @@ func TestShutdownTimeoutSafety(t *testing.T) {
 	writeWrapper(t, binDir, "playground", stubBin,
 		"15200", "/api/health", "IGNORE_SIGTERM=1")
 	cmd, _ := startLauncher(t, launcher, binDir)
-	waitHealthy(t, 10*time.Second)
+	waitHealthy(t)
 	start := time.Now()
 	_ = cmd.Process.Signal(syscall.SIGTERM)
 	done := make(chan error, 1)
@@ -319,7 +323,7 @@ func TestSecondInstanceWakeUp(t *testing.T) {
 	}
 	launcher, binDir := buildLauncherAndStubs(t)
 	cmd, home := startLauncher(t, launcher, binDir)
-	waitHealthy(t, 10*time.Second)
+	waitHealthy(t)
 	pid := readPidFile(t, home)
 
 	// Spawn second instance with the SAME home dir.
@@ -350,13 +354,13 @@ func TestStalePidFileHandling(t *testing.T) {
 	}
 	launcher, binDir := buildLauncherAndStubs(t)
 	home := filepath.Join(t.TempDir(), ".friday", "local")
-	if err := os.MkdirAll(filepath.Join(home, "pids"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, "pids"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	// Plant a stale pid file for a definitely-not-running pid.
 	if err := os.WriteFile(
 		filepath.Join(home, "pids", "launcher.pid"),
-		[]byte("99999 1000000000\n"), 0o644); err != nil {
+		[]byte("99999 1000000000\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
@@ -398,7 +402,7 @@ func TestOrphanCleanup(t *testing.T) {
 	launcher, binDir := buildLauncherAndStubs(t)
 	home := filepath.Join(t.TempDir(), ".friday", "local")
 	pidsDir := filepath.Join(home, "pids")
-	if err := os.MkdirAll(pidsDir, 0o755); err != nil {
+	if err := os.MkdirAll(pidsDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	// Spawn a victim sleeper that we'll claim is an orphaned supervised process.
@@ -418,7 +422,7 @@ func TestOrphanCleanup(t *testing.T) {
 	// Plant a per-process pid file pointing at the sleeper.
 	if err := os.WriteFile(
 		filepath.Join(pidsDir, "friday.pid"),
-		[]byte(strconv.Itoa(victim.Process.Pid)+" 1000000000\n"), 0o644); err != nil {
+		[]byte(strconv.Itoa(victim.Process.Pid)+" 1000000000\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -502,7 +506,7 @@ func TestAutostartSelfRegister(t *testing.T) {
 	backup, _ := os.ReadFile(plistPath)
 	t.Cleanup(func() {
 		if backup != nil {
-			_ = os.WriteFile(plistPath, backup, 0o644)
+			_ = os.WriteFile(plistPath, backup, 0o600)
 		} else {
 			_ = os.Remove(plistPath)
 		}
@@ -548,7 +552,7 @@ func TestAutostartStalenessRepair(t *testing.T) {
 	backup, _ := os.ReadFile(plistPath)
 	t.Cleanup(func() {
 		if backup != nil {
-			_ = os.WriteFile(plistPath, backup, 0o644)
+			_ = os.WriteFile(plistPath, backup, 0o600)
 		} else {
 			_ = os.Remove(plistPath)
 		}
@@ -569,7 +573,7 @@ func TestAutostartStalenessRepair(t *testing.T) {
   <key>KeepAlive</key><false/>
 </dict>
 </plist>`
-	if err := os.WriteFile(plistPath, []byte(stalePlist), 0o644); err != nil {
+	if err := os.WriteFile(plistPath, []byte(stalePlist), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	launcher, binDir := buildLauncherAndStubs(t)
@@ -577,7 +581,7 @@ func TestAutostartStalenessRepair(t *testing.T) {
 	// Mark autostart_initialized=true so goroutine E hits the
 	// staleness-repair branch (not first-run).
 	if err := os.WriteFile(filepath.Join(home, "state.json"),
-		[]byte(`{"autostart_initialized":true}`), 0o644); err != nil {
+		[]byte(`{"autostart_initialized":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Restart the launcher so goroutine E sees state.json this time.
@@ -622,7 +626,7 @@ func TestUninstall(t *testing.T) {
 	// which would race with the manual reaper goroutine we need below.
 	// Inline the spawn so we own lifecycle exclusively.
 	home := filepath.Join(t.TempDir(), ".friday", "local")
-	if err := os.MkdirAll(home, 0o755); err != nil {
+	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
@@ -665,7 +669,7 @@ func TestUninstall(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	waitHealthy(t, 10*time.Second)
+	waitHealthy(t)
 
 	// On macOS, save/restore the real plist; uninstall removes it.
 	var plistPath string
@@ -677,7 +681,7 @@ func TestUninstall(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		if plistPath != "" && backup != nil {
-			_ = os.WriteFile(plistPath, backup, 0o644)
+			_ = os.WriteFile(plistPath, backup, 0o600)
 		}
 	})
 

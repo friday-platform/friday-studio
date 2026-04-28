@@ -9,11 +9,11 @@ import (
 )
 
 // runUninstall removes Friday Launcher's OS-level footprint:
-//   1. If a launcher is currently running (pid file + alive), send
-//      SIGTERM and wait up to 35 s for clean exit.
-//   2. Remove the OS autostart entry (LaunchAgent plist on macOS,
-//      HKCU registry value on Windows).
-//   3. Remove pids/ + state.json.
+//  1. If a launcher is currently running (pid file + alive), send
+//     SIGTERM and wait up to 35 s for clean exit.
+//  2. Remove the OS autostart entry (LaunchAgent plist on macOS,
+//     HKCU registry value on Windows).
+//  3. Remove pids/ + state.json.
 //
 // Logs (~/.friday/local/logs/) are kept by default for diagnostics.
 // Idempotent — re-running after a previous --uninstall is safe.
@@ -33,7 +33,7 @@ func runUninstall() {
 	fmt.Println("friday-launcher uninstall:")
 
 	// 1. Stop running launcher.
-	pid, _, err := readLauncherPid()
+	pid, err := readLauncherPid()
 	if err == nil && pid > 0 && processkit.ProcessAlive(pid) {
 		fmt.Printf("  · stopping running launcher pid=%d\n", pid)
 		_ = processkit.Kill(pid, 0)

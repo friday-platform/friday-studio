@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/friday-platform/friday-studio/pkg/x/middleware"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/friday-platform/friday-studio/pkg/x/middleware"
 )
 
 var ErrNotFound = errors.New("pgxdb: nil value in context")

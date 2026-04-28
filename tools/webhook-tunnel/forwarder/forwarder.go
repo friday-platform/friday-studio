@@ -68,7 +68,7 @@ func (f *Forwarder) Forward(workspaceID, signalID string, payload map[string]any
 	if err != nil {
 		return "", fmt.Errorf("post atlasd: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("atlasd %d: %s", resp.StatusCode, string(body))
