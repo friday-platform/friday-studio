@@ -29,7 +29,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@atlas/workspace-builder": "workspace:*",
     "@codemirror/lang-markdown": "^6.5.0",
-    "@codemirror/lang-yaml": "^6.1.2",
+    "@codemirror/lang-yaml": "^6.1.3",
     "@codemirror/language": "^6.12.3",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.40.0",
