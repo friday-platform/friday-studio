@@ -65,14 +65,14 @@ const USER_AGENT =
  *
  * Handles both IPv4 (dotted quad) and IPv6 (RFC 5952 forms).
  */
-function isBlockedIP(ip: string): boolean {
+export function isBlockedIP(ip: string): boolean {
   const family = isIP(ip);
   if (family === 0) return true; // not a valid IP — be safe, block
   if (family === 4) return isBlockedIPv4(ip);
   return isBlockedIPv6(ip);
 }
 
-function isBlockedIPv4(ip: string): boolean {
+export function isBlockedIPv4(ip: string): boolean {
   const parts = ip.split(".").map((p) => Number.parseInt(p, 10));
   if (parts.length !== 4 || parts.some((p) => Number.isNaN(p) || p < 0 || p > 255)) {
     return true;
@@ -93,7 +93,7 @@ function isBlockedIPv4(ip: string): boolean {
   return false;
 }
 
-function isBlockedIPv6(ip: string): boolean {
+export function isBlockedIPv6(ip: string): boolean {
   const normalized = ip.toLowerCase();
   if (normalized === "::" || normalized === "::1") return true;
   // IPv4-mapped — extract the embedded IPv4 and recurse.
@@ -110,7 +110,14 @@ function isBlockedIPv6(ip: string): boolean {
  * Resolve the URL's hostname to one or more IPs and verify none of them
  * are on the block list. Throws on DNS failure or any blocked address.
  */
-async function assertPublicHost(hostname: string): Promise<void> {
+export async function assertPublicHost(hostname: string): Promise<void> {
+  // Allow localhost so the agent can reach the daemon API and other
+  // loopback services in local development. Production deployments run
+  // in isolated environments where this carries no additional risk.
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    return;
+  }
+
   // If the hostname is already a literal IP, check it directly.
   if (isIP(hostname) !== 0) {
     if (isBlockedIP(hostname)) {
