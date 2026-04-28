@@ -11,7 +11,7 @@
 -->
 
 <script lang="ts">
-  import { toast } from "@atlas/ui";
+  import { Button, IconSmall, ListDetail, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -152,30 +152,39 @@
   const hasUpdate = $derived(selectedServerId ? (updateState[selectedServerId] ?? false) : false);
 </script>
 
-<div class="mcp-layout">
-  <aside class="mcp-sidebar">
-    <MCPCatalogTree
-      {selectedServerId}
-      onSelectServer={handleSelectServer}
-      onOpenImport={() => (importDialogOpen = true)}
-    />
-  </aside>
+<ListDetail>
+  {#snippet header()}
+    <h1>MCP Catalog</h1>
+    <Button
+      variant="secondary"
+      size="small"
+      aria-label="Import from registry"
+      onclick={() => (importDialogOpen = true)}
+    >
+      {#snippet prepend()}
+        <IconSmall.Plus />
+      {/snippet}
+      Add
+    </Button>
+  {/snippet}
 
-  <div class="mcp-content">
-    <MCPServerDetail
-      server={selectedServer}
-      onInstall={handleInstall}
-      onCheckUpdate={handleCheckUpdate}
-      onPullUpdate={handlePullUpdate}
-      onDelete={handleDelete}
-      installing={installMut.isPending}
-      checking={checkingId === selectedServerId}
-      pulling={pullingId === selectedServerId}
-      deleting={deletingId === selectedServerId}
-      {hasUpdate}
-    />
-  </div>
-</div>
+  {#snippet sidebar()}
+    <MCPCatalogTree {selectedServerId} onSelectServer={handleSelectServer} />
+  {/snippet}
+
+  <MCPServerDetail
+    server={selectedServer}
+    onInstall={handleInstall}
+    onCheckUpdate={handleCheckUpdate}
+    onPullUpdate={handlePullUpdate}
+    onDelete={handleDelete}
+    installing={installMut.isPending}
+    checking={checkingId === selectedServerId}
+    pulling={pullingId === selectedServerId}
+    deleting={deletingId === selectedServerId}
+    {hasUpdate}
+  />
+</ListDetail>
 
 <MCPRegistryImport
   open={importDialogOpen}
@@ -184,32 +193,3 @@
   installing={installMut.isPending}
 />
 
-<style>
-  .mcp-layout {
-    background: var(--surface-dark);
-    display: flex;
-    block-size: 100%;
-  }
-
-  .mcp-sidebar {
-    border-inline-start: var(--size-px) solid var(--border);
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    inline-size: 300px;
-    overflow-y: auto;
-    scrollbar-width: thin;
-  }
-
-  .mcp-content {
-    background: var(--surface);
-    border-start-start-radius: var(--radius-7);
-    border-end-start-radius: var(--radius-7);
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    min-inline-size: 0;
-    overflow-y: auto;
-    scrollbar-width: thin;
-  }
-</style>

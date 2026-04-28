@@ -254,25 +254,13 @@
 
   .sidebar-header {
     align-items: center;
-    background-color: var(--surface-dark);
     display: flex;
     flex-shrink: 0;
     gap: var(--size-2);
     padding-block: var(--size-5) var(--size-1);
     padding-inline: var(--size-5);
-    position: sticky;
     top: 0;
     z-index: 1;
-
-    &::after {
-      background: linear-gradient(to bottom, var(--surface-dark) 0%, transparent 100%);
-      block-size: var(--size-10);
-      content: "";
-      inset-block-start: 100%;
-      inset-inline: 0;
-      pointer-events: none;
-      position: absolute;
-    }
 
     .logo {
       block-size: 20px;
