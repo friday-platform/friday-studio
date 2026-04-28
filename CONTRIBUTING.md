@@ -21,7 +21,8 @@ Detailed environment notes live in [`CLAUDE.md`](./CLAUDE.md) and
 
 ```bash
 # Deno + TypeScript (core platform)
-deno task dev:full        # Start daemon (auto-restarts on changes)
+deno task dev:playground  # Daemon (auto-restart) + web playground + link + tunnel
+deno task start           # Daemon only, no auto-restart
 deno task typecheck       # Type check (deno check + svelte-check)
 deno task lint            # Lint
 deno task test $file      # Run a specific test (vitest)
