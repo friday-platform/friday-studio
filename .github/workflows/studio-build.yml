@@ -139,8 +139,8 @@ jobs:
         run: |
           set -euo pipefail
           deno run -A scripts/build-studio.ts \
-            --target ${{ matrix.target }} \
-            --version ${RELEASE_VERSION}
+            --target "${{ matrix.target }}" \
+            --version "${RELEASE_VERSION}"
 
       - name: Codesign Mach-O binaries (macOS)
         if: startsWith(matrix.platform, 'macos')

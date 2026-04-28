@@ -146,14 +146,16 @@ jobs:
         shell: bash
         run: |
           app=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
-          echo "app_path=$app" >> "$GITHUB_OUTPUT"
-          echo "app_name=$(basename "$app")" >> "$GITHUB_OUTPUT"
           # Version goes in the filename so each release becomes a new URL —
           # otherwise the CDN's immutable cache pins the first build forever.
           # Version is computed by the upstream `version` job and threaded
           # through here as RELEASE_VERSION (also written into tauri.conf.json).
-          echo "zip_path=${app%.app}.zip" >> "$GITHUB_OUTPUT"
-          echo "zip_name=FridayStudioInstaller_${RELEASE_VERSION}_${{ matrix.target }}.zip" >> "$GITHUB_OUTPUT"
+          {
+            echo "app_path=$app"
+            echo "app_name=$(basename "$app")"
+            echo "zip_path=${app%.app}.zip"
+            echo "zip_name=FridayStudioInstaller_${RELEASE_VERSION}_${{ matrix.target }}.zip"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Locate NSIS installer (Windows)
         if: matrix.bundle_ext == 'exe'
