@@ -87,83 +87,7 @@ function getLinkAuthHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${atlasKey}` };
 }
 
-/**
- * Check for an unwired slack-app credential via Link's mapping table.
- * Returns the credential/app info if one exists, null otherwise.
- */
-export async function resolveUnwiredSlackApp(): Promise<{
-  credentialId: string;
-  appId: string;
-} | null> {
-  const result = await parseResult(
-    client.link.internal.v1["slack-apps"].unwired.$get({}, { headers: getLinkAuthHeaders() }),
-  );
-
-  if (!result.ok) {
-    if (result.error instanceof DetailedError && result.error.statusCode === 404) {
-      return null;
-    }
-    throw new Error(`Failed to check for unwired slack app: ${result.error}`);
-  }
-
-  return { credentialId: result.data.credential_id, appId: result.data.app_id };
-}
-
-/**
- * Resolve the slack-app credential already wired to a specific workspace.
- * Returns the credential/app info if wired, null otherwise.
- */
-export async function resolveSlackAppByWorkspace(
-  workspaceId: string,
-): Promise<{ credentialId: string; appId: string } | null> {
-  const result = await parseResult(
-    client.link.internal.v1["slack-apps"]["by-workspace"][":workspace_id"].$get(
-      { param: { workspace_id: workspaceId } },
-      { headers: getLinkAuthHeaders() },
-    ),
-  );
-
-  if (!result.ok) {
-    if (result.error instanceof DetailedError && result.error.statusCode === 404) {
-      return null;
-    }
-    throw new Error(`Failed to resolve slack-app for workspace '${workspaceId}': ${result.error}`);
-  }
-
-  return { credentialId: result.data.credential_id, appId: result.data.app_id };
-}
-
-/**
- * Delete a Slack app via Link — removes the app from Slack, the webhook secret,
- * the workspace↔credential mapping, and the credential itself. Idempotent:
- * a 404 from Link is treated as success.
- */
-export async function deleteSlackApp(appId: string): Promise<void> {
-  const result = await parseResult(
-    client.link.internal.v1["slack-apps"]["by-app-id"][":app_id"].$delete(
-      { param: { app_id: appId } },
-      { headers: getLinkAuthHeaders() },
-    ),
-  );
-
-  if (!result.ok) {
-    if (result.error instanceof DetailedError && result.error.statusCode === 404) {
-      return;
-    }
-    throw new Error(`Failed to delete slack app '${appId}': ${result.error}`);
-  }
-}
-
-export async function resolveCredentialsByProvider(
-  provider: string,
-  opts?: { workspaceId?: string },
-): Promise<CredentialSummary[]> {
-  // slack-app credentials are per-workspace — resolve via workspace mapping
-  // instead of the generic summary endpoint.
-  if (provider === "slack-app") {
-    return resolveSlackAppCredentials(opts?.workspaceId);
-  }
-
+export async function resolveCredentialsByProvider(provider: string): Promise<CredentialSummary[]> {
   const result = await parseResult(
     client.link.v1.summary.$get({ query: { provider } }, { headers: getLinkAuthHeaders() }),
   );
@@ -178,42 +102,6 @@ export async function resolveCredentialsByProvider(
     throw new CredentialNotFoundError(provider);
   }
   return credentials;
-}
-
-/**
- * Resolve slack-app credential. Resolution order:
- * 1. If workspaceId provided, check for a bot already wired to this workspace
- * 2. Check for an unwired bot (available for wiring by the workspace create flow)
- * 3. No credential available — throw
- */
-async function resolveSlackAppCredentials(workspaceId?: string): Promise<CredentialSummary[]> {
-  // Workspace exists — check wired bot first
-  if (workspaceId) {
-    const wired = await resolveSlackAppByWorkspace(workspaceId);
-    if (wired) {
-      return [toSlackAppSummary(wired.credentialId)];
-    }
-  }
-
-  // Check for an unwired bot (build-time: will be wired by tryAutoWireSlackApp)
-  const unwired = await resolveUnwiredSlackApp();
-  if (unwired) {
-    return [toSlackAppSummary(unwired.credentialId)];
-  }
-
-  throw new CredentialNotFoundError("slack-app");
-}
-
-function toSlackAppSummary(credentialId: string): CredentialSummary {
-  return {
-    id: credentialId,
-    provider: "slack-app",
-    label: "",
-    type: "oauth",
-    displayName: null,
-    userIdentifier: null,
-    isDefault: false,
-  };
 }
 
 /**

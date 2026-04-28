@@ -1474,23 +1474,14 @@ describe("POST /create — credential resolution", () => {
     );
   });
 
-  test("imports bundled agent with slack-app provider → requires_setup (never auto-resolved)", async () => {
+  test("imports bundled agent with slack-app provider → requires_setup when no credential", async () => {
     const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
-    // slack-app credentials exist, but should NOT be auto-resolved —
-    // each workspace needs a fresh bot install.
-    mockResolveCredentialsByProvider.mockResolvedValue([
-      {
-        id: "cred_sl",
-        provider: "slack",
-        label: "Work Slack",
-        type: "oauth",
-        displayName: null,
-        userIdentifier: null,
-        isDefault: false,
-      },
-    ]);
+    const { CredentialNotFoundError } = await import(
+      "@atlas/core/mcp-registry/credential-resolver"
+    );
+    mockResolveCredentialsByProvider.mockRejectedValue(new CredentialNotFoundError("slack-app"));
 
     const config = makeConfig({
       agents: {
@@ -1512,9 +1503,7 @@ describe("POST /create — credential resolution", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.success).toBe(true);
-    // slack-app should NOT be in resolvedCredentials
     expect(body.resolvedCredentials).toBeUndefined();
-    // Workspace should require setup
     expect(mockRegisterWorkspace).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ skipEnvValidation: true }),

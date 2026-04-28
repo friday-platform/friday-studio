@@ -64,13 +64,6 @@ import {
   setCommunicatorMutation,
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
-import {
-  createLinkUnwiredClient,
-  createLinkWireClient,
-  enableSlackEventSubscriptions,
-  slackSignalMutation,
-  tryAutoWireSlackApp,
-} from "../../src/services/slack-auto-wire.ts";
 import { getCurrentUser } from "../me/adapter.ts";
 import { applyBlueprint, loadWorkspaceBlueprint } from "./blueprint-recompile.ts";
 import {
@@ -544,10 +537,7 @@ const workspacesRoutes = daemonFactory
       );
       const allProviders = [...new Set(providerOnlyRefs.map((ref) => ref.provider))];
 
-      // slack-app credentials are 1:1 with workspaces — never auto-resolve from the
-      // generic pool. Always require a fresh bot install via the setup flow.
-      const uniqueProviders = allProviders.filter((p) => p !== "slack-app");
-      const hasSlackApp = allProviders.includes("slack-app");
+      const uniqueProviders = allProviders;
 
       type ResolvedCredentialInfo = {
         path: string;
@@ -641,12 +631,6 @@ const workspacesRoutes = daemonFactory
           }));
       }
 
-      // slack-app credentials are 1:1 with workspaces — always require fresh
-      // bot install via setup flow, regardless of existing credentials.
-      if (hasSlackApp) {
-        unresolvedProviders.push("slack-app");
-      }
-
       // Reference validator — catches LLM hallucinations (bad npm packages,
       // typoed agent ids, unknown skills, etc.) before they land on disk.
       // Registry-confirmed 404 and cross-ref typos are hard-fail; registry
@@ -718,32 +702,6 @@ const workspacesRoutes = daemonFactory
           });
         }
 
-        // Best-effort Slack auto-wire: find unwired slack-app credential, wire it,
-        // and inject a provider: "slack" signal into the workspace config.
-        // Skip when slack-app refs are present — those require a fresh bot install
-        // via the setup flow, not reuse of an existing credential.
-        let slackWired: { credentialId: string; appId: string } | undefined;
-        if (!hasSlackApp) {
-          try {
-            const wireResult = await tryAutoWireSlackApp(
-              { findUnwired: createLinkUnwiredClient(), wireToWorkspace: createLinkWireClient() },
-              workspace.id,
-              finalWorkspaceName,
-              validatedConfig.workspace.description,
-            );
-            if (wireResult) {
-              slackWired = wireResult;
-              await applyMutation(workspacePath, slackSignalMutation(wireResult.appId));
-              await enableSlackEventSubscriptions(wireResult.credentialId);
-            }
-          } catch (wireError) {
-            logger.warn("Slack auto-wire failed during workspace creation", {
-              workspaceId: workspace.id,
-              error: stringifyError(wireError),
-            });
-          }
-        }
-
         // Provision resources declared in the imported config
         let resourceErrors: string[] | undefined;
         if (validatedConfig.resources && validatedConfig.resources.length > 0 && created) {
@@ -774,7 +732,6 @@ const workspacesRoutes = daemonFactory
             ...(strippedCredentialPaths && strippedCredentialPaths.length > 0
               ? { strippedCredentials: strippedCredentialPaths }
               : {}),
-            ...(slackWired ? { slackWired } : {}),
             ...(unresolvedCredentialPaths && unresolvedCredentialPaths.length > 0
               ? { unresolvedCredentials: unresolvedCredentialPaths }
               : {}),
@@ -820,27 +777,6 @@ const workspacesRoutes = daemonFactory
         analytics.emit({ eventName: EventNames.WORKSPACE_CREATED, userId, workspaceId: entry.id });
       }
 
-      // Best-effort Slack auto-wire
-      let slackWired: { credentialId: string; appId: string } | undefined;
-      try {
-        const wireResult = await tryAutoWireSlackApp(
-          { findUnwired: createLinkUnwiredClient(), wireToWorkspace: createLinkWireClient() },
-          entry.id,
-          name ?? entry.name,
-          description,
-        );
-        if (wireResult) {
-          slackWired = wireResult;
-          await applyMutation(path, slackSignalMutation(wireResult.appId));
-          await enableSlackEventSubscriptions(wireResult.credentialId);
-        }
-      } catch (wireError) {
-        logger.warn("Slack auto-wire failed during workspace add", {
-          workspaceId: entry.id,
-          error: stringifyError(wireError),
-        });
-      }
-
       // Convert to API response format
       const workspaceInfo = {
         id: entry.id,
@@ -851,7 +787,6 @@ const workspacesRoutes = daemonFactory
         createdAt: entry.createdAt,
         lastSeen: entry.lastSeen,
         created,
-        ...(slackWired ? { slackWired } : {}),
       };
 
       return c.json(workspaceInfo, created ? 201 : 200);
@@ -1613,30 +1548,6 @@ const workspacesRoutes = daemonFactory
 
         if (missingProviders.length > 0) {
           return c.json({ error: "incomplete_setup", missingProviders }, 422);
-        }
-
-        // Wire slack-app credential to workspace if present (mapping table + signal app_id)
-        const slackAppCred = credentials.find(
-          (cred) => cred.provider === "slack-app" && cred.credentialId,
-        );
-        if (slackAppCred?.credentialId) {
-          try {
-            const wireClient = createLinkWireClient();
-            const appId = await wireClient(
-              slackAppCred.credentialId,
-              workspaceId,
-              workspace.name,
-              config.workspace.workspace?.description,
-            );
-            await applyMutation(workspace.path, slackSignalMutation(appId));
-            await enableSlackEventSubscriptions(slackAppCred.credentialId);
-          } catch (wireError) {
-            logger.warn("Slack wiring failed during setup completion", {
-              workspaceId,
-              credentialId: slackAppCred.credentialId,
-              error: stringifyError(wireError),
-            });
-          }
         }
 
         // All credentials connected — clear requires_setup

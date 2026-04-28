@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { TestCommunicatorWiringRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
-import { SLACK_APP_PROVIDER } from "../providers/constants.ts";
 import { ProviderRegistry } from "../providers/registry.ts";
 import { defineApiKeyProvider } from "../providers/types.ts";
 import { createCommunicatorRoutes } from "./communicator.ts";
@@ -233,7 +232,7 @@ describe("Communicator Routes", () => {
   describe("GET /internal/v1/communicator/wiring", () => {
     it("returns 200 { wiring: null } when no wiring exists for the workspace", async () => {
       const res = await app.request(
-        `/internal/v1/communicator/wiring?workspace_id=ws-unwired&provider=${SLACK_APP_PROVIDER}`,
+        "/internal/v1/communicator/wiring?workspace_id=ws-unwired&provider=slack",
       );
 
       expect(res.status).toBe(200);
@@ -242,10 +241,10 @@ describe("Communicator Routes", () => {
     });
 
     it("returns 200 with wiring details when the workspace is wired", async () => {
-      await wiringRepo.insert(userId, "cred-abc", "ws-wired", SLACK_APP_PROVIDER, "conn-xyz");
+      await wiringRepo.insert(userId, "cred-abc", "ws-wired", "slack", "conn-xyz");
 
       const res = await app.request(
-        `/internal/v1/communicator/wiring?workspace_id=ws-wired&provider=${SLACK_APP_PROVIDER}`,
+        "/internal/v1/communicator/wiring?workspace_id=ws-wired&provider=slack",
       );
 
       expect(res.status).toBe(200);
@@ -254,8 +253,8 @@ describe("Communicator Routes", () => {
     });
 
     it("returns 200 { workspace_ids: [...] } in list mode when no params are given", async () => {
-      await wiringRepo.insert(userId, "cred-1", "ws-a", SLACK_APP_PROVIDER, "conn-1");
-      await wiringRepo.insert(userId, "cred-2", "ws-b", SLACK_APP_PROVIDER, "conn-2");
+      await wiringRepo.insert(userId, "cred-1", "ws-a", "slack", "conn-1");
+      await wiringRepo.insert(userId, "cred-2", "ws-b", "slack", "conn-2");
 
       const res = await app.request("/internal/v1/communicator/wiring");
 

@@ -1,7 +1,4 @@
-import { readFileSync } from "node:fs";
-import { env } from "node:process";
 import { logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
 // Side-effect import: config.ts has a top-level `await loadEnv()` that populates
 // process.env from the DOT_ENV file. This must run before any provider factory
 // reads env vars (e.g. GITHUB_APP_ID_FILE). Without this dependency edge, ES module
@@ -23,7 +20,6 @@ import { linearProvider } from "./linear.ts";
 import { notionProvider } from "./notion.ts";
 import { posthogProvider } from "./posthog.ts";
 import { sentryProvider } from "./sentry.ts";
-import { createSlackUserProvider } from "./slack-user.ts";
 import { snowflakeProvider } from "./snowflake.ts";
 import { getProviderStorageAdapter, type ProviderStorageAdapter } from "./storage/index.ts";
 import type { DynamicProviderInput, ProviderDefinition } from "./types.ts";
@@ -124,29 +120,6 @@ const googleProviders = [
 ];
 for (const provider of googleProviders) {
   if (provider) registry.register(provider);
-}
-
-// The dynamic slack-app provider is registered in index.ts (needs StorageAdapter)
-const slackUserProvider = (() => {
-  const clientIdFile = env.SLACK_APP_CLIENT_ID_FILE;
-  const clientSecretFile = env.SLACK_APP_CLIENT_SECRET_FILE;
-  if (!clientIdFile || !clientSecretFile) return undefined;
-  try {
-    return createSlackUserProvider({
-      clientId: readFileSync(clientIdFile, "utf-8").trim(),
-      clientSecret: readFileSync(clientSecretFile, "utf-8").trim(),
-    });
-  } catch (err) {
-    logger.warn("slack_user_credential_read_failed", { error: stringifyError(err) });
-    return undefined;
-  }
-})();
-if (slackUserProvider) {
-  registry.register(slackUserProvider);
-} else {
-  logger.info(
-    "Skipping slack-user provider: SLACK_APP_CLIENT_ID_FILE or SLACK_APP_CLIENT_SECRET_FILE not set",
-  );
 }
 
 const githubAppProvider = createGitHubAppInstallProvider();

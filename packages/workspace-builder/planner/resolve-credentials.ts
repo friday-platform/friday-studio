@@ -26,8 +26,6 @@ export type UnresolvedCredential = {
 export type ResolveCredentialsOpts = {
   /** Skip Link API calls — returns all Link fields as unresolved. */
   skipLink?: boolean;
-  /** Workspace ID — when provided, slack-app resolves via the wired bot first. */
-  workspaceId?: string;
 };
 
 /** Result from resolveCredentials(). */
@@ -44,9 +42,6 @@ export type ResolveCredentialsResult = {
  * plan approval UI can render a picker. If no default exists (ambiguous),
  * the first candidate is auto-selected into bindings instead of leaving it
  * unresolved — the user can override via the picker before approving.
- *
- * slack-app credentials are per-workspace — handled internally by
- * resolveCredentialsByProvider when workspaceId is provided.
  */
 export async function resolveCredentials(
   requirements: ConfigRequirement[],
@@ -82,9 +77,7 @@ export async function resolveCredentials(
       try {
         let credentials = fetchCache.get(field.provider);
         if (!credentials) {
-          credentials = await resolveCredentialsByProvider(field.provider, {
-            workspaceId: opts?.workspaceId,
-          });
+          credentials = await resolveCredentialsByProvider(field.provider);
           fetchCache.set(field.provider, credentials);
         }
 
@@ -135,7 +128,7 @@ export async function resolveCredentials(
             targetType,
             targetId,
             field: field.key,
-            reason: field.provider === "slack-app" ? "setup_required" : "not_found",
+            reason: "not_found",
           });
         } else {
           throw error;

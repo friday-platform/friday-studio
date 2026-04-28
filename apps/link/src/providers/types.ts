@@ -41,23 +41,8 @@ export type OAuthTokens = {
 
 export type Platform = "slack" | "github";
 
-const SlackCredentialSecretSchema = z.object({
-  platform: z.literal("slack"),
-  externalId: z.string(),
-  access_token: z.string(),
-  refresh_token: z.string().optional(),
-  expires_at: z.number().optional(),
-  slack: z
-    .object({
-      clientId: z.string().optional(),
-      clientSecret: z.string().optional(),
-      slackUserCredentialId: z.string().optional(),
-    })
-    .optional(),
-});
-
 /** installationId is the single source of truth — tokens are minted fresh from it. */
-const GitHubAppCredentialSecretSchema = z.object({
+export const AppInstallCredentialSecretSchema = z.object({
   platform: z.literal("github"),
   externalId: z.string(),
   access_token: z.string(),
@@ -68,52 +53,6 @@ const GitHubAppCredentialSecretSchema = z.object({
     organizationId: z.number(),
   }),
 });
-
-/** xoxp- user token for manifest API access. */
-const SlackUserCredentialSecretSchema = z.object({
-  platform: z.literal("slack-user"),
-  access_token: z.string(),
-  team_id: z.string(),
-  team_name: z.string(),
-  user_id: z.string(),
-});
-
-/**
- * Normalizes legacy credential data by adding the `platform` discriminant.
- *
- * LEGACY DATA HANDLING (added Jan 2026):
- * Before the GitHub App integration, Slack credentials were stored without a
- * `platform` field. With the introduction of the discriminated union for
- * multi-platform support, we need to handle these legacy credentials.
- *
- * Why lazy migration instead of a database migration script:
- * - Credentials are encrypted per-user via Cypher service using user_id as AAD
- * - A migration script cannot decrypt all users' credentials with a single token
- * - Lazy migration runs in the user's auth context where decryption works
- *
- * Detection heuristic:
- * - Missing `platform` field + has `externalId` field = legacy Slack credential
- * - This is safe because GitHub credentials always have `platform: "github"`
- *
- * Cleanup: This preprocessor can be removed once all Slack credentials have been
- * refreshed (tokens expire and get rewritten with the new schema). Monitor for
- * credentials without `platform` field before removing.
- */
-function normalizeLegacyCredential(data: unknown): unknown {
-  if (typeof data === "object" && data !== null && !("platform" in data) && "externalId" in data) {
-    return { ...data, platform: "slack" };
-  }
-  return data;
-}
-
-export const AppInstallCredentialSecretSchema = z.preprocess(
-  normalizeLegacyCredential,
-  z.discriminatedUnion("platform", [
-    SlackCredentialSecretSchema,
-    SlackUserCredentialSecretSchema,
-    GitHubAppCredentialSecretSchema,
-  ]),
-);
 
 export type AppInstallCredentialSecret = z.infer<typeof AppInstallCredentialSecretSchema>;
 

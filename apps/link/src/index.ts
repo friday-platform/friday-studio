@@ -31,7 +31,6 @@ import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
 import {
   DISCORD_PROVIDER,
-  SLACK_APP_PROVIDER,
   SLACK_PROVIDER,
   TEAMS_PROVIDER,
   TELEGRAM_PROVIDER,
@@ -40,7 +39,6 @@ import {
 import { discordProvider } from "./providers/discord.ts";
 import { registry } from "./providers/registry.ts";
 import { slackProvider } from "./providers/slack.ts";
-import { createSlackAppDynamicProvider } from "./providers/slack-app-dynamic.ts";
 import { teamsProvider } from "./providers/teams.ts";
 import { telegramProvider } from "./providers/telegram.ts";
 import { whatsappProvider } from "./providers/whatsapp.ts";
@@ -51,8 +49,6 @@ import { createCredentialsRoutes, createInternalCredentialsRoutes } from "./rout
 import { createOAuthRoutes } from "./routes/oauth.ts";
 import { providersRouter } from "./routes/providers.ts";
 import { createSummaryRoutes } from "./routes/summary.ts";
-import { createInternalSlackAppRoutes, createSlackAppRoutes } from "./slack-apps/routes.ts";
-import { SlackAppService } from "./slack-apps/service.ts";
 import type { StorageAdapter } from "./types.ts";
 
 /** Create Link application. Reads config fresh on each call to support testing. */
@@ -170,10 +166,6 @@ export function createApp(
     callbackBase,
   );
 
-  if (!registry.has(SLACK_APP_PROVIDER)) {
-    registry.register(createSlackAppDynamicProvider(storage));
-  }
-
   if (!registry.has(SLACK_PROVIDER)) {
     registry.register(slackProvider);
   }
@@ -194,21 +186,14 @@ export function createApp(
     registry.register(whatsappProvider);
   }
 
-  const slackAppService = new SlackAppService(storage, communicatorWiringRepo);
-
   return baseApp
     .route("/v1/providers", providersRouter)
     .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
     .route("/v1/callback", createCallbackRoutes(oauthService, appInstallService))
     .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
-    .route("/v1/summary", createSummaryRoutes(storage, communicatorWiringRepo))
+    .route("/v1/summary", createSummaryRoutes(storage))
     .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
     .route("/v1/app-install", createAppInstallRoutes(appInstallService))
-    .route("/v1/slack-apps", createSlackAppRoutes(slackAppService))
-    .route(
-      "/internal/v1/slack-apps",
-      createInternalSlackAppRoutes(slackAppService, cfg.gatewayBase),
-    )
     .route(
       "/internal/v1/communicator",
       createCommunicatorRoutes(communicatorWiringRepo, storage, registry),
