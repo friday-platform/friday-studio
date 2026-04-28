@@ -675,7 +675,6 @@ func TestAutostartStalenessRepair(t *testing.T) {
 		data, err := os.ReadFile(plistPath)
 		if err == nil && !strings.Contains(string(data), stalePath) &&
 			strings.Contains(string(data), "ai.hellofriday.studio-launcher") {
-			_ = launcher
 			return // success
 		}
 		time.Sleep(100 * time.Millisecond)

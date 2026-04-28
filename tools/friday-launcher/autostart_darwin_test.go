@@ -5,7 +5,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -61,7 +60,7 @@ func TestCurrentAutostartBundleID_V008FormatReturnsEmpty(t *testing.T) {
   <key>Label</key><string>ai.hellofriday.studio</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/lcf/.friday/local/friday-launcher</string>
+    <string>/usr/local/friday-launcher</string>
     <string>--no-browser</string>
   </array>
   <key>RunAtLoad</key><true/>
@@ -192,7 +191,4 @@ func TestCurrentAutostartBundleID_WrongPrefixReturnsEmpty(t *testing.T) {
 	if got := currentAutostartBundleID(); got != "" {
 		t.Errorf("got %q, want \"\" for non-/usr/bin/open prefix", got)
 	}
-	// strings is referenced once via the string concatenation
-	// above — placate any future unused-import lint pass.
-	_ = strings.HasPrefix
 }

@@ -32,11 +32,11 @@ func requiredBinaries() []string {
 }
 
 // checkBinariesPresent verifies that every supervised binary exists
-// at `binDir/<name>` as a non-empty regular file. Returns the list
-// of missing binaries (empty slice on success) plus the first
-// stat-error if any — non-existence is an empty error; permission /
-// IO errors surface so the user sees something more actionable than
-// "missing binary".
+// at `binDir/<name>` as a non-directory file with non-zero size.
+// Returns the list of missing binaries (empty slice on success) plus
+// the first stat-error if any — non-existence is an empty error;
+// permission / IO errors surface so the user sees something more
+// actionable than "missing binary".
 //
 // We do NOT verify the binaries are valid Mach-O / PE / ELF or
 // carry the executable bit — that's process-compose's job at spawn
