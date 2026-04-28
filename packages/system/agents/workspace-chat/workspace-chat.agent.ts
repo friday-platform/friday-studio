@@ -921,7 +921,6 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
                   endTimestamp = new Date().toISOString();
                 }
                 return {
-                  ...metadata,
                   startTimestamp,
                   endTimestamp,
                   provider: conversationalModel.provider,
