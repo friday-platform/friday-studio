@@ -36,15 +36,15 @@ describe("workspace direct chat injection", () => {
 
   beforeEach(() => {
     testDir = makeTempDir({ prefix: "atlas_chat_injection_test_" });
-    originalAtlasHome = process.env.ATLAS_HOME;
-    process.env.ATLAS_HOME = testDir;
+    originalAtlasHome = process.env.FRIDAY_HOME;
+    process.env.FRIDAY_HOME = testDir;
   });
 
   afterEach(async () => {
     if (originalAtlasHome) {
-      process.env.ATLAS_HOME = originalAtlasHome;
+      process.env.FRIDAY_HOME = originalAtlasHome;
     } else {
-      delete process.env.ATLAS_HOME;
+      delete process.env.FRIDAY_HOME;
     }
     try {
       await rm(testDir, { recursive: true });

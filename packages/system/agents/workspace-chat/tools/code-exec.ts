@@ -80,14 +80,14 @@ const LANGUAGE_COMMANDS: Record<Language, { extension: string; build: (file: str
 // ─── Scratch directory ───────────────────────────────────────────────────────
 
 /**
- * Resolve the per-session scratch directory under `{ATLAS_HOME}/scratch/{sessionId}/`.
+ * Resolve the per-session scratch directory under `{FRIDAY_HOME}/scratch/{sessionId}/`.
  * The directory is created on first call and reused across `run_code`
  * invocations within the same chat turn so scripts can read files written
  * by earlier calls. It is NOT cleaned up here — cleanup happens when the
  * chat-sdk session ends.
  */
 function scratchDir(sessionId: string): string {
-  const atlasHome = process.env.ATLAS_HOME ?? join(process.env.HOME ?? "/tmp", ".atlas");
+  const atlasHome = process.env.FRIDAY_HOME ?? join(process.env.HOME ?? "/tmp", ".atlas");
   // Strip any path traversal; session IDs are UUIDs so this is paranoia.
   const safe = sessionId.replace(/[^a-zA-Z0-9-_]/g, "");
   return join(atlasHome, "scratch", safe || "default");

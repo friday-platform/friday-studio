@@ -42,7 +42,7 @@ export async function createLibraryStorage(
 
 /** Common storage configurations */
 export const StorageConfigs = {
-  /** Default Deno KV storage in $ATLAS_HOME/ (respects ATLAS_HOME env var) */
+  /** Default Deno KV storage in $FRIDAY_HOME/ (respects FRIDAY_HOME env var) */
   defaultKV(): KVStorageConfig {
     return { type: "deno-kv", connection: `${getAtlasHome()}/storage.db` };
   },

@@ -127,8 +127,8 @@ async function withTestRuntime(
   fn: (runtime: import("../runtime.ts").WorkspaceRuntime) => Promise<void>,
 ): Promise<void> {
   const testDir = makeTempDir({ prefix: "atlas_standing_orders_test_" });
-  const originalAtlasHome = process.env.ATLAS_HOME;
-  process.env.ATLAS_HOME = testDir;
+  const originalAtlasHome = process.env.FRIDAY_HOME;
+  process.env.FRIDAY_HOME = testDir;
 
   const { WorkspaceRuntime } = await import("../runtime.ts");
 
@@ -147,9 +147,9 @@ async function withTestRuntime(
     await runtime.shutdown();
   } finally {
     if (originalAtlasHome) {
-      process.env.ATLAS_HOME = originalAtlasHome;
+      process.env.FRIDAY_HOME = originalAtlasHome;
     } else {
-      delete process.env.ATLAS_HOME;
+      delete process.env.FRIDAY_HOME;
     }
     try {
       await rm(testDir, { recursive: true });

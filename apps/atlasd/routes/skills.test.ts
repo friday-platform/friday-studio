@@ -8,7 +8,7 @@ import { z } from "zod";
 // Set up isolated test environment BEFORE importing routes
 const testDir = join(tmpdir(), `skills-routes-test-${Date.now()}`);
 mkdirSync(join(testDir, "data"), { recursive: true });
-process.env.ATLAS_HOME = testDir;
+process.env.FRIDAY_HOME = testDir;
 
 // Create a test JWT for auth
 function createTestJwt(payload: Record<string, unknown>): string {

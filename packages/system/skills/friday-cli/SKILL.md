@@ -262,7 +262,7 @@ image.
 - **`"Signal 'X' not found"` on `POST /signals/:id` immediately after
   creating the signal** — the runtime hasn't seen the edit yet. Three
   common causes: (a) you used the `write_file` tool to edit `workspace.yml`,
-  which writes to `{ATLAS_HOME}/scratch/{sessionId}/` only — the real file
+  which writes to `{FRIDAY_HOME}/scratch/{sessionId}/` only — the real file
   never changed. Use `run_code` with an absolute path instead. (b) Your
   config edit failed Zod validation — check the workspace log for
   `"Invalid workspace configuration detected, skipping reload"`. (c) An

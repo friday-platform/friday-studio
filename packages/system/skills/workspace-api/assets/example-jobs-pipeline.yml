@@ -33,7 +33,7 @@ tools:
           args:
             - mcp-server-sqlite
             - "--db-path"
-            - "${ATLAS_HOME}/workspaces/bookmarks/bookmarks.sqlite"
+            - "${FRIDAY_HOME}/workspaces/bookmarks/bookmarks.sqlite"
 
 signals:
   save-bookmark:

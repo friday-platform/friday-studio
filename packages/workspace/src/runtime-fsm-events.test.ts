@@ -51,8 +51,8 @@ function createTestConfig(): MergedConfig {
 
 it("WorkspaceRuntime emits FSM transition and action events via chunk callback", async () => {
   const testDir = makeTempDir({ prefix: "atlas_fsm_events_test_" });
-  const originalAtlasHome = process.env.ATLAS_HOME;
-  process.env.ATLAS_HOME = testDir;
+  const originalAtlasHome = process.env.FRIDAY_HOME;
+  process.env.FRIDAY_HOME = testDir;
 
   try {
     const config = createTestConfig();
@@ -127,9 +127,9 @@ it("WorkspaceRuntime emits FSM transition and action events via chunk callback",
     await runtime.shutdown();
   } finally {
     if (originalAtlasHome) {
-      process.env.ATLAS_HOME = originalAtlasHome;
+      process.env.FRIDAY_HOME = originalAtlasHome;
     } else {
-      delete process.env.ATLAS_HOME;
+      delete process.env.FRIDAY_HOME;
     }
     try {
       await rm(testDir, { recursive: true });

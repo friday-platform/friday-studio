@@ -51,7 +51,7 @@ export function isSystemService(): boolean {
  * - User mode: ~/.atlas
  */
 export function getAtlasHome(): string {
-  const atlasHome = process.env.ATLAS_HOME;
+  const atlasHome = process.env.FRIDAY_HOME;
   if (atlasHome) {
     return atlasHome;
   }

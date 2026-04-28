@@ -138,8 +138,8 @@ function createMockSessionStream() {
 describe("workspace-runtime session:summary wiring", () => {
   it("emits session:summary AFTER session:complete and BEFORE finalize, with aiSummary on finalized summary", async () => {
     const testDir = makeTempDir({ prefix: "atlas_session_summary_test_" });
-    const originalAtlasHome = process.env.ATLAS_HOME;
-    process.env.ATLAS_HOME = testDir;
+    const originalAtlasHome = process.env.FRIDAY_HOME;
+    process.env.FRIDAY_HOME = testDir;
 
     const mock = createMockSessionStream();
 
@@ -189,9 +189,9 @@ describe("workspace-runtime session:summary wiring", () => {
       await runtime.shutdown();
     } finally {
       if (originalAtlasHome) {
-        process.env.ATLAS_HOME = originalAtlasHome;
+        process.env.FRIDAY_HOME = originalAtlasHome;
       } else {
-        delete process.env.ATLAS_HOME;
+        delete process.env.FRIDAY_HOME;
       }
       try {
         await rm(testDir, { recursive: true });
@@ -206,8 +206,8 @@ describe("workspace-runtime session:summary wiring", () => {
     mockGenerateSessionSummary.mockResolvedValueOnce(undefined);
 
     const testDir = makeTempDir({ prefix: "atlas_session_summary_test_" });
-    const originalAtlasHome = process.env.ATLAS_HOME;
-    process.env.ATLAS_HOME = testDir;
+    const originalAtlasHome = process.env.FRIDAY_HOME;
+    process.env.FRIDAY_HOME = testDir;
 
     const mock = createMockSessionStream();
 
@@ -242,9 +242,9 @@ describe("workspace-runtime session:summary wiring", () => {
       await runtime.shutdown();
     } finally {
       if (originalAtlasHome) {
-        process.env.ATLAS_HOME = originalAtlasHome;
+        process.env.FRIDAY_HOME = originalAtlasHome;
       } else {
-        delete process.env.ATLAS_HOME;
+        delete process.env.FRIDAY_HOME;
       }
       try {
         await rm(testDir, { recursive: true });

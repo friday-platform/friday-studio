@@ -1055,7 +1055,7 @@ const artifactsApp = daemonFactory
       return c.json({ error: validation.error }, 415);
     }
 
-    // Stream file to /tmp, then createArtifactFromFile persists to ATLAS_HOME
+    // Stream file to /tmp, then createArtifactFromFile persists to FRIDAY_HOME
     const uploadTmpDir = join(tmpdir(), "atlas-upload");
     await mkdir(uploadTmpDir, { recursive: true });
     const uuid = crypto.randomUUID();

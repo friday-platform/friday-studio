@@ -646,7 +646,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // - web_search: Brave Search API, only registered when
         //   BRAVE_SEARCH_API_KEY is set (Hermes `check_fn` pattern).
         // - run_code: python3 / deno / bash subprocess in a per-session
-        //   scratch dir under {ATLAS_HOME}/scratch/{sessionId}/, 30 s
+        //   scratch dir under {FRIDAY_HOME}/scratch/{sessionId}/, 30 s
         //   timeout, 100 KB stdout cap. No network inside the sandbox —
         //   scripts must use web_fetch via the outer tool loop.
         // - read_file / write_file / list_files: scoped to the same scratch

@@ -18,7 +18,7 @@
  *   - Write to workspace source code or config.
  *   - Leak data across users or across chat sessions.
  *
- * So every path is resolved relative to `{ATLAS_HOME}/scratch/{sessionId}/`
+ * So every path is resolved relative to `{FRIDAY_HOME}/scratch/{sessionId}/`
  * and rejected if it escapes that root after `path.resolve` normalization.
  * The same scratch dir is shared with {@link createRunCodeTool}, so a
  * Python script and a `read_file` call see the same files.
@@ -47,7 +47,7 @@ const MAX_LIST_ENTRIES = 1000;
 // ─── Scratch path resolver ───────────────────────────────────────────────────
 
 function scratchRoot(sessionId: string): string {
-  const atlasHome = process.env.ATLAS_HOME ?? join(process.env.HOME ?? "/tmp", ".atlas");
+  const atlasHome = process.env.FRIDAY_HOME ?? join(process.env.HOME ?? "/tmp", ".atlas");
   const safe = sessionId.replace(/[^a-zA-Z0-9-_]/g, "");
   return join(atlasHome, "scratch", safe || "default");
 }

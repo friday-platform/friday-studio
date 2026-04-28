@@ -35,12 +35,12 @@ const REPO_ROOT = process.cwd();
  * TELEGRAM_BOT_TOKEN, etc.) never reach the daemon's `process.env`, forcing
  * users to paste plaintext credentials directly into `workspace.yml`.
  */
-const ATLAS_HOME_ENV = path.join(homedir(), ".atlas", ".env");
+const FRIDAY_HOME_ENV = path.join(homedir(), ".atlas", ".env");
 const REPO_ENV = path.join(REPO_ROOT, ".env");
 function envFileFlags(): string[] {
   const flags: string[] = [];
   if (existsSync(REPO_ENV)) flags.push(`--env-file=${REPO_ENV}`);
-  if (existsSync(ATLAS_HOME_ENV)) flags.push(`--env-file=${ATLAS_HOME_ENV}`);
+  if (existsSync(FRIDAY_HOME_ENV)) flags.push(`--env-file=${FRIDAY_HOME_ENV}`);
   return flags;
 }
 

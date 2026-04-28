@@ -47,8 +47,8 @@ describe("loadCredentials", () => {
 
     const savedHome = process.env.HOME;
     process.env.HOME = "/nonexistent";
-    const savedAtlasHome = process.env.ATLAS_HOME;
-    delete process.env.ATLAS_HOME;
+    const savedAtlasHome = process.env.FRIDAY_HOME;
+    delete process.env.FRIDAY_HOME;
 
     try {
       const deps = createMockDeps();
@@ -60,7 +60,7 @@ describe("loadCredentials", () => {
     } finally {
       if (saved !== undefined) process.env.ATLAS_KEY = saved;
       if (savedHome !== undefined) process.env.HOME = savedHome;
-      if (savedAtlasHome !== undefined) process.env.ATLAS_HOME = savedAtlasHome;
+      if (savedAtlasHome !== undefined) process.env.FRIDAY_HOME = savedAtlasHome;
     }
   });
 });

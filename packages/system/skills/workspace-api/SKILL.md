@@ -324,7 +324,7 @@ Python agent creation is an out-of-flow step the user kicks off explicitly. See 
 
    For detailed signal authoring guidance (schema payloads, provider configs, path collisions), load `@friday/writing-workspace-signals` before creating or editing any signal.
 
-4. **`write_file` writes to scratch only** (`{ATLAS_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
+4. **`write_file` writes to scratch only** (`{FRIDAY_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
 
 5. **Always call `list_mcp_tools` before referencing MCP tools in an agent.** Tool names are not predictable — they come from the server implementation, not the server ID. Guessing produces `unknown_tool` validation errors. Call `list_mcp_tools({ serverId })`, then use the returned names verbatim in the agent's `tools` array. The returned names are already prefixed as `serverId/toolName`.
 

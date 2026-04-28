@@ -83,8 +83,8 @@ async function withTestRuntime<T>(
   fn: (runtime: WorkspaceRuntime) => Promise<T>,
 ): Promise<T> {
   const testDir = makeTempDir({ prefix: "atlas_error_prop_test_" });
-  const originalAtlasHome = process.env.ATLAS_HOME;
-  process.env.ATLAS_HOME = testDir;
+  const originalAtlasHome = process.env.FRIDAY_HOME;
+  process.env.FRIDAY_HOME = testDir;
 
   try {
     const runtime = new WorkspaceRuntime({ id: "test-workspace-id" }, config, {
@@ -98,9 +98,9 @@ async function withTestRuntime<T>(
     return result;
   } finally {
     if (originalAtlasHome) {
-      process.env.ATLAS_HOME = originalAtlasHome;
+      process.env.FRIDAY_HOME = originalAtlasHome;
     } else {
-      delete process.env.ATLAS_HOME;
+      delete process.env.FRIDAY_HOME;
     }
     try {
       await rm(testDir, { recursive: true });

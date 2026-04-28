@@ -829,13 +829,13 @@ describe("createMCPTools", () => {
 
   describe("stdio arg placeholder expansion", () => {
     // Regression: Friday kept guessing wrong usernames in absolute paths.
-    // Expanding `${HOME}` / `${ATLAS_HOME}` at spawn time makes templates
+    // Expanding `${HOME}` / `${FRIDAY_HOME}` at spawn time makes templates
     // portable and removes the hallucinated-username failure mode.
-    it("expands ${HOME} and ${ATLAS_HOME} in stdio args before spawning", async () => {
+    it("expands ${HOME} and ${FRIDAY_HOME} in stdio args before spawning", async () => {
       const originalHome = process.env.HOME;
-      const originalAtlasHome = process.env.ATLAS_HOME;
+      const originalAtlasHome = process.env.FRIDAY_HOME;
       process.env.HOME = "/Users/alice";
-      process.env.ATLAS_HOME = "/Users/alice/.atlas";
+      process.env.FRIDAY_HOME = "/Users/alice/.atlas";
 
       try {
         mockTools.mockResolvedValue({ write_query: { description: "x", parameters: {} } });
@@ -850,7 +850,7 @@ describe("createMCPTools", () => {
               args: [
                 "mcp-server-sqlite",
                 "--db-path",
-                "${ATLAS_HOME}/workspaces/knowledge-base/kb.sqlite",
+                "${FRIDAY_HOME}/workspaces/knowledge-base/kb.sqlite",
                 "--fallback",
                 "${HOME}/Documents/kb.sqlite",
               ],
@@ -874,8 +874,8 @@ describe("createMCPTools", () => {
       } finally {
         if (originalHome === undefined) delete process.env.HOME;
         else process.env.HOME = originalHome;
-        if (originalAtlasHome === undefined) delete process.env.ATLAS_HOME;
-        else process.env.ATLAS_HOME = originalAtlasHome;
+        if (originalAtlasHome === undefined) delete process.env.FRIDAY_HOME;
+        else process.env.FRIDAY_HOME = originalAtlasHome;
       }
     });
 
@@ -895,11 +895,11 @@ describe("createMCPTools", () => {
       );
     });
 
-    it("falls back to ${HOME}/.atlas when ATLAS_HOME is unset", async () => {
+    it("falls back to ${HOME}/.atlas when FRIDAY_HOME is unset", async () => {
       const originalHome = process.env.HOME;
-      const originalAtlasHome = process.env.ATLAS_HOME;
+      const originalAtlasHome = process.env.FRIDAY_HOME;
       process.env.HOME = "/Users/test";
-      delete process.env.ATLAS_HOME;
+      delete process.env.FRIDAY_HOME;
 
       try {
         mockTools.mockResolvedValue({});
@@ -911,7 +911,7 @@ describe("createMCPTools", () => {
             transport: {
               type: "stdio",
               command: "uvx",
-              args: ["mcp-server-sqlite", "--db-path", "${ATLAS_HOME}/kb.sqlite"],
+              args: ["mcp-server-sqlite", "--db-path", "${FRIDAY_HOME}/kb.sqlite"],
             },
           },
         };
@@ -926,7 +926,7 @@ describe("createMCPTools", () => {
       } finally {
         if (originalHome === undefined) delete process.env.HOME;
         else process.env.HOME = originalHome;
-        if (originalAtlasHome !== undefined) process.env.ATLAS_HOME = originalAtlasHome;
+        if (originalAtlasHome !== undefined) process.env.FRIDAY_HOME = originalAtlasHome;
       }
     });
   });

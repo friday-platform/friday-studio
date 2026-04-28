@@ -254,7 +254,7 @@ async function connectServer(
 }
 
 /**
- * Expand `${HOME}` / `${ATLAS_HOME}` inside a single string value. Friday
+ * Expand `${HOME}` / `${FRIDAY_HOME}` inside a single string value. Friday
  * regularly guesses the wrong username when asked to write absolute paths
  * in workspace.yml, which 3-retries into "MCP server failed to start" and
  * silently strips the sqlite/fs tools from the agent. Supporting portable
@@ -267,8 +267,8 @@ async function connectServer(
  */
 function interpolateArg(arg: string): string {
   const home = process.env.HOME ?? "";
-  const atlasHome = process.env.ATLAS_HOME ?? (home ? `${home}/.atlas` : "");
-  return arg.replaceAll("${HOME}", home).replaceAll("${ATLAS_HOME}", atlasHome);
+  const atlasHome = process.env.FRIDAY_HOME ?? (home ? `${home}/.atlas` : "");
+  return arg.replaceAll("${HOME}", home).replaceAll("${FRIDAY_HOME}", atlasHome);
 }
 
 async function connectStdio(
