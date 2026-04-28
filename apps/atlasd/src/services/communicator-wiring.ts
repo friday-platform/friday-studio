@@ -1,19 +1,18 @@
 /**
  * Generic atlasd → Link communicator wiring client.
  *
- * Mirrors the slack-auto-wire pattern for non-Slack chat providers (Telegram,
+ * Single connect-communicator path for all chat providers (Slack, Telegram,
  * Discord, Teams, WhatsApp). The wiring table stores `(workspace_id, provider,
  * credential_id, connection_id)`; daemon resolves credentials per-workspace at
  * runtime via the wiring lookup, so workspace.yml only carries `{ kind }` —
  * no inline secrets.
  *
  * `connection_id` is the routing key used by inbound webhook handlers to find
- * the right workspace from a webhook URL. For Telegram it's the post-colon
+ * the right workspace from an incoming event. For Telegram it's the post-colon
  * segment of `bot_token` — the segment Telegram echoes back in webhook URLs
  * registered via `setWebhook(url=…/platform/telegram/<SUFFIX>)`. Treated as
  * semi-sensitive (the full token = bot takeover): stored under RLS, never
- * logged unredacted. Other providers will plug in their own derivation when
- * Task #7 mirrors this pattern.
+ * logged unredacted. Per-kind extraction lives in `deriveConnectionId`.
  */
 
 import process from "node:process";
@@ -26,11 +25,13 @@ import { z } from "zod";
 const logger = createLogger({ component: "communicator-wiring" });
 
 /**
- * Communicator kinds handled by the generic connect-communicator route. Slack
- * is excluded — it has its own connect-slack flow with app-install OAuth.
+ * Communicator kinds handled by the generic connect-communicator route.
+ * Slack joined this set when the apikey provider replaced the OAuth-based
+ * `connect-slack` flow — users now paste `{ bot_token, signing_secret, app_id }`
+ * directly, and the routing key (`app_id`) is extracted in `deriveConnectionId`.
  */
-export const NonSlackCommunicatorKindSchema = z.enum(["telegram", "discord", "teams", "whatsapp"]);
-export type NonSlackCommunicatorKind = z.infer<typeof NonSlackCommunicatorKindSchema>;
+export const CommunicatorKindSchema = z.enum(["slack", "telegram", "discord", "teams", "whatsapp"]);
+export type CommunicatorKind = z.infer<typeof CommunicatorKindSchema>;
 
 /** Telegram credential secret as stored in Link after autoFields injection. */
 export const TelegramCredentialSecretSchema = z.object({
@@ -49,6 +50,8 @@ export const DiscordCredentialSecretSchema = z.object({ application_id: z.string
 export const TeamsCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
 
 export const WhatsappCredentialSecretSchema = z.object({ phone_number_id: z.string().min(1) });
+
+export const SlackCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
 
 function getLinkServiceUrl(): string {
   return process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
@@ -112,16 +115,24 @@ function getLinkAuthHeaders(): Record<string, string> {
  * Derive the routing-key (`connection_id`) for a credential, per kind.
  *
  * Each kind picks the field that the platform echoes back to inbound webhooks
- * (and that the daemon uses for `…/platform/{kind}/{connection_id}` routing):
+ * (and that the daemon uses to route inbound events to a workspace):
+ *   - slack:    `app_id` (matches `api_app_id` in the Slack event payload —
+ *               daemon serves a single `/platform/slack` route and routes by
+ *               body, not path; see `apps/atlasd/routes/signals/platform.ts`)
  *   - telegram: post-colon segment of `bot_token`
  *   - discord:  `application_id` (Discord interactions arrive keyed on app)
  *   - teams:    `app_id` (matches `recipient.id` Teams sends inbound)
  *   - whatsapp: `phone_number_id` (Meta echoes via `metadata.phone_number_id`)
  */
 export async function deriveConnectionId(
-  kind: NonSlackCommunicatorKind,
+  kind: CommunicatorKind,
   credentialId: string,
 ): Promise<string> {
+  if (kind === "slack") {
+    const credential = await fetchLinkCredential(credentialId, logger);
+    const secret = SlackCredentialSecretSchema.parse(credential.secret);
+    return secret.app_id;
+  }
   if (kind === "telegram") {
     const credential = await fetchLinkCredential(credentialId, logger);
     const secret = TelegramCredentialSecretSchema.parse(credential.secret);
@@ -162,7 +173,7 @@ const DisconnectResponseSchema = z.object({ credential_id: z.string().nullable()
  */
 export async function wireCommunicator(
   workspaceId: string,
-  provider: NonSlackCommunicatorKind,
+  provider: CommunicatorKind,
   credentialId: string,
   connectionId: string,
   callbackBaseUrl: string,
@@ -198,7 +209,7 @@ export async function wireCommunicator(
  */
 export async function disconnectCommunicator(
   workspaceId: string,
-  provider: NonSlackCommunicatorKind,
+  provider: CommunicatorKind,
   callbackBaseUrl: string,
 ): Promise<{ credentialId: string | null }> {
   const url = `${getLinkServiceUrl()}/internal/v1/communicator/disconnect`;
@@ -240,7 +251,7 @@ const ResolveResponseSchema = z.object({
  */
 export async function resolveCommunicatorByConnection(
   connectionId: string,
-  provider: NonSlackCommunicatorKind,
+  provider: CommunicatorKind,
 ): Promise<{ workspaceId: string; credentialId: string; secret: unknown } | null> {
   const url = new URL(`${getLinkServiceUrl()}/internal/v1/communicator/resolve`);
   url.searchParams.set("connection_id", connectionId);
@@ -280,7 +291,7 @@ export async function resolveCommunicatorByConnection(
  */
 export async function findCommunicatorWiring(
   workspaceId: string,
-  provider: NonSlackCommunicatorKind,
+  provider: CommunicatorKind,
 ): Promise<{ credentialId: string; connectionId: string | null } | null> {
   const url = new URL(`${getLinkServiceUrl()}/internal/v1/communicator/wiring`);
   url.searchParams.set("workspace_id", workspaceId);
@@ -315,7 +326,7 @@ export async function findCommunicatorWiring(
  * existing block, since the new shape is kind-only — Link owns the secrets.
  */
 export function setCommunicatorMutation(
-  kind: NonSlackCommunicatorKind,
+  kind: CommunicatorKind,
 ): (config: WorkspaceConfig) => MutationResult<WorkspaceConfig> {
   return (config) => {
     const existing = config.communicators?.[kind];
@@ -353,7 +364,7 @@ export function setCommunicatorMutation(
  * yml to omit the key entirely.
  */
 export function removeCommunicatorMutation(
-  kind: NonSlackCommunicatorKind,
+  kind: CommunicatorKind,
 ): (config: WorkspaceConfig) => MutationResult<WorkspaceConfig> {
   return (config) => {
     if (!config.communicators?.[kind]) {

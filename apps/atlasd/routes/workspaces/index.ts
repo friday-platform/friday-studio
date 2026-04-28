@@ -59,9 +59,9 @@ import { z } from "zod";
 import type { AppContext } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
+  CommunicatorKindSchema,
   deriveConnectionId,
   disconnectCommunicator,
-  NonSlackCommunicatorKindSchema,
   removeCommunicatorMutation,
   resolveTunnelUrl,
   setCommunicatorMutation,
@@ -1820,29 +1820,21 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  // Connect a non-Slack communicator (telegram/discord/teams/whatsapp) to a
+  // Connect a communicator (slack/telegram/discord/teams/whatsapp) to a
   // workspace. Wires the credential to the workspace via Link's
   // communicator_wiring table (single source of truth for secrets) and adds
-  // a kind-only block to workspace.yml for visibility. Slack uses the
-  // dedicated /connect-slack route because of its app-install OAuth flow.
+  // a kind-only block to workspace.yml for visibility.
   .post(
     "/:workspaceId/connect-communicator",
     zValidator("param", z.object({ workspaceId: z.string() })),
     zValidator(
       "json",
-      z.object({
-        kind: z.union([z.literal("slack"), NonSlackCommunicatorKindSchema]),
-        credential_id: z.string().min(1),
-      }),
+      z.object({ kind: CommunicatorKindSchema, credential_id: z.string().min(1) }),
     ),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
       const { kind, credential_id } = c.req.valid("json");
       const ctx = c.get("app");
-
-      if (kind === "slack") {
-        return c.json({ error: "Use /connect-slack for Slack" }, 400);
-      }
 
       try {
         const manager = ctx.getWorkspaceManager();
@@ -1897,24 +1889,17 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  // Disconnect a non-Slack communicator from a workspace. Removes the wiring
-  // row in Link, removes the kind block from workspace.yml, and evicts the
-  // chat-sdk so the next message dispatch picks up the absence.
+  // Disconnect a communicator from a workspace. Removes the wiring row in
+  // Link, removes the kind block from workspace.yml, and evicts the chat-sdk
+  // so the next message dispatch picks up the absence.
   .post(
     "/:workspaceId/disconnect-communicator",
     zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator(
-      "json",
-      z.object({ kind: z.union([z.literal("slack"), NonSlackCommunicatorKindSchema]) }),
-    ),
+    zValidator("json", z.object({ kind: CommunicatorKindSchema })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
       const { kind } = c.req.valid("json");
       const ctx = c.get("app");
-
-      if (kind === "slack") {
-        return c.json({ error: "Use /disconnect-slack for Slack" }, 400);
-      }
 
       try {
         const manager = ctx.getWorkspaceManager();
