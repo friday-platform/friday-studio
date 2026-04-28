@@ -333,7 +333,7 @@
   }
 
   .tree-item:hover {
-    background-color: color-mix(in srgb, var(--color-surface-2), transparent 50%);
+    background-color: var(--highlight);
     opacity: 1;
   }
 
