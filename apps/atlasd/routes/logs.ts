@@ -196,5 +196,3 @@ logsRoutes.get("/tail", validator("query", LogTailQuerySchema), async (c) => {
 });
 
 export { logsRoutes };
-
-export type LogsRoutes = typeof logsRoutes;

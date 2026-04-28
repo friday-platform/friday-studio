@@ -144,7 +144,7 @@ describe("useDisableMCPServer", () => {
     expect(mockWorkspaceMcp).toHaveBeenCalledWith("ws-1");
     expect($delete).toHaveBeenCalledWith({
       param: { serverId: "github" },
-      query: undefined,
+      query: {},
     });
     expect(result.removed).toBe("github");
   });

@@ -38,5 +38,4 @@ describe("workspace name propagation", () => {
       expect(scopeWithoutName.workspaceName).toBeUndefined();
     });
   });
-
 });

@@ -158,8 +158,9 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
     },
   });
 
-  async function cleanup(): Promise<void> {
+  function cleanup(): Promise<void> {
     referenceFilesCache.clear();
+    return Promise.resolve();
   }
 
   return { tool: skillTool, cleanup };

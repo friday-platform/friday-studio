@@ -91,7 +91,7 @@ describe("createDisableMcpServerTool", () => {
     await tools.disable_mcp_server!.execute!({ serverId: "github", force: false }, TOOL_CALL_OPTS);
 
     expect(mockDelete).toHaveBeenCalledWith(
-      expect.objectContaining({ param: { serverId: "github" }, query: undefined }),
+      expect.objectContaining({ param: { serverId: "github" }, query: {} }),
     );
   });
 

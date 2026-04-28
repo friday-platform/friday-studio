@@ -6,10 +6,9 @@ import { SkillStorage } from "../src/storage.ts";
 
 // Mock archive module — must be before imports that use it
 vi.mock("../src/archive.ts", () => ({
-  extractArchiveContents: vi.fn().mockResolvedValue({
-    "references/config.json": '{"key": "value"}',
-    "SKILL.md": "# Skill",
-  }),
+  extractArchiveContents: vi
+    .fn()
+    .mockResolvedValue({ "references/config.json": '{"key": "value"}', "SKILL.md": "# Skill" }),
 }));
 
 // =============================================================================
@@ -97,7 +96,9 @@ describe("createLoadSkillTool — two-tier resolution", () => {
       referenceFiles: { "references/config.json": '{"key": "value"}' },
     });
     // SKILL.md is excluded from referenceFiles
-    expect((result as { referenceFiles?: Record<string, string> }).referenceFiles).not.toHaveProperty("SKILL.md");
+    expect(
+      (result as { referenceFiles?: Record<string, string> }).referenceFiles,
+    ).not.toHaveProperty("SKILL.md");
   });
 
   it("deduplicates archive extraction for same skill loaded twice", async () => {

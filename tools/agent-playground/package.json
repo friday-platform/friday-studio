@@ -25,7 +25,6 @@
     "@atlas/mcp": "workspace:*",
     "@atlas/ui": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "@atlas/workspace": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/workspace-builder": "workspace:*",
     "@codemirror/lang-markdown": "^6.5.0",

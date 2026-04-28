@@ -21,7 +21,6 @@
     "@atlas/client": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
-    "@atlas/fsm-engine": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
