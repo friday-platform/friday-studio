@@ -442,12 +442,12 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       }
     }
 
-    // Check for ATLAS_NPX_PATH and augment PATH if needed
-    const npxPath = process.env.ATLAS_NPX_PATH;
+    // Check for FRIDAY_NPX_PATH and augment PATH if needed
+    const npxPath = process.env.FRIDAY_NPX_PATH;
     if (npxPath) {
       await augmentPathWithTool(npxPath, "npx");
     } else {
-      logger.debug("No ATLAS_NPX_PATH configured, MCP servers using npx may not work");
+      logger.debug("No FRIDAY_NPX_PATH configured, MCP servers using npx may not work");
     }
 
     // Check for ATLAS_NODE_PATH and augment PATH if needed (for bundled claude-code agent)
@@ -458,14 +458,14 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       logger.debug("No ATLAS_NODE_PATH configured, bundled claude-code agent may not work");
     }
 
-    // Check for ATLAS_UVX_PATH / ATLAS_UV_PATH and augment PATH if needed
+    // Check for FRIDAY_UVX_PATH / ATLAS_UV_PATH and augment PATH if needed
     // (for MCP servers using uvx/pipx — uvx ships alongside uv in the same bin dir)
-    const uvxPath = process.env.ATLAS_UVX_PATH ?? process.env.ATLAS_UV_PATH;
+    const uvxPath = process.env.FRIDAY_UVX_PATH ?? process.env.ATLAS_UV_PATH;
     if (uvxPath) {
       await augmentPathWithTool(uvxPath, "uvx");
     } else {
       logger.debug(
-        "No ATLAS_UVX_PATH or ATLAS_UV_PATH configured, MCP servers using uvx rely on PATH",
+        "No FRIDAY_UVX_PATH or ATLAS_UV_PATH configured, MCP servers using uvx rely on PATH",
       );
     }
 

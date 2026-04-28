@@ -10,7 +10,7 @@ cd /app
 # ── Override host paths ─────────────────────────────────────────────────────
 # The user's .env may contain macOS paths (e.g. /opt/homebrew/bin/npx).
 # Force container-correct paths regardless of what's in the env file.
-export ATLAS_NPX_PATH=/usr/bin/npx
+export FRIDAY_NPX_PATH=/usr/bin/npx
 export ATLAS_NODE_PATH=/usr/bin/node
 export FRIDAY_CLAUDE_PATH=/usr/local/bin/claude
 export FRIDAY_SQLITE3_PATH=/usr/bin/sqlite3
