@@ -99,13 +99,13 @@ describe("MemDedupStore", () => {
 
 describe("InMemoryMemoryAdapter", () => {
   let adapter: InMemoryMemoryAdapter;
-  const workspaceId = "ws-bucketlist-cs";
+  const workspaceId = "ws-cs-knowledge";
 
   beforeEach(() => {
     adapter = new InMemoryMemoryAdapter();
   });
 
-  describe("bucketlist-cs batch dedup integration", () => {
+  describe("cs-knowledge batch dedup integration", () => {
     it("processes a batch of tickets, replays same batch, no duplicates", async () => {
       const dedup: DedupStore = await adapter.store(workspaceId, "processed-tickets", "dedup");
       const incomingIds = ["t-100", "t-101", "t-102"];

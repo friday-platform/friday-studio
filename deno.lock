@@ -8049,14 +8049,6 @@
           ]
         }
       },
-      "packages/bucketlist-cs": {
-        "packageJson": {
-          "dependencies": [
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
-          ]
-        }
-      },
       "packages/bundle": {
         "packageJson": {
           "dependencies": [

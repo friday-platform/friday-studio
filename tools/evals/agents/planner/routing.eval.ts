@@ -185,7 +185,7 @@ const cases: RoutingCase[] = [
     id: "scrape-url-for-content",
     name: "none - scrape specific URL for content extraction",
     input:
-      "Build a workspace with an agent that uses webfetch to load the page at bucketlistrewards.com and parse out brand terms, product names, and key identifiers from the HTML.",
+      "Build a workspace with an agent that uses webfetch to load the page at example.com and parse out brand terms, product names, and key identifiers from the HTML.",
     expectedCapabilities: [],
     forbiddenCapabilities: ["research"],
   },
@@ -205,8 +205,8 @@ const cases: RoutingCase[] = [
     id: "brand-monitor-pipeline",
     name: "multi-agent - brand monitor with URL fetching and web search",
     input:
-      "Build a brand mention monitor for bucketlistrewards.com. " +
-      "First agent: fetch bucketlistrewards.com to extract brand terms and product names. " +
+      "Build a brand mention monitor for example.com. " +
+      "First agent: fetch example.com to extract brand terms and product names. " +
       "Second agent: search the web for mentions of those brand terms across news and blogs. " +
       "Third agent: verify each found URL by fetching it to confirm it resolves. " +
       "Fourth agent: compile verified results into a digest email.",

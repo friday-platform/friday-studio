@@ -79,7 +79,7 @@ describe("stripHtml", () => {
 });
 
 describe("detectColumns", () => {
-  test("detects Bucketlist KB article columns", () => {
+  test("detects KB article columns from a typical export", () => {
     const headers = [
       "Knowledge base name",
       "Article title",

@@ -122,7 +122,7 @@ describe("FSM Engine - unstringify nested JSON in LLM complete output", () => {
       [
         {
           page_id: "3221d872-3ea3-817b-a10d-fbeef5dd4700",
-          title: "Bucketlist Engineering \u2014 Agent Development Environment",
+          title: "Acme Engineering \u2014 Agent Development Environment",
           body: "Engineering wants to adopt AI-assisted code review but needs to run it locally on their own machines, using their own codebase and internal engineering standards.",
         },
         {
