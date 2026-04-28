@@ -8,23 +8,129 @@ signals, and jobs in a `workspace.yml`. Signals arrive (HTTP, CLI, cron), the
 daemon routes them to the workspace runtime, which spawns sessions where agents
 execute with MCP tool access.
 
+## Quickstart
+
+### Prerequisites
+
+| Tool | Version | Why |
+| --- | --- | --- |
+| [Deno](https://deno.com/) | `2.7.0+` | Runs the daemon, CLI, and TypeScript packages |
+| [Go](https://go.dev/) | `1.26+` | Builds `bounce` (auth), `gist`, and `atlas-operator` |
+| [Node.js](https://nodejs.org/) | `24+` | Needed for `npx`, Vite, and the web playground |
+| [git](https://git-scm.com/) | any recent | — |
+| Docker (optional) | any recent | Alternative path: run the full stack with `docker compose up` |
+
+You do **not** need Postgres for local development — the daemon uses SQLite by
+default. Postgres is only required when running the `link` credential service
+in production.
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/friday-platform/friday-studio
+cd friday-studio
+deno install                    # install JS/TS deps
+npx husky                       # install git hooks
+```
+
+### 2. Configure environment
+
+```bash
+cp .env.example .env
+# open .env and set ANTHROPIC_API_KEY (or another provider key)
+```
+
+The example file documents every variable the daemon reads. The minimum to run
+a real agent is one LLM provider key.
+
+### 3. Start the daemon
+
+```bash
+deno task atlas daemon start --detached
+```
+
+Verify it's up:
+
+```bash
+curl -sf http://localhost:8080/health && echo "  daemon ok"
+deno task atlas daemon status
+```
+
+### 4. Run your first agent
+
+Send a prompt through the CLI — the daemon routes it to the bundled chat
+workspace and returns a chat id you can follow up on.
+
+```bash
+deno task atlas prompt "Write a haiku about TypeScript"
+deno task atlas chat                    # list recent chats
+deno task atlas chat <chatId> --human   # readable transcript
+```
+
+To run one of the bundled example workspaces (HTTP-triggered Claude Code
+agent):
+
+```bash
+deno task atlas workspace add ./examples/claude-code-smoke
+curl -X POST http://localhost:8080/webhooks/run-code \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "explain this repo in two sentences"}'
+```
+
+Browse `examples/` for more — `pr-review-github`, `jira-bugfix-labeled`,
+`voices`, and others — each is a self-contained `workspace.yml` you can copy
+and edit.
+
+### 5. Stop the daemon
+
+```bash
+deno task atlas daemon stop
+```
+
+### Alternative: Docker
+
+```bash
+docker compose up
+```
+
+This runs the daemon, web UI (Studio), credential service, PTY server, and
+webhook tunnel together. Ports default to `1xxxx` to avoid host collisions —
+see [`docker-compose.yml`](docker-compose.yml).
+
+### Web playground (optional)
+
+For interactive development with the Svelte UI, hot-reload daemon, and webhook
+tunnel running side by side:
+
+```bash
+deno task dev:playground
+```
+
+Open http://localhost:5173.
+
 ## Commands
 
 ```bash
-# Run
-deno task dev                   # Start daemon (auto-restarts on changes)
-deno task atlas daemon status   # Check if daemon is running
-deno task atlas prompt "test"   # Send a test prompt
+# Daemon lifecycle
+deno task atlas daemon start --detached   # start (background)
+deno task atlas:dev daemon start          # start with hot-reload
+deno task atlas daemon status             # health check
+deno task atlas daemon stop               # stop
+
+# Interact
+deno task atlas prompt "your prompt"      # send a one-shot prompt
+deno task atlas chat                      # list recent chats
+deno task atlas chat <chatId> --human     # show transcript
 
 # Develop
-deno task typecheck               # Type check (deno check + svelte-check)
-deno task lint                  # Lint
-deno task test $file            # Run specific test
-deno task fmt                   # Format
+deno task typecheck                       # deno check + svelte-check
+deno task lint                            # deno lint + biome check --write
+deno task fmt                             # biome format --write
+deno task test $file                      # run a vitest file
 
 # Go services
-go test -race ./...             # Test with race detector
-golangci-lint run               # Lint
+go test -race ./...
+golangci-lint run
 ```
 
 ## Project Structure
@@ -32,21 +138,26 @@ golangci-lint run               # Lint
 ```
 apps/
   atlasd/           # Daemon - HTTP API, workspace lifecycle
+  atlas-cli/        # CLI entry point (`deno task atlas`)
   atlas-operator/   # K8s operator (Go)
   bounce/           # Auth service (Go)
   gist/             # File service (Go)
+  link/             # Credential / OAuth service
   web-client/       # Svelte web UI
 packages/
   @atlas/config     # YAML config loading + Zod schemas
   @atlas/core       # Core types, artifacts, errors
+  @atlas/llm        # LLM provider adapters
   @atlas/logger     # Structured logging
   @atlas/mcp        # MCP client implementation
   @atlas/signals    # Signal types and routing
   @atlas/storage    # Persistence layer
-src/                # atlasd internals
-  core/             # Workspace runtime (fsm-engine, sessions)
-  cli/              # CLI commands
-  services/         # Daemon services
+examples/           # Bundled workspace.yml examples
+tools/
+  agent-playground/ # Svelte dev UI
+  evals/            # Eval runner
+  pty-server/       # WebSocket terminal (Go)
+  webhook-tunnel/   # Local webhook receiver (Go)
 ```
 
 Config: `friday.yml` (platform-wide) · `workspace.yml` (per-workspace) ·
@@ -77,16 +188,9 @@ Claude Code skills support a structured planning-to-execution pipeline:
 Post-ship: `/code-review` for reviewing others' PRs. `/remember-learnings` mines
 agent commit footers into CLAUDE.md.
 
-## Development
+## Learn more
 
-**Prerequisites:** Deno 2.4.0+, Go 1.22+ (for operator/auth/gist services)
-
-```bash
-git clone https://github.com/friday-platform/friday-studio && cd friday-studio
-deno install                    # Install dependencies
-npx husky                       # Set up git hooks
-```
-
-See [`CLAUDE.md`](CLAUDE.md) for hard rules, code philosophy, and architecture.
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for component details and
-data flow.
+- [`CLAUDE.md`](CLAUDE.md) — hard rules, code philosophy, gotchas
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components and data flow
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to send patches (CLA required)
+- [`SECURITY.md`](SECURITY.md) — vulnerability disclosure
