@@ -133,7 +133,7 @@ Rationale: The workspace-api skill is already loaded when the LLM is creating or
 **Prerequisites:**
 - Daemon running on `localhost:8080`
 - Web client running on `localhost:5200` (or wherever it's served)
-- Gmail OAuth configured for `eric@tempest.team`
+- Gmail OAuth configured for a test account (e.g. `your-test-account@example.com`)
 - `agent-browser` skill available
 
 **Test script (from `docs/qa/plans/workspace-creation-redesign-cases.md` Case 10):**

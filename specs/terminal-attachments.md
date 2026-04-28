@@ -32,7 +32,7 @@ drag-and-drop, file previews, and actual file uploads.
 
 - **Trigger**: When a line consists ENTIRELY of a valid file path (start to end)
 - **Display**: `[#1 report.pdf]`
-- **Content**: The full file path (e.g., `/Users/dwoolf/Documents/report.pdf`)
+- **Content**: The full file path (e.g., `/Users/alice/Documents/report.pdf`)
 - **Use Case**: Referencing specific files
 
 ### 3. Folder Path Attachments
@@ -54,7 +54,7 @@ themselves. Paths embedded within other text are NOT converted to attachments.
 #### Creates File Attachments:
 
 ```
-/Users/dwoolf/report.pdf
+/Users/alice/report.pdf
 C:\Users\David\document.txt
 ~/Pictures/photo.jpg
 ```
@@ -62,8 +62,8 @@ C:\Users\David\document.txt
 #### Creates Text Attachment (10+ lines with mixed content):
 
 ```
-Here is my file: /Users/dwoolf/test.txt
-And a folder: /Users/dwoolf/Documents/
+Here is my file: /Users/alice/test.txt
+And a folder: /Users/alice/Documents/
 Some more text here
 Line 4
 Line 5
@@ -77,7 +77,7 @@ Line 10
 #### Does NOT Create Any Attachments (< 10 lines):
 
 ```
-Check out this file: /Users/dwoolf/test.txt
+Check out this file: /Users/alice/test.txt
 It's in the Documents folder
 ```
 
@@ -170,8 +170,8 @@ function generatePlaceholder(attachment: AttachmentData, id: number): string {
 When the user submits a message:
 
 1. All placeholders are replaced with their full original content
-2. File path attachments: Full path is sent (e.g., `/Users/dwoolf/Documents/report.pdf`)
-3. Folder path attachments: Full path is sent (e.g., `/Users/dwoolf/Documents/`)
+2. File path attachments: Full path is sent (e.g., `/Users/alice/Documents/report.pdf`)
+3. Folder path attachments: Full path is sent (e.g., `/Users/alice/Documents/`)
 4. Text attachments: Full multi-line text is sent
 
 ## Usage Examples
@@ -187,18 +187,18 @@ Sent to server: <full 15 lines of code>
 ### Example 2: Single File Path
 
 ```
-User pastes: /Users/dwoolf/Documents/report.pdf
+User pastes: /Users/alice/Documents/report.pdf
 Display in input: [#1 report.pdf]
-Sent to server: /Users/dwoolf/Documents/report.pdf
+Sent to server: /Users/alice/Documents/report.pdf
 ```
 
 ### Example 3: Multiple File Paths
 
 ```
 User pastes:
-/Users/dwoolf/image.png
-/Users/dwoolf/document.txt
-/Users/dwoolf/data.csv
+/Users/alice/image.png
+/Users/alice/document.txt
+/Users/alice/data.csv
 
 Display in input:
 [#1 image.png]
@@ -206,9 +206,9 @@ Display in input:
 [#3 data.csv]
 
 Sent to server:
-/Users/dwoolf/image.png
-/Users/dwoolf/document.txt
-/Users/dwoolf/data.csv
+/Users/alice/image.png
+/Users/alice/document.txt
+/Users/alice/data.csv
 ```
 
 ### Example 4: Mixed Content (Creates Text Attachment)
@@ -216,8 +216,8 @@ Sent to server:
 ```
 User pastes 12 lines including:
 Here is my analysis:
-/Users/dwoolf/data.csv contains the raw data
-The results are in /Users/dwoolf/results.txt
+/Users/alice/data.csv contains the raw data
+The results are in /Users/alice/results.txt
 ... (9 more lines)
 
 Display in input: [#1 12 lines of text]
@@ -228,10 +228,10 @@ Sent to server: <full 12 lines including embedded paths>
 
 ```
 User pastes:
-Check the file at /Users/dwoolf/test.txt
+Check the file at /Users/alice/test.txt
 
-Display in input: Check the file at /Users/dwoolf/test.txt
-Sent to server: Check the file at /Users/dwoolf/test.txt
+Display in input: Check the file at /Users/alice/test.txt
+Sent to server: Check the file at /Users/alice/test.txt
 ```
 
 ## Terminal-Specific Constraints

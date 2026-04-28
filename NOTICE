@@ -1,20 +1,48 @@
 Friday Studio
-Copyright (c) Tempest Labs, Inc.
+Copyright (c) 2024-2026 Tempest Labs, Inc.
 
-This product includes software developed by third parties. The notices below
-satisfy attribution requirements of those dependencies and, for dual-licensed
-dependencies, record the license option Tempest Labs elects.
+This product includes software developed by third parties.
+
+Friday Studio ships several artifacts, each of which bundles a different set of
+upstream dependencies:
+
+  - Atlas daemon, CLI, and web playground (Deno + npm + JSR packages)
+  - Friday Launcher, pty-server, webhook-tunnel (Go modules)
+  - Studio Installer (Rust crates via Cargo / Tauri)
+
+The complete inventory of every third-party dependency, its version, license,
+and source URL is generated from the project's lockfiles and recorded in
+THIRD_PARTY_LICENSES.md at the root of this repository.
+
+Run `bash scripts/generate-third-party-licenses.sh` to regenerate the inventory
+after a dependency bump.
+
+Release artifacts (the macOS / Windows installers and the compiled Go binaries)
+include a copy of THIRD_PARTY_LICENSES.md alongside the executable, satisfying
+the attribution requirements of MIT, BSD, Apache-2.0, MPL-2.0, and ISC license
+families. The full text of any individual license can be retrieved from the
+locations described in the "How to retrieve full license text" section of
+THIRD_PARTY_LICENSES.md.
 
 ================================================================================
+Specific notices
+================================================================================
+
+The following dependencies require a notice that goes beyond the standard
+SPDX/source-URL listing in THIRD_PARTY_LICENSES.md — for example, because we
+have made an explicit license election from a dual-licensed package, or because
+the upstream license text mandates verbatim inclusion.
+
+--------------------------------------------------------------------------------
 jszip
-================================================================================
+--------------------------------------------------------------------------------
 
 Source:    https://github.com/Stuk/jszip
 Available: MIT OR GPL-3.0-or-later
 Elected:   MIT
 
 Copyright (c) 2009-2016 Stuart Knightley, David Duponchel, Franz Buchinger,
-                        António Afonso
+                        Antonio Afonso
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

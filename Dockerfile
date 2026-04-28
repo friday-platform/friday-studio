@@ -31,6 +31,7 @@ COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json apps/atlasd/package.json* ./apps/atlasd/
 COPY apps/atlas-cli/deno.json apps/atlas-cli/package.json* ./apps/atlas-cli/
 COPY apps/link/deno.json apps/link/package.json* ./apps/link/
+COPY apps/ledger/deno.json apps/ledger/package.json* ./apps/ledger/
 COPY tools/agent-playground/deno.json tools/agent-playground/package.json ./tools/agent-playground/
 COPY tools/evals/deno.json tools/evals/package.json ./tools/evals/
 COPY packages/ ./packages/
@@ -79,6 +80,11 @@ RUN RUST_MIN_STACK=16777216 deno compile -q --no-check --allow-all \
     --output /app/bin/link \
     apps/link/src/index.ts
 
+# Ledger service (resources + activity backend).
+RUN RUST_MIN_STACK=16777216 deno compile -q --no-check --allow-all \
+    --output /app/bin/ledger \
+    apps/ledger/src/index.ts
+
 # ============================================================================
 # Stage 2: Go builder — compile webhook-tunnel and pty-server binaries
 # ============================================================================
@@ -86,9 +92,8 @@ FROM golang:1.26-bookworm AS go-builder
 
 WORKDIR /src
 
-# go.work uses `.` (single module), so the entire repo is one Go module.
-# Copy module manifests first for layer caching.
-COPY go.mod go.sum go.work go.work.sum ./
+# Single root Go module — copy manifests first for layer caching.
+COPY go.mod go.sum ./
 
 # Copy every directory referenced by the root Go module.
 COPY pkg ./pkg
@@ -148,6 +153,9 @@ RUN apt-get update && \
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
+# nats-server (multi-arch). Daemon spawns this for the internal messaging bus.
+COPY --from=nats:2.12.8-alpine /usr/local/bin/nats-server /usr/local/bin/nats-server
+
 # Symlink system libsqlite3 to a stable path so @db/sqlite uses it (Debian
 # puts it under /usr/lib/<arch>/, which varies by platform)
 RUN ln -sf "$(find /usr/lib -name 'libsqlite3.so.0' -print -quit)" /usr/lib/libsqlite3.so.0
@@ -159,6 +167,7 @@ RUN mkdir -p /data/atlas /data/link /tmp/.npm /app/config && \
 # ── Install compiled binaries (no layer duplication) ─────────────────────────
 COPY --from=deno-builder /app/bin/atlas         /usr/local/bin/atlas
 COPY --from=deno-builder /app/bin/link          /usr/local/bin/link
+COPY --from=deno-builder /app/bin/ledger        /usr/local/bin/ledger
 COPY --from=go-builder   /out/webhook-tunnel    /usr/local/bin/webhook-tunnel
 COPY --from=go-builder   /out/pty-server        /usr/local/bin/pty-server
 
@@ -232,18 +241,18 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     FRIDAY_CLAUDE_PATH=/usr/local/bin/claude \
     FRIDAY_SQLITE3_PATH=/usr/bin/sqlite3 \
     DENO_SQLITE_PATH=/usr/lib/libsqlite3.so.0 \
-    WEBHOOK_MAPPINGS_PATH=/app/config/webhook-mappings.yml \
     AGENT_SOURCE_DIR=/home/atlas/agent-src \
     LINK_DEV_MODE=true \
     LINK_PORT=3100 \
     DEV_MODE=true \
     SHELL=/bin/bash
 
-EXPOSE 8080 3100 5200 7681 9090
+EXPOSE 8080 3100 3200 5200 7681 9090
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -sf http://localhost:8080/health > /dev/null && \
         curl -sf http://localhost:3100/health > /dev/null && \
+        curl -sf http://localhost:3200/health > /dev/null && \
         curl -sf http://localhost:7681/health > /dev/null && \
         curl -sf http://localhost:9090/health > /dev/null || exit 1
 
