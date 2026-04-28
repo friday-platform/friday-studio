@@ -80,7 +80,7 @@ pub fn write_env_file(
 
     // Platform-internal vars — inline to avoid borrow-checker issues with closure
     let platform_vars = [
-        ("ATLAS_LOCAL_ONLY", "true"),
+        ("FRIDAY_LOCAL_ONLY", "true"),
         ("LINK_DEV_MODE", "true"),
         (
             "ATLAS_KEY",
