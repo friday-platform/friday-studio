@@ -113,8 +113,16 @@ func supervisedProcesses(binDir string) []processSpec {
 			healthPort: "9090", healthPath: "/health",
 		},
 		{
+			// Decision #32: the readiness probe MUST exercise the
+			// real handler stack at a public entry point — that's
+			// what makes "all healthy" actually mean "all usable".
+			// Playground is a SvelteKit app whose root path is a
+			// public landing; probing `/` catches the SvelteKit-
+			// not-yet-bound race that a sidecar `/api/health` would
+			// silently green-light. project_test.go pins this so a
+			// future refactor can't quietly revert to the sidecar.
 			name: "playground", binary: filepath.Join(binDir, "playground"),
-			healthPort: "5200", healthPath: "/api/health",
+			healthPort: "5200", healthPath: "/",
 		},
 	}
 	for i, s := range specs {

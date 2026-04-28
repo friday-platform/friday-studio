@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount } from "svelte";
+import { onMount, tick } from "svelte";
 import {
   advanceStep,
   currentPlatform,
@@ -50,7 +50,17 @@ onMount(async () => {
     // SHA-256 verification before extract — refuse to advance on mismatch.
     // Without this a corrupted or tampered archive would be unpacked silently
     // and break in confusing ways at first launch.
+    //
+    // `await tick()` between the phase flip and the verify call forces
+    // Svelte to commit the "Verifying download integrity…" subtitle
+    // BEFORE the synchronous prelude of invoke() blocks the JS event
+    // loop. Without it, on fast machines the verify call resolves so
+    // quickly that the verifying-state subtitle never paints — the
+    // user sees the downloading subtitle linger and then jumps
+    // straight to extract with no verify feedback (Decision #6
+    // companion: "subtitle flip-order fix").
     phase = "verifying";
+    await tick();
     const ok = await verifyDownload(store.downloadPath, sha256);
     if (!ok) {
       store.downloadError = "Downloaded file is corrupted (SHA-256 mismatch). Please try again.";

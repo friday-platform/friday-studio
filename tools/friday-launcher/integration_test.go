@@ -110,7 +110,12 @@ func buildLauncherAndStubs(t *testing.T) (launcherPath, binDir string) {
 		"link":           {"13100", "/health"},
 		"pty-server":     {"17681", "/health"},
 		"webhook-tunnel": {"19090", "/health"},
-		"playground":     {"15200", "/api/health"},
+		// Decision #32: playground probes `/` (the public SvelteKit
+		// root), not a sidecar. The stub program reads HEALTH_PATH
+		// and serves the same handler at any path, so the test
+		// observes the real probe rule: launcher hits the path
+		// project.go declares.
+		"playground":     {"15200", "/"},
 	}
 	for name, w := range wrappers {
 		writeWrapper(t, binDir, name, stubBin, w.port, w.healthPath, "")
@@ -241,7 +246,7 @@ func waitHealthy(t *testing.T) {
 		"http://127.0.0.1:13100/health",
 		"http://127.0.0.1:17681/health",
 		"http://127.0.0.1:19090/health",
-		"http://127.0.0.1:15200/api/health",
+		"http://127.0.0.1:15200/", // Decision #32 — see wrapper map.
 	}
 	for {
 		ok := 0
@@ -343,7 +348,7 @@ func TestShutdownTimeoutSafety(t *testing.T) {
 	// Replace the playground wrapper with one that ignores SIGTERM.
 	stubBin := filepath.Join(binDir, "_stub")
 	writeWrapper(t, binDir, "playground", stubBin,
-		"15200", "/api/health", "IGNORE_SIGTERM=1")
+		"15200", "/", "IGNORE_SIGTERM=1")
 	cmd, _ := startLauncher(t, launcher, binDir)
 	waitHealthy(t)
 	start := time.Now()
