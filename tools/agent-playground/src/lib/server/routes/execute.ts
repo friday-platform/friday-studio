@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import type { MCPServerConfig } from "@atlas/agent-sdk";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { enterTraceScope, type TraceEntry } from "@atlas/llm";
@@ -8,8 +7,6 @@ import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { parseSSEEvents } from "@atlas/utils/sse";
-import { createBashTool } from "@atlas/workspace/bash-tool";
-import { CodeAgentExecutor } from "@atlas/workspace/code-agent-executor";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -34,81 +31,27 @@ const ExecuteBody = z.object({
 export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody), async (c) => {
   const { agentId, input, env } = c.req.valid("json");
 
-  // User agents: subprocess agents (NATS protocol) proxy to daemon; legacy WASM agents run locally
+  // User agents proxy to daemon via NATS subprocess protocol
   if (await userAgentExists(agentId)) {
     const adapter = new UserAdapter(join(getAtlasHome(), "agents"));
     const agentSource = await adapter.loadAgent(agentId);
-
-    if (agentSource.metadata.entrypoint) {
-      // New-style NATS subprocess agent — relay SSE events from daemon via createSSEStream.
-      // Raw Response passthrough is silently buffered by Hono before reaching the client.
-      return createSSEStream(async (emitter, signal) => {
-        const res = await fetch(`${DAEMON_BASE_URL}/api/agents/${agentId}/run`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input, env }),
-          signal,
-        });
-        if (!res.ok || !res.body) {
-          const text = await res.text().catch(() => `HTTP ${res.status}`);
-          throw new Error(text);
-        }
-        for await (const msg of parseSSEEvents(res.body)) {
-          emitter.send(msg.event ?? "message", msg.data);
-        }
-      });
+    if (!agentSource.metadata.entrypoint) {
+      return c.json({ error: `Agent "${agentId}" has no entrypoint` }, 400);
     }
-
-    // Legacy WASM code agent
+    // Relay SSE events from daemon — raw Response passthrough is silently buffered by Hono
     return createSSEStream(async (emitter, signal) => {
-      const sourceLocation = join(agentSource.metadata.sourceLocation, "agent-js");
-
-      const mcpConfigs: Record<string, MCPServerConfig> = {
-        "atlas-platform": getAtlasPlatformServerConfig(),
-      };
-      if (agentSource.metadata.mcp) {
-        for (const [id, config] of Object.entries(agentSource.metadata.mcp)) {
-          mcpConfigs[id] = config;
-        }
+      const res = await fetch(`${DAEMON_BASE_URL}/api/agents/${agentId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input, env }),
+        signal,
+      });
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => `HTTP ${res.status}`);
+        throw new Error(text);
       }
-
-      const { tools: mcpTools, dispose } = await createMCPTools(mcpConfigs, logger, { signal });
-      mcpTools["bash"] = createBashTool();
-
-      try {
-        const executor = new CodeAgentExecutor();
-        const startTime = performance.now();
-
-        const result = await executor.execute(sourceLocation, input, {
-          logger,
-          streamEmitter: { emit: (event) => emitter.progress(event as never) },
-          mcpToolCall: async (name, args) => {
-            const tool = mcpTools[name];
-            if (!tool?.execute) throw new Error(`Unknown tool: ${name}`);
-            return await tool.execute(args, { toolCallId: crypto.randomUUID(), messages: [] });
-          },
-          mcpListTools: () =>
-            Promise.resolve(
-              Object.entries(mcpTools).map(([name, tool]) => ({
-                name,
-                description: tool.description ?? "",
-                inputSchema: tool.inputSchema,
-              })),
-            ),
-          sessionContext: {
-            id: crypto.randomUUID(),
-            workspaceId: "playground",
-          },
-          agentLlmConfig: agentSource.metadata.llm,
-          env,
-        });
-
-        emitter.result(result);
-        emitter.done({
-          durationMs: Math.round(performance.now() - startTime),
-        });
-      } finally {
-        await dispose();
+      for await (const msg of parseSSEEvents(res.body)) {
+        emitter.send(msg.event ?? "message", msg.data);
       }
     });
   }
