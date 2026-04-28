@@ -1,9 +1,42 @@
 import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
+import type { ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
-import { buildLLMActionTrace, FSMEngine, formatToolResultsForRetry } from "../fsm-engine.ts";
+import {
+  buildLLMActionTrace,
+  FSMEngine,
+  formatToolResultsForRetry,
+  ValidationFailedError,
+} from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMActionTrace, OutputValidator } from "../types.ts";
+
+/** Helper: pass verdict (high confidence, above threshold). */
+function passVerdict(): ValidationVerdict {
+  return { status: "pass", confidence: 0.9, threshold: 0.45, issues: [], retryGuidance: "" };
+}
+
+/** Helper: uncertain verdict (mid-band confidence). */
+function uncertainVerdict(): ValidationVerdict {
+  return {
+    status: "uncertain",
+    confidence: 0.4,
+    threshold: 0.45,
+    issues: [],
+    retryGuidance: "",
+  };
+}
+
+/** Helper: fail verdict (below floor). */
+function failVerdict(retryGuidance: string): ValidationVerdict {
+  return {
+    status: "fail",
+    confidence: 0.1,
+    threshold: 0.45,
+    issues: [],
+    retryGuidance,
+  };
+}
 
 /**
  * Part 1: Pure Function Tests for buildLLMActionTrace
@@ -268,7 +301,7 @@ describe("LLM Action Validation Hook", () => {
 
   it("validation pass → document persisted with response, state is done", async () => {
     const { engine, store, scope, fsm } = await createLLMEngine({
-      validator: () => Promise.resolve({ valid: true }),
+      validator: () => Promise.resolve({ verdict: passVerdict() }),
       llmResponses: [{ content: "validated response", data: { extra: "info" } }],
     });
 
@@ -290,9 +323,9 @@ describe("LLM Action Validation Hook", () => {
       validator: (trace) => {
         // Fail first attempt, pass retry
         if (trace.content === "bad response") {
-          return Promise.resolve({ valid: false, feedback: "That was wrong" });
+          return Promise.resolve({ verdict: failVerdict("That was wrong") });
         }
-        return Promise.resolve({ valid: true });
+        return Promise.resolve({ verdict: passVerdict() });
       },
       llmResponses: [
         { content: "bad response" },
@@ -313,25 +346,58 @@ describe("LLM Action Validation Hook", () => {
     expect(docResult.data?.data.data.retried).toEqual(true);
   });
 
-  it("double failure → throws, state unchanged at pending", async () => {
+  it("double failure → throws ValidationFailedError carrying verdict, state unchanged", async () => {
+    const verdict = failVerdict("Still wrong");
     const { engine } = await createLLMEngine({
-      validator: () => Promise.resolve({ valid: false, feedback: "Still wrong" }),
+      validator: () => Promise.resolve({ verdict }),
       llmResponses: [{ content: "first bad" }, { content: "second bad" }],
     });
 
-    // Observable outcome: throws error with validation feedback
+    // Observable outcome: throws ValidationFailedError with verdict on the error
     let error: Error | undefined;
     try {
       await engine.signal({ type: "RUN_LLM" });
     } catch (e) {
       error = e as Error;
     }
-    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(ValidationFailedError);
     expect(error?.message).toContain("failed validation after retry");
     expect(error?.message).toContain("Still wrong");
+    // Verdict travels on the error so consumers (system error chunk, observability)
+    // can render category/severity/citations without parsing strings.
+    if (error instanceof ValidationFailedError) {
+      expect(error.verdict.status).toEqual("fail");
+      expect(error.verdict.retryGuidance).toEqual("Still wrong");
+    }
 
     // Observable outcome: state unchanged (transaction rolled back)
     expect(engine.state).toEqual("pending");
+  });
+
+  it("uncertain verdict → proceeds identically to pass (no retry, no taint)", async () => {
+    let validatorCallCount = 0;
+    const { engine, store, scope, fsm, getLLMCallCount } = await createLLMEngine({
+      validator: () => {
+        validatorCallCount++;
+        return Promise.resolve({ verdict: uncertainVerdict() });
+      },
+      llmResponses: [{ content: "uncertain response", data: { extra: "info" } }],
+    });
+
+    await engine.signal({ type: "RUN_LLM" });
+
+    // Observable outcome: state transitioned (uncertain proceeds)
+    expect(engine.state).toEqual("done");
+
+    // Observable outcome: document persisted (no taint flag)
+    const docResult = await store.read(scope, fsm.id, "output", FSMDocumentDataSchema);
+    expect(docResult.ok).toBe(true);
+    if (!docResult.ok) throw new Error(docResult.error);
+    expect(docResult.data?.data.data.response).toEqual("uncertain response");
+
+    // LLM called once (no retry on uncertain), validator called once
+    expect(getLLMCallCount()).toEqual(1);
+    expect(validatorCallCount).toEqual(1);
   });
 
   it("no validator → document persisted without retry", async () => {
@@ -372,7 +438,7 @@ describe("LLM Action Validation Hook", () => {
 
   it("empty response string → document persisted with empty string", async () => {
     const { engine, store, scope, fsm } = await createLLMEngine({
-      validator: () => Promise.resolve({ valid: true }),
+      validator: () => Promise.resolve({ verdict: passVerdict() }),
       llmResponses: [{ content: "", data: { hasTools: false } }],
     });
 
@@ -394,10 +460,10 @@ describe("LLM Action Validation Hook", () => {
       validator: (trace) => {
         // Fail first attempt to trigger retry
         if (trace.content === "first attempt") {
-          return Promise.resolve({ valid: false, feedback: "Try again" });
+          return Promise.resolve({ verdict: failVerdict("Try again") });
         }
         // Should never reach here - failStep should be caught first
-        return Promise.resolve({ valid: true });
+        return Promise.resolve({ verdict: passVerdict() });
       },
       llmResponses: [
         { content: "first attempt" },
@@ -443,9 +509,9 @@ describe("LLM Action Validation Hook", () => {
       validatorTraces.push(trace);
       // Fail first, pass second
       if (validatorTraces.length === 1) {
-        return Promise.resolve({ valid: false, feedback: "Looks hallucinated" });
+        return Promise.resolve({ verdict: failVerdict("Looks hallucinated") });
       }
-      return Promise.resolve({ valid: true });
+      return Promise.resolve({ verdict: passVerdict() });
     };
 
     const { engine } = await createLLMEngine({
@@ -503,9 +569,9 @@ describe("LLM Action Validation Hook", () => {
     const validator: OutputValidator = (trace) => {
       validatorTraces.push(trace);
       if (validatorTraces.length === 1) {
-        return Promise.resolve({ valid: false, feedback: "Hallucinated" });
+        return Promise.resolve({ verdict: failVerdict("Hallucinated") });
       }
-      return Promise.resolve({ valid: true });
+      return Promise.resolve({ verdict: passVerdict() });
     };
 
     const { engine } = await createLLMEngine({
@@ -624,11 +690,10 @@ describe("LLM Action Validation Hook", () => {
       validateOutput: (trace) => {
         if (trace.content.includes("ISSUE-1 and ISSUE-3")) {
           return Promise.resolve({
-            valid: false,
-            feedback: "ISSUE-1 was already in the seen table",
+            verdict: failVerdict("ISSUE-1 was already in the seen table"),
           });
         }
-        return Promise.resolve({ valid: true });
+        return Promise.resolve({ verdict: passVerdict() });
       },
     });
     await engine.initialize();
@@ -692,9 +757,9 @@ describe("LLM Action Validation Hook", () => {
       llmProvider: mockLLMProvider,
       validateOutput: (trace) => {
         if (trace.content === "bad summary") {
-          return Promise.resolve({ valid: false, feedback: "Too short" });
+          return Promise.resolve({ verdict: failVerdict("Too short") });
         }
-        return Promise.resolve({ valid: true });
+        return Promise.resolve({ verdict: passVerdict() });
       },
     });
     await engine.initialize();

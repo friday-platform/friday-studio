@@ -11,6 +11,7 @@ import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { type HallucinationDetectorConfig, validate } from "./detector.ts";
 import { SupervisionLevel } from "./supervision-levels.ts";
+import { getThresholdForLevel, statusFromConfidence } from "./verdict.ts";
 
 /**
  * Convert FSM LLM action trace to AgentResult for hallucination detection.
@@ -41,9 +42,10 @@ export function traceToAgentResult(trace: LLMActionTrace): AgentResult<string, s
  * Uses existing hallucination detector infrastructure.
  * Adapts LLMActionTrace -> AgentResult at the boundary.
  *
- * When `platformModels` is omitted, returns a no-op validator that reports
- * valid for every trace. Callers still being migrated onto the DI seam use
- * this fallback; production paths (workspace runtime) always pass a resolver.
+ * When `platformModels` is omitted, returns a no-op validator that reports a
+ * synthetic `pass` verdict for every trace. Callers still being migrated onto
+ * the DI seam use this fallback; production paths (workspace runtime) always
+ * pass a resolver.
  *
  * @param supervisionLevel - Controls validation strictness (defaults to STANDARD)
  * @param platformModels - Platform model resolver; `classifier` role drives validation
@@ -53,8 +55,21 @@ export function createFSMOutputValidator(
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
   platformModels?: PlatformModels,
 ): (trace: LLMActionTrace) => Promise<LLMOutputValidationResult> {
+  const threshold = getThresholdForLevel(supervisionLevel);
+
   if (!platformModels) {
-    return () => Promise.resolve({ valid: true });
+    // No-op validator: synthesize a pass verdict at confidence 1.0 so consumers
+    // see a well-formed shape without paying for a judge call.
+    return () =>
+      Promise.resolve({
+        verdict: {
+          status: statusFromConfidence(1, threshold),
+          confidence: 1,
+          threshold,
+          issues: [],
+          retryGuidance: "",
+        },
+      });
   }
 
   return async (trace: LLMActionTrace): Promise<LLMOutputValidationResult> => {
@@ -66,13 +81,6 @@ export function createFSMOutputValidator(
     };
 
     const verdict = await validate(agentResult, supervisionLevel, config);
-
-    // Tracer-bullet adapter: keep the old `OutputValidator` shape so workspace runtime
-    // and the fsm-engine integration test compile unchanged. Task #22 replaces this
-    // with the verdict shape end-to-end.
-    if (verdict.status === "fail") {
-      return { valid: false, feedback: verdict.retryGuidance };
-    }
-    return { valid: true };
+    return { verdict };
   };
 }

@@ -31,6 +31,7 @@ import {
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
+import type { ValidationVerdict } from "@atlas/hallucination";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
@@ -284,6 +285,22 @@ function findRequestDocumentLegacy(
 
 type LLMResult = AgentResult<string, FSMLLMOutput>;
 
+/**
+ * Thrown when an LLM action fails validation on both the initial attempt and the retry.
+ * The terminal verdict travels on the error so downstream consumers (system error chunk
+ * renderer, observability tooling) can surface category/severity/citations without
+ * re-parsing freeform strings.
+ */
+export class ValidationFailedError extends Error {
+  constructor(
+    message: string,
+    public readonly verdict: ValidationVerdict,
+  ) {
+    super(message);
+    this.name = "ValidationFailedError";
+  }
+}
+
 /** Extract `complete` tool args from LLM result, or structured data if already extracted */
 function findCompleteToolArgs(result: LLMResult): Record<string, unknown> | undefined {
   if (!result.ok) return undefined;
@@ -375,6 +392,7 @@ export function buildLLMActionTrace(
 
   return {
     content,
+    reasoning: result.ok ? result.reasoning : undefined,
     toolCalls: result.ok ? result.toolCalls : undefined,
     toolResults: result.ok ? result.toolResults : undefined,
     model,
@@ -1305,18 +1323,23 @@ export class FSMEngine {
                 capturedCompleteOutput = findCompleteToolArgs(result);
               }
 
-              // Validate output if validator provided
+              // Validate output if validator provided.
+              // Retry policy: only verdict.status === "fail" triggers a retry.
+              // Both `pass` and `uncertain` proceed identically — uncertain is observability-only,
+              // never gating, so judge confusion (timezones, math) cannot kill recoverable work.
               if (this.options.validateOutput) {
                 const trace = buildLLMActionTrace(result, action.model, contextPrompt);
 
-                const validation = await this.options.validateOutput(trace);
+                const { verdict } = await this.options.validateOutput(trace);
                 // Note: If validator throws, error propagates and aborts the action (fail-closed)
 
-                if (!validation.valid) {
+                if (verdict.status === "fail") {
                   logger.warn("LLM action failed validation, retrying with feedback", {
                     state: currentState,
                     model: action.model,
-                    feedback: validation.feedback,
+                    confidence: verdict.confidence,
+                    threshold: verdict.threshold,
+                    retryGuidance: verdict.retryGuidance,
                   });
 
                   // Include previous tool results so the retry LLM can see data
@@ -1329,7 +1352,7 @@ export class FSMEngine {
                       ? `<previous-attempt-tool-results>\nThese are the tool results from your previous attempt. Use this data to correct your output.\n\n${previousToolContext}\n</previous-attempt-tool-results>\n\n`
                       : "") +
                     `<validation-feedback>\n${
-                      validation.feedback ?? "Output failed validation."
+                      verdict.retryGuidance || "Output failed validation."
                     }\n</validation-feedback>\n` +
                     (previousToolContext
                       ? `IMPORTANT: Correct your output using the tool results above. Only re-call tools if you need different data. If you cannot comply, call failStep.`
@@ -1390,24 +1413,31 @@ export class FSMEngine {
                     retryTrace.toolCalls = trace.toolCalls;
                   }
 
-                  const retryValidation = await this.options.validateOutput(retryTrace);
+                  const { verdict: retryVerdict } =
+                    await this.options.validateOutput(retryTrace);
 
-                  if (!retryValidation.valid) {
+                  if (retryVerdict.status === "fail") {
                     logger.error("LLM action failed validation after retry", {
                       state: currentState,
                       model: action.model,
-                      feedback: retryValidation.feedback,
+                      confidence: retryVerdict.confidence,
+                      threshold: retryVerdict.threshold,
+                      retryGuidance: retryVerdict.retryGuidance,
                     });
-                    throw new Error(
+                    // Attach the verdict to the error so callers (Task #29 system error
+                    // chunk renderer) can inspect issues without re-parsing strings.
+                    throw new ValidationFailedError(
                       `LLM action failed validation after retry: ${
-                        retryValidation.feedback ?? "no feedback"
+                        retryVerdict.retryGuidance || "no guidance"
                       }`,
+                      retryVerdict,
                     );
                   }
 
                   logger.info("LLM action passed validation on retry", {
                     state: currentState,
                     model: action.model,
+                    status: retryVerdict.status,
                   });
                 }
               }

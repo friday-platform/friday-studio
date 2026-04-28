@@ -7,6 +7,7 @@ import type { AgentResult, AtlasUIMessageChunk, ToolCall, ToolResult } from "@at
 // Re-export ToolCall and ToolResult for FSM event consumers
 export type { ToolCall, ToolResult };
 
+import type { ValidationVerdict } from "@atlas/hallucination";
 import type { ModelMessage, Tool } from "ai";
 import type { DocumentScope } from "../document-store/node.ts";
 
@@ -248,6 +249,8 @@ export type { AgentResult };
 /** Trace data from an LLM action for hallucination detection */
 export interface LLMActionTrace {
   content: string;
+  /** Model reasoning text (e.g., extended-thinking output), if the model produced any. */
+  reasoning?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   model: string;
@@ -257,12 +260,13 @@ export interface LLMActionTrace {
 /**
  * Result of validating LLM output.
  * Named distinctly to avoid collision with ValidationResult in validator.ts.
+ *
+ * The verdict's `status` field drives retry policy: `pass` and `uncertain`
+ * proceed identically to downstream steps; `fail` triggers a single retry, and
+ * a second `fail` throws with the verdict attached on the error.
  */
 export interface LLMOutputValidationResult {
-  /** Whether the output passed validation */
-  valid: boolean;
-  /** Required when valid=false - feedback for retry prompt injection */
-  feedback?: string;
+  verdict: ValidationVerdict;
 }
 
 /**

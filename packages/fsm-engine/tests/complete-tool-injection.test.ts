@@ -1,9 +1,18 @@
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
+import type { ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMProvider, OutputValidator } from "../types.ts";
+
+function passVerdict(): ValidationVerdict {
+  return { status: "pass", confidence: 0.9, threshold: 0.45, issues: [], retryGuidance: "" };
+}
+
+function failVerdict(retryGuidance: string): ValidationVerdict {
+  return { status: "fail", confidence: 0.1, threshold: 0.45, issues: [], retryGuidance };
+}
 
 /** Mock LLM response - simplified format converted to AgentResult */
 interface MockLLMResponse {
@@ -580,9 +589,9 @@ describe("complete tool injection for LLM actions", () => {
       validator: (trace) => {
         // Fail first attempt (no complete tool call), pass on retry
         if (trace.content === "first attempt without structured output") {
-          return Promise.resolve({ valid: false, feedback: "Call complete tool" });
+          return Promise.resolve({ verdict: failVerdict("Call complete tool") });
         }
-        return Promise.resolve({ valid: true });
+        return Promise.resolve({ verdict: passVerdict() });
       },
       llmResponses: [
         // First attempt: LLM responds with text only (fails validation)
@@ -895,9 +904,9 @@ describe("complete tool injection for LLM actions", () => {
       fsm,
       validator: (trace) => {
         if (trace.content === "first attempt") {
-          return Promise.resolve({ valid: false, feedback: "Try again" });
+          return Promise.resolve({ verdict: failVerdict("Try again") });
         }
-        return Promise.resolve({ valid: true });
+        return Promise.resolve({ verdict: passVerdict() });
       },
       llmResponses: [
         // First attempt: text only, fails validation
