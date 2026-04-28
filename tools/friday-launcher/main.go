@@ -209,6 +209,19 @@ func main() {
 	// systray.Run BLOCKS on macOS NSApp event loop. Everything else
 	// must spawn from onReady.
 	systray.Run(onReady, onExit)
+
+	// fyne/systray's darwin nativeLoop calls [NSApp run]; when
+	// systray.Quit invokes [NSApp stop:], the run-loop returns but
+	// applicationWillTerminate never fires — so the systray-registered
+	// onExit callback never runs. Without an explicit fallback,
+	// performShutdown would be skipped and every supervised child
+	// would orphan (observed 2026-04-28: tray Quit → confirmation →
+	// launcher exits silently → 6 supervised processes still alive).
+	//
+	// performShutdown is CAS-gated, so this is a no-op if onExit DID
+	// run (Linux/Windows path, or NSApp terminated for some other
+	// reason). On the macOS tray-Quit path it's the actual driver.
+	performShutdown("post-systray-run")
 }
 
 func parseFlags() (autostart string, uninstall bool) {
