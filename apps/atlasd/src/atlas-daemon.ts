@@ -357,10 +357,11 @@ export class AtlasDaemon {
     this.cronManager = new CronManager(kvStorage, logger);
 
     // Initialize Ledger client for versioned resource storage (auto-publish, resource tools)
-    try {
+    if (process.env.LEDGER_URL) {
       this.resourceStorage = createLedgerClient();
-    } catch {
-      logger.warn("Ledger client not initialized (LEDGER_URL not set)");
+      logger.info("Resource storage using Ledger client");
+    } else {
+      logger.info("Resource storage not configured (LEDGER_URL not set)");
     }
 
     // Initialize activity storage adapter
