@@ -135,7 +135,7 @@
     "npm:dompurify@^3.4.1": "3.4.1",
     "npm:dotenv@17.4.2": "17.4.2",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.2.1",
-    "npm:eslint-plugin-svelte@^3.17.0": "3.17.1_eslint@10.2.1_svelte@5.55.5__acorn@8.16.0_postcss@8.5.10",
+    "npm:eslint-plugin-svelte@^3.17.1": "3.17.1_eslint@10.2.1_svelte@5.55.5__acorn@8.16.0",
     "npm:eslint@^10.2.1": "10.2.1",
     "npm:fast-glob@^3.3.3": "3.3.3",
     "npm:file-type@^22.0.1": "22.0.1",
@@ -4745,7 +4745,7 @@
       ],
       "bin": true
     },
-    "eslint-plugin-svelte@3.17.1_eslint@10.2.1_svelte@5.55.5__acorn@8.16.0_postcss@8.5.10": {
+    "eslint-plugin-svelte@3.17.1_eslint@10.2.1_svelte@5.55.5__acorn@8.16.0": {
       "integrity": "sha512-NyiXHtS3Ni7e532RBwS9OXlMKDIrENg3gY+/+ODjZzQx2xhU3NlJ+nIl1a93iUUQeiJL3lS8KLmY+W8hklzweQ==",
       "dependencies": [
         "@eslint-community/eslint-utils",
@@ -6633,7 +6633,7 @@
     "pluralize@8.0.0": {
       "integrity": "sha512-Nc3IT5yHzflTfbjgqWcCPpo7DaKy4FnpB0l/zCAW0Tc7jxAiuqSxHasntB3D7887LSrA93kDJ9IXovxJYxyLCA=="
     },
-    "postcss-load-config@3.1.4_postcss@8.5.10": {
+    "postcss-load-config@3.1.4_postcss@8.5.12": {
       "integrity": "sha512-6DiM4E7v4coTE4uzA8U//WhtPwyhiim3eyjEMFCnUpzbrkK9wJHgKDT2mR+HbtSrd/NubVaYTOpSpjUl8NQeRg==",
       "dependencies": [
         "lilconfig",
@@ -6644,17 +6644,14 @@
         "postcss"
       ]
     },
-    "postcss-safe-parser@7.0.1_postcss@8.5.10": {
+    "postcss-safe-parser@7.0.1_postcss@8.5.12": {
       "integrity": "sha512-0AioNCJZ2DPYz5ABT6bddIqlhgwhpHZ/l65YAYo0BCIn0xiDpsnTHz0gnoTGk0OXZW0JRs+cDwL8u/teRdz+8A==",
       "dependencies": [
         "postcss"
       ]
     },
     "postcss-scss@4.0.9_postcss@8.5.10": {
-      "integrity": "sha512-AjKOeiwAitL/MXxQW2DliT28EKukvvbEWx3LBmJIRN8KfBGZbRTxNYW0kSqi1COiTZ57nZ9NW06S6ux//N1c9A==",
-      "dependencies": [
-        "postcss"
-      ]
+      "integrity": "sha512-AjKOeiwAitL/MXxQW2DliT28EKukvvbEWx3LBmJIRN8KfBGZbRTxNYW0kSqi1COiTZ57nZ9NW06S6ux//N1c9A=="
     },
     "postcss-selector-parser@7.1.1": {
       "integrity": "sha512-orRsuYpJVw8LdAwqqLykBj9ecS5/cRHlI5+nvTo8LcCKmzDmqVORXtOIYEEQuL9D4BxtA1lm5isAqzQZCoQ6Eg==",
@@ -6663,8 +6660,8 @@
         "util-deprecate"
       ]
     },
-    "postcss@8.5.10": {
-      "integrity": "sha512-pMMHxBOZKFU6HgAZ4eyGnwXF/EvPGGqUr0MnZ5+99485wwW41kW91A4LOGxSHhgugZmSChL5AlElNdwlNgcnLQ==",
+    "postcss@8.5.12": {
+      "integrity": "sha512-W62t/Se6rA0Az3DfCL0AqJwXuKwBeYg6nOaIgzP+xZ7N5BFCI7DYi1qs6ygUYT6rvfi6t9k65UMLJC+PHZpDAA==",
       "dependencies": [
         "nanoid@3.3.11",
         "picocolors",
@@ -8363,7 +8360,7 @@
             "npm:@tanstack/svelte-table@^9.0.0-alpha.10",
             "npm:@types/node@25",
             "npm:eslint-config-prettier@^10.1.8",
-            "npm:eslint-plugin-svelte@^3.17.0",
+            "npm:eslint-plugin-svelte@^3.17.1",
             "npm:eslint@^10.2.1",
             "npm:globals@^17.5.0",
             "npm:marked@^18.0.2",
