@@ -62,7 +62,11 @@ jobs:
           #   target: x86_64-apple-darwin
           #   archive_ext: tar.zst
           - platform: windows
-            os: windows-latest
+            # 8-core Windows hosted runner provisioned at the org level.
+            # The default windows-latest (4-core) spent ~12.5 min in the
+            # build-studio.ts step; this halves wall time for the Go +
+            # Deno compile passes on the Windows path.
+            os: windows-2025-8-cores
             target: x86_64-pc-windows-msvc
             archive_ext: zip
 

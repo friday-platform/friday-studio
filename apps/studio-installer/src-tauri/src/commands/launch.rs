@@ -70,6 +70,15 @@ fn spawn_launcher_detached(launcher: &Path) -> Result<u32, String> {
         .map_err(|e| format!("Failed to clone log handle: {e}"))?;
 
     let mut cmd = Command::new(launcher);
+    // --no-browser: the wizard's "Friday Studio is ready" screen has
+    // an explicit "Open in Browser" button that the user clicks when
+    // they're ready. The launcher's first-healthy auto-open would
+    // race that button — the browser pops in front of the wizard
+    // before the user finishes reading the success state. Suppressing
+    // the auto-open here only affects this wizard-driven first launch;
+    // the same launcher binary started by autostart-at-login OR the
+    // tray icon's "Open in browser" still opens normally.
+    cmd.arg("--no-browser");
     cmd.stdout(stdout).stderr(stderr).stdin(std::process::Stdio::null());
 
     #[cfg(unix)]

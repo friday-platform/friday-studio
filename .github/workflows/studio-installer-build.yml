@@ -55,11 +55,11 @@ jobs:
           - platform: macos-arm
             os: macos-latest-xlarge
             target: aarch64-apple-darwin
-            bundle_ext: zip
+            bundle_ext: dmg
           - platform: macos-intel
             os: macos-latest-large
             target: x86_64-apple-darwin
-            bundle_ext: zip
+            bundle_ext: dmg
           - platform: windows
             os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -92,7 +92,7 @@ jobs:
           cache-on-failure: true
 
       - name: Import Apple Developer ID certificate (macOS)
-        if: matrix.bundle_ext == 'zip'
+        if: matrix.bundle_ext == 'dmg'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -129,32 +129,37 @@ jobs:
           cd / && npm ci --prefix "$GITHUB_WORKSPACE/apps/studio-installer"
 
       - name: Build Tauri app (macOS)
-        if: matrix.bundle_ext == 'zip'
+        if: matrix.bundle_ext == 'dmg'
         working-directory: apps/studio-installer
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        run: npm run build -- --target ${{ matrix.target }}
+        run: npm run build -- --target ${{ matrix.target }} --bundles app,dmg
 
       - name: Build Tauri app (Windows)
         if: matrix.bundle_ext == 'exe'
         working-directory: apps/studio-installer
         run: npm run build -- --target ${{ matrix.target }}
 
-      - name: Locate .app bundle (macOS)
-        if: matrix.bundle_ext == 'zip'
+      - name: Locate .app + .dmg bundles (macOS)
+        if: matrix.bundle_ext == 'dmg'
         id: mac-artifact
         shell: bash
         run: |
           app=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          dmg=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/dmg -maxdepth 1 -name "*.dmg" | head -1)
           # Version goes in the filename so each release becomes a new URL —
           # otherwise the CDN's immutable cache pins the first build forever.
           # Version is computed by the upstream `version` job and threaded
           # through here as RELEASE_VERSION (also written into tauri.conf.json).
+          # We rename the .dmg to a stable, version-bearing name for the
+          # public URL; the .app inside is signed/notarized as-is.
+          renamed_dmg="$(dirname "$dmg")/FridayStudioInstaller_${RELEASE_VERSION}_${{ matrix.target }}.dmg"
+          mv "$dmg" "$renamed_dmg"
           {
             echo "app_path=$app"
             echo "app_name=$(basename "$app")"
-            echo "zip_path=${app%.app}.zip"
-            echo "zip_name=FridayStudioInstaller_${RELEASE_VERSION}_${{ matrix.target }}.zip"
+            echo "dmg_path=$renamed_dmg"
+            echo "dmg_name=$(basename "$renamed_dmg")"
           } >> "$GITHUB_OUTPUT"
 
       - name: Locate NSIS installer (Windows)
@@ -183,33 +188,36 @@ jobs:
             /t http://timestamp.digicert.com `
             "${{ steps.win-artifact.outputs.path }}"
 
-      - name: Notarize and staple .app (macOS)
-        if: matrix.bundle_ext == 'zip'
+      - name: Notarize and staple .dmg (macOS)
+        if: matrix.bundle_ext == 'dmg'
         env:
           APPLE_API_KEY_PATH: /tmp/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
-          APP_PATH: ${{ steps.mac-artifact.outputs.app_path }}
-          ZIP_PATH: ${{ steps.mac-artifact.outputs.zip_path }}
+          DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
         run: |
           echo "${{ secrets.APPLE_API_KEY }}" > "$APPLE_API_KEY_PATH"
-          # Zip the .app for notarization upload (notarytool accepts zip/dmg/pkg, not bare .app).
-          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
-          xcrun notarytool submit "$ZIP_PATH" \
+          # notarytool accepts .dmg natively — no need to wrap in a zip.
+          # The .app inside the .dmg was already signed by Tauri's bundler
+          # using APPLE_SIGNING_IDENTITY; submitting the dmg notarizes the
+          # whole disk image (and Apple verifies the embedded .app's
+          # signatures during notarization).
+          xcrun notarytool submit "$DMG_PATH" \
             --key "$APPLE_API_KEY_PATH" \
             --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
             --issuer "${{ secrets.APPLE_API_ISSUER }}" \
             --wait
-          # Staple the ticket to the .app, then re-zip so the distributed bundle includes the staple.
-          xcrun stapler staple "$APP_PATH"
-          rm "$ZIP_PATH"
-          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+          # Staple the notarization ticket to the .dmg so Gatekeeper can
+          # verify offline. Stapling .dmg also covers the .app inside —
+          # users dragging the .app to /Applications still get a stapled
+          # bundle, no double-staple needed.
+          xcrun stapler staple "$DMG_PATH"
           rm "$APPLE_API_KEY_PATH"
 
       - name: Upload GitHub artifact (macOS)
-        if: matrix.bundle_ext == 'zip'
+        if: matrix.bundle_ext == 'dmg'
         uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.platform }}
-          path: ${{ steps.mac-artifact.outputs.zip_path }}
+          path: ${{ steps.mac-artifact.outputs.dmg_path }}
           retention-days: 30
 
       - name: Upload GitHub artifact (Windows)
@@ -230,19 +238,19 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Upload to GCS + emit manifest entry (macOS)
-        if: matrix.bundle_ext == 'zip'
+        if: matrix.bundle_ext == 'dmg'
         env:
-          ZIP_NAME: ${{ steps.mac-artifact.outputs.zip_name }}
-          ZIP_PATH: ${{ steps.mac-artifact.outputs.zip_path }}
+          DMG_NAME: ${{ steps.mac-artifact.outputs.dmg_name }}
+          DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
         run: |
           # Versioned upload — kept forever, served as immutable by studio-artifact.
-          gsutil cp "$ZIP_PATH" \
-            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$ZIP_NAME"
+          gsutil cp "$DMG_PATH" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$DMG_NAME"
           # Per-platform entry for the publish-manifest job to assemble later.
           mkdir -p manifest-entries
-          encoded_name=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$ZIP_NAME")
-          sha=$(shasum -a 256 "$ZIP_PATH" | awk '{print $1}')
-          size=$(stat -f %z "$ZIP_PATH")
+          encoded_name=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$DMG_NAME")
+          sha=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+          size=$(stat -f %z "$DMG_PATH")
           printf '{"url":"https://download.fridayplatform.io/installer/%s/%s","sha256":"%s","size":%s}\n' \
             "${{ matrix.platform }}" "$encoded_name" "$sha" "$size" \
             > "manifest-entries/${{ matrix.platform }}.json"

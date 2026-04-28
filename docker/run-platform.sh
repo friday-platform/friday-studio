@@ -84,16 +84,11 @@ echo "[platform] Starting link on :3100..."
 link &
 LINK_PID=$!
 
-echo "[platform] Starting ledger on :3200..."
-ledger &
-LEDGER_PID=$!
-
 # Wait for backends before starting the playground — the playground proxies
 # to atlasd on load, so starting it early produces 500s in the browser.
 echo "[platform] Waiting for backend services..."
 wait_for_service "atlasd" "http://localhost:8080/health"
 wait_for_service "link"   "http://localhost:3100/health"
-wait_for_service "ledger" "http://localhost:3200/health"
 
 # ── Start playground after backends are healthy ──────────────────────────────
 
@@ -126,13 +121,12 @@ echo "  Daemon API:          http://localhost:${FRIDAY_DAEMON_PORT:-18080}"
 echo "  PTY Server:          http://localhost:${FRIDAY_PTY_PORT:-17681}"
 echo "  Webhook Tunnel:      http://localhost:${FRIDAY_TUNNEL_PORT:-19090}"
 echo "  Link Service:        http://localhost:${FRIDAY_LINK_PORT:-13100}"
-echo "  Ledger Service:      http://localhost:${FRIDAY_LEDGER_PORT:-13200}"
 echo "================================================================"
 echo ""
 
 # ── Keep alive ───────────────────────────────────────────────────────────────
 # Wait for any service to exit — if one dies, stop everything
-wait -n $ATLASD_PID $LINK_PID $LEDGER_PID $PLAYGROUND_PID $PTY_PID $TUNNEL_PID 2>/dev/null || true
+wait -n $ATLASD_PID $LINK_PID $PLAYGROUND_PID $PTY_PID $TUNNEL_PID 2>/dev/null || true
 
 echo "[platform] A service exited unexpectedly. Shutting down..."
 shutdown

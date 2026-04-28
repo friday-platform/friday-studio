@@ -63,7 +63,7 @@ onMount(async () => {
     await tick();
     const ok = await verifyDownload(store.downloadPath, sha256);
     if (!ok) {
-      store.downloadError = "Downloaded file is corrupted (SHA-256 mismatch). Please try again.";
+      store.downloadError = "Downloaded file is corrupted (checksum mismatch). Please try again.";
       return;
     }
 
@@ -127,7 +127,7 @@ function friendlyError(msg: string | null): string {
 
       {#if phase !== "downloading"}
         <div class="stats">
-          <span class="percent">{phase === "verifying" ? "Verifying SHA-256…" : "Verified ✓"}</span>
+          <span class="percent">{phase === "verifying" ? "Verifying checksum…" : "Verified ✓"}</span>
         </div>
       {:else if store.isRetrying}
         <div class="retry-banner">

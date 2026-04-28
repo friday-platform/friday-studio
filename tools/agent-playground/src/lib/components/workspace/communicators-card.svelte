@@ -183,7 +183,7 @@
   }
 
   async function handleApikeySubmit(
-    kind: CommunicatorKind,
+    kind: Exclude<CommunicatorKind, "slack">,
     label: string,
     secret: Record<string, string>,
   ) {
@@ -208,7 +208,7 @@
     );
   }
 
-  function handleApikeyDisconnect(kind: CommunicatorKind) {
+  function handleApikeyDisconnect(kind: Exclude<CommunicatorKind, "slack">) {
     rowError[kind] = null;
     pendingDisconnectKind = kind;
     disconnectMut.mutate(

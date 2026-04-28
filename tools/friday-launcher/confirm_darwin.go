@@ -1,32 +1,32 @@
 //go:build darwin
 
-// Note on linker warning: this file produces an
-// "ld: warning: ignoring duplicate libraries: '-lobjc'" at build
-// time on macOS. The duplicate comes from fyne.io/systray's darwin
-// backend already linking objc and Apple's clang implicitly adding
-// -lobjc again when compiling our .m file. Go's cgo whitelist
-// rejects -Wl,-no_warn_duplicate_libraries, and -lobjc is added
-// implicitly by clang either way — there's no portable way to
-// suppress the warning. The build still succeeds; the warning is
-// cosmetic and only seen during local macOS dev (CI builds on
-// Linux don't see it).
-
 package main
 
-/*
-#include <stdbool.h>
-extern bool friday_confirm_quit(void);
-*/
-import "C"
-
-// confirmQuit shows the macOS Quit-confirmation NSAlert and returns
-// true if the user clicked "Quit", false if "Cancel". MUST be
-// called from the main thread (the systray click handler runs there
-// on macOS — NSAlert.runModal blocks on the NSApp event loop).
+// confirmQuit shows the macOS Quit-confirmation dialog and returns
+// true if the user clicked "Quit", false if "Cancel" (or dismissed
+// via Esc).
 //
-// Decision #2: an explicit confirmation in front of the destructive
+// We use osascript here (via showStartupErrorDialog) — NOT cgo
+// NSAlert — because the systray click handler runs on a Go
+// goroutine, not the main thread, and macOS NSWindow/NSAlert APIs
+// throw NSInternalInconsistencyException ("NSWindow should only be
+// instantiated on the main thread!") when invoked off the main
+// thread. Crash observed 2026-04-28: the launcher segfaulted on
+// Quit, leaving every supervised process orphaned. osascript
+// spawns AppleScript which has its own NSApp, no interaction with
+// ours.
+//
+// Decision #2: explicit confirmation in front of the destructive
 // "shut down all services" path. Cmd+Q (Decision #13) bypasses this
 // — power-user signal, honor it immediately.
 func confirmQuit() bool {
-	return bool(C.friday_confirm_quit())
+	const buttonQuit = "Quit"
+	const buttonCancel = "Cancel"
+	clicked := showStartupErrorDialog(
+		"Quit Friday Studio?",
+		"Friday Studio will stop all running services and shut down. "+
+			"This may take up to 30 seconds.",
+		[]string{buttonCancel, buttonQuit},
+	)
+	return clicked == buttonQuit
 }
