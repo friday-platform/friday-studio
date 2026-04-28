@@ -4,6 +4,7 @@ pub mod commands;
 
 use commands::{
     check_running::check_running_processes,
+    create_app_bundle::create_app_bundle,
     delete_partial::delete_partial,
     download::download_file,
     download_checkpoint::{check_download_complete, mark_download_complete},
@@ -36,6 +37,7 @@ pub fn run() {
             verify_sha256,
             extract_archive,
             check_running_processes,
+            create_app_bundle,
             fetch_manifest,
             write_installed,
             read_installed,
