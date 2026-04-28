@@ -6,10 +6,10 @@ import { SkillStorage } from "../src/storage.ts";
 
 // Mock archive module — must be before imports that use it
 vi.mock("../src/archive.ts", () => ({
-  extractSkillArchive: vi.fn().mockResolvedValue("/tmp/atlas-skill-abc123"),
-  injectSkillDir: vi.fn((instructions: string, dir: string) =>
-    instructions.replaceAll("$SKILL_DIR", dir),
-  ),
+  extractArchiveContents: vi.fn().mockResolvedValue({
+    "references/config.json": '{"key": "value"}',
+    "SKILL.md": "# Skill",
+  }),
 }));
 
 // =============================================================================
@@ -66,7 +66,7 @@ describe("createLoadSkillTool — two-tier resolution", () => {
   // Archive extraction + $SKILL_DIR
   // -------------------------------------------------------------------------
 
-  it("extracts archive and injects $SKILL_DIR into instructions", async () => {
+  it("extracts archive and strips $SKILL_DIR/ from instructions, returns referenceFiles", async () => {
     const fakeArchive = Buffer.from("fake-archive");
 
     vi.spyOn(SkillStorage, "get").mockResolvedValue({
@@ -81,7 +81,7 @@ describe("createLoadSkillTool — two-tier resolution", () => {
         descriptionManual: false,
         disabled: false,
         frontmatter: {},
-        instructions: "Read $SKILL_DIR/config.json and follow instructions.",
+        instructions: "Read $SKILL_DIR/references/config.json and follow instructions.",
         archive: fakeArchive,
         createdBy: "user-1",
         createdAt: new Date(),
@@ -93,14 +93,16 @@ describe("createLoadSkillTool — two-tier resolution", () => {
 
     expect(result).toMatchObject({
       name: "with-files",
-      instructions: "Read /tmp/atlas-skill-abc123/config.json and follow instructions.",
-      skillDir: "/tmp/atlas-skill-abc123",
+      instructions: "Read references/config.json and follow instructions.",
+      referenceFiles: { "references/config.json": '{"key": "value"}' },
     });
+    // SKILL.md is excluded from referenceFiles
+    expect((result as { referenceFiles?: Record<string, string> }).referenceFiles).not.toHaveProperty("SKILL.md");
   });
 
   it("deduplicates archive extraction for same skill loaded twice", async () => {
-    const { extractSkillArchive } = await import("../src/archive.ts");
-    vi.mocked(extractSkillArchive).mockClear();
+    const { extractArchiveContents } = await import("../src/archive.ts");
+    vi.mocked(extractArchiveContents).mockClear();
     const fakeArchive = Buffer.from("fake-archive");
 
     vi.spyOn(SkillStorage, "get").mockResolvedValue({
@@ -128,13 +130,13 @@ describe("createLoadSkillTool — two-tier resolution", () => {
     await exec(result, "@atlas/with-files");
     await exec(result, "@atlas/with-files");
 
-    // extractSkillArchive should only be called once (second load reuses cache)
-    expect(extractSkillArchive).toHaveBeenCalledTimes(1);
+    // extractArchiveContents should only be called once (second load reuses cache)
+    expect(extractArchiveContents).toHaveBeenCalledTimes(1);
   });
 
   it("cleanup clears cache so next load re-extracts", async () => {
-    const { extractSkillArchive } = await import("../src/archive.ts");
-    vi.mocked(extractSkillArchive).mockClear();
+    const { extractArchiveContents } = await import("../src/archive.ts");
+    vi.mocked(extractArchiveContents).mockClear();
     const fakeArchive = Buffer.from("fake-archive");
 
     vi.spyOn(SkillStorage, "get").mockResolvedValue({
@@ -159,14 +161,14 @@ describe("createLoadSkillTool — two-tier resolution", () => {
     const result = createLoadSkillTool({ hardcodedSkills: [] });
 
     await exec(result, "@atlas/with-files");
-    expect(extractSkillArchive).toHaveBeenCalledTimes(1);
+    expect(extractArchiveContents).toHaveBeenCalledTimes(1);
 
-    // Cleanup clears the cache (rm will silently fail on fake path)
+    // Cleanup clears the in-memory cache
     await result.cleanup();
 
     // Loading again should re-extract since cache was cleared
     await exec(result, "@atlas/with-files");
-    expect(extractSkillArchive).toHaveBeenCalledTimes(2);
+    expect(extractArchiveContents).toHaveBeenCalledTimes(2);
   });
 
   // -------------------------------------------------------------------------

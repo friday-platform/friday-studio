@@ -1,11 +1,9 @@
 import { Buffer } from "node:buffer";
-import { rm } from "node:fs/promises";
 import { parseSkillRef } from "@atlas/config";
 import { logger } from "@atlas/logger";
-import { stringifyError } from "@atlas/utils";
 import { type Tool, tool } from "ai";
 import { z } from "zod";
-import { extractSkillArchive, injectSkillDir } from "./archive.ts";
+import { extractArchiveContents } from "./archive.ts";
 import { resolveVisibleSkills } from "./resolve.ts";
 import { type LintFinding, lintCache, lintSkill } from "./skill-linter.ts";
 import { SkillStorage } from "./storage.ts";
@@ -69,7 +67,7 @@ export interface CreateLoadSkillToolOptions {
 
 export interface LoadSkillToolResult {
   tool: Tool;
-  /** Removes all extracted skill directories. Call when the session ends. */
+  /** Clears the in-memory skill archive cache. Call when the session ends. */
   cleanup: () => Promise<void>;
 }
 
@@ -101,8 +99,8 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
   // (e.g. conversation), not by the workspace skill catalog.
   const hardcodedIds = hardcodedSkills.map((s) => s.id);
 
-  // Cache extracted skill dirs by "namespace/name/version" to avoid re-extracting
-  const extractedDirs = new Map<string, string>();
+  // Cache extracted reference file contents by "skillId:version" to avoid re-extracting
+  const referenceFilesCache = new Map<string, Record<string, string>>();
 
   const baseInstruction =
     "Load skill instructions BEFORE starting a task that matches a skill's description. " +
@@ -148,7 +146,7 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
           });
           return { error: `Skill "${name}" is not allowed for this job step.` };
         }
-        return await resolveGlobalSkill(name, extractedDirs, workspaceId, jobName);
+        return await resolveGlobalSkill(name, referenceFilesCache, workspaceId, jobName);
       }
 
       const sources = [hardcodedSkills.length > 0 ? "built-in" : null, "global catalog"]
@@ -161,15 +159,7 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
   });
 
   async function cleanup(): Promise<void> {
-    const dirs = [...extractedDirs.values()];
-    extractedDirs.clear();
-    await Promise.all(
-      dirs.map((dir) =>
-        rm(dir, { recursive: true, force: true }).catch((e) =>
-          logger.debug("cleanup failed", { error: stringifyError(e), dir }),
-        ),
-      ),
-    );
+    referenceFilesCache.clear();
   }
 
   return { tool: skillTool, cleanup };
@@ -177,7 +167,7 @@ export function createLoadSkillTool(options: CreateLoadSkillToolOptions = {}): L
 
 async function resolveGlobalSkill(
   ref: string,
-  extractedDirs: Map<string, string>,
+  referenceFilesCache: Map<string, Record<string, string>>,
   workspaceId?: string,
   jobName?: string,
 ): Promise<
@@ -186,7 +176,7 @@ async function resolveGlobalSkill(
       description: string;
       instructions: string;
       frontmatter?: Record<string, unknown>;
-      skillDir?: string;
+      referenceFiles?: Record<string, string>;
       lintWarnings?: LintFinding[];
     }
   | { error: string }
@@ -233,24 +223,24 @@ async function resolveGlobalSkill(
 
   const skill = result.data;
   let { instructions } = skill;
-  let skillDir: string | undefined;
+  let referenceFiles: Record<string, string> | undefined;
 
   if (skill.archive) {
-    const cacheKey = `${namespace}/${skillName}/${skill.version}`;
-    const cached = extractedDirs.get(cacheKey);
+    const cacheKey = `${skill.skillId}:${skill.version}`;
+    const cached = referenceFilesCache.get(cacheKey);
     if (cached) {
-      skillDir = cached;
+      referenceFiles = cached;
       logger.info("skill_archive_cache_hit", { skill: ref, version: skill.version });
     } else {
-      skillDir = await extractSkillArchive(
-        Buffer.from(skill.archive),
-        `atlas-skill-${namespace}-${skillName}-`,
+      const allFiles = await extractArchiveContents(Buffer.from(skill.archive));
+      // Exclude SKILL.md — its content is already in instructions
+      referenceFiles = Object.fromEntries(
+        Object.entries(allFiles).filter(([k]) => k !== "SKILL.md" && k !== "./SKILL.md"),
       );
-      extractedDirs.set(cacheKey, skillDir);
+      referenceFilesCache.set(cacheKey, referenceFiles);
     }
-    // Legacy compat: replace $SKILL_DIR with actual path for old skills.
-    // New skills use relative paths and don't need this.
-    instructions = injectSkillDir(instructions, skillDir);
+    // Legacy compat: strip $SKILL_DIR/ prefix so instructions use relative paths
+    instructions = instructions.replaceAll("$SKILL_DIR/", "");
   }
 
   logger.info("skill_loaded", {
@@ -280,7 +270,7 @@ async function resolveGlobalSkill(
     description: string;
     instructions: string;
     frontmatter?: Record<string, unknown>;
-    skillDir?: string;
+    referenceFiles?: Record<string, string>;
     lintWarnings?: LintFinding[];
   } = { name: skill.name ?? skillName, description: skill.description, instructions };
 
@@ -288,8 +278,8 @@ async function resolveGlobalSkill(
     response.frontmatter = skill.frontmatter;
   }
 
-  if (skillDir) {
-    response.skillDir = skillDir;
+  if (referenceFiles && Object.keys(referenceFiles).length > 0) {
+    response.referenceFiles = referenceFiles;
   }
 
   if (lintResult.warnings.length > 0) {
