@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { IconLarge, PageLayout } from "@atlas/ui";
+  import { PageLayout } from "@atlas/ui";
   import { getClient } from "$lib/client.ts";
 
   interface DiscoverItem {
@@ -15,7 +15,6 @@
   let items = $state<DiscoverItem[]>([]);
   let loading = $state(true);
   let errorMsg = $state<string | null>(null);
-  let source = $state<{ repo: string; path: string; ref: string } | null>(null);
 
   async function load(): Promise<void> {
     loading = true;
@@ -34,9 +33,6 @@
       if ("items" in data && Array.isArray(data.items)) {
         items = data.items as DiscoverItem[];
       }
-      if ("source" in data && data.source) {
-        source = data.source as { repo: string; path: string; ref: string };
-      }
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : String(err);
     } finally {
@@ -50,10 +46,11 @@
 </script>
 
 <PageLayout.Root>
-  <PageLayout.Title>Discover Spaces</PageLayout.Title>
+  <PageLayout.Title subtitle="Explore how others are using Friday">
+    Discover Spaces
+  </PageLayout.Title>
   <PageLayout.Body>
     <PageLayout.Content>
-      <p>Explore how others are using Friday, then build your own.</p>
       {#if errorMsg}
         <div class="error-banner" role="alert">
           <span>{errorMsg}</span>

@@ -23,4 +23,8 @@
       grid-template-columns: 1fr auto;
     }
   }
+
+  :global([data-friday-pagelayout-title]:has(.description) ~ .body) {
+    padding-block-start: var(--size-24);
+  }
 </style>

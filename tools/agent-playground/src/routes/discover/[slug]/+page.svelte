@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, MarkdownRendered, markdownToHTML, toast } from "@atlas/ui";
+  import { Button, MarkdownRendered, PageLayout, markdownToHTML, toast } from "@atlas/ui";
   import DOMPurify from "dompurify";
   import { page } from "$app/state";
   import { getClient } from "$lib/client.ts";
@@ -98,158 +98,126 @@
   }
 </script>
 
-<div class="detail-root">
-  <nav class="breadcrumb">
-    <a href="/discover">← Discover</a>
-  </nav>
-
-  {#if loading}
-    <div class="loading">Loading…</div>
-  {:else if errorMsg}
-    <div class="error-banner" role="alert">
-      <span>{errorMsg}</span>
-      <button class="retry" onclick={() => void load()}>Retry</button>
-    </div>
-  {:else if item}
-    <header class="detail-header">
-      <div class="detail-titles">
-        <h1>{item.name}</h1>
-        {#if item.description}
-          <p class="subtitle">{item.description}</p>
-        {/if}
-        <p class="meta">
-          <a href={item.source.htmlUrl} target="_blank" rel="noopener noreferrer">
-            <code>{item.source.repo}/{item.source.path}</code>
-          </a>
-        </p>
-      </div>
-      <div class="detail-actions">
-        <Button variant="primary" onclick={handleImport} disabled={importing}>
-          {importing ? "Importing…" : "Import workspace"}
-        </Button>
-      </div>
-    </header>
-
-    {#if item.signals.length > 0 || item.agents.length > 0 || item.jobs.length > 0}
-      <section class="manifest">
-        {#if item.signals.length > 0}
-          <div class="manifest-group">
-            <h2 class="manifest-h">Signals <span class="count">{item.signals.length}</span></h2>
-            <ul class="manifest-list">
-              {#each item.signals as s (s.id)}
-                <li class="manifest-row">
-                  <div class="row-main">
-                    <code class="row-id">{s.id}</code>
-                    {#if s.title}
-                      <span class="row-title">{s.title}</span>
-                    {/if}
-                  </div>
-                  {#if s.provider}
-                    <span class="pill" data-kind={s.provider}>{s.provider}</span>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
+<PageLayout.Root>
+  <PageLayout.Breadcrumbs
+    crumbs={[
+      { label: "Discover Spaces", href: "/discover" },
+      { label: item?.name ?? slug },
+    ]}
+  />
+  <PageLayout.Body>
+    <PageLayout.Content>
+      {#if loading}
+        <div class="loading">Loading…</div>
+      {:else if errorMsg}
+        <div class="error-banner" role="alert">
+          <span>{errorMsg}</span>
+          <button class="retry" onclick={() => void load()}>Retry</button>
+        </div>
+      {:else if item}
+        <div class="detail-stack">
+          <div class="detail-headerbar">
+            <p class="meta">
+              <a href={item.source.htmlUrl} target="_blank" rel="noopener noreferrer">
+                <code>{item.source.repo}/{item.source.path}</code>
+              </a>
+            </p>
+            <Button variant="primary" onclick={handleImport} disabled={importing}>
+              {importing ? "Importing…" : "Import workspace"}
+            </Button>
           </div>
-        {/if}
 
-        {#if item.agents.length > 0}
-          <div class="manifest-group">
-            <h2 class="manifest-h">Agents <span class="count">{item.agents.length}</span></h2>
-            <ul class="manifest-list">
-              {#each item.agents as a (a.id)}
-                <li class="manifest-row">
-                  <div class="row-main">
-                    <code class="row-id">{a.id}</code>
-                    {#if a.description}
-                      <span class="row-title">{a.description}</span>
-                    {/if}
-                  </div>
-                  {#if a.type}
-                    <span class="pill" data-kind={a.type}>{a.type}</span>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
+          {#if item.signals.length > 0 || item.agents.length > 0 || item.jobs.length > 0}
+            <section class="manifest">
+              {#if item.signals.length > 0}
+                <div class="manifest-group">
+                  <h2 class="manifest-h">Signals <span class="count">{item.signals.length}</span></h2>
+                  <ul class="manifest-list">
+                    {#each item.signals as s (s.id)}
+                      <li class="manifest-row">
+                        <div class="row-main">
+                          <code class="row-id">{s.id}</code>
+                          {#if s.title}
+                            <span class="row-title">{s.title}</span>
+                          {/if}
+                        </div>
+                        {#if s.provider}
+                          <span class="pill" data-kind={s.provider}>{s.provider}</span>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
 
-        {#if item.jobs.length > 0}
-          <div class="manifest-group">
-            <h2 class="manifest-h">Jobs <span class="count">{item.jobs.length}</span></h2>
-            <ul class="manifest-list">
-              {#each item.jobs as j (j.id)}
-                <li class="manifest-row">
-                  <div class="row-main">
-                    <code class="row-id">{j.id}</code>
-                    {#if j.title}
-                      <span class="row-title">{j.title}</span>
-                    {/if}
-                  </div>
-                </li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-      </section>
-    {/if}
+              {#if item.agents.length > 0}
+                <div class="manifest-group">
+                  <h2 class="manifest-h">Agents <span class="count">{item.agents.length}</span></h2>
+                  <ul class="manifest-list">
+                    {#each item.agents as a (a.id)}
+                      <li class="manifest-row">
+                        <div class="row-main">
+                          <code class="row-id">{a.id}</code>
+                          {#if a.description}
+                            <span class="row-title">{a.description}</span>
+                          {/if}
+                        </div>
+                        {#if a.type}
+                          <span class="pill" data-kind={a.type}>{a.type}</span>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
 
-    {#if item.readme}
-      <section class="readme">
-        <MarkdownRendered>
-          {@html renderedHtml}
-        </MarkdownRendered>
-      </section>
-    {:else}
-      <div class="empty">No README.md in this folder.</div>
-    {/if}
-  {/if}
-</div>
+              {#if item.jobs.length > 0}
+                <div class="manifest-group">
+                  <h2 class="manifest-h">Jobs <span class="count">{item.jobs.length}</span></h2>
+                  <ul class="manifest-list">
+                    {#each item.jobs as j (j.id)}
+                      <li class="manifest-row">
+                        <div class="row-main">
+                          <code class="row-id">{j.id}</code>
+                          {#if j.title}
+                            <span class="row-title">{j.title}</span>
+                          {/if}
+                        </div>
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+            </section>
+          {/if}
+
+          {#if item.readme}
+            <section class="readme">
+              <MarkdownRendered>
+                {@html renderedHtml}
+              </MarkdownRendered>
+            </section>
+          {:else}
+            <div class="empty">No README.md in this folder.</div>
+          {/if}
+        </div>
+      {/if}
+    </PageLayout.Content>
+  </PageLayout.Body>
+</PageLayout.Root>
 
 <style>
-  .detail-root {
+  .detail-stack {
     display: flex;
     flex-direction: column;
     gap: var(--size-6);
-    max-inline-size: 880px;
-    margin-inline: auto;
-    padding: var(--size-8) var(--size-6) var(--size-10);
   }
 
-  .breadcrumb a {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: 13px;
-    text-decoration: none;
-  }
-  .breadcrumb a:hover {
-    color: var(--color-text);
-  }
-
-  .detail-header {
-    align-items: flex-start;
+  .detail-headerbar {
+    align-items: center;
     display: flex;
     gap: var(--size-4);
     justify-content: space-between;
-  }
-
-  .detail-titles {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-  }
-
-  .detail-header h1 {
-    font-size: var(--font-size-6);
-    font-weight: var(--font-weight-7);
-    letter-spacing: -0.01em;
-    margin: 0;
-  }
-
-  .subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-2);
-    margin: 0;
-    max-width: 60ch;
   }
 
   .meta {
@@ -271,10 +239,6 @@
     border-radius: 4px;
     font-size: 12px;
     padding: 2px 8px;
-  }
-
-  .detail-actions {
-    flex-shrink: 0;
   }
 
   .readme {
