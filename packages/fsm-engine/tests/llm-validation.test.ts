@@ -4,7 +4,14 @@ import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { buildLLMActionTrace, FSMEngine, formatToolResultsForRetry } from "../fsm-engine.ts";
-import type { FSMDefinition, FSMLLMOutput, LLMActionTrace, OutputValidator } from "../types.ts";
+import type {
+  FSMDefinition,
+  FSMEvent,
+  FSMLLMOutput,
+  FSMValidationAttemptEvent,
+  LLMActionTrace,
+  OutputValidator,
+} from "../types.ts";
 
 /** Helper: pass verdict (high confidence, above threshold). */
 function passVerdict(): ValidationVerdict {
@@ -918,5 +925,220 @@ describe("formatToolResultsForRetry", () => {
 
     // Total output should be under 50K budget + truncation message (~80 chars)
     expect(formatted.length).toBeLessThan(50_200);
+  });
+});
+
+/**
+ * Part 4: Validation Lifecycle Event Emission
+ *
+ * Verifies that the FSM engine emits exactly one `running` event before each
+ * judge call and exactly one terminal event (`passed` / `failed`) after, with
+ * the verdict attached on terminal events. The retry-vs-terminal distinction
+ * is encoded explicitly via `terminal: boolean` on `failed` events.
+ */
+describe("FSMValidationAttemptEvent emission", () => {
+  /**
+   * Run an LLM action with the given validator + responses, capture every
+   * FSMEvent emitted via _context.onEvent, and return only the validation
+   * lifecycle events.
+   */
+  async function runAndCollectValidationEvents(opts: {
+    validator: OutputValidator;
+    llmResponses: MockLLMResponse[];
+    abortSignal?: AbortSignal;
+    expectThrow?: boolean;
+  }): Promise<FSMValidationAttemptEvent[]> {
+    const store = new InMemoryDocumentStore();
+    const scope = { workspaceId: "ws-1", sessionId: "sess-1" };
+
+    const fsm: FSMDefinition = {
+      id: "validation-events-test",
+      initial: "pending",
+      states: {
+        pending: {
+          on: {
+            RUN_LLM: {
+              target: "done",
+              actions: [
+                {
+                  type: "llm",
+                  provider: "test",
+                  model: "test-model",
+                  prompt: "Do something",
+                  outputTo: "output",
+                },
+              ],
+            },
+          },
+        },
+        done: { type: "final" },
+      },
+    };
+
+    let callCount = 0;
+    const mockLLMProvider: import("../types.ts").LLMProvider = {
+      call: (params) => {
+        const mockResponse =
+          opts.llmResponses[callCount] ?? opts.llmResponses[opts.llmResponses.length - 1];
+        callCount++;
+        if (!mockResponse) throw new Error("No LLM response available for mock");
+        return Promise.resolve(mockToEnvelope(mockResponse, params.agentId, params.prompt));
+      },
+    };
+
+    const engine = new FSMEngine(fsm, {
+      documentStore: store,
+      scope,
+      llmProvider: mockLLMProvider,
+      validateOutput: opts.validator,
+    });
+    await engine.initialize();
+
+    const events: FSMEvent[] = [];
+    const sendSignal = () =>
+      engine.signal(
+        { type: "RUN_LLM" },
+        {
+          sessionId: scope.sessionId,
+          workspaceId: scope.workspaceId,
+          onEvent: (e) => events.push(e),
+          abortSignal: opts.abortSignal,
+        },
+      );
+
+    if (opts.expectThrow) {
+      await expect(sendSignal()).rejects.toBeInstanceOf(ValidationFailedError);
+    } else {
+      await sendSignal();
+    }
+
+    return events.filter(
+      (e): e is FSMValidationAttemptEvent => e.type === "data-fsm-validation-attempt",
+    );
+  }
+
+  it("pass on first attempt → 1 running + 1 passed", async () => {
+    const validationEvents = await runAndCollectValidationEvents({
+      validator: () => Promise.resolve({ verdict: passVerdict() }),
+      llmResponses: [{ content: "good response" }],
+    });
+
+    expect(validationEvents.length).toEqual(2);
+    expect(validationEvents[0]?.data).toMatchObject({
+      attempt: 1,
+      status: "running",
+      actionId: "output",
+      sessionId: "sess-1",
+      workspaceId: "ws-1",
+      jobName: "validation-events-test",
+      state: "pending",
+    });
+    expect(validationEvents[0]?.data.verdict).toBeUndefined();
+    expect(validationEvents[0]?.data.terminal).toBeUndefined();
+
+    expect(validationEvents[1]?.data).toMatchObject({
+      attempt: 1,
+      status: "passed",
+      actionId: "output",
+    });
+    expect(validationEvents[1]?.data.verdict?.status).toEqual("pass");
+    expect(validationEvents[1]?.data.terminal).toBeUndefined();
+  });
+
+  it("uncertain on first attempt → 1 running + 1 passed (uncertain proceeds)", async () => {
+    const validationEvents = await runAndCollectValidationEvents({
+      validator: () => Promise.resolve({ verdict: uncertainVerdict() }),
+      llmResponses: [{ content: "borderline response" }],
+    });
+
+    expect(validationEvents.length).toEqual(2);
+    expect(validationEvents[0]?.data.status).toEqual("running");
+    expect(validationEvents[1]?.data.status).toEqual("passed");
+    // Uncertain rides through as a `passed` lifecycle event but the verdict
+    // itself preserves the underlying status for downstream observability.
+    expect(validationEvents[1]?.data.verdict?.status).toEqual("uncertain");
+  });
+
+  it("fail then pass on retry → 2 running + 1 failed[terminal=false] + 1 passed", async () => {
+    let validatorCalls = 0;
+    const validationEvents = await runAndCollectValidationEvents({
+      validator: () => {
+        validatorCalls++;
+        return Promise.resolve({
+          verdict: validatorCalls === 1 ? failVerdict("try again") : passVerdict(),
+        });
+      },
+      llmResponses: [{ content: "first bad" }, { content: "second good" }],
+    });
+
+    expect(validationEvents.length).toEqual(4);
+
+    expect(validationEvents[0]?.data).toMatchObject({ attempt: 1, status: "running" });
+
+    expect(validationEvents[1]?.data).toMatchObject({
+      attempt: 1,
+      status: "failed",
+      terminal: false,
+    });
+    expect(validationEvents[1]?.data.verdict?.status).toEqual("fail");
+
+    expect(validationEvents[2]?.data).toMatchObject({ attempt: 2, status: "running" });
+    expect(validationEvents[2]?.data.verdict).toBeUndefined();
+
+    expect(validationEvents[3]?.data).toMatchObject({ attempt: 2, status: "passed" });
+    expect(validationEvents[3]?.data.verdict?.status).toEqual("pass");
+    expect(validationEvents[3]?.data.terminal).toBeUndefined();
+  });
+
+  it("fail twice → 2 running + 1 failed[terminal=false] + 1 failed[terminal=true]", async () => {
+    const validationEvents = await runAndCollectValidationEvents({
+      validator: () => Promise.resolve({ verdict: failVerdict("still wrong") }),
+      llmResponses: [{ content: "bad 1" }, { content: "bad 2" }],
+      expectThrow: true,
+    });
+
+    expect(validationEvents.length).toEqual(4);
+
+    expect(validationEvents[0]?.data).toMatchObject({ attempt: 1, status: "running" });
+
+    expect(validationEvents[1]?.data).toMatchObject({
+      attempt: 1,
+      status: "failed",
+      terminal: false,
+    });
+    expect(validationEvents[1]?.data.verdict?.status).toEqual("fail");
+
+    expect(validationEvents[2]?.data).toMatchObject({ attempt: 2, status: "running" });
+
+    expect(validationEvents[3]?.data).toMatchObject({
+      attempt: 2,
+      status: "failed",
+      terminal: true,
+    });
+    expect(validationEvents[3]?.data.verdict?.status).toEqual("fail");
+    expect(validationEvents[3]?.data.verdict?.retryGuidance).toEqual("still wrong");
+  });
+
+  it("threads abortSignal into the validator on every attempt", async () => {
+    const controller = new AbortController();
+    const receivedSignals: Array<AbortSignal | undefined> = [];
+
+    const validationEvents = await runAndCollectValidationEvents({
+      validator: (_trace, abortSignal) => {
+        receivedSignals.push(abortSignal);
+        return Promise.resolve({
+          verdict: receivedSignals.length === 1 ? failVerdict("retry") : passVerdict(),
+        });
+      },
+      llmResponses: [{ content: "first" }, { content: "second" }],
+      abortSignal: controller.signal,
+    });
+
+    expect(validationEvents.length).toEqual(4);
+    expect(receivedSignals.length).toEqual(2);
+    // Both attempts received the same abort signal — propagation is
+    // unconditional so aborting mid-validation does not waste tokens.
+    expect(receivedSignals[0]).toBe(controller.signal);
+    expect(receivedSignals[1]).toBe(controller.signal);
   });
 });

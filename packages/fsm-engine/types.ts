@@ -211,12 +211,42 @@ export interface FSMStateSkippedEvent {
   };
 }
 
+/**
+ * Lifecycle event for a single LLM-output validation attempt.
+ *
+ * Each attempt emits exactly one `running` event before the judge call and
+ * exactly one terminal event (`passed` or `failed`) after. `terminal` is
+ * present only on `failed` events: `false` for the first failure (a retry
+ * follows), `true` for the second failure (the action throws).
+ *
+ * actionId MUST match the actionId from the parent FSMActionExecutionEvent
+ * to allow UI correlation.
+ */
+export interface FSMValidationAttemptEvent {
+  type: "data-fsm-validation-attempt";
+  data: {
+    sessionId: string;
+    workspaceId: string;
+    jobName: string;
+    actionId?: string;
+    state: string;
+    attempt: number;
+    status: "running" | "passed" | "failed";
+    /** Present on `failed` events; `true` only on terminal failure. */
+    terminal?: boolean;
+    /** Present on `passed` and `failed` terminal events; absent on `running`. */
+    verdict?: ValidationVerdict;
+    timestamp: number;
+  };
+}
+
 export type FSMEvent =
   | FSMStateTransitionEvent
   | FSMActionExecutionEvent
   | FSMToolCallEvent
   | FSMToolResultEvent
-  | FSMStateSkippedEvent;
+  | FSMStateSkippedEvent
+  | FSMValidationAttemptEvent;
 
 /**
  * Signal with additional context for execution tracking and event streaming
@@ -272,8 +302,14 @@ export interface LLMOutputValidationResult {
 /**
  * Function type for validating LLM action output.
  * Returns a promise because real validators call LLMs for analysis.
+ *
+ * `abortSignal` lets callers cancel an in-flight judge call when a job is
+ * aborted mid-validation, so doomed validations do not waste tokens.
  */
-export type OutputValidator = (trace: LLMActionTrace) => Promise<LLMOutputValidationResult>;
+export type OutputValidator = (
+  trace: LLMActionTrace,
+  abortSignal?: AbortSignal,
+) => Promise<LLMOutputValidationResult>;
 
 export interface LLMProvider {
   call(params: {

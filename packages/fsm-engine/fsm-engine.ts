@@ -30,7 +30,7 @@ import {
 } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
-import { ValidationFailedError } from "@atlas/hallucination";
+import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -1313,11 +1313,27 @@ export class FSMEngine {
               // never gating, so judge confusion (timezones, math) cannot kill recoverable work.
               if (this.options.validateOutput) {
                 const trace = buildLLMActionTrace(result, action.model, contextPrompt);
+                const validationActionId = this.getActionId(action);
 
-                const { verdict } = await this.options.validateOutput(trace);
+                this.emitValidationAttempt(sig, currentState, validationActionId, {
+                  attempt: 1,
+                  status: "running",
+                });
+
+                const { verdict } = await this.options.validateOutput(
+                  trace,
+                  sig._context?.abortSignal,
+                );
                 // Note: If validator throws, error propagates and aborts the action (fail-closed)
 
                 if (verdict.status === "fail") {
+                  this.emitValidationAttempt(sig, currentState, validationActionId, {
+                    attempt: 1,
+                    status: "failed",
+                    terminal: false,
+                    verdict,
+                  });
+
                   logger.warn("LLM action failed validation, retrying with feedback", {
                     state: currentState,
                     model: action.model,
@@ -1397,10 +1413,24 @@ export class FSMEngine {
                     retryTrace.toolCalls = trace.toolCalls;
                   }
 
-                  const { verdict: retryVerdict } =
-                    await this.options.validateOutput(retryTrace);
+                  this.emitValidationAttempt(sig, currentState, validationActionId, {
+                    attempt: 2,
+                    status: "running",
+                  });
+
+                  const { verdict: retryVerdict } = await this.options.validateOutput(
+                    retryTrace,
+                    sig._context?.abortSignal,
+                  );
 
                   if (retryVerdict.status === "fail") {
+                    this.emitValidationAttempt(sig, currentState, validationActionId, {
+                      attempt: 2,
+                      status: "failed",
+                      terminal: true,
+                      verdict: retryVerdict,
+                    });
+
                     logger.error("LLM action failed validation after retry", {
                       state: currentState,
                       model: action.model,
@@ -1413,10 +1443,22 @@ export class FSMEngine {
                     throw new ValidationFailedError(retryVerdict, llmAgentId);
                   }
 
+                  this.emitValidationAttempt(sig, currentState, validationActionId, {
+                    attempt: 2,
+                    status: "passed",
+                    verdict: retryVerdict,
+                  });
+
                   logger.info("LLM action passed validation on retry", {
                     state: currentState,
                     model: action.model,
                     status: retryVerdict.status,
+                  });
+                } else {
+                  this.emitValidationAttempt(sig, currentState, validationActionId, {
+                    attempt: 1,
+                    status: "passed",
+                    verdict,
                   });
                 }
               }
@@ -1727,6 +1769,41 @@ export class FSMEngine {
         sig._context.onEvent({ type: "data-fsm-tool-result", data: { ...baseData, toolResult } });
       }
     }
+  }
+
+  /**
+   * Emit a single validation-attempt lifecycle event.
+   * `running` events have no `verdict`; `passed`/`failed` carry the verdict.
+   * `terminal` is meaningful only on `failed` — `false` on a will-retry failure,
+   * `true` on the second attempt's failure that throws.
+   */
+  private emitValidationAttempt(
+    sig: SignalWithContext,
+    currentState: string,
+    actionId: string | undefined,
+    payload: {
+      attempt: number;
+      status: "running" | "passed" | "failed";
+      terminal?: boolean;
+      verdict?: ValidationVerdict;
+    },
+  ): void {
+    if (!sig._context?.onEvent) return;
+    sig._context.onEvent({
+      type: "data-fsm-validation-attempt",
+      data: {
+        sessionId: sig._context.sessionId,
+        workspaceId: sig._context.workspaceId,
+        jobName: this._definition.id,
+        actionId,
+        state: currentState,
+        attempt: payload.attempt,
+        status: payload.status,
+        ...(payload.terminal !== undefined ? { terminal: payload.terminal } : {}),
+        ...(payload.verdict !== undefined ? { verdict: payload.verdict } : {}),
+        timestamp: Date.now(),
+      },
+    });
   }
 
   private async buildContextPrompt(

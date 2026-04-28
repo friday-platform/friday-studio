@@ -141,5 +141,20 @@ export function mapFsmEventToSessionEvent(fsmEvent: FSMEvent): SessionHistoryEve
           status: "completed" as const,
         },
       };
+
+    case "data-fsm-validation-attempt":
+      // Validation attempts get a dedicated session-history mapping in Task #24.
+      // Until then, emit a no-op fsm-action placeholder so the union stays
+      // exhaustive and runtime persistence does not crash on this variant.
+      return {
+        type: "fsm-action",
+        context: { metadata: { fsmEventType: "validation-attempt-ignored" } },
+        data: {
+          jobName: fsmEvent.data.jobName,
+          state: fsmEvent.data.state,
+          actionType: "llm" as const,
+          status: "completed" as const,
+        },
+      };
   }
 }

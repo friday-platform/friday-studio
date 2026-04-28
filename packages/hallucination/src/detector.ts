@@ -223,11 +223,17 @@ export async function validate(
   result: AgentResult,
   supervisionLevel: SupervisionLevel,
   config: HallucinationDetectorConfig,
+  abortSignal?: AbortSignal,
 ): Promise<ValidationVerdict> {
   const threshold = getThresholdForLevel(supervisionLevel);
 
   try {
-    const { output } = await validateWithLLM(result, config.platformModels, config.logger);
+    const { output } = await validateWithLLM(
+      result,
+      config.platformModels,
+      config.logger,
+      abortSignal,
+    );
     const issues: ValidationIssue[] = output.issues.map((raw) => ({
       category: raw.category,
       severity: severityForCategory(raw.category),
@@ -374,6 +380,7 @@ async function validateWithLLM(
   result: AgentResult,
   platformModels: PlatformModels,
   logger?: Logger,
+  abortSignal?: AbortSignal,
 ): Promise<LLMValidationResult> {
   try {
     const messages: ModelMessage[] = [
@@ -394,6 +401,7 @@ async function validateWithLLM(
       maxOutputTokens: 1500,
       maxRetries: 3,
       experimental_repairText: repairJson,
+      abortSignal,
     });
 
     logger?.debug("AI SDK generateObject completed", {

@@ -54,7 +54,7 @@ export function traceToAgentResult(trace: LLMActionTrace): AgentResult<string, s
 export function createFSMOutputValidator(
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
   platformModels?: PlatformModels,
-): (trace: LLMActionTrace) => Promise<LLMOutputValidationResult> {
+): (trace: LLMActionTrace, abortSignal?: AbortSignal) => Promise<LLMOutputValidationResult> {
   const threshold = getThresholdForLevel(supervisionLevel);
 
   if (!platformModels) {
@@ -72,7 +72,10 @@ export function createFSMOutputValidator(
       });
   }
 
-  return async (trace: LLMActionTrace): Promise<LLMOutputValidationResult> => {
+  return async (
+    trace: LLMActionTrace,
+    abortSignal?: AbortSignal,
+  ): Promise<LLMOutputValidationResult> => {
     const agentResult = traceToAgentResult(trace);
 
     const config: HallucinationDetectorConfig = {
@@ -80,7 +83,7 @@ export function createFSMOutputValidator(
       logger: logger.child({ component: "fsm-output-validator" }),
     };
 
-    const verdict = await validate(agentResult, supervisionLevel, config);
+    const verdict = await validate(agentResult, supervisionLevel, config, abortSignal);
     return { verdict };
   };
 }
