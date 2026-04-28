@@ -101,9 +101,8 @@ PLAYGROUND_PID=$!
 cd /app
 
 echo "[platform] Starting pty-server on :7681..."
-cd /app/tools/pty-server && npx tsx server.ts &
+pty-server &
 PTY_PID=$!
-cd /app
 
 echo "[platform] Starting webhook-tunnel on :9090..."
 ATLASD_URL=http://localhost:8080 webhook-tunnel &

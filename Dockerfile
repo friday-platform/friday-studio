@@ -1,4 +1,4 @@
-# Friday Platform image: atlasd + link + agent-playground
+# Friday Platform image: atlasd + link + agent-playground + webhook-tunnel + pty-server
 #
 # Build:
 #   docker build -t friday-platform .
@@ -14,16 +14,15 @@
 #   19090  webhook-tunnel - mapped to container port 9090
 
 # ============================================================================
-# Stage 1: Build — compile binaries & install deps
+# Stage 1: Deno builder — compile atlas/link binaries & prepare playground
 # ============================================================================
-FROM denoland/deno:debian-2.7.4 AS builder
+FROM denoland/deno:debian-2.7.4 AS deno-builder
 
 WORKDIR /app
 
-# Need Node.js/npm for building @atlas/ui (svelte-package)
-# python3 + build-essential for compiling node-pty native addon (pty-server)
+# Need Node.js/npm for building @atlas/ui (svelte-package) and the playground.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nodejs npm python3 make g++ && \
+    nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first for layer caching — deno install only
@@ -32,10 +31,8 @@ COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json apps/atlasd/package.json* ./apps/atlasd/
 COPY apps/atlas-cli/deno.json apps/atlas-cli/package.json* ./apps/atlas-cli/
 COPY apps/link/deno.json apps/link/package.json* ./apps/link/
-COPY apps/webhook-tunnel/deno.json apps/webhook-tunnel/package.json ./apps/webhook-tunnel/
 COPY tools/agent-playground/deno.json tools/agent-playground/package.json ./tools/agent-playground/
 COPY tools/evals/deno.json tools/evals/package.json ./tools/evals/
-COPY tools/pty-server/deno.json tools/pty-server/package.json ./tools/pty-server/
 COPY packages/ ./packages/
 
 # Install dependencies (cached unless manifests above change)
@@ -52,21 +49,16 @@ RUN npx svelte-kit sync && npx svelte-package -o dist
 WORKDIR /app/tools/agent-playground
 RUN npx svelte-kit sync
 
-# Ensure pty-server spawn-helper is executable (node-pty prebuild).
-# Deno's install doesn't set the execute bit on prebuilt binaries.
-# Check both root node_modules and Deno's .deno/ layout.
-RUN chmod +x /app/node_modules/node-pty/prebuilds/linux-*/spawn-helper 2>/dev/null || true && \
-    chmod +x /app/node_modules/.deno/node-pty@*/node_modules/node-pty/prebuilds/linux-*/spawn-helper 2>/dev/null || true
-
 WORKDIR /app
 
-# ── Compile standalone binaries ──────────────────────────────────────────────
+# ── Compile standalone Deno binaries ─────────────────────────────────────────
 
-# Atlas daemon CLI — mirrors main Dockerfile compile flags.
+# Atlas daemon CLI.
 # Temporarily hide packages/ui (contains .svelte files deno compile can't handle)
-# then restore it for the runtime stage COPY.
-RUN mv packages/ui /tmp/_ui && mv node_modules/@atlas/ui /tmp/_atlas_ui 2>/dev/null; \
-    OTEL_DENO=true deno compile -q --no-check --allow-all \
+# then restore it for the runtime stage COPY. RUST_MIN_STACK bumps the tokio
+# worker thread stack — recursive Zod schemas overflow the default 2MB.
+RUN mv packages/ui /tmp/_ui && mv node_modules/@atlas/ui /tmp/_atlas_ui 2>/dev/null || true; \
+    RUST_MIN_STACK=16777216 OTEL_DENO=true deno compile -q --no-check --allow-all \
     --include=apps/atlas-cli \
     --include=packages \
     --include=node_modules/@opentelemetry \
@@ -74,22 +66,41 @@ RUN mv packages/ui /tmp/_ui && mv node_modules/@atlas/ui /tmp/_atlas_ui 2>/dev/n
     --unstable-broadcast-channel \
     --unstable-worker-options --unstable-kv --unstable-raw-imports \
     --output /app/bin/atlas \
-    apps/atlas-cli/src/otel-bootstrap.ts && \
-    mv /tmp/_ui packages/ui && mv /tmp/_atlas_ui node_modules/@atlas/ui 2>/dev/null; true
+    apps/atlas-cli/src/otel-bootstrap.ts; \
+    rc=$?; \
+    mv /tmp/_ui packages/ui && mv /tmp/_atlas_ui node_modules/@atlas/ui 2>/dev/null || true; \
+    exit $rc
 
-# Link service
-RUN deno compile -q --no-check --allow-all \
+# Link service.
+# RUST_MIN_STACK bumps the tokio worker thread stack — link's deeply-nested
+# Zod schemas blow the default 2MB stack during deno compile. 16MB is plenty.
+RUN RUST_MIN_STACK=16777216 deno compile -q --no-check --allow-all \
     --unstable-kv \
     --output /app/bin/link \
     apps/link/src/index.ts
 
-# Webhook tunnel
-RUN deno compile -q --no-check --allow-all \
-    --output /app/bin/webhook-tunnel \
-    apps/webhook-tunnel/src/index.ts
+# ============================================================================
+# Stage 2: Go builder — compile webhook-tunnel and pty-server binaries
+# ============================================================================
+FROM golang:1.26-bookworm AS go-builder
+
+WORKDIR /src
+
+# go.work uses `.` (single module), so the entire repo is one Go module.
+# Copy module manifests first for layer caching.
+COPY go.mod go.sum go.work go.work.sum ./
+
+# Copy every directory referenced by the root Go module.
+COPY pkg ./pkg
+COPY tools ./tools
+COPY apps ./apps
+
+# Static, fully-portable binaries (CGO disabled).
+RUN CGO_ENABLED=0 go build -o /out/webhook-tunnel ./tools/webhook-tunnel && \
+    CGO_ENABLED=0 go build -o /out/pty-server     ./tools/pty-server
 
 # ============================================================================
-# Stage 2: Runtime — all services in one container
+# Stage 3: Runtime — all services in one container
 # ============================================================================
 FROM denoland/deno:debian-2.7.4
 
@@ -112,11 +123,12 @@ RUN apt-get update && \
       > /etc/apt/sources.list.d/github-cli.list && \
     apt-get update && apt-get install -y --no-install-recommends gh && \
     rm -rf /var/lib/apt/lists/* && \
-    # Claude Code CLI
+    # Claude Code CLI — 2.x ships a Bun-compiled native binary at bin/claude.exe
+    # (the .exe suffix is package convention, not platform-specific).
     cd /tmp/docker-deps && npm install && \
     cp -r node_modules/@anthropic-ai/claude-code /usr/local/lib/claude-code && \
-    ln -s /usr/local/lib/claude-code/cli.js /usr/local/bin/claude && \
-    chmod +x /usr/local/bin/claude && \
+    chmod +x /usr/local/lib/claude-code/bin/claude.exe && \
+    ln -s /usr/local/lib/claude-code/bin/claude.exe /usr/local/bin/claude && \
     rm -rf /tmp/docker-deps
 
 # Agent build toolchain — componentize-py + jco for server-side Python→WASM builds
@@ -127,9 +139,11 @@ RUN apt-get update && \
     pip3 install --no-cache-dir --break-system-packages componentize-py==0.22.0 uv && \
     npm install -g @bytecodealliance/jco@1.16.1
 
-# Copy friday-agent-sdk (Python package + WIT definitions) to well-known container path
-COPY --from=builder /app/packages/sdk-python/friday_agent_sdk /opt/friday-agent-sdk/friday_agent_sdk
-COPY --from=builder /app/packages/sdk-python/wit /opt/friday-agent-sdk/wit
+# NOTE: the Python `friday_agent_sdk` package + WIT definitions live in a
+# separate repo (friday-platform/agent-sdk). The componentize-py and jco
+# toolchain installed below can compile Python agents only when the SDK is
+# mounted into /opt/friday-agent-sdk at runtime (e.g. via `-v
+# /path/to/agent-sdk/packages/python:/opt/friday-agent-sdk:ro`).
 
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
@@ -143,19 +157,19 @@ RUN mkdir -p /data/atlas /data/link /tmp/.npm /app/config && \
     chown -R 10001:10001 /data /tmp/.npm /home/atlas /app/config
 
 # ── Install compiled binaries (no layer duplication) ─────────────────────────
-COPY --from=builder /app/bin/atlas /usr/local/bin/atlas
-COPY --from=builder /app/bin/link /usr/local/bin/link
-COPY --from=builder /app/bin/webhook-tunnel /usr/local/bin/webhook-tunnel
+COPY --from=deno-builder /app/bin/atlas         /usr/local/bin/atlas
+COPY --from=deno-builder /app/bin/link          /usr/local/bin/link
+COPY --from=go-builder   /out/webhook-tunnel    /usr/local/bin/webhook-tunnel
+COPY --from=go-builder   /out/pty-server        /usr/local/bin/pty-server
 
 WORKDIR /app
 
 # ── Copy runtime source for services that can't be compiled ──────────────────
 # agent-playground: Vite dev server needs source + node_modules
-# pty-server: node-pty native addon can't be bundled by deno compile
 
-# Workspace config (Deno needs these to resolve imports for playground/pty)
-COPY --chown=atlas:atlas --from=builder /app/deno.json /app/deno.lock /app/package.json /app/tsconfig.json /app/reset.d.ts /app/
-COPY --chown=atlas:atlas --from=builder /app/types /app/types
+# Workspace config (Deno needs these to resolve imports for the playground)
+COPY --chown=atlas:atlas --from=deno-builder /app/deno.json /app/deno.lock /app/package.json /app/tsconfig.json /app/reset.d.ts /app/
+COPY --chown=atlas:atlas --from=deno-builder /app/types /app/types
 
 # Rewrite deno.json AND package.json workspace to only list members we
 # actually copy. The source uses "./apps/*" glob which fails when most
@@ -163,7 +177,7 @@ COPY --chown=atlas:atlas --from=builder /app/types /app/types
 RUN node -e " \
   const ws = [ \
     './packages/*', \
-    './tools/agent-playground', './tools/pty-server' \
+    './tools/agent-playground' \
   ]; \
   for (const f of ['/app/deno.json', '/app/package.json']) { \
     const c = JSON.parse(require('fs').readFileSync(f, 'utf8')); \
@@ -172,25 +186,21 @@ RUN node -e " \
     require('fs').writeFileSync(f, JSON.stringify(c, null, 2) + '\n'); \
   }" && chown atlas:atlas /app/deno.json /app/package.json /app/deno.lock
 
-# Runtime tools (playground needs source + svelte-kit, pty needs node-pty)
-COPY --chown=atlas:atlas --from=builder /app/tools/agent-playground /app/tools/agent-playground
-COPY --chown=atlas:atlas --from=builder /app/tools/pty-server /app/tools/pty-server
+# Runtime tools (playground needs source + svelte-kit)
+COPY --chown=atlas:atlas --from=deno-builder /app/tools/agent-playground /app/tools/agent-playground
 
 # Shared packages (playground imports @atlas/ui etc.)
-COPY --chown=atlas:atlas --from=builder /app/packages /app/packages
+COPY --chown=atlas:atlas --from=deno-builder /app/packages /app/packages
 
 # Agent definitions
-COPY --chown=atlas:atlas --from=builder /app/.agents /app/.agents
+COPY --chown=atlas:atlas --from=deno-builder /app/.agents /app/.agents
 
-# Default webhook mappings (can be overridden via volume mount)
-COPY --chown=atlas:atlas apps/webhook-tunnel/webhook-mappings.yml /app/config/webhook-mappings.yml
+# node_modules — only needed for the playground (vite, svelte)
+COPY --chown=atlas:atlas --from=deno-builder /app/node_modules /app/node_modules
 
-# node_modules — only needed for playground (vite, svelte) and pty-server (node-pty)
-COPY --chown=atlas:atlas --from=builder /app/node_modules /app/node_modules
-
-# Deno cache — only what playground and pty-server need at runtime.
-# The compiled binaries (atlas, link, webhook-tunnel) are self-contained.
-COPY --chown=atlas:atlas --from=builder /deno-dir /deno-dir
+# Deno cache — only what the playground needs at runtime.
+# The compiled binaries (atlas, link, webhook-tunnel, pty-server) are self-contained.
+COPY --chown=atlas:atlas --from=deno-builder /deno-dir /deno-dir
 # Fix /deno-dir top-level dir ownership (base image creates it as deno:deno,
 # COPY --chown only sets ownership on copied contents, not the existing dir)
 RUN chown atlas:atlas /deno-dir
