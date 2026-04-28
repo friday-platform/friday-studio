@@ -147,6 +147,9 @@ RUN apt-get update && \
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
+# nats-server (multi-arch). Daemon spawns this for the internal messaging bus.
+COPY --from=nats:2.12.8-alpine /usr/local/bin/nats-server /usr/local/bin/nats-server
+
 # Symlink system libsqlite3 to a stable path so @db/sqlite uses it (Debian
 # puts it under /usr/lib/<arch>/, which varies by platform)
 RUN ln -sf "$(find /usr/lib -name 'libsqlite3.so.0' -print -quit)" /usr/lib/libsqlite3.so.0
@@ -231,7 +234,6 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     FRIDAY_CLAUDE_PATH=/usr/local/bin/claude \
     FRIDAY_SQLITE3_PATH=/usr/bin/sqlite3 \
     DENO_SQLITE_PATH=/usr/lib/libsqlite3.so.0 \
-    WEBHOOK_MAPPINGS_PATH=/app/config/webhook-mappings.yml \
     AGENT_SOURCE_DIR=/home/atlas/agent-src \
     LINK_DEV_MODE=true \
     LINK_PORT=3100 \
