@@ -9,6 +9,7 @@
  */
 
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { ValidationVerdictSchema } from "@atlas/hallucination";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -111,6 +112,30 @@ export const SessionCompleteEventSchema = z.object({
 });
 export type SessionCompleteEvent = z.infer<typeof SessionCompleteEventSchema>;
 
+/**
+ * One LLM-output validation attempt's lifecycle event for the session stream.
+ *
+ * Mirrors `FSMValidationAttemptEvent` from @atlas/fsm-engine: each attempt emits
+ * one `running` event before the judge call and one terminal event (`passed` or
+ * `failed`) after. `terminal` is present only on `failed` events — `false` for
+ * the first failure (a retry follows), `true` for the second failure (the action
+ * throws). `verdict` is present on terminal events; absent on `running`.
+ *
+ * `actionId` mirrors the parent action event's identifier so clients can render
+ * pills inline with that action's tool calls — no new identifier is introduced.
+ */
+export const StepValidationEventSchema = z.object({
+  type: z.literal("step:validation"),
+  sessionId: z.string(),
+  actionId: z.string(),
+  attempt: z.number().int().positive(),
+  status: z.enum(["running", "passed", "failed"]),
+  terminal: z.boolean().optional(),
+  verdict: ValidationVerdictSchema.optional(),
+  timestamp: z.string(),
+});
+export type StepValidationEvent = z.infer<typeof StepValidationEventSchema>;
+
 export const SessionSummaryEventSchema = z.object({
   type: z.literal("session:summary"),
   timestamp: z.string(),
@@ -126,6 +151,7 @@ export const SessionStreamEventSchema = z.discriminatedUnion("type", [
   StepStartEventSchema,
   StepCompleteEventSchema,
   StepSkippedEventSchema,
+  StepValidationEventSchema,
   SessionCompleteEventSchema,
   SessionSummaryEventSchema,
 ]);

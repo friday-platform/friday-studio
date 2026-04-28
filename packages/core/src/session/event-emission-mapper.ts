@@ -8,11 +8,17 @@
  * @module
  */
 
-import type { FSMActionExecutionEvent, FSMStateSkippedEvent } from "@atlas/fsm-engine";
+import type {
+  FSMActionExecutionEvent,
+  FSMStateSkippedEvent,
+  FSMValidationAttemptEvent,
+} from "@atlas/fsm-engine";
+import { logger } from "@atlas/logger";
 import type {
   StepCompleteEvent,
   StepSkippedEvent,
   StepStartEvent,
+  StepValidationEvent,
   ToolCallSummary,
 } from "./session-events.ts";
 import { SessionActionTypeSchema } from "./session-events.ts";
@@ -125,5 +131,48 @@ export function mapStateSkippedToStepSkipped(event: FSMStateSkippedEvent): StepS
     sessionId: event.data.sessionId,
     stateId: event.data.stateId,
     timestamp: new Date(event.data.timestamp).toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// mapValidationAttemptToStepValidation
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps an `FSMValidationAttemptEvent` to a `step:validation` session event.
+ *
+ * Returns `null` when the source event has no `actionId` — surface validation
+ * events without an action cannot be correlated to their parent step in the UI,
+ * so dropping them is preferable to emitting orphan pills. A warning is logged
+ * to surface the dropped event in observability without crashing the pipeline.
+ *
+ * `terminal` and `verdict` are conditionally spread to preserve the on-the-wire
+ * absence/presence semantic from `FSMValidationAttemptEvent` — running events
+ * carry neither; passed events carry verdict only; failed events carry both.
+ */
+export function mapValidationAttemptToStepValidation(
+  event: FSMValidationAttemptEvent,
+): StepValidationEvent | null {
+  const { actionId, sessionId, attempt, status, terminal, verdict, timestamp } = event.data;
+
+  if (!actionId) {
+    logger.warn("Dropping validation attempt event without actionId", {
+      sessionId,
+      attempt,
+      status,
+      state: event.data.state,
+    });
+    return null;
+  }
+
+  return {
+    type: "step:validation",
+    sessionId,
+    actionId,
+    attempt,
+    status,
+    ...(terminal !== undefined && { terminal }),
+    ...(verdict !== undefined && { verdict }),
+    timestamp: new Date(timestamp).toISOString(),
   };
 }

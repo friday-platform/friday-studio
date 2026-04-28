@@ -10,27 +10,40 @@
  * module is the post-hoc Output Validator (Hallucination Judge) — runtime, LLM-driven.
  */
 
+import { z } from "zod";
 import { SupervisionLevel } from "./supervision-levels.ts";
 
-export type VerdictStatus = "pass" | "uncertain" | "fail";
-export type IssueCategory = "sourcing" | "no-tools-called" | "judge-uncertain" | "judge-error";
-export type IssueSeverity = "info" | "warn" | "error";
+export const VerdictStatusSchema = z.enum(["pass", "uncertain", "fail"]);
+export type VerdictStatus = z.infer<typeof VerdictStatusSchema>;
 
-export interface ValidationIssue {
-  category: IssueCategory;
-  severity: IssueSeverity;
-  claim: string;
-  reasoning: string;
-  citation: string | null;
-}
+export const IssueCategorySchema = z.enum([
+  "sourcing",
+  "no-tools-called",
+  "judge-uncertain",
+  "judge-error",
+]);
+export type IssueCategory = z.infer<typeof IssueCategorySchema>;
 
-export interface ValidationVerdict {
-  status: VerdictStatus;
-  confidence: number;
-  threshold: number;
-  issues: ValidationIssue[];
-  retryGuidance: string;
-}
+export const IssueSeveritySchema = z.enum(["info", "warn", "error"]);
+export type IssueSeverity = z.infer<typeof IssueSeveritySchema>;
+
+export const ValidationIssueSchema = z.object({
+  category: IssueCategorySchema,
+  severity: IssueSeveritySchema,
+  claim: z.string(),
+  reasoning: z.string(),
+  citation: z.string().nullable(),
+});
+export type ValidationIssue = z.infer<typeof ValidationIssueSchema>;
+
+export const ValidationVerdictSchema = z.object({
+  status: VerdictStatusSchema,
+  confidence: z.number(),
+  threshold: z.number(),
+  issues: z.array(ValidationIssueSchema),
+  retryGuidance: z.string(),
+});
+export type ValidationVerdict = z.infer<typeof ValidationVerdictSchema>;
 
 /**
  * Confidence threshold per supervision level. Above-threshold → pass; below 0.3 → fail;

@@ -306,6 +306,49 @@ describe("SessionStreamEventSchema", () => {
     expect(result.type).toBe("step:skipped");
   });
 
+  test("parses step:validation (running, no verdict)", () => {
+    const result = SessionStreamEventSchema.parse({
+      type: "step:validation",
+      sessionId: "sess-1",
+      actionId: "researcher",
+      attempt: 1,
+      status: "running",
+      timestamp: NOW,
+    });
+    expect(result.type).toBe("step:validation");
+  });
+
+  test("parses step:validation (failed, with terminal flag and verdict)", () => {
+    const result = SessionStreamEventSchema.parse({
+      type: "step:validation",
+      sessionId: "sess-1",
+      actionId: "researcher",
+      attempt: 2,
+      status: "failed",
+      terminal: true,
+      verdict: {
+        status: "fail",
+        confidence: 0.2,
+        threshold: 0.45,
+        issues: [
+          {
+            category: "sourcing",
+            severity: "error",
+            claim: "fabricated number",
+            reasoning: "no tool called",
+            citation: null,
+          },
+        ],
+        retryGuidance: "call a tool first",
+      },
+      timestamp: NOW,
+    });
+    if (result.type === "step:validation") {
+      expect(result.terminal).toBe(true);
+      expect(result.verdict?.status).toBe("fail");
+    }
+  });
+
   test("parses session:complete", () => {
     const result = SessionStreamEventSchema.parse(validSessionComplete());
     expect(result.type).toBe("session:complete");

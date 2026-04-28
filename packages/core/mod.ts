@@ -76,6 +76,7 @@ export {
   mapActionToStepComplete,
   mapActionToStepStart,
   mapStateSkippedToStepSkipped,
+  mapValidationAttemptToStepValidation,
 } from "./src/session/event-emission-mapper.ts";
 // Session History
 export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";
@@ -114,6 +115,8 @@ export {
   StepCompleteEventSchema,
   type StepStartEvent,
   StepStartEventSchema,
+  type StepValidationEvent,
+  StepValidationEventSchema,
   type ToolCallSummary,
   ToolCallSummarySchema,
 } from "./src/session/session-events.ts";
