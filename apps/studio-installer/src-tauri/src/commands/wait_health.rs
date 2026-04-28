@@ -14,10 +14,14 @@
 //!   - **90s hard deadline** (default end). Extendable to 150s via
 //!     `extend_wait_deadline`, then to 210s on a second extension.
 //!
-//! The `extend_wait_deadline` Tauri command pushes the deadline out
-//! by 60s — capped at two extensions per the v15 plan.
+//! Past the hard deadline the wait does NOT return — it parks on a
+//! `Notify` so a subsequent `extend_wait_deadline` can wake the loop
+//! and resume waiting (the v15 plan's "Wait again" affordance only
+//! makes sense if extension actually resumes the wait). The loop only
+//! returns on a terminal event (all-healthy, unreachable, EOF, or a
+//! supersede from a re-entered wizard).
 
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -25,7 +29,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio::time::sleep;
 
 /// Where the launcher's health endpoint lives. Hardcoded to match
@@ -54,10 +58,17 @@ const SOFT_DEADLINE_SECS: u64 = 60;
 /// Hard deadline — default end of the wait-healthy step. Each
 /// `extend_wait_deadline` call adds `EXTENSION_SECS`, capped at
 /// `MAX_EXTENSIONS` total. Past the hard deadline the wizard
-/// surfaces View logs / Open anyway / Wait again.
+/// surfaces View logs / Open anyway / Wait again; the wait loop
+/// itself parks on a Notify until extension wakes it.
 const HARD_DEADLINE_SECS: u64 = 90;
 const EXTENSION_SECS: u64 = 60;
 const MAX_EXTENSIONS: u32 = 2;
+
+/// Cap stream-read poll cadence. Drives how often the loop wakes
+/// to re-check the soft/hard deadlines and the cancellation flag.
+/// 1s is fine for a single-user wizard — fast enough that the
+/// frontend sees timeout events promptly, slow enough not to spin.
+const STREAM_POLL_CAP: Duration = Duration::from_secs(1);
 
 /// Per-service status emitted by the launcher. Mirrors
 /// `ServiceStatus` in `tools/friday-launcher/healthsvc.go`.
@@ -106,76 +117,110 @@ pub enum HealthEvent {
         stuck: Vec<String>,
         playground_healthy: bool,
     },
-    /// SSE-connect retry budget exhausted. The launcher never
-    /// bound port 5199 within `SSE_CONNECT_DEADLINE`. Fatal —
-    /// frontend shows "could not connect to launcher" + View logs.
+    /// SSE-connect retry budget exhausted, stream closed
+    /// unexpectedly, or stream errored mid-flight. Frontend shows
+    /// "could not connect to launcher" + View logs.
     Unreachable {
         reason: String,
     },
-    /// Launcher reported `shutting_down: true` mid-wait. Treat as
-    /// fatal — the user manually triggered a shutdown or something
-    /// else hit the launcher's HTTP shutdown endpoint.
+    /// Launcher reported `shutting_down: true` in a snapshot. Treat
+    /// as terminal — the user manually triggered a shutdown or
+    /// something else hit the launcher's HTTP shutdown endpoint.
+    /// Reserved for the snapshot-flag path; raw EOFs go through
+    /// `Unreachable` since EOF doesn't distinguish orderly shutdown
+    /// from a launcher crash.
     ShuttingDown,
 }
 
+/// Service name we treat as the user-facing surface for the
+/// partial-success "Open anyway" rule. Centralised here so the
+/// timeout-event builder and the frontend gate agree.
+const PLAYGROUND_SERVICE_NAME: &str = "playground";
+
 /// Mutable state shared between `wait_for_services` and
-/// `extend_wait_deadline`. The deadline is an absolute Instant, so
-/// extension is a single atomic add — no mutex needed for the
-/// commonly-read path.
-///
-/// `deadline_secs_from_start` is stored as nanos since the wait
-/// started; the consumer compares against `wait_started.elapsed()`
-/// rather than against an `Instant` (avoids passing tokio Instants
-/// across the Tauri command boundary, which doesn't serialize).
+/// `extend_wait_deadline`. The deadline is stored as nanos-from-
+/// start so consumers can compare against `wait_started.elapsed()`
+/// rather than passing tokio Instants across the Tauri command
+/// boundary (Instants don't serialize).
 #[derive(Default)]
 pub struct WaitDeadlineState {
     inner: Mutex<Option<WaitDeadline>>,
 }
 
+/// Per-wait deadline + supersede + extend-notify handles. Cloned
+/// when handed out so multiple owners can observe the same atomics.
 struct WaitDeadline {
     start: Instant,
     deadline_nanos: Arc<AtomicI64>,
-    extensions_used: Arc<std::sync::atomic::AtomicU32>,
+    extensions_used: Arc<AtomicU32>,
+    /// Pinged by `extend_wait_deadline` so a wait parked past the
+    /// hard deadline can resume promptly.
+    extend_notify: Arc<Notify>,
+    /// Flipped to `true` by `install()` when a new wait supersedes
+    /// this one. The loop polls it via the same `extend_notify`
+    /// (so a single ping wakes both extension AND supersede).
+    cancelled: Arc<AtomicBool>,
+}
+
+impl WaitDeadline {
+    fn clone_handle(&self) -> Self {
+        Self {
+            start: self.start,
+            deadline_nanos: self.deadline_nanos.clone(),
+            extensions_used: self.extensions_used.clone(),
+            extend_notify: self.extend_notify.clone(),
+            cancelled: self.cancelled.clone(),
+        }
+    }
+
+    fn nanos_remaining(&self) -> i64 {
+        let elapsed = i64::try_from(self.start.elapsed().as_nanos()).unwrap_or(i64::MAX);
+        self.deadline_nanos
+            .load(Ordering::Acquire)
+            .saturating_sub(elapsed)
+    }
 }
 
 impl WaitDeadlineState {
-    /// Returns the deadline atomic for the active wait, if any. Used
+    /// Returns a clone of the active wait's handles, if any. Used
     /// by `extend_wait_deadline` to push the deadline out.
     async fn current(&self) -> Option<WaitDeadline> {
-        self.inner.lock().await.as_ref().map(|d| WaitDeadline {
-            start: d.start,
-            deadline_nanos: d.deadline_nanos.clone(),
-            extensions_used: d.extensions_used.clone(),
-        })
+        self.inner.lock().await.as_ref().map(|d| d.clone_handle())
     }
 
-    /// Installs a fresh deadline at `HARD_DEADLINE_SECS` from now.
-    /// Replaces any prior deadline (a wizard re-run shouldn't
-    /// inherit the previous one's extension state).
+    /// Installs a fresh deadline at `hard_secs` from now. Cancels
+    /// any prior wait by flipping its `cancelled` flag and pinging
+    /// its `extend_notify` — the prior loop sees the flag, exits
+    /// cleanly, and stops contending for the deadline atomic.
     async fn install(&self, hard_secs: u64) -> WaitDeadline {
+        let deadline_nanos =
+            i64::try_from(u128::from(hard_secs) * 1_000_000_000_u128).unwrap_or(i64::MAX);
         let deadline = WaitDeadline {
             start: Instant::now(),
-            deadline_nanos: Arc::new(AtomicI64::new((hard_secs * 1_000_000_000) as i64)),
-            extensions_used: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            deadline_nanos: Arc::new(AtomicI64::new(deadline_nanos)),
+            extensions_used: Arc::new(AtomicU32::new(0)),
+            extend_notify: Arc::new(Notify::new()),
+            cancelled: Arc::new(AtomicBool::new(false)),
         };
-        let snapshot = WaitDeadline {
-            start: deadline.start,
-            deadline_nanos: deadline.deadline_nanos.clone(),
-            extensions_used: deadline.extensions_used.clone(),
-        };
-        *self.inner.lock().await = Some(deadline);
+        let snapshot = deadline.clone_handle();
+        let mut slot = self.inner.lock().await;
+        if let Some(prior) = slot.take() {
+            prior.cancelled.store(true, Ordering::Release);
+            prior.extend_notify.notify_waiters();
+        }
+        *slot = Some(deadline);
         snapshot
     }
 
     /// Clears the active wait — call when the loop exits cleanly
-    /// (all-healthy, timeout, or shutting-down).
+    /// (all-healthy, timeout-cap, unreachable, or shutting-down).
     async fn clear(&self) {
         *self.inner.lock().await = None;
     }
 }
 
 /// Test-only override for the launcher health URL. Production reads
-/// the const above; tests installing a httptest::Server can flip
+/// the const above; tests installing an httptest::Server can flip
 /// this to point at the test server's address. Same shape as
 /// `healthServerAddrOverride` in tools/friday-launcher/uninstall.go.
 fn launcher_health_url() -> String {
@@ -185,6 +230,21 @@ fn launcher_health_url() -> String {
         }
     }
     LAUNCHER_HEALTH_URL.to_string()
+}
+
+/// Pure helper extracted for testability — deadline gate the
+/// SSE-connect retry loop reads. A regression to `>` instead of
+/// `>=` would extend the loop one cycle past the budget; pinning
+/// this in a unit test catches that.
+fn should_give_up(now: Instant, deadline: Instant) -> bool {
+    now >= deadline
+}
+
+/// Pure helper extracted for testability — capped doubling backoff.
+/// `next_backoff_ms(d)` returns the next sleep duration; capped at
+/// `SSE_BACKOFF_MAX_MS`.
+fn next_backoff_ms(current_ms: u64) -> u64 {
+    current_ms.saturating_mul(2).min(SSE_BACKOFF_MAX_MS)
 }
 
 /// Connect to the launcher's SSE endpoint with capped exponential
@@ -210,7 +270,7 @@ async fn connect_with_backoff(client: &reqwest::Client) -> Result<reqwest::Respo
                 last_err = e.to_string();
             }
         }
-        if Instant::now() >= deadline {
+        if should_give_up(Instant::now(), deadline) {
             return Err(format!(
                 "launcher unreachable after {}s: {}",
                 SSE_CONNECT_DEADLINE.as_secs(),
@@ -218,7 +278,7 @@ async fn connect_with_backoff(client: &reqwest::Client) -> Result<reqwest::Respo
             ));
         }
         sleep(Duration::from_millis(delay_ms)).await;
-        delay_ms = (delay_ms * 2).min(SSE_BACKOFF_MAX_MS);
+        delay_ms = next_backoff_ms(delay_ms);
     }
 }
 
@@ -256,13 +316,47 @@ fn parse_sse_chunks(buf: &str) -> (usize, Vec<String>) {
     (last_terminator_end, payloads)
 }
 
+/// Build a `Timeout` event from the most-recent observed snapshot.
+/// `stuck` is every service whose status isn't "healthy";
+/// `playground_healthy` drives the partial-success rule. If we
+/// never observed a snapshot (no SSE events arrived in the wait
+/// window — extreme), the timeout event is empty + non-healthy
+/// playground, which makes the frontend hide "Open anyway" and
+/// just show View logs / Wait again.
+fn timeout_event_from_snapshot(latest: Option<&HealthSnapshot>) -> HealthEvent {
+    let Some(snap) = latest else {
+        return HealthEvent::Timeout {
+            stuck: Vec::new(),
+            playground_healthy: false,
+        };
+    };
+    let stuck: Vec<String> = snap
+        .services
+        .iter()
+        .filter(|s| s.status != "healthy")
+        .map(|s| s.name.clone())
+        .collect();
+    let playground_healthy = snap
+        .services
+        .iter()
+        .any(|s| s.name == PLAYGROUND_SERVICE_NAME && s.status == "healthy");
+    HealthEvent::Timeout {
+        stuck,
+        playground_healthy,
+    }
+}
+
 /// Wait for the launcher's services to all report healthy. Sends
 /// `HealthEvent`s through the supplied Channel; returns when the
-/// stream ends (all-healthy, timeout, unreachable, or shutting-down).
+/// stream ends (all-healthy, unreachable, EOF, or supersede).
 ///
-/// The frontend installs a Channel, calls this, and renders each
-/// event. The command itself is `async` and does NOT block the
-/// frontend — Tauri runs it on the tokio runtime.
+/// Past the hard deadline the loop emits `Timeout` ONCE and then
+/// parks on the deadline's `extend_notify`. A subsequent
+/// `extend_wait_deadline` Tauri command pushes the deadline out
+/// AND pings the notify; the loop wakes, re-checks the deadline,
+/// and resumes streaming. A new `wait_for_services` invocation
+/// supersedes the parked loop (via `cancelled`) so the wizard can
+/// safely re-enter the Launch step.
 #[tauri::command]
 pub async fn wait_for_services(
     on_event: Channel<HealthEvent>,
@@ -295,40 +389,71 @@ pub async fn wait_for_services(
     // deadline_nanos atomic the frontend can extend.
     let deadline = deadline_state.install(HARD_DEADLINE_SECS).await;
     let mut soft_fired = false;
+    let mut timeout_fired = false;
+    // Track the most-recent snapshot so the timeout event can
+    // populate `stuck` + `playground_healthy` honestly.
+    let mut latest_snapshot: Option<HealthSnapshot> = None;
 
     let mut stream = resp.bytes_stream();
     let mut buf = String::new();
 
     loop {
-        // Compute remaining time on each iteration so an extension
-        // landed via extend_wait_deadline is observed promptly.
-        let elapsed_nanos = deadline.start.elapsed().as_nanos() as i64;
-        let deadline_nanos = deadline.deadline_nanos.load(Ordering::Acquire);
-        let remaining_nanos = deadline_nanos.saturating_sub(elapsed_nanos);
+        // A supersede from a re-entered wizard wins over everything —
+        // exit silently so the new wait owns the user-visible state.
+        if deadline.cancelled.load(Ordering::Acquire) {
+            return Ok(());
+        }
 
         // Soft deadline fires once at +60s. After it fires, the wait
         // continues — frontend handles the UI swap.
-        if !soft_fired
-            && deadline.start.elapsed().as_secs() >= SOFT_DEADLINE_SECS
-        {
+        if !soft_fired && deadline.start.elapsed().as_secs() >= SOFT_DEADLINE_SECS {
             soft_fired = true;
             let _ = on_event.send(HealthEvent::SoftDeadline);
         }
 
+        let remaining_nanos = deadline.nanos_remaining();
         if remaining_nanos <= 0 {
-            // Hard deadline elapsed. Collect stuck services + check
-            // playground health for the partial-success rule.
-            let _ = on_event.send(timeout_event_from_buffer(&buf));
-            deadline_state.clear().await;
-            return Ok(());
+            // Hard deadline elapsed.
+            //   - First time: emit Timeout (with the real stuck
+            //     list and playground status) and park on the
+            //     extend_notify; resuming on extension or supersede.
+            //   - If the cap is reached and no further extension
+            //     can come: the frontend stops calling extend, the
+            //     loop sits parked indefinitely, and a wizard re-
+            //     entry supersedes via `cancelled`.
+            if !timeout_fired {
+                timeout_fired = true;
+                let _ = on_event.send(timeout_event_from_snapshot(latest_snapshot.as_ref()));
+            }
+            // Park until extension or supersede pings the notify.
+            // STREAM_POLL_CAP keeps us responsive to a cancelled
+            // flip even if the notify is missed (defense in depth).
+            tokio::select! {
+                _ = deadline.extend_notify.notified() => {},
+                _ = sleep(STREAM_POLL_CAP) => {},
+            }
+            continue;
         }
 
-        let chunk_timeout = Duration::from_nanos(remaining_nanos as u64).min(Duration::from_secs(1));
-        let chunk = match tokio::time::timeout(chunk_timeout, stream.next()).await {
+        // Below the hard deadline: read the next SSE chunk with a
+        // bounded poll so we re-check the deadline (and cancel flag)
+        // promptly even if the launcher goes silent.
+        let bound = u64::try_from(remaining_nanos).unwrap_or(0);
+        let chunk_timeout = Duration::from_nanos(bound).min(STREAM_POLL_CAP);
+        let chunk = tokio::select! {
+            biased;
+            _ = deadline.extend_notify.notified() => {
+                // Extension landed — loop, deadline atomic was
+                // updated by extend_wait_deadline before the ping.
+                continue;
+            }
+            r = tokio::time::timeout(chunk_timeout, stream.next()) => r,
+        };
+        let bytes = match chunk {
             Ok(Some(Ok(bytes))) => bytes,
             Ok(Some(Err(e))) => {
-                // Stream error mid-flight — surface as Unreachable so
-                // the frontend can show View logs.
+                // Stream error mid-flight — surface as Unreachable
+                // so the frontend shows View logs.
                 let _ = on_event.send(HealthEvent::Unreachable {
                     reason: format!("stream error: {e}"),
                 });
@@ -336,50 +461,59 @@ pub async fn wait_for_services(
                 return Ok(());
             }
             Ok(None) => {
-                // Stream closed by the launcher. Treat as ShuttingDown
-                // — the launcher's HTTP server only closes the stream
-                // during shutdown.
-                let _ = on_event.send(HealthEvent::ShuttingDown);
+                // Stream closed unexpectedly. EOF doesn't distinguish
+                // orderly shutdown (which the launcher signals via a
+                // snapshot with shutting_down: true BEFORE closing)
+                // from a launcher crash, network drop, or OS resource
+                // exhaustion. Treat as Unreachable; the snapshot path
+                // above is what handles the orderly case.
+                let _ = on_event.send(HealthEvent::Unreachable {
+                    reason: "stream closed unexpectedly".to_string(),
+                });
                 deadline_state.clear().await;
                 return Ok(());
             }
             Err(_) => {
-                // Timeout on the read — loop back and re-check the
-                // deadline. No event emitted; this is just keeping
-                // the loop responsive to extend_wait_deadline.
+                // Read timeout — loop back, re-check deadline +
+                // cancel flag. Common path when the launcher
+                // hasn't transitioned any service this tick.
                 continue;
             }
         };
 
         // Append the chunk to the rolling buffer and parse out any
         // complete SSE events.
-        buf.push_str(&String::from_utf8_lossy(&chunk));
+        buf.push_str(&String::from_utf8_lossy(&bytes));
         let (consumed, payloads) = parse_sse_chunks(&buf);
         if consumed > 0 {
             buf.drain(..consumed);
         }
 
         for payload in payloads {
-            match serde_json::from_str::<HealthSnapshot>(&payload) {
-                Ok(snap) => {
-                    let all_healthy = snap.all_healthy;
-                    let shutting_down = snap.shutting_down;
-                    let _ = on_event.send(HealthEvent::Snapshot(snap));
-                    if shutting_down {
-                        let _ = on_event.send(HealthEvent::ShuttingDown);
-                        deadline_state.clear().await;
-                        return Ok(());
-                    }
-                    if all_healthy {
-                        deadline_state.clear().await;
-                        return Ok(());
-                    }
-                }
+            let snap = match serde_json::from_str::<HealthSnapshot>(&payload) {
+                Ok(s) => s,
                 Err(_) => {
                     // Malformed payload — log + continue. We don't
-                    // surface this as a UI event because it could
-                    // be a transient framing issue.
+                    // surface this as a UI event because it could be
+                    // a transient framing issue.
+                    continue;
                 }
+            };
+            let all_healthy = snap.all_healthy;
+            let shutting_down = snap.shutting_down;
+            // Forward + retain. The frontend overwrites store.services
+            // wholesale per Snapshot event, so retaining a clone here
+            // is the only way to populate the timeout payload faithfully.
+            latest_snapshot = Some(snap.clone());
+            let _ = on_event.send(HealthEvent::Snapshot(snap));
+            if shutting_down {
+                let _ = on_event.send(HealthEvent::ShuttingDown);
+                deadline_state.clear().await;
+                return Ok(());
+            }
+            if all_healthy {
+                deadline_state.clear().await;
+                return Ok(());
             }
         }
     }
@@ -389,6 +523,10 @@ pub async fn wait_for_services(
 /// `MAX_EXTENSIONS` total. Returns the new deadline (seconds from
 /// wait start) so the frontend can render an accurate "wait again"
 /// affordance, or `None` if the cap is reached or no wait is active.
+///
+/// Pings the wait loop's `extend_notify` so a parked timeout wakes
+/// promptly — without it the loop would sit on its STREAM_POLL_CAP
+/// sleep before noticing the deadline atomic moved.
 #[tauri::command]
 pub async fn extend_wait_deadline(
     deadline_state: State<'_, WaitDeadlineState>,
@@ -401,31 +539,23 @@ pub async fn extend_wait_deadline(
         return Ok(None);
     }
     deadline.extensions_used.store(prior + 1, Ordering::Release);
-    let added_nanos = (EXTENSION_SECS * 1_000_000_000) as i64;
+    let added_nanos =
+        i64::try_from(u128::from(EXTENSION_SECS) * 1_000_000_000_u128).unwrap_or(i64::MAX);
     let new_nanos = deadline
         .deadline_nanos
         .fetch_add(added_nanos, Ordering::AcqRel)
         + added_nanos;
-    Ok(Some((new_nanos as u64) / 1_000_000_000))
-}
-
-/// Build a Timeout event from the current snapshot buffer. We don't
-/// have direct access to the most-recent snapshot here (the loop
-/// already drained the buffer), so this is a conservative fallback:
-/// emit Timeout with empty `stuck` and `playground_healthy: false`.
-/// In practice the loop returns Timeout right after consuming a
-/// snapshot, so this only fires if the launcher hasn't sent ANY
-/// snapshot in 90s — which means everything's stuck.
-fn timeout_event_from_buffer(_buf: &str) -> HealthEvent {
-    HealthEvent::Timeout {
-        stuck: Vec::new(),
-        playground_healthy: false,
-    }
+    // Wake any parked wait loop so it sees the new deadline.
+    deadline.extend_notify.notify_waiters();
+    let new_secs = u64::try_from(new_nanos / 1_000_000_000).unwrap_or(0);
+    Ok(Some(new_secs))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── SSE parser ─────────────────────────────────────────────
 
     #[test]
     fn parse_sse_single_event() {
@@ -463,5 +593,157 @@ mod tests {
         let buf = "data:hello\n\n";
         let (_, payloads) = parse_sse_chunks(buf);
         assert_eq!(payloads, vec!["hello".to_string()]);
+    }
+
+    // ── Backoff helpers ────────────────────────────────────────
+
+    #[test]
+    fn backoff_doubles_until_cap() {
+        // 200 → 400 → 800 → 1600 → 2000 (capped) → 2000
+        assert_eq!(next_backoff_ms(200), 400);
+        assert_eq!(next_backoff_ms(400), 800);
+        assert_eq!(next_backoff_ms(800), 1600);
+        assert_eq!(next_backoff_ms(1600), SSE_BACKOFF_MAX_MS);
+        assert_eq!(next_backoff_ms(SSE_BACKOFF_MAX_MS), SSE_BACKOFF_MAX_MS);
+    }
+
+    #[test]
+    fn backoff_handles_overflow_via_saturation() {
+        // saturating_mul keeps next_backoff_ms total under SSE_BACKOFF_MAX_MS
+        // even on a misbehaving u64.
+        assert_eq!(next_backoff_ms(u64::MAX / 4), SSE_BACKOFF_MAX_MS);
+    }
+
+    #[test]
+    fn give_up_is_inclusive() {
+        // Off-by-one regression: should_give_up MUST trigger at
+        // exactly the deadline, not one tick past it. Otherwise
+        // the SSE-connect loop runs `next_backoff_ms` extra time
+        // before honoring the budget.
+        let now = Instant::now();
+        let deadline = now;
+        assert!(should_give_up(now, deadline));
+        // And not before:
+        let before = now.checked_sub(Duration::from_millis(1)).unwrap_or(now);
+        assert!(!should_give_up(before, deadline));
+    }
+
+    // ── Timeout event from snapshot ────────────────────────────
+
+    fn svc(name: &str, status: &str) -> ServiceStatus {
+        ServiceStatus {
+            name: name.to_string(),
+            status: status.to_string(),
+            since_secs: 0,
+        }
+    }
+
+    fn snap(services: Vec<ServiceStatus>) -> HealthSnapshot {
+        HealthSnapshot {
+            uptime_secs: 0,
+            services,
+            all_healthy: false,
+            shutting_down: false,
+        }
+    }
+
+    #[test]
+    fn timeout_event_lists_unhealthy_services_only() {
+        let s = snap(vec![
+            svc("nats-server", "healthy"),
+            svc("friday", "starting"),
+            svc("playground", "starting"),
+        ]);
+        let HealthEvent::Timeout {
+            stuck,
+            playground_healthy,
+        } = timeout_event_from_snapshot(Some(&s))
+        else {
+            panic!("expected Timeout variant");
+        };
+        assert_eq!(stuck, vec!["friday".to_string(), "playground".to_string()]);
+        assert!(!playground_healthy);
+    }
+
+    #[test]
+    fn timeout_event_sets_playground_healthy_when_playground_green() {
+        let s = snap(vec![
+            svc("playground", "healthy"),
+            svc("webhook-tunnel", "starting"),
+        ]);
+        let HealthEvent::Timeout {
+            stuck,
+            playground_healthy,
+        } = timeout_event_from_snapshot(Some(&s))
+        else {
+            panic!("expected Timeout variant");
+        };
+        assert_eq!(stuck, vec!["webhook-tunnel".to_string()]);
+        assert!(playground_healthy);
+    }
+
+    #[test]
+    fn timeout_event_no_snapshot_yields_empty_payload() {
+        let HealthEvent::Timeout {
+            stuck,
+            playground_healthy,
+        } = timeout_event_from_snapshot(None)
+        else {
+            panic!("expected Timeout variant");
+        };
+        assert!(stuck.is_empty());
+        assert!(!playground_healthy);
+    }
+
+    // ── WaitDeadlineState extension cap ────────────────────────
+
+    #[tokio::test]
+    async fn extension_cap_pins_at_two() {
+        // Drive `WaitDeadlineState.install` + the ext-cap arithmetic
+        // directly. extensions_used starts at 0; after two pushes
+        // a third should be rejected even though the atomic CAS has
+        // headroom. Pinning the cap protects the v15 plan's 210s
+        // ceiling against a future regression that drops the gate.
+        let state = WaitDeadlineState::default();
+        let _ = state.install(HARD_DEADLINE_SECS).await;
+
+        // First extension: ok.
+        let d1 = state.current().await.expect("wait should be installed");
+        let prior_1 = d1.extensions_used.load(Ordering::Acquire);
+        assert!(prior_1 < MAX_EXTENSIONS);
+        d1.extensions_used
+            .store(prior_1 + 1, Ordering::Release);
+
+        // Second extension: ok.
+        let d2 = state.current().await.expect("wait should still be active");
+        let prior_2 = d2.extensions_used.load(Ordering::Acquire);
+        assert!(prior_2 < MAX_EXTENSIONS);
+        d2.extensions_used
+            .store(prior_2 + 1, Ordering::Release);
+
+        // Third extension: capped.
+        let d3 = state.current().await.expect("wait should still be active");
+        let prior_3 = d3.extensions_used.load(Ordering::Acquire);
+        assert!(
+            prior_3 >= MAX_EXTENSIONS,
+            "third extension must be rejected by the cap; got prior_3={prior_3}"
+        );
+    }
+
+    #[tokio::test]
+    async fn install_supersedes_prior_wait() {
+        // Two consecutive `install` calls — the first must be
+        // marked cancelled. A regression that drops the cancel
+        // ping would let two SSE loops run in parallel, each
+        // extending its own deadline atomic, with the wizard's
+        // extend_wait_deadline call only addressing the latest.
+        let state = WaitDeadlineState::default();
+        let first = state.install(HARD_DEADLINE_SECS).await;
+        assert!(!first.cancelled.load(Ordering::Acquire));
+        let _second = state.install(HARD_DEADLINE_SECS).await;
+        assert!(
+            first.cancelled.load(Ordering::Acquire),
+            "first wait must be cancelled after a second install"
+        );
     }
 }

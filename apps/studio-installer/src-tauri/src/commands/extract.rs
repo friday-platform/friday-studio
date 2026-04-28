@@ -27,6 +27,22 @@ pub enum ExtractEvent {
 /// motion" — roughly one update every two render frames at 120Hz.
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(200);
 
+/// Pure helper extracted for testability — answers "should we emit
+/// a progress event right now?" given the throttle state. The first
+/// tick always emits so the wizard switches off the generic
+/// "Extracting…" copy promptly; subsequent ticks are gated to one
+/// per `PROGRESS_EMIT_INTERVAL`. A regression that drops the
+/// first-tick override would freeze the UI on the generic copy for
+/// up to 200ms — invisible on a 1 GB archive but very visible on a
+/// 50-file archive that finishes in 80ms. Pinning this in tests
+/// catches that.
+fn should_emit_progress(started: bool, last_emit: Instant, now: Instant) -> bool {
+    if !started {
+        return true;
+    }
+    now.duration_since(last_emit) >= PROGRESS_EMIT_INTERVAL
+}
+
 /// Helper that throttles progress emissions to the wizard channel.
 /// Always lets the first and last events through; intermediate
 /// events are suppressed if they fall within the same throttle
@@ -51,10 +67,7 @@ impl ProgressEmitter {
     fn tick(&mut self) {
         self.entries_done += 1;
         let now = Instant::now();
-        // First tick always emits so the wizard switches from the
-        // generic "Extracting…" copy to the running count promptly.
-        let force = !self.started;
-        if force || now.duration_since(self.last_emit) >= PROGRESS_EMIT_INTERVAL {
+        if should_emit_progress(self.started, self.last_emit, now) {
             self.started = true;
             self.last_emit = now;
             let _ = self.channel.send(ExtractEvent::Progress {
@@ -70,6 +83,40 @@ impl ProgressEmitter {
             entries_done: self.entries_done,
         });
         let _ = self.channel.send(ExtractEvent::Done);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_tick_always_emits_regardless_of_clock() {
+        // started=false ⇒ emit, no matter what the timestamps say.
+        // A regression that drops the !started branch would freeze
+        // the wizard's "Extracting…" copy until ≥200ms elapsed.
+        let now = Instant::now();
+        assert!(should_emit_progress(false, now, now));
+        assert!(should_emit_progress(false, now, now + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn intermediate_tick_suppressed_inside_throttle_window() {
+        let last = Instant::now();
+        // last_emit = now - 100ms (< 200ms window) ⇒ suppress.
+        let now = last + Duration::from_millis(100);
+        assert!(!should_emit_progress(true, last, now));
+    }
+
+    #[test]
+    fn intermediate_tick_emits_at_or_past_throttle_window() {
+        let last = Instant::now();
+        // Exactly at the boundary: emit (>= window).
+        let at_boundary = last + PROGRESS_EMIT_INTERVAL;
+        assert!(should_emit_progress(true, last, at_boundary));
+        // Past the boundary: also emit.
+        let past = last + PROGRESS_EMIT_INTERVAL + Duration::from_millis(50);
+        assert!(should_emit_progress(true, last, past));
     }
 }
 

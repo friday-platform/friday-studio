@@ -50,3 +50,35 @@ func TestSupervisedProcessesProbeShape(t *testing.T) {
 		}
 	}
 }
+
+// TestSupervisedProcessesPinSet pins the exact set of supervised
+// service names. CLAUDE.md documents 6 services + the wizard's
+// checklist UI is sized for 6 rows; a refactor that accidentally
+// drops one (e.g. webhook-tunnel) would silently shrink the set
+// and the wizard would render fewer rows without anyone noticing.
+// This test forces a deliberate update when intentionally
+// adding/removing a service.
+func TestSupervisedProcessesPinSet(t *testing.T) {
+	want := []string{
+		"nats-server",
+		"friday",
+		"link",
+		"pty-server",
+		"webhook-tunnel",
+		"playground",
+	}
+	specs := supervisedProcesses("/tmp/dummy-bin")
+	got := make([]string, len(specs))
+	for i, s := range specs {
+		got[i] = s.name
+	}
+	if len(got) != len(want) {
+		t.Fatalf("supervisedProcesses count = %d, want %d (got=%v)",
+			len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("supervisedProcesses[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
