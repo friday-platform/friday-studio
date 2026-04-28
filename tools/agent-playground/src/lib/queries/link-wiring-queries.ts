@@ -168,18 +168,17 @@ export function useConnectCommunicator() {
   return createMutation(() => ({
     mutationFn: async (input: {
       workspaceId: string;
-      kind: string;
+      kind: "telegram" | "discord" | "teams" | "whatsapp";
       credentialId: string;
     }): Promise<void> => {
-      const url = `/api/daemon/api/workspaces/${encodeURIComponent(input.workspaceId)}/connect-communicator`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: input.kind, credential_id: input.credentialId }),
+      const client = getDaemonClient();
+      const res = await client.workspace[":workspaceId"]["connect-communicator"].$post({
+        param: { workspaceId: input.workspaceId },
+        json: { kind: input.kind, credential_id: input.credentialId },
       });
 
+      const body: unknown = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
         const errMsg =
           typeof body === "object" && body !== null && "error" in body
             ? String(body.error)
@@ -187,7 +186,7 @@ export function useConnectCommunicator() {
         throw new Error(errMsg);
       }
 
-      ConnectCommunicatorResponseSchema.parse(await res.json());
+      ConnectCommunicatorResponseSchema.parse(body);
     },
     onSuccess: (_data, input) => {
       queryClient.invalidateQueries({ queryKey: wiringQueries.all() });
@@ -209,16 +208,18 @@ export function useDisconnectCommunicator() {
   const queryClient = useQueryClient();
 
   return createMutation(() => ({
-    mutationFn: async (input: { workspaceId: string; kind: string }): Promise<void> => {
-      const url = `/api/daemon/api/workspaces/${encodeURIComponent(input.workspaceId)}/disconnect-communicator`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: input.kind }),
+    mutationFn: async (input: {
+      workspaceId: string;
+      kind: "telegram" | "discord" | "teams" | "whatsapp";
+    }): Promise<void> => {
+      const client = getDaemonClient();
+      const res = await client.workspace[":workspaceId"]["disconnect-communicator"].$post({
+        param: { workspaceId: input.workspaceId },
+        json: { kind: input.kind },
       });
 
+      const body: unknown = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
         const errMsg =
           typeof body === "object" && body !== null && "error" in body
             ? String(body.error)
@@ -226,7 +227,7 @@ export function useDisconnectCommunicator() {
         throw new Error(errMsg);
       }
 
-      DisconnectCommunicatorResponseSchema.parse(await res.json());
+      DisconnectCommunicatorResponseSchema.parse(body);
     },
     onSuccess: (_data, input) => {
       queryClient.invalidateQueries({ queryKey: wiringQueries.all() });

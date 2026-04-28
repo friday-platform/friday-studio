@@ -1856,9 +1856,10 @@ const workspacesRoutes = daemonFactory
         // to `credential_id` itself.
         const connectionId = await deriveConnectionId(kind, credential_id);
 
-        // Resolve the public tunnel URL up front. If the tunnel isn't running,
-        // we want to fail clean BEFORE touching any persistent state — Link's
-        // /wire would itself reject the call without a callback URL anyway.
+        // Tunnel must be up: registerWebhook needs a public URL to give upstream
+        // platforms. Resolve up front so we fail clean BEFORE touching any
+        // persistent state — Link's /wire would itself reject the call without
+        // a callback URL anyway.
         const callbackBaseUrl = await resolveTunnelUrl();
 
         // Wire FIRST. If Link wire fails we must NOT touch yml — the wiring
@@ -1937,9 +1938,9 @@ const workspacesRoutes = daemonFactory
           return mapMutationError(c, mutationResult.error, "Communicator mutation conflicted");
         }
 
-        // Tunnel URL is best-effort on disconnect — we still want to remove
-        // the wiring even if the tunnel is offline. Link's `unregisterWebhook`
-        // hook is itself best-effort and tolerates an empty callback URL.
+        // Tunnel-tolerant: user intent is to disconnect — don't strand them on
+        // tunnel unreachability. Link's `unregisterWebhook` hook is itself
+        // best-effort and tolerates an empty callback URL.
         let callbackBaseUrl = "";
         try {
           callbackBaseUrl = await resolveTunnelUrl();
