@@ -23,8 +23,8 @@ import { z } from "zod";
 
 const logger = createLogger({ component: "draft-helpers" });
 
-export const DRAFT_FILE_NAME = "workspace.yml.draft" as const;
-export const LIVE_FILE_NAME = "workspace.yml" as const;
+const DRAFT_FILE_NAME = "workspace.yml.draft" as const;
+const LIVE_FILE_NAME = "workspace.yml" as const;
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string };
 

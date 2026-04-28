@@ -17,10 +17,12 @@ import { z } from "zod";
 
 const StructuralIssueSchema = z.object({ code: z.string(), path: z.string(), message: z.string() });
 
-const FieldDiffEntrySchema = z.union([
-  z.object({ from: z.unknown().optional(), to: z.unknown().optional() }),
-  z.object({ added: z.array(z.unknown()).optional(), removed: z.array(z.unknown()).optional() }),
-]);
+const FieldDiffEntrySchema = z.object({
+  from: z.unknown().optional(),
+  to: z.unknown().optional(),
+  added: z.array(z.unknown()).optional(),
+  removed: z.array(z.unknown()).optional(),
+});
 
 const FieldDiffSchema = z.record(z.string(), FieldDiffEntrySchema);
 

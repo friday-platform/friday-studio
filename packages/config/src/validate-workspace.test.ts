@@ -1,23 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { parse } from "@std/yaml";
 import { describe, expect, it } from "vitest";
 import { validateWorkspace } from "./validate-workspace.ts";
-
-const inboxZeroRegistry = {
-  mcpServers: ["google-gmail"],
-  mcpTools: {
-    "google-gmail": [
-      "search_gmail_messages",
-      "get_gmail_message_content",
-      "get_gmail_messages_content_batch",
-      "get_gmail_thread_content",
-      "modify_gmail_message_labels",
-      "list_gmail_labels",
-      "draft_gmail_message",
-      "send_gmail_message",
-    ],
-  },
-};
 
 describe("validateWorkspace structural layer", () => {
   it("returns ok for a minimal valid config", () => {
@@ -140,15 +122,6 @@ describe("validateWorkspace structural layer", () => {
       expect(issue.message).not.toContain("ZodError");
       expect(issue.message).not.toContain("JSON.stringify");
     }
-  });
-
-  it("validates Ken's Inbox-Zero workspace as clean", async () => {
-    const yaml = await readFile("/Users/ericskram/Desktop/Inbox-Zero/workspace.yml", "utf-8");
-    const parsed: unknown = parse(yaml);
-    const result = validateWorkspace(parsed, inboxZeroRegistry);
-    expect(result.status).toBe("ok");
-    expect(result.errors).toEqual([]);
-    expect(result.warnings).toEqual([]);
   });
 
   it("resolves MCP tools from declared servers in config without explicit registry", () => {
@@ -625,17 +598,5 @@ describe("validateWorkspace semantic warnings", () => {
     const warn = result.warnings.find((w) => w.code === "http_path_collision");
     expect(warn).toBeDefined();
     expect(warn!.message).toContain("/same");
-  });
-
-  it("validates Meeting-Scheduler workspace as clean", async () => {
-    const yaml = await readFile(
-      "/Users/ericskram/Desktop/Meeting-Scheduler/workspace.yml",
-      "utf-8",
-    );
-    const parsed: unknown = parse(yaml);
-    const result = validateWorkspace(parsed);
-    expect(result.status).toBe("ok");
-    expect(result.errors).toEqual([]);
-    expect(result.warnings).toEqual([]);
   });
 });
