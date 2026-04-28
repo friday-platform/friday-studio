@@ -36,12 +36,13 @@ export const LLMActionSchema = z.object({
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType: z.string().optional(),
   /**
-   * Document id whose `data` becomes the LLM's task input. Used to chain
-   * a prior step's `outputTo` into the next step without writing a
-   * `prepare` action. The engine fails loud if the id is missing at
-   * action execution time.
+   * Document id(s) whose `data` becomes the LLM's task input. String form
+   * chains a single prior step's `outputTo`; array form concatenates
+   * multiple prior outputs labeled by id (`<id>: <data>` joined by blank
+   * lines). The engine fails loud if any id is missing at action
+   * execution time.
    */
-  inputFrom: z.string().optional(),
+  inputFrom: z.union([z.string(), z.array(z.string()).min(1)]).optional(),
 });
 
 export const EmitActionSchema = z.object({
@@ -61,12 +62,13 @@ export const AgentActionSchema = z.object({
   /** @experimental — see LLMActionSchema.skills. Not enforced at runtime today. */
   skills: z.array(z.string()).optional(),
   /**
-   * Document id whose `data` becomes the agent's task input. Used to chain
-   * a prior step's `outputTo` into the next step without writing a
-   * `prepare` action. The engine fails loud if the id is missing at
-   * action execution time.
+   * Document id(s) whose `data` becomes the agent's task input. String form
+   * chains a single prior step's `outputTo`; array form concatenates
+   * multiple prior outputs labeled by id (`<id>: <data>` joined by blank
+   * lines). The engine fails loud if any id is missing at action
+   * execution time.
    */
-  inputFrom: z.string().optional(),
+  inputFrom: z.union([z.string(), z.array(z.string()).min(1)]).optional(),
 });
 
 export const ActionSchema = z.discriminatedUnion("type", [

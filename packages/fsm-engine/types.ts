@@ -67,8 +67,8 @@ export interface LLMAction {
   outputTo?: string;
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType?: string;
-  /** Document id whose `data` becomes the LLM's task input. See AgentAction.inputFrom. */
-  inputFrom?: string;
+  /** Document id(s) whose `data` becomes the LLM's task input. See AgentAction.inputFrom. */
+  inputFrom?: string | string[];
 }
 
 export interface EmitAction {
@@ -86,12 +86,13 @@ export interface AgentAction {
   /** Task instructions for the agent. Takes precedence over agent config prompt. */
   prompt?: string;
   /**
-   * Document id whose `data` becomes the agent's task input. Used to chain
-   * a prior step's `outputTo` into the next step without writing a
-   * `prepare` action. The engine fails loud if the id is missing at
-   * action execution time.
+   * Document id(s) whose `data` becomes the agent's task input. String form
+   * chains a single prior step's `outputTo`; array form concatenates
+   * multiple prior outputs labeled by id (`<id>: <data>` joined by blank
+   * lines). The engine fails loud if any id is missing at action
+   * execution time.
    */
-  inputFrom?: string;
+  inputFrom?: string | string[];
 }
 
 export interface Context {

@@ -168,46 +168,65 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
  * Derive inputSnapshot for action execution events.
  *
  * Resolution order:
- * 1. `prepareResult` from a `prepare` code action — most expressive path.
- * 2. `inputFrom: <docId>` on the action — chain a prior step's `outputTo`
- *    into this step. Fails loud if the doc doesn't exist (config error).
+ * 1. `inputFrom: <docId>` (string) or `inputFrom: [<id1>, <id2>, ...]` (array)
+ *    on the action — explicit author-declared chain from prior steps' outputs.
+ *    Wins over carried-over prepareResult: cron/manual triggers auto-seed
+ *    prepareResult from signal payloads, and an empty payload (`{}`) used to
+ *    overshadow inputFrom and surface as `## Input: { config: {} }`.
+ * 2. `prepareResult` from a `prepare` code action — falls through when no
+ *    inputFrom is set on the action.
  * 3. Legacy `foo_result` ↔ `foo-request` document convention.
  */
 export function getInputSnapshot(
   prepareResult: PrepareResult | undefined,
-  action: { type: string; outputTo?: string; inputFrom?: string },
+  action: { type: string; outputTo?: string; inputFrom?: string | string[] },
   documents: Map<string, unknown>,
 ): { task?: string; config?: Record<string, unknown> } | undefined {
-  // New path: use prepare result when available
-  if (prepareResult) {
-    const { task, config } = prepareResult;
-    if (task || config) return { task, config };
-  }
-
   // inputFrom: explicit chain from a prior step's output document.
   // Fails loud — running with empty context is the bug we're trying to
   // avoid; if the referenced doc isn't there, the FSM is misconfigured.
   const inputFrom = action.type === "agent" || action.type === "llm" ? action.inputFrom : undefined;
-  if (inputFrom) {
-    const doc = documents.get(inputFrom);
-    if (!doc) {
-      const available = [...documents.keys()];
-      throw new Error(
-        `inputFrom: document '${inputFrom}' not found. ` +
-          `Available documents: ${available.length ? available.join(", ") : "(none)"}`,
-      );
-    }
-    const data = (doc as { data?: unknown }).data;
-    if (data === undefined || data === null) {
-      throw new Error(`inputFrom: document '${inputFrom}' has no data`);
-    }
-    // Expose as the agent's task (the user-message slot) so the existing
-    // prompt — usually a system-style instruction — operates on the prior
-    // doc without further wiring. Also surface under `config[<inputFrom>]`
-    // for prompts that prefer `{{config.<id>}}` interpolation.
-    const task = typeof data === "string" ? data : JSON.stringify(data);
-    const config: Record<string, unknown> = { [inputFrom]: data };
+  if (inputFrom !== undefined) {
+    const ids = Array.isArray(inputFrom) ? inputFrom : [inputFrom];
+
+    const items = ids.map((id) => {
+      const doc = documents.get(id);
+      if (!doc) {
+        const available = [...documents.keys()];
+        throw new Error(
+          `inputFrom: document '${id}' not found. ` +
+            `Available documents: ${available.length ? available.join(", ") : "(none)"}`,
+        );
+      }
+      const data = (doc as { data?: unknown }).data;
+      if (data === undefined || data === null) {
+        throw new Error(`inputFrom: document '${id}' has no data`);
+      }
+      return { id, data };
+    });
+
+    // Single source: keep historical shape — `task` is the doc data itself
+    // (raw string or JSON.stringify of object). Multi-source: prefix each
+    // item with its id so the consuming LLM can tell sources apart.
+    const task = Array.isArray(inputFrom)
+      ? items
+        .map(({ id, data }) => `${id}: ${typeof data === "string" ? data : JSON.stringify(data)}`)
+        .join("\n\n")
+      : typeof items[0]!.data === "string"
+        ? (items[0]!.data as string)
+        : JSON.stringify(items[0]!.data);
+
+    const config: Record<string, unknown> = Object.fromEntries(
+      items.map(({ id, data }) => [id, data]),
+    );
     return { task, config };
+  }
+
+  // Carried-over prepareResult — from a prior `prepare` code action or
+  // auto-seeded from the triggering signal payload.
+  if (prepareResult) {
+    const { task, config } = prepareResult;
+    if (task || config) return { task, config };
   }
 
   // Fallback: old-style request document lookup (backward compat)
@@ -976,6 +995,23 @@ export class FSMEngine {
         ? getInputSnapshot(prepareResult, action, documents)
         : undefined;
 
+    // When the action declares `inputFrom`, the snapshot reflects the chained
+    // documents and must drive the agent prompt — not the carried-over
+    // prepareResult (which is typically an auto-seeded signal payload, often
+    // empty for cron triggers). Without this override the snapshot only flows
+    // to telemetry while `buildContextPrompt` / `buildAgentPrompt` render
+    // `## Input` from prepareResult, surfacing as `{ "config": {} }` and
+    // making the agent complain that its inputs are missing.
+    const hasExplicitInputFrom =
+      (action.type === "agent" || action.type === "llm") && action.inputFrom !== undefined;
+    const effectivePrepareResult: PrepareResult | undefined =
+      hasExplicitInputFrom && inputSnapshot
+        ? {
+            ...inputSnapshot,
+            ...(prepareResult?.artifactRefs ? { artifactRefs: prepareResult.artifactRefs } : {}),
+          }
+        : prepareResult;
+
     // Emit action started event
     if (sig._context?.onEvent) {
       sig._context.onEvent({
@@ -1175,7 +1211,7 @@ export class FSMEngine {
               // Build prompt with curated input from prepare function, skills, and image resolution
               let { prompt: contextPrompt, images } = await this.buildContextPrompt(
                 action.prompt,
-                prepareResult,
+                effectivePrepareResult,
                 skills,
               );
 
@@ -1489,7 +1525,7 @@ export class FSMEngine {
               documents: Array.from(documents.values()),
               state: currentState,
               results: Object.fromEntries(resultsMap),
-              ...(prepareResult ? { input: prepareResult } : {}),
+              ...(effectivePrepareResult ? { input: effectivePrepareResult } : {}),
               emit: context.emit,
               updateDoc: this.makeUpdateDocFn(documents),
               createDoc: this.makeCreateDocFn(documents, currentState),
