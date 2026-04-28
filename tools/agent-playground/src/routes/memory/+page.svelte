@@ -47,6 +47,11 @@
   let activeTab = $state<Tab>("mounted");
 
   const visible = $derived(activeTab === "mounted" ? mounted : unmounted);
+
+  // $derived is required: Svelte 5 {#if} blocks don't re-evaluate when
+  // @tanstack/svelte-query's proxy-based state changes without an explicit derived.
+  const isWorkspacesLoading = $derived(workspacesQuery.isLoading || enrichedQuery.isLoading);
+  const workspacesError = $derived(workspacesQuery.error);
 </script>
 
 <div class="memory-root">
@@ -55,11 +60,11 @@
     <p class="subtitle">Browse workspace memories</p>
   </header>
 
-  {#if workspacesQuery.isLoading || enrichedQuery.isLoading}
+  {#if isWorkspacesLoading}
     <div class="loading">Loading workspaces…</div>
-  {:else if workspacesQuery.error}
+  {:else if workspacesError}
     <div class="error-banner">
-      <span>Failed to load workspaces: {workspacesQuery.error.message}</span>
+      <span>Failed to load workspaces: {workspacesError.message}</span>
       <button class="dismiss" onclick={() => workspacesQuery.refetch()}>Retry</button>
     </div>
   {:else}

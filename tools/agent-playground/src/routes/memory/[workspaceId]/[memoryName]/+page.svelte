@@ -49,6 +49,12 @@
     return new Date(entriesQuery.dataUpdatedAt).toLocaleTimeString();
   });
 
+  // $derived is required: Svelte 5 {#if} blocks don't re-evaluate when
+  // @tanstack/svelte-query's proxy-based state changes without an explicit derived.
+  const isEntriesLoading = $derived(entriesQuery.isLoading);
+  const isFetchingEntries = $derived(entriesQuery.isFetching);
+  const entriesError = $derived(entriesQuery.error);
+
   function handleKeydown(e: KeyboardEvent) {
     const target = e.target;
     if (target instanceof HTMLInputElement) return;
@@ -77,7 +83,7 @@
 
     <div class="title-row">
       <h1>{memoryName}</h1>
-      {#if entriesQuery.isFetching}
+      {#if isFetchingEntries}
         <span class="live-dot" title="Refreshing…"></span>
         <span class="live-label">Live</span>
       {/if}
@@ -101,7 +107,7 @@
     </div>
   </header>
 
-  {#if entriesQuery.error && entries.length === 0}
+  {#if entriesError && entries.length === 0}
     <div class="error-banner">
       <span>{entriesQuery.error.message}</span>
       <button class="dismiss" onclick={() => entriesQuery.refetch()}>Retry</button>
@@ -109,7 +115,7 @@
   {/if}
 
   <div class="table-container">
-    <MemoryEntryTable {entries} loading={entriesQuery.isLoading} />
+    <MemoryEntryTable {entries} loading={isEntriesLoading} />
   </div>
 </div>
 
