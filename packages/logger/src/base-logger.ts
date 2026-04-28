@@ -15,7 +15,7 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 const MAX_CONSOLE_BYTES = 32_768;
 
 /**
- * Resolve the minimum log level from ATLAS_LOG_LEVEL env var.
+ * Resolve the minimum log level from FRIDAY_LOG_LEVEL env var.
  * Cached after first access — avoids re-parsing on every log call
  * while allowing the env var to be set after module load (e.g. tests).
  * Defaults to "debug" to preserve current behavior for local dev.
@@ -26,7 +26,7 @@ function getMinLogLevel(): number {
   if (cachedMinLogLevel !== undefined) {
     return cachedMinLogLevel;
   }
-  const raw = process.env.ATLAS_LOG_LEVEL;
+  const raw = process.env.FRIDAY_LOG_LEVEL;
   if (raw && raw in LOG_LEVEL_ORDER) {
     cachedMinLogLevel = LOG_LEVEL_ORDER[raw as LogLevel];
   } else {
@@ -36,7 +36,7 @@ function getMinLogLevel(): number {
 }
 
 /**
- * Reset the cached log level so the next call re-reads ATLAS_LOG_LEVEL.
+ * Reset the cached log level so the next call re-reads FRIDAY_LOG_LEVEL.
  * Exported for tests only — production code should never call this.
  */
 export function resetLogLevelCache(): void {
@@ -82,7 +82,7 @@ export abstract class BaseLogger implements Logger {
   protected abstract log(level: LogLevel, message: string, context?: LogContext): void;
 
   /**
-   * Whether the given level meets the minimum configured via ATLAS_LOG_LEVEL.
+   * Whether the given level meets the minimum configured via FRIDAY_LOG_LEVEL.
    * Console output is suppressed for levels below the threshold.
    */
   protected shouldOutputToConsole(level: LogLevel): boolean {

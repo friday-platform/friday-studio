@@ -25,7 +25,7 @@ import (
 // log is the package-level Logger used by main.go and pty.go.
 // Initialized at package-init with default settings so tests (which
 // never call main()) can use the handlers without nil-derefing.
-// main() reassigns it after PTY_LOG_LEVEL → ATLAS_LOG_LEVEL is mapped.
+// main() reassigns it after PTY_LOG_LEVEL → FRIDAY_LOG_LEVEL is mapped.
 var log = logger.New("pty-server")
 
 // GitCommit is injected at build time via -ldflags
@@ -61,11 +61,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// PTY_LOG_LEVEL is the legacy knob; pkg/logger reads ATLAS_LOG_LEVEL.
+	// PTY_LOG_LEVEL is the legacy knob; pkg/logger reads FRIDAY_LOG_LEVEL.
 	// Map the former onto the latter so existing pty-server deployments
 	// keep their configured verbosity without users editing env vars.
 	if cfg.LogLevel != "" {
-		_ = os.Setenv("ATLAS_LOG_LEVEL", cfg.LogLevel)
+		_ = os.Setenv("FRIDAY_LOG_LEVEL", cfg.LogLevel)
 	}
 	log = logger.New("pty-server")
 

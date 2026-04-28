@@ -12,7 +12,7 @@
 //	TUNNEL_TOKEN    — Cloudflare tunnel token for stable URLs (optional)
 //	NO_TUNNEL       — "true" to skip cloudflared (HTTP server only)
 //	WEBHOOK_MAPPINGS_PATH — Override the embedded webhook-mappings.yml
-//	ATLAS_LOG_LEVEL — trace|debug|info|warn|error|fatal
+//	FRIDAY_LOG_LEVEL — trace|debug|info|warn|error|fatal
 //
 // Faithful Go port of apps/webhook-tunnel (TS / Hono / Deno).
 package main

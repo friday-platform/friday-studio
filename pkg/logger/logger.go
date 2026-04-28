@@ -25,7 +25,7 @@ type Logger struct {
 
 // New creates a Logger named after the given component. The component
 // name is prefixed to every log line (key=component) so aggregators
-// can partition cleanly. Level is read from ATLAS_LOG_LEVEL env at
+// can partition cleanly. Level is read from FRIDAY_LOG_LEVEL env at
 // New() time. Writes to os.Stderr.
 func New(component string) *Logger {
 	return NewWithWriter(component, os.Stderr)
@@ -57,11 +57,11 @@ func NewWithWriter(component string, w io.Writer) *Logger {
 	return &Logger{sl: sl}
 }
 
-// levelFromEnv parses ATLAS_LOG_LEVEL into a slog.Level. Unknown values
+// levelFromEnv parses FRIDAY_LOG_LEVEL into a slog.Level. Unknown values
 // fall back to info silently — log-init shouldn't be a place to fail
 // the whole binary.
 func levelFromEnv() slog.Level {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("ATLAS_LOG_LEVEL"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("FRIDAY_LOG_LEVEL"))) {
 	case "trace":
 		return LevelTrace
 	case "debug":

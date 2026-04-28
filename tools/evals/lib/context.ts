@@ -33,12 +33,12 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
 /**
  * Minimum log level for live stderr output during eval runs.
  * Defaults to "info" (eval output is meant for humans watching a run).
- * Respects ATLAS_LOG_LEVEL if set explicitly.
+ * Respects FRIDAY_LOG_LEVEL if set explicitly.
  * Set EVAL_QUIET=1 to silence live stderr output entirely.
  */
 function getLiveStderrMinLevel(): number {
   if (process.env.EVAL_QUIET === "1") return Number.POSITIVE_INFINITY;
-  const raw = process.env.ATLAS_LOG_LEVEL;
+  const raw = process.env.FRIDAY_LOG_LEVEL;
   if (raw && raw in LOG_LEVEL_ORDER) return LOG_LEVEL_ORDER[raw as LogLevel];
   return LOG_LEVEL_ORDER.info;
 }
@@ -129,7 +129,7 @@ class CapturedStreamEmitter implements StreamEmitter<AtlasUIMessageChunk> {
  * to stderr at info+ for live eval feedback.
  *
  * Silence the live output with `EVAL_QUIET=1` or raise the floor with
- * `ATLAS_LOG_LEVEL=warn`.
+ * `FRIDAY_LOG_LEVEL=warn`.
  */
 class CapturedLogger implements Logger {
   private logs: LogEntry[] = [];

@@ -81,25 +81,25 @@ describe("BaseLogger crash resilience", () => {
   });
 });
 
-describe("ATLAS_LOG_LEVEL filtering", () => {
+describe("FRIDAY_LOG_LEVEL filtering", () => {
   let originalEnv: string | undefined;
 
   beforeEach(() => {
-    originalEnv = process.env.ATLAS_LOG_LEVEL;
+    originalEnv = process.env.FRIDAY_LOG_LEVEL;
     resetLogLevelCache();
   });
 
   afterEach(() => {
     if (originalEnv === undefined) {
-      delete process.env.ATLAS_LOG_LEVEL;
+      delete process.env.FRIDAY_LOG_LEVEL;
     } else {
-      process.env.ATLAS_LOG_LEVEL = originalEnv;
+      process.env.FRIDAY_LOG_LEVEL = originalEnv;
     }
     resetLogLevelCache();
   });
 
-  it("suppresses debug logs when ATLAS_LOG_LEVEL=info", () => {
-    process.env.ATLAS_LOG_LEVEL = "info";
+  it("suppresses debug logs when FRIDAY_LOG_LEVEL=info", () => {
+    process.env.FRIDAY_LOG_LEVEL = "info";
     resetLogLevelCache();
     const consoleSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 
@@ -109,8 +109,8 @@ describe("ATLAS_LOG_LEVEL filtering", () => {
     consoleSpy.mockRestore();
   });
 
-  it("outputs info logs when ATLAS_LOG_LEVEL=info", () => {
-    process.env.ATLAS_LOG_LEVEL = "info";
+  it("outputs info logs when FRIDAY_LOG_LEVEL=info", () => {
+    process.env.FRIDAY_LOG_LEVEL = "info";
     resetLogLevelCache();
     const consoleSpy = vi.spyOn(console, "info").mockImplementation(() => {});
 
@@ -120,8 +120,8 @@ describe("ATLAS_LOG_LEVEL filtering", () => {
     consoleSpy.mockRestore();
   });
 
-  it("suppresses debug and info logs when ATLAS_LOG_LEVEL=warn", () => {
-    process.env.ATLAS_LOG_LEVEL = "warn";
+  it("suppresses debug and info logs when FRIDAY_LOG_LEVEL=warn", () => {
+    process.env.FRIDAY_LOG_LEVEL = "warn";
     resetLogLevelCache();
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -135,8 +135,8 @@ describe("ATLAS_LOG_LEVEL filtering", () => {
     infoSpy.mockRestore();
   });
 
-  it("outputs warn logs when ATLAS_LOG_LEVEL=warn", () => {
-    process.env.ATLAS_LOG_LEVEL = "warn";
+  it("outputs warn logs when FRIDAY_LOG_LEVEL=warn", () => {
+    process.env.FRIDAY_LOG_LEVEL = "warn";
     resetLogLevelCache();
     const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -146,8 +146,8 @@ describe("ATLAS_LOG_LEVEL filtering", () => {
     consoleSpy.mockRestore();
   });
 
-  it("outputs debug logs when ATLAS_LOG_LEVEL=debug", () => {
-    process.env.ATLAS_LOG_LEVEL = "debug";
+  it("outputs debug logs when FRIDAY_LOG_LEVEL=debug", () => {
+    process.env.FRIDAY_LOG_LEVEL = "debug";
     resetLogLevelCache();
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 
@@ -157,8 +157,8 @@ describe("ATLAS_LOG_LEVEL filtering", () => {
     debugSpy.mockRestore();
   });
 
-  it("defaults to debug when ATLAS_LOG_LEVEL is not set", () => {
-    delete process.env.ATLAS_LOG_LEVEL;
+  it("defaults to debug when FRIDAY_LOG_LEVEL is not set", () => {
+    delete process.env.FRIDAY_LOG_LEVEL;
     resetLogLevelCache();
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 

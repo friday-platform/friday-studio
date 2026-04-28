@@ -8,7 +8,7 @@
 // in friday-launcher routes each binary's logs to ~/.friday/local/logs/
 // so all atlas Go binaries produce uniform JSON in the same place.
 //
-// Level is read from ATLAS_LOG_LEVEL (trace|debug|info|warn|error|fatal),
+// Level is read from FRIDAY_LOG_LEVEL (trace|debug|info|warn|error|fatal),
 // defaulting to "info". The component name passed to New() is included
 // as the first kv pair on every log line so log aggregators can
 // reliably partition.

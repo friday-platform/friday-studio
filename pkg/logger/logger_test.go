@@ -22,7 +22,7 @@ func decodeLine(t *testing.T, raw []byte) map[string]any {
 }
 
 func TestComponentAlwaysPresent(t *testing.T) {
-	t.Setenv("ATLAS_LOG_LEVEL", "debug")
+	t.Setenv("FRIDAY_LOG_LEVEL", "debug")
 	var buf bytes.Buffer
 	log := NewWithWriter("test-bin", &buf)
 	log.Info("hello")
@@ -36,7 +36,7 @@ func TestComponentAlwaysPresent(t *testing.T) {
 }
 
 func TestKVPairs(t *testing.T) {
-	t.Setenv("ATLAS_LOG_LEVEL", "info")
+	t.Setenv("FRIDAY_LOG_LEVEL", "info")
 	var buf bytes.Buffer
 	log := NewWithWriter("x", &buf)
 	log.Info("event", "port", 9090, "alive", true)
@@ -50,7 +50,7 @@ func TestKVPairs(t *testing.T) {
 }
 
 func TestLevelFiltering(t *testing.T) {
-	t.Setenv("ATLAS_LOG_LEVEL", "warn")
+	t.Setenv("FRIDAY_LOG_LEVEL", "warn")
 	var buf bytes.Buffer
 	log := NewWithWriter("x", &buf)
 	log.Debug("dropped")
@@ -64,7 +64,7 @@ func TestLevelFiltering(t *testing.T) {
 }
 
 func TestChildMergesContext(t *testing.T) {
-	t.Setenv("ATLAS_LOG_LEVEL", "info")
+	t.Setenv("FRIDAY_LOG_LEVEL", "info")
 	var buf bytes.Buffer
 	parent := NewWithWriter("x", &buf)
 	child := parent.Child("provider", "github", "request_id", "abc")
@@ -85,7 +85,7 @@ func TestChildMergesContext(t *testing.T) {
 }
 
 func TestLevelLabels(t *testing.T) {
-	t.Setenv("ATLAS_LOG_LEVEL", "trace")
+	t.Setenv("FRIDAY_LOG_LEVEL", "trace")
 	var buf bytes.Buffer
 	log := NewWithWriter("x", &buf)
 	log.Trace("trace msg")
@@ -107,7 +107,7 @@ func TestLevelLabels(t *testing.T) {
 }
 
 func TestUnknownLevelDefaultsInfo(t *testing.T) {
-	t.Setenv("ATLAS_LOG_LEVEL", "blarg")
+	t.Setenv("FRIDAY_LOG_LEVEL", "blarg")
 	var buf bytes.Buffer
 	log := NewWithWriter("x", &buf)
 	log.Debug("dropped")
@@ -128,7 +128,7 @@ func TestFatalExits1(t *testing.T) {
 		return // unreachable
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=TestFatalExits1")
-	cmd.Env = append(os.Environ(), "LOGGER_FATAL_HELPER=1", "ATLAS_LOG_LEVEL=fatal")
+	cmd.Env = append(os.Environ(), "LOGGER_FATAL_HELPER=1", "FRIDAY_LOG_LEVEL=fatal")
 	err := cmd.Run()
 	if err == nil {
 		t.Fatalf("expected exit 1, got nil")
