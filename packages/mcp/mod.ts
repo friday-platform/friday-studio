@@ -11,10 +11,10 @@
 
 export type { CreateMCPToolsOptions, MCPToolsResult } from "./src/create-mcp-tools.ts";
 export { createMCPTools, MCPAuthError, MCPStartupError } from "./src/create-mcp-tools.ts";
-export { sharedMCPProcesses } from "./src/process-registry.ts";
 export type {
   ProcessRegistry,
   ProcessRegistryDeps,
   SharedProcessHandle,
   SharedProcessSpec,
 } from "./src/process-registry.ts";
+export { sharedMCPProcesses } from "./src/process-registry.ts";

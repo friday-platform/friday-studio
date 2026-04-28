@@ -349,11 +349,7 @@ describe("ProcessRegistry pid-file lifecycle", () => {
     await sharedMCPProcesses.acquire("calendar", makeSpec(), deps, fakeLogger);
 
     expect(pidFile.write).toHaveBeenCalledTimes(1);
-    expect(pidFile.write).toHaveBeenCalledWith(
-      "calendar",
-      54321,
-      expect.any(Number),
-    );
+    expect(pidFile.write).toHaveBeenCalledWith("calendar", 54321, expect.any(Number));
   });
 
   it("does not write pid file when child has no pid", async () => {
