@@ -309,7 +309,7 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
     return { ...m, id: crypto.randomUUID() };
   });
 
-  const validated = await validateUIMessages({
+  const validated = await validateUIMessages<AtlasUIMessage>({
     messages: withIds,
     metadataSchema: MessageMetadataSchema.optional(),
     dataSchemas: AtlasDataEventSchemas,
