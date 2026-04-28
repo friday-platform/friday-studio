@@ -9,14 +9,10 @@ import { createEnableMcpServerTool } from "./enable-mcp-server.ts";
 const mockPut = vi.hoisted(() => vi.fn());
 const mockWorkspaceMcp = vi.hoisted(() => vi.fn());
 
-vi.mock("@atlas/client/v2", () => ({
-  client: { workspaceMcp: mockWorkspaceMcp },
-}));
+vi.mock("@atlas/client/v2", () => ({ client: { workspaceMcp: mockWorkspaceMcp } }));
 
-function setupMock(workspaceId: string) {
-  mockWorkspaceMcp.mockReturnValue({
-    ":serverId": { $put: mockPut },
-  });
+function setupMock(_workspaceId: string) {
+  mockWorkspaceMcp.mockReturnValue({ ":serverId": { $put: mockPut } });
 }
 
 // ---------------------------------------------------------------------------

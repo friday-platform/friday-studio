@@ -61,7 +61,11 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
               .safeParse(body);
 
             const name = parsed.success && parsed.data.server ? parsed.data.server.name : serverId;
-            logger.info("enable_mcp_server succeeded", { workspaceId: effectiveWorkspaceId, serverId, name });
+            logger.info("enable_mcp_server succeeded", {
+              workspaceId: effectiveWorkspaceId,
+              serverId,
+              name,
+            });
             return {
               success: true,
               server: { id: serverId, name },
@@ -74,14 +78,21 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
             const errorMsg = String(
               errorBody.message ?? `Server "${serverId}" not found in catalog.`,
             );
-            logger.info("enable_mcp_server: not found", { workspaceId: effectiveWorkspaceId, serverId });
+            logger.info("enable_mcp_server: not found", {
+              workspaceId: effectiveWorkspaceId,
+              serverId,
+            });
             return { success: false, error: errorMsg };
           }
 
           if (res.status === 409) {
             const errorBody = body as Record<string, unknown>;
             const errorMsg = String(errorBody.message ?? "Conflict enabling MCP server.");
-            logger.info("enable_mcp_server: conflict", { workspaceId: effectiveWorkspaceId, serverId, error: errorMsg });
+            logger.info("enable_mcp_server: conflict", {
+              workspaceId: effectiveWorkspaceId,
+              serverId,
+              error: errorMsg,
+            });
             return { success: false, error: errorMsg };
           }
 
@@ -91,7 +102,10 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
               errorBody.message ??
                 "This workspace uses a blueprint — direct config mutations are not supported.",
             );
-            logger.info("enable_mcp_server: blueprint rejected", { workspaceId: effectiveWorkspaceId, serverId });
+            logger.info("enable_mcp_server: blueprint rejected", {
+              workspaceId: effectiveWorkspaceId,
+              serverId,
+            });
             return { success: false, error: errorMsg };
           }
 
@@ -108,7 +122,11 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
           return { success: false, error: errorMsg };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          logger.warn("enable_mcp_server threw", { workspaceId: effectiveWorkspaceId, serverId, error: message });
+          logger.warn("enable_mcp_server threw", {
+            workspaceId: effectiveWorkspaceId,
+            serverId,
+            error: message,
+          });
           return { success: false, error: `Enable failed: ${message}` };
         }
       },

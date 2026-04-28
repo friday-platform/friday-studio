@@ -79,7 +79,10 @@ export function findServerReferences(config: WorkspaceConfig, serverId: string):
         for (const action of state.entry) {
           if (action?.type === "llm") {
             const tools = action.tools;
-            if (Array.isArray(tools) && tools.some((t) => t === serverId || t.startsWith(`${serverId}/`))) {
+            if (
+              Array.isArray(tools) &&
+              tools.some((t) => t === serverId || t.startsWith(`${serverId}/`))
+            ) {
               jobIdSet.add(jobId);
               break; // deduplicate per job
             }

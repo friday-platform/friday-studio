@@ -14,10 +14,7 @@ const ListMcpToolsInput = z.object({
     ),
 });
 
-const ToolItemSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-});
+const ToolItemSchema = z.object({ name: z.string(), description: z.string().optional() });
 
 export interface ListMcpToolsSuccess {
   ok: true;
@@ -49,17 +46,12 @@ export function createListMcpToolsTool(logger: Logger): AtlasTools {
       inputSchema: ListMcpToolsInput,
       execute: async ({ serverId }): Promise<ListMcpToolsSuccess | ListMcpToolsError> => {
         try {
-          const res = await client.mcpRegistry[":id"].tools.$get({
-            param: { id: serverId },
-          });
+          const res = await client.mcpRegistry[":id"].tools.$get({ param: { id: serverId } });
           const body = await res.json();
 
           if (res.status === 200) {
             const parsed = z
-              .object({
-                ok: z.literal(true),
-                tools: z.array(ToolItemSchema),
-              })
+              .object({ ok: z.literal(true), tools: z.array(ToolItemSchema) })
               .safeParse(body);
 
             if (parsed.success) {
@@ -69,10 +61,7 @@ export function createListMcpToolsTool(logger: Logger): AtlasTools {
               });
               return {
                 ok: true,
-                tools: parsed.data.tools.map((t) => ({
-                  ...t,
-                  name: `${serverId}/${t.name}`,
-                })),
+                tools: parsed.data.tools.map((t) => ({ ...t, name: `${serverId}/${t.name}` })),
               };
             }
 

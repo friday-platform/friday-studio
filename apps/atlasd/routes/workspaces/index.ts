@@ -41,12 +41,12 @@ import {
   resolveCredentialsByProvider,
   resolveSlackAppByWorkspace,
 } from "@atlas/core/mcp-registry/credential-resolver";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { createDefaultResolvers } from "@atlas/core/mcp-registry/resolvers";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
-import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { ResourceMetadata, ResourceVersion } from "@atlas/ledger";
-import { createMCPTools } from "@atlas/mcp";
 import { createLogger, logger } from "@atlas/logger";
+import { createMCPTools } from "@atlas/mcp";
 import { createLedgerClient } from "@atlas/resources";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
@@ -75,6 +75,7 @@ import {
 import { DEFAULT_WORKSPACE_MEMORY } from "./default-workspace-config.ts";
 import {
   beginDraft,
+  type DraftItemKind,
   deleteDraftItem,
   discardDraft,
   publishDraft,
@@ -83,7 +84,6 @@ import {
   upsertDraftItem,
   upsertLiveItem,
   validateDraft,
-  type DraftItemKind,
 } from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { mapMutationError } from "./mutation-errors.ts";
@@ -157,9 +157,7 @@ function buildValidationContext(app: AppContext): ValidationContext {
  * prefixed tools still pass via the static serverPrefixes fallback, but bare
  * tool names for those servers will not resolve.
  */
-async function buildMcpToolRegistry(
-  config: WorkspaceConfig,
-): Promise<Registry> {
+async function buildMcpToolRegistry(config: WorkspaceConfig): Promise<Registry> {
   const declaredServers = Object.keys(config.tools?.mcp?.servers ?? {});
   if (declaredServers.length === 0) return {};
 
@@ -175,11 +173,9 @@ async function buildMcpToolRegistry(
       }
       if (!server) continue;
 
-      const result = await createMCPTools(
-        { [serverId]: server.configTemplate },
-        logger,
-        { signal: AbortSignal.timeout(5000) },
-      );
+      const result = await createMCPTools({ [serverId]: server.configTemplate }, logger, {
+        signal: AbortSignal.timeout(5000),
+      });
       mcpTools[serverId] = Object.keys(result.tools);
       await result.dispose();
     } catch (error) {
@@ -2529,14 +2525,17 @@ const workspacesRoutes = daemonFactory
   // Refuses the write if structural validation errors exist.
   .post(
     "/:workspaceId/items/:kind",
-    zValidator("param", z.object({
-      workspaceId: z.string().min(1),
-      kind: z.enum(["agent", "signal", "job"] as const),
-    })),
-    zValidator("json", z.object({
-      id: z.string().min(1),
-      config: z.record(z.string(), z.unknown()),
-    })),
+    zValidator(
+      "param",
+      z.object({
+        workspaceId: z.string().min(1),
+        kind: z.enum(["agent", "signal", "job"] as const),
+      }),
+    ),
+    zValidator(
+      "json",
+      z.object({ id: z.string().min(1), config: z.record(z.string(), z.unknown()) }),
+    ),
     async (c) => {
       const { workspaceId, kind } = c.req.valid("param");
       const { id, config } = c.req.valid("json");
@@ -2577,11 +2576,14 @@ const workspacesRoutes = daemonFactory
   // Refuses the operation if the entity is referenced by other items.
   .delete(
     "/:workspaceId/items/:kind/:id",
-    zValidator("param", z.object({
-      workspaceId: z.string().min(1),
-      kind: z.enum(["agent", "signal", "job"] as const),
-      id: z.string().min(1),
-    })),
+    zValidator(
+      "param",
+      z.object({
+        workspaceId: z.string().min(1),
+        kind: z.enum(["agent", "signal", "job"] as const),
+        id: z.string().min(1),
+      }),
+    ),
     async (c) => {
       const { workspaceId, kind, id } = c.req.valid("param");
       const ctx = c.get("app");
@@ -2594,7 +2596,10 @@ const workspacesRoutes = daemonFactory
         const result = await removeLiveItem(workspace.path, kind as DraftItemKind, id);
         if (!result.ok) {
           if (result.reason === "referenced") {
-            return c.json({ ok: false, error: { code: "referenced", dependents: result.dependents } }, 422);
+            return c.json(
+              { ok: false, error: { code: "referenced", dependents: result.dependents } },
+              422,
+            );
           }
           const status = result.error.includes("not found") ? 404 : 500;
           return c.json({ ok: false, error: result.error }, status);
@@ -2615,14 +2620,17 @@ const workspacesRoutes = daemonFactory
   // Upsert an entity (agent/signal/job) into the draft config
   .post(
     "/:workspaceId/draft/items/:kind",
-    zValidator("param", z.object({
-      workspaceId: z.string().min(1),
-      kind: z.enum(["agent", "signal", "job"] as const),
-    })),
-    zValidator("json", z.object({
-      id: z.string().min(1),
-      config: z.record(z.string(), z.unknown()),
-    })),
+    zValidator(
+      "param",
+      z.object({
+        workspaceId: z.string().min(1),
+        kind: z.enum(["agent", "signal", "job"] as const),
+      }),
+    ),
+    zValidator(
+      "json",
+      z.object({ id: z.string().min(1), config: z.record(z.string(), z.unknown()) }),
+    ),
     async (c) => {
       const { workspaceId, kind } = c.req.valid("param");
       const { id, config } = c.req.valid("json");
@@ -2640,11 +2648,14 @@ const workspacesRoutes = daemonFactory
           }
           return c.json({ ok: false, error: result.error }, 400);
         }
-        return c.json({
-          ok: result.value.ok,
-          diff: result.value.diff,
-          structural_issues: result.value.structuralIssues,
-        }, 200);
+        return c.json(
+          {
+            ok: result.value.ok,
+            diff: result.value.diff,
+            structural_issues: result.value.structuralIssues,
+          },
+          200,
+        );
       } catch (error) {
         return c.json({ success: false, error: stringifyError(error) }, 500);
       }
@@ -2653,11 +2664,14 @@ const workspacesRoutes = daemonFactory
   // Delete an entity (agent/signal/job) from the draft config
   .delete(
     "/:workspaceId/draft/items/:kind/:id",
-    zValidator("param", z.object({
-      workspaceId: z.string().min(1),
-      kind: z.enum(["agent", "signal", "job"] as const),
-      id: z.string().min(1),
-    })),
+    zValidator(
+      "param",
+      z.object({
+        workspaceId: z.string().min(1),
+        kind: z.enum(["agent", "signal", "job"] as const),
+        id: z.string().min(1),
+      }),
+    ),
     async (c) => {
       const { workspaceId, kind, id } = c.req.valid("param");
       const ctx = c.get("app");
@@ -2674,16 +2688,16 @@ const workspacesRoutes = daemonFactory
           }
           return c.json({ success: false, error: result.error }, 409);
         }
-        const structuralIssues = result.value.report.status === "error"
-          ? result.value.report.errors
-          : null;
-        return c.json({
-          ok: true,
-          diff: {
-            removed: [{ path: `${kind}s.${id}`, oldValue: result.value.oldValue }],
+        const structuralIssues =
+          result.value.report.status === "error" ? result.value.report.errors : null;
+        return c.json(
+          {
+            ok: true,
+            diff: { removed: [{ path: `${kind}s.${id}`, oldValue: result.value.oldValue }] },
+            structural_issues: structuralIssues,
           },
-          structural_issues: structuralIssues,
-        }, 200);
+          200,
+        );
       } catch (error) {
         return c.json({ success: false, error: stringifyError(error) }, 500);
       }

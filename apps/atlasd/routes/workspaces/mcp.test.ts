@@ -179,9 +179,7 @@ describe("GET /mcp", () => {
   });
 
   test("reads from draft when draft exists", async () => {
-    mockDiscoverMCPServers.mockResolvedValue([
-      makeCandidate("github", "GitHub", "static"),
-    ]);
+    mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
 
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
@@ -196,10 +194,7 @@ describe("GET /mcp", () => {
     await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
     await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
 
-    const { app } = createTestApp({
-      workspace,
-      config: createMergedConfig(liveConfig),
-    });
+    const { app } = createTestApp({ workspace, config: createMergedConfig(liveConfig) });
 
     const res = await app.request("/ws-test-id/mcp");
 
@@ -583,7 +578,7 @@ describe("DELETE /mcp/:serverId", () => {
     const draftContent = await readFile(join(testDir, "workspace.yml.draft"), "utf-8");
     expect(draftContent).not.toContain("github");
     // Agent tools should also be stripped in draft
-    expect(draftContent).not.toContain("tools: [\"github\"]");
+    expect(draftContent).not.toContain('tools: ["github"]');
 
     const liveContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
     expect(liveContent).toContain("github");

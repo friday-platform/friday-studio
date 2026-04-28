@@ -1,8 +1,8 @@
 import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
 import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
-import { WorkspaceConfigSchema, type WorkspaceConfig } from "./workspace.ts";
 import { extractFSMAgents } from "./mutations/fsm-agents.ts";
+import { type WorkspaceConfig, WorkspaceConfigSchema } from "./workspace.ts";
 
 const AgentIdSpecSchema = z.union([z.string(), z.object({ id: z.string() })]);
 
@@ -129,11 +129,7 @@ function checkAgentReferences(config: WorkspaceConfig, issues: Issue[]): void {
   }
 }
 
-function checkToolReferences(
-  config: WorkspaceConfig,
-  registry: Registry,
-  issues: Issue[],
-): void {
+function checkToolReferences(config: WorkspaceConfig, registry: Registry, issues: Issue[]): void {
   const validTools = new Set(PLATFORM_TOOL_NAMES);
   const serverPrefixes = new Set<string>();
   // serverId -> Set<bareToolName> for precise prefixed-tool verification
@@ -237,8 +233,7 @@ function checkMemoryReferences(config: WorkspaceConfig, issues: Issue[]): void {
 // ==============================================================================
 
 function checkMissingToolsArray(config: WorkspaceConfig, issues: Issue[]): void {
-  const hasMcpServers =
-    Object.keys(config.tools?.mcp?.servers ?? {}).length > 0;
+  const hasMcpServers = Object.keys(config.tools?.mcp?.servers ?? {}).length > 0;
   if (!hasMcpServers) return;
 
   for (const [agentName, agent] of Object.entries(config.agents ?? {})) {
@@ -379,11 +374,11 @@ function findMemoryReferences(text: string): string[] {
   // Quoted string followed by memory/corpus/store
   const quotedPattern = /["']([a-zA-Z0-9_-]+)["']\s+(memory|corpus|store)\b/g;
 
-  let match: RegExpExecArray | null;
-
-  while ((match = quotedPattern.exec(text)) !== null) {
+  let match = quotedPattern.exec(text);
+  while (match !== null) {
     const name = match[1];
     if (name) refs.add(name);
+    match = quotedPattern.exec(text);
   }
 
   return [...refs];

@@ -20,11 +20,7 @@ vi.mock("@atlas/client/v2", () => ({
       create: { $post: mockWorkspaceCreatePost },
       ":workspaceId": {
         $delete: mockWorkspaceDelete,
-        items: {
-          ":kind": {
-            ":id": { $delete: mockItemsDelete },
-          },
-        },
+        items: { ":kind": { ":id": { $delete: mockItemsDelete } } },
       },
     },
   },
@@ -81,7 +77,10 @@ describe("createWorkspaceOpsTools", () => {
 
     expect(mockWorkspaceCreatePost).toHaveBeenCalledWith({
       json: {
-        config: { version: "1.0", workspace: { name: "Test Workspace", description: "A test workspace" } },
+        config: {
+          version: "1.0",
+          workspace: { name: "Test Workspace", description: "A test workspace" },
+        },
         workspaceName: undefined,
         ephemeral: false,
       },
@@ -166,11 +165,7 @@ describe("createWorkspaceOpsTools", () => {
 });
 
 function mockResponse(ok: boolean, status: number, body: unknown): unknown {
-  return {
-    ok,
-    status,
-    json: () => Promise.resolve(body),
-  };
+  return { ok, status, json: () => Promise.resolve(body) };
 }
 
 describe("createBoundWorkspaceOpsTools", () => {
@@ -192,7 +187,11 @@ describe("createBoundWorkspaceOpsTools", () => {
 
   it("calls DELETE /items/:kind/:id and returns success", async () => {
     mockItemsDelete.mockResolvedValueOnce(
-      mockResponse(true, 200, { ok: true, livePath: "/tmp/ws-1/workspace.yml", runtimeReloaded: false }),
+      mockResponse(true, 200, {
+        ok: true,
+        livePath: "/tmp/ws-1/workspace.yml",
+        runtimeReloaded: false,
+      }),
     );
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
@@ -204,12 +203,19 @@ describe("createBoundWorkspaceOpsTools", () => {
     expect(mockItemsDelete).toHaveBeenCalledWith({
       param: { workspaceId: "ws-1", kind: "agent", id: "test-agent" },
     });
-    expect(result).toEqual({ ok: true, livePath: "/tmp/ws-1/workspace.yml", runtimeReloaded: false });
+    expect(result).toEqual({
+      ok: true,
+      livePath: "/tmp/ws-1/workspace.yml",
+      runtimeReloaded: false,
+    });
   });
 
   it("returns structured error when remove_item fails", async () => {
     mockItemsDelete.mockResolvedValueOnce(
-      mockResponse(false, 422, { ok: false, error: { code: "referenced", dependents: ["test-job"] } }),
+      mockResponse(false, 422, {
+        ok: false,
+        error: { code: "referenced", dependents: ["test-job"] },
+      }),
     );
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");

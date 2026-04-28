@@ -22,14 +22,13 @@ export function createDraftTools(_logger: Logger): AtlasTools {
         "stage changes safely. Idempotent — calling again when a draft already " +
         "exists is a no-op.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "begin_draft must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
 
     publish_draft: tool({
@@ -40,14 +39,13 @@ export function createDraftTools(_logger: Logger): AtlasTools {
         "the draft is left untouched and you receive a structured error report " +
         "to fix before retrying.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "publish_draft must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
 
     validate_workspace: tool({
@@ -56,28 +54,26 @@ export function createDraftTools(_logger: Logger): AtlasTools {
         "the draft; otherwise validates the live config. Returns a full validation " +
         "report with errors and warnings.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "validate_workspace must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
 
     discard_draft: tool({
       description:
         "Discard the current workspace draft without publishing. No-op if no draft exists.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "discard_draft must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
   };
 }
@@ -144,11 +140,7 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
 
         const data = await res.json();
         logger.info("publish_draft succeeded", { workspaceId: targetId });
-        return {
-          success: true,
-          livePath: data.livePath,
-          runtimeReloaded: data.runtimeReloaded,
-        };
+        return { success: true, livePath: data.livePath, runtimeReloaded: data.runtimeReloaded };
       },
     }),
 
@@ -186,12 +178,18 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
           }
 
           const body = await lintRes.json().catch(() => ({ error: "Live validation failed" }));
-          logger.warn("validate_workspace live validation failed", { error: body.error, workspaceId: targetId });
+          logger.warn("validate_workspace live validation failed", {
+            error: body.error,
+            workspaceId: targetId,
+          });
           return { success: false, error: body.error ?? "Live validation failed" };
         }
 
         const body = await draftRes.json().catch(() => ({ error: "Draft validation failed" }));
-        logger.warn("validate_workspace draft validation failed", { error: body.error, workspaceId: targetId });
+        logger.warn("validate_workspace draft validation failed", {
+          error: body.error,
+          workspaceId: targetId,
+        });
         return { success: false, error: body.error ?? "Draft validation failed" };
       },
     }),
@@ -210,7 +208,10 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
         });
 
         if (res.ok || res.status === 409) {
-          logger.info("discard_draft succeeded", { workspaceId: targetId, noOp: res.status === 409 });
+          logger.info("discard_draft succeeded", {
+            workspaceId: targetId,
+            noOp: res.status === 409,
+          });
           return { success: true, noOp: res.status === 409 };
         }
 

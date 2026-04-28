@@ -9,14 +9,10 @@ import { createDisableMcpServerTool } from "./disable-mcp-server.ts";
 const mockDelete = vi.hoisted(() => vi.fn());
 const mockWorkspaceMcp = vi.hoisted(() => vi.fn());
 
-vi.mock("@atlas/client/v2", () => ({
-  client: { workspaceMcp: mockWorkspaceMcp },
-}));
+vi.mock("@atlas/client/v2", () => ({ client: { workspaceMcp: mockWorkspaceMcp } }));
 
-function setupMock(workspaceId: string) {
-  mockWorkspaceMcp.mockReturnValue({
-    ":serverId": { $delete: mockDelete },
-  });
+function setupMock(_workspaceId: string) {
+  mockWorkspaceMcp.mockReturnValue({ ":serverId": { $delete: mockDelete } });
 }
 
 // ---------------------------------------------------------------------------

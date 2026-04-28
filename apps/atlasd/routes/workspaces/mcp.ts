@@ -162,10 +162,7 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
     // Load editable config (draft if exists, live otherwise) for idempotency and catalog lookup
     const editableResult = await getEditableConfig(workspace.path);
     if (!editableResult.ok) {
-      return c.json(
-        { success: false, error: "internal", message: editableResult.error },
-        500,
-      );
+      return c.json({ success: false, error: "internal", message: editableResult.error }, 500);
     }
     const editableConfig = editableResult.value;
 

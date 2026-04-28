@@ -43,8 +43,8 @@ import {
   saveAndRecompileBlueprint,
   withBlueprintMutation,
 } from "./blueprint-recompile.ts";
-import { injectBundledAgentRefs } from "./index.ts";
 import { applyDraftAwareMutation, getEditableConfig } from "./draft-helpers.ts";
+import { injectBundledAgentRefs } from "./index.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 
 /**
@@ -351,10 +351,7 @@ async function handleUpdateCredential(
     // Load editable config (draft if exists, live otherwise) for credential lookup
     const editableResult = await getEditableConfig(workspace.path);
     if (!editableResult.ok) {
-      return c.json(
-        { success: false, error: "internal", message: editableResult.error },
-        500,
-      );
+      return c.json({ success: false, error: "internal", message: editableResult.error }, 500);
     }
 
     const credentials = extractCredentials(editableResult.value);

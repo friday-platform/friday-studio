@@ -111,9 +111,7 @@ describe("validateWorkspace structural layer", () => {
     const result = validateWorkspace({
       version: "1.0",
       workspace: { name: "Test" },
-      signals: {
-        "review-inbox": { provider: "http", config: { path: "/review" } },
-      },
+      signals: { "review-inbox": { provider: "http", config: { path: "/review" } } },
     });
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.path === "signals.review-inbox.description");
@@ -127,11 +125,13 @@ describe("validateWorkspace structural layer", () => {
     const bad = validateWorkspace({
       version: 2.0,
       workspace: { name: "Test" },
-      signals: {
-        "review-inbox": { provider: "http", config: { path: "/review" } },
-      },
+      signals: { "review-inbox": { provider: "http", config: { path: "/review" } } },
       agents: {
-        orphan: { type: "llm", description: "Orphan", config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" } },
+        orphan: {
+          type: "llm",
+          description: "Orphan",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" },
+        },
       },
     });
     const allIssues = [...bad.errors, ...bad.warnings];
@@ -173,19 +173,16 @@ describe("validateWorkspace structural layer", () => {
             provider: "anthropic",
             model: "claude-sonnet-4-5",
             prompt: "Hi",
-            tools: ["google-gmail/search_gmail_messages", "google-gmail/draft_gmail_message", "memory_read"],
+            tools: [
+              "google-gmail/search_gmail_messages",
+              "google-gmail/draft_gmail_message",
+              "memory_read",
+            ],
           },
         },
       },
-      jobs: {
-        my_job: {
-          triggers: [{ signal: "s1" }],
-          execution: { agents: ["my_agent"] },
-        },
-      },
-      signals: {
-        s1: { provider: "http", description: "S1", config: { path: "/s1" } },
-      },
+      jobs: { my_job: { triggers: [{ signal: "s1" }], execution: { agents: ["my_agent"] } } },
+      signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
     });
     expect(result.status).toBe("ok");
     expect(result.errors).toEqual([]);
@@ -199,9 +196,7 @@ describe("validateWorkspace structural layer", () => {
       tools: {
         mcp: {
           servers: {
-            "google-gmail": {
-              transport: { type: "http", url: "http://localhost:8002/mcp" },
-            },
+            "google-gmail": { transport: { type: "http", url: "http://localhost:8002/mcp" } },
           },
         },
       },
@@ -232,9 +227,7 @@ describe("validateWorkspace structural layer", () => {
       tools: {
         mcp: {
           servers: {
-            "google-gmail": {
-              transport: { type: "http", url: "http://localhost:8002/mcp" },
-            },
+            "google-gmail": { transport: { type: "http", url: "http://localhost:8002/mcp" } },
           },
         },
       },
@@ -266,9 +259,7 @@ describe("validateWorkspace structural layer", () => {
         tools: {
           mcp: {
             servers: {
-              "google-gmail": {
-                transport: { type: "http", url: "http://localhost:8002/mcp" },
-              },
+              "google-gmail": { transport: { type: "http", url: "http://localhost:8002/mcp" } },
             },
           },
         },
@@ -291,9 +282,7 @@ describe("validateWorkspace structural layer", () => {
               id: "fsm1",
               initial: "step1",
               states: {
-                step1: {
-                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
-                },
+                step1: { entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }] },
               },
             },
           },
@@ -316,9 +305,7 @@ describe("validateWorkspace structural layer", () => {
         tools: {
           mcp: {
             servers: {
-              "google-gmail": {
-                transport: { type: "http", url: "http://localhost:8002/mcp" },
-              },
+              "google-gmail": { transport: { type: "http", url: "http://localhost:8002/mcp" } },
             },
           },
         },
@@ -341,19 +328,14 @@ describe("validateWorkspace structural layer", () => {
               id: "fsm1",
               initial: "step1",
               states: {
-                step1: {
-                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
-                },
+                step1: { entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }] },
               },
             },
           },
         },
         signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
       },
-      {
-        mcpServers: ["google-gmail"],
-        mcpTools: { "google-gmail": ["search_gmail_messages"] },
-      },
+      { mcpServers: ["google-gmail"], mcpTools: { "google-gmail": ["search_gmail_messages"] } },
     );
     expect(result.status).toBe("error");
     const err = result.errors.find((e) => e.code === "unknown_tool");
@@ -370,9 +352,7 @@ describe("validateWorkspace structural layer", () => {
         tools: {
           mcp: {
             servers: {
-              "google-gmail": {
-                transport: { type: "http", url: "http://localhost:8002/mcp" },
-              },
+              "google-gmail": { transport: { type: "http", url: "http://localhost:8002/mcp" } },
             },
           },
         },
@@ -395,19 +375,14 @@ describe("validateWorkspace structural layer", () => {
               id: "fsm1",
               initial: "step1",
               states: {
-                step1: {
-                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
-                },
+                step1: { entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }] },
               },
             },
           },
         },
         signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
       },
-      {
-        mcpServers: ["google-gmail"],
-        mcpTools: { "google-gmail": ["search_gmail_messages"] },
-      },
+      { mcpServers: ["google-gmail"], mcpTools: { "google-gmail": ["search_gmail_messages"] } },
     );
     expect(result.status).toBe("ok");
   });
@@ -420,9 +395,7 @@ describe("validateWorkspace structural layer", () => {
         tools: {
           mcp: {
             servers: {
-              "google-gmail": {
-                transport: { type: "http", url: "http://localhost:8002/mcp" },
-              },
+              "google-gmail": { transport: { type: "http", url: "http://localhost:8002/mcp" } },
             },
           },
         },
@@ -445,9 +418,7 @@ describe("validateWorkspace structural layer", () => {
               id: "fsm1",
               initial: "step1",
               states: {
-                step1: {
-                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
-                },
+                step1: { entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }] },
               },
             },
           },
@@ -465,7 +436,13 @@ describe("validateWorkspace reference integrity", () => {
     const result = validateWorkspace({
       version: "1.0",
       workspace: { name: "Test" },
-      agents: { known: { type: "llm", description: "Known", config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" } } },
+      agents: {
+        known: {
+          type: "llm",
+          description: "Known",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" },
+        },
+      },
       jobs: {
         my_job: {
           triggers: [{ signal: "s1" }],
@@ -473,9 +450,7 @@ describe("validateWorkspace reference integrity", () => {
             id: "fsm1",
             initial: "step1",
             states: {
-              step1: {
-                entry: [{ type: "agent", agentId: "unknown-agent", outputTo: "out" }],
-              },
+              step1: { entry: [{ type: "agent", agentId: "unknown-agent", outputTo: "out" }] },
             },
           },
         },
@@ -496,7 +471,12 @@ describe("validateWorkspace reference integrity", () => {
         my_agent: {
           type: "llm",
           description: "Test agent",
-          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi", tools: ["bogus_tool"] },
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-5",
+            prompt: "Hi",
+            tools: ["bogus_tool"],
+          },
         },
       },
     });
@@ -514,7 +494,11 @@ describe("validateWorkspace reference integrity", () => {
         my_agent: {
           type: "llm",
           description: "Test agent",
-          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: 'Use "ghost-store" memory to save data.' },
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-5",
+            prompt: 'Use "ghost-store" memory to save data.',
+          },
         },
       },
     });
@@ -531,17 +515,18 @@ describe("validateWorkspace semantic warnings", () => {
       version: "1.0",
       workspace: { name: "Test" },
       tools: {
-        mcp: {
-          servers: {
-            some_server: { transport: { type: "stdio", command: "echo" } },
-          },
-        },
+        mcp: { servers: { some_server: { transport: { type: "stdio", command: "echo" } } } },
       },
       agents: {
         my_agent: {
           type: "llm",
           description: "Test agent",
-          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi", tool_choice: "auto" },
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-5",
+            prompt: "Hi",
+            tool_choice: "auto",
+          },
         },
       },
     });
@@ -555,9 +540,7 @@ describe("validateWorkspace semantic warnings", () => {
     const result = validateWorkspace({
       version: "1.0",
       workspace: { name: "Test" },
-      signals: {
-        unused: { provider: "http", description: "Unused", config: { path: "/unused" } },
-      },
+      signals: { unused: { provider: "http", description: "Unused", config: { path: "/unused" } } },
     });
     expect(result.status).toBe("warning");
     const warn = result.warnings.find((w) => w.code === "dead_signal");
@@ -570,17 +553,14 @@ describe("validateWorkspace semantic warnings", () => {
       version: "1.0",
       workspace: { name: "Test" },
       agents: {
-        orphan: { type: "llm", description: "Orphan", config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" } },
-      },
-      jobs: {
-        my_job: {
-          triggers: [{ signal: "s1" }],
-          execution: { agents: ["other"] },
+        orphan: {
+          type: "llm",
+          description: "Orphan",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" },
         },
       },
-      signals: {
-        s1: { provider: "http", description: "S1", config: { path: "/s1" } },
-      },
+      jobs: { my_job: { triggers: [{ signal: "s1" }], execution: { agents: ["other"] } } },
+      signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
     });
     expect(result.status).toBe("warning");
     const warn = result.warnings.find((w) => w.code === "orphan_agent");
@@ -593,7 +573,11 @@ describe("validateWorkspace semantic warnings", () => {
       version: "1.0",
       workspace: { name: "Test" },
       agents: {
-        triager: { type: "llm", description: "Triager", config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" } },
+        triager: {
+          type: "llm",
+          description: "Triager",
+          config: { provider: "anthropic", model: "claude-sonnet-4-5", prompt: "Hi" },
+        },
       },
       jobs: {
         my_job: {
@@ -601,17 +585,11 @@ describe("validateWorkspace semantic warnings", () => {
           fsm: {
             id: "fsm1",
             initial: "step1",
-            states: {
-              step1: {
-                entry: [{ type: "agent", agentId: "triager", outputTo: "out" }],
-              },
-            },
+            states: { step1: { entry: [{ type: "agent", agentId: "triager", outputTo: "out" }] } },
           },
         },
       },
-      signals: {
-        s1: { provider: "http", description: "S1", config: { path: "/s1" } },
-      },
+      signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
     });
     expect(result.warnings.find((w) => w.code === "orphan_agent")).toBeUndefined();
   });
@@ -650,7 +628,10 @@ describe("validateWorkspace semantic warnings", () => {
   });
 
   it("validates Meeting-Scheduler workspace as clean", async () => {
-    const yaml = await readFile("/Users/ericskram/Desktop/Meeting-Scheduler/workspace.yml", "utf-8");
+    const yaml = await readFile(
+      "/Users/ericskram/Desktop/Meeting-Scheduler/workspace.yml",
+      "utf-8",
+    );
     const parsed: unknown = parse(yaml);
     const result = validateWorkspace(parsed);
     expect(result.status).toBe("ok");
