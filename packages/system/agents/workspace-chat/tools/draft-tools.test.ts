@@ -13,11 +13,7 @@ const mockDraftDelete = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 const mockLintPost = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 
 function mockResponse(ok: boolean, status: number, body: unknown): unknown {
-  return {
-    ok,
-    status,
-    json: () => Promise.resolve(body),
-  };
+  return { ok, status, json: () => Promise.resolve(body) };
 }
 
 vi.mock("@atlas/client/v2", () => ({
@@ -56,7 +52,10 @@ describe("createDraftTools", () => {
     expect(tools).toHaveProperty("begin_draft");
 
     const result = await tools.begin_draft!.execute!({}, TOOL_CALL_OPTS);
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining("begin_draft must be called") });
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("begin_draft must be called"),
+    });
   });
 
   it("returns placeholder publish_draft that errors without workspaceId", async () => {
@@ -64,7 +63,10 @@ describe("createDraftTools", () => {
     expect(tools).toHaveProperty("publish_draft");
 
     const result = await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining("publish_draft must be called") });
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("publish_draft must be called"),
+    });
   });
 
   it("returns placeholder validate_workspace that errors without workspaceId", async () => {
@@ -72,7 +74,10 @@ describe("createDraftTools", () => {
     expect(tools).toHaveProperty("validate_workspace");
 
     const result = await tools.validate_workspace!.execute!({}, TOOL_CALL_OPTS);
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining("validate_workspace must be called") });
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("validate_workspace must be called"),
+    });
   });
 
   it("returns placeholder discard_draft that errors without workspaceId", async () => {
@@ -80,7 +85,10 @@ describe("createDraftTools", () => {
     expect(tools).toHaveProperty("discard_draft");
 
     const result = await tools.discard_draft!.execute!({}, TOOL_CALL_OPTS);
-    expect(result).toMatchObject({ success: false, error: expect.stringContaining("discard_draft must be called") });
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining("discard_draft must be called"),
+    });
   });
 });
 
@@ -136,7 +144,11 @@ describe("createBoundDraftTools", () => {
 
   it("publish_draft calls the draft publish endpoint", async () => {
     mockDraftPublishPost.mockResolvedValueOnce(
-      mockResponse(true, 200, { success: true, livePath: "/tmp/ws-1/workspace.yml", runtimeReloaded: false }),
+      mockResponse(true, 200, {
+        success: true,
+        livePath: "/tmp/ws-1/workspace.yml",
+        runtimeReloaded: false,
+      }),
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
@@ -151,7 +163,11 @@ describe("createBoundDraftTools", () => {
   });
 
   it("publish_draft returns report on validation failure", async () => {
-    const report = { status: "error", errors: [{ code: "unknown_agent_id", path: "jobs.test.fsm", message: "Missing agent" }], warnings: [] };
+    const report = {
+      status: "error",
+      errors: [{ code: "unknown_agent_id", path: "jobs.test.fsm", message: "Missing agent" }],
+      warnings: [],
+    };
     mockDraftPublishPost.mockResolvedValueOnce(
       mockResponse(false, 422, { success: false, error: "Validation failed", report }),
     );
@@ -186,9 +202,7 @@ describe("createBoundDraftTools", () => {
 
   it("validate_workspace returns draft report when draft exists", async () => {
     const report = { status: "ok", errors: [], warnings: [] };
-    mockDraftValidatePost.mockResolvedValueOnce(
-      mockResponse(true, 200, { success: true, report }),
-    );
+    mockDraftValidatePost.mockResolvedValueOnce(mockResponse(true, 200, { success: true, report }));
 
     const tools = createBoundDraftTools(logger, "ws-1");
     const result = await tools.validate_workspace!.execute!({}, TOOL_CALL_OPTS);
@@ -202,9 +216,7 @@ describe("createBoundDraftTools", () => {
     mockDraftValidatePost.mockResolvedValueOnce(
       mockResponse(false, 409, { success: false, error: "No draft exists" }),
     );
-    mockLintPost.mockResolvedValueOnce(
-      mockResponse(true, 200, { report }),
-    );
+    mockLintPost.mockResolvedValueOnce(mockResponse(true, 200, { report }));
 
     const tools = createBoundDraftTools(logger, "ws-1");
     const result = await tools.validate_workspace!.execute!({}, TOOL_CALL_OPTS);
@@ -225,9 +237,7 @@ describe("createBoundDraftTools", () => {
   });
 
   it("discard_draft succeeds when draft is deleted", async () => {
-    mockDraftDelete.mockResolvedValueOnce(
-      mockResponse(true, 200, { success: true }),
-    );
+    mockDraftDelete.mockResolvedValueOnce(mockResponse(true, 200, { success: true }));
 
     const tools = createBoundDraftTools(logger, "ws-1");
     const result = await tools.discard_draft!.execute!({}, TOOL_CALL_OPTS);

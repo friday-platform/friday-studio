@@ -33,10 +33,10 @@ export * from "./src/signals.ts";
 // Skill schemas
 export * from "./src/skills.ts";
 export * from "./src/topology.ts";
-export * from "./src/workspace.ts";
+export type { Issue, Registry, ValidationReport } from "./src/validate-workspace.ts";
 // Workspace structural validator
 export { validateWorkspace } from "./src/validate-workspace.ts";
-export type { Issue, Registry, ValidationReport } from "./src/validate-workspace.ts";
+export * from "./src/workspace.ts";
 
 // ==============================================================================
 // HELPER FUNCTIONS

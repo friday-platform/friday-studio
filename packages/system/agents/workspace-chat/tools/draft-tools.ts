@@ -13,6 +13,8 @@ import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
 
+const ErrorBodySchema = z.object({ error: z.string().optional(), report: z.unknown().optional() });
+
 export function createDraftTools(_logger: Logger): AtlasTools {
   return {
     begin_draft: tool({
@@ -22,14 +24,13 @@ export function createDraftTools(_logger: Logger): AtlasTools {
         "stage changes safely. Idempotent — calling again when a draft already " +
         "exists is a no-op.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "begin_draft must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
 
     publish_draft: tool({
@@ -40,14 +41,13 @@ export function createDraftTools(_logger: Logger): AtlasTools {
         "the draft is left untouched and you receive a structured error report " +
         "to fix before retrying.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "publish_draft must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
 
     validate_workspace: tool({
@@ -56,28 +56,26 @@ export function createDraftTools(_logger: Logger): AtlasTools {
         "the draft; otherwise validates the live config. Returns a full validation " +
         "report with errors and warnings.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "validate_workspace must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
 
     discard_draft: tool({
       description:
         "Discard the current workspace draft without publishing. No-op if no draft exists.",
       inputSchema: z.object({ workspaceId: z.string().optional() }),
-      execute: async () => {
-        return {
+      execute: () =>
+        Promise.resolve({
           success: false,
           error:
             "discard_draft must be called with a workspaceId context. " +
             "This is handled automatically by the workspace-chat agent.",
-        };
-      },
+        }),
     }),
   };
 }
@@ -106,7 +104,12 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
         });
 
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "begin_draft failed" }));
+          let body: z.infer<typeof ErrorBodySchema>;
+          try {
+            body = ErrorBodySchema.parse(await res.json());
+          } catch {
+            body = { error: "begin_draft failed" };
+          }
           logger.warn("begin_draft failed", { error: body.error, workspaceId: targetId });
           return { success: false, error: body.error ?? "begin_draft failed" };
         }
@@ -133,7 +136,12 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
         });
 
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "publish_draft failed" }));
+          let body: z.infer<typeof ErrorBodySchema>;
+          try {
+            body = ErrorBodySchema.parse(await res.json());
+          } catch {
+            body = { error: "publish_draft failed" };
+          }
           logger.warn("publish_draft failed", { error: body.error, workspaceId: targetId });
           return {
             success: false,
@@ -144,11 +152,7 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
 
         const data = await res.json();
         logger.info("publish_draft succeeded", { workspaceId: targetId });
-        return {
-          success: true,
-          livePath: data.livePath,
-          runtimeReloaded: data.runtimeReloaded,
-        };
+        return { success: true, livePath: data.livePath, runtimeReloaded: data.runtimeReloaded };
       },
     }),
 
@@ -185,13 +189,29 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
             return data.report;
           }
 
-          const body = await lintRes.json().catch(() => ({ error: "Live validation failed" }));
-          logger.warn("validate_workspace live validation failed", { error: body.error, workspaceId: targetId });
+          let body: z.infer<typeof ErrorBodySchema>;
+          try {
+            body = ErrorBodySchema.parse(await lintRes.json());
+          } catch {
+            body = { error: "Live validation failed" };
+          }
+          logger.warn("validate_workspace live validation failed", {
+            error: body.error,
+            workspaceId: targetId,
+          });
           return { success: false, error: body.error ?? "Live validation failed" };
         }
 
-        const body = await draftRes.json().catch(() => ({ error: "Draft validation failed" }));
-        logger.warn("validate_workspace draft validation failed", { error: body.error, workspaceId: targetId });
+        let body: z.infer<typeof ErrorBodySchema>;
+        try {
+          body = ErrorBodySchema.parse(await draftRes.json());
+        } catch {
+          body = { error: "Draft validation failed" };
+        }
+        logger.warn("validate_workspace draft validation failed", {
+          error: body.error,
+          workspaceId: targetId,
+        });
         return { success: false, error: body.error ?? "Draft validation failed" };
       },
     }),
@@ -210,11 +230,19 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
         });
 
         if (res.ok || res.status === 409) {
-          logger.info("discard_draft succeeded", { workspaceId: targetId, noOp: res.status === 409 });
+          logger.info("discard_draft succeeded", {
+            workspaceId: targetId,
+            noOp: res.status === 409,
+          });
           return { success: true, noOp: res.status === 409 };
         }
 
-        const body = await res.json().catch(() => ({ error: "discard_draft failed" }));
+        let body: z.infer<typeof ErrorBodySchema>;
+        try {
+          body = ErrorBodySchema.parse(await res.json());
+        } catch {
+          body = { error: "discard_draft failed" };
+        }
         logger.warn("discard_draft failed", { error: body.error, workspaceId: targetId });
         return { success: false, error: body.error ?? "discard_draft failed" };
       },

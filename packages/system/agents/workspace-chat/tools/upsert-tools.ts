@@ -13,6 +13,33 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { client } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 import { jsonSchema, tool } from "ai";
+import { z } from "zod";
+
+const StructuralIssueSchema = z.object({ code: z.string(), path: z.string(), message: z.string() });
+
+const FieldDiffEntrySchema = z.object({
+  from: z.unknown().optional(),
+  to: z.unknown().optional(),
+  added: z.array(z.unknown()).optional(),
+  removed: z.array(z.unknown()).optional(),
+});
+
+const FieldDiffSchema = z.record(z.string(), FieldDiffEntrySchema);
+
+const UpsertErrorBodySchema = z.object({
+  error: z.string().optional(),
+  diff: FieldDiffSchema.optional(),
+  structuralIssues: z.array(StructuralIssueSchema).nullable().optional(),
+  structural_issues: z.array(StructuralIssueSchema).nullable().optional(),
+});
+
+type UpsertErrorBody = z.infer<typeof UpsertErrorBodySchema>;
+
+function parseStructuralIssues(
+  body: UpsertErrorBody,
+): Array<{ code: string; path: string; message: string }> | null {
+  return body.structuralIssues ?? body.structural_issues ?? null;
+}
 
 export interface FieldDiff {
   [field: string]: { from?: unknown; to?: unknown } | { added?: unknown[]; removed?: unknown[] };
@@ -43,7 +70,8 @@ const UPSERT_INPUT_SCHEMA = {
     },
     workspaceId: {
       type: "string" as const,
-      description: "Optional. Target a specific workspace instead of the current session workspace. Pass the workspace id returned by create_workspace.",
+      description:
+        "Optional. Target a specific workspace instead of the current session workspace. Pass the workspace id returned by create_workspace.",
     },
   },
   required: ["id", "config"],
@@ -53,14 +81,15 @@ function makePlaceholder(kind: string) {
   return tool({
     description: `Upsert a ${kind} into the current workspace. Respects draft mode.`,
     inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
-    execute: async () => ({
-      ok: false,
-      diff: {} as FieldDiff,
-      structural_issues: null,
-      error:
-        `upsert_${kind} must be called with a workspaceId context. ` +
-        "This is handled automatically by the workspace-chat agent.",
-    }),
+    execute: () =>
+      Promise.resolve({
+        ok: false,
+        diff: {} as FieldDiff,
+        structural_issues: null,
+        error:
+          `upsert_${kind} must be called with a workspaceId context. ` +
+          "This is handled automatically by the workspace-chat agent.",
+      }),
   });
 }
 
@@ -96,16 +125,23 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
 
     if (!draftRes.ok && draftRes.status === 409) {
       // No draft exists — fall back to the direct (live) endpoint.
-      logger.info(`No draft for workspace ${targetWorkspaceId}, falling back to direct ${kind} upsert`);
+      logger.info(
+        `No draft for workspace ${targetWorkspaceId}, falling back to direct ${kind} upsert`,
+      );
       const directRes = await client.workspace[":workspaceId"].items[":kind"].$post({
         param: { workspaceId: targetWorkspaceId, kind },
         json: { id, config },
       });
 
       if (!directRes.ok) {
-        const body = await directRes.json().catch(() => ({ error: `Direct ${kind} upsert failed` }));
-        const structuralIssues = body.structuralIssues ?? body.structural_issues ?? null;
-        const hasStructuredIssues = Array.isArray(structuralIssues) && structuralIssues.length > 0;
+        let body: UpsertErrorBody;
+        try {
+          body = UpsertErrorBodySchema.parse(await directRes.json());
+        } catch {
+          body = { error: `Direct ${kind} upsert failed` };
+        }
+        const structuralIssues = parseStructuralIssues(body);
+        const hasStructuredIssues = structuralIssues !== null && structuralIssues.length > 0;
         logger.warn(`Direct ${kind} upsert failed`, {
           workspaceId: targetWorkspaceId,
           id,
@@ -116,7 +152,9 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
           ok: false,
           diff: body.diff ?? {},
           structural_issues: structuralIssues,
-          error: body.error ?? (hasStructuredIssues ? "Validation failed" : `Direct ${kind} upsert failed`),
+          error:
+            body.error ??
+            (hasStructuredIssues ? "Validation failed" : `Direct ${kind} upsert failed`),
         };
       }
 
@@ -125,13 +163,22 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
       return {
         ok: body.ok,
         diff: body.diff ?? {},
-        structural_issues: body.structuralIssues ?? body.structural_issues ?? null,
+        structural_issues: body.structural_issues ?? null,
       };
     }
 
     if (!draftRes.ok) {
-      const body = await draftRes.json().catch(() => ({ error: `Draft ${kind} upsert failed` }));
-      logger.warn(`Draft ${kind} upsert failed`, { workspaceId: targetWorkspaceId, id, error: body.error });
+      let body: UpsertErrorBody;
+      try {
+        body = UpsertErrorBodySchema.parse(await draftRes.json());
+      } catch {
+        body = { error: `Draft ${kind} upsert failed` };
+      }
+      logger.warn(`Draft ${kind} upsert failed`, {
+        workspaceId: targetWorkspaceId,
+        id,
+        error: body.error,
+      });
       return {
         ok: false,
         diff: {},
@@ -145,7 +192,7 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
     return {
       ok: body.ok,
       diff: body.diff ?? {},
-      structural_issues: body.structuralIssues ?? body.structural_issues ?? null,
+      structural_issues: body.structural_issues ?? null,
     };
   }
 
@@ -157,8 +204,15 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
         "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
-      execute: async ({ id, config, workspaceId: providedId }: { id: string; config: Record<string, unknown>; workspaceId?: string }) =>
-        executeUpsert("agent", id, config, providedId ?? workspaceId),
+      execute: ({
+        id,
+        config,
+        workspaceId: providedId,
+      }: {
+        id: string;
+        config: Record<string, unknown>;
+        workspaceId?: string;
+      }) => executeUpsert("agent", id, config, providedId ?? workspaceId),
     }),
 
     upsert_signal: tool({
@@ -168,8 +222,15 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
         "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
-      execute: async ({ id, config, workspaceId: providedId }: { id: string; config: Record<string, unknown>; workspaceId?: string }) =>
-        executeUpsert("signal", id, config, providedId ?? workspaceId),
+      execute: ({
+        id,
+        config,
+        workspaceId: providedId,
+      }: {
+        id: string;
+        config: Record<string, unknown>;
+        workspaceId?: string;
+      }) => executeUpsert("signal", id, config, providedId ?? workspaceId),
     }),
 
     upsert_job: tool({
@@ -179,8 +240,15 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
         "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
-      execute: async ({ id, config, workspaceId: providedId }: { id: string; config: Record<string, unknown>; workspaceId?: string }) =>
-        executeUpsert("job", id, config, providedId ?? workspaceId),
+      execute: ({
+        id,
+        config,
+        workspaceId: providedId,
+      }: {
+        id: string;
+        config: Record<string, unknown>;
+        workspaceId?: string;
+      }) => executeUpsert("job", id, config, providedId ?? workspaceId),
     }),
   };
 }

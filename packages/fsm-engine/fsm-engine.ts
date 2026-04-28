@@ -406,7 +406,6 @@ export class FSMEngine {
   private static readonly MAX_RECURSION_DEPTH = 10;
   private static readonly MAX_PROCESSED_SIGNALS = 100;
   private _processedSignalsCount = 0;
-  private _hasProcessedSignal = false;
 
   constructor(
     private _definition: FSMDefinition,
@@ -586,7 +585,6 @@ export class FSMEngine {
   }
 
   private async processSingleSignal(sig: SignalWithContext): Promise<void> {
-    this._hasProcessedSignal = true;
     await withOtelSpan(
       "fsm.signal",
       {
@@ -2083,7 +2081,6 @@ export class FSMEngine {
     this._emittedEvents = [];
     this._recursionDepth = 0;
     this._processedSignalsCount = 0;
-    this._hasProcessedSignal = false;
     this._processing = false;
 
     // Re-run idle entry actions (like initialize() does)

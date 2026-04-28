@@ -17,14 +17,8 @@ vi.mock("@atlas/client/v2", () => ({
   client: {
     workspace: {
       ":workspaceId": {
-        draft: {
-          items: {
-            ":kind": { $post: mockDraftItemsPost },
-          },
-        },
-        items: {
-          ":kind": { $post: mockDirectItemsPost },
-        },
+        draft: { items: { ":kind": { $post: mockDraftItemsPost } } },
+        items: { ":kind": { $post: mockDirectItemsPost } },
       },
     },
   },
@@ -46,11 +40,7 @@ function makeLogger(): Logger {
 const TOOL_CALL_OPTS = { toolCallId: "test-call", messages: [] as never[] };
 
 function makeResponse(body: unknown, status = 200, ok = true): Response {
-  return {
-    ok,
-    status,
-    json: async () => body,
-  } as Response;
+  return { ok, status, json: () => Promise.resolve(body) } as Response;
 }
 
 describe("createUpsertTools", () => {
@@ -60,10 +50,7 @@ describe("createUpsertTools", () => {
     expect(tools).toHaveProperty("upsert_signal");
     expect(tools).toHaveProperty("upsert_job");
 
-    const result = await tools.upsert_agent!.execute!(
-      { id: "a", config: {} },
-      TOOL_CALL_OPTS,
-    );
+    const result = await tools.upsert_agent!.execute!({ id: "a", config: {} }, TOOL_CALL_OPTS);
     expect(result).toMatchObject({
       ok: false,
       error: expect.stringContaining("upsert_agent must be called"),
@@ -102,17 +89,20 @@ describe("createBoundUpsertTools", () => {
       param: { workspaceId: "ws-1", kind: "agent" },
       json: { id: "email-triager", config: { type: "llm" } },
     });
-    expect(result).toEqual({
-      ok: true,
-      diff: { type: { to: "llm" } },
-      structural_issues: null,
-    });
+    expect(result).toEqual({ ok: true, diff: { type: { to: "llm" } }, structural_issues: null });
   });
 
   it("upsert_agent falls back to direct endpoint when no draft (409)", async () => {
-    mockDraftItemsPost.mockResolvedValueOnce(makeResponse({ error: "No draft exists" }, 409, false));
+    mockDraftItemsPost.mockResolvedValueOnce(
+      makeResponse({ error: "No draft exists" }, 409, false),
+    );
     mockDirectItemsPost.mockResolvedValueOnce(
-      makeResponse({ ok: true, diff: { type: { to: "llm" } }, structuralIssues: null, runtimeReloaded: false }),
+      makeResponse({
+        ok: true,
+        diff: { type: { to: "llm" } },
+        structuralIssues: null,
+        runtimeReloaded: false,
+      }),
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
@@ -129,11 +119,7 @@ describe("createBoundUpsertTools", () => {
       param: { workspaceId: "ws-1", kind: "agent" },
       json: { id: "email-triager", config: { type: "llm" } },
     });
-    expect(result).toEqual({
-      ok: true,
-      diff: { type: { to: "llm" } },
-      structural_issues: null,
-    });
+    expect(result).toEqual({ ok: true, diff: { type: { to: "llm" } }, structural_issues: null });
   });
 
   it("upsert_signal calls draft endpoint with correct kind", async () => {
@@ -201,16 +187,15 @@ describe("createBoundUpsertTools", () => {
   });
 
   it("returns structured error when direct endpoint fails", async () => {
-    mockDraftItemsPost.mockResolvedValueOnce(makeResponse({ error: "No draft exists" }, 409, false));
+    mockDraftItemsPost.mockResolvedValueOnce(
+      makeResponse({ error: "No draft exists" }, 409, false),
+    );
     mockDirectItemsPost.mockResolvedValueOnce(
       makeResponse({ error: "Direct upsert failed" }, 500, false),
     );
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!(
-      { id: "agent", config: {} },
-      TOOL_CALL_OPTS,
-    );
+    const result = await tools.upsert_agent!.execute!({ id: "agent", config: {} }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       ok: false,
@@ -221,14 +206,20 @@ describe("createBoundUpsertTools", () => {
   });
 
   it("preserves diff and structural_issues when direct endpoint returns 422", async () => {
-    mockDraftItemsPost.mockResolvedValueOnce(makeResponse({ error: "No draft exists" }, 409, false));
+    mockDraftItemsPost.mockResolvedValueOnce(
+      makeResponse({ error: "No draft exists" }, 409, false),
+    );
     mockDirectItemsPost.mockResolvedValueOnce(
       makeResponse(
         {
           ok: false,
           diff: { "config.tools": { added: ["google-gmail/search_gmail_messages"] } },
           structural_issues: [
-            { code: "unknown_tool", path: "agents.email-triage.config.tools[0]", message: "unknown tool" },
+            {
+              code: "unknown_tool",
+              path: "agents.email-triage.config.tools[0]",
+              message: "unknown tool",
+            },
           ],
         },
         422,
@@ -246,7 +237,11 @@ describe("createBoundUpsertTools", () => {
       ok: false,
       diff: { "config.tools": { added: ["google-gmail/search_gmail_messages"] } },
       structural_issues: [
-        { code: "unknown_tool", path: "agents.email-triage.config.tools[0]", message: "unknown tool" },
+        {
+          code: "unknown_tool",
+          path: "agents.email-triage.config.tools[0]",
+          message: "unknown tool",
+        },
       ],
       error: "Validation failed",
     });
@@ -256,16 +251,11 @@ describe("createBoundUpsertTools", () => {
     mockDraftItemsPost.mockResolvedValueOnce({
       ok: false,
       status: 500,
-      json: async () => {
-        throw new Error("JSON parse error");
-      },
+      json: () => Promise.reject(new Error("JSON parse error")),
     } as Response);
 
     const tools = createBoundUpsertTools(logger, "ws-1");
-    const result = await tools.upsert_agent!.execute!(
-      { id: "agent", config: {} },
-      TOOL_CALL_OPTS,
-    );
+    const result = await tools.upsert_agent!.execute!({ id: "agent", config: {} }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       ok: false,

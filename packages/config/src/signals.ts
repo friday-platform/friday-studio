@@ -17,9 +17,7 @@ export const HTTPProviderConfigSchema = z.strictObject({
 export type HTTPProviderConfig = z.infer<typeof HTTPProviderConfigSchema>;
 
 export const ScheduleProviderConfigSchema = z.strictObject({
-  schedule: z
-    .string()
-    .describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)"),
+  schedule: z.string().describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)"),
   timezone: z.string().optional().default("UTC").describe("Timezone for the schedule"),
 });
 export type ScheduleProviderConfig = z.infer<typeof ScheduleProviderConfigSchema>;

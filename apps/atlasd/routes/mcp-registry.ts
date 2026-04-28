@@ -576,7 +576,7 @@ export const mcpRegistryRouter = daemonFactory
         const remoteTime = Date.parse(remoteUpdatedAt);
         const storedTime = Date.parse(storedUpdatedAt);
 
-        if (isNaN(remoteTime) || isNaN(storedTime)) {
+        if (Number.isNaN(remoteTime) || Number.isNaN(storedTime)) {
           return c.json({ hasUpdate: false, reason: "Unable to compare version timestamps." }, 200);
         }
 

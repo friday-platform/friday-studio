@@ -65,7 +65,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute(
+    const result = await tools.list_mcp_tools!.execute!(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );
@@ -91,7 +91,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute(
+    const result = await tools.list_mcp_tools!.execute!(
       { serverId: "minimal-server" },
       TOOL_CALL_OPTS,
     );
@@ -106,7 +106,7 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute(
+    const result = await tools.list_mcp_tools!.execute!(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );
@@ -129,14 +129,15 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute(
+    const result = await tools.list_mcp_tools!.execute!(
       { serverId: "nonexistent" },
       TOOL_CALL_OPTS,
     );
 
     expect(result).toEqual({
       ok: false,
-      error: 'MCP server "nonexistent" not found in catalog. Use search_mcp_servers or list_mcp_servers to find valid IDs.',
+      error:
+        'MCP server "nonexistent" not found in catalog. Use search_mcp_servers or list_mcp_servers to find valid IDs.',
       phase: "connect",
     });
   });
@@ -148,38 +149,27 @@ describe("createListMcpToolsTool", () => {
     });
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute(
+    const result = await tools.list_mcp_tools!.execute!(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );
 
-    expect(result).toEqual({
-      ok: false,
-      error: "Registry timeout",
-      phase: "tools",
-    });
+    expect(result).toEqual({ ok: false, error: "Registry timeout", phase: "tools" });
   });
 
   it("returns error when fetch throws", async () => {
     mockGet.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createListMcpToolsTool(logger);
-    const result = await tools.list_mcp_tools!.execute(
+    const result = await tools.list_mcp_tools!.execute!(
       { serverId: "google-gmail" },
       TOOL_CALL_OPTS,
     );
 
-    expect(result).toEqual({
-      ok: false,
-      error: "Probe failed: Network failure",
-      phase: "tools",
-    });
+    expect(result).toEqual({ ok: false, error: "Probe failed: Network failure", phase: "tools" });
     expect(logger.warn).toHaveBeenCalledWith(
       "list_mcp_tools threw",
-      expect.objectContaining({
-        serverId: "google-gmail",
-        error: "Network failure",
-      }),
+      expect.objectContaining({ serverId: "google-gmail", error: "Network failure" }),
     );
   });
 });

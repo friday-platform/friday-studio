@@ -74,11 +74,7 @@ function formatRelativeTime(iso: string): string {
 /**
  * Handle list chats command (no ID provided).
  */
-async function handleListChats(
-  workspaceId: string,
-  human: boolean,
-  limit: number,
-): Promise<void> {
+async function handleListChats(workspaceId: string, human: boolean, limit: number): Promise<void> {
   const daemonUrl = getAtlasDaemonUrl();
   const response = await fetch(
     `${daemonUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/chat?limit=${limit}`,

@@ -242,7 +242,11 @@ describe("findServerReferences", () => {
       agents: {
         "gmail-agent": llmAgent({
           description: "Gmail agent",
-          tools: ["google-gmail/search_gmail_messages", "google-gmail/draft_gmail_message", "memory_read"],
+          tools: [
+            "google-gmail/search_gmail_messages",
+            "google-gmail/draft_gmail_message",
+            "memory_read",
+          ],
         }),
       },
     });
@@ -285,12 +289,7 @@ describe("findServerReferences", () => {
 
   test("does not match partial server-id prefixes", () => {
     const config = createTestConfig({
-      agents: {
-        agent: llmAgent({
-          description: "Agent",
-          tools: ["google-gmail-extra/search"],
-        }),
-      },
+      agents: { agent: llmAgent({ description: "Agent", tools: ["google-gmail-extra/search"] }) },
     });
 
     // "google-gmail" should NOT match "google-gmail-extra/search"

@@ -25,7 +25,7 @@ const CREATE_WORKSPACE_INPUT_SCHEMA = {
     },
   },
   required: ["name"],
-} as const;
+};
 
 const WORKSPACE_DELETE_INPUT_SCHEMA = z.object({
   workspaceId: z
@@ -44,20 +44,18 @@ const REMOVE_ITEM_INPUT_SCHEMA = {
   properties: {
     kind: {
       type: "string" as const,
-      enum: ["agent", "signal", "job"] as const,
+      enum: ["agent", "signal", "job"],
       description: "Type of entity to remove",
     },
-    id: {
-      type: "string" as const,
-      description: "Unique identifier of the entity to remove",
-    },
+    id: { type: "string" as const, description: "Unique identifier of the entity to remove" },
     workspaceId: {
       type: "string" as const,
-      description: "Optional. Target a specific workspace instead of the current session workspace.",
+      description:
+        "Optional. Target a specific workspace instead of the current session workspace.",
     },
   },
   required: ["kind", "id"],
-} as const;
+};
 
 export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
   return {
@@ -97,10 +95,7 @@ export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
 
         const config = {
           version: "1.0" as const,
-          workspace: {
-            name,
-            ...(description !== undefined && { description }),
-          },
+          workspace: { name, ...(description !== undefined && { description }) },
         };
 
         const result = await parseResult(
@@ -137,7 +132,15 @@ export function createBoundWorkspaceOpsTools(logger: Logger, workspaceId: string
         "Refuses the operation if the item is still referenced by other workspace entities. " +
         "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(REMOVE_ITEM_INPUT_SCHEMA),
-      execute: async ({ kind, id, workspaceId: providedId }: { kind: "agent" | "signal" | "job"; id: string; workspaceId?: string }) => {
+      execute: async ({
+        kind,
+        id,
+        workspaceId: providedId,
+      }: {
+        kind: "agent" | "signal" | "job";
+        id: string;
+        workspaceId?: string;
+      }) => {
         const targetId = providedId ?? workspaceId;
         logger.info("remove_item tool invoked", { workspaceId: targetId, kind, id });
 
@@ -146,18 +149,20 @@ export function createBoundWorkspaceOpsTools(logger: Logger, workspaceId: string
         });
 
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "remove_item failed" }));
+          const errorSchema = z.object({ error: z.unknown().optional() });
+          let body: z.infer<typeof errorSchema>;
+          try {
+            body = errorSchema.parse(await res.json());
+          } catch {
+            body = { error: "remove_item failed" };
+          }
           logger.warn("remove_item failed", { workspaceId: targetId, kind, id, error: body.error });
           return { ok: false, error: body.error ?? "remove_item failed" };
         }
 
         const data = await res.json();
         logger.info("remove_item succeeded", { workspaceId: targetId, kind, id });
-        return {
-          ok: true,
-          livePath: data.livePath,
-          runtimeReloaded: data.runtimeReloaded,
-        };
+        return { ok: true, livePath: data.livePath, runtimeReloaded: data.runtimeReloaded };
       },
     }),
   };

@@ -139,7 +139,7 @@ Rationale: The workspace-api skill is already loaded when the LLM is creating or
 **Test script (from `docs/qa/plans/workspace-creation-redesign-cases.md` Case 10):**
 ```
 1. Navigate to workspace-chat
-2. Send: "I'd love to create a new workspace that works as a personal assistant 
+2. Send: "I'd love to create a new workspace that works as a personal assistant
    to help me review my emails and get to inbox zero..."
 3. Observe chat's tool calls:
    - list_mcp_servers (should show google-gmail as available)

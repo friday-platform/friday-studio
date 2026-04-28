@@ -5,15 +5,15 @@ import {
   JobSpecificationSchema,
   type Registry,
   type ValidationReport,
-  type WorkspaceConfig,
+  validateWorkspace,
   WorkspaceAgentConfigSchema,
+  type WorkspaceConfig,
   WorkspaceConfigSchema,
   WorkspaceSignalConfigSchema,
-  validateWorkspace,
 } from "@atlas/config";
 import {
-  applyMutation,
   type ApplyMutationOptions,
+  applyMutation,
   type MutationResult,
 } from "@atlas/config/mutations";
 import { createLogger } from "@atlas/logger";
@@ -23,8 +23,8 @@ import { z } from "zod";
 
 const logger = createLogger({ component: "draft-helpers" });
 
-export const DRAFT_FILE_NAME = "workspace.yml.draft" as const;
-export const LIVE_FILE_NAME = "workspace.yml" as const;
+const DRAFT_FILE_NAME = "workspace.yml.draft" as const;
+const LIVE_FILE_NAME = "workspace.yml" as const;
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -127,9 +127,7 @@ export async function readDraft(workspacePath: string): Promise<DraftResult<Work
 /**
  * Read the current live config file as parsed YAML.
  */
-export async function readLiveConfig(
-  workspacePath: string,
-): Promise<DraftResult<WorkspaceConfig>> {
+export async function readLiveConfig(workspacePath: string): Promise<DraftResult<WorkspaceConfig>> {
   try {
     const livePath = await resolveLiveConfigPath(workspacePath);
     const content = await readFile(livePath, "utf-8");
@@ -209,10 +207,7 @@ export async function applyDraftAwareMutation(
     const writeResult = await writeDraft(workspacePath, validation.data);
     if (!writeResult.ok) {
       return {
-        result: {
-          ok: false,
-          error: { type: "write", message: writeResult.error },
-        },
+        result: { ok: false, error: { type: "write", message: writeResult.error } },
         wroteToDraft: true,
       };
     }
@@ -322,8 +317,8 @@ function computeFlatDiff(
 
   for (const key of allKeys) {
     const fullKey = prefix ? `${prefix}.${key}` : key;
-    const hasOld = Object.prototype.hasOwnProperty.call(oldObj, key);
-    const hasNew = Object.prototype.hasOwnProperty.call(newObj, key);
+    const hasOld = Object.hasOwn(oldObj, key);
+    const hasNew = Object.hasOwn(newObj, key);
     const oldVal = oldObj[key];
     const newVal = newObj[key];
 
@@ -333,12 +328,8 @@ function computeFlatDiff(
       diff[fullKey] = { from: oldVal };
     } else if (!valuesEqual(oldVal, newVal)) {
       if (Array.isArray(oldVal) && Array.isArray(newVal)) {
-        const removed = oldVal.filter(
-          (x) => !newVal.some((y) => valuesEqual(x, y)),
-        );
-        const added = newVal.filter(
-          (x) => !oldVal.some((y) => valuesEqual(x, y)),
-        );
+        const removed = oldVal.filter((x) => !newVal.some((y) => valuesEqual(x, y)));
+        const added = newVal.filter((x) => !oldVal.some((y) => valuesEqual(x, y)));
         if (removed.length > 0 || added.length > 0) {
           diff[fullKey] = { added, removed };
         }
@@ -418,23 +409,14 @@ export async function upsertDraftItem(
   const schema = entitySchemaForKind(kind);
   const parseResult = schema.safeParse(config);
   if (!parseResult.success) {
-    return {
-      ok: false,
-      error: `Invalid ${kind} config: ${parseResult.error.message}`,
-    };
+    return { ok: false, error: `Invalid ${kind} config: ${parseResult.error.message}` };
   }
 
   const key = configKeyForKind(kind);
   const oldCollection = (readResult.value[key] as Record<string, unknown> | undefined) ?? {};
   const oldValue = (oldCollection[id] as Record<string, unknown> | undefined) ?? {};
 
-  const updated = {
-    ...readResult.value,
-    [key]: {
-      ...oldCollection,
-      [id]: parseResult.data,
-    },
-  };
+  const updated = { ...readResult.value, [key]: { ...oldCollection, [id]: parseResult.data } };
 
   const validation = WorkspaceConfigSchema.safeParse(updated);
   if (!validation.success) {
@@ -452,15 +434,9 @@ export async function upsertDraftItem(
   const report = validateWorkspace(validation.data);
   const structuralIssues = report.status === "error" ? report.errors : null;
 
-  const diff = computeFlatDiff(
-    oldValue,
-    parseResult.data as Record<string, unknown>,
-  );
+  const diff = computeFlatDiff(oldValue, parseResult.data as Record<string, unknown>);
 
-  return {
-    ok: true,
-    value: { ok: true, diff, structuralIssues },
-  };
+  return { ok: true, value: { ok: true, diff, structuralIssues } };
 }
 
 /**
@@ -483,23 +459,14 @@ export async function upsertLiveItem(
   const schema = entitySchemaForKind(kind);
   const parseResult = schema.safeParse(config);
   if (!parseResult.success) {
-    return {
-      ok: false,
-      error: `Invalid ${kind} config: ${parseResult.error.message}`,
-    };
+    return { ok: false, error: `Invalid ${kind} config: ${parseResult.error.message}` };
   }
 
   const key = configKeyForKind(kind);
   const oldCollection = (readResult.value[key] as Record<string, unknown> | undefined) ?? {};
   const oldValue = (oldCollection[id] as Record<string, unknown> | undefined) ?? {};
 
-  const updated = {
-    ...readResult.value,
-    [key]: {
-      ...oldCollection,
-      [id]: parseResult.data,
-    },
-  };
+  const updated = { ...readResult.value, [key]: { ...oldCollection, [id]: parseResult.data } };
 
   const validation = WorkspaceConfigSchema.safeParse(updated);
   if (!validation.success) {
@@ -511,14 +478,8 @@ export async function upsertLiveItem(
 
   const report = validateWorkspace(validation.data);
   if (report.status === "error") {
-    const diff = computeFlatDiff(
-      oldValue,
-      parseResult.data as Record<string, unknown>,
-    );
-    return {
-      ok: true,
-      value: { ok: false, diff, structuralIssues: report.errors },
-    };
+    const diff = computeFlatDiff(oldValue, parseResult.data as Record<string, unknown>);
+    return { ok: true, value: { ok: false, diff, structuralIssues: report.errors } };
   }
 
   const writeResult = await writeLiveConfig(workspacePath, validation.data);
@@ -526,15 +487,9 @@ export async function upsertLiveItem(
     return { ok: false, error: writeResult.error };
   }
 
-  const diff = computeFlatDiff(
-    oldValue,
-    parseResult.data as Record<string, unknown>,
-  );
+  const diff = computeFlatDiff(oldValue, parseResult.data as Record<string, unknown>);
 
-  return {
-    ok: true,
-    value: { ok: true, diff, structuralIssues: null },
-  };
+  return { ok: true, value: { ok: true, diff, structuralIssues: null } };
 }
 
 /**
@@ -586,14 +541,9 @@ export async function deleteDraftItem(
 // REFERENCE HELPERS
 // ==============================================================================
 
-const FSMStateSchema = z.object({
-  entry: z.array(z.unknown()).optional(),
-});
+const FSMStateSchema = z.object({ entry: z.array(z.unknown()).optional() });
 
-const FSMAgentActionSchema = z.object({
-  type: z.literal("agent"),
-  agentId: z.string(),
-});
+const FSMAgentActionSchema = z.object({ type: z.literal("agent"), agentId: z.string() });
 
 function findDependents(config: WorkspaceConfig, kind: DraftItemKind, id: string): string[] {
   const dependents: string[] = [];
@@ -626,7 +576,12 @@ function findDependents(config: WorkspaceConfig, kind: DraftItemKind, id: string
           let agentId: string | undefined;
           if (typeof spec === "string") {
             agentId = spec;
-          } else if (typeof spec === "object" && spec !== null && "id" in spec && typeof spec.id === "string") {
+          } else if (
+            typeof spec === "object" &&
+            spec !== null &&
+            "id" in spec &&
+            typeof spec.id === "string"
+          ) {
             agentId = spec.id;
           }
           if (agentId === id && !dependents.includes(jobId)) {

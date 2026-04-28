@@ -12,8 +12,8 @@ import type { WorkspaceConfig } from "@atlas/config";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { stringify } from "@std/yaml";
 import { Hono } from "hono";
-import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
 
@@ -62,10 +62,9 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
         status: "idle",
         metadata: {},
       }),
-    getWorkspaceConfig: vi.fn().mockImplementation(async () => {
-      // Return a mock merged config
-      return { atlas: null, workspace: createMinimalConfig() };
-    }),
+    getWorkspaceConfig: vi
+      .fn()
+      .mockResolvedValue({ atlas: null, workspace: createMinimalConfig() }),
   } as unknown as WorkspaceManager;
 
   const mockContext: AppContext = {
@@ -398,11 +397,7 @@ describe("Draft file flow", () => {
     const agentConfig = {
       type: "llm",
       description: "Test agent",
-      config: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-6",
-        prompt: "You are a test agent",
-      },
+      config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "You are a test agent" },
     };
 
     const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
@@ -412,11 +407,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.record(z.string(), z.unknown()),
-      structural_issues: z.null(),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.record(z.string(), z.unknown()),
+        structural_issues: z.null(),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff).toHaveProperty("type");
     expect(body.diff["type"]).toEqual({ to: "llm" });
@@ -444,11 +441,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.record(z.string(), z.unknown()),
-      structural_issues: z.null(),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.record(z.string(), z.unknown()),
+        structural_issues: z.null(),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff).toHaveProperty("provider");
 
@@ -465,9 +464,7 @@ describe("Draft file flow", () => {
     const jobConfig = {
       description: "Test job",
       triggers: [{ signal: "webhook" }],
-      execution: {
-        agents: ["test-agent"],
-      },
+      execution: { agents: ["test-agent"] },
     };
 
     const res = await app.request(`/workspaces/${workspaceId}/draft/items/job`, {
@@ -477,11 +474,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.record(z.string(), z.unknown()),
-      structural_issues: z.null(),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.record(z.string(), z.unknown()),
+        structural_issues: z.null(),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
 
     const draft = await readFile(join(tempDir, "workspace.yml.draft"), "utf-8");
@@ -512,11 +511,7 @@ describe("Draft file flow", () => {
     const agentConfig = {
       type: "llm",
       description: "Live agent",
-      config: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-6",
-        prompt: "You are a live agent",
-      },
+      config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "You are a live agent" },
     };
 
     const res = await app.request(`/workspaces/${workspaceId}/items/agent`, {
@@ -526,12 +521,14 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.record(z.string(), z.unknown()),
-      structural_issues: z.null(),
-      runtimeReloaded: z.boolean(),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.record(z.string(), z.unknown()),
+        structural_issues: z.null(),
+        runtimeReloaded: z.boolean(),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: true, runtimeReloaded: true });
 
     const liveContent = await readFile(join(tempDir, "workspace.yml"), "utf-8");
@@ -548,11 +545,7 @@ describe("Draft file flow", () => {
       fsm: {
         id: "broken-fsm",
         initial: "step_0",
-        states: {
-          step_0: {
-            entry: [{ type: "agent", agentId: "nonexistent-agent" }],
-          },
-        },
+        states: { step_0: { entry: [{ type: "agent", agentId: "nonexistent-agent" }] } },
       },
     };
     const res = await app.request(`/workspaces/${workspaceId}/items/job`, {
@@ -562,11 +555,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(422);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.record(z.string(), z.unknown()),
-      structural_issues: z.array(z.object({ code: z.string() })),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.record(z.string(), z.unknown()),
+        structural_issues: z.array(z.object({ code: z.string() })),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: false });
     expect(body.structural_issues.length).toBeGreaterThan(0);
     expect(body.structural_issues[0]?.code).toBe("unknown_agent_id");
@@ -584,11 +579,7 @@ describe("Draft file flow", () => {
     const agentConfig = {
       type: "llm",
       description: "Original agent",
-      config: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-6",
-        prompt: "Original prompt",
-      },
+      config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Original prompt" },
     };
     await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
       method: "POST",
@@ -599,11 +590,7 @@ describe("Draft file flow", () => {
     const updatedConfig = {
       type: "llm",
       description: "Updated agent",
-      config: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-6",
-        prompt: "Updated prompt",
-      },
+      config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "Updated prompt" },
     };
     const res = await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
       method: "POST",
@@ -612,11 +599,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.record(z.string(), z.unknown()),
-      structural_issues: z.null(),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.record(z.string(), z.unknown()),
+        structural_issues: z.null(),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff).toHaveProperty("description");
     expect(body.diff["description"]).toEqual({ from: "Original agent", to: "Updated agent" });
@@ -632,11 +621,7 @@ describe("Draft file flow", () => {
     const agentConfig = {
       type: "llm",
       description: "Test agent",
-      config: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-6",
-        prompt: "You are a test agent",
-      },
+      config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "You are a test agent" },
     };
 
     await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
@@ -650,13 +635,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.object({
-        removed: z.array(z.object({ path: z.string() })),
-      }),
-      structural_issues: z.null(),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.object({ removed: z.array(z.object({ path: z.string() })) }),
+        structural_issues: z.null(),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff.removed).toHaveLength(1);
     expect(body.diff.removed[0]?.path).toBe("agents.delete-me");
@@ -690,11 +675,7 @@ describe("Draft file flow", () => {
     const agentConfig = {
       type: "llm",
       description: "Test agent",
-      config: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-6",
-        prompt: "You are a test agent",
-      },
+      config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "You are a test agent" },
     };
     await app.request(`/workspaces/${workspaceId}/draft/items/agent`, {
       method: "POST",
@@ -708,11 +689,7 @@ describe("Draft file flow", () => {
       fsm: {
         id: "test-fsm",
         initial: "step_0",
-        states: {
-          step_0: {
-            entry: [{ type: "agent", agentId: "test-agent" }],
-          },
-        },
+        states: { step_0: { entry: [{ type: "agent", agentId: "test-agent" }] } },
       },
     };
     await app.request(`/workspaces/${workspaceId}/draft/items/job`, {
@@ -727,13 +704,13 @@ describe("Draft file flow", () => {
     });
     expect(res.status).toBe(200);
 
-    const body = z.object({
-      ok: z.boolean(),
-      diff: z.object({
-        removed: z.array(z.object({ path: z.string() })),
-      }),
-      structural_issues: z.array(z.object({ code: z.string() })),
-    }).parse(await res.json());
+    const body = z
+      .object({
+        ok: z.boolean(),
+        diff: z.object({ removed: z.array(z.object({ path: z.string() })) }),
+        structural_issues: z.array(z.object({ code: z.string() })),
+      })
+      .parse(await res.json());
     expect(body).toMatchObject({ ok: true });
     expect(body.diff.removed).toHaveLength(1);
     expect(body.diff.removed[0]?.path).toBe("agents.test-agent");
@@ -751,7 +728,10 @@ describe("Draft file flow", () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body).toMatchObject({ success: true, report: { status: "ok", errors: [], warnings: [] } });
+    expect(body).toMatchObject({
+      success: true,
+      report: { status: "ok", errors: [], warnings: [] },
+    });
   });
 
   test("validate draft returns 409 when no draft exists", async () => {
@@ -793,7 +773,9 @@ describe("Draft file flow", () => {
     const { app } = createApp({ workspaceDir: tempDir, workspaceId });
 
     // 1. Begin draft
-    const beginRes = await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+    const beginRes = await app.request(`/workspaces/${workspaceId}/draft/begin`, {
+      method: "POST",
+    });
     expect(beginRes.status).toBe(200);
 
     // 2. Upsert agent
@@ -851,13 +833,17 @@ describe("Draft file flow", () => {
     expect(signalRes.status).toBe(200);
 
     // 5. Validate draft
-    const validateRes = await app.request(`/workspaces/${workspaceId}/draft/validate`, { method: "POST" });
+    const validateRes = await app.request(`/workspaces/${workspaceId}/draft/validate`, {
+      method: "POST",
+    });
     expect(validateRes.status).toBe(200);
     const validateBody = await validateRes.json();
     expect(validateBody).toMatchObject({ success: true, report: { status: "ok" } });
 
     // 6. Publish
-    const publishRes = await app.request(`/workspaces/${workspaceId}/draft/publish`, { method: "POST" });
+    const publishRes = await app.request(`/workspaces/${workspaceId}/draft/publish`, {
+      method: "POST",
+    });
     expect(publishRes.status).toBe(200);
     const publishBody = await publishRes.json();
     expect(publishBody).toMatchObject({ success: true, runtimeReloaded: true });
@@ -875,7 +861,9 @@ describe("Draft file flow", () => {
   test("all draft endpoints return 404 for missing workspace", async () => {
     const mockManager = {
       find: vi.fn().mockResolvedValue(null),
-      getWorkspaceConfig: vi.fn().mockResolvedValue({ atlas: null, workspace: createMinimalConfig() }),
+      getWorkspaceConfig: vi
+        .fn()
+        .mockResolvedValue({ atlas: null, workspace: createMinimalConfig() }),
     } as unknown as WorkspaceManager;
 
     const mockContext: AppContext = {

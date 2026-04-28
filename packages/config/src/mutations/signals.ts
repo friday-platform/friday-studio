@@ -114,18 +114,12 @@ export function patchSignalConfig(
   }
 
   // Extra validation: schedule signals need a valid cron expression.
-  if (
-    parseResult.data.provider === "schedule" &&
-    parseResult.data.config.schedule
-  ) {
+  if (parseResult.data.provider === "schedule" && parseResult.data.config.schedule) {
     try {
       CronExpressionParser.parse(parseResult.data.config.schedule);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return {
-        ok: false,
-        error: validationError(`Invalid cron expression: ${message}`),
-      };
+      return { ok: false, error: validationError(`Invalid cron expression: ${message}`) };
     }
   }
 

@@ -179,9 +179,7 @@ describe("GET /mcp", () => {
   });
 
   test("reads from draft when draft exists", async () => {
-    mockDiscoverMCPServers.mockResolvedValue([
-      makeCandidate("github", "GitHub", "static"),
-    ]);
+    mockDiscoverMCPServers.mockResolvedValue([makeCandidate("github", "GitHub", "static")]);
 
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
@@ -196,15 +194,12 @@ describe("GET /mcp", () => {
     await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
     await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
 
-    const { app } = createTestApp({
-      workspace,
-      config: createMergedConfig(liveConfig),
-    });
+    const { app } = createTestApp({ workspace, config: createMergedConfig(liveConfig) });
 
     const res = await app.request("/ws-test-id/mcp");
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as JsonBody;
+    const body = (await res.json()) as { enabled: JsonBody[]; available: JsonBody[] };
     expect(body.enabled).toHaveLength(1);
     expect(body.enabled[0]).toMatchObject({ id: "github", name: "GitHub" });
     expect(body.available).toHaveLength(0);
@@ -479,7 +474,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
     const { app, destroyWorkspaceRuntime } = createTestApp({
       workspace,
@@ -514,7 +509,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
     const { app, destroyWorkspaceRuntime } = createTestApp({
       workspace,
@@ -547,7 +542,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     // Draft has the server enabled; live does too (draft was copied from live)
     const draftConfig = {
       ...makeWorkspaceConfig({ github: { transport: { type: "stdio", command: "echo" } } }),
@@ -563,7 +558,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
     await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
     const { app, destroyWorkspaceRuntime } = createTestApp({
@@ -583,7 +578,7 @@ describe("DELETE /mcp/:serverId", () => {
     const draftContent = await readFile(join(testDir, "workspace.yml.draft"), "utf-8");
     expect(draftContent).not.toContain("github");
     // Agent tools should also be stripped in draft
-    expect(draftContent).not.toContain("tools: [\"github\"]");
+    expect(draftContent).not.toContain('tools: ["github"]');
 
     const liveContent = await readFile(join(testDir, "workspace.yml"), "utf-8");
     expect(liveContent).toContain("github");
