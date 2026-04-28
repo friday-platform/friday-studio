@@ -216,7 +216,8 @@ func parseFlags() (autostart string, uninstall bool) {
 		"do not auto-open the browser when supervised processes report ready")
 	flag.StringVar(&binDir, "bin-dir", "",
 		"directory containing supervised binaries "+
-			"(defaults to ~/.friday/local/bin/, fallback to launcher's own dir)")
+			"(auto-detect: ~/.friday/local/bin/ if present, "+
+			"else launcher's own directory)")
 	flag.StringVar(&autostart, "autostart", "",
 		"enable|disable|status — manage OS autostart entry then exit")
 	flag.BoolVar(&uninstall, "uninstall", false,
@@ -225,22 +226,29 @@ func parseFlags() (autostart string, uninstall bool) {
 	flag.Parse()
 
 	if binDir == "" {
-		// Decision #25: supervised binaries live in
-		// `~/.friday/local/bin/`, not next to the launcher binary.
-		// Stack 3's installer extracts the launcher into the .app
-		// bundle (`/Applications/Friday Studio.app/...`) and the
-		// supervised binaries into `~/.friday/local/bin/` — these
-		// are different paths. Old behavior (filepath.Dir(exe))
-		// was correct for the v0.0.8 flat-tarball layout but breaks
-		// after the .app split.
-		//
-		// Fallback to filepath.Dir(exe) when the home dir lookup
-		// fails — covers test harnesses that don't set HOME and
-		// the legacy in-tree layout for `go run`.
+		// Auto-detect layout. Decision #25 wanted supervised binaries
+		// at `~/.friday/local/bin/` so the .app bundle could land
+		// separately under `/Applications`. But the platform tarball
+		// (build-studio.ts) still ships the v0.0.8 flat layout where
+		// binaries sit directly in `~/.friday/local/`. Until the
+		// build-studio.ts side is updated to produce a `bin/` subdir,
+		// prefer the bin/ subdir IF it exists, otherwise fall back to
+		// the launcher's own directory. This makes the launcher
+		// forward-compatible with the eventual split without breaking
+		// the current flat layout.
 		if home, err := os.UserHomeDir(); err == nil {
-			binDir = filepath.Join(home, ".friday", "local", "bin")
-		} else if exe, err := os.Executable(); err == nil {
-			binDir = filepath.Dir(exe)
+			candidate := filepath.Join(home, ".friday", "local", "bin")
+			if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
+				binDir = candidate
+			}
+		}
+		// Either home lookup failed, or the bin/ subdir doesn't exist
+		// — use the launcher's own directory. Covers the v0.0.x flat
+		// tarball layout AND tests / `go run` invocations.
+		if binDir == "" {
+			if exe, err := os.Executable(); err == nil {
+				binDir = filepath.Dir(exe)
+			}
 		}
 	}
 	return autostart, uninstall
