@@ -3,12 +3,16 @@ import { advanceStep, writeKeys } from "../lib/installer.ts";
 import { type ProviderId, store } from "../lib/store.svelte.ts";
 
 // Provider catalog. `recommended: true` decorates the dropdown option AND
-// the inline "Recommended" badge on the form. Each provider maps to a
-// single env-var name on the Rust side via writeKeys().
+// the inline "Recommended" badge on the form. `experimental: true` marks
+// providers that we haven't fully validated against the agent stack yet —
+// they work, but Anthropic is the only one we'd recommend for production.
+// Each provider maps to a single env-var name on the Rust side via
+// writeKeys().
 type ProviderConfig = {
   id: ProviderId;
   label: string;
   recommended?: boolean;
+  experimental?: boolean;
   placeholder: string;
   keyPrefix: string;
   consoleUrl: string;
@@ -28,6 +32,7 @@ const PROVIDERS: ProviderConfig[] = [
   {
     id: "openai",
     label: "OpenAI",
+    experimental: true,
     placeholder: "sk-…",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.openai.com/api-keys",
@@ -36,6 +41,7 @@ const PROVIDERS: ProviderConfig[] = [
   {
     id: "gemini",
     label: "Google Gemini",
+    experimental: true,
     placeholder: "AIza…",
     keyPrefix: "AIza",
     consoleUrl: "https://aistudio.google.com/app/apikey",
@@ -44,6 +50,7 @@ const PROVIDERS: ProviderConfig[] = [
   {
     id: "groq",
     label: "Groq",
+    experimental: true,
     placeholder: "gsk_…",
     keyPrefix: "gsk_",
     consoleUrl: "https://console.groq.com/keys",
@@ -111,7 +118,11 @@ async function handleSkip() {
         <select id="provider" bind:value={store.selectedProvider}>
           {#each PROVIDERS as p (p.id)}
             <option value={p.id}>
-              {p.label}{p.recommended ? "  (Recommended)" : ""}
+              {p.label}{p.recommended
+                ? "  (Recommended)"
+                : p.experimental
+                  ? "  (Experimental)"
+                  : ""}
             </option>
           {/each}
         </select>
