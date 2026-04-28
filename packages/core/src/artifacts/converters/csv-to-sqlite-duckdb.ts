@@ -19,7 +19,7 @@ const logger = createLogger({ component: "csv-converter" });
 
 // CLI paths from environment (with fallback to PATH lookup)
 const DUCKDB_PATH = process.env.ATLAS_DUCKDB_PATH ?? "duckdb";
-const SQLITE3_PATH = process.env.ATLAS_SQLITE3_PATH ?? "sqlite3";
+const SQLITE3_PATH = process.env.FRIDAY_SQLITE3_PATH ?? "sqlite3";
 
 // 10 minute timeout for CLI processes (large files can take a while)
 const CLI_TIMEOUT_MS = 10 * 60 * 1000;
