@@ -31,7 +31,8 @@ const testOAuthProvider = {
   description: "OAuth provider for PATCH credential tests",
   oauthConfig: {
     mode: "static" as const,
-    serverUrl: "https://example.com/oauth",
+    authorizationEndpoint: "https://example.com/oauth/authorize",
+    tokenEndpoint: "https://example.com/oauth/token",
     clientId: "test-client-id",
     clientSecret: "test-client-secret",
     scopes: ["read"],
@@ -69,6 +70,12 @@ describe("PATCH /v1/credentials/:id", () => {
     await rm(tempDir, { recursive: true });
   });
 
+  const CredentialResponseSchema = z.object({
+    id: z.string(),
+    label: z.string().optional(),
+    displayName: z.string().optional(),
+  });
+
   async function createApiKeyCredential(secret: Record<string, string>) {
     const res = await app.request("/v1/credentials/apikey", {
       method: "PUT",
@@ -76,7 +83,7 @@ describe("PATCH /v1/credentials/:id", () => {
       body: JSON.stringify({ provider: testProvider.id, label: "Test Credential", secret }),
     });
     expect(res.status).toEqual(201);
-    return await res.json();
+    return CredentialResponseSchema.parse(await res.json());
   }
 
   it("updates secret only — 200, id unchanged", async () => {
@@ -90,7 +97,7 @@ describe("PATCH /v1/credentials/:id", () => {
     });
 
     expect(res.status).toEqual(200);
-    const updated = await res.json();
+    const updated = CredentialResponseSchema.parse(await res.json());
     expect(updated.id).toEqual(originalId);
     expect(updated.label).toEqual("Test Credential");
   });
@@ -105,7 +112,7 @@ describe("PATCH /v1/credentials/:id", () => {
     });
 
     expect(res.status).toEqual(200);
-    const updated = await res.json();
+    const updated = CredentialResponseSchema.parse(await res.json());
     expect(updated.displayName).toEqual("Renamed Credential");
   });
 
@@ -119,7 +126,7 @@ describe("PATCH /v1/credentials/:id", () => {
     });
 
     expect(res.status).toEqual(400);
-    const body = await res.json();
+    const body = z.object({ error: z.string() }).parse(await res.json());
     expect(body.error).toEqual("validation_failed");
   });
 
@@ -165,7 +172,7 @@ describe("PATCH /v1/credentials/:id", () => {
     });
 
     expect(res.status).toEqual(400);
-    const body = await res.json();
+    const body = z.object({ error: z.string() }).parse(await res.json());
     expect(body.error).toEqual("invalid_provider_type");
   });
 });
