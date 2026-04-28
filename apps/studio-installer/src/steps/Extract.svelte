@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import { invoke } from "@tauri-apps/api/core";
 import { advanceStep, createAppBundleIfDarwin, installDir, runExtract } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
 
@@ -18,6 +19,17 @@ onMount(async () => {
     // the launcher and the user can re-launch after they Quit.
     // Non-fatal if it fails — see createAppBundleIfDarwin.
     await createAppBundleIfDarwin(dest, store.availableVersion);
+    // Persist the install marker so the wizard's mode detection on
+    // the next run sees mode==="current" / "update" instead of
+    // re-treating the install as "fresh". Without this, every run
+    // re-runs the full Welcome → license → keys → download flow,
+    // and the studioRunning warning never surfaces. Best-effort:
+    // a marker write failure shouldn't block the user's install.
+    try {
+      await invoke("write_installed", { version: store.availableVersion });
+    } catch (err) {
+      console.warn("write_installed failed (non-fatal):", err);
+    }
     extracting = false;
     advanceStep();
   } catch {

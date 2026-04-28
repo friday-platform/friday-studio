@@ -60,9 +60,35 @@ async function stopThenAdvance(): Promise<void> {
       <p class="subtitle">
         Orchestrate agentic workflows from a single config file.<br />Versionable, shareable, repeatable.
       </p>
-      <div class="actions">
-        <button class="primary" onclick={advanceStep}>Install</button>
-      </div>
+      {#if studioRunning}
+        <!--
+          studioRunning + mode==="fresh" means the install marker
+          (~/.friday/local/.installed) is missing while a launcher
+          is alive — typically a previous install from before the
+          marker was written, or the file was wiped. Treat this the
+          same as the update path so we don't blunder into a port
+          collision later. Same warning, same stop button.
+        -->
+        <div class="warning">
+          <span class="warning-icon" aria-hidden="true">⚠</span>
+          A previous Friday Studio is currently running. Installing will stop it briefly.
+        </div>
+        {#if stopError !== null}
+          <div class="warning">
+            <span class="warning-icon" aria-hidden="true">⚠</span>
+            Could not stop the running Studio: {stopError}
+          </div>
+        {/if}
+        <div class="actions">
+          <button class="primary" onclick={stopThenAdvance} disabled={stopping}>
+            {stopping ? "Stopping Studio…" : "Install"}
+          </button>
+        </div>
+      {:else}
+        <div class="actions">
+          <button class="primary" onclick={advanceStep}>Install</button>
+        </div>
+      {/if}
     {:else if mode === "update"}
       <h1>Update Available</h1>
       <p class="version-badge">
