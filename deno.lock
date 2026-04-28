@@ -154,7 +154,7 @@
     "npm:jose@^6.1.3": "6.2.3",
     "npm:jose@^6.2.3": "6.2.3",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
-    "npm:jsonrepair@^3.13.3": "3.14.0",
+    "npm:jsonrepair@^3.14.0": "3.14.0",
     "npm:jszip@^3.10.1": "3.10.1",
     "npm:knip@*": "6.7.0_@emnapi+core@1.9.2_@emnapi+runtime@1.9.2",
     "npm:knip@6.7.0": "6.7.0_@emnapi+core@1.9.2_@emnapi+runtime@1.9.2",
@@ -8033,7 +8033,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@opentelemetry/api@^1.9.1",
             "npm:ai@^6.0.168",
-            "npm:jsonrepair@^3.13.3",
+            "npm:jsonrepair@^3.14.0",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
