@@ -1,5 +1,5 @@
 import { bundledAgents, bundledAgentsRegistry, webAgent } from "@atlas/bundled-agents";
-import type { WorkspaceConfig } from "@atlas/config";
+import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
 import type { LinkSummary, MCPServerCandidate } from "@atlas/core/mcp-registry/discovery";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { Logger } from "@atlas/logger";
@@ -58,12 +58,13 @@ function makeCandidate(overrides: {
 
 function makeWorkspaceConfig(enabledServerIds: string[] = []): WorkspaceConfig {
   const servers = Object.fromEntries(
-    enabledServerIds.map((id) => [id, { transport: { type: "stdio" as const, command: "echo" } }]),
+    enabledServerIds.map((id) => [id, { transport: { type: "stdio", command: "echo" } }]),
   );
-  return {
-    workspace: { name: "test", id: "ws-1", root: "/tmp/ws-1" },
+  return WorkspaceConfigSchema.parse({
+    version: "1.0",
+    workspace: { name: "test", id: "ws-1" },
     tools: { mcp: { servers } },
-  } as unknown as WorkspaceConfig;
+  });
 }
 
 const TOOL_CALL_OPTS = {
