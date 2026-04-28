@@ -134,7 +134,7 @@
     "npm:cron-parser@^5.5.0": "5.5.0",
     "npm:diff@9": "9.0.0",
     "npm:dompurify@^3.4.1": "3.4.1",
-    "npm:dotenv@17.4.0": "17.4.0",
+    "npm:dotenv@17.4.2": "17.4.2",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.2.1",
     "npm:eslint-plugin-svelte@^3.17.0": "3.17.1_eslint@10.2.1_svelte@5.55.5__acorn@8.16.0_postcss@8.5.10",
     "npm:eslint@^10.2.1": "10.2.1",
@@ -4547,8 +4547,8 @@
         "@types/trusted-types"
       ]
     },
-    "dotenv@17.4.0": {
-      "integrity": "sha512-kCKF62fwtzwYm0IGBNjRUjtJgMfGapII+FslMHIjMR5KTnwEmBmWLDRSnc3XSNP8bNy34tekgQyDT0hr7pERRQ=="
+    "dotenv@17.4.2": {
+      "integrity": "sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw=="
     },
     "dunder-proto@1.0.1": {
       "integrity": "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==",
@@ -8331,7 +8331,7 @@
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__assert@^1.0.14",
             "npm:ai@^6.0.168",
-            "npm:dotenv@17.4.0",
+            "npm:dotenv@17.4.2",
             "npm:gunshi@~0.29.4",
             "npm:papaparse@^5.5.3",
             "npm:vitest@^4.1.0",
