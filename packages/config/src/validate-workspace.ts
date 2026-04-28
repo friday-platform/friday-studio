@@ -135,6 +135,9 @@ function checkToolReferences(
   issues: Issue[],
 ): void {
   const validTools = new Set(PLATFORM_TOOL_NAMES);
+  const serverPrefixes = new Set<string>();
+  // serverId -> Set<bareToolName> for precise prefixed-tool verification
+  const serverTools = new Map<string, Set<string>>();
 
   if (registry.mcpTools) {
     const enabledServers = registry.mcpServers
@@ -143,10 +146,20 @@ function checkToolReferences(
 
     for (const [serverId, tools] of Object.entries(registry.mcpTools)) {
       if (!enabledServers.has(serverId)) continue;
+      serverPrefixes.add(serverId);
+      const bareSet = new Set<string>();
       for (const tool of tools) {
         validTools.add(tool);
+        bareSet.add(tool);
       }
+      serverTools.set(serverId, bareSet);
     }
+  }
+
+  // Also accept tools from servers declared in workspace config (static resolution
+  // when the server is configured but not yet running / enumerable).
+  for (const serverId of Object.keys(config.tools?.mcp?.servers ?? {})) {
+    serverPrefixes.add(serverId);
   }
 
   for (const [agentName, agent] of Object.entries(config.agents ?? {})) {
@@ -157,6 +170,22 @@ function checkToolReferences(
       const tool = tools[i];
       if (typeof tool !== "string") continue;
       if (validTools.has(tool)) continue;
+
+      const prefix = tool.split("/")[0];
+      const bareName = tool.slice(prefix.length + 1);
+
+      if (prefix) {
+        if (serverTools.has(prefix)) {
+          // Registry has resolved tools for this server — verify the bare name exists
+          if (serverTools.get(prefix)?.has(bareName)) continue;
+          // Registry has this server but not this tool — do NOT fall back to
+          // static acceptance. The server was probed and this tool is unknown.
+        } else if (serverPrefixes.has(prefix)) {
+          // No registry data for this declared server — static fallback
+          continue;
+        }
+      }
+
       issues.push({
         code: "unknown_tool",
         path: `agents.${agentName}.config.tools[${i}]`,

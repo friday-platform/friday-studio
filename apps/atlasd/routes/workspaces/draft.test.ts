@@ -192,7 +192,7 @@ describe("Draft file flow", () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body).toMatchObject({ success: true, runtimeReloaded: false });
+    expect(body).toMatchObject({ success: true, runtimeReloaded: true });
 
     // Draft should be gone
     expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);
@@ -271,13 +271,14 @@ describe("Draft file flow", () => {
     } as unknown as WorkspaceManager;
 
     const destroySpy = vi.fn().mockResolvedValue(undefined);
+    const createRuntimeSpy = vi.fn().mockResolvedValue(undefined);
     const mockContext: AppContext = {
       runtimes: new Map(),
       startTime: Date.now(),
       sseClients: new Map(),
       sseStreams: new Map(),
       getWorkspaceManager: () => mockManager,
-      getOrCreateWorkspaceRuntime: vi.fn(),
+      getOrCreateWorkspaceRuntime: createRuntimeSpy,
       resetIdleTimeout: vi.fn(),
       getWorkspaceRuntime: vi.fn().mockReturnValue({ id: "runtime-1" }),
       destroyWorkspaceRuntime: destroySpy,
@@ -313,6 +314,70 @@ describe("Draft file flow", () => {
     const body = await res.json();
     expect(body).toMatchObject({ success: true, runtimeReloaded: true });
     expect(destroySpy).toHaveBeenCalledWith(workspaceId);
+    expect(createRuntimeSpy).toHaveBeenCalledWith(workspaceId);
+  });
+
+  test("publish eagerly starts runtime when none exists", async () => {
+    const mockManager = {
+      find: vi
+        .fn()
+        .mockResolvedValue({
+          id: workspaceId,
+          name: "Test Workspace",
+          path: tempDir,
+          status: "idle",
+          metadata: {},
+        }),
+      getWorkspaceConfig: vi
+        .fn()
+        .mockResolvedValue({ atlas: null, workspace: createMinimalConfig() }),
+    } as unknown as WorkspaceManager;
+
+    const destroySpy = vi.fn().mockResolvedValue(undefined);
+    const createRuntimeSpy = vi.fn().mockResolvedValue(undefined);
+    const mockContext: AppContext = {
+      runtimes: new Map(),
+      startTime: Date.now(),
+      sseClients: new Map(),
+      sseStreams: new Map(),
+      getWorkspaceManager: () => mockManager,
+      getOrCreateWorkspaceRuntime: createRuntimeSpy,
+      resetIdleTimeout: vi.fn(),
+      getWorkspaceRuntime: vi.fn().mockReturnValue(undefined),
+      destroyWorkspaceRuntime: destroySpy,
+      getLibraryStorage: vi.fn(),
+      daemon: {
+        getWorkspaceManager: () => mockManager,
+        runtimes: new Map(),
+      } as unknown as AppContext["daemon"],
+      streamRegistry: {} as AppContext["streamRegistry"],
+      sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
+      sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+      getAgentRegistry: vi.fn(),
+      getOrCreateChatSdkInstance: vi.fn(),
+      evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
+      getLedgerAdapter: vi.fn(),
+      getActivityAdapter: vi.fn(),
+      exposeKernel: false,
+      platformModels: { get: vi.fn() },
+    };
+
+    const app = new Hono<AppVariables>();
+    app.use("*", async (c, next) => {
+      c.set("app", mockContext);
+      await next();
+    });
+    app.route("/workspaces", workspacesRoutes);
+
+    // Begin draft and publish
+    await app.request(`/workspaces/${workspaceId}/draft/begin`, { method: "POST" });
+    const res = await app.request(`/workspaces/${workspaceId}/draft/publish`, { method: "POST" });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ success: true, runtimeReloaded: true });
+    expect(destroySpy).not.toHaveBeenCalled();
+    expect(createRuntimeSpy).toHaveBeenCalledWith(workspaceId);
   });
 
   test("read draft returns 409 when no draft exists", async () => {
@@ -467,7 +532,7 @@ describe("Draft file flow", () => {
       structural_issues: z.null(),
       runtimeReloaded: z.boolean(),
     }).parse(await res.json());
-    expect(body).toMatchObject({ ok: true, runtimeReloaded: false });
+    expect(body).toMatchObject({ ok: true, runtimeReloaded: true });
 
     const liveContent = await readFile(join(tempDir, "workspace.yml"), "utf-8");
     expect(liveContent).toContain("live-agent");
@@ -795,7 +860,7 @@ describe("Draft file flow", () => {
     const publishRes = await app.request(`/workspaces/${workspaceId}/draft/publish`, { method: "POST" });
     expect(publishRes.status).toBe(200);
     const publishBody = await publishRes.json();
-    expect(publishBody).toMatchObject({ success: true, runtimeReloaded: false });
+    expect(publishBody).toMatchObject({ success: true, runtimeReloaded: true });
 
     // Draft should be gone
     expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);

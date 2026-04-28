@@ -220,6 +220,38 @@ describe("createBoundUpsertTools", () => {
     });
   });
 
+  it("preserves diff and structural_issues when direct endpoint returns 422", async () => {
+    mockDraftItemsPost.mockResolvedValueOnce(makeResponse({ error: "No draft exists" }, 409, false));
+    mockDirectItemsPost.mockResolvedValueOnce(
+      makeResponse(
+        {
+          ok: false,
+          diff: { "config.tools": { added: ["google-gmail/search_gmail_messages"] } },
+          structural_issues: [
+            { code: "unknown_tool", path: "agents.email-triage.config.tools[0]", message: "unknown tool" },
+          ],
+        },
+        422,
+        false,
+      ),
+    );
+
+    const tools = createBoundUpsertTools(logger, "ws-1");
+    const result = await tools.upsert_agent!.execute!(
+      { id: "email-triage", config: { type: "llm" } },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      diff: { "config.tools": { added: ["google-gmail/search_gmail_messages"] } },
+      structural_issues: [
+        { code: "unknown_tool", path: "agents.email-triage.config.tools[0]", message: "unknown tool" },
+      ],
+      error: "Validation failed",
+    });
+  });
+
   it("handles json body parsing failures gracefully", async () => {
     mockDraftItemsPost.mockResolvedValueOnce({
       ok: false,

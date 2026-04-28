@@ -41,6 +41,10 @@ const UPSERT_INPUT_SCHEMA = {
         "For jobs: { description, triggers, fsm | execution }.",
       additionalProperties: true,
     },
+    workspaceId: {
+      type: "string" as const,
+      description: "Optional. Target a specific workspace instead of the current session workspace. Pass the workspace id returned by create_workspace.",
+    },
   },
   required: ["id", "config"],
 };
@@ -80,36 +84,44 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
     kind: "agent" | "signal" | "job",
     id: string,
     config: Record<string, unknown>,
+    targetWorkspaceId: string,
   ): Promise<UpsertResult> {
-    logger.info(`upsert_${kind} tool invoked`, { workspaceId, id });
+    logger.info(`upsert_${kind} tool invoked`, { workspaceId: targetWorkspaceId, id });
 
     // Try the draft endpoint first.
     const draftRes = await client.workspace[":workspaceId"].draft.items[":kind"].$post({
-      param: { workspaceId, kind },
+      param: { workspaceId: targetWorkspaceId, kind },
       json: { id, config },
     });
 
     if (!draftRes.ok && draftRes.status === 409) {
       // No draft exists — fall back to the direct (live) endpoint.
-      logger.info(`No draft for workspace ${workspaceId}, falling back to direct ${kind} upsert`);
+      logger.info(`No draft for workspace ${targetWorkspaceId}, falling back to direct ${kind} upsert`);
       const directRes = await client.workspace[":workspaceId"].items[":kind"].$post({
-        param: { workspaceId, kind },
+        param: { workspaceId: targetWorkspaceId, kind },
         json: { id, config },
       });
 
       if (!directRes.ok) {
         const body = await directRes.json().catch(() => ({ error: `Direct ${kind} upsert failed` }));
-        logger.warn(`Direct ${kind} upsert failed`, { workspaceId, id, error: body.error });
+        const structuralIssues = body.structuralIssues ?? body.structural_issues ?? null;
+        const hasStructuredIssues = Array.isArray(structuralIssues) && structuralIssues.length > 0;
+        logger.warn(`Direct ${kind} upsert failed`, {
+          workspaceId: targetWorkspaceId,
+          id,
+          error: body.error,
+          structuralIssuesCount: hasStructuredIssues ? structuralIssues.length : 0,
+        });
         return {
           ok: false,
-          diff: {},
-          structural_issues: null,
-          error: body.error ?? `Direct ${kind} upsert failed`,
+          diff: body.diff ?? {},
+          structural_issues: structuralIssues,
+          error: body.error ?? (hasStructuredIssues ? "Validation failed" : `Direct ${kind} upsert failed`),
         };
       }
 
       const body = await directRes.json();
-      logger.info(`Direct ${kind} upsert succeeded`, { workspaceId, id });
+      logger.info(`Direct ${kind} upsert succeeded`, { workspaceId: targetWorkspaceId, id });
       return {
         ok: body.ok,
         diff: body.diff ?? {},
@@ -119,7 +131,7 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
 
     if (!draftRes.ok) {
       const body = await draftRes.json().catch(() => ({ error: `Draft ${kind} upsert failed` }));
-      logger.warn(`Draft ${kind} upsert failed`, { workspaceId, id, error: body.error });
+      logger.warn(`Draft ${kind} upsert failed`, { workspaceId: targetWorkspaceId, id, error: body.error });
       return {
         ok: false,
         diff: {},
@@ -129,7 +141,7 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
     }
 
     const body = await draftRes.json();
-    logger.info(`Draft ${kind} upsert succeeded`, { workspaceId, id });
+    logger.info(`Draft ${kind} upsert succeeded`, { workspaceId: targetWorkspaceId, id });
     return {
       ok: body.ok,
       diff: body.diff ?? {},
@@ -142,30 +154,33 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
       description:
         "Upsert an agent into the current workspace. " +
         "If a draft exists, the agent is staged in the draft; otherwise it writes directly to the live workspace.yml. " +
-        "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing.",
+        "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
+        "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
-      execute: async ({ id, config }: { id: string; config: Record<string, unknown> }) =>
-        executeUpsert("agent", id, config),
+      execute: async ({ id, config, workspaceId: providedId }: { id: string; config: Record<string, unknown>; workspaceId?: string }) =>
+        executeUpsert("agent", id, config, providedId ?? workspaceId),
     }),
 
     upsert_signal: tool({
       description:
         "Upsert a signal into the current workspace. " +
         "If a draft exists, the signal is staged in the draft; otherwise it writes directly to the live workspace.yml. " +
-        "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing.",
+        "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
+        "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
-      execute: async ({ id, config }: { id: string; config: Record<string, unknown> }) =>
-        executeUpsert("signal", id, config),
+      execute: async ({ id, config, workspaceId: providedId }: { id: string; config: Record<string, unknown>; workspaceId?: string }) =>
+        executeUpsert("signal", id, config, providedId ?? workspaceId),
     }),
 
     upsert_job: tool({
       description:
         "Upsert a job into the current workspace. " +
         "If a draft exists, the job is staged in the draft; otherwise it writes directly to the live workspace.yml. " +
-        "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing.",
+        "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
+        "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
-      execute: async ({ id, config }: { id: string; config: Record<string, unknown> }) =>
-        executeUpsert("job", id, config),
+      execute: async ({ id, config, workspaceId: providedId }: { id: string; config: Record<string, unknown>; workspaceId?: string }) =>
+        executeUpsert("job", id, config, providedId ?? workspaceId),
     }),
   };
 }

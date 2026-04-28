@@ -10,7 +10,7 @@ import {
   importGlobalSkills,
 } from "@atlas/bundle";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
-import type { WorkspaceConfig } from "@atlas/config";
+import type { Registry, WorkspaceConfig } from "@atlas/config";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import {
   applyMutation,
@@ -43,7 +43,10 @@ import {
   resolveSlackAppByWorkspace,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { createDefaultResolvers } from "@atlas/core/mcp-registry/resolvers";
+import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { ResourceMetadata, ResourceVersion } from "@atlas/ledger";
+import { createMCPTools } from "@atlas/mcp";
 import { createLogger, logger } from "@atlas/logger";
 import { createLedgerClient } from "@atlas/resources";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
@@ -146,6 +149,51 @@ function buildValidationContext(app: AppContext): ValidationContext {
       },
     },
   };
+}
+
+/**
+ * Build a Registry with resolved MCP tool names for all servers declared in
+ * a workspace config. Probes each server via createMCPTools (5s timeout) to
+ * get the exact tool list. Servers that fail to probe are skipped — their
+ * prefixed tools still pass via the static serverPrefixes fallback, but bare
+ * tool names for those servers will not resolve.
+ */
+async function buildMcpToolRegistry(
+  config: WorkspaceConfig,
+): Promise<Registry> {
+  const declaredServers = Object.keys(config.tools?.mcp?.servers ?? {});
+  if (declaredServers.length === 0) return {};
+
+  const mcpTools: Record<string, string[]> = {};
+
+  for (const serverId of declaredServers) {
+    try {
+      const staticServer = mcpServersRegistry.servers[serverId];
+      let server = staticServer;
+      if (!server) {
+        const adapter = await getMCPRegistryAdapter();
+        server = (await adapter.get(serverId)) ?? undefined;
+      }
+      if (!server) continue;
+
+      const result = await createMCPTools(
+        { [serverId]: server.configTemplate },
+        logger,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      mcpTools[serverId] = Object.keys(result.tools);
+      await result.dispose();
+    } catch (error) {
+      logger.warn("MCP tool probe failed during validation", {
+        serverId,
+        error: stringifyError(error),
+      });
+      // Skip this server — bare tool names won't resolve, but prefixed tools
+      // still pass via the static serverPrefixes fallback in checkToolReferences.
+    }
+  }
+
+  return { mcpTools, mcpServers: declaredServers };
 }
 
 /** Shared schemas for the signal endpoint (SSE + JSON handlers). */
@@ -2561,7 +2609,12 @@ const workspacesRoutes = daemonFactory
         if (!workspace) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
-        const result = await publishDraft(workspace.path);
+        const draftResult = await readDraft(workspace.path);
+        let registry: Registry | undefined;
+        if (draftResult.ok) {
+          registry = await buildMcpToolRegistry(draftResult.value);
+        }
+        const result = await publishDraft(workspace.path, registry);
         if (!result.ok) {
           if (result.error === "No draft to publish") {
             return c.json({ success: false, error: result.error }, 409);
@@ -2573,14 +2626,10 @@ const workspacesRoutes = daemonFactory
         const runtime = ctx.getWorkspaceRuntime(workspace.id);
         if (runtime) {
           await ctx.destroyWorkspaceRuntime(workspace.id);
-          return c.json(
-            { success: true, livePath: result.value.livePath, runtimeReloaded: true },
-            200,
-          );
         }
-
+        await ctx.getOrCreateWorkspaceRuntime(workspace.id);
         return c.json(
-          { success: true, livePath: result.value.livePath, runtimeReloaded: false },
+          { success: true, livePath: result.value.livePath, runtimeReloaded: true },
           200,
         );
       } catch (error) {
@@ -2650,9 +2699,9 @@ const workspacesRoutes = daemonFactory
         const runtime = ctx.getWorkspaceRuntime(workspace.id);
         if (runtime) {
           await ctx.destroyWorkspaceRuntime(workspace.id);
-          return c.json({ ...responseBody, runtimeReloaded: true }, 200);
         }
-        return c.json({ ...responseBody, runtimeReloaded: false }, 200);
+        await ctx.getOrCreateWorkspaceRuntime(workspace.id);
+        return c.json({ ...responseBody, runtimeReloaded: true }, 200);
       } catch (error) {
         return c.json({ ok: false, error: stringifyError(error) }, 500);
       }
@@ -2689,9 +2738,9 @@ const workspacesRoutes = daemonFactory
         const runtime = ctx.getWorkspaceRuntime(workspace.id);
         if (runtime) {
           await ctx.destroyWorkspaceRuntime(workspace.id);
-          return c.json({ ok: true, livePath: result.livePath, runtimeReloaded: true }, 200);
         }
-        return c.json({ ok: true, livePath: result.livePath, runtimeReloaded: false }, 200);
+        await ctx.getOrCreateWorkspaceRuntime(workspace.id);
+        return c.json({ ok: true, livePath: result.livePath, runtimeReloaded: true }, 200);
       } catch (error) {
         return c.json({ ok: false, error: stringifyError(error) }, 500);
       }
@@ -2788,7 +2837,12 @@ const workspacesRoutes = daemonFactory
         if (!workspace) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
-        const result = await validateDraft(workspace.path);
+        const draftResult = await readDraft(workspace.path);
+        let registry: Registry | undefined;
+        if (draftResult.ok) {
+          registry = await buildMcpToolRegistry(draftResult.value);
+        }
+        const result = await validateDraft(workspace.path, registry);
         if (!result.ok) {
           return c.json({ success: false, error: result.error }, 409);
         }

@@ -51,6 +51,10 @@ const REMOVE_ITEM_INPUT_SCHEMA = {
       type: "string" as const,
       description: "Unique identifier of the entity to remove",
     },
+    workspaceId: {
+      type: "string" as const,
+      description: "Optional. Target a specific workspace instead of the current session workspace.",
+    },
   },
   required: ["kind", "id"],
 } as const;
@@ -130,23 +134,25 @@ export function createBoundWorkspaceOpsTools(logger: Logger, workspaceId: string
       description:
         "Remove an agent, signal, or job from the current workspace. " +
         "Calls DELETE /items/:kind/:id on the live config. " +
-        "Refuses the operation if the item is still referenced by other workspace entities.",
+        "Refuses the operation if the item is still referenced by other workspace entities. " +
+        "Optional: pass workspaceId to target a different workspace (e.g. after create_workspace).",
       inputSchema: jsonSchema(REMOVE_ITEM_INPUT_SCHEMA),
-      execute: async ({ kind, id }: { kind: "agent" | "signal" | "job"; id: string }) => {
-        logger.info("remove_item tool invoked", { workspaceId, kind, id });
+      execute: async ({ kind, id, workspaceId: providedId }: { kind: "agent" | "signal" | "job"; id: string; workspaceId?: string }) => {
+        const targetId = providedId ?? workspaceId;
+        logger.info("remove_item tool invoked", { workspaceId: targetId, kind, id });
 
         const res = await client.workspace[":workspaceId"].items[":kind"][":id"].$delete({
-          param: { workspaceId, kind, id },
+          param: { workspaceId: targetId, kind, id },
         });
 
         if (!res.ok) {
           const body = await res.json().catch(() => ({ error: "remove_item failed" }));
-          logger.warn("remove_item failed", { workspaceId, kind, id, error: body.error });
+          logger.warn("remove_item failed", { workspaceId: targetId, kind, id, error: body.error });
           return { ok: false, error: body.error ?? "remove_item failed" };
         }
 
         const data = await res.json();
-        logger.info("remove_item succeeded", { workspaceId, kind, id });
+        logger.info("remove_item succeeded", { workspaceId: targetId, kind, id });
         return {
           ok: true,
           livePath: data.livePath,

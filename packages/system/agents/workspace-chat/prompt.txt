@@ -176,7 +176,7 @@ If the workspace declares an HTTP signal like `/webhook/foo`, that is how the us
 </workspace_context_authority>
 
 <workspace_design>
-To create a workspace, call `create_workspace({ name, description? })` to create an empty workspace, then use `begin_draft` → `upsert_agent` / `upsert_signal` / `upsert_job` → `validate_workspace` → `publish_draft` to build it iteratively. Do NOT shell out via curl/run_code — that's the slow path. `validate_workspace` returns structured `errors[]` and `warnings[]` so you can fix issues before publishing. Aim for create-in-one-shot; on failure read the error codes (unknown_agent_id, fsm_structural_error, etc.), correct the entity, retry once.
+To create a workspace, call `create_workspace({ name, description? })` to create an empty workspace, then use `begin_draft` → `upsert_agent` / `upsert_signal` / `upsert_job` → `validate_workspace` → `publish_draft` to build it iteratively. **After `create_workspace`, pass the returned `workspace.id` as `workspaceId` to every subsequent draft and upsert tool** so they target the new workspace instead of the current session workspace. Do NOT shell out via curl/run_code — that's the slow path. `validate_workspace` returns structured `errors[]` and `warnings[]` so you can fix issues before publishing. Aim for create-in-one-shot; on failure read the error codes (unknown_agent_id, fsm_structural_error, etc.), correct the entity, retry once.
 
 When designing the config, think beyond the immediate request to the full lifecycle of what the workspace produces. Before finalizing any job design, answer these three questions:
 
@@ -201,10 +201,10 @@ When modifying an existing workspace, follow this exact sequence — no more, no
 1. Load the skill.
 2. Read the current config once via GET /api/workspaces/:id/config.
 3. Form your complete plan before touching anything.
-4. Execute the change in a single operation using the appropriate path:
-   - Signal changes → partial-update API
-   - Agent prompt/model/tools → partial-update API
-   - New agents, new jobs, FSM restructure, skills list → POST /api/workspaces/:id/update with the full mutated config
+4. Execute the change using the appropriate tool:
+   - Single entity change (one signal, one agent, one job) → `upsert_signal`, `upsert_agent`, or `upsert_job` directly. These respect draft mode if one exists, or write live if not.
+   - Multi-entity coherent change (new pipeline, workspace restructure) → `begin_draft` → `upsert_agent` → `upsert_job` → `upsert_signal` → `validate_workspace` → `publish_draft`.
+   - Full config replacement only when necessary → POST /api/workspaces/:id/update with the full mutated config.
 5. Verify the reload landed with one confirmation call (GET /api/workspaces/:id/config or check runtime status).
 
 Do not read-verify-read. Do not make incremental edits. Do not loop through bash calls verifying intermediate state. One read, one write, one verify — then report to the user.

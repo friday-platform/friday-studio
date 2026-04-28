@@ -71,15 +71,24 @@ const handleGetMCPStatus = async (c: import("hono").Context<AppVariables>) => {
       );
     }
 
-    const config = await manager.getWorkspaceConfig(workspace.id);
-    if (!config) {
-      return c.json(
-        { success: false, error: "internal", message: "Failed to load workspace configuration" },
-        500,
-      );
+    // Prefer editable config (draft if exists, live otherwise) so the MCP
+    // status reflects staged changes during draft mode.
+    let config: WorkspaceConfig;
+    const editableResult = await getEditableConfig(workspace.path);
+    if (editableResult.ok) {
+      config = editableResult.value;
+    } else {
+      const liveConfig = await manager.getWorkspaceConfig(workspace.id);
+      if (!liveConfig) {
+        return c.json(
+          { success: false, error: "internal", message: "Failed to load workspace configuration" },
+          500,
+        );
+      }
+      config = liveConfig.workspace;
     }
 
-    const status = await getWorkspaceMCPStatus(workspaceId, config.workspace);
+    const status = await getWorkspaceMCPStatus(workspaceId, config);
     return c.json(status);
   } catch (error) {
     logger.error("Failed to get workspace MCP status", {

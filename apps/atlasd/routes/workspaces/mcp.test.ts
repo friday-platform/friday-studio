@@ -118,6 +118,8 @@ function makeCandidate(id: string, name: string, source: "static" | "registry" |
 // =============================================================================
 
 describe("GET /mcp", () => {
+  const getTestDir = useTempDir();
+
   beforeEach(() => {
     mockDiscoverMCPServers.mockReset();
   });
@@ -176,6 +178,38 @@ describe("GET /mcp", () => {
     await app.request("/ws-test-id/mcp");
 
     expect(mockDiscoverMCPServers).toHaveBeenCalledWith("ws-test-id", config, undefined);
+  });
+
+  test("reads from draft when draft exists", async () => {
+    mockDiscoverMCPServers.mockResolvedValue([
+      makeCandidate("github", "GitHub", "static"),
+    ]);
+
+    const testDir = getTestDir();
+    const workspace = createMockWorkspace({ path: testDir });
+
+    // Live has no servers
+    const liveConfig = makeWorkspaceConfig({});
+    // Draft has github enabled
+    const draftConfig = makeWorkspaceConfig({
+      github: { transport: { type: "stdio", command: "echo" } },
+    });
+
+    await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
+    await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
+
+    const { app } = createTestApp({
+      workspace,
+      config: createMergedConfig(liveConfig),
+    });
+
+    const res = await app.request("/ws-test-id/mcp");
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body.enabled).toHaveLength(1);
+    expect(body.enabled[0]).toMatchObject({ id: "github", name: "GitHub" });
+    expect(body.available).toHaveLength(0);
   });
 });
 

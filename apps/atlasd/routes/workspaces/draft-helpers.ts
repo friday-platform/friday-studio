@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   type Issue,
   JobSpecificationSchema,
+  type Registry,
   type ValidationReport,
   type WorkspaceConfig,
   WorkspaceAgentConfigSchema,
@@ -228,6 +229,7 @@ export async function applyDraftAwareMutation(
  */
 export async function publishDraft(
   workspacePath: string,
+  registry?: Registry,
 ): Promise<PublishDraftResult> {
   const draftFilePath = draftPath(workspacePath);
 
@@ -240,7 +242,7 @@ export async function publishDraft(
   if (!readResult.ok) {
     return { ok: false, error: readResult.error };
   }
-  const report = validateWorkspace(readResult.value);
+  const report = validateWorkspace(readResult.value, registry);
   if (report.status === "error") {
     return {
       ok: false,
@@ -715,10 +717,11 @@ export async function removeLiveItem(
  */
 export async function validateDraft(
   workspacePath: string,
+  registry?: Registry,
 ): Promise<DraftResult<ValidationReport>> {
   const readResult = await readDraft(workspacePath);
   if (!readResult.ok) {
     return readResult;
   }
-  return { ok: true, value: validateWorkspace(readResult.value) };
+  return { ok: true, value: validateWorkspace(readResult.value, registry) };
 }

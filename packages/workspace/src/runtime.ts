@@ -855,7 +855,13 @@ export class WorkspaceRuntime {
         jobName: job.name,
       });
 
-      const parsed = FSMDefinitionSchema.parse(job.fsmDefinition);
+      // Inline FSMs in workspace.yml jobs don't include `id` — the job name is the identity.
+      // Inject it before parsing so the engine has a document-store scope key.
+      const parsed = FSMDefinitionSchema.parse(
+        typeof job.fsmDefinition === "object" && job.fsmDefinition !== null
+          ? { id: job.name, ...job.fsmDefinition }
+          : job.fsmDefinition,
+      );
       const definition = expandAgentActions(parsed, this.config.workspace.agents ?? {});
 
       job.engine = createEngine(definition, engineOptions);

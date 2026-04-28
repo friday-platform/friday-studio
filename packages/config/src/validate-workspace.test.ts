@@ -150,6 +150,314 @@ describe("validateWorkspace structural layer", () => {
     expect(result.errors).toEqual([]);
     expect(result.warnings).toEqual([]);
   });
+
+  it("resolves MCP tools from declared servers in config without explicit registry", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      tools: {
+        mcp: {
+          servers: {
+            "google-gmail": {
+              transport: { type: "http", url: "http://localhost:8002/mcp" },
+              auth: { type: "bearer", token_env: "GOOGLE_GMAIL_ACCESS_TOKEN" },
+            },
+          },
+        },
+      },
+      agents: {
+        my_agent: {
+          type: "llm",
+          description: "Test agent",
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-5",
+            prompt: "Hi",
+            tools: ["google-gmail/search_gmail_messages", "google-gmail/draft_gmail_message", "memory_read"],
+          },
+        },
+      },
+      jobs: {
+        my_job: {
+          triggers: [{ signal: "s1" }],
+          execution: { agents: ["my_agent"] },
+        },
+      },
+      signals: {
+        s1: { provider: "http", description: "S1", config: { path: "/s1" } },
+      },
+    });
+    expect(result.status).toBe("ok");
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("still errors on unknown tool even when other MCP servers are declared", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      tools: {
+        mcp: {
+          servers: {
+            "google-gmail": {
+              transport: { type: "http", url: "http://localhost:8002/mcp" },
+            },
+          },
+        },
+      },
+      agents: {
+        my_agent: {
+          type: "llm",
+          description: "Test agent",
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-5",
+            prompt: "Hi",
+            tools: ["bogus-tool-name"],
+          },
+        },
+      },
+    });
+    expect(result.status).toBe("error");
+    const err = result.errors.find((e) => e.code === "unknown_tool");
+    expect(err).toBeDefined();
+    expect(err!.path).toBe("agents.my_agent.config.tools[0]");
+    expect(err!.message).toContain("bogus-tool-name");
+  });
+
+  it("still errors on tool from undeclared MCP server prefix", () => {
+    const result = validateWorkspace({
+      version: "1.0",
+      workspace: { name: "Test" },
+      tools: {
+        mcp: {
+          servers: {
+            "google-gmail": {
+              transport: { type: "http", url: "http://localhost:8002/mcp" },
+            },
+          },
+        },
+      },
+      agents: {
+        my_agent: {
+          type: "llm",
+          description: "Test agent",
+          config: {
+            provider: "anthropic",
+            model: "claude-sonnet-4-5",
+            prompt: "Hi",
+            tools: ["undeclared-server/some_tool"],
+          },
+        },
+      },
+    });
+    expect(result.status).toBe("error");
+    const err = result.errors.find((e) => e.code === "unknown_tool");
+    expect(err).toBeDefined();
+    expect(err!.path).toBe("agents.my_agent.config.tools[0]");
+    expect(err!.message).toContain("undeclared-server");
+  });
+
+  it("accepts prefixed tool when registry has the bare name", () => {
+    const result = validateWorkspace(
+      {
+        version: "1.0",
+        workspace: { name: "Test" },
+        tools: {
+          mcp: {
+            servers: {
+              "google-gmail": {
+                transport: { type: "http", url: "http://localhost:8002/mcp" },
+              },
+            },
+          },
+        },
+        agents: {
+          my_agent: {
+            type: "llm",
+            description: "Test agent",
+            config: {
+              provider: "anthropic",
+              model: "claude-sonnet-4-5",
+              prompt: "Hi",
+              tools: ["google-gmail/search_gmail_messages"],
+            },
+          },
+        },
+        jobs: {
+          my_job: {
+            triggers: [{ signal: "s1" }],
+            fsm: {
+              id: "fsm1",
+              initial: "step1",
+              states: {
+                step1: {
+                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
+                },
+              },
+            },
+          },
+        },
+        signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
+      },
+      {
+        mcpServers: ["google-gmail"],
+        mcpTools: { "google-gmail": ["search_gmail_messages", "get_gmail_message_content"] },
+      },
+    );
+    expect(result.status).toBe("ok");
+  });
+
+  it("errors on prefixed tool when registry does not have the bare name", () => {
+    const result = validateWorkspace(
+      {
+        version: "1.0",
+        workspace: { name: "Test" },
+        tools: {
+          mcp: {
+            servers: {
+              "google-gmail": {
+                transport: { type: "http", url: "http://localhost:8002/mcp" },
+              },
+            },
+          },
+        },
+        agents: {
+          my_agent: {
+            type: "llm",
+            description: "Test agent",
+            config: {
+              provider: "anthropic",
+              model: "claude-sonnet-4-5",
+              prompt: "Hi",
+              tools: ["google-gmail/nonexistent_tool"],
+            },
+          },
+        },
+        jobs: {
+          my_job: {
+            triggers: [{ signal: "s1" }],
+            fsm: {
+              id: "fsm1",
+              initial: "step1",
+              states: {
+                step1: {
+                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
+                },
+              },
+            },
+          },
+        },
+        signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
+      },
+      {
+        mcpServers: ["google-gmail"],
+        mcpTools: { "google-gmail": ["search_gmail_messages"] },
+      },
+    );
+    expect(result.status).toBe("error");
+    const err = result.errors.find((e) => e.code === "unknown_tool");
+    expect(err).toBeDefined();
+    expect(err!.path).toBe("agents.my_agent.config.tools[0]");
+    expect(err!.message).toContain("nonexistent_tool");
+  });
+
+  it("accepts bare tool name when registry includes it", () => {
+    const result = validateWorkspace(
+      {
+        version: "1.0",
+        workspace: { name: "Test" },
+        tools: {
+          mcp: {
+            servers: {
+              "google-gmail": {
+                transport: { type: "http", url: "http://localhost:8002/mcp" },
+              },
+            },
+          },
+        },
+        agents: {
+          my_agent: {
+            type: "llm",
+            description: "Test agent",
+            config: {
+              provider: "anthropic",
+              model: "claude-sonnet-4-5",
+              prompt: "Hi",
+              tools: ["search_gmail_messages"],
+            },
+          },
+        },
+        jobs: {
+          my_job: {
+            triggers: [{ signal: "s1" }],
+            fsm: {
+              id: "fsm1",
+              initial: "step1",
+              states: {
+                step1: {
+                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
+                },
+              },
+            },
+          },
+        },
+        signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
+      },
+      {
+        mcpServers: ["google-gmail"],
+        mcpTools: { "google-gmail": ["search_gmail_messages"] },
+      },
+    );
+    expect(result.status).toBe("ok");
+  });
+
+  it("still accepts prefixed tool via static fallback when no registry data for server", () => {
+    const result = validateWorkspace(
+      {
+        version: "1.0",
+        workspace: { name: "Test" },
+        tools: {
+          mcp: {
+            servers: {
+              "google-gmail": {
+                transport: { type: "http", url: "http://localhost:8002/mcp" },
+              },
+            },
+          },
+        },
+        agents: {
+          my_agent: {
+            type: "llm",
+            description: "Test agent",
+            config: {
+              provider: "anthropic",
+              model: "claude-sonnet-4-5",
+              prompt: "Hi",
+              tools: ["google-gmail/search_gmail_messages"],
+            },
+          },
+        },
+        jobs: {
+          my_job: {
+            triggers: [{ signal: "s1" }],
+            fsm: {
+              id: "fsm1",
+              initial: "step1",
+              states: {
+                step1: {
+                  entry: [{ type: "agent", agentId: "my_agent", outputTo: "out" }],
+                },
+              },
+            },
+          },
+        },
+        signals: { s1: { provider: "http", description: "S1", config: { path: "/s1" } } },
+      },
+      {},
+    );
+    expect(result.status).toBe("ok");
+  });
 });
 
 describe("validateWorkspace reference integrity", () => {

@@ -17,7 +17,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 2. For each not yet enabled: `enable_mcp_server` (see `using-mcp-servers` skill).
 3. For each provider needing credentials: `connect_service`.
 4. Decide direct vs draft: single atomic change → direct; multi-entity build → draft.
-5. If draft: `begin_draft`. Then `upsert_agent` → `upsert_job` → `upsert_signal` in dependency order (agents before jobs, jobs before signals).
+5. If draft: `begin_draft` (pass `workspaceId` if targeting a newly created workspace). Then `upsert_agent` → `upsert_job` → `upsert_signal` in dependency order (agents before jobs, jobs before signals). **All draft/upsert tools accept an optional `workspaceId` parameter.** Use it after `create_workspace` so operations land on the new workspace, not the current session workspace.
 6. `validate_workspace` — fix errors, address warnings or accept them.
 7. If draft: `publish_draft` after user confirms. If direct: done.
 
@@ -75,6 +75,12 @@ From the user's intent, list every external tool the workspace needs (SQLite, Gi
 
 For each missing server, call `enable_mcp_server`. If the server isn't in the platform catalog yet, call `search_mcp_servers` → `install_mcp_server` first. See the `using-mcp-servers` skill for the full decision tree (install vs enable vs create custom).
 
+### 2b. Discover tool names
+
+Before adding an agent that uses MCP tools, call `list_mcp_tools({ serverId })` to get the exact tool names the server exposes. Use these names verbatim in the agent's `tools` array. Do not guess tool names.
+
+Example: `list_mcp_tools({ serverId: "google-gmail" })` returns `[{ name: "gmail_list_messages", description: "..." }, ...]` — use `"gmail_list_messages"` in the agent config.
+
 ### 3. Connect credentials
 
 If an enabled server requires credentials (GitHub token, API key, OAuth), call `connect_service(provider)` before any agent references the server's tools. The user will be prompted to authenticate; on `data-credential-linked`, continue.
@@ -101,7 +107,7 @@ Inside draft (or direct), create entities in this order:
 2. **Jobs second** — because they wire agents into the orchestration layer.
 3. **Signals last** — because they are external entry points; nothing else depends on them. Jobs reference signals by name in `triggers`, but the runtime resolves those at execution time, so signal existence is not a hard dependency for job creation.
 
-Call `upsert_agent({ id, config })`, `upsert_job({ id, config })`, `upsert_signal({ id, config })`. Each returns `{ ok, diff, structural_issues }`. Read `diff` to confirm intent. If `structural_issues` is non-null, fix them before proceeding — structural issues block the write.
+Call `upsert_agent({ id, config, workspaceId? })`, `upsert_job({ id, config, workspaceId? })`, `upsert_signal({ id, config, workspaceId? })`. Each returns `{ ok, diff, structural_issues }`. Read `diff` to confirm intent. If `structural_issues` is non-null, fix them before proceeding — structural issues block the write. Pass `workspaceId` when building a workspace you just created from a chat session in a different workspace.
 
 Common structural issue codes: `unknown_agent_id` (job references an agent you haven't upserted yet — fix by ordering correctly), `fsm_structural_error` (states malformed), `npm_package_not_found` / `pypi_package_not_found` (MCP server transport args point to a bad package).
 
@@ -308,23 +314,27 @@ Python agent creation is an out-of-flow step the user kicks off explicitly. See 
 
 ## Top gotchas — read before writing any config
 
-1. **Jobs must use `fsm:`, not `execution:`**. The schema accepts both; the runtime silently skips any job lacking `fsm:` and signal dispatch fails at runtime with `"No FSM job handles signal '<name>'"`.
+1. **Pass `workspaceId` after `create_workspace`.** The draft and upsert tools default to the current session workspace. When you create a new workspace from a chat session in a different workspace, every subsequent `begin_draft`, `upsert_*`, `validate_workspace`, `publish_draft`, `discard_draft`, `enable_mcp_server`, and `disable_mcp_server` call must include `workspaceId: '<new-id>'` or the changes land on the wrong workspace.
 
-2. **FSM shape is XState-style.** States are `{ entry: [...actions], on: { EVENT: { target: 'next' } } }` or `{ type: 'final' }`. Do **not** use `type: action, action: {...}, next: ...` — the validator rejects it with `fsm_structural_error`.
+2. **Jobs must use `fsm:`, not `execution:`**. The schema accepts both; the runtime silently skips any job lacking `fsm:` and signal dispatch fails at runtime with `"No FSM job handles signal '<name>'"`.
 
-3. **`write_file` writes to scratch only** (`{ATLAS_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
+3. **FSM shape is XState-style.** States are `{ entry: [...actions], on: { EVENT: { target: 'next' } } }` or `{ type: 'final' }`. Do **not** use `type: action, action: {...}, next: ...` — the validator rejects it with `fsm_structural_error`.
 
-4. **Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*`.** There are no platform-default filesystem tools. Listing a tool name without a configured MCP server that provides it is a no-op. *Exception:* the platform ships memory tools (`memory_save`, `memory_read`, `memory_remove`) and state tools (`state_{append,filter,lookup}`) for both chat and FSM LLM agents without any MCP server config.
+   For detailed job authoring guidance, load `@friday/writing-workspace-jobs` before creating or editing any `fsm:` job.
 
-5. **Never report "saved to memory" without verifying.** Setup can look successful end-to-end and still silently fail. Before reporting success:
+4. **`write_file` writes to scratch only** (`{ATLAS_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
+
+5. **Always call `list_mcp_tools` before referencing MCP tools in an agent.** Tool names are not predictable — they come from the server implementation, not the server ID. Guessing produces `unknown_tool` validation errors. Call `list_mcp_tools({ serverId })`, then use the returned names verbatim in the agent's `tools` array. The returned names are already prefixed as `serverId/toolName`.
+
+6. **Never report "saved to memory" without verifying.** Setup can look successful end-to-end and still silently fail. Before reporting success:
    1. Fire the signal once with a canary payload.
    2. Poll `GET /api/sessions/:id` until terminal (`completed` / `failed`).
    3. Read back with `GET /api/memory/:workspaceId/narrative/:memoryName`.
    4. Surface any mismatch explicitly — don't paper over it.
 
-6. **Always resolve workspace IDs from the API.** Runtime IDs like `layered_ham` are random per daemon. Never hardcode them.
+7. **Always resolve workspace IDs from the API.** Runtime IDs like `layered_ham` are random per daemon. Never hardcode them.
 
-7. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
+8. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
 ---
 
@@ -335,6 +345,7 @@ Python agent creation is an out-of-flow step the user kicks off explicitly. See 
 - `references/updating-workspaces.md` — partial-update API details, disk-edit path, when to use each.
 - `references/messaging-signals.md` — Slack, Telegram, WhatsApp signal configuration.
 - `references/platform-friday-yml.md` — platform-level overrides (transport, auth, rate limits).
+- `writing-workspace-jobs` skill — FSM job authoring: trigger wiring, MCP tool naming, state-machine shapes, validation error decoder, runtime anti-patterns. Load before creating or editing any `fsm:` job.
 - `using-mcp-servers` skill — MCP catalog, install/enable/disable, credentials, delegation.
 - `writing-friday-agents` skill — authoring and registering Python/TS SDK agents.
 - `friday-cli` skill — daemon lifecycle, signal triggering, session streaming, log forensics.

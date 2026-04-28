@@ -59,6 +59,7 @@ import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListMCPServersTool } from "./tools/list-mcp-servers.ts";
+import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
@@ -607,6 +608,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const installMcpServerTool = createInstallMcpServerTool(logger);
         const createMcpServerTool = createCreateMcpServerTool(logger);
 
+        // MCP tool discovery (registry-scoped, no workspace state modified)
+        const listMcpToolsTool = createListMcpToolsTool(logger);
+
         // Workspace-scoped MCP management tools
         const getWorkspaceMcpStatusTool = createGetWorkspaceMcpStatusTool(workspaceId, logger);
         const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
@@ -738,6 +742,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...getWorkspaceMcpStatusTool,
           ...enableMcpServerTool,
           ...disableMcpServerTool,
+          ...listMcpToolsTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };

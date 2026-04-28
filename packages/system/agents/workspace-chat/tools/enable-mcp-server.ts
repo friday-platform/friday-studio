@@ -9,6 +9,13 @@ const EnableInputSchema = z.object({
     .string()
     .min(1)
     .describe("ID of the MCP server to enable in this workspace (e.g. 'github', 'slack')."),
+  workspaceId: z
+    .string()
+    .optional()
+    .describe(
+      "Optional target workspace ID. Defaults to the current session workspace. " +
+        "Use this after create_workspace to enable a server in the new workspace.",
+    ),
 });
 
 interface EnableSuccess {
@@ -39,10 +46,12 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
         "Enable an MCP server in this workspace. The server must already exist in the platform catalog " +
         "(use search_mcp_servers or list_mcp_servers to find it). Idempotent — calling again succeeds with no mutation.",
       inputSchema: EnableInputSchema,
-      execute: async ({ serverId }): Promise<EnableResult> => {
+      execute: async ({ serverId, workspaceId: targetWorkspaceId }): Promise<EnableResult> => {
+        const effectiveWorkspaceId = targetWorkspaceId ?? workspaceId;
+
         try {
           const res = await client
-            .workspaceMcp(workspaceId)
+            .workspaceMcp(effectiveWorkspaceId)
             [":serverId"].$put({ param: { serverId } });
           const body = await res.json();
 
@@ -52,7 +61,7 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
               .safeParse(body);
 
             const name = parsed.success && parsed.data.server ? parsed.data.server.name : serverId;
-            logger.info("enable_mcp_server succeeded", { workspaceId, serverId, name });
+            logger.info("enable_mcp_server succeeded", { workspaceId: effectiveWorkspaceId, serverId, name });
             return {
               success: true,
               server: { id: serverId, name },
@@ -65,14 +74,14 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
             const errorMsg = String(
               errorBody.message ?? `Server "${serverId}" not found in catalog.`,
             );
-            logger.info("enable_mcp_server: not found", { workspaceId, serverId });
+            logger.info("enable_mcp_server: not found", { workspaceId: effectiveWorkspaceId, serverId });
             return { success: false, error: errorMsg };
           }
 
           if (res.status === 409) {
             const errorBody = body as Record<string, unknown>;
             const errorMsg = String(errorBody.message ?? "Conflict enabling MCP server.");
-            logger.info("enable_mcp_server: conflict", { workspaceId, serverId, error: errorMsg });
+            logger.info("enable_mcp_server: conflict", { workspaceId: effectiveWorkspaceId, serverId, error: errorMsg });
             return { success: false, error: errorMsg };
           }
 
@@ -82,7 +91,7 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
               errorBody.message ??
                 "This workspace uses a blueprint — direct config mutations are not supported.",
             );
-            logger.info("enable_mcp_server: blueprint rejected", { workspaceId, serverId });
+            logger.info("enable_mcp_server: blueprint rejected", { workspaceId: effectiveWorkspaceId, serverId });
             return { success: false, error: errorMsg };
           }
 
@@ -91,7 +100,7 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
               ? String(body.message)
               : `Enable failed: ${res.status}`;
           logger.warn("enable_mcp_server failed", {
-            workspaceId,
+            workspaceId: effectiveWorkspaceId,
             serverId,
             status: res.status,
             error: errorMsg,
@@ -99,7 +108,7 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
           return { success: false, error: errorMsg };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          logger.warn("enable_mcp_server threw", { workspaceId, serverId, error: message });
+          logger.warn("enable_mcp_server threw", { workspaceId: effectiveWorkspaceId, serverId, error: message });
           return { success: false, error: `Enable failed: ${message}` };
         }
       },
