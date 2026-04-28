@@ -15,13 +15,10 @@
 -->
 
 <script lang="ts">
-  import { mapSessionToStepStatus, type StepStatus } from "@atlas/config/map-session-status";
   import { humanizeStepName } from "@atlas/config/pipeline-utils";
   import type { Topology } from "@atlas/config/topology";
   import type { SessionSummary } from "@atlas/core/session/session-events";
   import { StatusBadge } from "@atlas/ui";
-  import { createQuery } from "@tanstack/svelte-query";
-  import { sessionQueries } from "$lib/queries";
 
   type Props = {
     session: SessionSummary;
@@ -32,17 +29,6 @@
   };
 
   let { session, topology, workspaceId, jobTitles = {} }: Props = $props();
-
-  const sessionViewQuery = createQuery(() => ({
-    ...sessionQueries.view(session.sessionId),
-    refetchInterval: session.status === "active" ? 3_000 : false,
-  }));
-
-  const stepStatuses = $derived.by((): Map<string, StepStatus> => {
-    const view = sessionViewQuery.data;
-    if (!view) return new Map();
-    return mapSessionToStepStatus(view, topology);
-  });
 
   /** Signal nodes for THIS job only — filter by job association from topology. */
   const signalSteps = $derived.by(() => {
@@ -55,43 +41,12 @@
     );
   });
 
-  /** Agent-step nodes for this session's job — rendered as status pills. */
-  const agentSteps = $derived.by(() => {
-    const jobId = session.jobName;
-    return topology.nodes.filter((n) => n.type === "agent-step" && n.jobId === jobId);
-  });
-
-  /**
-   * Corrected step statuses — clamps steps after a failure to "pending"
-   * since they never actually ran. The raw data from mapSessionToStepStatus
-   * can report downstream steps as "completed" even when the session
-   * failed early, because the FSM pre-creates blocks.
-   */
-  const correctedStatuses = $derived.by((): Map<string, StepStatus> => {
-    const result = new Map<string, StepStatus>();
-    let hitFailure = false;
-    for (const node of agentSteps) {
-      const raw = stepStatuses.get(node.id) ?? "pending";
-      if (hitFailure) {
-        result.set(node.id, "pending");
-      } else {
-        result.set(node.id, raw);
-        if (raw === "failed") hitFailure = true;
-      }
-    }
-    return result;
-  });
-
-  function getStepStatus(nodeId: string): StepStatus {
-    return correctedStatuses.get(nodeId) ?? "pending";
-  }
-
-  /** Extract the signal provider from metadata for display. */
+  /** Readable signal provider label (lowercase). */
   function signalType(node: { metadata: Record<string, unknown> }): string {
     const provider = node.metadata?.provider;
-    if (typeof provider !== "string") return "SIGNAL";
-    if (provider === "http") return "WEBHOOK";
-    return provider.toUpperCase();
+    if (typeof provider !== "string") return "signal";
+    if (provider === "http") return "webhook";
+    return provider.toLowerCase();
   }
 
   function formatDuration(ms: number | undefined): string {
@@ -137,92 +92,17 @@
   <div class="card-header">
     <span class="job-name">{jobTitles[session.jobName] ?? humanizeStepName(session.jobName)}</span>
     <StatusBadge status={badgeStatus} />
+    {#if signalSteps.length > 0}
+      <span class="signal-chips">
+        {#each signalSteps as signal (signal.id)}
+          <span class="signal-chip signal-chip--{signalType(signal)}">{signalType(signal)}</span>
+        {/each}
+      </span>
+    {/if}
   </div>
   {#if session.aiSummary?.summary || session.task}
     <span class="task-text">{session.aiSummary?.summary ?? session.task}</span>
   {/if}
-
-  <div class="pipeline-strip">
-    {#if signalSteps.length > 0}
-      <div class="signal-trigger">
-        {#each signalSteps as signal (signal.id)}
-          <span class="signal-tag">{signalType(signal)}</span>
-        {/each}
-        <span class="trigger-arrow">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path
-              d="M2 6H10M10 6L7 3M10 6L7 9"
-              stroke="currentColor"
-              stroke-width="1.25"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </span>
-      </div>
-    {/if}
-
-    <div class="step-pills">
-      {#each agentSteps as node, i (node.id)}
-        {@const status = getStepStatus(node.id)}
-        {#if i > 0}
-          <span
-            class="step-connector"
-            class:step-connector--done={status === "completed" || status === "skipped" || status === "failed"}
-          ></span>
-        {/if}
-        <span
-          class="step-pill"
-          class:step-pill--completed={status === "completed"}
-          class:step-pill--skipped={status === "skipped"}
-          class:step-pill--active={status === "active"}
-          class:step-pill--failed={status === "failed"}
-          class:step-pill--pending={status === "pending"}
-        >
-          <span class="step-icon">
-            {#if status === "completed"}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M2.5 6L5 8.5L9.5 3.5"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            {:else if status === "skipped"}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M3 3L7 6L3 9"
-                  stroke="currentColor"
-                  stroke-width="1.25"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <line x1="8.5" y1="3" x2="8.5" y2="9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
-              </svg>
-            {:else if status === "active"}
-              <span class="pulse-dot"></span>
-            {:else if status === "failed"}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M3 3L9 9M9 3L3 9"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                />
-              </svg>
-            {:else}
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.25" fill="none" />
-              </svg>
-            {/if}
-          </span>
-          <span class="step-name">{node.label}</span>
-        </span>
-      {/each}
-    </div>
-  </div>
 
   <div class="card-footer">
     <span class="footer-meta">
@@ -273,7 +153,7 @@
 
   .task-text {
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
+    -webkit-line-clamp: 2;
     color: color-mix(in srgb, var(--color-text), transparent 25%);
     display: -webkit-box;
     font-size: var(--font-size-2);
@@ -281,127 +161,37 @@
     overflow: hidden;
   }
 
-  /* Pipeline strip — signal trigger + agent step pills */
-  .pipeline-strip {
+  /* Signal chips — compact badges after the status badge */
+  .signal-chips {
     align-items: center;
     display: flex;
-    gap: var(--size-2);
+    gap: var(--size-1);
+    margin-inline-start: auto;
   }
 
-  /* Signal trigger — muted tag, visually distinct from steps */
-  .signal-trigger {
-    align-items: center;
-    display: flex;
-    flex-shrink: 0;
-    gap: var(--size-1-5);
-  }
-
-  .signal-tag {
-    border: 1px solid color-mix(in srgb, var(--color-text), transparent 25%);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    font-family: var(--font-family-monospace);
+  .signal-chip {
+    border-radius: var(--radius-1);
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);
-    letter-spacing: var(--font-letterspacing-2);
-    padding: var(--size-1) var(--size-2);
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    text-transform: uppercase;
   }
 
-  .trigger-arrow {
-    color: color-mix(in srgb, var(--color-text), transparent 60%);
-    display: flex;
+  .signal-chip--webhook {
+    background-color: light-dark(hsl(220 60% 90%), hsl(220 30% 20%));
+    color: light-dark(hsl(220 60% 35%), hsl(220 60% 75%));
   }
 
-  /* Step pills */
-  .step-pills {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1-5);
+  .signal-chip--schedule {
+    background-color: light-dark(hsl(270 50% 90%), hsl(270 30% 20%));
+    color: light-dark(hsl(270 50% 40%), hsl(270 60% 75%));
   }
 
-  .step-connector {
-    background: var(--color-border-2);
-    block-size: 1px;
-    inline-size: var(--size-2);
-  }
-
-  .step-connector--done {
-    background: color-mix(in srgb, var(--color-text), transparent 60%);
-  }
-
-  .step-pill {
-    align-items: center;
-    border: 1px solid color-mix(in srgb, var(--color-text), transparent 25%);
-    border-radius: var(--radius-round);
-    color: var(--color-text);
-    display: flex;
-    gap: var(--size-1-5);
-    padding: var(--size-1-5) var(--size-3) var(--size-1-5) var(--size-2);
-  }
-
-  .step-pill--completed {
-    .step-icon {
-      color: var(--color-success);
-    }
-  }
-
-  .step-pill--active {
-    border-color: color-mix(in srgb, var(--color-warning), transparent 25%);
-
-    .step-icon {
-      color: var(--color-warning);
-    }
-  }
-
-  .step-pill--failed {
-    .step-icon {
-      color: var(--color-error);
-    }
-  }
-
-  .step-pill--skipped {
-    border-color: color-mix(in srgb, var(--color-text), transparent 60%);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    border-style: dashed;
-  }
-
-  .step-pill--pending {
-    border-color: color-mix(in srgb, var(--color-text), transparent 60%);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-  }
-
-  .step-icon {
-    align-items: center;
-    block-size: 12px;
-    display: flex;
-    flex-shrink: 0;
-    inline-size: 12px;
-    justify-content: center;
-  }
-
-  .pulse-dot {
-    animation: pulse 1.5s ease-in-out infinite;
-    background: currentColor;
-    block-size: 6px;
-    border-radius: 50%;
-    inline-size: 6px;
-  }
-
-  .step-name {
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    white-space: nowrap;
-  }
-
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-    }
-    50% {
-      opacity: 1;
-    }
+  .signal-chip--signal,
+  .signal-chip--file {
+    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
   }
 
   /* Footer */

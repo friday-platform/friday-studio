@@ -348,6 +348,13 @@
       .then((data) => { if (data) recentChats = data.chats; })
       .catch(() => {});
   });
+
+  // ---------------------------------------------------------------------------
+  // Tabs
+  // ---------------------------------------------------------------------------
+
+  type Tab = "activity" | "info";
+  let activeTab = $state<Tab>("activity");
 </script>
 
 <div class="overview-page">
@@ -407,88 +414,108 @@
       </div>
     </div>
 
-    <!-- Chat (non-zero state only — zero state already has a chat composer) -->
+    <!-- Tabs (non-empty state only) -->
     {#if !isEmpty}
-    <div class="card">
-      <header class="section-head">
-        <h2 class="section-title">Chat</h2>
-        {#if recentChats.length > 0}
-          <span class="section-count">{recentChats.length}</span>
-        {/if}
-        <a href="/platform/{workspaceId}/chat" class="section-action">New chat</a>
-      </header>
-      {#if recentChats.length > 0}
-        <div class="row-list">
-          {#each recentChats as chat (chat.id)}
-            <div class="list-row">
-              <a href="/platform/{workspaceId}/chat/{chat.id}" class="row-link">
-                <span class="row-name">{chat.title ?? "Untitled"}</span>
-              </a>
-              <span class="chat-source source-{chat.source}">{chatSourceLabel(chat.source)}</span>
-              <span class="row-time">{formatRelativeTime(chat.updatedAt)}</span>
+      <div class="tab-bar" role="tablist">
+        <button
+          class="tab"
+          class:tab--active={activeTab === "activity"}
+          role="tab"
+          aria-selected={activeTab === "activity"}
+          onclick={() => (activeTab = "activity")}
+        >Activity</button>
+        <button
+          class="tab"
+          class:tab--active={activeTab === "info"}
+          role="tab"
+          aria-selected={activeTab === "info"}
+          onclick={() => (activeTab = "info")}
+        >Info</button>
+      </div>
+
+      {#if activeTab === "activity"}
+        <!-- Chat -->
+        <div class="card">
+          <header class="section-head">
+            <h2 class="section-title">Chat</h2>
+            {#if recentChats.length > 0}
+              <span class="section-count">{recentChats.length}</span>
+            {/if}
+            <a href="/platform/{workspaceId}/chat" class="section-action">New chat</a>
+          </header>
+          {#if recentChats.length > 0}
+            <div class="row-list">
+              {#each recentChats as chat (chat.id)}
+                <div class="list-row">
+                  <a href="/platform/{workspaceId}/chat/{chat.id}" class="row-link">
+                    <span class="row-name">{chat.title ?? "Untitled"}</span>
+                  </a>
+                  <span class="chat-source source-{chat.source}">{chatSourceLabel(chat.source)}</span>
+                  <span class="row-time">{formatRelativeTime(chat.updatedAt)}</span>
+                </div>
+              {/each}
             </div>
-          {/each}
+          {:else}
+            <p class="section-empty">No chats yet — <a href="/platform/{workspaceId}/chat">start a conversation</a>.</p>
+          {/if}
         </div>
-      {:else}
-        <p class="section-empty">No chats yet — <a href="/platform/{workspaceId}/chat">start a conversation</a>.</p>
-      {/if}
-    </div>
-    {/if}
 
-    <!-- Runs -->
-    {#if topology && (latestSession ?? olderSessions.length > 0)}
-      <div class="runs-card card">
-        <header class="section-head">
-          <h2 class="section-title">Recent Runs</h2>
-          <span class="section-count">{visibleSessions.length}</span>
-          <a href="/platform/{workspaceId}/sessions" class="section-action">View all</a>
-        </header>
+        <!-- Runs -->
+        {#if topology && (latestSession ?? olderSessions.length > 0)}
+          <div class="runs-card card">
+            <header class="section-head">
+              <h2 class="section-title">Recent Runs</h2>
+              <span class="section-count">{visibleSessions.length}</span>
+              <a href="/platform/{workspaceId}/sessions" class="section-action">View all</a>
+            </header>
 
-        {#if latestSession}
-          <SessionProgressCard
-            session={latestSession}
-            {topology}
-            {workspaceId}
-            jobTitles={jobTitleMap}
-          />
-        {/if}
-        {#if olderSessions.length > 0}
-          <div class="row-list">
-            {#each olderSessions as session (session.sessionId)}
-              <div class="list-row">
-                <a href="/platform/{workspaceId}/sessions/{session.sessionId}" class="row-link">
-                  <span
-                    class="status-dot"
-                    class:dot-active={session.status === "active"}
-                    class:dot-failed={session.status === "failed"}
-                    class:dot-completed={session.status === "completed"}
-                  ></span>
-                  <span class="row-name">{jobTitleMap[session.jobName] ?? session.jobName}</span>
-                </a>
-                {#if session.durationMs}
-                  <span class="row-mono">{formatDuration(session.durationMs)}</span>
-                {/if}
-                <span class="row-time">{formatTime(session.startedAt)}</span>
+            {#if latestSession}
+              <SessionProgressCard
+                session={latestSession}
+                {topology}
+                {workspaceId}
+                jobTitles={jobTitleMap}
+              />
+            {/if}
+            {#if olderSessions.length > 0}
+              <div class="row-list">
+                {#each olderSessions as session (session.sessionId)}
+                  <div class="list-row">
+                    <a href="/platform/{workspaceId}/sessions/{session.sessionId}" class="row-link">
+                      <span
+                        class="status-dot"
+                        class:dot-active={session.status === "active"}
+                        class:dot-failed={session.status === "failed"}
+                        class:dot-completed={session.status === "completed"}
+                      ></span>
+                      <span class="row-name">{jobTitleMap[session.jobName] ?? session.jobName}</span>
+                    </a>
+                    {#if session.durationMs}
+                      <span class="row-mono">{formatDuration(session.durationMs)}</span>
+                    {/if}
+                    <span class="row-time">{formatTime(session.startedAt)}</span>
+                  </div>
+                {/each}
               </div>
-            {/each}
+            {/if}
           </div>
         {/if}
-      </div>
-    {/if}
 
-    <!-- Jobs + Integrations -->
-    {#if jobSummaries.length > 0 && workspaceId}
-      <JobsIntegrationsCard {workspaceId} jobs={jobSummaries} signals={workspaceSignals} />
-    {/if}
-
-    <!-- Signals -->
-    {#if signalsWithJobs.length > 0 && workspaceId}
-      <SignalsCard signals={signalsWithJobs} {workspaceId} {agentIds} />
-    {/if}
-
-    <!-- Agents -->
-    {#if workspaceAgents.length > 0 && workspaceId}
-      <AgentsCard agents={workspaceAgents} {workspaceId} />
+      {:else}
+        <!-- Info: Jobs + Signals + Agents -->
+        {#if jobSummaries.length > 0 && workspaceId}
+          <JobsIntegrationsCard {workspaceId} jobs={jobSummaries} signals={workspaceSignals} />
+        {/if}
+        {#if signalsWithJobs.length > 0 && workspaceId}
+          <SignalsCard signals={signalsWithJobs} {workspaceId} {agentIds} />
+        {/if}
+        {#if workspaceAgents.length > 0 && workspaceId}
+          <AgentsCard agents={workspaceAgents} {workspaceId} />
+        {/if}
+        {#if jobSummaries.length === 0 && signalsWithJobs.length === 0 && workspaceAgents.length === 0}
+          <p class="info-empty">No jobs, signals, or agents configured yet — <a href="/platform/{workspaceId}/edit">edit the workspace config</a> to add them.</p>
+        {/if}
+      {/if}
     {/if}
 
     <!-- Empty state: no jobs/agents/signals/runs yet -->
@@ -684,6 +711,55 @@
     line-height: var(--font-lineheight-3);
     margin: 0;
     max-inline-size: 56ch;
+  }
+
+  /* ── Tab bar ───────────────────────────────────────────────────────────── */
+
+  .tab-bar {
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    gap: var(--size-1);
+    margin-block-end: var(--size-1);
+  }
+
+  .tab {
+    background: none;
+    border: none;
+    border-block-end: 2px solid transparent;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    margin-block-end: -1px;
+    padding: var(--size-1-5) var(--size-3);
+    transition:
+      color 120ms ease,
+      border-color 120ms ease;
+  }
+
+  .tab:hover:not(.tab--active) {
+    color: color-mix(in srgb, var(--color-text), transparent 15%);
+  }
+
+  .tab--active {
+    border-block-end-color: var(--color-text);
+    color: var(--color-text);
+  }
+
+  .info-empty {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-2);
+    margin: 0;
+    padding-block: var(--size-6);
+    text-align: center;
+
+    a {
+      color: color-mix(in srgb, var(--color-text), transparent 20%);
+    }
+
+    a:hover {
+      color: var(--color-text);
+    }
   }
 
   /* ── Section card ──────────────────────────────────────────────────────── */
