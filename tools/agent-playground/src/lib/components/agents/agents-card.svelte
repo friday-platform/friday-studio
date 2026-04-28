@@ -115,10 +115,11 @@
 </script>
 
 <div class="card">
-  <div class="card-header">
-    <h3 class="card-title">Agents</h3>
-    <p class="card-lede">Jobs dispatch tasks to these workers.</p>
-  </div>
+  <header class="section-head">
+    <h2 class="section-title">Agents</h2>
+    <span class="section-count">{agents.length}</span>
+    <a href="/platform/{workspaceId}/agents" class="section-action">View all</a>
+  </header>
 
   <div class="rows">
     {#each agents as agent (agent.id)}
@@ -190,30 +191,40 @@
 <style>
   .card {
     background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
+    border-radius: var(--radius-4);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
     padding: var(--size-4) var(--size-5);
   }
 
-  .card-header {
+  .section-head {
+    align-items: baseline;
     display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--size-2-5);
   }
 
-  .card-title {
+  .section-title {
     font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
+    font-weight: var(--font-weight-6);
     margin: 0;
   }
 
-  .card-lede {
-    color: color-mix(in srgb, var(--color-text), transparent 10%);
+  .section-count {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
     font-size: var(--font-size-1);
-    margin: 0;
+  }
+
+  .section-action {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-size: var(--font-size-1);
+    margin-inline-start: auto;
+    text-decoration: none;
+    transition: color 120ms ease;
+  }
+
+  .section-action:hover {
+    color: var(--color-text);
   }
 
   .rows {
@@ -222,27 +233,49 @@
   }
 
   .row {
+    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
     color: inherit;
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
-    padding-block: var(--size-2);
+    padding-block: var(--size-2-5);
+    position: relative;
     text-decoration: none;
-    transition: background-color 120ms ease;
+    transition: border-color 250ms ease;
+    z-index: 1;
+  }
+
+  .row:last-child {
+    border-block-end: none;
+  }
+
+  .row::before {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-4);
+    content: "";
+    inset: 0;
+    opacity: 0;
+    position: absolute;
+    transition: opacity 150ms ease;
+    z-index: -1;
+  }
+
+  .row:hover::before {
+    opacity: 1;
+  }
+
+  .row:hover {
+    border-color: transparent;
+  }
+
+  .row:has(+ .row:hover) {
+    border-color: transparent;
   }
 
   .row-top {
     align-items: center;
     display: flex;
     gap: var(--size-2);
-  }
-
-  .row:not(:last-child) {
-    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
-  }
-
-  .row:hover {
-    background-color: color-mix(in srgb, var(--color-text), transparent 96%);
   }
 
   .agent-description {

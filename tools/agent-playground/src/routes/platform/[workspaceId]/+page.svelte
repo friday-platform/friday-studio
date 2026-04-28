@@ -410,26 +410,27 @@
     <!-- Chat (non-zero state only — zero state already has a chat composer) -->
     {#if !isEmpty}
     <div class="card">
-      <div class="section-head">
-        <div class="card-header">
-          <h2 class="card-title">Chat</h2>
-          <p class="card-lede">Recent conversations with this space.</p>
-        </div>
+      <header class="section-head">
+        <h2 class="section-title">Chat</h2>
+        {#if recentChats.length > 0}
+          <span class="section-count">{recentChats.length}</span>
+        {/if}
         <a href="/platform/{workspaceId}/chat" class="section-action">New chat</a>
-      </div>
+      </header>
       {#if recentChats.length > 0}
-        <div class="compact-runs">
+        <div class="row-list">
           {#each recentChats as chat (chat.id)}
-            <a href="/platform/{workspaceId}/chat/{chat.id}" class="compact-run">
-              <span class="compact-job">{chat.title ?? "Untitled"}</span>
+            <div class="list-row">
+              <a href="/platform/{workspaceId}/chat/{chat.id}" class="row-link">
+                <span class="row-name">{chat.title ?? "Untitled"}</span>
+              </a>
               <span class="chat-source source-{chat.source}">{chatSourceLabel(chat.source)}</span>
-              <span class="compact-time">{formatRelativeTime(chat.updatedAt)}</span>
-            </a>
+              <span class="row-time">{formatRelativeTime(chat.updatedAt)}</span>
+            </div>
           {/each}
         </div>
-        <a href="/platform/{workspaceId}/chat" class="view-all-row">View all chats</a>
       {:else}
-        <a href="/platform/{workspaceId}/chat" class="view-all-row">Start a conversation</a>
+        <p class="section-empty">No chats yet — <a href="/platform/{workspaceId}/chat">start a conversation</a>.</p>
       {/if}
     </div>
     {/if}
@@ -437,13 +438,11 @@
     <!-- Runs -->
     {#if topology && (latestSession ?? olderSessions.length > 0)}
       <div class="runs-card card">
-        <div class="section-head">
-          <div class="card-header">
-            <h2 class="card-title">Recent Runs</h2>
-            <p class="card-lede">Each run traces a signal through your pipeline.</p>
-          </div>
+        <header class="section-head">
+          <h2 class="section-title">Recent Runs</h2>
+          <span class="section-count">{visibleSessions.length}</span>
           <a href="/platform/{workspaceId}/sessions" class="section-action">View all</a>
-        </div>
+        </header>
 
         {#if latestSession}
           <SessionProgressCard
@@ -454,29 +453,23 @@
           />
         {/if}
         {#if olderSessions.length > 0}
-          <div class="compact-runs">
+          <div class="row-list">
             {#each olderSessions as session (session.sessionId)}
-              <a href="/platform/{workspaceId}/sessions/{session.sessionId}" class="compact-run">
-                <span class="compact-job">{jobTitleMap[session.jobName] ?? session.jobName}</span>
-                <span
-                  class="status-icon"
-                  class:status-active={session.status === "active"}
-                  class:status-failed={session.status === "failed"}
-                  class:status-completed={session.status === "completed"}
-                >
-                  {#if session.status === "completed"}
-                    <IconSmall.Check />
-                  {:else if session.status === "failed"}
-                    <IconSmall.Close />
-                  {:else if session.status === "active"}
-                    <span class="spin"><IconSmall.Progress /></span>
-                  {/if}
-                </span>
+              <div class="list-row">
+                <a href="/platform/{workspaceId}/sessions/{session.sessionId}" class="row-link">
+                  <span
+                    class="status-dot"
+                    class:dot-active={session.status === "active"}
+                    class:dot-failed={session.status === "failed"}
+                    class:dot-completed={session.status === "completed"}
+                  ></span>
+                  <span class="row-name">{jobTitleMap[session.jobName] ?? session.jobName}</span>
+                </a>
                 {#if session.durationMs}
-                  <span class="compact-duration">{formatDuration(session.durationMs)}</span>
+                  <span class="row-mono">{formatDuration(session.durationMs)}</span>
                 {/if}
-                <span class="compact-time">{formatTime(session.startedAt)}</span>
-              </a>
+                <span class="row-time">{formatTime(session.startedAt)}</span>
+              </div>
             {/each}
           </div>
         {/if}
@@ -693,17 +686,40 @@
     max-inline-size: 56ch;
   }
 
-  .section-head {
-    align-items: flex-start;
+  /* ── Section card ──────────────────────────────────────────────────────── */
+
+  .card {
+    background: var(--color-surface-1);
+    border-radius: var(--radius-4);
     display: flex;
+    flex-direction: column;
     gap: var(--size-3);
-    justify-content: space-between;
+    padding: var(--size-4) var(--size-5);
+  }
+
+  /* ── Section header (MCP-style: h2 + count + action inline) ────────────── */
+
+  .section-head {
+    align-items: baseline;
+    display: flex;
+    gap: var(--size-2-5);
+  }
+
+  .section-title {
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+    margin: 0;
+  }
+
+  .section-count {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: var(--font-size-1);
   }
 
   .section-action {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    flex-shrink: 0;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
     font-size: var(--font-size-1);
+    margin-inline-start: auto;
     text-decoration: none;
     transition: color 120ms ease;
     white-space: nowrap;
@@ -713,14 +729,144 @@
     color: var(--color-text);
   }
 
+  .section-empty {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-1);
+    margin: 0;
+    padding-block: var(--size-2);
+
+    a {
+      color: color-mix(in srgb, var(--color-text), transparent 20%);
+    }
+
+    a:hover {
+      color: var(--color-text);
+    }
+  }
+
+  /* ── Generic row list (chat, compact runs) ──────────────────────────────── */
+
+  .row-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .list-row {
+    align-items: center;
+    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
+    column-gap: var(--size-3);
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    padding: var(--size-2-5) var(--size-1);
+    position: relative;
+    z-index: 1;
+  }
+
+  .list-row::before {
+    background-color: var(--color-surface-2);
+    border-radius: var(--radius-4);
+    content: "";
+    inset: 0;
+    opacity: 0;
+    position: absolute;
+    transition: opacity 150ms ease;
+    z-index: -1;
+  }
+
+  .list-row:hover::before {
+    opacity: 1;
+  }
+
+  .list-row:hover {
+    border-color: transparent;
+  }
+
+  .list-row:has(+ .list-row:hover) {
+    border-color: transparent;
+  }
+
+  /* Stretched link covers entire row; buttons/badges sit above it via z-index */
+  .row-link {
+    align-items: center;
+    color: var(--color-text);
+    display: flex;
+    gap: var(--size-2-5);
+    min-inline-size: 0;
+    text-decoration: none;
+  }
+
+  .row-link::after {
+    content: "";
+    cursor: pointer;
+    inset: 0;
+    position: absolute;
+    z-index: 0;
+  }
+
+  .row-name {
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .row-mono {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    flex-shrink: 0;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-1);
+    position: relative;
+    z-index: 1;
+  }
+
+  .row-time {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Status dot for run rows */
+  .status-dot {
+    background-color: color-mix(in srgb, var(--color-text), transparent 60%);
+    block-size: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    inline-size: 7px;
+  }
+
+  .status-dot.dot-active {
+    animation: pulse 1.6s ease-in-out infinite;
+    background-color: var(--color-warning);
+  }
+
+  .status-dot.dot-failed {
+    background-color: var(--color-error);
+  }
+
+  .status-dot.dot-completed {
+    background-color: var(--color-success);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  /* Chat source badge — sits above stretched link */
   .chat-source {
     border-radius: var(--radius-1);
     flex-shrink: 0;
     font-size: 10px;
     font-weight: var(--font-weight-6);
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     padding: 1px 5px;
+    position: relative;
     text-transform: uppercase;
+    z-index: 1;
   }
 
   .source-atlas {
@@ -748,51 +894,7 @@
     color: light-dark(hsl(142 60% 30%), hsl(142 60% 70%));
   }
 
-  .card {
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-3);
-    padding: var(--size-4) var(--size-5);
-  }
-
-  .card-header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-  }
-
-  .card-title {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin: 0;
-  }
-
-  .card-lede {
-    color: color-mix(in srgb, var(--color-text), transparent 10%);
-    font-size: var(--font-size-1);
-    margin: 0;
-  }
-
-  .view-all-row {
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-1);
-    padding: var(--size-2) var(--size-1);
-    text-align: center;
-    transition:
-      background 150ms ease,
-      color 150ms ease;
-  }
-
-  .view-all-row:hover {
-    background: var(--color-surface-2);
-    color: var(--color-text);
-  }
-
-  /* Strip interior border from SessionProgressCard inside runs card */
+  /* Strip SessionProgressCard interior border/chrome when nested in runs card */
   .runs-card > :global(.progress-card) {
     border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
     border-radius: 0;
@@ -820,112 +922,6 @@
 
   .runs-card > :global(.progress-card:hover)::before {
     opacity: 1;
-  }
-
-  /* Compact run rows */
-  .compact-runs {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .compact-run {
-    align-items: center;
-    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
-    color: var(--color-text);
-    display: flex;
-    font-size: var(--font-size-2);
-    gap: var(--size-2);
-    padding: var(--size-3) var(--size-1);
-    position: relative;
-    transition: border-color 250ms ease;
-    z-index: 1;
-  }
-
-  .compact-run:last-child {
-    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
-  }
-
-  .compact-run::before {
-    background-color: var(--color-surface-2);
-    border-radius: var(--radius-4);
-    content: "";
-    inset: 0;
-    opacity: 0;
-    position: absolute;
-    transition: opacity 150ms ease;
-    z-index: -1;
-  }
-
-  .compact-run:hover {
-    border-color: transparent;
-  }
-
-  .compact-run:hover::before {
-    opacity: 1;
-  }
-
-  .compact-run:has(+ .compact-run:hover) {
-    border-color: transparent;
-  }
-
-  .status-icon {
-    align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 60%);
-    display: flex;
-    flex-shrink: 0;
-  }
-
-  .status-icon.status-active {
-    color: var(--color-warning);
-  }
-
-  .status-icon.status-failed {
-    color: var(--color-error);
-  }
-
-  .status-icon.status-completed {
-    color: var(--color-success);
-  }
-
-  .spin {
-    animation: spin 2s linear infinite;
-    display: flex;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .compact-job {
-    font-weight: var(--font-weight-5);
-    min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .compact-duration {
-    margin-inline-start: auto;
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-  }
-
-  .compact-time {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    flex-shrink: 0;
-    font-size: var(--font-size-1);
-  }
-
-  /* When no duration exists, push time right instead */
-  .status-icon + .compact-time {
-    margin-inline-start: auto;
   }
 
   /* Empty hero */

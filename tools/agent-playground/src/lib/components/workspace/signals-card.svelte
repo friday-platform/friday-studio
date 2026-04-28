@@ -30,10 +30,10 @@
 </script>
 
 <div class="card">
-  <div class="section-header">
-    <h2 class="section-label">Signals</h2>
-    <p class="section-lede">Define when and why your jobs run.</p>
-  </div>
+  <header class="section-head">
+    <h2 class="section-title">Signals</h2>
+    <span class="section-count">{signals.length}</span>
+  </header>
 
   <div class="rows">
     {#each signals as signal (signal.id)}
@@ -45,30 +45,28 @@
 <style>
   .card {
     background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
+    border-radius: var(--radius-4);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
     padding: var(--size-4) var(--size-5);
   }
 
-  .section-header {
+  .section-head {
+    align-items: baseline;
     display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--size-2-5);
   }
 
-  .section-label {
+  .section-title {
     font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
+    font-weight: var(--font-weight-6);
     margin: 0;
   }
 
-  .section-lede {
-    color: color-mix(in srgb, var(--color-text), transparent 10%);
+  .section-count {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
     font-size: var(--font-size-1);
-    margin: 0;
   }
 
   .rows {

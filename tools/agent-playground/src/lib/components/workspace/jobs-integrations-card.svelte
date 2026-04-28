@@ -31,10 +31,11 @@
 </script>
 
 <section class="card">
-  <div class="card-header">
-    <h2 class="card-title">Jobs</h2>
-    <p class="card-lede">Signal-driven workflows that coordinate your agents.</p>
-  </div>
+  <header class="section-head">
+    <h2 class="section-title">Jobs</h2>
+    <span class="section-count">{jobs.length}</span>
+    <a href="/platform/{workspaceId}/jobs" class="section-action">View all</a>
+  </header>
 
   <div class="job-rows">
     {#each jobs as job (job.id)}
@@ -50,8 +51,7 @@
 <style>
   .card {
     background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
+    border-radius: var(--radius-4);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
@@ -59,31 +59,41 @@
     padding: var(--size-4) var(--size-5);
   }
 
-  .card-header {
+  .section-head {
+    align-items: baseline;
     display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--size-2-5);
   }
 
-  .card-title {
+  .section-title {
     font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
+    font-weight: var(--font-weight-6);
     margin: 0;
   }
 
-  .card-lede {
-    color: color-mix(in srgb, var(--color-text), transparent 10%);
+  .section-count {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
     font-size: var(--font-size-1);
-    margin: 0;
+  }
+
+  .section-action {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-size: var(--font-size-1);
+    margin-inline-start: auto;
+    text-decoration: none;
+    transition: color 120ms ease;
+  }
+
+  .section-action:hover {
+    color: var(--color-text);
   }
 
   .job-rows {
     display: flex;
     flex-direction: column;
-    padding-block-start: var(--size-5);
   }
 
   .divider {
-    border-block-start: 1px solid var(--color-border-1);
+    border-block-start: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
   }
 </style>
