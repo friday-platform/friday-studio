@@ -19,6 +19,15 @@ vi.mock("@std/async/retry", () => ({ retry: (fn: () => Promise<unknown>) => fn()
 
 // Import after mocks
 const { connectHttp, MCPStartupError } = await import("./create-mcp-tools.ts");
+const { sharedMCPProcesses } = await import("./process-registry.ts");
+
+/** No-op pid file writer for tests — avoids touching the user's filesystem. */
+function noopPidFile() {
+  return {
+    write: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 const fakeLogger = {
   info: vi.fn(),
@@ -31,10 +40,12 @@ const fakeLogger = {
 beforeEach(() => {
   mockCreateMCPClient.mockReset();
   MockHTTPTransport.mockReset();
+  sharedMCPProcesses._resetForTesting();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  sharedMCPProcesses._resetForTesting();
 });
 
 /** Build a mock child process that can emit stderr / exit events and record kill() calls. */
@@ -121,7 +132,7 @@ function makeHttpConfig(overrides?: Partial<MCPServerConfig["startup"]>): MCPSer
 }
 
 describe("connectHttp startup", () => {
-  it("happy path: spawns process, polls ready_url, returns tracked children", async () => {
+  it("happy path: spawns process via shared registry, polls ready_url, returns tools", async () => {
     const child = createMockChildProcess();
     const mockSpawn = vi.fn().mockReturnValue(child);
 
@@ -141,6 +152,7 @@ describe("connectHttp startup", () => {
     const result = await connectHttp(config, {}, "test-server", fakeLogger, {
       spawn: mockSpawn,
       fetch: mockFetch,
+      pidFile: noopPidFile(),
     });
 
     expect(mockSpawn).toHaveBeenCalledTimes(1);
@@ -153,9 +165,38 @@ describe("connectHttp startup", () => {
     );
 
     expect(result.tools).toHaveProperty("cal-tool");
-    expect(result.children).toBeDefined();
-    expect(result.children!.size).toBe(1);
-    expect(result.children!.has(child as unknown as ChildProcess)).toBe(true);
+    // Children are owned by the daemon-scoped registry, not returned to the caller.
+    expect((result as { children?: unknown }).children).toBeUndefined();
+  });
+
+  it("registry reuse: a second connectHttp for the same serverId does not respawn", async () => {
+    const child = createMockChildProcess();
+    const mockSpawn = vi.fn().mockReturnValue(child);
+    // Server unreachable initially, then reachable after first acquire's poll.
+    let fetchCall = 0;
+    const mockFetch = vi.fn().mockImplementation(() => {
+      fetchCall++;
+      if (fetchCall <= 1) {
+        return Promise.reject(new Error("ECONNREFUSED"));
+      }
+      return Promise.resolve({ status: 200, ok: true } as Response);
+    });
+
+    mockMCPClient({ "cal-tool": { description: "calendar" } });
+
+    const config = makeHttpConfig();
+    await connectHttp(config, {}, "shared-server", fakeLogger, {
+      spawn: mockSpawn,
+      fetch: mockFetch,
+      pidFile: noopPidFile(),
+    });
+    await connectHttp(config, {}, "shared-server", fakeLogger, {
+      spawn: mockSpawn,
+      fetch: mockFetch,
+      pidFile: noopPidFile(),
+    });
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
   });
 
   it("skip path: URL already reachable → no spawn, connects directly", async () => {
@@ -168,11 +209,12 @@ describe("connectHttp startup", () => {
     const result = await connectHttp(config, {}, "test-server", fakeLogger, {
       spawn: mockSpawn,
       fetch: mockFetch,
+      pidFile: noopPidFile(),
     });
 
     expect(mockSpawn).not.toHaveBeenCalled();
     expect(result.tools).toHaveProperty("skip-tool");
-    expect(result.children).toBeUndefined();
+    expect((result as { children?: unknown }).children).toBeUndefined();
   });
 
   it("timeout: ready_url never responds → MCPStartupError(kind: 'timeout')", async () => {
@@ -184,6 +226,7 @@ describe("connectHttp startup", () => {
     const error = await connectHttp(config, {}, "timeout-server", fakeLogger, {
       spawn: mockSpawn,
       fetch: mockFetch,
+      pidFile: noopPidFile(),
     }).catch((e: unknown) => e);
 
     if (!(error instanceof MCPStartupError)) throw new Error("expected MCPStartupError");
@@ -191,44 +234,6 @@ describe("connectHttp startup", () => {
     expect(error.serverId).toBe("timeout-server");
     expect(error.command).toBe("uvx");
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
-  });
-
-  it("EADDRINUSE fallback: spawn fails with port in use, existing server is reachable → connects directly", async () => {
-    const child = createMockChildProcess();
-    const mockSpawn = vi.fn().mockReturnValue(child);
-
-    // Call 1 = initial check (rejected). Call 2 = first poll (rejected).
-    // Call 3 = re-check after EADDRINUSE detected (200).
-    let fetchCall = 0;
-    const mockFetch = vi.fn().mockImplementation(() => {
-      fetchCall++;
-      if (fetchCall <= 2) {
-        return Promise.reject(new Error("ECONNREFUSED"));
-      }
-      return Promise.resolve({ status: 200, ok: true } as Response);
-    });
-
-    mockMCPClient({ "fallback-tool": { description: "fallback" } });
-
-    const config = makeHttpConfig();
-
-    const connectPromise = connectHttp(config, {}, "eaddr-server", fakeLogger, {
-      spawn: mockSpawn,
-      fetch: mockFetch,
-    });
-
-    // Allow connectHttp to attach listeners before emitting child events
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    // Simulate child writing EADDRINUSE to stderr and exiting with error
-    child._emitStderr("Error: listen EADDRINUSE: address already in use :::8001");
-    child._emitExit(1, null);
-
-    const result = await connectPromise;
-
-    expect(result.tools).toHaveProperty("fallback-tool");
-    expect(result.children).toBeUndefined();
-    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   it("env isolation: config.env bearer tokens never reach child; startup.env never reaches HTTP headers", async () => {
@@ -266,6 +271,7 @@ describe("connectHttp startup", () => {
     await connectHttp(config, resolvedEnv, "iso-server", fakeLogger, {
       spawn: mockSpawn,
       fetch: mockFetch,
+      pidFile: noopPidFile(),
     });
 
     // Spawn env must NOT contain the bearer token
