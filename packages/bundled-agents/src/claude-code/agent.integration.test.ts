@@ -8,11 +8,11 @@
  *
  * Prerequisites:
  *   ANTHROPIC_API_KEY - valid API key
- *   ATLAS_CLAUDE_PATH - path to claude-code CLI binary
+ *   FRIDAY_CLAUDE_PATH - path to claude-code CLI binary
  *   GH_TOKEN - GitHub PAT (can be a dummy value if not cloning repos)
  *
  * Run:
- *   ANTHROPIC_API_KEY=sk-... ATLAS_CLAUDE_PATH=$(which claude) GH_TOKEN=ghp_... \
+ *   ANTHROPIC_API_KEY=sk-... FRIDAY_CLAUDE_PATH=$(which claude) GH_TOKEN=ghp_... \
  *     deno task test packages/bundled-agents/src/claude-code/agent.integration.test.ts
  *
  * This test takes 2-5 minutes. It's not meant for CI — it's a one-off QA check.
@@ -24,10 +24,10 @@ import { type ActivityTracker, createKeepalive, withMessageTimeout } from "./age
 import { sandboxOptions } from "./sandbox.ts";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ATLAS_CLAUDE_PATH = process.env.ATLAS_CLAUDE_PATH;
+const FRIDAY_CLAUDE_PATH = process.env.FRIDAY_CLAUDE_PATH;
 const GH_TOKEN = process.env.GH_TOKEN ?? "dummy";
 
-const canRun = Boolean(ANTHROPIC_API_KEY && ATLAS_CLAUDE_PATH);
+const canRun = Boolean(ANTHROPIC_API_KEY && FRIDAY_CLAUDE_PATH);
 
 /** Use a shorter timeout than production (2 min vs 10 min) to catch regressions faster.
  * With includePartialMessages, stream_event tokens keep activity alive during LLM generation,
@@ -52,7 +52,7 @@ describe.skipIf(!canRun)("integration: stall detection with includePartialMessag
         "and in-order traversal. Put everything in a single file called rbtree.ts.",
       ].join("\n"),
       options: {
-        pathToClaudeCodeExecutable: ATLAS_CLAUDE_PATH,
+        pathToClaudeCodeExecutable: FRIDAY_CLAUDE_PATH,
         cwd: process.env.TMPDIR ?? "/tmp",
         model: "claude-sonnet-4-6",
         tools: { type: "preset", preset: "claude_code" },

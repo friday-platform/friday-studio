@@ -426,7 +426,7 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
           prompt: effectivePrompt,
           options: {
             // SDK defaults to bundled cli.js which doesn't exist in compiled Deno binaries
-            pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
+            pathToClaudeCodeExecutable: process.env.FRIDAY_CLAUDE_PATH,
             cwd: sandbox.workDir,
             model,
             fallbackModel,

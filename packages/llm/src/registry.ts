@@ -25,7 +25,7 @@ function strippedEnv(): Record<string, string | undefined> {
 function createClaudeCodeProvider() {
   return createClaudeCode({
     defaultSettings: {
-      pathToClaudeCodeExecutable: process.env.ATLAS_CLAUDE_PATH,
+      pathToClaudeCodeExecutable: process.env.FRIDAY_CLAUDE_PATH,
       permissionMode: "bypassPermissions",
       disallowedTools: ["Bash(rm -rf:*)", "Bash(curl:*)", "Bash(wget:*)", "Bash(sudo:*)"],
       settingSources: ["project"],

@@ -12,7 +12,7 @@ cd /app
 # Force container-correct paths regardless of what's in the env file.
 export ATLAS_NPX_PATH=/usr/bin/npx
 export ATLAS_NODE_PATH=/usr/bin/node
-export ATLAS_CLAUDE_PATH=/usr/local/bin/claude
+export FRIDAY_CLAUDE_PATH=/usr/local/bin/claude
 export FRIDAY_SQLITE3_PATH=/usr/bin/sqlite3
 # No OTEL collector in this container — disable to avoid dangling metrics
 unset OTEL_DENO
