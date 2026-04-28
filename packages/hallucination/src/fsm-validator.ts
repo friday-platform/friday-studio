@@ -9,12 +9,7 @@ import type { AgentResult } from "@atlas/agent-sdk";
 import type { LLMActionTrace, LLMOutputValidationResult } from "@atlas/fsm-engine";
 import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import {
-  analyzeResults,
-  containsSeverePatterns,
-  getSevereIssues,
-  type HallucinationDetectorConfig,
-} from "./detector.ts";
+import { type HallucinationDetectorConfig, validate } from "./detector.ts";
 import { SupervisionLevel } from "./supervision-levels.ts";
 
 /**
@@ -70,19 +65,14 @@ export function createFSMOutputValidator(
       logger: logger.child({ component: "fsm-output-validator" }),
     };
 
-    const analysis = await analyzeResults([agentResult], supervisionLevel, config);
+    const verdict = await validate(agentResult, supervisionLevel, config);
 
-    // Same severity logic as validateAgentOutput in agent-helpers.ts
-    const isSevere = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
-
-    if (isSevere) {
-      const severeIssues = getSevereIssues(analysis.issues);
-      return {
-        valid: false,
-        feedback: severeIssues.length > 0 ? severeIssues.join("; ") : analysis.issues.join("; "),
-      };
+    // Tracer-bullet adapter: keep the old `OutputValidator` shape so workspace runtime
+    // and the fsm-engine integration test compile unchanged. Task #22 replaces this
+    // with the verdict shape end-to-end.
+    if (verdict.status === "fail") {
+      return { valid: false, feedback: verdict.retryGuidance };
     }
-
     return { valid: true };
   };
 }

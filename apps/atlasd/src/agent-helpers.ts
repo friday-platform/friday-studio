@@ -9,12 +9,9 @@ import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
 import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
 import {
-  analyzeResults as analyzeHallucinations,
-  containsSeverePatterns,
-  getSevereIssues,
-  type HallucinationAnalysis,
   type HallucinationDetectorConfig,
   SupervisionLevel,
+  validate as validateOutput,
 } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts, type DatetimeContext, type PlatformModels } from "@atlas/llm";
@@ -238,37 +235,29 @@ export async function validateAgentOutput(
     };
 
     try {
-      const analysis: HallucinationAnalysis = await analyzeHallucinations(
-        [result],
-        supervisionLevel,
-        hallucinationDetectorConfig,
-      );
+      // TODO(#26): finish verdict integration — surface verdict.issues, attach the
+      // verdict to the thrown error, and replace the joined-string feedback with
+      // structured per-issue rendering. This call site is the bare-minimum
+      // migration that came with #20 (the helpers it used to call were deleted).
+      const verdict = await validateOutput(result, supervisionLevel, hallucinationDetectorConfig);
 
       logger.info("Agent confidence validation", {
         agentId: result.agentId,
-        confidence: analysis.averageConfidence,
-        issues: analysis.issues,
-        issuesCount: analysis.issues.length,
+        confidence: verdict.confidence,
+        status: verdict.status,
+        issues: verdict.issues,
+        issuesCount: verdict.issues.length,
       });
 
-      // Check for severe hallucinations
-      const isSevere = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
-
-      if (isSevere) {
-        const severeIssues = getSevereIssues(analysis.issues);
-
+      if (verdict.status === "fail") {
         logger.error("SEVERE HALLUCINATION DETECTED", {
           agentId: result.agentId,
-          confidence: analysis.averageConfidence,
-          severeIssues,
-          allIssues: analysis.issues,
+          confidence: verdict.confidence,
+          retryGuidance: verdict.retryGuidance,
+          issues: verdict.issues,
         });
 
-        throw new Error(
-          `Agent ${result.agentId} hallucinated: ${
-            severeIssues.length > 0 ? severeIssues.join("; ") : analysis.issues.join("; ")
-          }`,
-        );
+        throw new Error(`Agent ${result.agentId} hallucinated: ${verdict.retryGuidance}`);
       }
     } catch (error) {
       // If the error is from our validation above, re-throw it

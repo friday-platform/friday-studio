@@ -19,6 +19,12 @@ import type { ModelMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { SupervisionLevel } from "./supervision-levels.ts";
+import {
+  getThresholdForLevel,
+  judgeErrorVerdict,
+  statusFromConfidence,
+  type ValidationVerdict,
+} from "./verdict.ts";
 
 /**
  * MCP CallToolResult content item — the actual payload inside tool result `output`.
@@ -30,22 +36,6 @@ const McpToolOutputSchema = z.object({
   content: z.array(McpContentItemSchema).optional(),
   isError: z.boolean().optional(),
 });
-
-/**
- * Check if issues indicate severe fabrication
- */
-export function containsSeverePatterns(issues: string[]): boolean {
-  const severePattern =
-    /fabricated|impossible|no tool access|false attribution|external data without tools/i;
-  return issues.some((issue) => severePattern.test(issue));
-}
-
-/**
- * Extract severe issues from a list of issues
- */
-export function getSevereIssues(issues: string[]): string[] {
-  return issues.filter((issue) => containsSeverePatterns([issue]));
-}
 
 /**
  * Error classification for LLM validation failures
@@ -184,6 +174,44 @@ export interface HallucinationDetectorConfig {
 }
 
 /**
+ * Run the LLM-output judge against a single agent result and return a structured verdict.
+ *
+ * Status (`pass` / `uncertain` / `fail`) is derived in code from confidence vs. the
+ * supervision-level threshold; the judge never picks status. Infrastructure failures
+ * (network, rate-limit, parse, judge crash) return a synthetic `uncertain` verdict —
+ * this function never throws.
+ *
+ * Until Task #21 enriches the prompt with categorized issues, the judge still emits a
+ * freeform `feedback`-style string list; we surface that as `retryGuidance` and leave
+ * `issues: []` rather than fabricating placeholder categories.
+ */
+export async function validate(
+  result: AgentResult,
+  supervisionLevel: SupervisionLevel,
+  config: HallucinationDetectorConfig,
+): Promise<ValidationVerdict> {
+  const threshold = getThresholdForLevel(supervisionLevel);
+
+  try {
+    const llmResult = await validateWithLLM(result, config.platformModels, config.logger);
+    return {
+      status: statusFromConfidence(llmResult.confidence, threshold),
+      confidence: llmResult.confidence,
+      threshold,
+      issues: [],
+      retryGuidance: llmResult.issues.join("; "),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    config.logger?.warn("Output validator: judge call failed, returning uncertain verdict", {
+      agentId: result.agentId,
+      error: message,
+    });
+    return judgeErrorVerdict(threshold, message);
+  }
+}
+
+/**
  * Main analysis function for detecting hallucinations
  *
  * Validates agent outputs by checking if all factual claims are traceable
@@ -271,11 +299,12 @@ async function performLLMValidation(
       error,
     });
 
-    // Simple fallback - just add to issues and mark as not validated
+    // Infrastructure-failure fallback — confidence 0.4 keeps us in the `uncertain`
+    // band (above the 0.3 fail-floor) so judge outages never lose agent work.
     return {
       method: "llm",
       agentId: result.agentId,
-      confidence: 0.3, // Conservative fallback
+      confidence: 0.4,
       issues: [
         "Wasn't validated properly",
         `LLM validation failed: ${error instanceof Error ? error.message : String(error)}`,
