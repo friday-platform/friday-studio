@@ -58,7 +58,6 @@ const ToolsProbeFailureSchema = z.object({
 const ToolsProbeResponseSchema = z.union([ToolsProbeSuccessSchema, ToolsProbeFailureSchema]);
 
 export type SearchResult = z.infer<typeof SearchResultSchema>;
-export type ToolsProbeResult = z.infer<typeof ToolsProbeResponseSchema>;
 
 // ==============================================================================
 // QUERY FACTORIES

@@ -41,7 +41,6 @@
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.79": "0.2.119_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.92": "0.2.119_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.13",
-    "npm:@bytecodealliance/preview2-shim@~0.17.8": "0.17.9",
     "npm:@chat-adapter/discord@4.26.0": "4.26.0",
     "npm:@chat-adapter/slack@4.26.0": "4.26.0",
     "npm:@chat-adapter/teams@4.26.0": "4.26.0",
@@ -54,7 +53,6 @@
     "npm:@codemirror/view@^6.41.1": "6.41.1",
     "npm:@coderabbitai/bitbucket@^1.1.4": "1.1.4",
     "npm:@deno/kv@0.13": "0.13.0",
-    "npm:@electric-sql/pglite@~0.4.5": "0.4.5",
     "npm:@eslint/compat@^2.0.5": "2.0.5_eslint@10.2.1",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.2.1",
     "npm:@faker-js/faker@^10.4.0": "10.4.0",
@@ -115,7 +113,6 @@
     "npm:@tauri-apps/api@2.10.1": "2.10.1",
     "npm:@tauri-apps/cli@2.10.1": "2.10.1",
     "npm:@tauri-apps/plugin-opener@2.5.3": "2.5.3",
-    "npm:@tauri-apps/plugin-os@2.3.2": "2.3.2",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/deno@2.5.0": "2.5.0",
     "npm:@types/markdown-it@^14.1.2": "14.1.2",
@@ -1311,9 +1308,6 @@
     "@borewit/text-codec@0.2.2": {
       "integrity": "sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ=="
     },
-    "@bytecodealliance/preview2-shim@0.17.9": {
-      "integrity": "sha512-i0R3eQBe6PA/o/1EFE3Owe4In2rcccb6QxnjpntM/lPe3/duJ0bRQTVZM2Ufpo99X4eofGeltQUkape1C91FFA=="
-    },
     "@chat-adapter/discord@4.26.0": {
       "integrity": "sha512-p0Xm/aPjHP9z87/tXtHz0KFmbUcu7SGPQAAlT8mrKRX49jO77Tognj/5poSmV1XQ1C4BLfxpPvTQlLNK/5omkw==",
       "dependencies": [
@@ -1587,9 +1581,6 @@
         "tslib",
         "ws"
       ]
-    },
-    "@electric-sql/pglite@0.4.5": {
-      "integrity": "sha512-aGG2zGEyZzGWKy8P+9ZoNUV0jxt1+hgbeTf+bVAYyxVZZLXg3/9aFlfLxb08AYZVAfAkQlQIysmWjhc5hwDG8g=="
     },
     "@emnapi/core@1.9.2": {
       "integrity": "sha512-UC+ZhH3XtczQYfOlu3lNEkdW/p4dsJ1r/bP7H8+rhao3TTTMO1ATq/4DdIi23XuGoFY+Cz0JmCbdVl0hz9jZcA==",
@@ -3668,12 +3659,6 @@
     },
     "@tauri-apps/plugin-opener@2.5.3": {
       "integrity": "sha512-CCcUltXMOfUEArbf3db3kCE7Ggy1ExBEBl51Ko2ODJ6GDYHRp1nSNlQm5uNCFY5k7/ufaK5Ib3Du/Zir19IYQQ==",
-      "dependencies": [
-        "@tauri-apps/api"
-      ]
-    },
-    "@tauri-apps/plugin-os@2.3.2": {
-      "integrity": "sha512-n+nXWeuSeF9wcEsSPmRnBEGrRgOy6jjkSU+UVCOV8YUGKb2erhDOxis7IqRXiRVHhY8XMKks00BJ0OAdkpf6+A==",
       "dependencies": [
         "@tauri-apps/api"
       ]
@@ -7735,7 +7720,6 @@
     ],
     "packageJson": {
       "dependencies": [
-        "npm:@bytecodealliance/preview2-shim@~0.17.8",
         "npm:@jsr/std__dotenv@~0.225.5",
         "npm:@opentelemetry/api@^1.9.1",
         "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
@@ -7870,7 +7854,6 @@
             "npm:@tauri-apps/api@2.10.1",
             "npm:@tauri-apps/cli@2.10.1",
             "npm:@tauri-apps/plugin-opener@2.5.3",
-            "npm:@tauri-apps/plugin-os@2.3.2",
             "npm:svelte@^5.55.4",
             "npm:typescript@^5.9.3",
             "npm:vite@^7.3.2"
@@ -8052,13 +8035,9 @@
         }
       },
       "packages/fsm-engine": {
-        "dependencies": [
-          "jsr:@db/sqlite@0.13"
-        ],
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.8",
-            "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__yaml@^1.0.9",
             "npm:@modelcontextprotocol/sdk@^1.29.0",
             "npm:ai@^6.0.141",
@@ -8175,8 +8154,7 @@
         "packageJson": {
           "dependencies": [
             "npm:nats@^2.29.3",
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
+            "npm:vitest@^4.1.0"
           ]
         }
       },
@@ -8349,7 +8327,6 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.8",
-            "npm:@electric-sql/pglite@~0.4.5",
             "npm:@faker-js/faker@^10.4.0",
             "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__assert@^1.0.14",

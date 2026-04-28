@@ -89,7 +89,13 @@
     },
     "tools/pty-server": { "project": ["**/*.{ts,js}!"], "ignoreDependencies": ["tsx"] },
     "tools/agent-playground": {
-      "entry": ["cli.ts!", "mod.ts!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
+      "entry": [
+        "cli.ts!",
+        "mod.ts!",
+        "static-server.ts!",
+        "src/routes/**/*.svelte!",
+        "src/**/*.test.ts"
+      ],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.ts!", "*.js!"],
       "paths": {
         "$lib": ["./src/lib"],

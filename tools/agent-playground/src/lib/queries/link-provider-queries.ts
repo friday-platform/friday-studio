@@ -27,8 +27,6 @@ const ProviderDetailsSchema = z.object({
     .optional(),
 });
 
-export type ProviderDetails = z.infer<typeof ProviderDetailsSchema>;
-
 const CredentialSummarySchema = z.object({
   id: z.string(),
   type: z.enum(["apikey", "oauth"]),
