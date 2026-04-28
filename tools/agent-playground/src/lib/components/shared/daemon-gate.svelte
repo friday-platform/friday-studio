@@ -17,9 +17,10 @@
 {:else if !daemonHealth.connected}
   <div class="gate-state">
     <p class="gate-icon">!</p>
-    <p class="gate-title">Daemon unreachable</p>
-    <p class="gate-command">
-      Run: <code>deno task atlas daemon start --detached</code>
+    <p class="gate-title">Reconnecting to Friday Studio…</p>
+    <p class="gate-message">
+      The background services are still starting up or were briefly unavailable.
+      This usually clears in a few seconds.
     </p>
     <Button size="small" variant="secondary" onclick={retry}>Retry Now</Button>
   </div>

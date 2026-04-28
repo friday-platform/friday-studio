@@ -199,8 +199,7 @@
 
       {#if showTooltip && !daemonHealth.connected}
         <div class="tooltip" role="tooltip">
-          <p>Daemon unreachable. Start it with:</p>
-          <code>deno task atlas daemon start --detached</code>
+          <p>Background services are reconnecting. This usually clears in a few seconds.</p>
         </div>
       {/if}
     </span>
