@@ -64,6 +64,12 @@ updates:
       # do a TS 6 migration.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
+      # type inference in `server.registerPrompt(...)` — every destructured
+      # binding becomes implicit-any (TS7031), breaking ~100 typecheck sites
+      # in packages/mcp-server. Pinned to ~1.28.x until upstream fixes typing.
+      - dependency-name: "@modelcontextprotocol/sdk"
+        versions: [">= 1.29.0"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
@@ -170,3 +176,8 @@ updates:
       - "npm"
       - "link"
     rebase-strategy: "auto"
+    ignore:
+      # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
+      # type inference. Pinned to ~1.28.x until upstream fixes typing.
+      - dependency-name: "@modelcontextprotocol/sdk"
+        versions: [">= 1.29.0"]

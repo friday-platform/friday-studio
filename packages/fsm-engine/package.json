@@ -20,7 +20,7 @@
     "@atlas/resources": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "~1.28.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "ai": "npm:ai@^6.0.141",
     "zod": "^4.3.5"
