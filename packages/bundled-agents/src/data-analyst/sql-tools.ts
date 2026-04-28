@@ -4,7 +4,7 @@ import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
 
-const DUCKDB_PATH = process.env.ATLAS_DUCKDB_PATH ?? "duckdb";
+const DUCKDB_PATH = process.env.FRIDAY_DUCKDB_PATH ?? "duckdb";
 const QUERY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_STDERR_BYTES = 64 * 1024; // 64KB cap on stderr
 
