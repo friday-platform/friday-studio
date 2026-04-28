@@ -458,14 +458,14 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       logger.debug("No FRIDAY_NODE_PATH configured, bundled claude-code agent may not work");
     }
 
-    // Check for FRIDAY_UVX_PATH / ATLAS_UV_PATH and augment PATH if needed
+    // Check for FRIDAY_UVX_PATH / FRIDAY_UV_PATH and augment PATH if needed
     // (for MCP servers using uvx/pipx — uvx ships alongside uv in the same bin dir)
-    const uvxPath = process.env.FRIDAY_UVX_PATH ?? process.env.ATLAS_UV_PATH;
+    const uvxPath = process.env.FRIDAY_UVX_PATH ?? process.env.FRIDAY_UV_PATH;
     if (uvxPath) {
       await augmentPathWithTool(uvxPath, "uvx");
     } else {
       logger.debug(
-        "No FRIDAY_UVX_PATH or ATLAS_UV_PATH configured, MCP servers using uvx rely on PATH",
+        "No FRIDAY_UVX_PATH or FRIDAY_UV_PATH configured, MCP servers using uvx rely on PATH",
       );
     }
 
