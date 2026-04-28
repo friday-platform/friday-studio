@@ -61,8 +61,8 @@ describe("parseUserProfileState", () => {
   });
 
   it("falls back to full text when regex does not match", () => {
-    const entries = [{ text: "Kenneth", metadata: { type: "user-name" } }];
-    expect(parseUserProfileState(entries)).toEqual({ status: "known", name: "Kenneth" });
+    const entries = [{ text: "Alice", metadata: { type: "user-name" } }];
+    expect(parseUserProfileState(entries)).toEqual({ status: "known", name: "Alice" });
   });
 });
 

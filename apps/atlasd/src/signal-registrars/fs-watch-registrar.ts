@@ -127,7 +127,7 @@ export class FsWatchSignalRegistrar implements WorkspaceSignalRegistrar {
       recursive: cfg.recursive !== false,
     });
 
-    // TODO: @Sara cleanup: clean typing on signals. Here we should fs watcher signals which implement IWorkspaceSignal interface
+    // TODO: clean typing on signals. fs watcher signals should implement IWorkspaceSignal interface
     const runtime = signal.toRuntimeSignal() as {
       initialize: (ctx: {
         id: string;
