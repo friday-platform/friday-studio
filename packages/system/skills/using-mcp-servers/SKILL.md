@@ -26,7 +26,7 @@ enable/disable only controls `workspace.yml` overrides, not chat visibility.
 | Context | Who asks | What changes | Key rule |
 |---------|----------|--------------|----------|
 | Admin | User talking to settings / UI | Catalog or workspace config | `install`/`delete` mutate the catalog; `enable`/`disable` mutate workspace YAML |
-| Chat | Agent during a conversation | Nothing — uses existing servers | `list_mcp_servers` discovers all catalog servers. `enable` is irrelevant. |
+| Chat | Agent during a conversation | Nothing — uses existing servers | `list_capabilities` discovers everything; filter by `kind: "mcp_enabled" \| "mcp_available"` for MCP-only intent. `enable` is irrelevant. |
 
 **Critical:** Chat agents do not need `enable_mcp_server` to see or use a
 catalog server. `enable` only adds workspace-level overrides or custom
@@ -50,14 +50,16 @@ servers to `workspace.yml`.
 
 ## Chat path: delegation with MCP tools
 
-1. **Discover:** `list_mcp_servers` — returns all available servers with
-   `configured: true/false`.
-2. **Connect if needed:** If `configured: false` and `provider` is present, call
-   `connect_service(provider)`. The UI will fire `data-credential-linked` when
-   the user finishes.
-3. **Auto-continue:** On `data-credential-linked`, re-call `list_mcp_servers` to
-   confirm `configured: true`, then `delegate` with `mcpServers: [id]` and the
-   original goal.
+1. **Discover:** `list_capabilities` — returns a flat list across bundled
+   agents and MCP servers. Filter to `kind: "mcp_enabled" | "mcp_available"`
+   for MCP-only intent. A server is credentialed when `requiresConfig` is
+   empty.
+2. **Connect if needed:** If `requiresConfig` is non-empty and `provider` is
+   present (on `mcp_available`), call `connect_service(provider)`. The UI will
+   fire `data-credential-linked` when the user finishes.
+3. **Auto-continue:** On `data-credential-linked`, re-call `list_capabilities`
+   to confirm `requiresConfig` is empty, then `delegate` with
+   `mcpServers: [id]` and the original goal.
 4. **Delegate:** `delegate` validates IDs fail-fast. Unknown or unconfigured
    IDs return `ok: false` before any connection attempt.
 5. **Tool naming:** Child gets prefixed tools (`strava_getActivity`) when 2+
@@ -69,17 +71,18 @@ servers to `workspace.yml`.
 
 | Mistake | Why it happens | Fix |
 |---------|---------------|-----|
-| Calling `enable` so chat can use a server | Confusing workspace YAML with chat discovery | Catalog servers are visible to `list_mcp_servers` without enable. |
+| Calling `enable` so chat can use a server | Confusing workspace YAML with chat discovery | Catalog servers are visible to `list_capabilities` (as `kind: "mcp_available"`) without enable. |
 | Calling `delete` when user said "remove from workspace" | Confusing catalog deletion with workspace disable | "Remove from workspace" = `disable`. "Delete from catalog" = `delete`. |
 | Calling `install` when user said "add to workspace" | Catalog installation does not wire into workspace YAML | Check catalog first. If present, ask: install (catalog) or enable (workspace YAML)? |
-| Delegating without calling `list_mcp_servers` | LLM assumes server IDs from stale prompt | Always list first. Validate IDs server-side. |
-| Ignoring `configured: false` | Async credential check is accurate | Prompt user to `connect_service`. Do not attempt connection. |
+| Delegating without calling `list_capabilities` | LLM assumes server IDs from stale prompt | Always list first. Validate IDs server-side. |
+| Ignoring non-empty `requiresConfig` | Async credential check is accurate | Prompt user to `connect_service`. Do not attempt connection. |
 | Re-enabling a custom server after disable | Custom servers have no catalog backing | Re-enable requires manual YAML editing. Say this explicitly. |
 
 ## Quick diagnostic
 
-1. User says "I don't see X" → `list_mcp_servers`. If it's there but
-   `configured: false` → `connect_service`.
+1. User says "I don't see X" → `list_capabilities` (filter by
+   `kind: "mcp_enabled" | "mcp_available"`). If it's there but
+   `requiresConfig` is non-empty → `connect_service`.
 2. User says "Add X to workspace" → Check if X is in catalog. If yes, ask:
    chat already sees it — do you mean enable for workspace YAML?
 3. Disable fails → Surface `willUnlinkFrom`, confirm, retry with `force: true`.
