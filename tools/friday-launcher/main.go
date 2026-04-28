@@ -152,6 +152,16 @@ func main() {
 		log.Fatal("writePid", "error", err)
 	}
 
+	// Pre-flight: every supervised binary must exist + be runnable.
+	// Decision #12 + #21. Runs AFTER --uninstall / --autostart
+	// dispatch (those don't need binaries) but BEFORE the orphan
+	// sweep / health-server bind / tray boot — so a missing-binary
+	// install fails fast with a useful dialog instead of process-
+	// compose spawning then crashing supervised stubs in a loop.
+	// runPreflight calls os.Exit(1) on failure; control returns
+	// here only when binaries are confirmed present.
+	runPreflight(binDir)
+
 	// Best-effort: clean up orphan supervised processes from a prior
 	// SIGKILL'd launcher (Unix only — Windows Job Object handles it).
 	// Two passes:
@@ -205,7 +215,8 @@ func parseFlags() (autostart string, uninstall bool) {
 	flag.BoolVar(&noBrowser, "no-browser", false,
 		"do not auto-open the browser when supervised processes report ready")
 	flag.StringVar(&binDir, "bin-dir", "",
-		"directory containing supervised binaries (defaults to launcher's own dir)")
+		"directory containing supervised binaries "+
+			"(defaults to ~/.friday/local/bin/, fallback to launcher's own dir)")
 	flag.StringVar(&autostart, "autostart", "",
 		"enable|disable|status — manage OS autostart entry then exit")
 	flag.BoolVar(&uninstall, "uninstall", false,
@@ -214,8 +225,21 @@ func parseFlags() (autostart string, uninstall bool) {
 	flag.Parse()
 
 	if binDir == "" {
-		exe, err := os.Executable()
-		if err == nil {
+		// Decision #25: supervised binaries live in
+		// `~/.friday/local/bin/`, not next to the launcher binary.
+		// Stack 3's installer extracts the launcher into the .app
+		// bundle (`/Applications/Friday Studio.app/...`) and the
+		// supervised binaries into `~/.friday/local/bin/` — these
+		// are different paths. Old behavior (filepath.Dir(exe))
+		// was correct for the v0.0.8 flat-tarball layout but breaks
+		// after the .app split.
+		//
+		// Fallback to filepath.Dir(exe) when the home dir lookup
+		// fails — covers test harnesses that don't set HOME and
+		// the legacy in-tree layout for `go run`.
+		if home, err := os.UserHomeDir(); err == nil {
+			binDir = filepath.Join(home, ".friday", "local", "bin")
+		} else if exe, err := os.Executable(); err == nil {
 			binDir = filepath.Dir(exe)
 		}
 	}
@@ -513,18 +537,19 @@ func runAutostartCommand(cmd string) {
 //
 // Two cases:
 //  1. state.json absent or autostart_initialized != true → write the
-//     OS autostart entry pointing at os.Executable(), set the flag.
-//  2. state.json says we're initialized → still compare currentAutostartPath()
-//     to os.Executable(); if they differ (user moved the binary),
-//     rewrite the entry. State.json stays unchanged.
+//     OS autostart entry, set the flag.
+//  2. state.json says we're initialized → call isAutostartStale();
+//     if stale (Stack 3: bundle ID differs on darwin; exe path
+//     differs on Windows), rewrite the entry. state.json unchanged.
+//
+// Decision #36: the migration code OUTSIDE this function preserves
+// the user's autostart preference (a deliberately-disabled plist
+// stays disabled across upgrades). This function only runs when a
+// plist is wanted; it's the "make sure the plist is current" step.
 func autostartSelfRegister() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("os.Executable: %w", err)
-	}
 	state := readState()
 	if !state.AutostartInitialized {
-		log.Info("first-run autostart self-register", "exe", exe)
+		log.Info("first-run autostart self-register")
 		if err := enableAutostart(); err != nil {
 			return fmt.Errorf("enableAutostart: %w", err)
 		}
@@ -535,10 +560,8 @@ func autostartSelfRegister() error {
 		return nil
 	}
 	// Already initialized — staleness repair pass.
-	registered := currentAutostartPath()
-	if registered != "" && registered != exe {
-		log.Info("autostart path stale; rewriting",
-			"registered", registered, "current", exe)
+	if isAutostartStale() {
+		log.Info("autostart entry stale; rewriting")
 		if err := enableAutostart(); err != nil {
 			return fmt.Errorf("enableAutostart (staleness): %w", err)
 		}

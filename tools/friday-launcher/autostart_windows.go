@@ -64,6 +64,7 @@ func isAutostartEnabled() bool {
 // currentAutostartPath reads the registered command and extracts the
 // executable path (stripping the surrounding quotes and the
 // --no-browser tail). Returns "" if not registered or malformed.
+// Internal — exposed only for isAutostartStale below.
 func currentAutostartPath() string {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey,
 		registry.READ)
@@ -91,4 +92,20 @@ func currentAutostartPath() string {
 		return ""
 	}
 	return val[1:endQuote]
+}
+
+// isAutostartStale reports whether the registry entry needs to be
+// rewritten. Cross-platform contract — see autostart_darwin.go.
+//
+// Windows: stale iff the registered exe path differs from
+// os.Executable(). Stack 3 doesn't change the Windows autostart
+// shape (no .app bundle on Windows), so the v0.0.8 behavior carries
+// forward unchanged.
+func isAutostartStale() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	registered := currentAutostartPath()
+	return registered != "" && registered != exe
 }

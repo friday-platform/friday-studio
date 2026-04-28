@@ -68,7 +68,17 @@ func runUninstall() {
 		step("autostart entry removed", nil)
 	}
 
-	// 4. Remove pids/ + state.json. Logs are preserved.
+	// 4. Remove the .app bundle from /Applications (Stack 3,
+	// darwin-only). The launcher is currently running from inside
+	// the bundle; the OS holds the executable open until our
+	// process exits, so we can RM the surrounding directory now —
+	// the kernel reference-counts the deleted inode and our exec
+	// stays valid until exit. Best-effort: not all installs land
+	// in /Applications (devs running `go run` against a flat
+	// build; unit tests with FRIDAY_LAUNCHER_HOME set).
+	removeAppBundleIfPresent(step)
+
+	// 5. Remove pids/ + state.json. Logs are preserved.
 	// os.RemoveAll handles ENOENT silently — same idiom for both.
 	if err := os.RemoveAll(statePath()); err != nil {
 		step("remove state.json", err)
@@ -200,4 +210,42 @@ func waitForLauncherExit(pid int, deadline time.Duration) bool {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return false
+}
+
+// removeAppBundleIfPresent deletes /Applications/Friday Studio.app
+// on darwin (and is a no-op on other platforms). Best-effort: the
+// .app may not exist (devs running flat builds, or installers that
+// don't land it in /Applications), so absence is reported as a
+// noop step rather than a failure.
+//
+// Safety: the launcher's own executable lives inside the bundle.
+// Removing the bundle from disk while we're running is safe — the
+// kernel reference-counts the open inode, our exec stays valid
+// until process exit. Same trick Sparkle uses.
+func removeAppBundleIfPresent(step func(string, error)) {
+	path := appBundlePath()
+	if path == "" {
+		// Non-darwin or otherwise no-op platform.
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			step("no .app bundle to remove", nil)
+			return
+		}
+		step("stat "+path, err)
+		return
+	}
+	if !info.IsDir() {
+		// Something else at that path — don't touch it. Surface
+		// for the operator's attention rather than blindly rm.
+		step(fmt.Sprintf("%s is not a directory; skipping", path), nil)
+		return
+	}
+	if err := os.RemoveAll(path); err != nil {
+		step("remove "+path, err)
+		return
+	}
+	step(".app bundle removed from /Applications", nil)
 }
