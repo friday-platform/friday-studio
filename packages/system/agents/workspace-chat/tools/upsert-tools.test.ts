@@ -307,6 +307,14 @@ describe("upsert_agent tool description", () => {
 // four variants server-side. The chat-facing description only advertises three
 // (llm | atlas | user); the server still parses type: "system" because it is
 // used for platform-internal agents.
+//
+// Note: there is intentionally no `unknown_bundled_agent` validation case
+// here. The bundled-agent-discovery design doc keeps server runtime unchanged
+// (see § Module Boundaries) and lists registry-membership validation under
+// § Out of Scope as the post-ship escalation path if telemetry shows the LLM
+// still produces unknown atlas agent ids despite list_capabilities + the
+// SKILL rewrite. Don't add registry-membership validation here without
+// re-opening that decision.
 // ===========================================================================
 
 describe("WorkspaceAgentConfigSchema acceptance", () => {
