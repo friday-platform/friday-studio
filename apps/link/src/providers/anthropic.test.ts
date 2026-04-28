@@ -150,7 +150,10 @@ describe("anthropicProvider.health", () => {
  */
 function mockFetch(url: string, responseInit: { status: number; body: string }): Disposable {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = ((input: string | URL | Request) => {
+  globalThis.fetch = function patchedFetch(
+    input: URL | RequestInfo,
+    init?: RequestInit,
+  ): Promise<Response> {
     const inputUrl = extractUrlFromInput(input);
     if (inputUrl === url) {
       return Promise.resolve(
@@ -160,8 +163,8 @@ function mockFetch(url: string, responseInit: { status: number; body: string }):
         }),
       );
     }
-    return originalFetch(input);
-  }) as typeof fetch;
+    return originalFetch(input, init);
+  };
 
   return {
     [Symbol.dispose]: () => {
@@ -175,13 +178,16 @@ function mockFetch(url: string, responseInit: { status: number; body: string }):
  */
 function mockFetchError(url: string, errorMessage: string): Disposable {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = ((input: string | URL | Request) => {
+  globalThis.fetch = function patchedFetch(
+    input: URL | RequestInfo,
+    init?: RequestInit,
+  ): Promise<Response> {
     const inputUrl = extractUrlFromInput(input);
     if (inputUrl === url) {
       return Promise.reject(new Error(errorMessage));
     }
-    return originalFetch(input);
-  }) as typeof fetch;
+    return originalFetch(input, init);
+  };
 
   return {
     [Symbol.dispose]: () => {

@@ -118,7 +118,7 @@ export async function validateWorkspaceConfig(
     Promise.resolve(checkFsmStructures(config)),
     checkExternalPackages(config, ctx.resolvers),
     checkSkillRefs(config, ctx.skillDb),
-    checkModelRefs(config, ctx.modelCatalog),
+    Promise.resolve(checkModelRefs(config, ctx.modelCatalog)),
     checkMountWorkspaces(config, ctx.workspaceList),
   ];
 

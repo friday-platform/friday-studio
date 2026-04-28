@@ -35,7 +35,9 @@ function msgWithData(data: Uint8Array): import("nats").Msg {
     subject: "",
     sid: 0,
     respond: () => true,
-    json: () => JSON.parse(new TextDecoder().decode(data)),
+    // Msg.json<T>() returns T directly (typed at the call site); production
+    // SDK uses an internal cast — mirror that here for the test helper.
+    json: <T>(): T => JSON.parse(new TextDecoder().decode(data)) as T,
     string: () => new TextDecoder().decode(data),
   };
 }

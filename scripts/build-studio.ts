@@ -220,8 +220,10 @@ async function run(
   opts: { cwd?: string; env?: Record<string, string> } = {},
 ): Promise<void> {
   console.log(`+ ${cmd.join(" ")}`);
-  const proc = new Deno.Command(cmd[0], {
-    args: cmd.slice(1),
+  const [bin, ...args] = cmd;
+  if (!bin) throw new Error("run() requires a non-empty command array");
+  const proc = new Deno.Command(bin, {
+    args,
     cwd: opts.cwd,
     env: { ...Deno.env.toObject(), ...(opts.env ?? {}) },
     stdout: "inherit",

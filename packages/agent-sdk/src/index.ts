@@ -92,6 +92,8 @@ export type {
   MCPStartupConfig,
   MCPTransportConfig,
   OutlineRef,
+  PlatformModels,
+  PlatformRole,
   StoreMountBinding,
   StreamEmitter,
   ToolCall,

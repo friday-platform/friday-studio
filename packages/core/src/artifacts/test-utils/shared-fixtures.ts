@@ -80,8 +80,8 @@ export function createTableArtifactInput(
         title: "Test Table",
         headers: ["id", "name"],
         rows: [
-          { id: "1", name: "Alice" },
-          { id: "2", name: "Bob" },
+          ["1", "Alice"],
+          ["2", "Bob"],
         ],
       },
     },

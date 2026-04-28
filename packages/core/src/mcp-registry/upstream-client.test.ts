@@ -39,7 +39,10 @@ describe("MCPUpstreamClient", () => {
       };
 
       let capturedUrl: string | undefined;
-      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+      const mockFetch: typeof fetch = (
+        url: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> => {
         capturedUrl = url.toString();
         return Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
@@ -49,7 +52,7 @@ describe("MCPUpstreamClient", () => {
         );
       };
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       const result = await client.search("filesystem", 10);
 
       expect(capturedUrl).toEqual(
@@ -63,7 +66,10 @@ describe("MCPUpstreamClient", () => {
       const mockResponse = { servers: [] };
 
       let capturedUrl: string | undefined;
-      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+      const mockFetch: typeof fetch = (
+        url: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> => {
         capturedUrl = url.toString();
         return Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
@@ -73,7 +79,7 @@ describe("MCPUpstreamClient", () => {
         );
       };
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       await client.search("filesystem", 20, "latest");
 
       expect(capturedUrl).toEqual(
@@ -85,7 +91,10 @@ describe("MCPUpstreamClient", () => {
       const mockResponse = { servers: [] };
 
       let capturedUrl: string | undefined;
-      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+      const mockFetch: typeof fetch = (
+        url: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> => {
         capturedUrl = url.toString();
         return Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
@@ -95,7 +104,7 @@ describe("MCPUpstreamClient", () => {
         );
       };
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       await client.search("test");
 
       expect(capturedUrl).toContain("limit=20");
@@ -105,7 +114,10 @@ describe("MCPUpstreamClient", () => {
       const mockResponse = { servers: [] };
 
       let capturedUrl: string | undefined;
-      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+      const mockFetch: typeof fetch = (
+        url: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> => {
         capturedUrl = url.toString();
         return Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
@@ -115,7 +127,7 @@ describe("MCPUpstreamClient", () => {
         );
       };
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       await client.search("hello world & more", 5);
 
       expect(capturedUrl).toContain("search=hello%20world%20%26%20more");
@@ -151,7 +163,10 @@ describe("MCPUpstreamClient", () => {
       };
 
       let capturedUrl: string | undefined;
-      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+      const mockFetch: typeof fetch = (
+        url: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> => {
         capturedUrl = url.toString();
         return Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
@@ -161,7 +176,7 @@ describe("MCPUpstreamClient", () => {
         );
       };
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       const result = await client.fetchLatest("io.github/Digital-Defiance/mcp-filesystem");
 
       expect(capturedUrl).toEqual(
@@ -189,7 +204,10 @@ describe("MCPUpstreamClient", () => {
         },
       };
 
-      const mockFetch = (): Promise<Response> =>
+      const mockFetch: typeof fetch = (
+        _input: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> =>
         Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
             status: 200,
@@ -197,7 +215,7 @@ describe("MCPUpstreamClient", () => {
           }),
         );
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       const result = await client.fetchLatest("test-server");
 
       // Verify the schema parses the nanosecond timestamp correctly
@@ -209,10 +227,13 @@ describe("MCPUpstreamClient", () => {
     });
 
     it("throws on non-OK response", async () => {
-      const mockFetch = (): Promise<Response> =>
+      const mockFetch: typeof fetch = (
+        _input: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> =>
         Promise.resolve(new Response("Not found", { status: 404, statusText: "Not Found" }));
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       await expect(client.fetchLatest("unknown-server")).rejects.toThrow(
         "upstream registry fetch failed: 404 Not Found",
       );
@@ -232,7 +253,10 @@ describe("MCPUpstreamClient", () => {
         },
       };
 
-      const mockFetch = (): Promise<Response> =>
+      const mockFetch: typeof fetch = (
+        _input: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> =>
         Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
             status: 200,
@@ -240,7 +264,7 @@ describe("MCPUpstreamClient", () => {
           }),
         );
 
-      const client = new MCPUpstreamClient({ fetchFn: mockFetch as typeof fetch });
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
       await expect(client.fetchLatest("test-server")).rejects.toThrow(
         "upstream registry returned invalid response",
       );
@@ -440,7 +464,10 @@ describe("MCPUpstreamClient", () => {
       };
 
       let capturedUrl: string | undefined;
-      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+      const mockFetch: typeof fetch = (
+        url: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> => {
         capturedUrl = url.toString();
         return Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
@@ -452,7 +479,7 @@ describe("MCPUpstreamClient", () => {
 
       const client = new MCPUpstreamClient({
         baseUrl: "http://localhost:8080/api",
-        fetchFn: mockFetch as typeof fetch,
+        fetchFn: mockFetch,
       });
       await client.fetchLatest("test");
 
@@ -463,7 +490,10 @@ describe("MCPUpstreamClient", () => {
       const mockResponse = { servers: [] };
 
       let capturedUrl: string | undefined;
-      const mockFetch = (url: string | URL | Request): Promise<Response> => {
+      const mockFetch: typeof fetch = (
+        url: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> => {
         capturedUrl = url.toString();
         return Promise.resolve(
           new Response(JSON.stringify(mockResponse), {
@@ -473,10 +503,7 @@ describe("MCPUpstreamClient", () => {
         );
       };
 
-      const client = new MCPUpstreamClient({
-        baseUrl: "http://test.com/",
-        fetchFn: mockFetch as typeof fetch,
-      });
+      const client = new MCPUpstreamClient({ baseUrl: "http://test.com/", fetchFn: mockFetch });
       await client.search("test");
 
       expect(capturedUrl).toEqual("http://test.com/servers?search=test&limit=20");

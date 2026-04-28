@@ -88,16 +88,18 @@
     // Intercept WebSocket creation to capture restty's PTY connection.
     // We need direct WS access to paste commands WITHOUT a trailing \r
     // (restty's sendInput appends \r which auto-executes the command).
+    // Proxy the constructor so static members (OPEN, CLOSED, …) survive.
     const OrigWS = window.WebSocket;
-    window.WebSocket = function (...args: ConstructorParameters<typeof WebSocket>) {
-      const ws = new OrigWS(...args);
-      const url = typeof args[0] === "string" ? args[0] : (args[0]?.toString() ?? "");
-      if (url.includes("/pty")) {
-        ptySocket = ws;
-      }
-      return ws;
-    } as unknown as typeof WebSocket;
-    window.WebSocket.prototype = OrigWS.prototype;
+    window.WebSocket = new Proxy(OrigWS, {
+      construct(target, args: ConstructorParameters<typeof WebSocket>) {
+        const ws = new target(...args);
+        const url = typeof args[0] === "string" ? args[0] : (args[0]?.toString() ?? "");
+        if (url.includes("/pty")) {
+          ptySocket = ws;
+        }
+        return ws;
+      },
+    });
 
     const { Restty } = await import("restty");
 

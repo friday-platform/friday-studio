@@ -14,11 +14,11 @@ const mockedPopup = await import("./oauth-popup.ts");
 
 describe("useCredentialConnect", () => {
   let originalFetch: typeof globalThis.fetch;
-  let fetchSpy: ReturnType<typeof vi.fn>;
+  let fetchSpy: ReturnType<typeof vi.fn<typeof fetch>>;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    fetchSpy = vi.fn();
+    fetchSpy = vi.fn<typeof fetch>();
     globalThis.fetch = fetchSpy;
 
     vi.clearAllMocks();

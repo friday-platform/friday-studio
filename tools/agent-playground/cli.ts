@@ -17,7 +17,7 @@ import {
   formatClarifications,
   formatCompilerWarnings,
   PipelineError,
-  type FSMDefinition,
+  type CompiledFSMDefinition,
   type WorkspaceBlueprint,
 } from "@atlas/workspace-builder";
 import { runPipeline, type StopAt } from "./src/lib/server/lib/workspace/pipeline.ts";
@@ -304,7 +304,7 @@ function printExecutionSummary(fsmId: string, report: ExecutionReport): void {
 function writeSummary(
   dir: string,
   plan: WorkspaceBlueprint,
-  fsms: FSMDefinition[],
+  fsms: CompiledFSMDefinition[],
   hasWorkspaceYaml = false,
 ): void {
   const lines: string[] = [];

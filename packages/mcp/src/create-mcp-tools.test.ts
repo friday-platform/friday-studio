@@ -49,7 +49,7 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 vi.mock("@std/async/retry", () => {
   class RetryError extends Error {
     constructor(
-      public readonly cause: unknown,
+      public override readonly cause: unknown,
       public readonly attempts: number,
     ) {
       super(`Retrying exceeded the maxAttempts (${attempts}).`);

@@ -46,8 +46,14 @@ function build(overrides: Partial<ChatSdkAdapterConfig> = {}) {
   });
 }
 
+interface AdapterCase {
+  name: string;
+  config: Partial<ChatSdkAdapterConfig>;
+  expected: string[];
+}
+
 describe("buildChatSdkAdapters", () => {
-  it.each([
+  it.each<AdapterCase>([
     { name: "no signals", config: {}, expected: ["atlas"] },
     { name: "non-chat signals only", config: { signals: httpSignals }, expected: ["atlas"] },
     {

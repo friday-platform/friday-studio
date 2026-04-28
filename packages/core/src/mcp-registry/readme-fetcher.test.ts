@@ -9,14 +9,14 @@ import { fetchReadme } from "./readme-fetcher.ts";
  * Fake fetch that returns responses from a lookup map.
  */
 function makeFakeFetch(responses: Map<string, { status: number; body: string }>): typeof fetch {
-  return ((input: RequestInfo | URL) => {
+  return function fakeFetch(input: URL | RequestInfo, _init?: RequestInit): Promise<Response> {
     const url = typeof input === "string" ? input : input.toString();
     const match = responses.get(url);
     if (match) {
-      return new Response(match.body, { status: match.status });
+      return Promise.resolve(new Response(match.body, { status: match.status }));
     }
-    return new Response("Not Found", { status: 404 });
-  }) as typeof fetch;
+    return Promise.resolve(new Response("Not Found", { status: 404 }));
+  };
 }
 
 describe("fetchReadme", () => {
