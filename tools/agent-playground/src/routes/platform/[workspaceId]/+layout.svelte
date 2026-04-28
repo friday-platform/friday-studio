@@ -62,6 +62,9 @@
   /** Session detail pages manage their own sidebar layout. */
   const isSessionDetail = $derived(!!page.params.sessionId);
 
+  /** Signal detail page is self-contained — no layout sidebar needed. */
+  const isSignalDetail = $derived(!!page.params.signalId);
+
   /** Overview page uses a full-width dashboard grid — no sidebar needed. */
   const isOverview = $derived(page.route.id === "/platform/[workspaceId]");
 
@@ -134,7 +137,7 @@
   <Page.Content scrollable={!isChat} padded={false}>
     {@render children?.()}
   </Page.Content>
-  {#if !isSessionDetail && !isOverview && !isEdit && !isChat}
+  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat}
     <Page.Sidebar>
       {#if isAgents}
         <AgentIndexSidebar agents={workspaceAgents} {providerStatus} />
