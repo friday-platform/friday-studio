@@ -322,6 +322,8 @@ Python agent creation is an out-of-flow step the user kicks off explicitly. See 
 
    For detailed job authoring guidance, load `@friday/writing-workspace-jobs` before creating or editing any `fsm:` job.
 
+   For detailed signal authoring guidance (schema payloads, provider configs, path collisions), load `@friday/writing-workspace-signals` before creating or editing any signal.
+
 4. **`write_file` writes to scratch only** (`{ATLAS_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
 
 5. **Always call `list_mcp_tools` before referencing MCP tools in an agent.** Tool names are not predictable — they come from the server implementation, not the server ID. Guessing produces `unknown_tool` validation errors. Call `list_mcp_tools({ serverId })`, then use the returned names verbatim in the agent's `tools` array. The returned names are already prefixed as `serverId/toolName`.
@@ -346,6 +348,7 @@ Python agent creation is an out-of-flow step the user kicks off explicitly. See 
 - `references/messaging-signals.md` — Slack, Telegram, WhatsApp signal configuration.
 - `references/platform-friday-yml.md` — platform-level overrides (transport, auth, rate limits).
 - `writing-workspace-jobs` skill — FSM job authoring: trigger wiring, MCP tool naming, state-machine shapes, validation error decoder, runtime anti-patterns. Load before creating or editing any `fsm:` job.
+- `writing-workspace-signals` skill — Signal authoring: JSON Schema payloads, provider configs, HTTP path collisions, cron validation, runtime payload checks. Load before creating or editing any signal that accepts parameters or needs a webhook endpoint.
 - `using-mcp-servers` skill — MCP catalog, install/enable/disable, credentials, delegation.
 - `writing-friday-agents` skill — authoring and registering Python/TS SDK agents.
 - `friday-cli` skill — daemon lifecycle, signal triggering, session streaming, log forensics.

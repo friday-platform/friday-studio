@@ -324,3 +324,11 @@ malformed FSMs, and circular retries.
   publish.
 - `assets/multi-step-job-template.yml` — chained agent pipeline with
   `outputTo` → `inputFrom` wiring.
+
+## Companion skills
+
+- `writing-workspace-signals` — Signal authoring: JSON Schema payloads, provider configs,
+  HTTP path collisions, cron validation. Load before creating or editing any
+  signal that accepts parameters or needs a webhook endpoint.
+- `workspace-api` — Workspace building workflow: draft mode, CRUD, validation,
+  reachability model, tool selection.
