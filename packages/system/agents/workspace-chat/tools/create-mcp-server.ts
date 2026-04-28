@@ -102,8 +102,13 @@ export function createCreateMcpServerTool(logger: Logger): AtlasTools {
         try {
           const res = await client.mcpRegistry.custom.$post({ json: body });
           const responseBody = await res.json();
+          // Capture status before the conditional cascade — Hono types the
+          // RPC response status as a literal union, and after narrowing on
+          // `=== 201` / `=== 400 || 409` the remaining `res` value is `never`,
+          // which would otherwise make later `res.status` accesses fail.
+          const status: number = res.status;
 
-          if (res.status === 201) {
+          if (status === 201) {
             const parsed = z
               .object({ server: MCPServerMetadataSchema, warning: z.string().optional() })
               .safeParse(responseBody);
@@ -140,22 +145,18 @@ export function createCreateMcpServerTool(logger: Logger): AtlasTools {
             };
           }
 
-          if (res.status === 400 || res.status === 409) {
+          if (status === 400 || status === 409) {
             const errorBody = responseBody as Record<string, unknown>;
             const errorMsg = String(errorBody.error ?? "Failed to create MCP server.");
-            logger.info("create_mcp_server rejected", {
-              name,
-              status: res.status,
-              error: errorMsg,
-            });
+            logger.info("create_mcp_server rejected", { name, status, error: errorMsg });
             return { success: false, error: errorMsg };
           }
 
           const errorMsg =
             typeof responseBody === "object" && responseBody !== null && "error" in responseBody
               ? String(responseBody.error)
-              : `Create failed: ${res.status}`;
-          logger.warn("create_mcp_server failed", { name, status: res.status, error: errorMsg });
+              : `Create failed: ${status}`;
+          logger.warn("create_mcp_server failed", { name, status, error: errorMsg });
           return { success: false, error: errorMsg };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);

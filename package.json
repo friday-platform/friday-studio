@@ -1,7 +1,17 @@
 {
-  "name": "atlas",
+  "name": "friday-studio",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "description": "Friday Agent Studio & Toolkit (FAST) — AI agent orchestration platform. Workspaces define agents, signals, and jobs that run autonomously on HTTP, cron, and other triggers.",
+  "homepage": "https://github.com/friday-platform/friday-studio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/friday-platform/friday-studio.git"
+  },
+  "bugs": { "url": "https://github.com/friday-platform/friday-studio/issues" },
+  "author": "Tempest Labs, Inc.",
+  "license": "BUSL-1.1",
   "workspaces": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
   "dependencies": {
     "@atlas/activity": "workspace:*",
@@ -19,7 +29,6 @@
     "@atlas/system": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
-    "@bytecodealliance/preview2-shim": "^0.17.8",
     "@opentelemetry/api": "^1.9.1",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "lint-staged": "^16.4.0",
@@ -30,8 +39,9 @@
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/proper-lockfile": "^4.1.4",
     "@types/turndown": "^5.0.6",
-    "@vitest/coverage-v8": "4.1.0",
-    "knip": "6.4.1",
+    "@vitest/coverage-v8": "4.1.5",
+    "happy-dom": "^20.9.0",
+    "knip": "6.7.0",
     "vitest": "^4.1.0"
   },
   "knip": {}

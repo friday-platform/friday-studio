@@ -8,6 +8,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import { stringify } from "@std/yaml";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -74,6 +75,8 @@ function createTestApp(options: {
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   const app = new Hono<AppVariables>();
@@ -100,15 +103,10 @@ function makeWorkspaceConfig(servers: Record<string, MCPServerConfig>): Workspac
 }
 
 function makeCandidate(id: string, name: string, source: "static" | "registry" | "workspace") {
+  const stdioConfig: MCPServerConfig = { transport: { type: "stdio", command: "echo" } };
   return {
-    metadata: {
-      id,
-      name,
-      source,
-      securityRating: "high" as const,
-      configTemplate: { transport: { type: "stdio", command: "echo" } as MCPServerConfig },
-    },
-    mergedConfig: { transport: { type: "stdio", command: "echo" } } as MCPServerConfig,
+    metadata: { id, name, source, securityRating: "high" as const, configTemplate: stdioConfig },
+    mergedConfig: stdioConfig,
     configured: true,
   };
 }
@@ -148,7 +146,7 @@ describe("GET /mcp", () => {
     const res = await app.request("/ws-test-id/mcp");
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as JsonBody;
+    const body = (await res.json()) as { enabled: JsonBody[]; available: JsonBody[] };
     expect(body.enabled).toHaveLength(1);
     expect(body.enabled[0]).toMatchObject({ id: "github", name: "GitHub", source: "static" });
     expect(body.available).toHaveLength(1);
@@ -476,6 +474,7 @@ describe("DELETE /mcp/:serverId", () => {
             provider: "anthropic",
             model: "claude-sonnet-4-6",
             prompt: "p",
+            temperature: 0,
             tools: ["github"],
           },
         },
@@ -510,6 +509,7 @@ describe("DELETE /mcp/:serverId", () => {
             provider: "anthropic",
             model: "claude-sonnet-4-6",
             prompt: "p",
+            temperature: 0,
             tools: ["github"],
           },
         },

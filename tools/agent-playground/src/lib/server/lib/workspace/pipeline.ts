@@ -17,8 +17,8 @@ import {
   type BlueprintProgressEvent,
   type BlueprintResult,
   type BuildBlueprintOpts,
+  type CompiledFSMDefinition,
   type CompileWarning,
-  type FSMDefinition,
   type WorkspaceBlueprint,
 } from "@atlas/workspace-builder";
 import { createDirectMCPExecutor, type AgentTraceEntry } from "./direct-executor.ts";
@@ -60,7 +60,7 @@ function generateBlueprint(
 
 /** Result of compiling all jobs in a blueprint to FSMs. */
 export interface CompileResult {
-  fsms: FSMDefinition[];
+  fsms: CompiledFSMDefinition[];
   warnings: Array<{ jobId: string; warnings: CompileWarning[] }>;
 }
 
@@ -74,7 +74,7 @@ export interface CompileResult {
  * @throws {Error} When FSM compilation fails for any job
  */
 export function compileFSMs(plan: WorkspaceBlueprint): CompileResult {
-  const fsms: FSMDefinition[] = [];
+  const fsms: CompiledFSMDefinition[] = [];
   const warnings: CompileResult["warnings"] = [];
 
   for (const job of plan.jobs) {
@@ -110,7 +110,7 @@ export interface AssembleResult {
  */
 export function assembleWorkspaceYml(
   plan: WorkspaceBlueprint,
-  fsms: FSMDefinition[],
+  fsms: CompiledFSMDefinition[],
   bindings?: BlueprintResult["credentials"]["bindings"],
 ): AssembleResult {
   const phase1 = { workspace: plan.workspace, signals: plan.signals, agents: plan.agents };
@@ -125,7 +125,7 @@ export function assembleWorkspaceYml(
 /** Options for executing compiled FSMs. */
 export interface ExecuteOptions {
   plan: WorkspaceBlueprint;
-  fsms: FSMDefinition[];
+  fsms: CompiledFSMDefinition[];
   /** Use real MCP agents instead of deterministic mocks. */
   real?: boolean;
   /** Data passed as signal payload to the trigger signal. */

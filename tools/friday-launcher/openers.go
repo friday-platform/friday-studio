@@ -20,14 +20,16 @@ func openURLInBrowser(url string) error {
 // (Finder on macOS, Explorer on Windows, xdg-open on Linux). NOT
 // pkg/browser — see comment above.
 func openInFileBrowser(path string) error {
+	// path is a launcher-controlled directory ("~/.friday/local"), not user
+	// input piped through the API — gosec's taint analysis can't see that.
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", path)
+		cmd = exec.Command("open", path) //nolint:gosec // G204: launcher-controlled path
 	case "windows":
-		cmd = exec.Command("explorer.exe", path)
+		cmd = exec.Command("explorer.exe", path) //nolint:gosec // G204: launcher-controlled path
 	default:
-		cmd = exec.Command("xdg-open", path)
+		cmd = exec.Command("xdg-open", path) //nolint:gosec // G204: launcher-controlled path
 	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("open %s: %w", path, err)

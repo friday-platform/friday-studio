@@ -5,8 +5,6 @@
  * Guards and actions are executed via dynamic import from code strings.
  */
 
-import { mkdir, stat } from "node:fs/promises";
-import { join } from "node:path";
 import {
   type AgentResult as AgentSDKExecutionResult,
   type ArtifactRef,
@@ -51,9 +49,7 @@ import {
   SkillStorage,
 } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
-import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
-import { Database } from "@db/sqlite";
 import { type ImagePart, type ModelMessage, type Tool, tool } from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
@@ -191,8 +187,7 @@ export function getInputSnapshot(
   // inputFrom: explicit chain from a prior step's output document.
   // Fails loud — running with empty context is the bug we're trying to
   // avoid; if the referenced doc isn't there, the FSM is misconfigured.
-  const inputFrom =
-    action.type === "agent" || action.type === "llm" ? action.inputFrom : undefined;
+  const inputFrom = action.type === "agent" || action.type === "llm" ? action.inputFrom : undefined;
   if (inputFrom) {
     const doc = documents.get(inputFrom);
     if (!doc) {
@@ -1851,149 +1846,6 @@ export class FSMEngine {
     }
 
     return { tools, dispose };
-  }
-
-  /**
-   * Pre-load state DB data into context results so code actions can use
-   * context.stateFilter() for local filtering without external calls.
-   */
-  private async preloadStateCache(resultsMap: Map<string, Record<string, unknown>>): Promise<void> {
-    const dbFile = join(getWorkspaceFilesDir(this.options.scope.workspaceId), "state.db");
-    try {
-      await stat(dbFile);
-    } catch {
-      logger.debug("No state DB found, skipping cache preload", {
-        workspaceId: this.options.scope.workspaceId,
-      });
-      return;
-    }
-
-    const db = new Database(dbFile, { readonly: true });
-    try {
-      db.exec("PRAGMA busy_timeout=5000");
-      const TableNameRow = z.object({ name: z.string() });
-      const StateRow = z.object({ data: z.string(), _ts: z.string() });
-
-      const cache: Record<string, Array<z.infer<typeof StateRow>>> = {};
-      const tablesStmt = db.prepare("SELECT name FROM sqlite_master WHERE type='table'");
-      const tables = z.array(TableNameRow).parse(tablesStmt.all());
-      tablesStmt.finalize();
-
-      // Cap per-table rows to prevent unbounded memory usage.
-      // 50K rows × ~100 bytes ≈ 5MB — safe for worker serialization.
-      const MAX_ROWS_PER_TABLE = 50_000;
-
-      let totalRows = 0;
-      for (const t of tables) {
-        const rowsStmt = db.prepare(
-          `SELECT data, _ts FROM "${t.name}" ORDER BY _ts DESC LIMIT ${MAX_ROWS_PER_TABLE}`,
-        );
-        cache[t.name] = z.array(StateRow).parse(rowsStmt.all());
-        rowsStmt.finalize();
-        totalRows += cache[t.name]?.length ?? 0;
-      }
-
-      resultsMap.set("__stateCache", cache as Record<string, unknown>);
-      logger.debug("State cache preloaded", {
-        workspaceId: this.options.scope.workspaceId,
-        tables: tables.map((t) => t.name),
-        totalRows,
-      });
-    } catch (err) {
-      logger.warn("Failed to preload state cache", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      db.close();
-    }
-  }
-
-  /**
-   * Apply pending stateAppend mutations after code action completes.
-   * The worker records them as __pendingStateAppends in results.
-   */
-  private async applyPendingStateAppends(
-    resultsMap: Map<string, Record<string, unknown>>,
-  ): Promise<void> {
-    const pending = resultsMap.get("__pendingStateAppends");
-    if (!pending) return;
-    const PendingItem = z.object({
-      key: z.string(),
-      entry: z.record(z.string(), z.unknown()),
-      ttlHours: z.number().optional(),
-    });
-    const parsed = z.array(PendingItem).safeParse(pending.items);
-    if (!parsed.success || parsed.data.length === 0) return;
-    const items = parsed.data;
-
-    // Clean up the pending marker
-    resultsMap.delete("__pendingStateAppends");
-
-    const dir = getWorkspaceFilesDir(this.options.scope.workspaceId);
-    await mkdir(dir, { recursive: true });
-    const dbFile = join(dir, "state.db");
-    const db = new Database(dbFile);
-
-    try {
-      db.exec("PRAGMA journal_mode=WAL");
-      db.exec("PRAGMA busy_timeout=5000");
-
-      for (const item of items) {
-        // Validate key to prevent SQL injection via table/index names.
-        // SQLite has no parameterized identifiers — only values can use ?.
-        // Defense: regex allowlist + double-quote escaping per SQLite spec.
-        if (!/^[a-z][a-z0-9_-]*$/.test(item.key)) {
-          throw new Error(
-            `Invalid state key "${item.key}" — must start with [a-z] and contain only [a-z0-9_-]`,
-          );
-        }
-        const safeKey = item.key.replaceAll('"', '""');
-
-        db.exec(`
-          CREATE TABLE IF NOT EXISTS "${safeKey}" (
-            id INTEGER PRIMARY KEY,
-            data TEXT NOT NULL,
-            _ts TEXT NOT NULL
-          );
-          CREATE INDEX IF NOT EXISTS "idx_${safeKey}_ts" ON "${safeKey}" (_ts);
-        `);
-
-        const ts = new Date().toISOString();
-        const runTx = db.transaction(() => {
-          const insertStmt = db.prepare(`INSERT INTO "${safeKey}" (data, _ts) VALUES (?, ?)`);
-          insertStmt.run(JSON.stringify(item.entry), ts);
-          insertStmt.finalize();
-
-          if (item.ttlHours !== undefined) {
-            const cutoff = new Date(Date.now() - item.ttlHours * 3600000).toISOString();
-            const delStmt = db.prepare(`DELETE FROM "${safeKey}" WHERE _ts < ?`);
-            delStmt.run(cutoff);
-            delStmt.finalize();
-          }
-        });
-        runTx();
-      }
-
-      logger.debug("Applied stateAppend mutations", {
-        count: items.length,
-        workspaceId: this.options.scope.workspaceId,
-        workspaceName: this.options.scope.workspaceName,
-      });
-    } catch (error) {
-      // Hard fail — if state write fails, the ticket will be reprocessed
-      // next run (at-least-once semantics). Throwing surfaces the error
-      // to the session rather than silently losing state.
-      const nameLabel = this.options.scope.workspaceName
-        ? ` (${this.options.scope.workspaceName})`
-        : "";
-      throw new Error(
-        `stateAppend failed for workspace ${this.options.scope.workspaceId}${nameLabel}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    } finally {
-      db.close();
-    }
   }
 
   private validateDocumentData(type: string, data: Record<string, unknown>, id: string): void {

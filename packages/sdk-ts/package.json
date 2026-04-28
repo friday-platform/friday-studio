@@ -4,6 +4,6 @@
   "type": "module",
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
-  "dependencies": { "nats": "^2.29.3", "zod": "^4.3.5" },
+  "dependencies": { "nats": "^2.29.3" },
   "devDependencies": { "vitest": "^4.1.0" }
 }

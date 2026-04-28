@@ -1,4 +1,4 @@
-import type { ToolCallDisplay } from "./types";
+import type { ToolCallDisplay } from "./types.ts";
 
 export function isInProgress(state: ToolCallDisplay["state"]): boolean {
   return state === "input-streaming" || state === "input-available";

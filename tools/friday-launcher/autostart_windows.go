@@ -9,8 +9,10 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-const runKey = `Software\Microsoft\Windows\CurrentVersion\Run`
-const runValueName = "FridayStudio"
+const (
+	runKey       = `Software\Microsoft\Windows\CurrentVersion\Run`
+	runValueName = "FridayStudio"
+)
 
 func enableAutostart() error {
 	exe, err := os.Executable()

@@ -45,7 +45,9 @@ describe("classifyAgents — bundled agent registry lookup", () => {
       capabilities: ["google-calendar"],
       bundledId: "google-calendar",
     },
-    { name: "research → bundled research", capabilities: ["research"], bundledId: "research" },
+    // `research` is an alias for the unified `web` agent in the bundled
+    // registry; the classifier returns the canonical bundledId.
+    { name: "research → bundled web (alias)", capabilities: ["research"], bundledId: "web" },
   ])("$name", ({ capabilities, bundledId }) => {
     const agent = classify(capabilities);
     expect(agent.type.kind).toBe("bundled");
@@ -78,7 +80,8 @@ describe("classifyAgents — first-match-wins", () => {
   it("returns first bundled match, ignoring subsequent capabilities", () => {
     const agent = classify(["research", "email"]);
     expect(agent.type.kind).toBe("bundled");
-    expect(agent.type).toMatchObject({ bundledId: "research" });
+    // `research` aliases the canonical `web` bundled agent.
+    expect(agent.type).toMatchObject({ bundledId: "web" });
   });
 });
 

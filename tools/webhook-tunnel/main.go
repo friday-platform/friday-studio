@@ -30,13 +30,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/friday-platform/friday-studio/pkg/logger"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/cloudflared"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/forwarder"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/provider"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/tunnel"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
-	"github.com/tempestteam/atlas/pkg/logger"
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/cloudflared"
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/forwarder"
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/provider"
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/tunnel"
 )
 
 // maxBodySize caps request bodies for /hook and /platform routes.

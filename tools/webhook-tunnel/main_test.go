@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/forwarder"
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/provider"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/forwarder"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/provider"
 )
 
 // setupTestServer starts the same routes main() does, with NO_TUNNEL=true
@@ -43,7 +43,7 @@ func TestHealthEndpointShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
@@ -67,7 +67,7 @@ func TestStatusEndpointHasAllSevenFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
@@ -117,7 +117,7 @@ func TestHookValidSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status %d, body %s", resp.StatusCode, respBody)
@@ -143,7 +143,7 @@ func TestHookInvalidSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", resp.StatusCode)
 	}
@@ -156,7 +156,7 @@ func TestHookUnknownProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
 	}
@@ -172,7 +172,7 @@ func TestHookOversizedRejectedAs413(t *testing.T) {
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d", resp.StatusCode)
 	}
@@ -195,7 +195,7 @@ func TestHookRawForwarded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
 	}

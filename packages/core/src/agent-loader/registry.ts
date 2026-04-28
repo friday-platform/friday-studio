@@ -78,8 +78,8 @@ export class AgentRegistry {
     let failureCount = 0;
 
     for (const agentSummary of agentList) {
-      // User agents are WASM code agents — they don't produce AtlasAgent instances.
-      // Store their summaries; CodeAgentExecutor handles instantiation at runtime.
+      // User agents are subprocess agents — they don't produce AtlasAgent instances.
+      // Store their summaries; ProcessAgentExecutor handles execution at runtime via NATS.
       if (agentSummary.type === "user") {
         this.userAgentSummaries.set(agentSummary.id, agentSummary);
         this.agentSourceTypes.set(agentSummary.id, "user");
@@ -119,13 +119,13 @@ export class AgentRegistry {
     this.logger.debug("Registered SDK agent", { id });
   }
 
-  /** Get a specific agent by ID. Returns undefined for user agents (use CodeAgentExecutor). */
+  /** Get a specific agent by ID. Returns undefined for user agents (executed via NATS). */
   async getAgent(id: string): Promise<AtlasAgent | undefined> {
     if (this.registeredAgents.has(id)) {
       return this.registeredAgents.get(id);
     }
 
-    // User agents aren't AtlasAgent instances — they're handled by CodeAgentExecutor
+    // User agents aren't AtlasAgent instances — they're executed via ProcessAgentExecutor/NATS
     if (this.userAgentSummaries.has(id)) {
       return undefined;
     }

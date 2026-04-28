@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tempestteam/atlas/pkg/logger"
-	"github.com/tempestteam/atlas/pkg/processkit"
+	"github.com/friday-platform/friday-studio/pkg/logger"
+	"github.com/friday-platform/friday-studio/pkg/processkit"
 )
 
 // Constants tuned to match the TS implementation. Changing these is a
@@ -141,7 +141,9 @@ func (m *Manager) Start(ctx context.Context) error {
 // readers + exit handler that drive the reconnect path.
 func (m *Manager) connect(parentCtx context.Context) error {
 	args := m.buildArgs()
-	cmd := exec.Command(m.opts.CloudflaredBin, args...)
+	// CloudflaredBin is resolved from a curated download/install path
+	// inside this package, not arbitrary user input.
+	cmd := exec.Command(m.opts.CloudflaredBin, args...) //nolint:gosec // G204: package-curated bin path
 	processkit.SetSysProcAttr(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -287,17 +289,6 @@ func (m *Manager) handleEvents(events <-chan Event, urlCh chan<- string, cmd *ex
 			m.opts.Logger.Warn("cloudflared edge connection lost", "remaining", n)
 		}
 	}
-}
-
-// ctxDone returns a channel that's closed when Stop is called.
-func (m *Manager) ctxDone() <-chan struct{} {
-	if m.stopped.Load() {
-		ch := make(chan struct{})
-		close(ch)
-		return ch
-	}
-	// stopped=false case: return a never-closing channel.
-	return make(chan struct{})
 }
 
 // scheduleReconnect waits backoffSeconds then tries to reconnect.

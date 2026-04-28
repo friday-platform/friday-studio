@@ -110,15 +110,10 @@ import {
   takeMountContext,
 } from "../../core/src/mount-context-registry.ts";
 import { createBashTool } from "./bash-tool.ts";
-import { CodeAgentExecutor, type CodeAgentExecutorOptions } from "./code-agent-executor.ts";
+import type { CodeAgentExecutorOptions } from "./code-agent-executor.ts";
 import type { MemoryMount } from "./config-schema.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
-import {
-  type ImproverAgentInput,
-  type ImproverAgentResult,
-  runImprovementLoop,
-} from "./improvement-loop.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { mountRegistry } from "./mount-registry.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
@@ -265,12 +260,6 @@ interface WorkspaceRuntimeOptions {
   }) => void | Promise<void>;
   /** Ledger storage adapter for versioned workspace resources (auto-publish) */
   resourceStorage?: ResourceStorageAdapter;
-  /** Blueprint artifact ID — when set, enables the self-improvement loop on failures */
-  blueprintArtifactId?: string;
-  /** Callback to invoke the workspace-improver agent (injected by daemon) */
-  invokeImprover?: (input: ImproverAgentInput) => Promise<ImproverAgentResult>;
-  /** Snapshot: whether a pending revision exists at runtime creation time */
-  hasPendingRevision?: boolean;
   /** Activity storage adapter for creating activity feed items */
   activityStorage?: ActivityStorageAdapter;
   /** Memory adapter for bootstrap injection (feature-flagged via ATLAS_MEMORY_BOOTSTRAP) */
@@ -281,7 +270,9 @@ interface WorkspaceRuntimeOptions {
   kernelWorkspaceId?: string;
   /** Platform model resolver — required for session summarization and other platform LLM calls */
   platformModels: PlatformModels;
-  /** Injectable agent executor. Defaults to CodeAgentExecutor (WASM). Injected by daemon as ProcessAgentExecutor (NATS). */
+  /** Blueprint artifact ID, when this workspace was generated from a blueprint */
+  blueprintArtifactId?: string;
+  /** Injectable agent executor. Injected by daemon as ProcessAgentExecutor (NATS). */
   agentExecutor?: {
     execute(
       agentPath: string,
@@ -342,12 +333,10 @@ export class WorkspaceRuntime {
   private config: MergedConfig;
   private options: WorkspaceRuntimeOptions;
   private initialized = false;
-  private improvementLoopFired = false;
   private createdByUserId?: string;
 
   // Shared resources
   private orchestrator: AgentOrchestrator;
-  private codeAgentExecutor = new CodeAgentExecutor();
   private userAdapter = new UserAdapter(path.join(getAtlasHome(), "agents"));
 
   // Job tracking (each job has its own FSMEngine and DocumentStore)
@@ -1487,19 +1476,6 @@ export class WorkspaceRuntime {
       this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
     }
 
-    // Fire improvement loop for failed sessions (async, non-blocking)
-    if (
-      sessionResult.status === WorkspaceSessionStatus.FAILED &&
-      this.options.blueprintArtifactId
-    ) {
-      this.fireImprovementLoop(sessionResult, job).catch((error) => {
-        logger.error("Improvement loop fire-and-forget error", {
-          sessionId: sessionResult.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }
-
     // Call onSessionFinished callback and cleanup
     await this.handleSessionCompletion(sessionResult);
 
@@ -1694,7 +1670,7 @@ export class WorkspaceRuntime {
         "atlas.session.id": sessionId,
       },
       async (agentOtelSpan) => {
-        // User (code) agents bypass the MCP orchestrator — execute directly via WASM
+        // User agents bypass the MCP orchestrator — execute via ProcessAgentExecutor (NATS)
         const agentResult =
           agentConfig?.type === "user"
             ? await this.executeCodeAgent(agentConfig.agent, finalPrompt, {
@@ -1786,9 +1762,9 @@ export class WorkspaceRuntime {
   }
 
   /**
-   * Execute a user (WASM code) agent via CodeAgentExecutor.
+   * Execute a user agent via ProcessAgentExecutor (NATS subprocess protocol).
    * Creates ephemeral MCP connections for tool access, resolves the agent's
-   * source location from UserAdapter, and runs the WASM module directly.
+   * source location from UserAdapter, and dispatches to the NATS subprocess.
    */
   private async executeCodeAgent(
     userAgentId: string,
@@ -1966,7 +1942,8 @@ export class WorkspaceRuntime {
       }
     }
 
-    const executor = this.options.agentExecutor ?? this.codeAgentExecutor;
+    const executor = this.options.agentExecutor;
+    if (!executor) throw new Error("No agentExecutor configured — ProcessAgentExecutor required");
     try {
       return await executor.execute(sourceLocation, prompt, {
         env: opts.agentEnv
@@ -2396,49 +2373,6 @@ export class WorkspaceRuntime {
 
   getOrchestrator(): AgentOrchestrator {
     return this.orchestrator;
-  }
-
-  /**
-   * Fire the self-improvement loop for a failed session.
-   * Loads session timeline and delegates to the improvement pipeline.
-   */
-  private async fireImprovementLoop(sessionResult: SessionResult, job: FSMJob): Promise<void> {
-    const blueprintArtifactId = this.options.blueprintArtifactId;
-    const invokeImprover = this.options.invokeImprover;
-    const platformModels = this.options.platformModels;
-    if (!blueprintArtifactId || !invokeImprover || !platformModels) return;
-
-    // Circuit breaker: skip if already fired or a pending revision existed at startup
-    if (this.improvementLoopFired || this.options.hasPendingRevision) {
-      logger.debug("Skipping improvement loop — already fired or pending revision exists", {
-        workspaceId: this.workspace.id,
-        sessionId: sessionResult.id,
-      });
-      return;
-    }
-    this.improvementLoopFired = true;
-
-    // Load session timeline for transcript analysis
-    const timelineResult = await SessionHistoryStorage.loadSessionTimeline(sessionResult.id);
-    if (!timelineResult.ok || !timelineResult.data) {
-      logger.warn("Could not load session timeline for improvement loop", {
-        sessionId: sessionResult.id,
-        error: timelineResult.ok ? "no timeline" : timelineResult.error,
-      });
-      return;
-    }
-
-    await runImprovementLoop({
-      workspaceId: this.workspace.id,
-      workspaceName: this.workspace.name ?? this.workspace.id,
-      sessionId: sessionResult.id,
-      jobName: job.name,
-      errorMessage: sessionResult.error?.message ?? "Unknown error",
-      blueprintArtifactId,
-      timeline: timelineResult.data,
-      platformModels,
-      invokeImprover,
-    });
   }
 
   /**

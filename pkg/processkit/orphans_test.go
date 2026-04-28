@@ -37,7 +37,7 @@ func TestSweepOrphansSkipsLauncherPid(t *testing.T) {
 	// kill us.
 	self := os.Getpid()
 	content := strconv.Itoa(self) + " 1234567890\n"
-	if err := os.WriteFile(filepath.Join(tmp, "launcher.pid"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "launcher.pid"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	killed, err := SweepOrphans(tmp)
@@ -56,7 +56,7 @@ func TestSweepOrphansSkipsLauncherPid(t *testing.T) {
 func TestSweepOrphansRemovesMalformed(t *testing.T) {
 	tmp := t.TempDir()
 	bad := filepath.Join(tmp, "broken.pid")
-	if err := os.WriteFile(bad, []byte("not a pid file"), 0o644); err != nil {
+	if err := os.WriteFile(bad, []byte("not a pid file"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = SweepOrphans(tmp)
@@ -79,7 +79,7 @@ func TestSweepOrphansKillsLiveChild(t *testing.T) {
 
 	pid := cmd.Process.Pid
 	content := strconv.Itoa(pid) + " 0\n"
-	if err := os.WriteFile(filepath.Join(tmp, "child.pid"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "child.pid"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import JSZip from "jszip";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
+import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
@@ -52,6 +53,7 @@ function createAppMulti(opts: {
   registeredId?: (index: number) => string;
 }): { app: Hono<AppVariables>; registerSpy: ReturnType<typeof vi.fn> } {
   let callCount = 0;
+  // deno-lint-ignore require-await
   const registerSpy = vi.fn().mockImplementation(async (path: string, meta: { name: string }) => {
     const id = opts.registeredId ? opts.registeredId(callCount) : `imported-${callCount}`;
     callCount += 1;
@@ -60,6 +62,7 @@ function createAppMulti(opts: {
 
   const byId = new Map(opts.workspaces.map((w) => [w.id, w]));
   const mockManager = {
+    // deno-lint-ignore require-await
     find: vi.fn().mockImplementation(async (q: { id?: string; name?: string }) => {
       if (q.id && byId.has(q.id)) {
         const w = byId.get(q.id);
@@ -68,6 +71,7 @@ function createAppMulti(opts: {
       }
       return null;
     }),
+    // deno-lint-ignore require-await
     getWorkspaceConfig: vi.fn().mockImplementation(async (id: string) => {
       const w = byId.get(id);
       if (!w) return null;
@@ -108,6 +112,8 @@ function createAppMulti(opts: {
     evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
   mockGetAtlasHome.mockReturnValue(opts.homeDir);
 
@@ -166,7 +172,7 @@ describe("bundle-all endpoints (end-to-end)", () => {
     expect(archive.file("workspaces/b.zip")).toBeTruthy();
     expect(archive.file("workspaces/k.zip")).toBeNull();
 
-    const manifestYaml = await archive.file("manifest.yml")!.async("string");
+    const manifestYaml = await archive.file("manifest.yml")?.async("string");
     expect(manifestYaml).toContain("schemaVersion: 1");
     expect(manifestYaml).toContain("alpha");
     expect(manifestYaml).toContain("beta");

@@ -289,9 +289,11 @@ describe("createDelegateTool", () => {
     const envelopedToolCallIds = delegateChunks
       .map((c) => extractInnerToolCallId(c))
       .filter((v): v is string => v !== undefined);
-    // `web_search` chunks get namespaced; `finish` chunks are dropped.
-    expect(envelopedToolCallIds).toContain("del-call-1-child-1");
-    expect(envelopedToolCallIds.every((id) => !id.endsWith("-finish-id"))).toBe(true);
+    // Inner toolCallIds are forwarded unchanged (the parent reads them via
+    // the `delegateToolCallId` on the envelope to disambiguate). `finish`
+    // chunks are dropped.
+    expect(envelopedToolCallIds).toContain("child-1");
+    expect(envelopedToolCallIds.every((id) => id !== "finish-id")).toBe(true);
   });
 
   it("falls back to final streamed text when child does not call finish", async () => {

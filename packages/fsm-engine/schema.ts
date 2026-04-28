@@ -94,6 +94,10 @@ export const FSMDefinitionSchema = z.object({
   initial: z.string(),
   states: z.record(z.string(), StateDefinitionSchema),
   documentTypes: z.record(z.string(), JSONSchemaSchema).optional(),
+  functions: z
+    .record(z.string(), z.object({ type: z.enum(["action", "guard"]), code: z.string() }))
+    .optional(),
+  tools: z.record(z.string(), z.object({ code: z.string() })).optional(),
 });
 
 export const SignalSchema = z.object({

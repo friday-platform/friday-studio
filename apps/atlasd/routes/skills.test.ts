@@ -18,10 +18,13 @@ function createTestJwt(payload: Record<string, unknown>): string {
   return `${encode(header)}.${encode(payload)}.`;
 }
 
+// Tests publish into the @friday namespace, which is gated to the
+// bootstrap-loader sentinel id "system" via isFridayNamespaceBlockedForUser.
+// Use that id here so the publish path isn't 403'd out.
 process.env.ATLAS_KEY = createTestJwt({
   email: "test@example.com",
-  sub: "test-user-id",
-  user_metadata: { tempest_user_id: "test-tempest-id" },
+  sub: "system",
+  user_metadata: { tempest_user_id: "system" },
 });
 
 process.env.USER_IDENTITY_ADAPTER = "local";

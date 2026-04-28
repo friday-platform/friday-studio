@@ -2,6 +2,7 @@ import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
 } from "@atlas/core/mcp-registry/credential-resolver";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { parse } from "@std/yaml";
 import { Hono } from "hono";
@@ -119,6 +120,8 @@ function createExportTestApp(options: {
     evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   const app = new Hono<AppVariables>();

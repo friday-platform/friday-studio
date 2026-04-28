@@ -1,7 +1,7 @@
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { Buffer } from "node:buffer";
 
 export interface HashResult {
   /** sha256 of the canonical manifest. */
@@ -71,7 +71,7 @@ export async function hashPrimitive(dir: string): Promise<HashResult> {
   }
 
   const manifest = lines.join("\n") + (lines.length > 0 ? "\n" : "");
-  const hash = "sha256:" + createHash("sha256").update(manifest).digest("hex");
+  const hash = `sha256:${createHash("sha256").update(manifest).digest("hex")}`;
 
   return { hash, manifest, files };
 }

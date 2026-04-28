@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 
 /**
  * Executes a function within a transaction with the request.user_id session
@@ -28,7 +28,7 @@ import type { Sql } from "postgres";
 export function withUserContext<T>(
   sql: Sql,
   userId: string,
-  fn: (tx: Sql) => T | Promise<T>,
+  fn: (tx: TransactionSql) => T | Promise<T>,
 ): Promise<T> {
   return sql.begin(async (tx) => {
     // Order matters: set_config first (as connection owner), then drop to

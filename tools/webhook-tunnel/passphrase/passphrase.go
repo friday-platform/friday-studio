@@ -17,9 +17,9 @@ import (
 func Generate() string {
 	const wordCount = 4
 	parts := make([]string, wordCount)
-	max := big.NewInt(int64(len(wordlist)))
+	wordlistLen := big.NewInt(int64(len(wordlist)))
 	for i := range parts {
-		n, err := rand.Int(rand.Reader, max)
+		n, err := rand.Int(rand.Reader, wordlistLen)
 		if err != nil {
 			// crypto/rand failure is catastrophic; the TS code would
 			// throw too. Returning a constant ensures the caller gets

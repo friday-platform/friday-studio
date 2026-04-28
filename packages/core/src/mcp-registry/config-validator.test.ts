@@ -151,13 +151,7 @@ describe("validateWorkspaceConfig", () => {
       tools: {
         mcp: {
           servers: {
-            time: {
-              transport: {
-                type: "stdio",
-                command: "uvx",
-                args: ["mcp-server-time", "--local-timezone"],
-              },
-            },
+            time: { transport: { type: "stdio", command: "uvx", args: ["mcp-server-time"] } },
           },
         },
       },

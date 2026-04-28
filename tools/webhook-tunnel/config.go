@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/tempestteam/atlas/tools/webhook-tunnel/passphrase"
+	"github.com/friday-platform/friday-studio/tools/webhook-tunnel/passphrase"
 )
 
 // Config is env-derived runtime configuration.

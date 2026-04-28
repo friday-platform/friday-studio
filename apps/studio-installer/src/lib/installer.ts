@@ -130,27 +130,6 @@ async function launchByOpening(): Promise<void> {
   }
 }
 
-// ── Proceed guard ─────────────────────────────────────────────────────────────
-
-export function canProceed(): boolean {
-  switch (store.step) {
-    case "welcome":
-      return true;
-    case "license":
-      return store.licenseAccepted;
-    case "api-keys":
-      return store.anthropicKey.trim().length > 0 || store.openaiKey.trim().length > 0;
-    case "download":
-      return store.downloadError === null && store.progressPercent === 100;
-    case "extract":
-      return store.error === null;
-    case "launch":
-      return store.error === null;
-    case "done":
-      return false;
-  }
-}
-
 // ── Download ──────────────────────────────────────────────────────────────────
 
 let _downloadPlatform = "";
@@ -265,12 +244,6 @@ export async function writeKeys(): Promise<void> {
     geminiKey: store.selectedProvider === "gemini" ? trimmed : null,
     groqKey: store.selectedProvider === "groq" ? trimmed : null,
   });
-}
-
-// ── Startup script ────────────────────────────────────────────────────────────
-
-export function writeStartupScript(installDir: string): Promise<string> {
-  return invoke<string>("create_startup_script", { installDir });
 }
 
 // ── Launch ────────────────────────────────────────────────────────────────────

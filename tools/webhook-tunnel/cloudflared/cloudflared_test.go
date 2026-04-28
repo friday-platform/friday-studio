@@ -28,7 +28,7 @@ func fakeRelease(t *testing.T, body []byte, mismatchHash bool) (binURL, sidecarU
 		if mismatchHash {
 			hex = strings.Repeat("0", 64)
 		}
-		fmt.Fprintf(w, "%s  binary\n", hex)
+		_, _ = fmt.Fprintf(w, "%s  binary\n", hex)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

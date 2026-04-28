@@ -3,9 +3,14 @@
 import type { MCPServerConfig, WorkspaceAgentConfig, WorkspaceConfig } from "@atlas/config";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-import type { FSMDefinition } from "@atlas/fsm-engine";
 import { stringify } from "@std/yaml";
-import type { Agent, CredentialBinding, Signal, WorkspaceBlueprint } from "../types.ts";
+import type {
+  Agent,
+  CompiledFSMDefinition,
+  CredentialBinding,
+  Signal,
+  WorkspaceBlueprint,
+} from "../types.ts";
 
 export interface Phase1Output {
   workspace: { name: string; purpose: string };
@@ -26,7 +31,7 @@ export interface Phase1Output {
 export function buildWorkspaceYaml(
   phase1: Phase1Output,
   phase3: WorkspaceBlueprint,
-  fsms: FSMDefinition[],
+  fsms: CompiledFSMDefinition[],
   bindings?: CredentialBinding[],
   dynamicServers?: MCPServerMetadata[],
 ): string {
@@ -182,7 +187,7 @@ function buildAgentEnv(
 
 function buildJobs(
   phase3: WorkspaceBlueprint,
-  fsmByJobId: Map<string, FSMDefinition>,
+  fsmByJobId: Map<string, CompiledFSMDefinition>,
 ): NonNullable<WorkspaceConfig["jobs"]> {
   const result: Record<string, NonNullable<WorkspaceConfig["jobs"]>[string]> = {};
 

@@ -49,10 +49,6 @@ updates:
         patterns:
           - "@opentelemetry/*"
     ignore:
-      # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
-      # See: https://github.com/porsager/postgres/issues/1143
-      - dependency-name: "postgres"
-        versions: [">= 3.4.8"]
       # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
       # Docker images — rolldown-binding.linux-x64-musl.node not found.
       # Also requires vite-plugin-svelte v7 migration. Block until resolved.
@@ -63,6 +59,17 @@ updates:
       # Vite 8 reaches stable. See PR #2164 for context.
       - dependency-name: "@sveltejs/vite-plugin-svelte"
         update-types: ["version-update:semver-major"]
+      # TypeScript 6 has new strictness defaults that fail the Deno typecheck
+      # and svelte-check across the monorepo. Hold majors until we deliberately
+      # do a TS 6 migration.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
+      # type inference in `server.registerPrompt(...)` — every destructured
+      # binding becomes implicit-any (TS7031), breaking ~100 typecheck sites
+      # in packages/mcp-server. Pinned to ~1.28.x until upstream fixes typing.
+      - dependency-name: "@modelcontextprotocol/sdk"
+        versions: [">= 1.29.0"]
 
   # Keep Docker dependencies up to date
   - package-ecosystem: "docker"
@@ -80,9 +87,8 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
-    # when OTEL_DENO=true is baked in at compile time. Affects 2.7.5 and 2.7.6.
-    # See: https://github.com/denoland/deno/pull/32501, #32557
+    # Block denoland/deno >= 2.7.5
+    # See: https://github.com/denoland/deno/issues/32821
     ignore:
       - dependency-name: "denoland/deno"
         versions: [">= 2.7.5, < 2.8.0"]
@@ -147,7 +153,7 @@ updates:
       - "docker"
     rebase-strategy: "auto"
     # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
-    # See: https://github.com/denoland/deno/pull/32501, #32557
+    # See: https://github.com/denoland/deno/issues/32821
     ignore:
       - dependency-name: "denoland/deno"
         versions: [">= 2.7.5, < 2.8.0"]
@@ -171,8 +177,7 @@ updates:
       - "link"
     rebase-strategy: "auto"
     ignore:
-      # postgres 3.4.8 has broken TransactionSql types (Omit strips call signatures)
-      # See: https://github.com/porsager/postgres/issues/1143
-      - dependency-name: "postgres"
-        versions: [">= 3.4.8"]
-
+      # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
+      # type inference. Pinned to ~1.28.x until upstream fixes typing.
+      - dependency-name: "@modelcontextprotocol/sdk"
+        versions: [">= 1.29.0"]

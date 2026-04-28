@@ -187,11 +187,10 @@ export class AgentLoader {
         return source.agent;
 
       case "user":
-        // User agents (WASM code agents) don't carry an AtlasAgent instance —
-        // they're loaded by CodeAgentExecutor at execution time. The registry
-        // stores source data; the executor handles instantiation.
+        // User agents are subprocess agents — they don't carry an AtlasAgent instance.
+        // The registry stores source data; ProcessAgentExecutor handles execution via NATS.
         throw new Error(
-          `User agent "${source.id}" cannot be converted to AtlasAgent directly. Use CodeAgentExecutor.`,
+          `User agent "${source.id}" cannot be converted to AtlasAgent directly. Use ProcessAgentExecutor.`,
         );
 
       default:

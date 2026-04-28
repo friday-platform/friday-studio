@@ -1,6 +1,13 @@
 name: Knip Check
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches: [main]
     paths-ignore:
@@ -9,6 +16,7 @@ on:
       - 'LICENSE'
       - '.gitignore'
   merge_group:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}

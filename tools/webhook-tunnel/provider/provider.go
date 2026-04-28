@@ -77,7 +77,7 @@ func load() {
 	loadOnce.Do(func() {
 		raw := defaultMappings
 		if path := os.Getenv("WEBHOOK_MAPPINGS_PATH"); path != "" {
-			data, err := os.ReadFile(path)
+			data, err := os.ReadFile(path) //nolint:gosec // G304: env-controlled override is intentional
 			if err != nil {
 				loadErr = fmt.Errorf("read WEBHOOK_MAPPINGS_PATH=%s: %w", path, err)
 				return

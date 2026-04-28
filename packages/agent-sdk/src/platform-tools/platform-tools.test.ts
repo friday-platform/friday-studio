@@ -12,7 +12,7 @@ import type {
 } from "../memory-adapter.ts";
 import { createPlatformTools, PLATFORM_TOOL_NAMES } from "../platform-tools.ts";
 import type { ScratchpadAdapter, ScratchpadChunk } from "../scratchpad-adapter.ts";
-import type { AgentContext, AgentSessionData, Logger } from "../types.ts";
+import type { AgentContext, AgentSessionData, Logger, PlatformModels } from "../types.ts";
 import { createMemoryDedupTools } from "./memory-dedup-tools.ts";
 import { createMemoryKVTools } from "./memory-kv-tools.ts";
 import { createMemoryRetrievalTools } from "./memory-retrieval-tools.ts";
@@ -108,6 +108,12 @@ function mockMemoryAdapter(storeMap: Record<string, unknown> = {}): MemoryAdapte
   };
 }
 
+const mockPlatformModels: PlatformModels = {
+  get: () => {
+    throw new Error("platformModels.get should not be called in these tests");
+  },
+};
+
 function createMockContext(overrides?: {
   adapter?: MemoryAdapter;
   scratchpad?: ScratchpadAdapter;
@@ -122,6 +128,7 @@ function createMockContext(overrides?: {
     stream: undefined,
     logger: mockLogger(),
     memory: { mounts: {}, adapter: overrides?.adapter, scratchpad: overrides?.scratchpad },
+    platformModels: mockPlatformModels,
   };
 }
 

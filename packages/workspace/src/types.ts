@@ -27,16 +27,6 @@ export const WorkspaceMetadataSchema = z.object({
   // Blueprint tracking
   blueprintArtifactId: z.string().optional(),
   blueprintRevision: z.number().optional(),
-  // Pending improvement revision (proposed by workspace-improver agent)
-  pendingRevision: z
-    .object({
-      artifactId: z.string(),
-      revision: z.number(),
-      summary: z.string(),
-      triageReasoning: z.string(),
-      createdAt: z.iso.datetime(),
-    })
-    .optional(),
   // Session tracking fields
   lastFinishedSession: z
     .object({

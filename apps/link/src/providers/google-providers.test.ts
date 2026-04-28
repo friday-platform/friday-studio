@@ -25,17 +25,20 @@ describe("Google providers", () => {
       expect(provider, `${id} should be defined`).toBeDefined();
       expect(provider.type, `${id} should be oauth type`).toBe("oauth");
       expect(provider.id, `${id} id mismatch`).toBe(id);
-      expect(provider.oauthConfig.mode, `${id} should be static mode`).toBe("static");
+      if (provider.oauthConfig.mode !== "static") {
+        throw new Error(`${id} should be static mode, got ${provider.oauthConfig.mode}`);
+      }
+      const oauthConfig = provider.oauthConfig;
 
       // Desktop app client — PKCE provides real security but Google still requires
       // client_secret present for Desktop app clients at the token endpoint.
-      expect(provider.oauthConfig.clientAuthMethod, `${id} should use client_secret_post`).toBe(
+      expect(oauthConfig.clientAuthMethod, `${id} should use client_secret_post`).toBe(
         "client_secret_post",
       );
-      expect(provider.oauthConfig.clientSecret, `${id} should have client_secret`).toBeDefined();
+      expect(oauthConfig.clientSecret, `${id} should have client_secret`).toBeDefined();
 
       // Scopes should include openid, email, and the service scope
-      const scopes = provider.oauthConfig.scopes ?? [];
+      const scopes = oauthConfig.scopes ?? [];
       expect(scopes, `${id} should include openid`).toContain("openid");
       expect(scopes, `${id} should include email`).toContain("email");
       expect(

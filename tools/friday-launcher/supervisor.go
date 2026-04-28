@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,7 +17,6 @@ type Supervisor struct {
 	runner *app.ProjectRunner
 
 	supervisorExited atomic.Bool
-	supervisorErr    atomic.Value // error
 	shuttingDown     *atomic.Bool
 
 	startedAt time.Time
@@ -57,13 +55,8 @@ func NewSupervisor(project *types.Project, shuttingDown *atomic.Bool) (*Supervis
 // process-compose panics without propagating, Run() stays blocked
 // forever — that's a documented limitation (see v8 plan Out of Scope).
 func (s *Supervisor) runAndWatch() {
-	err := s.runner.Run()
+	_ = s.runner.Run()
 	if !s.shuttingDown.Load() {
-		if err != nil {
-			s.supervisorErr.Store(err)
-		} else {
-			s.supervisorErr.Store(errors.New("supervisor exited without error"))
-		}
 		s.supervisorExited.Store(true)
 	}
 }
@@ -71,18 +64,6 @@ func (s *Supervisor) runAndWatch() {
 // SupervisorExited reports whether runner.Run() returned unexpectedly.
 func (s *Supervisor) SupervisorExited() bool {
 	return s.supervisorExited.Load()
-}
-
-// SupervisorErr returns the recorded error if SupervisorExited() is true.
-func (s *Supervisor) SupervisorErr() error {
-	v := s.supervisorErr.Load()
-	if v == nil {
-		return nil
-	}
-	if e, ok := v.(error); ok {
-		return e
-	}
-	return nil
 }
 
 // State proxies through to runner.GetProcessesState. May return cached

@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-/** Wait for the next microtask so Svelte rune updates propagate. */
-function tick() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 // Mock oauth-popup module so we can control popup behavior
 vi.mock("./oauth-popup.ts", () => ({
   getOAuthUrl: vi.fn((provider: string) => `https://example.com/oauth/${provider}`),
@@ -98,6 +93,7 @@ describe("useCredentialConnect", () => {
   it("submitApiKey flips submitting state during call", async () => {
     const connect = useCredentialConnect("openai");
     let resolved = false;
+    // deno-lint-ignore require-await
     fetchSpy.mockImplementation(async () => {
       expect(connect.submitting).toBe(true);
       resolved = true;

@@ -35,7 +35,10 @@ export interface ExportGlobalSkillsResult {
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  // `Uint8Array<ArrayBufferLike>` (TS 5+ default) is not assignable to
+  // BufferSource's `ArrayBufferView<ArrayBuffer>`. Slice to produce a fresh
+  // Uint8Array backed by ArrayBuffer.
+  const digest = await crypto.subtle.digest("SHA-256", bytes.slice());
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");

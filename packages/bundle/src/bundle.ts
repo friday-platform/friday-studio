@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { dirname, join, relative, sep } from "node:path";
 import JSZip from "jszip";
 import { hashPrimitive } from "./hasher.ts";
-import { type Lockfile, readLockfile, writeLockfile } from "./lockfile.ts";
+import { type Lockfile, readLockfile } from "./lockfile.ts";
 
 export interface ExportOptions {
   /** Path to the workspace directory containing workspace.yml + skills/. */

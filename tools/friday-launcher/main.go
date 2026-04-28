@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"fyne.io/systray"
-	"github.com/tempestteam/atlas/pkg/logger"
-	"github.com/tempestteam/atlas/pkg/processkit"
+	"github.com/friday-platform/friday-studio/pkg/logger"
+	"github.com/friday-platform/friday-studio/pkg/processkit"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -103,7 +103,7 @@ func main() {
 	}
 	if !ok {
 		// Another launcher is running. Read its pid + wake it.
-		if pid, _, err := readLauncherPid(); err == nil {
+		if pid, err := readLauncherPid(); err == nil {
 			log.Info("another launcher detected; sending wake", "running_pid", pid)
 			if err := notifyRunningInstance(pid); err != nil {
 				log.Warn("failed to notify running launcher", "error", err)
@@ -167,7 +167,7 @@ func parseFlags() (autostart string, uninstall bool) {
 			binDir = filepath.Dir(exe)
 		}
 	}
-	return
+	return autostart, uninstall
 }
 
 func setupLogging() {

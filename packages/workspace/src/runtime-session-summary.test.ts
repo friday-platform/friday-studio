@@ -5,12 +5,12 @@
 
 import { rm } from "node:fs/promises";
 import process from "node:process";
+import type { AgentResult } from "@atlas/agent-sdk";
 import type { MergedConfig } from "@atlas/config";
 import type { SessionAISummary, SessionStreamEvent, SessionSummary } from "@atlas/core";
 import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { describe, expect, it, vi } from "vitest";
-import { WorkspaceRuntime } from "./runtime.ts";
 
 const fakePlatformModels = createStubPlatformModels();
 
@@ -29,6 +29,43 @@ const { mockSummary, mockGenerateSessionSummary } = vi.hoisted(() => {
 vi.mock("../../../apps/atlasd/src/session-summarizer.ts", () => ({
   generateSessionSummary: mockGenerateSessionSummary,
 }));
+
+// ---------------------------------------------------------------------------
+// Mock AgentOrchestrator — runtime gates session:summary on executed agent
+// blocks. Provide a stub so the FSM's `agent` step records as "executed".
+// ---------------------------------------------------------------------------
+
+vi.mock("@atlas/core", async (importActual) => {
+  const actual = await importActual<typeof import("@atlas/core")>();
+
+  const successResult: AgentResult = {
+    agentId: "test-agent",
+    timestamp: new Date().toISOString(),
+    input: {},
+    ok: true as const,
+    data: "mock agent output",
+    durationMs: 0,
+  };
+
+  class MockAgentOrchestrator {
+    executeAgent(): Promise<AgentResult> {
+      return Promise.resolve(successResult);
+    }
+    hasActiveExecutions() {
+      return false;
+    }
+    getActiveExecutions() {
+      return [];
+    }
+    shutdown() {
+      return Promise.resolve();
+    }
+  }
+
+  return { ...actual, AgentOrchestrator: MockAgentOrchestrator };
+});
+
+const { WorkspaceRuntime } = await import("./runtime.ts");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,7 +94,10 @@ function createTestConfig(): MergedConfig {
             states: {
               idle: { on: { "test-signal": { target: "processing" } } },
               processing: {
-                entry: [{ type: "emit", event: "DONE" }],
+                entry: [
+                  { type: "agent", agentId: "test-agent", prompt: "do the task" },
+                  { type: "emit", event: "DONE" },
+                ],
                 on: { DONE: { target: "complete" } },
               },
               complete: { type: "final" },

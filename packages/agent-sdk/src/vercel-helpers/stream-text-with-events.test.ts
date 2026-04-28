@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { StreamEmitter } from "../types.ts";
-import { streamTextWithEvents, type ResolvedStreamResult } from "./stream-text-with-events.ts";
+import { streamTextWithEvents } from "./stream-text-with-events.ts";
 
 const mockStreamText = vi.hoisted(() => vi.fn());
 

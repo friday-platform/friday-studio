@@ -602,7 +602,7 @@ export const skillsRoutes = daemonFactory
         description: fix.description,
         instructions: fix.instructions,
         frontmatter,
-        archive: skill.archive,
+        archive: skill.archive ?? undefined,
         skillId: skill.skillId,
         descriptionManual: skill.descriptionManual,
       });
@@ -962,10 +962,17 @@ export const skillsRoutes = daemonFactory
           archiveContents = await extractArchiveContents(new Uint8Array(existing.data.archive));
         }
       }
+      // The linter reads `description` from frontmatter, but the publish API
+      // accepts it as a sibling field — surface it so `description-missing`
+      // doesn't fire when the caller provides one out-of-band.
+      const lintFrontmatter = {
+        ...(input.frontmatter ?? {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+      };
       const lint = lintSkill(
         {
           name,
-          frontmatter: input.frontmatter ?? {},
+          frontmatter: lintFrontmatter,
           instructions: input.instructions,
           archiveFiles: archiveContents ? Object.keys(archiveContents) : undefined,
           archiveContents,

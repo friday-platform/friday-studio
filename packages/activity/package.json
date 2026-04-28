@@ -13,7 +13,7 @@
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
-    "hono": "4.12.12",
+    "hono": "4.12.15",
     "ulid": "^3.0.2",
     "zod": "^4.3.5"
   },

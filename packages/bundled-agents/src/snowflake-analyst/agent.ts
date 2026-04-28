@@ -165,9 +165,9 @@ export const snowflakeAnalystAgent = createAgent<string, SnowflakeAnalystResult>
   useWorkspaceSkills: true,
   expertise: {
     examples: [
-      "Analyze the DAILY_FLASH table for advertising trends",
-      "What are the top performing campaigns in this Snowflake dataset?",
-      "Find anomalies in the SNOWFLAKE_LEARNING_DB.PUBLIC.DAILY_FLASH table",
+      "Summarize trends in the ORDERS table over the last 30 days",
+      "What are the top values by revenue in this Snowflake dataset?",
+      "Find anomalies in MY_DB.PUBLIC.EVENTS",
     ],
   },
   environment: {

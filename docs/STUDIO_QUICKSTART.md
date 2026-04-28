@@ -1,7 +1,7 @@
 # Friday Agent Studio & Toolkit — Quickstart
 
-Get [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit) running locally with Docker Compose,
-load a space, and run your first agentic workflow.
+Get [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit) running locally with the
+Friday Studio installer, load a space, and run your first agentic workflow.
 
 ## Overview
 
@@ -20,7 +20,6 @@ it versionable, shareable, and repeatable.
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) with Docker Compose v2+
 - An [Anthropic API key](https://console.anthropic.com/) (powers the Claude
   Code agent)
 - A [Bitbucket app password](https://support.atlassian.com/bitbucket-cloud/docs/create-an-app-password/)
@@ -31,14 +30,35 @@ it versionable, shareable, and repeatable.
 - Optionally, a [GitHub personal access token](https://github.com/settings/tokens)
   (for the GitHub PR review starter)
 
-## 1. Create your `.env` file
+## 1. Install Friday Studio
 
-Create a `.env` file with your API keys:
+Download the Friday Studio installer for your platform from
+[hellofriday.ai/download](https://hellofriday.ai/download) and run it. The
+installer is a small desktop app that walks you through the install flow:
+
+1. **Welcome** — confirms your OS and architecture
+2. **License** — scroll-to-accept the BSL-1.1 license
+3. **API Keys** — enter at least one of `ANTHROPIC_API_KEY` or
+   `OPENAI_API_KEY`. Optional keys for Bitbucket / Jira / GitHub can be added
+   now or later (see step 2)
+4. **Download + verify** — fetches the latest Studio binary and verifies its
+   checksum (resumes automatically on flaky connections)
+5. **Extract + launch** — installs to the platform-standard location
+   (`/Applications` on macOS, `Program Files` on Windows), starts the five
+   Studio processes, and opens your browser to **http://localhost:5200**
+
+Re-running the installer later detects the existing install and updates it in
+place — your API keys and data are preserved.
+
+> **Building from source instead?** See
+> [`apps/studio-installer`](../apps/studio-installer) for the dev workflow.
+
+## 2. Add the optional API keys
+
+If you skipped the optional keys in the installer, edit `~/.friday/local/.env`
+to add them:
 
 ```bash
-# Required for all starters — powers the Claude Code agent
-ANTHROPIC_API_KEY=sk-ant-...
-
 # Required for the Bitbucket starters
 BITBUCKET_EMAIL=your-atlassian-email
 BITBUCKET_TOKEN=your-app-password
@@ -52,96 +72,10 @@ JIRA_API_TOKEN=your-api-token
 GH_TOKEN=ghp_...
 ```
 
-Only set the keys for the starters you plan to run. `ANTHROPIC_API_KEY` is
-always required.
+Only set the keys for the starters you plan to run. Restart Studio from the
+menu bar (or your OS app launcher) after editing the file.
 
-## 2. Authenticate with the container registry
-
-The platform image is hosted on Google Artifact Registry. You'll receive a
-`key.json` service account key file from Friday — use it to authenticate
-Docker:
-
-```bash
-docker login -u _json_key --password-stdin https://us-west2-docker.pkg.dev < key.json
-```
-
-This only needs to be done once per machine. The credential is stored in your
-Docker config and persists across sessions.
-
-## 3. Create `docker-compose.yml`
-
-Create a `docker-compose.yml` in the same directory as your `.env` file:
-
-```yaml
-services:
-  platform:
-    image: us-west2-docker.pkg.dev/friday-platform/releases/platform:latest
-    pull_policy: always   # always pull latest; set to "never" for local builds
-    platform: linux/amd64  # required on Apple Silicon Macs
-    ports:
-      - "8080:8080"  # Friday daemon API
-      - "3100:3100"  # link (credential/auth service)
-      - "5200:5200"  # Friday Studio (web UI)
-      - "7681:7681"  # pty-server (WebSocket PTY)
-      - "9090:9090"  # webhook-tunnel
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      ATLAS_LOG_LEVEL: ${ATLAS_LOG_LEVEL:-info}
-    volumes:
-      - atlas-data:/data/atlas
-      - link-data:/data/link
-      # Override default webhook mappings (optional — image ships with defaults for examples)
-      # - ./webhook-mappings.yml:/app/config/webhook-mappings.yml:ro
-    restart: unless-stopped
-    healthcheck:
-      test:
-        - CMD
-        - sh
-        - -c
-        - >
-          curl -sf http://localhost:8080/health &&
-          curl -sf http://localhost:3100/health &&
-          curl -sf http://localhost:7681/health &&
-          curl -sf http://localhost:9090/health
-      interval: 10s
-      timeout: 5s
-      start_period: 60s
-      retries: 3
-
-volumes:
-  atlas-data:
-  link-data:
-```
-
-> **Using a local build instead of the registry image:** Build with
-> `docker build -f Dockerfile-platform -t friday-platform:local .`, then change
-> the `image:` line to `friday-platform:local` and set `pull_policy: never`.
-
-## 4. Start the platform
-
-```bash
-docker compose up
-```
-
-Wait for the startup banner:
-
-```
-================================================================
-  Friday Platform is ready!
-
-  Friday Studio:       http://localhost:5200
-  Daemon API:          http://localhost:8080
-  Webhook Tunnel:      http://localhost:9090
-  Link Service:        http://localhost:3100
-  PTY Server:          http://localhost:7681
-================================================================
-```
-
-Open **http://localhost:5200** in your browser.
-
-## 5. Add a starter space
+## 3. Add a starter space
 
 FAST comes with four starter spaces you can try right away.
 Each one is a `workspace.yml` that defines a complete agentic workflow — agents,
@@ -180,7 +114,7 @@ curl -s -X POST http://localhost:8080/api/workspaces/create \
   -d "{\"config\":$CONFIG,\"workspaceName\":\"PR Code Review (Bitbucket)\"}"
 ```
 
-## 6. Publish skills
+## 4. Publish skills
 
 The PR review starters use the `@tempest/pr-code-review` skill, which must be
 published before running those workspaces. Each starter includes a `skill/`
@@ -210,7 +144,7 @@ curl -X POST http://localhost:8080/api/skills/@tempest/pr-code-review/upload \
 The Jira starters don't use skills — skip this step if you're only running
 those.
 
-## 7. Trigger a job
+## 5. Trigger a job
 
 Once a space is loaded, start a job by sending a signal.
 
@@ -279,7 +213,7 @@ curl -X POST http://localhost:8080/api/workspaces/<workspace-id>/signals/review-
   }'
 ```
 
-## 8. Watch it run
+## 6. Watch it run
 
 After triggering a signal:
 
@@ -296,7 +230,7 @@ ticket, the Bitbucket agent clones the repo, Claude Code implements the fix,
 the Bitbucket agent creates a PR, and the Jira agent comments on the ticket with
 the PR link.
 
-## 9. Connect external webhooks
+## 7. Connect external webhooks
 
 The platform includes a webhook tunnel that creates a public URL via
 Cloudflare, so GitHub or Bitbucket can send webhooks directly to your
@@ -431,51 +365,44 @@ Each provider entry defines:
 - **`events`** — map of event names to an optional `actions` filter and a
   `mapping` of output field → dot-path into the webhook body
 
-To customize, save your own `webhook-mappings.yml` and uncomment the volume
-mount in `docker-compose.yml`:
-
-```yaml
-volumes:
-  - ./webhook-mappings.yml:/app/config/webhook-mappings.yml:ro
-```
+To customize, save your own `webhook-mappings.yml` to
+`~/.friday/local/webhook-mappings.yml` and restart Studio. Studio picks up the
+override on startup; the bundled defaults are used if the file is absent.
 
 ## Stopping the platform
 
+Quit Friday Studio from the menu bar (macOS) or system tray (Windows) — this
+stops all five processes. Your spaces, skills, and `.env` keys persist in
+`~/.friday/local/` across restarts.
+
+To start fresh, quit Studio and remove the data directory:
+
 ```bash
-docker compose down
+rm -rf ~/.friday/local
 ```
 
-Data persists across restarts in Docker volumes. To start fresh:
-
-```bash
-docker compose down -v
-```
+Re-run the installer to set up a clean install.
 
 ## Troubleshooting
 
-**Container fails to start:** Check that Docker has at least 4 GB of memory
-allocated. Also make sure ports 8080, 3100, 5200, 7681, and 9090 are free — if
-another service is already bound to one of them, Docker will fail with an
-"address already in use" error.
+**Studio fails to start:** Make sure ports 8080, 3100, 5200, 7681, and 9090
+are free — if another service is already bound to one of them, Studio will
+fail with an "address already in use" error. Stop the conflicting process and
+relaunch Studio.
 
-**"no matching manifest for linux/arm64":** The image is built for `amd64`. On
-Apple Silicon Macs, Docker Desktop runs it via Rosetta emulation. Make sure
-`platform: linux/amd64` is in your `docker-compose.yml` (included in the
-example above).
-
-**`ANTHROPIC_API_KEY` errors:** Verify your key is set in `.env` and the
-container was restarted after adding it (`docker compose down && docker compose up`).
+**`ANTHROPIC_API_KEY` errors:** Verify your key is set in
+`~/.friday/local/.env` and that you restarted Studio after editing the file.
 
 **Bitbucket/Jira/GitHub auth failures:** Make sure the corresponding tokens in
-`.env` have the right permissions:
+`~/.friday/local/.env` have the right permissions:
 - **Bitbucket:** App password with `repository:read`, `repository:write`, and
   `pullrequest:write`
 - **Jira:** `JIRA_API_TOKEN` from https://id.atlassian.com/manage-profile/security/api-tokens,
   `JIRA_SITE` is just the hostname (e.g. `acme.atlassian.net`)
 - **GitHub:** `repo` scope for private repos, or just public repo access
 
-**Logs:** View service logs with:
+**Logs:** Service logs are written to `~/.friday/local/logs/`. Tail them with:
 
 ```bash
-docker compose logs -f
+tail -f ~/.friday/local/logs/*.log
 ```

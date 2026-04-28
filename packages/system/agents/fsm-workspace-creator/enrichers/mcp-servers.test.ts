@@ -45,12 +45,12 @@ describe("generateMCPServers — registry lookup", () => {
 
   it("generates multiple MCP servers for different capabilities", () => {
     const agents: WorkspacePlan["agents"] = [
-      { id: "bot", name: "Bot", description: "test", capabilities: ["github", "linear"] },
+      { id: "bot", name: "Bot", description: "test", capabilities: ["github", "google-drive"] },
     ];
 
     const servers = generateMCPServers(agents);
     expect(servers).toHaveLength(2);
-    expect(servers.map((s) => s.id).sort()).toEqual(["github", "linear"]);
+    expect(servers.map((s) => s.id).sort()).toEqual(["github", "google-drive"]);
   });
 });
 
@@ -167,10 +167,10 @@ describe("generateMCPServers — credential bindings", () => {
   it("ignores bindings for servers not in result", () => {
     const agents: WorkspacePlan["agents"] = [
       {
-        id: "linear-agent",
-        name: "Linear Agent",
-        description: "Tracks issues",
-        capabilities: ["linear"],
+        id: "drive-agent",
+        name: "Drive Agent",
+        description: "Manages files",
+        capabilities: ["google-drive"],
       },
     ];
 
@@ -190,7 +190,7 @@ describe("generateMCPServers — credential bindings", () => {
     const githubServer = servers.find((s) => s.id === "github");
     expect(githubServer).toBeUndefined();
 
-    const linearServer = servers.find((s) => s.id === "linear");
-    expect(linearServer).toBeDefined();
+    const driveServer = servers.find((s) => s.id === "google-drive");
+    expect(driveServer).toBeDefined();
   });
 });

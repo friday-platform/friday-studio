@@ -67,7 +67,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: true,
@@ -83,7 +83,7 @@ describe("createEnableMcpServerTool", () => {
     mockPut.mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({}) });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: true,
@@ -100,7 +100,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: 'Server "github" not found in catalog.' });
   });
@@ -116,7 +116,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       success: false,
@@ -132,7 +132,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Internal server error" });
   });
@@ -142,7 +142,7 @@ describe("createEnableMcpServerTool", () => {
     mockPut.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute({ serverId: "github" }, TOOL_CALL_OPTS);
+    const result = await tools.enable_mcp_server!.execute!({ serverId: "github" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ success: false, error: "Enable failed: Network failure" });
     expect(logger.warn).toHaveBeenCalledWith(

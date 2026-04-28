@@ -19,7 +19,7 @@ vi.mock("@atlas/core/mcp-registry/storage", async (importOriginal) => {
 });
 
 // Mock the upstream client - use simpler typing to avoid esbuild parsing issues
-type SearchResult = { server: { name: string } };
+type SearchResult = { server: { name: string; version?: string } };
 const mockFetchLatest = vi.fn<(name: string) => Promise<UpstreamServerEntry>>();
 const mockSearch =
   vi.fn<
@@ -49,7 +49,7 @@ const mockCreateMCPTools =
   >();
 
 vi.mock("@atlas/mcp", () => ({
-  createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
+  createMCPTools: (...args: Parameters<typeof mockCreateMCPTools>) => mockCreateMCPTools(...args),
   MCPAuthError: class extends Error {
     readonly serverId: string;
     readonly url: string;

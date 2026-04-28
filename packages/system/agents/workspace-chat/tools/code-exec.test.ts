@@ -31,7 +31,10 @@ function getExecute(
   throw new Error("run_code tool has no execute method");
 }
 
-function hasKey<K extends string>(o: unknown, k: K): o is Record<K, unknown> {
+function hasKey<K extends string>(
+  o: unknown,
+  k: K,
+): o is Record<K, unknown> & Record<"stdout" | "stderr" | "exit_code", unknown> {
   return typeof o === "object" && o !== null && k in o;
 }
 

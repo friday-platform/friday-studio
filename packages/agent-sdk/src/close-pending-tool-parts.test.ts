@@ -20,7 +20,7 @@ function getErrorText(m: { parts: Record<string, unknown>[] }, i: number): strin
 
 describe("closePendingToolParts", () => {
   it("no-ops on a message with no parts", () => {
-    const result = closePendingToolParts({ role: "assistant" });
+    const result = closePendingToolParts({});
     expect(result.closed).toBe(0);
   });
 

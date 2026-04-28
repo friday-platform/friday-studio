@@ -59,7 +59,7 @@
         {
           "name": "John Summit",
           "recipientField": "TO",
-          "deliveryIdentifier": { "type": "HS_EMAIL_ADDRESS", "value": "summit@tempest.team" }
+          "deliveryIdentifier": { "type": "HS_EMAIL_ADDRESS", "value": "summit@example.com" }
         }
       ],
       "archived": false,

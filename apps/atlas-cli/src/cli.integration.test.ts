@@ -47,7 +47,10 @@ async function runCLI(
   }
 }
 
-describe("CLI output contract", () => {
+// Each test spawns a `deno run` subprocess that JITs the full CLI graph
+// on first invocation; on a cold runner that overruns vitest's 5s default.
+// Match runCLI's 15s subprocess timeout file-wide.
+describe("CLI output contract", { timeout: 15_000 }, () => {
   it("atlas version → prints version and channel", async () => {
     const { stdout, exitCode } = await runCLI("version");
     expect(exitCode).toBe(0);

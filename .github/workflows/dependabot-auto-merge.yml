@@ -1,7 +1,16 @@
 name: Auto-merge Dependabot PRs
 
+# Use pull_request_target so the workflow runs with a token that has
+# write permission. The default pull_request token from Dependabot is
+# read-only. The `github.event.pull_request.user.login == 'dependabot[bot]'`
+# gate is what makes pull_request_target safe — we never run untrusted
+# PR code, only invoke `gh` against the PR's metadata.
+#
+# No approval step: main is not branch-protected, so `--auto --squash`
+# merges as soon as any required checks pass. (And the default GITHUB_TOKEN
+# cannot approve PRs — that always requires a PAT or GitHub App token.)
 on:
-  pull_request:
+  pull_request_target:
     types:
       - opened
       - synchronize
@@ -21,14 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Approve Dependabot PR
-        run: gh pr review --approve "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.DEPENDABOT_PAT }}
-
       - name: Enable auto-merge for Dependabot PRs
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.DEPENDABOT_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

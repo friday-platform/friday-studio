@@ -142,11 +142,11 @@ func downloadAtomic(ctx context.Context) (string, error) {
 		return "", err
 	}
 	dst := cachedPath()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return "", fmt.Errorf("create cache dir: %w", err)
 	}
 	tmp := fmt.Sprintf("%s.tmp.%d", dst, os.Getpid())
-	defer os.Remove(tmp) // best-effort cleanup if we don't reach the rename
+	defer func() { _ = os.Remove(tmp) }() // best-effort cleanup if we don't reach the rename
 
 	// 1. Fetch sidecar first — fail fast if the version doesn't have
 	//    one (rather than after a multi-MB download). The sidecar
@@ -176,8 +176,9 @@ func downloadAtomic(ctx context.Context) (string, error) {
 		}
 	}
 
-	// 5. chmod + atomic rename.
-	if err := os.Chmod(tmp, 0o755); err != nil {
+	// 5. chmod + atomic rename. cloudflared is an executable; the +x bit
+	// is essential.
+	if err := os.Chmod(tmp, 0o700); err != nil { //nolint:gosec // G302: executable needs +x
 		return "", fmt.Errorf("chmod: %w", err)
 	}
 	if err := os.Rename(tmp, dst); err != nil {
@@ -198,7 +199,7 @@ func fetchSha256Sidecar(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("sidecar HTTP %d", resp.StatusCode)
 	}
@@ -224,11 +225,11 @@ func downloadToTmp(ctx context.Context, url, tmp string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("download GET: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download HTTP %d", resp.StatusCode)
 	}
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // G304: tmp is a path we computed inside this package
 	if err != nil {
 		return "", fmt.Errorf("open tmp: %w", err)
 	}
