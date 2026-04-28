@@ -6,7 +6,7 @@ import { getAtlasHome, isSystemService } from "@atlas/utils/paths.server";
  * Returns Atlas logs directory: /var/log/atlas (system) or ~/.atlas/logs (user)
  */
 export function getAtlasLogsDir(): string {
-  const logsDir = process.env.ATLAS_LOGS_DIR;
+  const logsDir = process.env.FRIDAY_LOGS_DIR;
   if (logsDir) {
     return logsDir;
   }

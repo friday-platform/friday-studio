@@ -156,7 +156,7 @@ Error objects include full context:
 
 **Path Detection:**
 
-- `ATLAS_LOGS_DIR` environment variable override
+- `FRIDAY_LOGS_DIR` environment variable override
 - `.atlas` directory detection for compiled binaries
 - Windows/Unix home directory detection
 - System service detection (root user, `ATLAS_SYSTEM_MODE=true`, `atlas` user)
