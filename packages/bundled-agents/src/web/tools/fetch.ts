@@ -25,22 +25,23 @@ function htmlToMarkdown(html: string): string {
 }
 
 /**
- * Strips HTML tags to extract plain text.
+ * Strips HTML tags to extract plain text. Goes through Turndown so the
+ * tag handling reuses a real HTML parser (regex-based stripping misses
+ * forgiving-parser corner cases like `</script foo="bar">`), then we
+ * collapse the resulting markdown to plain text.
  */
 function htmlToText(html: string): string {
-  // Iterate the script/style/meta/link removals and tag strip until stable —
-  // a single pass leaves crafted nesting like `<scr<script>ipt>...</script>`
-  // intact, which would otherwise survive into the plain-text output.
-  let cleaned = html;
-  while (true) {
-    const next = cleaned
-      .replace(/<(script|style|meta|link)\b[^<>]*>[\s\S]*?<\/(script|style|meta|link)>/gi, "")
-      .replace(/<(script|style|meta|link)\b[^<>]*\/?>/gi, "")
-      .replace(/<[^<>]*>/g, " ");
-    if (next === cleaned) break;
-    cleaned = next;
-  }
-  return cleaned.replace(/\s+/g, " ").trim();
+  const md = htmlToMarkdown(html);
+  return md
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1") // images → alt text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links → label
+    .replace(/^#+\s+/gm, "") // heading markers
+    .replace(/^\s*>\s+/gm, "") // blockquote markers
+    .replace(/^\s*[-*+]\s+/gm, "") // unordered list markers
+    .replace(/^\s*\d+\.\s+/gm, "") // ordered list markers
+    .replace(/[*_~`]/g, "") // emphasis / inline code
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
