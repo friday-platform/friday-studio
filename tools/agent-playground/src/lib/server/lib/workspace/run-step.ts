@@ -12,10 +12,9 @@ import type {
   AgentAction,
   AgentResult,
   Context,
-  FSMDefinition,
   SignalWithContext,
 } from "@atlas/fsm-engine";
-import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
+import type { CompiledFSMDefinition, WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { createDirectMCPExecutor } from "./direct-executor.ts";
 import { createMockAgentExecutor } from "./mock-executor.ts";
 
@@ -26,7 +25,7 @@ import { createMockAgentExecutor } from "./mock-executor.ts";
 /** Options for executing a single step. */
 export interface RunStepOptions {
   /** The FSM definition containing the target state. */
-  fsm: FSMDefinition;
+  fsm: CompiledFSMDefinition;
   /** The workspace plan (for schema lookup and agent resolution). */
   plan: WorkspaceBlueprint;
   /** The FSM state ID to execute (e.g. "step_clone_repo"). */

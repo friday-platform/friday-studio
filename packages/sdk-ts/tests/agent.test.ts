@@ -15,7 +15,7 @@ import { err, ok } from "../src/index.ts";
 
 function mockNats(): NatsConnection {
   return {
-    request: vi.fn<() => Promise<{ data: Uint8Array }>>(),
+    request: vi.fn<() => Promise<import("nats").Msg>>(),
     publish: vi.fn<() => void>(),
     subscribe: vi.fn(),
     drain: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -24,6 +24,20 @@ function mockNats(): NatsConnection {
 
 function encode(s: string): Uint8Array {
   return new TextEncoder().encode(s);
+}
+
+/** Build a partial NATS Msg whose only meaningful field is `data`. The rest
+ * of the Msg interface (subject/sid/respond/json/string) is unused by the
+ * production code paths under test. */
+function msgWithData(data: Uint8Array): import("nats").Msg {
+  return {
+    data,
+    subject: "",
+    sid: 0,
+    respond: () => true,
+    json: () => JSON.parse(new TextDecoder().decode(data)),
+    string: () => new TextDecoder().decode(data),
+  };
 }
 
 function makeRaw(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -111,7 +125,7 @@ describe("buildContext capabilities", () => {
   test("llm.generate sends request to caps.{sessionId}.llm.generate", async () => {
     const nc = mockNats();
     const responsePayload = { text: "pong", model: "claude", usage: {}, finish_reason: "stop" };
-    vi.mocked(nc.request).mockResolvedValue({ data: encode(JSON.stringify(responsePayload)) });
+    vi.mocked(nc.request).mockResolvedValue(msgWithData(encode(JSON.stringify(responsePayload))));
 
     const ctx = buildContext(makeRaw(), nc, "sess-abc");
     const result = await ctx.llm.generate({ messages: [{ role: "user", content: "ping" }] });
@@ -126,9 +140,9 @@ describe("buildContext capabilities", () => {
 
   test("llm.generate throws on error response", async () => {
     const nc = mockNats();
-    vi.mocked(nc.request).mockResolvedValue({
-      data: encode(JSON.stringify({ error: "rate limited" })),
-    });
+    vi.mocked(nc.request).mockResolvedValue(
+      msgWithData(encode(JSON.stringify({ error: "rate limited" }))),
+    );
 
     const ctx = buildContext(makeRaw(), nc, "sess-abc");
     await expect(ctx.llm.generate({})).rejects.toThrow("rate limited");
@@ -139,7 +153,7 @@ describe("buildContext capabilities", () => {
     const tools = [
       { name: "read_file", description: "Reads a file", inputSchema: { type: "object" } },
     ];
-    vi.mocked(nc.request).mockResolvedValue({ data: encode(JSON.stringify({ tools })) });
+    vi.mocked(nc.request).mockResolvedValue(msgWithData(encode(JSON.stringify({ tools }))));
 
     const ctx = buildContext(makeRaw(), nc, "sess-t");
     const result = await ctx.tools.list();
@@ -150,7 +164,7 @@ describe("buildContext capabilities", () => {
 
   test("tools.call sends name+args to caps.{sessionId}.tools.call", async () => {
     const nc = mockNats();
-    vi.mocked(nc.request).mockResolvedValue({ data: encode(JSON.stringify({ result: "ok" })) });
+    vi.mocked(nc.request).mockResolvedValue(msgWithData(encode(JSON.stringify({ result: "ok" }))));
 
     const ctx = buildContext(makeRaw(), nc, "sess-c");
     const result = await ctx.tools.call("write_file", { path: "/tmp/x", content: "hello" });

@@ -707,7 +707,10 @@ describe("buildAgentContext memory mount resolution", () => {
     const key = "sess-1:test-agent";
     setMountContext(key, memoryCtx);
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
     const { context } = await buildAgentContext(
       createTestAgent(),
       { ...createTestSessionData("ws-mem"), memoryContextKey: key },
@@ -723,7 +726,10 @@ describe("buildAgentContext memory mount resolution", () => {
     const key = "sess-2:test-agent";
     setMountContext(key, memoryCtx);
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
     await buildAgentContext(
       createTestAgent(),
       { ...createTestSessionData("ws-consume"), memoryContextKey: key },
@@ -741,7 +747,10 @@ describe("buildAgentContext memory mount resolution", () => {
     const key = "sess-3:test-agent";
     setMountContext(key, registryCtx);
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
     const { context } = await buildAgentContext(
       createTestAgent(),
       { ...createTestSessionData("ws-override"), memoryContextKey: key },
@@ -753,7 +762,10 @@ describe("buildAgentContext memory mount resolution", () => {
   });
 
   it("memory is undefined when no registry entry and no override", async () => {
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
     const { context } = await buildAgentContext(
       createTestAgent(),
       createTestSessionData("ws-no-mem"),
@@ -777,7 +789,10 @@ describe("buildAgentContext memory mount resolution", () => {
     const key = "sess-4:test-agent";
     setMountContext(key, { mounts: { persona: mockMount } });
 
-    const buildAgentContext = createAgentContextBuilder({ logger: mockLogger });
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
     const { context } = await buildAgentContext(
       createTestAgent(),
       { ...createTestSessionData("ws-closures"), memoryContextKey: key },
