@@ -137,7 +137,7 @@ describe("createListMcpToolsTool", () => {
     expect(result).toEqual({
       ok: false,
       error:
-        'MCP server "nonexistent" not found in catalog. Use search_mcp_servers or list_mcp_servers to find valid IDs.',
+        'MCP server "nonexistent" not found in catalog. Use search_mcp_servers or list_capabilities to find valid IDs.',
       phase: "connect",
     });
   });

@@ -57,15 +57,15 @@ import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import { createJobTools } from "./tools/job-tools.ts";
-import { createListMCPServersTool } from "./tools/list-mcp-servers.ts";
+import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
+import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
-import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createBoundWorkspaceOpsTools, createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
@@ -592,8 +592,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const loadSkillTool = loadSkillResult.tool;
         cleanupSkills = loadSkillResult.cleanup;
 
-        // MCP server discovery tool
-        const listMcpServersTool = createListMCPServersTool(
+        // Capability discovery tool — bundled agents + enabled/available MCP servers
+        const listCapabilitiesTool = createListCapabilitiesTool(
           workspaceId,
           wsConfig,
           linkSummary ?? undefined,
@@ -739,7 +739,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...createBoundWorkspaceOpsTools(logger, workspaceId),
           ...createBoundDraftTools(logger, workspaceId),
           ...createBoundUpsertTools(logger, workspaceId),
-          ...listMcpServersTool,
+          ...listCapabilitiesTool,
           ...searchMcpServersTool,
           ...installMcpServerTool,
           ...createMcpServerTool,

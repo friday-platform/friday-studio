@@ -10,7 +10,7 @@ const ListMcpToolsInput = z.object({
     .min(1)
     .describe(
       "ID of the MCP server to probe (e.g. 'google-gmail', 'github', 'com-notion-mcp'). " +
-        "Use list_mcp_servers or search_mcp_servers to find valid IDs.",
+        "Use list_capabilities or search_mcp_servers to find valid IDs.",
     ),
 });
 
@@ -76,7 +76,7 @@ export function createListMcpToolsTool(logger: Logger): AtlasTools {
           if (res.status === 404) {
             return {
               ok: false,
-              error: `MCP server "${serverId}" not found in catalog. Use search_mcp_servers or list_mcp_servers to find valid IDs.`,
+              error: `MCP server "${serverId}" not found in catalog. Use search_mcp_servers or list_capabilities to find valid IDs.`,
               phase: "connect",
             };
           }
