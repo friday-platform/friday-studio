@@ -1,6 +1,13 @@
 import process from "node:process";
+import type { PlatformModels } from "@atlas/llm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+
+const fakePlatformModels: PlatformModels = {
+  get: () => {
+    throw new Error("platformModels.get should not be called when LLM mocks are active");
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
@@ -68,6 +75,7 @@ function makeCtx(overrides?: Record<string, unknown>) {
     logger: mockLogger(),
     config: undefined,
     abortSignal: undefined,
+    platformModels: fakePlatformModels,
     ...overrides,
   };
 }
@@ -163,7 +171,14 @@ describe("createSearchTool", () => {
     setupSuccessPipeline();
 
     const result = await executeSearch(makeCtx(), { objective: "test topic" });
-    const parsed = JSON.parse(result);
+    const parsed = z
+      .object({
+        searchId: z.string(),
+        summary: z.string(),
+        sources: z.array(z.record(z.string(), z.unknown())),
+        usage: z.record(z.string(), z.unknown()),
+      })
+      .parse(JSON.parse(result));
 
     expect(parsed.searchId).toBe("search-1");
     expect(parsed.summary).toBe("Synthesized answer");

@@ -160,7 +160,7 @@ function resolveRole(
   errors: ResolutionError[],
 ): LanguageModelV3 | null {
   if (userValue !== undefined) {
-    const chain = Array.isArray(userValue) ? userValue : [userValue];
+    const chain: readonly string[] = Array.isArray(userValue) ? userValue : [userValue];
 
     // Pre-flight: every entry must at least parse and name a known
     // provider. A typo or unknown-provider in a chain is always an error;
