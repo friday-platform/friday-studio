@@ -19,6 +19,7 @@
     "@atlas/ledger": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
+    "@atlas/mcp": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/resources": "workspace:*",
     "@atlas/schemas": "workspace:*",
