@@ -145,11 +145,7 @@
           {/if}
 
           {#if tools.length > 0}
-            <span class="tool-pills">
-              {#each tools as tool (tool)}
-                <InlineBadge variant="info">{tool}</InlineBadge>
-              {/each}
-            </span>
+            <span class="tool-count">{tools.length} {tools.length === 1 ? "tool" : "tools"}</span>
           {/if}
 
           {#if status !== null}
@@ -341,11 +337,11 @@
     white-space: nowrap;
   }
 
-  .tool-pills {
-    align-items: center;
-    display: flex;
+  .tool-count {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
     flex-shrink: 0;
-    gap: var(--size-1);
+    font-size: var(--font-size-0);
+    white-space: nowrap;
   }
 
 </style>

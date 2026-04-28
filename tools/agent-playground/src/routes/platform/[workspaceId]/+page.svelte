@@ -300,6 +300,54 @@
       toast({ title: "Failed to remove workspace", error: true });
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Recent chats
+  // ---------------------------------------------------------------------------
+
+  interface ChatEntry {
+    id: string;
+    title?: string;
+    source: "atlas" | "slack" | "discord" | "telegram" | "whatsapp";
+    updatedAt: string;
+  }
+
+  let recentChats = $state<ChatEntry[]>([]);
+
+  function formatRelativeTime(iso: string): string {
+    const then = new Date(iso).getTime();
+    const diffMs = Date.now() - then;
+    const min = Math.floor(diffMs / 60_000);
+    if (min < 1) return "just now";
+    if (min < 60) return `${min}m`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h`;
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day}d`;
+    const wk = Math.floor(day / 7);
+    if (wk < 4) return `${wk}w`;
+    return `${Math.floor(day / 30)}mo`;
+  }
+
+  function chatSourceLabel(source: ChatEntry["source"]): string {
+    switch (source) {
+      case "atlas": return "Web";
+      case "slack": return "Slack";
+      case "discord": return "Discord";
+      case "telegram": return "Telegram";
+      case "whatsapp": return "WhatsApp";
+      default: return source;
+    }
+  }
+
+  $effect(() => {
+    if (!workspaceId || !browser) return;
+    const url = `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/chat?limit=5`;
+    fetch(url)
+      .then((res) => (res.ok ? (res.json() as Promise<{ chats: ChatEntry[] }>) : null))
+      .then((data) => { if (data) recentChats = data.chats; })
+      .catch(() => {});
+  });
 </script>
 
 <div class="overview-page">
@@ -359,69 +407,96 @@
       </div>
     </div>
 
-    <!-- Row 2: Sessions + Jobs/Integrations -->
-    <div class="row-2">
-      {#if topology && (latestSession ?? olderSessions.length > 0)}
-        <div class="runs-card card">
+    <!-- Chat (non-zero state only — zero state already has a chat composer) -->
+    {#if !isEmpty}
+    <div class="card">
+      <div class="section-head">
+        <div class="card-header">
+          <h2 class="card-title">Chat</h2>
+          <p class="card-lede">Recent conversations with this space.</p>
+        </div>
+        <a href="/platform/{workspaceId}/chat" class="section-action">New chat</a>
+      </div>
+      {#if recentChats.length > 0}
+        <div class="compact-runs">
+          {#each recentChats as chat (chat.id)}
+            <a href="/platform/{workspaceId}/chat/{chat.id}" class="compact-run">
+              <span class="compact-job">{chat.title ?? "Untitled"}</span>
+              <span class="chat-source source-{chat.source}">{chatSourceLabel(chat.source)}</span>
+              <span class="compact-time">{formatRelativeTime(chat.updatedAt)}</span>
+            </a>
+          {/each}
+        </div>
+        <a href="/platform/{workspaceId}/chat" class="view-all-row">View all chats</a>
+      {:else}
+        <a href="/platform/{workspaceId}/chat" class="view-all-row">Start a conversation</a>
+      {/if}
+    </div>
+    {/if}
+
+    <!-- Runs -->
+    {#if topology && (latestSession ?? olderSessions.length > 0)}
+      <div class="runs-card card">
+        <div class="section-head">
           <div class="card-header">
             <h2 class="card-title">Recent Runs</h2>
             <p class="card-lede">Each run traces a signal through your pipeline.</p>
           </div>
-
-          {#if latestSession}
-            <SessionProgressCard
-              session={latestSession}
-              {topology}
-              {workspaceId}
-              jobTitles={jobTitleMap}
-            />
-          {/if}
-          {#if olderSessions.length > 0}
-            <div class="compact-runs">
-              {#each olderSessions as session (session.sessionId)}
-                <a href="/platform/{workspaceId}/sessions/{session.sessionId}" class="compact-run">
-                  <span class="compact-job">{jobTitleMap[session.jobName] ?? session.jobName}</span>
-                  <span
-                    class="status-icon"
-                    class:status-active={session.status === "active"}
-                    class:status-failed={session.status === "failed"}
-                    class:status-completed={session.status === "completed"}
-                  >
-                    {#if session.status === "completed"}
-                      <IconSmall.Check />
-                    {:else if session.status === "failed"}
-                      <IconSmall.Close />
-                    {:else if session.status === "active"}
-                      <span class="spin"><IconSmall.Progress /></span>
-                    {/if}
-                  </span>
-                  {#if session.durationMs}
-                    <span class="compact-duration">{formatDuration(session.durationMs)}</span>
-                  {/if}
-                  <span class="compact-time">{formatTime(session.startedAt)}</span>
-                </a>
-              {/each}
-            </div>
-          {/if}
-          <a href="/platform/{workspaceId}/sessions" class="view-all-row">View all runs</a>
+          <a href="/platform/{workspaceId}/sessions" class="section-action">View all</a>
         </div>
-      {/if}
 
-      {#if jobSummaries.length > 0 && workspaceId}
-        <JobsIntegrationsCard {workspaceId} jobs={jobSummaries} signals={workspaceSignals} />
-      {/if}
-    </div>
+        {#if latestSession}
+          <SessionProgressCard
+            session={latestSession}
+            {topology}
+            {workspaceId}
+            jobTitles={jobTitleMap}
+          />
+        {/if}
+        {#if olderSessions.length > 0}
+          <div class="compact-runs">
+            {#each olderSessions as session (session.sessionId)}
+              <a href="/platform/{workspaceId}/sessions/{session.sessionId}" class="compact-run">
+                <span class="compact-job">{jobTitleMap[session.jobName] ?? session.jobName}</span>
+                <span
+                  class="status-icon"
+                  class:status-active={session.status === "active"}
+                  class:status-failed={session.status === "failed"}
+                  class:status-completed={session.status === "completed"}
+                >
+                  {#if session.status === "completed"}
+                    <IconSmall.Check />
+                  {:else if session.status === "failed"}
+                    <IconSmall.Close />
+                  {:else if session.status === "active"}
+                    <span class="spin"><IconSmall.Progress /></span>
+                  {/if}
+                </span>
+                {#if session.durationMs}
+                  <span class="compact-duration">{formatDuration(session.durationMs)}</span>
+                {/if}
+                <span class="compact-time">{formatTime(session.startedAt)}</span>
+              </a>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
 
-    <!-- Row 3: Signals + Agents -->
-    <div class="row-3">
-      {#if signalsWithJobs.length > 0 && workspaceId}
-        <SignalsCard signals={signalsWithJobs} {workspaceId} {agentIds} />
-      {/if}
+    <!-- Jobs + Integrations -->
+    {#if jobSummaries.length > 0 && workspaceId}
+      <JobsIntegrationsCard {workspaceId} jobs={jobSummaries} signals={workspaceSignals} />
+    {/if}
 
-      {#if workspaceAgents.length > 0 && workspaceId}
-        <AgentsCard agents={workspaceAgents} {workspaceId} />
-      {/if}
-    </div>
+    <!-- Signals -->
+    {#if signalsWithJobs.length > 0 && workspaceId}
+      <SignalsCard signals={signalsWithJobs} {workspaceId} {agentIds} />
+    {/if}
+
+    <!-- Agents -->
+    {#if workspaceAgents.length > 0 && workspaceId}
+      <AgentsCard agents={workspaceAgents} {workspaceId} />
+    {/if}
 
     <!-- Empty state: no jobs/agents/signals/runs yet -->
     {#if isEmpty}
@@ -538,7 +613,7 @@
   .overview-page {
     display: flex;
     flex-direction: column;
-    gap: var(--size-6);
+    gap: var(--size-5);
     padding: var(--size-8) var(--size-10);
   }
 
@@ -618,28 +693,59 @@
     max-inline-size: 56ch;
   }
 
-  /* Row 2: Sessions (2/3) + Jobs/Integrations (1/3) */
-  .row-2 {
-    display: grid;
-    gap: var(--size-6);
-    grid-template-columns: 2fr 1fr;
+  .section-head {
+    align-items: flex-start;
+    display: flex;
+    gap: var(--size-3);
+    justify-content: space-between;
   }
 
-  /* Row 3: Signals + Agents (equal) */
-  .row-3 {
-    display: grid;
-    gap: var(--size-6);
-    grid-template-columns: repeat(2, 1fr);
+  .section-action {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    flex-shrink: 0;
+    font-size: var(--font-size-1);
+    text-decoration: none;
+    transition: color 120ms ease;
+    white-space: nowrap;
   }
 
-  @media (max-width: 900px) {
-    .row-2 {
-      grid-template-columns: 1fr;
-    }
+  .section-action:hover {
+    color: var(--color-text);
+  }
 
-    .row-3 {
-      grid-template-columns: 1fr;
-    }
+  .chat-source {
+    border-radius: var(--radius-1);
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: var(--font-weight-6);
+    letter-spacing: 0.02em;
+    padding: 1px 5px;
+    text-transform: uppercase;
+  }
+
+  .source-atlas {
+    background-color: light-dark(hsl(220 60% 90%), hsl(220 30% 20%));
+    color: light-dark(hsl(220 60% 35%), hsl(220 60% 75%));
+  }
+
+  .source-slack {
+    background-color: light-dark(hsl(330 60% 90%), hsl(330 30% 20%));
+    color: light-dark(hsl(330 60% 35%), hsl(330 60% 75%));
+  }
+
+  .source-discord {
+    background-color: light-dark(hsl(240 60% 90%), hsl(240 30% 20%));
+    color: light-dark(hsl(240 60% 35%), hsl(240 60% 75%));
+  }
+
+  .source-telegram {
+    background-color: light-dark(hsl(200 70% 90%), hsl(200 30% 22%));
+    color: light-dark(hsl(200 70% 35%), hsl(200 70% 75%));
+  }
+
+  .source-whatsapp {
+    background-color: light-dark(hsl(142 60% 90%), hsl(142 30% 20%));
+    color: light-dark(hsl(142 60% 30%), hsl(142 60% 70%));
   }
 
   .card {
