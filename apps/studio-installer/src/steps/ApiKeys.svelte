@@ -1,6 +1,6 @@
 <script lang="ts">
-import { store, type ProviderId } from "../lib/store.svelte.ts";
 import { advanceStep, writeKeys } from "../lib/installer.ts";
+import { type ProviderId, store } from "../lib/store.svelte.ts";
 
 // Provider catalog. `recommended: true` decorates the dropdown option AND
 // the inline "Recommended" badge on the form. Each provider maps to a

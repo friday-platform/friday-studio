@@ -1,9 +1,9 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import JSZip from "jszip";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
+import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
@@ -55,6 +55,7 @@ function createApp(opts: {
   const workspaceId = opts.workspaceId ?? "ws-demo";
   const registerSpy = vi
     .fn()
+    // deno-lint-ignore require-await
     .mockImplementation(async (path: string) => ({
       workspace: {
         id: opts.registeredWorkspace?.id ?? "ws-imported",
@@ -157,7 +158,7 @@ describe("workspace bundle endpoints (end-to-end)", () => {
     expect(zip.file("workspace.lock")).toBeTruthy();
     expect(zip.file("skills/hello/SKILL.md")).toBeTruthy();
 
-    const lockfile = await zip.file("workspace.lock")!.async("string");
+    const lockfile = await zip.file("workspace.lock")?.async("string");
     expect(lockfile).toContain("mode: definition");
     expect(lockfile).toContain("hello");
   });

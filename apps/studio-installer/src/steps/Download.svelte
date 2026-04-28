@@ -1,14 +1,14 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { store } from "../lib/store.svelte.ts";
 import {
-  startDownload,
-  retryDownload,
   advanceStep,
   currentPlatform,
   fetchManifest,
+  retryDownload,
+  startDownload,
   verifyDownload,
 } from "../lib/installer.ts";
+import { store } from "../lib/store.svelte.ts";
 
 // Phase the wizard moves through so the body text matches the actual work
 // happening. Without explicit phases the user saw "99% ETA 0s" linger for

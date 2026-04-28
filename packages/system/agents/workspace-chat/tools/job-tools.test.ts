@@ -22,10 +22,7 @@ const MockDetailedError = vi.hoisted(() => {
     override readonly name = "DetailedError";
     detail?: unknown;
     statusCode?: number;
-    constructor(
-      message: string,
-      options: { detail?: unknown; statusCode?: number } = {},
-    ) {
+    constructor(message: string, options: { detail?: unknown; statusCode?: number } = {}) {
       super(message);
       this.detail = options.detail;
       this.statusCode = options.statusCode;
@@ -242,12 +239,7 @@ describe("createJobTools execute", () => {
     const { execute } = buildTool();
     const result = await execute({ prompt: "deploy to prod" }, TOOL_CALL_OPTS);
 
-    expect(result).toEqual({
-      success: true,
-      sessionId: "sess-1",
-      status: "completed",
-      output: [],
-    });
+    expect(result).toEqual({ success: true, sessionId: "sess-1", status: "completed", output: [] });
   });
 
   it("surfaces structured signal-error body to the chat agent", async () => {
@@ -260,7 +252,7 @@ describe("createJobTools execute", () => {
       detail: {
         data: {
           error:
-            "Signal 'review-inbox' session failed: LLM step failed: {\"reason\":\"No email triage data was provided in the input.\"}",
+            'Signal \'review-inbox\' session failed: LLM step failed: {"reason":"No email triage data was provided in the input."}',
         },
       },
     });
@@ -273,7 +265,7 @@ describe("createJobTools execute", () => {
       success: false,
       statusCode: 422,
       error:
-        "Signal 'review-inbox' session failed: LLM step failed: {\"reason\":\"No email triage data was provided in the input.\"}",
+        'Signal \'review-inbox\' session failed: LLM step failed: {"reason":"No email triage data was provided in the input."}',
     });
   });
 
@@ -287,11 +279,7 @@ describe("createJobTools execute", () => {
     const { execute } = buildTool();
     const result = await execute({ prompt: "deploy" }, TOOL_CALL_OPTS);
 
-    expect(result).toEqual({
-      success: false,
-      statusCode: 502,
-      error: "502 Bad Gateway",
-    });
+    expect(result).toEqual({ success: false, statusCode: 502, error: "502 Bad Gateway" });
   });
 
   it("handles non-Error rejections gracefully", async () => {
@@ -300,11 +288,7 @@ describe("createJobTools execute", () => {
     const { execute } = buildTool();
     const result = await execute({ prompt: "deploy" }, TOOL_CALL_OPTS);
 
-    expect(result).toEqual({
-      success: false,
-      statusCode: undefined,
-      error: "workspace not found",
-    });
+    expect(result).toEqual({ success: false, statusCode: undefined, error: "workspace not found" });
   });
 
   it("returns failure when session status is failed", async () => {
@@ -355,11 +339,6 @@ describe("createJobTools execute", () => {
       param: { workspaceId: "ws-test", signalId: "deploy-signal" },
       json: { payload: { target: "production", force: true } },
     });
-    expect(result).toEqual({
-      success: true,
-      sessionId: "sess-4",
-      status: "completed",
-      output: [],
-    });
+    expect(result).toEqual({ success: true, sessionId: "sess-4", status: "completed", output: [] });
   });
 });

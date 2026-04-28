@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import { installDir, runLaunch } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
-import { runLaunch, installDir } from "../lib/installer.ts";
 
 let launching = $state(true);
 let launched = $state(false);

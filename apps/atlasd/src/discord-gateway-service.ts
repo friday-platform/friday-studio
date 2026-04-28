@@ -8,7 +8,7 @@
 
 import { ChatSdkStateAdapter } from "@atlas/core/chat/chat-sdk-state-adapter";
 import type { Logger } from "@atlas/logger";
-import { createDiscordAdapter, DiscordAdapter } from "@chat-adapter/discord";
+import { createDiscordAdapter, type DiscordAdapter } from "@chat-adapter/discord";
 import { Chat } from "chat";
 import { toDiscordLogger } from "./chat-sdk/discord-logger.ts";
 import {

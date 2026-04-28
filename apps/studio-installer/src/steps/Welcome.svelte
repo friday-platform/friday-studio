@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { InstallMode } from "../lib/store.svelte.ts";
 import { advanceStep } from "../lib/installer.ts";
+import type { InstallMode } from "../lib/store.svelte.ts";
 
 interface Props {
   mode: InstallMode;

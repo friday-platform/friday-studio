@@ -5,6 +5,7 @@
 import { mkdir, rename, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { exportBundle } from "@atlas/bundle";
+import type { WorkspaceConfig } from "@atlas/config";
 import {
   type CredentialUsage,
   extractCredentials,
@@ -18,7 +19,6 @@ import {
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
 import { stringify } from "@std/yaml";
-import type { WorkspaceConfig } from "@atlas/config";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 
 export interface BuildWorkspaceBundleInput {

@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import { advanceStep, installDir, runExtract } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
-import { runExtract, advanceStep, installDir } from "../lib/installer.ts";
 
 let extracting = $state(true);
 

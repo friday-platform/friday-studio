@@ -159,6 +159,7 @@
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.13.3": "3.14.0",
     "npm:jszip@^3.10.1": "3.10.1",
+    "npm:knip@*": "6.4.1",
     "npm:knip@6.4.1": "6.4.1",
     "npm:lint-staged@^16.4.0": "16.4.0",
     "npm:markdown-it@^14.1.1": "14.1.1",

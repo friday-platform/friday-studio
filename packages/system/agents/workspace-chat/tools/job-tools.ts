@@ -103,11 +103,7 @@ export function createJobTools(
             error: failure.message,
             statusCode: failure.statusCode,
           });
-          return {
-            success: false,
-            statusCode: failure.statusCode,
-            error: failure.message,
-          };
+          return { success: false, statusCode: failure.statusCode, error: failure.message };
         }
 
         const { sessionId, status, output } = result.data;

@@ -1,7 +1,7 @@
 <script lang="ts">
-import { store } from "../lib/store.svelte.ts";
-import { advanceStep } from "../lib/installer.ts";
 import LICENSE_TEXT from "../../../../LICENSE?raw";
+import { advanceStep } from "../lib/installer.ts";
+import { store } from "../lib/store.svelte.ts";
 
 function onScroll(e: Event) {
   const el = e.target as HTMLDivElement;
