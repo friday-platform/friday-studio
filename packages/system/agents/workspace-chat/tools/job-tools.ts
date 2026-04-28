@@ -4,14 +4,19 @@
  * Converts workspace jobs into AI SDK tools that the workspace-chat agent can invoke.
  * Jobs with `inputs` schemas get typed parameters; jobs without get a generic `{ prompt }` fallback.
  *
- * Job tools call the daemon's signal trigger endpoint (JSON mode), blocking until completion.
+ * When a `writer` is provided, job tools stream via SSE and forward inner session
+ * chunks as `nested-chunk` envelopes so the chat UI renders nested tool-call cards
+ * live under the job tool card. When no writer is provided, they fall back to the
+ * legacy JSON-blocking mode.
  */
 
-import type { AtlasTools } from "@atlas/agent-sdk";
+import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { JobSpecification, WorkspaceSignalConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
-import { jsonSchema, tool } from "ai";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { parseSSEStream } from "@atlas/utils/sse";
+import { jsonSchema, tool, type UIMessageStreamWriter } from "ai";
 import { z } from "zod";
 
 /**
@@ -51,7 +56,7 @@ const DEFAULT_INPUT_SCHEMA = {
  * Create AI SDK tools from workspace job definitions.
  *
  * Each job becomes a tool that triggers the job's signal via the daemon's
- * signal endpoint (JSON mode) and blocks until completion.
+ * signal endpoint and blocks until completion.
  * The `handle-chat` job is excluded to prevent self-referential invocation.
  *
  * `parentStreamId` is the chat's streamId — when passed, it's forwarded as
@@ -60,6 +65,12 @@ const DEFAULT_INPUT_SCHEMA = {
  * thread and skip the source platform as a broadcast target. The daemon
  * hook recovers the source from the streamId prefix (`discord:` / `slack:`
  * / etc.), so we don't need to forward it as a separate field.
+ *
+ * When `writer` is provided, the tool streams via SSE and forwards inner
+ * session chunks as `data-nested-chunk` envelopes so nested tool calls
+ * render live under the job card. `abortSignal` is wired to the fetch so
+ * the HTTP connection closes on user Stop (the background session keeps
+ * running — abort propagation to the workspace runtime is a future improvement).
  */
 export function createJobTools(
   workspaceId: string,
@@ -67,6 +78,8 @@ export function createJobTools(
   signals: Record<string, WorkspaceSignalConfig>,
   logger: Logger,
   parentStreamId?: string,
+  writer?: UIMessageStreamWriter<AtlasUIMessage>,
+  abortSignal?: AbortSignal,
 ): AtlasTools {
   const tools: AtlasTools = {};
 
@@ -89,61 +102,36 @@ export function createJobTools(
     tools[jobName] = tool({
       description,
       inputSchema: jsonSchema(inputSchemaObj),
-      execute: async (input: Record<string, unknown>) => {
+      execute: (input: Record<string, unknown>, { toolCallId }) => {
         logger.info("Job tool executing via signal trigger", {
           jobName,
           workspaceId,
           signalId: triggerSignal,
+          mode: writer ? "sse" : "json",
         });
 
-        // Forward `parentStreamId` as the top-level `streamId` field — the
-        // runtime merges it into `signal.data.streamId` so the inner job
-        // session inherits the chat thread ID, and the broadcast hook reads
-        // its prefix (e.g. `discord:`) to skip the source platform.
-        const result = await parseResult(
-          client.workspace[":workspaceId"].signals[":signalId"].$post({
-            param: { workspaceId, signalId: triggerSignal },
-            json: parentStreamId
-              ? { payload: input, streamId: parentStreamId }
-              : { payload: input },
-          }),
-        );
-
-        if (!result.ok) {
-          const failure = describeJobFailure(result.error);
-          logger.error("Job tool execution failed", {
-            jobName,
+        if (writer) {
+          return executeJobViaSSE({
             workspaceId,
-            error: failure.message,
-            statusCode: failure.statusCode,
-          });
-          return { success: false, statusCode: failure.statusCode, error: failure.message };
-        }
-
-        const { sessionId, status, output } = result.data;
-
-        if (status === "completed") {
-          logger.info("Job tool completed", {
+            signalId: triggerSignal,
+            input,
+            streamId: parentStreamId,
+            toolCallId,
+            writer,
+            abortSignal,
+            logger,
             jobName,
-            sessionId,
-            status,
-            outputDocCount: Array.isArray(output) ? output.length : 0,
           });
-          // Surface the FSM's output documents verbatim. Workspace-chat's
-          // LLM needs to see what the agent actually produced — without
-          // `output` the model has a success flag and nothing to render,
-          // so "what did I save?" returns an empty answer even when the
-          // underlying pipeline succeeded.
-          return { success: true, sessionId, status, output: output ?? [] };
         }
 
-        logger.error("Job tool execution unexpected status", { jobName, sessionId, status });
-        return {
-          success: false,
-          sessionId,
-          status,
-          error: `Job '${jobName}' returned status: ${status}`,
-        };
+        return executeJobViaJSON({
+          workspaceId,
+          signalId: triggerSignal,
+          input,
+          streamId: parentStreamId,
+          logger,
+          jobName,
+        });
       },
     });
 
@@ -155,4 +143,218 @@ export function createJobTools(
   }
 
   return tools;
+}
+
+// ── JSON fallback (legacy, used when no writer is available) ───────────────
+
+interface ExecuteJobViaJSONDeps {
+  workspaceId: string;
+  signalId: string;
+  input: Record<string, unknown>;
+  streamId: string | undefined;
+  logger: Logger;
+  jobName: string;
+}
+
+async function executeJobViaJSON(
+  deps: ExecuteJobViaJSONDeps,
+): Promise<{
+  success: boolean;
+  sessionId?: string;
+  status?: string;
+  output?: unknown[];
+  error?: string;
+  statusCode?: number;
+}> {
+  const { workspaceId, signalId, input, streamId, logger, jobName } = deps;
+
+  const result = await parseResult(
+    client.workspace[":workspaceId"].signals[":signalId"].$post({
+      param: { workspaceId, signalId },
+      json: streamId ? { payload: input, streamId } : { payload: input },
+    }),
+  );
+
+  if (!result.ok) {
+    const failure = describeJobFailure(result.error);
+    logger.error("Job tool execution failed", {
+      jobName,
+      workspaceId,
+      error: failure.message,
+      statusCode: failure.statusCode,
+    });
+    return { success: false, statusCode: failure.statusCode, error: failure.message };
+  }
+
+  const { sessionId, status, output } = result.data;
+
+  if (status === "completed") {
+    logger.info("Job tool completed", {
+      jobName,
+      sessionId,
+      status,
+      outputDocCount: Array.isArray(output) ? output.length : 0,
+    });
+    return { success: true, sessionId, status, output: output ?? [] };
+  }
+
+  logger.error("Job tool execution unexpected status", { jobName, sessionId, status });
+  return {
+    success: false,
+    sessionId,
+    status,
+    error: `Job '${jobName}' returned status: ${status}`,
+  };
+}
+
+// ── SSE streaming (forward inner session chunks as nested-chunk envelopes) ─
+
+interface ExecuteJobViaSSEDeps {
+  workspaceId: string;
+  signalId: string;
+  input: Record<string, unknown>;
+  streamId: string | undefined;
+  toolCallId: string;
+  writer: UIMessageStreamWriter<AtlasUIMessage>;
+  abortSignal: AbortSignal | undefined;
+  logger: Logger;
+  jobName: string;
+}
+
+async function executeJobViaSSE(
+  deps: ExecuteJobViaSSEDeps,
+): Promise<{
+  success: boolean;
+  sessionId?: string;
+  status?: string;
+  output?: unknown[];
+  error?: string;
+  statusCode?: number;
+}> {
+  const {
+    workspaceId,
+    signalId,
+    input,
+    streamId,
+    toolCallId,
+    writer,
+    abortSignal,
+    logger,
+    jobName,
+  } = deps;
+
+  const url = `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(workspaceId)}/signals/${encodeURIComponent(signalId)}`;
+  const body: Record<string, unknown> = { payload: input };
+  if (streamId !== undefined) {
+    body.streamId = streamId;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(body),
+      signal: abortSignal,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("Job tool SSE fetch failed", { jobName, workspaceId, signalId, error: message });
+    return { success: false, error: message };
+  }
+
+  if (!response.ok) {
+    let errorText = `HTTP ${response.status}`;
+    try {
+      const errorJson: unknown = await response.json();
+      if (
+        errorJson !== null &&
+        typeof errorJson === "object" &&
+        "error" in errorJson &&
+        typeof errorJson.error === "string"
+      ) {
+        errorText = errorJson.error;
+      }
+    } catch {
+      // ignore — fall back to status text
+    }
+    logger.error("Job tool SSE trigger failed", {
+      jobName,
+      workspaceId,
+      signalId,
+      status: response.status,
+      error: errorText,
+    });
+    return { success: false, statusCode: response.status, error: errorText };
+  }
+
+  if (!response.body) {
+    logger.error("Job tool SSE response has no body", { jobName, workspaceId, signalId });
+    return { success: false, error: "SSE response has no body" };
+  }
+
+  for await (const message of parseSSEStream(response.body)) {
+    if (message.data === "[DONE]") {
+      break;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(message.data);
+    } catch {
+      continue;
+    }
+
+    if (parsed === null || typeof parsed !== "object" || !("type" in parsed)) {
+      continue;
+    }
+
+    const type = (parsed as Record<string, unknown>).type;
+
+    if (type === "job-complete") {
+      const data = (parsed as Record<string, unknown>).data;
+      if (data !== null && typeof data === "object") {
+        const d = data as Record<string, unknown>;
+        const sessionId = typeof d.sessionId === "string" ? d.sessionId : undefined;
+        const status = typeof d.status === "string" ? d.status : "completed";
+        const output = Array.isArray(d.output) ? d.output : [];
+        logger.info("Job tool completed (SSE)", {
+          jobName,
+          sessionId,
+          status,
+          outputDocCount: output.length,
+        });
+        return { success: true, sessionId, status, output };
+      }
+      return { success: true };
+    }
+
+    if (type === "job-error") {
+      const data = (parsed as Record<string, unknown>).data;
+      const errorMessage: string =
+        data !== null &&
+        typeof data === "object" &&
+        "error" in data &&
+        typeof (data as Record<string, unknown>).error === "string"
+          ? ((data as Record<string, unknown>).error as string)
+          : "Job tool SSE stream error";
+      logger.error("Job tool SSE stream error", {
+        jobName,
+        workspaceId,
+        signalId,
+        error: errorMessage,
+      });
+      return { success: false, error: errorMessage };
+    }
+
+    // Forward everything else as nested-chunk so the chat UI reducer can
+    // reconstruct inner tool-call children under this job tool card.
+    writer.write({
+      type: "data-nested-chunk",
+      data: { parentToolCallId: toolCallId, chunk: parsed as AtlasUIMessageChunk },
+    });
+  }
+
+  logger.warn("Job tool SSE stream ended without job-complete", { jobName, workspaceId, signalId });
+  return { success: false, error: "Job stream ended without completion signal" };
 }

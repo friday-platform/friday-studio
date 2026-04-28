@@ -8,10 +8,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
-const ParamSchema = z.object({
-  workspaceId: z.string(),
-  signalId: z.string(),
-});
+const ParamSchema = z.object({ workspaceId: z.string(), signalId: z.string() });
 
 export const cronRoutes = daemonFactory
   .createApp()

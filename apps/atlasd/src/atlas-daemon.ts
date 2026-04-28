@@ -43,7 +43,6 @@ import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { type NatsConnection, RetentionPolicy, StorageType, type Subscription } from "nats";
 import { activityRoutes } from "../routes/activity.ts";
-import { cronRoutes } from "../routes/cron.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -54,6 +53,7 @@ import {
   shutdownChunkedUpload,
 } from "../routes/chunked-upload.ts";
 import { configRoutes } from "../routes/config.ts";
+import { cronRoutes } from "../routes/cron.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { jobsRoutes } from "../routes/jobs.ts";

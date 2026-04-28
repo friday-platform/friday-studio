@@ -616,12 +616,16 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // Job tools — pass session.streamId so nested job sessions inherit
         // the chat thread ID. The daemon's broadcast hook reads it to skip
         // the originating chat communicator (no echo back to Discord/Slack/etc).
+        // Pass writer + abortSignal so job tools can stream via SSE and render
+        // nested inner tool-call cards live in the chat UI.
         const jobTools = createJobTools(
           workspaceId,
           wsConfig?.jobs ?? {},
           wsConfig?.signals ?? {},
           logger,
           session.streamId,
+          writer,
+          abortSignal,
         );
 
         // Compose resources from primary + foreground workspaces
@@ -756,6 +760,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             fg.config?.signals ?? {},
             logger,
             session.streamId,
+            writer,
+            abortSignal,
           ),
         }));
         const allTools = composeTools(primaryTools, foregroundToolSets);
