@@ -1,5 +1,14 @@
+import type { PlatformModels } from "@atlas/llm";
 import type { SkillsShClient, SkillsShDownloadResult, SkillsShSearchResult } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// `smallLLM` is mocked, so platformModels is never read in tests — but the
+// signature still requires a value with the right shape.
+const fakePlatformModels: PlatformModels = {
+  get: () => {
+    throw new Error("platformModels.get should not be called when smallLLM is mocked");
+  },
+};
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
@@ -88,28 +97,28 @@ describe("judgeComplexity", () => {
 
   it("returns complex=true when LLM says YES", async () => {
     mockSmallLLM.mockResolvedValueOnce("YES needs deployment");
-    const result = await judgeComplexity("deploy my app to production");
+    const result = await judgeComplexity("deploy my app to production", fakePlatformModels);
     expect(result.complex).toBe(true);
     expect(result.rationale).toBe("needs deployment");
   });
 
   it("returns complex=false when LLM says NO", async () => {
     mockSmallLLM.mockResolvedValueOnce("NO simple greeting");
-    const result = await judgeComplexity("hello");
+    const result = await judgeComplexity("hello", fakePlatformModels);
     expect(result.complex).toBe(false);
     expect(result.rationale).toBe("simple greeting");
   });
 
   it("defaults to non-complex on LLM failure", async () => {
     mockSmallLLM.mockRejectedValueOnce(new Error("LLM unavailable"));
-    const result = await judgeComplexity("build a feature");
+    const result = await judgeComplexity("build a feature", fakePlatformModels);
     expect(result.complex).toBe(false);
     expect(result.rationale).toBe("judgment failed");
   });
 
   it("is case-insensitive for YES/NO", async () => {
     mockSmallLLM.mockResolvedValueOnce("yes complex task");
-    const result = await judgeComplexity("build something");
+    const result = await judgeComplexity("build something", fakePlatformModels);
     expect(result.complex).toBe(true);
   });
 });
@@ -133,6 +142,7 @@ describe("discoverAndInstallSkill", () => {
       messageText: "what is TypeScript?",
       workspaceId: "test-ws",
       skillsShClient: client,
+      platformModels: fakePlatformModels,
     });
 
     expect(result.complex).toBe(false);
@@ -165,6 +175,7 @@ describe("discoverAndInstallSkill", () => {
       messageText: "debug this error",
       workspaceId: "test-ws",
       skillsShClient: client,
+      platformModels: fakePlatformModels,
     });
 
     expect(result.complex).toBe(true);
@@ -205,6 +216,7 @@ describe("discoverAndInstallSkill", () => {
       messageText: "run QA tests on this feature",
       workspaceId: "test-ws",
       skillsShClient: client,
+      platformModels: fakePlatformModels,
     });
 
     expect(result.complex).toBe(true);
@@ -223,6 +235,7 @@ describe("discoverAndInstallSkill", () => {
       messageText: "do something very specific",
       workspaceId: "test-ws",
       skillsShClient: client,
+      platformModels: fakePlatformModels,
     });
 
     expect(result.complex).toBe(true);
@@ -264,6 +277,7 @@ describe("discoverAndInstallSkill", () => {
       messageText: "build a feature",
       workspaceId: "test-ws",
       skillsShClient: client,
+      platformModels: fakePlatformModels,
     });
 
     expect(result.complex).toBe(true);
@@ -305,6 +319,7 @@ describe("discoverAndInstallSkill", () => {
       messageText: "build something",
       workspaceId: "test-ws",
       skillsShClient: client,
+      platformModels: fakePlatformModels,
     });
 
     expect(result.complex).toBe(true);
@@ -325,6 +340,7 @@ describe("discoverAndInstallSkill", () => {
       messageText: "deploy to production",
       workspaceId: "test-ws",
       skillsShClient: client,
+      platformModels: fakePlatformModels,
     });
 
     expect(result.complex).toBe(true);

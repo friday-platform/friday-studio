@@ -1,5 +1,6 @@
 import type { LinkCredentialRef } from "@atlas/agent-sdk";
 import type { LinkSummary, MCPServerCandidate } from "@atlas/core/mcp-registry/discovery";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import type { Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createListMCPServersTool } from "./list-mcp-servers.ts";
@@ -32,16 +33,20 @@ function makeLogger(): Logger {
   } satisfies Record<keyof Logger, unknown>;
 }
 
-function makeCandidate(
-  overrides: Partial<MCPServerCandidate> & { metadata: { id: string; name: string } },
-): MCPServerCandidate {
+function makeCandidate(overrides: {
+  metadata: Partial<MCPServerMetadata> & { id: string; name: string };
+  mergedConfig?: MCPServerCandidate["mergedConfig"];
+  configured?: boolean;
+}): MCPServerCandidate {
   return {
     metadata: {
       id: overrides.metadata.id,
       name: overrides.metadata.name,
       source: overrides.metadata.source ?? "static",
       securityRating: overrides.metadata.securityRating ?? "high",
-      configTemplate: { transport: { type: "stdio", command: "echo" } },
+      configTemplate: overrides.metadata.configTemplate ?? {
+        transport: { type: "stdio", command: "echo" },
+      },
       description: overrides.metadata.description,
       constraints: overrides.metadata.constraints,
     },
@@ -87,7 +92,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.list_mcp_servers!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       servers: [
@@ -124,7 +129,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute({ filter: "configured" }, TOOL_CALL_OPTS);
+    const result = await tools.list_mcp_servers!.execute!({ filter: "configured" }, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       servers: [
@@ -151,7 +156,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute(
+    const result = await tools.list_mcp_servers!.execute!(
       { filter: "unconfigured" },
       TOOL_CALL_OPTS,
     );
@@ -177,7 +182,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce([]);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.list_mcp_servers!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ servers: [], total: 0, configuredCount: 0 });
   });
@@ -194,7 +199,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce([]);
 
     const tools = createListMCPServersTool("ws-1", wsConfig, linkSummary, logger);
-    await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+    await tools.list_mcp_servers!.execute!({}, TOOL_CALL_OPTS);
 
     expect(mockDiscoverMCPServers).toHaveBeenCalledWith("ws-1", wsConfig, linkSummary);
   });
@@ -203,7 +208,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.list_mcp_servers!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toHaveProperty("error", "list_mcp_servers failed: Network failure");
     expect(logger.warn).toHaveBeenCalledWith(
@@ -227,7 +232,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.list_mcp_servers!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       servers: [
@@ -261,7 +266,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.list_mcp_servers!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       servers: [
@@ -296,7 +301,7 @@ describe("createListMCPServersTool", () => {
     mockDiscoverMCPServers.mockResolvedValueOnce(candidates);
 
     const tools = createListMCPServersTool("ws-1", undefined, undefined, logger);
-    const result = await tools.list_mcp_servers!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.list_mcp_servers!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       servers: [

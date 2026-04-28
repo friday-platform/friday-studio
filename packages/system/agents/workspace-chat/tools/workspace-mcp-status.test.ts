@@ -71,7 +71,7 @@ describe("createGetWorkspaceMcpStatusTool", () => {
     });
 
     const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       enabled: [
@@ -90,7 +90,7 @@ describe("createGetWorkspaceMcpStatusTool", () => {
     });
 
     const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ error: "Internal server error" });
   });
@@ -103,7 +103,7 @@ describe("createGetWorkspaceMcpStatusTool", () => {
     });
 
     const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       error: "Unexpected response shape from workspace MCP status endpoint.",
@@ -114,7 +114,7 @@ describe("createGetWorkspaceMcpStatusTool", () => {
     mockFetch.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute({}, TOOL_CALL_OPTS);
+    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ error: "Failed to get workspace MCP status: Network failure" });
     expect(logger.warn).toHaveBeenCalledWith(

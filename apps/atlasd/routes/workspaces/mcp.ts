@@ -317,12 +317,12 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
 const mcpRoutes = daemonFactory
   .createApp()
   .get("/", handleGetMCPStatus)
-  .put("/:serverId", zValidator("param", ServerIdParamSchema), handleEnableMCPServer)
+  .put("/:serverId", zValidator("param", ServerIdParamSchema), (c) => handleEnableMCPServer(c))
   .delete(
     "/:serverId",
     zValidator("param", ServerIdParamSchema),
     zValidator("query", DeleteQuerySchema),
-    handleDisableMCPServer,
+    (c) => handleDisableMCPServer(c),
   );
 
 export { mcpRoutes };
