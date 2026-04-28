@@ -1,6 +1,6 @@
 <script lang="ts">
 import { advanceStep, stopRunningLauncher } from "../lib/installer.ts";
-import type { InstallMode } from "../lib/store.svelte.ts";
+import { type InstallMode, store } from "../lib/store.svelte.ts";
 
 interface Props {
   mode: InstallMode;
@@ -20,19 +20,26 @@ async function openStudio(): Promise<void> {
   await openUrl("http://localhost:5200");
 }
 
-// Update / re-install path for mode === "update": if the previous
-// launcher is still running we need to shut it down before download
-// + extract + launch, otherwise:
+// Update / re-install path: if the previous launcher is still
+// running we need to shut it down before download + extract +
+// launch, otherwise:
 //   - the new launcher's port 5199 bind will collide and surface
 //     the port-in-use dialog
 //   - extract may fail to overwrite a running binary on Windows
 //
 // We do this BEFORE download (not before launch) so the user isn't
 // waiting through a 500MB tarball just to find out we couldn't free
-// the port. The "Friday Studio is currently running. The update will
-// stop it briefly." warning above the button is the consent — by
-// clicking the button the user has already opted in.
-async function stopThenAdvance(): Promise<void> {
+// the port. The "Friday Studio is currently running" warning above
+// the button is the consent — by clicking the button the user has
+// already opted in.
+//
+// `forceFullInstall` forces the wizard into the download path even
+// when mode === "current" (the user clicked "Reinstall" — they want
+// a full re-run, not the relaunch-existing-install shortcut that
+// advanceStep("welcome") routes to). For mode === "update" /
+// "fresh", advanceStep already routes through download, so we leave
+// the default behaviour alone.
+async function stopThenAdvance(forceFullInstall = false): Promise<void> {
   stopError = null;
   if (studioRunning) {
     stopping = true;
@@ -45,7 +52,22 @@ async function stopThenAdvance(): Promise<void> {
     }
     stopping = false;
   }
-  advanceStep();
+  if (forceFullInstall) {
+    // Skip welcome's "current → launch" shortcut; go straight to
+    // download. License/API keys are already on disk from the
+    // previous install, so we follow the update-flow elision and
+    // skip them too.
+    store.step = "download";
+  } else {
+    advanceStep();
+  }
+}
+
+function reinstall(): void {
+  // mode === "current" + studio NOT running: nothing to stop, just
+  // jump into the download flow. Same shortcut as stopThenAdvance's
+  // forceFullInstall branch, without the stop-launcher detour.
+  store.step = "download";
 }
 </script>
 
@@ -125,13 +147,43 @@ async function stopThenAdvance(): Promise<void> {
       <h1>You're up to date</h1>
       <p class="version-badge">v{installedVersion ?? availableVersion}</p>
       <p class="subtitle">Friday Studio is already at the latest version.</p>
-      <div class="actions">
-        {#if studioRunning}
-          <button class="primary" onclick={openStudio}>Open Studio</button>
-        {:else}
-          <button class="primary" onclick={advanceStep}>Launch Studio</button>
+      {#if studioRunning}
+        <div class="warning">
+          <span class="warning-icon" aria-hidden="true">⚠</span>
+          Friday Studio is currently running. Reinstalling will stop it briefly.
+        </div>
+        {#if stopError !== null}
+          <div class="warning">
+            <span class="warning-icon" aria-hidden="true">⚠</span>
+            Could not stop the running Studio: {stopError}
+          </div>
         {/if}
-      </div>
+        <div class="actions">
+          <!--
+            Both buttons remain available even when the version is
+            current. Reinstall is the primary path because that's what
+            most people opening an installer.dmg actually want to do
+            ("I'm running the installer, install something"). Open
+            Studio stays as the no-op shortcut for users who only
+            wanted to relaunch from a fresh window.
+          -->
+          <button
+            class="primary"
+            onclick={() => stopThenAdvance(true)}
+            disabled={stopping}
+          >
+            {stopping ? "Stopping Studio…" : "Reinstall"}
+          </button>
+          <button class="secondary" onclick={openStudio} disabled={stopping}>
+            Open Studio
+          </button>
+        </div>
+      {:else}
+        <div class="actions">
+          <button class="primary" onclick={reinstall}>Reinstall</button>
+          <button class="secondary" onclick={advanceStep}>Launch Studio</button>
+        </div>
+      {/if}
     {/if}
   </div>
 

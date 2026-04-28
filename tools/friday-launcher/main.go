@@ -148,9 +148,20 @@ func main() {
 		os.Exit(0)
 	}
 	pidLock = lock
-	if err := pidLock.writePid(os.Getpid(), time.Now().Unix()); err != nil {
-		log.Fatal("writePid", "error", err)
-	}
+	// writePid is intentionally deferred until after preflight + the
+	// health server bind succeed — see below. We hold the flock here
+	// so a concurrent second-instance still loses the acquire race;
+	// just don't claim our own pid in the file yet.
+	//
+	// Why: every os.Exit(1) path before writePid (preflight failure,
+	// port-5199-in-use) skips deferred cleanup, leaving the launcher
+	// pid file pointing at the dying process even though it's about
+	// to vanish. The wizard's check_running_processes (port probe +
+	// pid-file fallback) and our own readLauncherPid for the
+	// second-instance handshake then trust a stale entry. By writing
+	// the pid only after we're committed to running, an early-exit
+	// launcher leaves the file content intact (whatever the previous
+	// successful run put there, if anything).
 
 	// Pre-flight: every supervised binary must exist + be runnable.
 	// Decision #12 + #21. Runs AFTER --uninstall / --autostart
@@ -205,6 +216,14 @@ func main() {
 		os.Exit(1)
 	}
 	healthSrv = srv
+
+	// All early-exit paths (preflight, port bind) are behind us; this
+	// launcher is committed to running. Claim the pid file now so the
+	// wizard's second-instance handshake + supervisory tools see our
+	// pid, not whatever a dying earlier launcher left behind.
+	if err := pidLock.writePid(os.Getpid(), time.Now().Unix()); err != nil {
+		log.Fatal("writePid", "error", err)
+	}
 
 	// systray.Run BLOCKS on macOS NSApp event loop. Everything else
 	// must spawn from onReady.
