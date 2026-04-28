@@ -11,6 +11,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
+import { resolveCommunicatorByConnection } from "../../src/services/communicator-wiring.ts";
 
 const logger = createLogger({ component: "platform-signal-route" });
 
@@ -186,22 +187,38 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     const telegramRequest = c.req.raw.clone();
     const tokenSuffix = c.req.param("tokenSuffix");
 
-    // Find workspace: match by bot-token suffix first (multi-bot setups),
-    // fall back to any telegram-provider workspace (single-bot env-var setups).
-    // Suffix is computed on the fly from each workspace's resolved bot_token
-    // rather than a stashed config field, so it survives config reloads and
-    // doesn't rely on credential-resolution side-effects.
-    const workspaceId =
+    // Resolution priority:
+    //   1. Link wiring — workspace.yml carries `{ kind: telegram }` only and
+    //      Link's communicator_wiring table maps the URL suffix
+    //      (`connection_id`) to a workspace. Single-call atomic lookup.
+    //   2. Legacy yml/env paths — workspaces with inline `bot_token` under
+    //      `signals.telegram.config` or env-var single-bot setups.
+    let workspaceId: string | null = null;
+    if (tokenSuffix) {
+      const resolved = await resolveCommunicatorByConnection(tokenSuffix, "telegram").catch(
+        (error) => {
+          logger.warn("telegram_link_resolve_failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        },
+      );
+      if (resolved) workspaceId = resolved.workspaceId;
+    }
+    workspaceId ??=
       (tokenSuffix ? await findTelegramWorkspaceBySuffix(daemon, tokenSuffix) : null) ??
       (await findWorkspaceByProvider(daemon, "telegram"));
+
     if (!workspaceId) {
-      logger.warn("telegram_no_workspace", { tokenSuffix });
+      logger.warn("telegram_no_workspace", { tokenSuffixPresent: !!tokenSuffix });
       return c.json({ error: "No workspace configured for Telegram" }, 404);
     }
 
-    logger.info("telegram_signal_received", { workspaceId, tokenSuffix });
+    logger.info("telegram_signal_received", { workspaceId, tokenSuffixPresent: !!tokenSuffix });
 
-    return delegateToWebhook(c, daemon, "telegram", workspaceId, telegramRequest, { tokenSuffix });
+    return delegateToWebhook(c, daemon, "telegram", workspaceId, telegramRequest, {
+      tokenSuffixPresent: !!tokenSuffix,
+    });
   });
 
   // ─── WhatsApp ─────────────────────────────────────────────────────
@@ -359,8 +376,10 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
 
 /**
  * Find a workspace whose signal config matches a provider and optional
- * config key/value. Without a configKey, returns the first workspace
- * with a matching provider.
+ * config key/value. Without a `configKey`, also accepts a top-level
+ * `communicators[provider]` declaration — the new yml shape carries
+ * `{ kind: <provider> }` with no inline config, so the configKey/value
+ * branch only applies to the legacy `signals.<x>.config` path.
  */
 async function findWorkspaceByProvider(
   daemon: AtlasDaemon,
@@ -373,6 +392,12 @@ async function findWorkspaceByProvider(
   for (const ws of workspaces) {
     const config = await daemon.getWorkspaceManager().getWorkspaceConfig(ws.id);
     if (!config) continue;
+
+    if (!configKey && config.workspace.communicators) {
+      for (const entry of Object.values(config.workspace.communicators)) {
+        if (entry?.kind === provider) return ws.id;
+      }
+    }
 
     const signals = config.workspace.signals;
     if (!signals) continue;

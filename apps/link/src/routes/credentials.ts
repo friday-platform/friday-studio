@@ -73,7 +73,7 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
             );
           }
 
-          // Validate secret against provider schema
+          // Validate secret against the public schema (user-typed fields only).
           const secretResult = providerDef.secretSchema.safeParse(secret);
           if (!secretResult.success) {
             const firstIssue = secretResult.error.issues[0];
@@ -88,6 +88,13 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
             );
           }
 
+          // Merge auto-generated fields. Auto fields override user input as a
+          // defense-in-depth measure: a buggy or malicious client can't supply
+          // values for fields that are server-chosen (e.g. webhook secrets).
+          const storedSecret: Record<string, unknown> = providerDef.autoFields
+            ? { ...secretResult.data, ...providerDef.autoFields() }
+            : secretResult.data;
+
           if (providerDef.health) {
             const healthResult = await providerDef.health(secretResult.data);
             if (!healthResult.healthy) {
@@ -101,7 +108,7 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
           try {
             // Storage generates ID and returns it with metadata
             const { id, isDefault, metadata } = await storage.save(
-              { type, provider, label, secret: secretResult.data },
+              { type, provider, label, secret: storedSecret },
               userId,
             );
 

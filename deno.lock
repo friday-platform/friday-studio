@@ -7917,6 +7917,7 @@
       },
       "apps/link": {
         "dependencies": [
+          "jsr:@db/sqlite@0.13",
           "jsr:@std/async@^1.0.15",
           "jsr:@std/dotenv@~0.225.5",
           "npm:@deno/kv@0.13",

@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
 import { logger } from "@atlas/logger";
 import { flush as flushSentry, initSentry } from "@atlas/sentry";
@@ -8,6 +10,10 @@ import { jwt } from "hono/jwt";
 import { routePath } from "hono/route";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import postgres from "postgres";
+import {
+  type CommunicatorWiringRepository,
+  PostgresCommunicatorWiringRepository,
+} from "./adapters/communicator-wiring-repository.ts";
 import { CypherStorageAdapter } from "./adapters/cypher-storage-adapter.ts";
 import { FileSystemStorageAdapter } from "./adapters/filesystem-adapter.ts";
 import {
@@ -15,11 +21,7 @@ import {
   type PlatformRouteRepository,
   PostgresPlatformRouteRepository,
 } from "./adapters/platform-route-repository.ts";
-import {
-  NoOpSlackAppWorkspaceRepository,
-  PostgresSlackAppWorkspaceRepository,
-  type SlackAppWorkspaceRepository,
-} from "./adapters/slack-app-workspace-repository.ts";
+import { SqliteCommunicatorWiringRepository } from "./adapters/sqlite-communicator-wiring-repository.ts";
 import { AppInstallService } from "./app-install/service.ts";
 import { getAuthToken, runWithAuthToken } from "./auth-context.ts";
 import { config, readConfig } from "./config.ts";
@@ -27,10 +29,13 @@ import { CypherHttpClient } from "./cypher-client.ts";
 import { factory } from "./factory.ts";
 import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
+import { SLACK_APP_PROVIDER, TELEGRAM_PROVIDER } from "./providers/constants.ts";
 import { registry } from "./providers/registry.ts";
 import { createSlackAppDynamicProvider } from "./providers/slack-app-dynamic.ts";
+import { telegramProvider } from "./providers/telegram.ts";
 import { createAppInstallRoutes } from "./routes/app-install.ts";
 import { createCallbackRoutes } from "./routes/callback.ts";
+import { createCommunicatorRoutes } from "./routes/communicator.ts";
 import { createCredentialsRoutes, createInternalCredentialsRoutes } from "./routes/credentials.ts";
 import { createOAuthRoutes } from "./routes/oauth.ts";
 import { providersRouter } from "./routes/providers.ts";
@@ -44,7 +49,7 @@ export function createApp(
   storage: StorageAdapter,
   oauthService: OAuthService,
   platformRouteRepo: PlatformRouteRepository,
-  slackAppWorkspaceRepo: SlackAppWorkspaceRepository,
+  communicatorWiringRepo: CommunicatorWiringRepository,
 ) {
   const cfg = readConfig();
   const callbackBase = process.env.LINK_CALLBACK_BASE || "http://localhost:3000";
@@ -154,24 +159,32 @@ export function createApp(
     callbackBase,
   );
 
-  if (!registry.has("slack-app")) {
+  if (!registry.has(SLACK_APP_PROVIDER)) {
     registry.register(createSlackAppDynamicProvider(storage));
   }
 
-  const slackAppService = new SlackAppService(storage, slackAppWorkspaceRepo);
+  if (!registry.has(TELEGRAM_PROVIDER)) {
+    registry.register(telegramProvider);
+  }
+
+  const slackAppService = new SlackAppService(storage, communicatorWiringRepo);
 
   return baseApp
     .route("/v1/providers", providersRouter)
     .route("/v1/oauth", createOAuthRoutes(registry, oauthService, storage))
     .route("/v1/callback", createCallbackRoutes(oauthService, appInstallService))
     .route("/v1/credentials", createCredentialsRoutes(storage, oauthService))
-    .route("/v1/summary", createSummaryRoutes(storage, slackAppWorkspaceRepo))
+    .route("/v1/summary", createSummaryRoutes(storage, communicatorWiringRepo))
     .route("/internal/v1/credentials", createInternalCredentialsRoutes(storage, oauthService))
     .route("/v1/app-install", createAppInstallRoutes(appInstallService))
     .route("/v1/slack-apps", createSlackAppRoutes(slackAppService))
     .route(
       "/internal/v1/slack-apps",
       createInternalSlackAppRoutes(slackAppService, cfg.gatewayBase),
+    )
+    .route(
+      "/internal/v1/communicator",
+      createCommunicatorRoutes(communicatorWiringRepo, storage, registry),
     );
 }
 
@@ -254,24 +267,27 @@ function createPlatformRouteRepo(): PlatformRouteRepository {
 
 const platformRouteRepo = createPlatformRouteRepo();
 
-function createSlackAppWorkspaceRepo(): SlackAppWorkspaceRepository {
+function createCommunicatorWiringRepo(): CommunicatorWiringRepository {
   if (sql) {
-    return new PostgresSlackAppWorkspaceRepository(sql);
+    return new PostgresCommunicatorWiringRepository(sql);
   }
   if (config.devMode) {
-    logger.warn("Using NoOpSlackAppWorkspaceRepository - workspace mappings will not persist");
-    return new NoOpSlackAppWorkspaceRepository();
+    const dbDir = join(homedir(), ".atlas", "link");
+    mkdirSync(dbDir, { recursive: true });
+    const dbPath = join(dbDir, "wiring.db");
+    logger.info("Using SqliteCommunicatorWiringRepository", { dbPath });
+    return new SqliteCommunicatorWiringRepository(dbPath);
   }
-  throw new Error("POSTGRES_CONNECTION required in production for slack app workspace storage");
+  throw new Error("POSTGRES_CONNECTION required in production for communicator wiring storage");
 }
 
-const slackAppWorkspaceRepo = createSlackAppWorkspaceRepo();
+const communicatorWiringRepo = createCommunicatorWiringRepo();
 
 export const app = createApp(
   defaultStorage,
   defaultOAuthService,
   platformRouteRepo,
-  slackAppWorkspaceRepo,
+  communicatorWiringRepo,
 );
 
 export type LinkRoutes = typeof app;

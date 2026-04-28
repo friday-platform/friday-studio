@@ -131,6 +131,28 @@ describe("useCredentialConnect", () => {
     expect(connect.submitting).toBe(false);
   });
 
+  it("submitApiKey resolves to the new credential id on success", async () => {
+    const connect = useCredentialConnect("openai");
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ id: "cred-abc" }), { status: 201 }),
+    );
+
+    const result = await connect.submitApiKey("Work Account", { apiKey: "sk-123" });
+
+    expect(result).toBe("cred-abc");
+  });
+
+  it("submitApiKey resolves to null on failure", async () => {
+    const connect = useCredentialConnect("openai");
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ message: "Invalid API key" }), { status: 400 }),
+    );
+
+    const result = await connect.submitApiKey("Label", { apiKey: "bad" });
+
+    expect(result).toBeNull();
+  });
+
   it("listenForCallback registers and returns cleanup", () => {
     const connect = useCredentialConnect("github");
     const cleanup = connect.listenForCallback(() => {});

@@ -59,6 +59,15 @@ import { z } from "zod";
 import type { AppContext } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
+  deriveConnectionId,
+  disconnectCommunicator,
+  NonSlackCommunicatorKindSchema,
+  removeCommunicatorMutation,
+  resolveTunnelUrl,
+  setCommunicatorMutation,
+  wireCommunicator,
+} from "../../src/services/communicator-wiring.ts";
+import {
   createLinkUnwiredClient,
   createLinkWireClient,
   disableSlackEventSubscriptions,
@@ -1808,6 +1817,153 @@ const workspacesRoutes = daemonFactory
       } catch (error) {
         logger.error("disconnect_slack_failed", { workspaceId, error });
         return c.json({ error: `Failed to disconnect Slack: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
+  // Connect a non-Slack communicator (telegram/discord/teams/whatsapp) to a
+  // workspace. Wires the credential to the workspace via Link's
+  // communicator_wiring table (single source of truth for secrets) and adds
+  // a kind-only block to workspace.yml for visibility. Slack uses the
+  // dedicated /connect-slack route because of its app-install OAuth flow.
+  .post(
+    "/:workspaceId/connect-communicator",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    zValidator(
+      "json",
+      z.object({
+        kind: z.union([z.literal("slack"), NonSlackCommunicatorKindSchema]),
+        credential_id: z.string().min(1),
+      }),
+    ),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const { kind, credential_id } = c.req.valid("json");
+      const ctx = c.get("app");
+
+      if (kind === "slack") {
+        return c.json({ error: "Use /connect-slack for Slack" }, 400);
+      }
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        // Derive routing-key from the credential before wiring. For telegram
+        // this is the bot's app id (`bot_token` prefix). Other kinds default
+        // to `credential_id` itself.
+        const connectionId = await deriveConnectionId(kind, credential_id);
+
+        // Resolve the public tunnel URL up front. If the tunnel isn't running,
+        // we want to fail clean BEFORE touching any persistent state — Link's
+        // /wire would itself reject the call without a callback URL anyway.
+        const callbackBaseUrl = await resolveTunnelUrl();
+
+        // Wire FIRST. If Link wire fails we must NOT touch yml — the wiring
+        // table is the source of truth, and a yml block without a Link row
+        // would route messages to a workspace whose secrets we can't resolve.
+        await wireCommunicator(workspaceId, kind, credential_id, connectionId, callbackBaseUrl);
+
+        // Idempotent yml mutation. If this fails, the wiring stays — a retry
+        // will see the existing wiring and re-attempt the yml write.
+        const mutationResult = await applyMutation(workspace.path, setCommunicatorMutation(kind));
+        if (!mutationResult.ok) {
+          logger.error("connect_communicator_mutation_failed", {
+            workspaceId,
+            kind,
+            credentialId: credential_id,
+            error: mutationResult.error,
+          });
+          return mapMutationError(c, mutationResult.error, "Communicator mutation conflicted");
+        }
+
+        await ctx.evictChatSdkInstance(workspaceId);
+
+        // connectionId is intentionally omitted — for telegram it's the
+        // post-colon half of the bot token, which is semi-sensitive (full
+        // token = bot takeover). Log existence only.
+        logger.info("communicator_connected_to_workspace", {
+          workspaceId,
+          kind,
+          credentialId: credential_id,
+        });
+        return c.json({ ok: true, kind }, 200);
+      } catch (error) {
+        logger.error("connect_communicator_failed", { workspaceId, kind, error });
+        return c.json({ error: `Failed to connect ${kind}: ${stringifyError(error)}` }, 500);
+      }
+    },
+  )
+  // Disconnect a non-Slack communicator from a workspace. Removes the wiring
+  // row in Link, removes the kind block from workspace.yml, and evicts the
+  // chat-sdk so the next message dispatch picks up the absence.
+  .post(
+    "/:workspaceId/disconnect-communicator",
+    zValidator("param", z.object({ workspaceId: z.string() })),
+    zValidator(
+      "json",
+      z.object({ kind: z.union([z.literal("slack"), NonSlackCommunicatorKindSchema]) }),
+    ),
+    async (c) => {
+      const { workspaceId } = c.req.valid("param");
+      const { kind } = c.req.valid("json");
+      const ctx = c.get("app");
+
+      if (kind === "slack") {
+        return c.json({ error: "Use /disconnect-slack for Slack" }, 400);
+      }
+
+      try {
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.find({ id: workspaceId });
+        if (!workspace) {
+          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+        }
+
+        // Mutate yml first — if the write fails we must not delete the Link
+        // wiring on top of a still-referencing yml block.
+        const mutationResult = await applyMutation(
+          workspace.path,
+          removeCommunicatorMutation(kind),
+        );
+        if (!mutationResult.ok) {
+          logger.error("disconnect_communicator_mutation_failed", {
+            workspaceId,
+            kind,
+            error: mutationResult.error,
+          });
+          return mapMutationError(c, mutationResult.error, "Communicator mutation conflicted");
+        }
+
+        // Tunnel URL is best-effort on disconnect — we still want to remove
+        // the wiring even if the tunnel is offline. Link's `unregisterWebhook`
+        // hook is itself best-effort and tolerates an empty callback URL.
+        let callbackBaseUrl = "";
+        try {
+          callbackBaseUrl = await resolveTunnelUrl();
+        } catch (error) {
+          logger.warn("disconnect_communicator_tunnel_unavailable", {
+            workspaceId,
+            kind,
+            error: stringifyError(error),
+          });
+        }
+
+        const { credentialId } = await disconnectCommunicator(workspaceId, kind, callbackBaseUrl);
+
+        await ctx.evictChatSdkInstance(workspaceId);
+
+        logger.info("communicator_disconnected_from_workspace", {
+          workspaceId,
+          kind,
+          credentialId,
+        });
+        return c.json({ ok: true, credential_id: credentialId }, 200);
+      } catch (error) {
+        logger.error("disconnect_communicator_failed", { workspaceId, kind, error });
+        return c.json({ error: `Failed to disconnect ${kind}: ${stringifyError(error)}` }, 500);
       }
     },
   )

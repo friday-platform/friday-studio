@@ -1394,7 +1394,12 @@ export class AtlasDaemon {
       const communicators = config.workspace?.communicators as
         | Record<string, { kind?: string } & Record<string, unknown>>
         | undefined;
-      const resolved = await resolvePlatformCredentials(workspaceId, signals, communicators);
+      const resolved = await resolvePlatformCredentials(
+        workspaceId,
+        userId,
+        signals,
+        communicators,
+      );
       if (resolved.length > 0) {
         credentials = resolved.map((r) => r.credentials);
       }

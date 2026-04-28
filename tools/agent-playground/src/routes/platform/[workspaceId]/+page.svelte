@@ -23,6 +23,7 @@
   import { page } from "$app/state";
   import AgentsCard from "$lib/components/agents/agents-card.svelte";
   import SessionProgressCard from "$lib/components/session/session-progress-card.svelte";
+  import CommunicatorsCard from "$lib/components/workspace/communicators-card.svelte";
   import JobsIntegrationsCard from "$lib/components/workspace/jobs-integrations-card.svelte";
   import SignalsCard from "$lib/components/workspace/signals-card.svelte";
   import { sessionQueries, useDeleteWorkspace, workspaceQueries } from "$lib/queries";
@@ -508,6 +509,9 @@
         {/if}
         {#if signalsWithJobs.length > 0 && workspaceId}
           <SignalsCard signals={signalsWithJobs} {workspaceId} {agentIds} />
+        {/if}
+        {#if workspaceId}
+          <CommunicatorsCard {workspaceId} {config} />
         {/if}
         {#if workspaceAgents.length > 0 && workspaceId}
           <AgentsCard agents={workspaceAgents} {workspaceId} />

@@ -140,17 +140,73 @@ type BaseProviderDefinition = {
   docsUrl?: string;
 };
 
+/**
+ * Input for `registerWebhook` / `unregisterWebhook` provider hooks. Symmetric
+ * by design — `unregisterWebhook` always receives the same shape so per-platform
+ * implementations can choose what they need (Telegram ignores `callbackBaseUrl`
+ * on delete, but other platforms may need it to identify the subscription).
+ */
+export type RegisterWebhookInput = {
+  /** Full stored secret post-`autoFields` injection. */
+  secret: Record<string, unknown>;
+  /** Public tunnel base URL, e.g. `https://<tunnel>` — no trailing slash, no path. */
+  callbackBaseUrl: string;
+  /** Wiring `connection_id` (kind-specific routing key). */
+  connectionId: string;
+};
+
 export type ApiKeyProvider = BaseProviderDefinition & {
   readonly type: "apikey";
   readonly setupInstructions: string;
+  /**
+   * Public, user-facing schema. Describes only the fields the user types into
+   * the form. Auto-generated fields (see `autoFields`) are excluded here so the
+   * client never sees them in the provider catalog response.
+   */
   readonly secretSchema: z.ZodType<Record<string, unknown>>;
+  /**
+   * Optional server-side hook for fields that should be generated rather than
+   * typed by the user (e.g. webhook shared secrets). Called at credential
+   * creation time; the returned object is merged into the user-supplied secret
+   * with auto-fields overriding user input as a defense-in-depth measure
+   * against clients attempting to supply values they shouldn't choose.
+   */
+  autoFields?(): Record<string, unknown>;
   health?(secret: Record<string, unknown>): Promise<HealthResult>;
+  /**
+   * Called by Link's `/internal/v1/communicator/wire` AFTER the wiring row has
+   * been inserted. The hook constructs the full webhook URL from
+   * `${callbackBaseUrl}/platform/${id}/${connectionId}` and registers it with
+   * the upstream platform (e.g. Telegram `setWebhook`).
+   *
+   * Atomicity: if this throws, `/wire` rolls back the wiring insert before
+   * returning 500 — a wiring row only exists if the platform accepted the
+   * registration. Use Zod for response parsing; never raw `as` casts.
+   *
+   * Optional. Providers without webhooks (Anthropic etc.) leave it unset and
+   * `/wire` is a pure DB insert.
+   */
+  readonly registerWebhook?: (input: RegisterWebhookInput) => Promise<void>;
+  /**
+   * Called by Link's `/internal/v1/communicator/disconnect` BEFORE the wiring
+   * row is removed. Best-effort: failures log
+   * `communicator_webhook_unregister_failed` and disconnect proceeds anyway —
+   * user intent is to disconnect, so we don't strand them on platform
+   * unreachability.
+   */
+  readonly unregisterWebhook?: (input: RegisterWebhookInput) => Promise<void>;
 };
 
 export function defineApiKeyProvider<TSchema extends z.ZodType<Record<string, unknown>>>(
-  provider: Omit<ApiKeyProvider, "type" | "health"> & {
+  provider: Omit<
+    ApiKeyProvider,
+    "type" | "health" | "autoFields" | "registerWebhook" | "unregisterWebhook"
+  > & {
     secretSchema: TSchema;
+    autoFields?: () => Record<string, unknown>;
     health?: (secret: z.infer<TSchema>) => Promise<HealthResult>;
+    registerWebhook?: (input: RegisterWebhookInput) => Promise<void>;
+    unregisterWebhook?: (input: RegisterWebhookInput) => Promise<void>;
   },
 ): ApiKeyProvider {
   return { type: "apikey", ...provider };

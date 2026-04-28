@@ -8,9 +8,9 @@ async function makeTempDir(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "link-credentials-test-"));
 }
 
+import { NoOpCommunicatorWiringRepository } from "../adapters/communicator-wiring-repository.ts";
 import { FileSystemStorageAdapter } from "../adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../adapters/platform-route-repository.ts";
-import { NoOpSlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
 import { createApp } from "../index.ts";
 import { OAuthService } from "../oauth/service.ts";
 import { registry } from "../providers/registry.ts";
@@ -55,7 +55,7 @@ describe("PATCH /v1/credentials/:id", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpSlackAppWorkspaceRepository(),
+      new NoOpCommunicatorWiringRepository(),
     );
 
     if (!registry.has(testProvider.id)) {
@@ -150,6 +150,63 @@ describe("PATCH /v1/credentials/:id", () => {
     });
 
     expect(res.status).toEqual(404);
+  });
+
+  it("auto-generates webhook_secret when creating a Telegram credential", async () => {
+    const res = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "telegram",
+        label: "test-tg",
+        secret: { bot_token: "123456:ABC-test" },
+      }),
+    });
+    expect(res.status).toEqual(201);
+    const created = CredentialResponseSchema.parse(await res.json());
+
+    const stored = await storage.get(created.id, userId);
+    if (!stored) throw new Error("expected stored credential");
+
+    const StoredSecretSchema = z.object({
+      bot_token: z.string(),
+      webhook_secret: z.string().regex(/^[0-9a-f]{64}$/),
+    });
+    const parsed = StoredSecretSchema.parse(stored.secret);
+    expect(parsed.bot_token).toEqual("123456:ABC-test");
+  });
+
+  it("ignores client-supplied webhook_secret and overrides with server-generated value", async () => {
+    const res = await app.request("/v1/credentials/apikey", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "telegram",
+        label: "test-tg-override",
+        secret: { bot_token: "654321:XYZ", webhook_secret: "client-tried-to-set-this" },
+      }),
+    });
+    expect(res.status).toEqual(201);
+    const created = CredentialResponseSchema.parse(await res.json());
+
+    const stored = await storage.get(created.id, userId);
+    if (!stored) throw new Error("expected stored credential");
+
+    const StoredSecretSchema = z.object({
+      bot_token: z.string(),
+      webhook_secret: z.string().regex(/^[0-9a-f]{64}$/),
+    });
+    const parsed = StoredSecretSchema.parse(stored.secret);
+    expect(parsed.webhook_secret).not.toEqual("client-tried-to-set-this");
+  });
+
+  it("provider catalog exposes only the public secretSchema for Telegram", async () => {
+    const res = await app.request("/v1/providers/telegram");
+    expect(res.status).toEqual(200);
+    const body = z
+      .object({ secretSchema: z.object({ properties: z.record(z.string(), z.unknown()) }) })
+      .parse(await res.json());
+    expect(Object.keys(body.secretSchema.properties)).toEqual(["bot_token"]);
   });
 
   it("rejects secret replacement for OAuth providers — 400", async () => {

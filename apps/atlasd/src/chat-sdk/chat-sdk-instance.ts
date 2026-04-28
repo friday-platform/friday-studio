@@ -21,6 +21,10 @@ import { Chat } from "chat";
 import { z } from "zod";
 import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import {
+  findCommunicatorWiring,
+  TelegramCredentialSecretSchema,
+} from "../services/communicator-wiring.ts";
+import {
   ByWorkspaceResponseSchema,
   SlackCredentialSecretSchema,
 } from "../services/slack-credentials.ts";
@@ -115,12 +119,14 @@ function collectBroadcastDestinations(
  * Resolve every platform credential a workspace has wired. Each provider is
  * resolved independently from a single config block — drawn from the top-level
  * `communicators` map first, then from a matching signal's `config` — plus env
- * vars. The Link service is consulted only for Slack and only when no slack
- * communicator/signal config produced credentials, as a fallback for
- * managed/OAuth-installed Slack apps.
+ * vars. The Link service is consulted for Slack (workspace→app mapping) and
+ * for Telegram (communicator_wiring table). Telegram resolution priority is:
+ * Link → yml inline → env var; the latter two stay as backward-compat
+ * fallbacks for env-only and BYO-token setups.
  */
 export async function resolvePlatformCredentials(
   workspaceId: string,
+  userId: string,
   signals: Record<string, { provider?: string; config?: Record<string, unknown> }>,
   communicators?: Record<string, CommunicatorEntry>,
 ): Promise<ResolvedCredentials[]> {
@@ -128,7 +134,7 @@ export async function resolvePlatformCredentials(
 
   const telegramConfig = pickConfigForKind("telegram", signals, communicators);
   if (telegramConfig) {
-    const creds = resolveTelegramCredentials(telegramConfig);
+    const creds = await resolveTelegramCredentials(workspaceId, userId, telegramConfig);
     if (creds) resolved.push(creds);
   }
 
@@ -183,7 +189,23 @@ export async function resolvePlatformCredentials(
   return resolved;
 }
 
-function resolveTelegramCredentials(config: Record<string, unknown>): ResolvedCredentials | null {
+/**
+ * Resolve Telegram credentials in priority order:
+ * 1. Link wiring (`communicator_wiring` table → credential secret) — preferred,
+ *    workspace.yml carries `{ kind: telegram }` only and Link owns the secrets.
+ * 2. yml inline — legacy BYO-token setups where workspace.yml stashes
+ *    `bot_token` directly under the signal/communicator config.
+ * 3. `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` env vars — single-bot
+ *    dev setups.
+ */
+async function resolveTelegramCredentials(
+  workspaceId: string,
+  userId: string,
+  config: Record<string, unknown>,
+): Promise<ResolvedCredentials | null> {
+  const linkCreds = await resolveTelegramFromLink(workspaceId, userId);
+  if (linkCreds) return linkCreds;
+
   const parsed = TelegramProviderConfigSchema.safeParse(config);
   if (!parsed.success) {
     logger.debug("telegram_invalid_config", { error: parsed.error.message });
@@ -208,6 +230,65 @@ function resolveTelegramCredentials(config: Record<string, unknown>): ResolvedCr
       appId: botToken.split(":")[0] ?? "",
     },
     credentialId: `telegram:${botToken.split(":")[0]}`,
+  };
+}
+
+/**
+ * Look up the workspace's Telegram wiring in Link. Returns null on no wiring,
+ * pending credential, or transient Link errors — those fall through to the
+ * legacy yml/env paths instead of failing loudly. A 5xx from Link should not
+ * disable a workspace whose secrets could be served from yml.
+ */
+async function resolveTelegramFromLink(
+  workspaceId: string,
+  userId: string,
+): Promise<ResolvedCredentials | null> {
+  let wiring: { credentialId: string; connectionId: string | null } | null;
+  try {
+    wiring = await findCommunicatorWiring(workspaceId, "telegram");
+  } catch (error) {
+    logger.warn("telegram_link_wiring_lookup_failed", {
+      workspaceId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  if (!wiring) return null;
+
+  let credential: Awaited<ReturnType<typeof fetchLinkCredential>>;
+  try {
+    credential = await fetchLinkCredential(wiring.credentialId, logger);
+  } catch (error) {
+    logger.warn("telegram_link_credential_fetch_failed", {
+      workspaceId,
+      userId,
+      credentialId: wiring.credentialId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  const secretParse = TelegramCredentialSecretSchema.safeParse(credential.secret);
+  if (!secretParse.success) {
+    logger.warn("telegram_link_credential_invalid_secret", {
+      workspaceId,
+      credentialId: wiring.credentialId,
+      issues: secretParse.error.issues,
+    });
+    return null;
+  }
+
+  const { bot_token, webhook_secret } = secretParse.data;
+  return {
+    credentials: {
+      kind: "telegram",
+      botToken: bot_token,
+      secretToken: webhook_secret,
+      appId: bot_token.split(":")[0] ?? "",
+    },
+    credentialId: wiring.credentialId,
   };
 }
 

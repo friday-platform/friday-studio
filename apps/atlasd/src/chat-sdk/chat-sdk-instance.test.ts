@@ -409,26 +409,26 @@ describe("resolvePlatformCredentials", () => {
   };
 
   it("resolves telegram when only telegram signal is wired", async () => {
-    const result = await resolvePlatformCredentials("ws-1", tgSignal);
+    const result = await resolvePlatformCredentials("ws-1", "user-1", tgSignal);
     expect(result).toHaveLength(1);
     expect(result[0]?.credentials.kind).toBe("telegram");
     expect(result[0]?.credentialId).toBe("telegram:111");
   });
 
   it("resolves whatsapp when only whatsapp signal is wired", async () => {
-    const result = await resolvePlatformCredentials("ws-1", waSignal);
+    const result = await resolvePlatformCredentials("ws-1", "user-1", waSignal);
     expect(result).toHaveLength(1);
     expect(result[0]?.credentials.kind).toBe("whatsapp");
   });
 
   it("resolves BOTH when telegram + whatsapp signals coexist", async () => {
-    const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...waSignal });
+    const result = await resolvePlatformCredentials("ws-1", "user-1", { ...tgSignal, ...waSignal });
     const kinds = result.map((r) => r.credentials.kind).sort();
     expect(kinds).toEqual(["telegram", "whatsapp"]);
   });
 
   it("resolves empty array when no signals and Slack lookup fails", async () => {
-    const result = await resolvePlatformCredentials("ws-1", {});
+    const result = await resolvePlatformCredentials("ws-1", "user-1", {});
     expect(result).toEqual([]);
   });
 
@@ -437,7 +437,7 @@ describe("resolvePlatformCredentials", () => {
     // that coupled credential resolution to route-lookup ordering.
     const signals = { ...tgSignal };
     const before = JSON.stringify(signals);
-    await resolvePlatformCredentials("ws-1", signals);
+    await resolvePlatformCredentials("ws-1", "user-1", signals);
     expect(JSON.stringify(signals)).toBe(before);
   });
 
@@ -445,7 +445,7 @@ describe("resolvePlatformCredentials", () => {
     const originalToken = process.env.TELEGRAM_BOT_TOKEN;
     process.env.TELEGRAM_BOT_TOKEN = "222:env-secret";
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "telegram-chat": { provider: "telegram", config: {} },
       });
       expect(result).toHaveLength(1);
@@ -456,8 +456,61 @@ describe("resolvePlatformCredentials", () => {
     }
   });
 
+  it("Link wiring wins over yml inline config for telegram", async () => {
+    // Stub LINK_SERVICE_URL to a reachable host that the mocked fetch handles.
+    process.env.LINK_SERVICE_URL = "http://link.test";
+    const fetchStub = vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/internal/v1/communicator/wiring")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ wiring: { credential_id: "cred-link", connection_id: "tg-conn" } }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      if (url.includes("/internal/v1/credentials/cred-link")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              credential: {
+                id: "cred-link",
+                type: "apikey",
+                provider: "telegram",
+                userIdentifier: "user-1",
+                label: "tg",
+                secret: { bot_token: "777:link-token", webhook_secret: "ws-secret" },
+                metadata: {},
+              },
+              status: "ready",
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("not stubbed", { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    try {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "telegram-chat": { provider: "telegram", config: { bot_token: "111:yml-token" } },
+      });
+      expect(result).toHaveLength(1);
+      const cred = result[0];
+      expect(cred?.credentials.kind).toBe("telegram");
+      if (cred?.credentials.kind === "telegram") {
+        expect(cred.credentials.botToken).toBe("777:link-token");
+        expect(cred.credentials.secretToken).toBe("ws-secret");
+      }
+      expect(cred?.credentialId).toBe("cred-link");
+    } finally {
+      vi.unstubAllGlobals();
+      process.env.LINK_SERVICE_URL = "http://127.0.0.1:1";
+    }
+  });
+
   it("resolves slack from BYO signal config", async () => {
-    const result = await resolvePlatformCredentials("ws-1", slackSignal);
+    const result = await resolvePlatformCredentials("ws-1", "user-1", slackSignal);
     expect(result).toHaveLength(1);
     expect(result[0]?.credentials).toEqual({
       kind: "slack",
@@ -476,7 +529,7 @@ describe("resolvePlatformCredentials", () => {
     process.env.SLACK_SIGNING_SECRET = "env-signing";
     process.env.SLACK_APP_ID = "AENV";
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "slack-chat": { provider: "slack", config: {} },
       });
       expect(result).toHaveLength(1);
@@ -493,7 +546,7 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("returns null when slack signal missing signing_secret (no silent partial creds)", async () => {
-    const result = await resolvePlatformCredentials("ws-1", {
+    const result = await resolvePlatformCredentials("ws-1", "user-1", {
       "slack-chat": { provider: "slack", config: { app_id: "A1", bot_token: "xoxb-only-token" } },
     });
     // Link is unreachable in the test env, so resolver returns empty rather than
@@ -502,13 +555,16 @@ describe("resolvePlatformCredentials", () => {
   });
 
   it("slack signal coexists with telegram signal (no cross-provider shadow)", async () => {
-    const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...slackSignal });
+    const result = await resolvePlatformCredentials("ws-1", "user-1", {
+      ...tgSignal,
+      ...slackSignal,
+    });
     const kinds = result.map((r) => r.credentials.kind).sort();
     expect(kinds).toEqual(["slack", "telegram"]);
   });
 
   it("resolves all three when slack + telegram + whatsapp signals coexist", async () => {
-    const result = await resolvePlatformCredentials("ws-1", {
+    const result = await resolvePlatformCredentials("ws-1", "user-1", {
       ...tgSignal,
       ...waSignal,
       ...slackSignal,
@@ -560,7 +616,7 @@ describe("resolvePlatformCredentials", () => {
       DISCORD_APPLICATION_ID: "app-123",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", discordSignal);
+      const result = await resolvePlatformCredentials("ws-1", "user-1", discordSignal);
       expect(result).toHaveLength(1);
       expect(result[0]?.credentials).toEqual({
         kind: "discord",
@@ -581,7 +637,7 @@ describe("resolvePlatformCredentials", () => {
       DISCORD_APPLICATION_ID: undefined,
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "discord-chat": {
           provider: "discord",
           config: { bot_token: "cfg-bot", public_key: "cfg-pub", application_id: "cfg-app" },
@@ -607,7 +663,7 @@ describe("resolvePlatformCredentials", () => {
       DISCORD_APPLICATION_ID: undefined,
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "discord-chat": { provider: "discord", config: { bot_token: "only-this" } },
       });
       expect(result).toEqual([]);
@@ -623,7 +679,7 @@ describe("resolvePlatformCredentials", () => {
       DISCORD_APPLICATION_ID: undefined,
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "discord-chat": {
           provider: "discord",
           config: { bot_token: "cfg-bot", application_id: "cfg-app" },
@@ -648,7 +704,7 @@ describe("resolvePlatformCredentials", () => {
       DISCORD_APPLICATION_ID: "env-app",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "discord-chat": {
           provider: "discord",
           config: { bot_token: "cfg-bot", public_key: "cfg-pub", application_id: "cfg-app" },
@@ -678,7 +734,7 @@ describe("resolvePlatformCredentials", () => {
       [missingKey]: undefined,
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", discordSignal);
+      const result = await resolvePlatformCredentials("ws-1", "user-1", discordSignal);
       // No Discord creds, and Link is unreachable in the test env → empty array.
       // Guards against a partial creds object reaching createDiscordAdapter,
       // whose constructor throws ValidationError synchronously and would crash
@@ -696,7 +752,10 @@ describe("resolvePlatformCredentials", () => {
       DISCORD_APPLICATION_ID: "app-123",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", { ...tgSignal, ...discordSignal });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        ...tgSignal,
+        ...discordSignal,
+      });
       const kinds = result.map((r) => r.credentials.kind).sort();
       expect(kinds).toEqual(["discord", "telegram"]);
     } finally {
@@ -710,7 +769,7 @@ describe("resolvePlatformCredentials", () => {
     // on that here, so instead assert the resolver succeeds purely from signal
     // data — no network required. The unreachable LINK URL in beforeEach would
     // surface as a thrown error on `!res.ok` if it were actually called.
-    const result = await resolvePlatformCredentials("ws-1", slackSignal);
+    const result = await resolvePlatformCredentials("ws-1", "user-1", slackSignal);
     expect(result).toHaveLength(1);
     expect(result[0]?.credentials.kind).toBe("slack");
   });
@@ -725,7 +784,7 @@ describe("resolvePlatformCredentials", () => {
   it("resolves teams from signal config (all four fields inline)", async () => {
     const restore = withEnv(teamsEnvKeys, {});
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": {
           provider: "teams",
           config: {
@@ -757,7 +816,7 @@ describe("resolvePlatformCredentials", () => {
       TEAMS_APP_TENANT_ID: "env-tenant",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": { provider: "teams", config: {} },
       });
       expect(result).toHaveLength(1);
@@ -776,7 +835,7 @@ describe("resolvePlatformCredentials", () => {
   it("returns null when app_id is missing (neither signal nor env)", async () => {
     const restore = withEnv(teamsEnvKeys, { TEAMS_APP_PASSWORD: "env-password" });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": { provider: "teams", config: {} },
       });
       expect(result).toEqual([]);
@@ -788,7 +847,7 @@ describe("resolvePlatformCredentials", () => {
   it("returns null when app_password is missing (neither signal nor env)", async () => {
     const restore = withEnv(teamsEnvKeys, { TEAMS_APP_ID: "env-app-id" });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": { provider: "teams", config: {} },
       });
       expect(result).toEqual([]);
@@ -806,7 +865,7 @@ describe("resolvePlatformCredentials", () => {
       TEAMS_APP_PASSWORD: "env-password",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": { provider: "teams", config: { app_type: "SingleTenant" } },
       });
       expect(result).toEqual([]);
@@ -821,7 +880,7 @@ describe("resolvePlatformCredentials", () => {
       TEAMS_APP_PASSWORD: "env-password",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": { provider: "teams", config: { app_type: "MultiTenant" } },
       });
       expect(result).toHaveLength(1);
@@ -846,7 +905,7 @@ describe("resolvePlatformCredentials", () => {
       TEAMS_APP_TYPE: "SingleTenant",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": { provider: "teams", config: {} },
       });
       expect(result).toHaveLength(1);
@@ -869,7 +928,7 @@ describe("resolvePlatformCredentials", () => {
       TEAMS_APP_TYPE: "MultiTenant",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": {
           provider: "teams",
           config: { app_type: "SingleTenant", app_tenant_id: "sig-tenant" },
@@ -895,7 +954,7 @@ describe("resolvePlatformCredentials", () => {
       TEAMS_APP_TYPE: "typo",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         "teams-chat": { provider: "teams", config: {} },
       });
       expect(result).toHaveLength(1);
@@ -913,7 +972,7 @@ describe("resolvePlatformCredentials", () => {
       TEAMS_APP_PASSWORD: "env-password",
     });
     try {
-      const result = await resolvePlatformCredentials("ws-1", {
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
         ...slackSignal,
         "teams-chat": { provider: "teams", config: {} },
       });
@@ -928,6 +987,7 @@ describe("resolvePlatformCredentials", () => {
     it("resolves telegram when only declared in communicators (no signal)", async () => {
       const result = await resolvePlatformCredentials(
         "ws-1",
+        "user-1",
         {},
         { ops: { kind: "telegram", bot_token: "555:top-token" } },
       );
@@ -939,6 +999,7 @@ describe("resolvePlatformCredentials", () => {
     it("communicators wins when both communicators and signal declare the same kind", async () => {
       const result = await resolvePlatformCredentials(
         "ws-1",
+        "user-1",
         { "telegram-chat": { provider: "telegram", config: { bot_token: "111:signal" } } },
         { ops: { kind: "telegram", bot_token: "999:top" } },
       );
@@ -950,6 +1011,7 @@ describe("resolvePlatformCredentials", () => {
     it("falls back to signal when kind is absent from communicators", async () => {
       const result = await resolvePlatformCredentials(
         "ws-1",
+        "user-1",
         { "telegram-chat": { provider: "telegram", config: { bot_token: "111:signal" } } },
         {
           ops: {
@@ -970,6 +1032,7 @@ describe("resolvePlatformCredentials", () => {
     it("resolves multiple kinds from a single communicators map", async () => {
       const result = await resolvePlatformCredentials(
         "ws-1",
+        "user-1",
         {},
         {
           ops_telegram: { kind: "telegram", bot_token: "111:tg" },
@@ -983,6 +1046,7 @@ describe("resolvePlatformCredentials", () => {
     it("resolves slack from communicators map (skips Link fallback when inline succeeds)", async () => {
       const result = await resolvePlatformCredentials(
         "ws-1",
+        "user-1",
         {},
         {
           ops: {
@@ -1003,7 +1067,7 @@ describe("resolvePlatformCredentials", () => {
     });
 
     it("returns empty when communicators is undefined and signals empty", async () => {
-      const result = await resolvePlatformCredentials("ws-1", {}, undefined);
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {}, undefined);
       expect(result).toEqual([]);
     });
 
@@ -1016,6 +1080,7 @@ describe("resolvePlatformCredentials", () => {
       try {
         const result = await resolvePlatformCredentials(
           "ws-1",
+          "user-1",
           {},
           { ops: { kind: "discord", application_id: "top-app" } },
         );
@@ -1036,7 +1101,7 @@ describe("resolvePlatformCredentials", () => {
       // Signals empty, communicators absent → no slack declaration at all.
       // Resolver must skip Link entirely; otherwise the unreachable LINK_SERVICE_URL
       // would cause the fetch path to run (debug-logged, but unnecessary).
-      const result = await resolvePlatformCredentials("ws-1", {}, undefined);
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {}, undefined);
       expect(result).toEqual([]);
     });
   });

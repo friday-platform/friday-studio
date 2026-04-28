@@ -10,13 +10,22 @@
  * @module
  */
 
+import { z } from "zod";
 import {
   getAppInstallUrl,
   getOAuthUrl,
   listenForOAuthCallback,
+  type OAuthCallbackMessage,
   startAppInstallFlow,
   startOAuthFlow,
 } from "./oauth-popup.ts";
+
+/**
+ * Subset of the `PUT /v1/credentials/apikey` response we rely on. Link
+ * returns more fields (`label`, `displayName`); we only parse the id since
+ * that is the only thing downstream wiring needs.
+ */
+const ApiKeyCreateResponseSchema = z.object({ id: z.string().min(1) });
 
 interface CredentialConnectState {
   popupBlocked: boolean;
@@ -67,10 +76,10 @@ export function useCredentialConnect(providerId: string) {
     }
   }
 
-  function listenForCallback(onSuccess: () => void) {
-    cleanup = listenForOAuthCallback(() => {
+  function listenForCallback(onSuccess: (message: OAuthCallbackMessage) => void) {
+    cleanup = listenForOAuthCallback((message) => {
       reset();
-      onSuccess();
+      onSuccess(message);
     }, providerId);
 
     return () => {
@@ -79,7 +88,15 @@ export function useCredentialConnect(providerId: string) {
     };
   }
 
-  async function submitApiKey(label: string, secret: Record<string, string>) {
+  /**
+   * PUT /v1/credentials/apikey — creates an apikey credential under the
+   * current provider. Returns the new credential id on success, `null` on
+   * failure (with `state.error` set so the caller can surface it).
+   */
+  async function submitApiKey(
+    label: string,
+    secret: Record<string, string>,
+  ): Promise<string | null> {
     state.submitting = true;
     state.error = null;
 
@@ -103,12 +120,20 @@ export function useCredentialConnect(providerId: string) {
             ? (body as { message: string }).message
             : `HTTP ${res.status}`;
         state.error = msg;
-        return;
+        return null;
+      }
+
+      const parsed = ApiKeyCreateResponseSchema.safeParse(await res.json());
+      if (!parsed.success) {
+        state.error = "Malformed response from credentials/apikey";
+        return null;
       }
 
       reset();
+      return parsed.data.id;
     } catch (e) {
       state.error = e instanceof Error ? e.message : String(e);
+      return null;
     } finally {
       state.submitting = false;
     }
