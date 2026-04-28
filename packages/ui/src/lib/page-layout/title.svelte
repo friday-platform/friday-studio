@@ -3,18 +3,18 @@
   import type { Writable } from "svelte/store";
   import { DropdownMenu } from "../dropdown-menu/index.js";
 
-  type Props = { children: Snippet; actions?: Snippet<[Writable<boolean>]> };
+  type Props = { subtitle?: string; children: Snippet; actions?: Snippet<[Writable<boolean>]> };
 
-  let { children, actions }: Props = $props();
+  let { subtitle, children, actions }: Props = $props();
 </script>
 
 {#snippet titleNode()}
-  <h1 class="title">
+  <h1>
     {@render children()}
   </h1>
 {/snippet}
 
-<div class="component">
+<div class="component" data-friday-pagelayout-title>
   {#if actions}
     <DropdownMenu.Root positioning={{ placement: "bottom-start" }}>
       {#snippet children(open)}
@@ -29,6 +29,10 @@
   {:else}
     {@render titleNode()}
   {/if}
+
+  {#if subtitle}
+    <p class="description">{subtitle}</p>
+  {/if}
 </div>
 
 <style>
@@ -41,17 +45,22 @@
     mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
     inset-block-start: 0;
     inset-inline: 0;
-    inline-size: 100%;
+    inline-size: calc(100% - var(--size-8));
     position: absolute;
     z-index: var(--layer-2);
   }
 
-  .title {
+  h1 {
     color: var(--text-bright);
     font-size: var(--font-size-4);
     font-weight: var(--font-weight-5);
     line-height: 1.2;
     margin: 0;
     text-align: start;
+  }
+
+  p {
+    color: var(--text-faded);
+    font-size: var(--font-size-4);
   }
 </style>

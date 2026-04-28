@@ -11,6 +11,7 @@ import { getAtlasHome } from "@atlas/utils/paths.server";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { load, parse } from "@std/dotenv";
 import { fetchCypherToken } from "../../services/cypher-token.ts";
+import { ensureLocalFridayKey } from "../../services/local-friday-key.ts";
 import { displayDaemonStatus } from "../../utils/daemon-status.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import type { YargsInstance } from "../../utils/yargs.ts";
@@ -167,7 +168,12 @@ async function peekAtlasKey(): Promise<string | undefined> {
     }
   }
 
-  return undefined;
+  // Priority 5: Generate an ephemeral self-signed FRIDAY_KEY for this daemon
+  // process. Friday Studio runs single-user-local-first; without a key,
+  // authenticated routes (skill publish, workspace creation) return 401 and
+  // leave the user with no clear path to recovery. Mirrors the Docker
+  // entrypoint's auto-generate behavior so the desktop binary works offline.
+  return ensureLocalFridayKey();
 }
 
 /**

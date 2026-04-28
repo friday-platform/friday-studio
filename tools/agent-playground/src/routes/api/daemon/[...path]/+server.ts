@@ -13,14 +13,29 @@ const handler: RequestHandler = async ({ params, request }) => {
 
   const headers = new Headers(request.headers);
   headers.delete("host");
+  headers.delete("content-length");
 
-  const res = await fetch(target, {
-    method: request.method,
-    headers,
-    body: request.body,
-    // @ts-expect-error -- Node/Deno support duplex for streaming request bodies
-    duplex: "half",
-  });
+  // Buffer the request body for methods that carry one. Streaming with
+  // `duplex: "half"` races the response: when the daemon short-circuits
+  // (e.g. 401 from requireUser before consuming the body) the in-flight
+  // body sender can error with `TypeError: fetch failed`, swallowing the
+  // upstream's real status code. Buffering eliminates the race so the
+  // browser sees the actual status and the user gets a useful message.
+  let body: BodyInit | null = null;
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    body = new Uint8Array(await request.arrayBuffer());
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(target, { method: request.method, headers, body });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(
+      JSON.stringify({ error: `daemon proxy fetch failed: ${message}` }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
 
   // SSE: pass through the readable stream without buffering
   if (res.headers.get("content-type")?.includes("text/event-stream")) {

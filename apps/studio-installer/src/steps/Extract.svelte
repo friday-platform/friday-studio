@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { advanceStep, installDir, runExtract } from "../lib/installer.ts";
+import { advanceStep, createAppBundleIfDarwin, installDir, runExtract } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
 
 let extracting = $state(true);
@@ -14,6 +14,10 @@ onMount(async () => {
 
   try {
     await runExtract(src, dest);
+    // Create /Applications/Friday Studio.app so Spotlight can index
+    // the launcher and the user can re-launch after they Quit.
+    // Non-fatal if it fails — see createAppBundleIfDarwin.
+    await createAppBundleIfDarwin(dest, store.availableVersion);
     extracting = false;
     advanceStep();
   } catch {

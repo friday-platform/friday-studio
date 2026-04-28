@@ -42,13 +42,24 @@ const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
   headers.delete("host");
   headers.delete("content-length");
 
-  const res = await fetch(target, {
-    method: c.req.method,
-    headers,
-    body: c.req.raw.body,
-    // @ts-expect-error -- Deno supports duplex for streaming request bodies
-    duplex: "half",
-  });
+  // Buffer the request body for methods that carry one. Streaming with
+  // `duplex: "half"` races the response: when the daemon short-circuits
+  // (e.g. 401 from requireUser before consuming the body) the in-flight
+  // body sender can error with `TypeError: fetch failed`, swallowing the
+  // upstream's real status code. Buffering eliminates the race so the
+  // browser sees the actual 401 and the user gets a useful message.
+  let body: BodyInit | null = null;
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+    body = new Uint8Array(await c.req.raw.arrayBuffer());
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(target, { method: c.req.method, headers, body });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `daemon proxy fetch failed: ${message}` }, 502);
+  }
 
   // SSE: pass the body stream through unbuffered so live event streams
   // don't get held up at our proxy boundary.

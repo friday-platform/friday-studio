@@ -428,10 +428,41 @@ export function getPlaygroundService(): ServiceStatus | undefined {
 }
 
 /**
- * Open the playground in the user's browser and close the wizard.
- * The launcher is detached from the wizard at spawn time, so closing
- * the wizard window does NOT kill the platform — the launcher keeps
- * supervising its services. Same close logic for "Open anyway".
+ * Create /Applications/Friday Studio.app on darwin so Spotlight can
+ * index the launcher and the user can re-open it from Finder /
+ * Spotlight after they Quit. No-op (and quiet failure) on other
+ * platforms — the Rust side is gated to darwin via a platform check
+ * inside the command. Best-effort: a permission denied on
+ * /Applications doesn't block the install (the launcher itself is
+ * already running and reachable from the tray).
+ */
+export async function createAppBundleIfDarwin(installDir: string, version: string): Promise<void> {
+  const platform = await currentPlatform();
+  if (platform !== "macos-arm" && platform !== "macos-intel") return;
+  try {
+    await invoke("create_app_bundle", { launcherPath: `${installDir}/friday-launcher`, version });
+  } catch (err) {
+    // Non-fatal: log and continue. Most likely cause is /Applications
+    // not being writable (managed Macs); user can still re-launch via
+    // the tray icon while it's alive, just not from Spotlight after
+    // Quit. We surface the error to the console for diagnostics but
+    // don't block the install.
+    console.warn("create_app_bundle failed (non-fatal):", err);
+  }
+}
+
+/**
+ * Open the playground in the user's browser and exit the wizard.
+ * The launcher is detached from the wizard at spawn time, so exiting
+ * the wizard does NOT kill the platform — the launcher keeps
+ * supervising its services. Same exit logic for "Open anyway".
+ *
+ * We invoke a Rust-side `exit_installer` command rather than calling
+ * `getCurrentWindow().close()` from JS — close() is permissioned and
+ * doesn't always terminate the app on macOS (Tauri's default
+ * close-requested handler can call preventDefault, leaving the
+ * window up after openUrl resolves). `app.exit(0)` from Rust
+ * bypasses every JS-level prevention path.
  */
 export async function openPlaygroundAndExit(): Promise<void> {
   try {
@@ -441,10 +472,9 @@ export async function openPlaygroundAndExit(): Promise<void> {
     // ignore — browser might already be open or plugin unavailable
   }
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().close();
+    await invoke("exit_installer");
   } catch {
-    // ignore — window already closing or API unavailable
+    // ignore — installer already exiting
   }
 }
 
