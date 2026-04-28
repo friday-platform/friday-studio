@@ -51,7 +51,7 @@
     "compile": "./scripts/compile.sh",
     "evals": "deno run --allow-all tools/evals/run.ts",
     "sync:svelte": "deno task -f @atlas/ui sync && deno task -f @atlas/agent-playground sync",
-    "playground": "deno task sync:svelte && (cd tools/pty-server && go build -o ../../target/pty-server .) && deno run -A npm:concurrently -n playground,pty -c magenta,cyan 'cd tools/agent-playground && VITE_EXTERNAL_DAEMON_URL=http://localhost:8080 VITE_EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev' './target/pty-server'"
+    "playground": "deno task sync:svelte && (cd tools/pty-server && go build -o pty-server .) && deno run -A npm:concurrently -n playground,pty -c magenta,cyan 'cd tools/agent-playground && VITE_EXTERNAL_DAEMON_URL=http://localhost:8080 VITE_EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev' './tools/pty-server/pty-server'"
   },
   "lint": { "rules": { "tags": ["recommended"] }, "exclude": ["opensrc/**"] },
   "imports": {
