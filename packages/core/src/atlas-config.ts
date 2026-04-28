@@ -16,8 +16,8 @@ export function getAtlasBaseUrl(): string {
 
 /**
  * Gets the full credentials API endpoint URL
- * K8s pods can override via ATLAS_CREDENTIALS_URL to point to Cypher directly
+ * K8s pods can override via FRIDAY_CREDENTIALS_URL to point to Cypher directly
  */
 export function getCredentialsApiUrl(): string {
-  return process.env.ATLAS_CREDENTIALS_URL || `${getAtlasBaseUrl()}/api/credentials`;
+  return process.env.FRIDAY_CREDENTIALS_URL || `${getAtlasBaseUrl()}/api/credentials`;
 }
