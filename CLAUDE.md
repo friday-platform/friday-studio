@@ -246,7 +246,7 @@ gh pr create
 
 ## Environment Variables
 
-- `ATLAS_EXPOSE_KERNEL=1` — when set, the kernel workspace (`thick_endive`)
+- `FRIDAY_EXPOSE_KERNEL=1` — when set, the kernel workspace (`thick_endive`)
   becomes visible in the workspace picker and `/api/workspaces` list. When unset
   (the default), the kernel is hidden from all user-facing surfaces. Internal
   paths (cron, session dispatch, planner) always address the kernel directly by

@@ -56,7 +56,7 @@ async function isDir(p: string): Promise<boolean> {
 // GET / — list workspace IDs that have any memory on disk.
 // Backed by ~/.atlas/memory/ — every immediate subdirectory is treated as a
 // workspaceId. Empty array if the memory root doesn't exist yet.
-// Respects ATLAS_EXPOSE_KERNEL — hides the kernel workspace memory unless set.
+// Respects FRIDAY_EXPOSE_KERNEL — hides the kernel workspace memory unless set.
 memoryNarrativeRoutes.get("/", async (c) => {
   const root = path.join(getAtlasHome(), "memory");
   const entries = await safeReaddir(root);

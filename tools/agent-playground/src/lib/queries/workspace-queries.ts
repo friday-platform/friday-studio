@@ -68,7 +68,7 @@ export const AGENT_TYPE_LABELS: Record<string, string> = {
 
 /** Workspaces that are internal system concerns and hidden from UI. */
 // NOTE: Do NOT add "system" here — LCF explicitly wants the kernel workspace
-// visible in the playground when ATLAS_EXPOSE_KERNEL=1 is set. The daemon's
+// visible in the playground when FRIDAY_EXPOSE_KERNEL=1 is set. The daemon's
 // workspace list endpoint handles the kernel filter server-side.
 const HIDDEN_WORKSPACES = new Set(["friday-conversation"]);
 
