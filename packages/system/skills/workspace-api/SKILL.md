@@ -373,6 +373,7 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 - `references/updating-workspaces.md` — partial-update API details, disk-edit path, when to use each.
 - `references/messaging-signals.md` — Slack, Telegram, WhatsApp signal configuration.
 - `references/platform-friday-yml.md` — platform-level overrides (transport, auth, rate limits).
+- `references/agent-types.md` — `atlas` / `user` / `llm` worked examples with full agent + FSM wiring.
 - `writing-workspace-jobs` skill — FSM job authoring: trigger wiring, MCP tool naming, state-machine shapes, validation error decoder, runtime anti-patterns. Load before creating or editing any `fsm:` job.
 - `writing-workspace-signals` skill — Signal authoring: JSON Schema payloads, provider configs, HTTP path collisions, cron validation, runtime payload checks. Load before creating or editing any signal that accepts parameters or needs a webhook endpoint.
 - `using-mcp-servers` skill — MCP catalog, install/enable/disable, credentials, delegation.
