@@ -1,64 +1,249 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { installDir, runLaunch } from "../lib/installer.ts";
+import {
+  extendWaitDeadline,
+  getPlaygroundService,
+  installDir,
+  openPlaygroundAndExit,
+  runLaunch,
+  waitForServices,
+} from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
 
-let launching = $state(true);
-let launched = $state(false);
-
+// Spawn the launcher (one-shot) then subscribe to its health stream.
+// runLaunch returns immediately after the launcher process has been
+// detached; waitForServices runs the wait-healthy step end-to-end and
+// drives store.launchStage. The two are intentionally separate calls
+// so a launcher-spawn failure shows a different UX than a wait-healthy
+// timeout.
 onMount(async () => {
   try {
-    // installDir() resolves to ~/.friday/local on every supported platform —
-    // that's where Extract.svelte just unpacked the binaries.
     const dir = await installDir();
     await runLaunch(dir);
-    launching = false;
-    launched = true;
   } catch {
-    launching = false;
-    // store.error is set by runLaunch
+    // store.error is set by runLaunch; the early-return template
+    // branch below picks it up and shows the spawn-failure state.
+    return;
   }
+  // The wait command itself never throws — it always emits a
+  // terminal HealthEvent (ready/timeout/unreachable/shutting-down)
+  // and then resolves. Errors during the SSE roundtrip surface as
+  // HealthEvent::Unreachable so the user can still hit View logs.
+  await waitForServices();
 });
 
-async function openStudio(): Promise<void> {
-  // Tauri 2 plugin-opener exports openUrl, not a default-export
-  // `open()` method. The previous `opener.open(...)` call was
-  // resolving to `undefined` and silently no-op'ing.
-  const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl("http://localhost:5200");
+async function onWait60More(): Promise<void> {
+  // Push the deadline out by 60s. The Rust side caps at 2 extensions
+  // total (so max wait = 90 + 60 + 60 = 210s); on the cap, the helper
+  // returns null and the button stays hidden via canExtendDeadline.
+  await extendWaitDeadline();
+}
+
+async function onOpenLogs(): Promise<void> {
+  // Logs live alongside the launcher binary at
+  // ~/.friday/local/logs/launcher.log. plugin-opener's openPath
+  // hands off to the OS file viewer (Finder / Explorer). We open
+  // the log directory rather than the file so the user can see all
+  // service logs at once.
+  try {
+    const { openPath } = await import("@tauri-apps/plugin-opener");
+    const dir = await installDir();
+    await openPath(`${dir}/logs`);
+  } catch {
+    // plugin failure is non-fatal — the log directory exists
+    // regardless; the user can navigate there manually.
+  }
+}
+
+// "Open anyway" gate: only show when playground is healthy at the
+// timeout. If the user's playground is stuck the browser would hit
+// connection-refused, which is exactly the v3-and-prior bug Stack 2
+// is fixing.
+let canOpenAnyway = $derived.by(() => {
+  if (store.launchStage !== "timeout") return false;
+  const playground = getPlaygroundService();
+  return playground?.status === "healthy";
+});
+
+// "Wait again" gate: hide once the cap of 2 extensions is reached.
+// Pre-cap the button is shown alongside View logs / Open anyway in
+// the timeout state.
+let canExtendDeadline = $derived(store.waitDeadlineExtensions < 2);
+
+// Status pip glyph for each service row. Failed renders as ✗ in the
+// timeout treatment; pending/starting both render as a spinner so
+// the user sees forward motion regardless of which transient state
+// the launcher reports.
+function statusGlyph(status: string): string {
+  if (status === "healthy") return "✓";
+  if (status === "failed") return "✗";
+  return "•"; // pending / starting — paired with .pip-spinner in CSS
+}
+
+function statusClass(status: string): string {
+  if (status === "healthy") return "pip pip-healthy";
+  if (status === "failed") return "pip pip-failed";
+  return "pip pip-spinner";
+}
+
+// Pretty service name. The launcher reports "nats-server", "friday",
+// "link", "pty-server", "webhook-tunnel", "playground" — we display
+// each with a friendlier label so the user doesn't have to map raw
+// process names to product surfaces.
+function prettyName(name: string): string {
+  switch (name) {
+    case "nats-server":
+      return "Message bus";
+    case "friday":
+      return "Friday daemon";
+    case "link":
+      return "Authentication";
+    case "pty-server":
+      return "Terminal";
+    case "webhook-tunnel":
+      return "Webhook tunnel";
+    case "playground":
+      return "Playground UI";
+    default:
+      return name;
+  }
 }
 </script>
 
 <div class="screen">
   <div class="content">
     {#if store.error !== null}
+      <!-- Launcher spawn failed (runLaunch threw). Distinct from
+           wait-healthy errors which surface via launchStage. -->
       <div class="error-state">
         <div class="error-icon" aria-hidden="true">✕</div>
         <h2>Could not start Studio</h2>
         <p class="error-detail">{store.error}</p>
-        <button class="primary" onclick={openStudio}>Try Opening Browser</button>
+        <div class="actions">
+          <button class="secondary" onclick={onOpenLogs}>View logs</button>
+        </div>
       </div>
-    {:else if launched}
+    {:else if store.launchStage === "ready"}
       <div class="success-state">
         <div class="check-icon" aria-hidden="true">✓</div>
-        <h2>Studio is open in your browser!</h2>
+        <h2>Friday Studio is ready</h2>
         <p class="subtitle">
-          Friday Studio is running at
-          <a href="http://localhost:5200" target="_blank" rel="noreferrer"
-            >localhost:5200</a
-          >
+          All services are healthy. Click below to open the Playground.
         </p>
-        <button class="secondary" onclick={openStudio}>
-          Open in Browser
-        </button>
+        {#each store.services as svc (svc.name)}
+          <div class="row">
+            <span class={statusClass(svc.status)} aria-hidden="true"
+              >{statusGlyph(svc.status)}</span
+            >
+            <span class="row-name">{prettyName(svc.name)}</span>
+          </div>
+        {/each}
+        <button class="primary" onclick={openPlaygroundAndExit}
+          >Open in Browser</button
+        >
       </div>
-    {:else}
+    {:else if store.launchStage === "unreachable"}
+      <div class="error-state">
+        <div class="error-icon" aria-hidden="true">✕</div>
+        <h2>Could not connect to Studio launcher</h2>
+        <p class="error-detail">
+          {store.launchUnreachableReason ?? "Launcher did not start in time."}
+        </p>
+        <div class="actions">
+          <button class="secondary" onclick={onOpenLogs}>View logs</button>
+        </div>
+      </div>
+    {:else if store.launchStage === "shutting-down"}
+      <div class="error-state">
+        <div class="error-icon" aria-hidden="true">⏻</div>
+        <h2>Studio is shutting down</h2>
+        <p class="subtitle">
+          The launcher reported a shutdown in progress. Close this wizard and
+          try again once shutdown completes.
+        </p>
+      </div>
+    {:else if store.launchStage === "timeout"}
+      <div class="timeout-state">
+        <h2>Some services are still starting</h2>
+        <p class="subtitle">
+          {#if store.stuckServices.length > 0}
+            Waiting on: {store.stuckServices
+              .map((n) => prettyName(n))
+              .join(", ")}.
+          {:else}
+            Friday Studio's services are taking longer than expected to
+            become ready.
+          {/if}
+        </p>
+        {#each store.services as svc (svc.name)}
+          <div class="row">
+            <span class={statusClass(svc.status)} aria-hidden="true"
+              >{statusGlyph(svc.status)}</span
+            >
+            <span class="row-name">{prettyName(svc.name)}</span>
+          </div>
+        {/each}
+        <div class="actions">
+          <button class="secondary" onclick={onOpenLogs}>View logs</button>
+          {#if canOpenAnyway}
+            <button class="primary" onclick={openPlaygroundAndExit}
+              >Open anyway</button
+            >
+          {/if}
+          {#if canExtendDeadline}
+            <button class="secondary" onclick={onWait60More}
+              >Wait 60s more</button
+            >
+          {/if}
+        </div>
+      </div>
+    {:else if store.launchStage === "long-wait"}
       <div class="launching-state">
         <div class="spinner" aria-label="Starting Studio"></div>
-        <h2>Starting Studio…</h2>
+        <h2>Still starting up…</h2>
         <p class="subtitle">
-          Launching backends and checking health. This may take up to 30 seconds.
+          This is taking longer than usual — services are still booting.
         </p>
+        {#each store.services as svc (svc.name)}
+          <div class="row">
+            <span class={statusClass(svc.status)} aria-hidden="true"
+              >{statusGlyph(svc.status)}</span
+            >
+            <span class="row-name">{prettyName(svc.name)}</span>
+          </div>
+        {/each}
+        {#if canExtendDeadline}
+          <div class="actions">
+            <button class="secondary" onclick={onWait60More}
+              >Wait 60s more</button
+            >
+          </div>
+        {/if}
+      </div>
+    {:else if store.launchStage === "connecting" || store.launchStage === "idle"}
+      <div class="launching-state">
+        <div class="spinner" aria-label="Starting Studio"></div>
+        <h2>Starting Friday Studio…</h2>
+        <p class="subtitle">
+          Connecting to the launcher.
+        </p>
+      </div>
+    {:else}
+      <!-- launchStage === "waiting": SSE is live, render the live
+           checklist. Each row pip is driven by the snapshot the
+           launcher emits per state-change tick. -->
+      <div class="launching-state">
+        <div class="spinner" aria-label="Starting Studio"></div>
+        <h2>Starting Friday Studio…</h2>
+        <p class="subtitle">Waiting for services to report healthy.</p>
+        {#each store.services as svc (svc.name)}
+          <div class="row">
+            <span class={statusClass(svc.status)} aria-hidden="true"
+              >{statusGlyph(svc.status)}</span
+            >
+            <span class="row-name">{prettyName(svc.name)}</span>
+          </div>
+        {/each}
       </div>
     {/if}
   </div>
@@ -80,6 +265,7 @@ async function openStudio(): Promise<void> {
     text-align: center;
     gap: 16px;
     padding: 48px;
+    max-width: 480px;
   }
 
   h2 {
@@ -90,23 +276,14 @@ async function openStudio(): Promise<void> {
 
   .subtitle {
     font-size: 14px;
-    color: #777;
-    max-width: 340px;
+    color: #888;
+    max-width: 380px;
     line-height: 1.5;
   }
 
-  .subtitle a {
-    color: #6b72f0;
-    text-decoration: none;
-  }
-
-  .subtitle a:hover {
-    text-decoration: underline;
-  }
-
   .spinner {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
     border: 4px solid #1e1e1e;
     border-top-color: #6b72f0;
     border-radius: 50%;
@@ -142,11 +319,17 @@ async function openStudio(): Promise<void> {
 
   .launching-state,
   .success-state,
-  .error-state {
+  .error-state,
+  .timeout-state {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .timeout-state h2 {
+    color: #fbbf24;
   }
 
   .error-state h2 {
@@ -164,6 +347,69 @@ async function openStudio(): Promise<void> {
     padding: 12px 16px;
   }
 
+  /* Per-service checklist row. Pip on the left, pretty name centered. */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #ccc;
+    padding: 4px 12px;
+    width: 100%;
+    max-width: 320px;
+    text-align: left;
+  }
+
+  .row-name {
+    flex: 1;
+  }
+
+  .pip {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .pip-healthy {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+  }
+
+  .pip-failed {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+  }
+
+  .pip-spinner {
+    background: rgba(107, 114, 240, 0.15);
+    color: #6b72f0;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 8px;
+  }
+
   button {
     padding: 10px 28px;
     border: none;
@@ -172,7 +418,6 @@ async function openStudio(): Promise<void> {
     font-weight: 500;
     cursor: pointer;
     transition: background 0.15s;
-    margin-top: 8px;
   }
 
   .primary {

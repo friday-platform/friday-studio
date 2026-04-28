@@ -15,6 +15,7 @@ use commands::{
     platform::{current_platform, install_dir},
     startup::create_startup_script,
     verify::verify_sha256,
+    wait_health::{extend_wait_deadline, wait_for_services, WaitDeadlineState},
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +23,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
+        // WaitDeadlineState carries the active wait-healthy
+        // deadline so extend_wait_deadline can push it out without
+        // re-spawning the whole stream. State is per-app-instance.
+        .manage(WaitDeadlineState::default())
         .invoke_handler(tauri::generate_handler![
             download_file,
             delete_partial,
@@ -38,6 +43,8 @@ pub fn run() {
             launch_studio,
             current_platform,
             install_dir,
+            wait_for_services,
+            extend_wait_deadline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

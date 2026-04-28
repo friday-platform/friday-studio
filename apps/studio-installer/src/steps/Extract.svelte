@@ -38,7 +38,13 @@ onMount(async () => {
       <div class="extracting-state">
         <div class="spinner" aria-label="Installing"></div>
         <h2>Installing…</h2>
-        <p class="subtitle">Extracting Friday Studio files. This may take a moment.</p>
+        <p class="subtitle">
+          {#if store.extractEntriesDone > 0}
+            Unpacking… {store.extractEntriesDone.toLocaleString()} files
+          {:else}
+            Extracting Friday Studio files. This may take a moment.
+          {/if}
+        </p>
       </div>
     {:else}
       <div class="success-state">
