@@ -174,7 +174,11 @@ describe("hydrateDynamicProvider", () => {
     const evilCalls = fetchSpy.mock.calls.filter(([input]) => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-      return url.includes("evil.example.com");
+      try {
+        return new URL(url).hostname === "evil.example.com";
+      } catch {
+        return false;
+      }
     });
     expect(evilCalls).toHaveLength(0);
   });

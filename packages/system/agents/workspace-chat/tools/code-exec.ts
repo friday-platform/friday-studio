@@ -327,8 +327,9 @@ function wrapWithPty(command: string): string {
     return `/usr/bin/script -q /dev/null ${command}`;
   }
   if (process.platform === "linux") {
-    // Escape double-quotes in the command for -c wrapping.
-    const escaped = command.replace(/"/g, '\\"');
+    // Escape backslashes first, then double-quotes — order matters so an
+    // input `\"` doesn't become `\\"` (literal backslash + start-quote).
+    const escaped = command.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     return `script -q -c "${escaped}" /dev/null`;
   }
   return command;

@@ -74,6 +74,10 @@ func parseClientMessage(raw []byte) (clientMsg, bool) {
 // validateCwd resolves the requested cwd, defending gosec G304 by stat'ing
 // the path before passing it to PTY spawn. Empty input falls back to
 // PTY_CWD env or os.Getwd().
+//
+// The cwd flows from a localhost-only HTTP query parameter, but we still
+// canonicalize through filepath.Clean + EvalSymlinks so any `..` traversal
+// or symlink trickery is resolved before the path is handed to PTY spawn.
 func validateCwd(raw, fallback string) (string, error) {
 	if raw == "" {
 		if fallback != "" {
@@ -81,16 +85,21 @@ func validateCwd(raw, fallback string) (string, error) {
 		}
 		return os.Getwd()
 	}
-	abs, err := filepath.Abs(raw)
+	cleaned := filepath.Clean(raw)
+	abs, err := filepath.Abs(cleaned)
 	if err != nil {
 		return "", fmt.Errorf("invalid cwd: %w", err)
 	}
-	info, err := os.Stat(abs) //nolint:gosec // G703: path is validated here (this is the validator).
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("cwd does not exist: %w", err)
+	}
+	info, err := os.Stat(resolved) //nolint:gosec // path is canonicalized via Clean + Abs + EvalSymlinks above.
 	if err != nil {
 		return "", fmt.Errorf("cwd does not exist: %w", err)
 	}
 	if !info.IsDir() {
 		return "", errors.New("cwd is not a directory")
 	}
-	return abs, nil
+	return resolved, nil
 }

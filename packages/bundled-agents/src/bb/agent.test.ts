@@ -1085,7 +1085,13 @@ describe("bbAgent handler — clone", () => {
     const cloneOpts = cloneCall[2] as { env: Record<string, string> };
 
     // Clone URL should NOT contain the token
-    const cloneUrlArg = cloneArgs.find((a: string) => a.includes("bitbucket.org"));
+    const cloneUrlArg = cloneArgs.find((a: string) => {
+      try {
+        return new URL(a).hostname === "bitbucket.org";
+      } catch {
+        return false;
+      }
+    });
     expect(cloneUrlArg).toBeDefined();
     expect(cloneUrlArg).not.toContain(BB_ENV.BITBUCKET_TOKEN);
 

@@ -77,6 +77,67 @@ type OperationConfig = z.infer<typeof OperationConfigSchema>;
 // ADF (Atlassian Document Format) plaintext extraction
 // ---------------------------------------------------------------------------
 
+interface MarkdownLink {
+  start: number;
+  end: number;
+  label: string;
+  href: string;
+}
+
+// Linear-time scanner for `[label](href)` — replaces a regex whose
+// `(?:[^()]*|\([^()]*\))*` alternation backtracks exponentially on
+// adversarial input.
+function findMarkdownLinks(text: string): MarkdownLink[] {
+  const out: MarkdownLink[] = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== "[") {
+      i++;
+      continue;
+    }
+    const labelStart = i + 1;
+    let labelEnd = -1;
+    for (let j = labelStart; j < text.length; j++) {
+      if (text[j] === "]") {
+        labelEnd = j;
+        break;
+      }
+    }
+    if (labelEnd === -1 || text[labelEnd + 1] !== "(") {
+      i++;
+      continue;
+    }
+    // Walk the href, allowing one level of nested parens (e.g. wikipedia URLs).
+    const hrefStart = labelEnd + 2;
+    let depth = 1;
+    let hrefEnd = -1;
+    for (let j = hrefStart; j < text.length; j++) {
+      const ch = text[j];
+      if (ch === "(") {
+        depth++;
+      } else if (ch === ")") {
+        depth--;
+        if (depth === 0) {
+          hrefEnd = j;
+          break;
+        }
+      }
+    }
+    if (hrefEnd === -1) {
+      i++;
+      continue;
+    }
+    out.push({
+      start: i,
+      end: hrefEnd + 1,
+      label: text.slice(labelStart, labelEnd),
+      href: text.slice(hrefStart, hrefEnd),
+    });
+    i = hrefEnd + 1;
+  }
+  return out;
+}
+
 /**
  * Convert a plain text string with optional markdown links to ADF inline content nodes.
  *
@@ -95,22 +156,15 @@ export function textToAdfContent(
     text?: string;
     marks?: Array<{ type: string; attrs?: Record<string, string> }>;
   }> = [];
-  const linkPattern = /\[([^\]]+)\]\(((?:[^()]*|\([^()]*\))*)\)/g;
   let lastIndex = 0;
 
-  for (const match of text.matchAll(linkPattern)) {
-    const matchIndex = match.index ?? 0;
-    // Add preceding plain text
-    if (matchIndex > lastIndex) {
-      nodes.push({ type: "text", text: text.slice(lastIndex, matchIndex) });
+  for (const match of findMarkdownLinks(text)) {
+    const { start, end, label, href } = match;
+    if (start > lastIndex) {
+      nodes.push({ type: "text", text: text.slice(lastIndex, start) });
     }
-    // Add linked text with link mark
-    nodes.push({
-      type: "text",
-      text: match[1],
-      marks: [{ type: "link", attrs: { href: match[2] ?? "" } }],
-    });
-    lastIndex = matchIndex + match[0].length;
+    nodes.push({ type: "text", text: label, marks: [{ type: "link", attrs: { href } }] });
+    lastIndex = end;
   }
 
   // Add trailing plain text

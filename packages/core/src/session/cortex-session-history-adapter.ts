@@ -52,7 +52,9 @@ export class CortexSessionHistoryAdapter implements SessionHistoryAdapter {
   private readonly baseUrl: string;
 
   constructor(baseUrl: string) {
-    this.baseUrl = baseUrl ? baseUrl.replace(/\/+$/, "") : "";
+    let trimmed = baseUrl ?? "";
+    while (trimmed.endsWith("/")) trimmed = trimmed.slice(0, -1);
+    this.baseUrl = trimmed;
   }
 
   /**

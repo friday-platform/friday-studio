@@ -89,7 +89,7 @@ async function doCheck(
   ref: string,
 ): Promise<Awaited<ReturnType<PackageResolver["check"]>>> {
   // Scoped packages must be URL-encoded: `@scope/name` → `@scope%2Fname`.
-  const urlRef = ref.startsWith("@") ? ref.replace("/", "%2F") : ref;
+  const urlRef = ref.startsWith("@") ? ref.replaceAll("/", "%2F") : ref;
   const url = `${NPM_REGISTRY}/${urlRef}`;
 
   let res: Response;

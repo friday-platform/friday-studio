@@ -28,14 +28,19 @@ function htmlToMarkdown(html: string): string {
  * Strips HTML tags to extract plain text.
  */
 function htmlToText(html: string): string {
-  // Remove script/style/meta/link content entirely, then strip remaining tags
-  const cleaned = html
-    .replace(/<(script|style|meta|link)[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/<(script|style|meta|link)[^>]*\/?>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned;
+  // Iterate the script/style/meta/link removals and tag strip until stable —
+  // a single pass leaves crafted nesting like `<scr<script>ipt>...</script>`
+  // intact, which would otherwise survive into the plain-text output.
+  let cleaned = html;
+  while (true) {
+    const next = cleaned
+      .replace(/<(script|style|meta|link)\b[^<>]*>[\s\S]*?<\/(script|style|meta|link)>/gi, "")
+      .replace(/<(script|style|meta|link)\b[^<>]*\/?>/gi, "")
+      .replace(/<[^<>]*>/g, " ");
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+  return cleaned.replace(/\s+/g, " ").trim();
 }
 
 /**

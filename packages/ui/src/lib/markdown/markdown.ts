@@ -17,8 +17,15 @@ const marked = new Marked({
  * and external deep-links like `?tab=reference#syscall-level-evasion`.
  */
 function slugifyHeading(text: string): string {
-  return text
-    .replace(/<[^>]+>/g, "")
+  // Loop the tag strip so nested patterns like `<scr<script>ipt>` can't
+  // reconstitute a tag after a single pass.
+  let stripped = text;
+  while (true) {
+    const next = stripped.replace(/<[^<>]*>/g, "");
+    if (next === stripped) break;
+    stripped = next;
+  }
+  return stripped
     .replace(/[*_`~]/g, "")
     .trim()
     .toLowerCase()
@@ -114,8 +121,22 @@ export function cleanMarkdownSyntax(node: ASTNode): string {
 }
 
 export function extractLinkData(content: string): { text: string; href: string } {
-  const match = content.match(/\[([^\]]+)\]\(([^)]+)\)/);
-  return { text: match?.[1] ?? content, href: match?.[2] ?? "#" };
+  // Linear-time scan for `[text](href)` — a regex with greedy character classes
+  // around fixed delimiters can backtrack quadratically on near-matches.
+  if (content.startsWith("[")) {
+    const labelEnd = content.indexOf("]", 1);
+    if (labelEnd > 1 && content[labelEnd + 1] === "(") {
+      const hrefStart = labelEnd + 2;
+      const hrefEnd = content.indexOf(")", hrefStart);
+      if (hrefEnd > hrefStart) {
+        return {
+          text: content.slice(1, labelEnd),
+          href: content.slice(hrefStart, hrefEnd),
+        };
+      }
+    }
+  }
+  return { text: content, href: "#" };
 }
 
 function reconstructParagraphContent(node: ASTNode): string {

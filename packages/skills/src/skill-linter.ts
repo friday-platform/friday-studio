@@ -114,7 +114,7 @@ function splitAllowedTools(raw: unknown): string[] | null {
     .map((s) => s.trim())
     // Strip a trailing `(…)` argument qualifier — "Bash(rm:*)" normalizes to "Bash".
     // This matches how the platform's tool-permission parser treats the prefix.
-    .map((s) => s.replace(/\(.*\)$/, "").trim())
+    .map((s) => s.replace(/\([^()]*\)$/, "").trim())
     .filter((s) => s.length > 0);
   return parts;
 }

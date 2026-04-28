@@ -10,8 +10,29 @@ function tokenize(text: string): string[] {
 }
 
 export function SentenceChunker(text: string): string[] {
-  const sentences = text.match(/[^.!?]+[.!?]+\s*/g);
-  if (!sentences) return [text];
+  // Linear single-pass split: walk to a sentence terminator, then absorb
+  // any trailing whitespace before starting the next chunk. The previous
+  // regex (`[^.!?]+[.!?]+\s*`) backtracked quadratically on terminator-less
+  // input with many spaces.
+  const sentences: string[] = [];
+  let start = 0;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "." || ch === "!" || ch === "?") {
+      while (i < text.length && (text[i] === "." || text[i] === "!" || text[i] === "?")) i++;
+      while (i < text.length && /\s/.test(text[i] ?? "")) i++;
+      if (i > start) sentences.push(text.slice(start, i));
+      start = i;
+    } else {
+      i++;
+    }
+  }
+  if (start < text.length) {
+    const tail = text.slice(start);
+    if (tail.trim().length > 0) sentences.push(tail);
+  }
+  if (sentences.length === 0) return [text];
 
   const chunks: string[] = [];
   let current = "";

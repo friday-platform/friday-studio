@@ -920,8 +920,10 @@ const artifactsApp = daemonFactory
         },
       });
 
-      // Escape filename for Content-Disposition header
-      const safeFileName = sourceFileName.replace(/"/g, '\\"');
+      // Escape backslashes first, then double-quotes — without the backslash
+      // pass, a name containing `\"` would become `\\"` (a literal backslash
+      // followed by an unescaped quote that closes the header value early).
+      const safeFileName = sourceFileName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
       return new Response(stream, {
         headers: {

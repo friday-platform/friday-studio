@@ -157,15 +157,22 @@ export function parseCsvRow(line: string): string[] {
 }
 
 export function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<[^>]+>/g, "")
+  let stripped = html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n\n");
+  // Iterate tag-strip until stable so nested patterns like `<scr<script>ipt>`
+  // can't reconstitute a tag after a single pass.
+  while (true) {
+    const next = stripped.replace(/<[^<>]*>/g, "");
+    if (next === stripped) break;
+    stripped = next;
+  }
+  // Decode `&amp;` last — otherwise `&amp;lt;` would round-trip into `<`
+  // (double unescape) instead of staying as the literal text `&lt;`.
+  return stripped
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

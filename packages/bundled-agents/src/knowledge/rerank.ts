@@ -45,7 +45,11 @@ export function applyDiversity(
 
 /** Escape text for safe inclusion in LLM prompts (prevents prompt injection via query). */
 export function escapeForPrompt(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**

@@ -83,7 +83,8 @@ export async function storeToCortex(
     throw new Error("ATLAS_KEY not available for Cortex authentication");
   }
 
-  const url = baseUrl.replace(/\/+$/, "");
+  let url = baseUrl;
+  while (url.endsWith("/")) url = url.slice(0, -1);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 

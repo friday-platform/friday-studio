@@ -42,10 +42,12 @@ export type BacklogMetadata = z.infer<typeof BacklogMetadataSchema>;
 const AppendDiscoveryResponseSchema = z.object({ id: z.string(), createdAt: z.string() });
 
 export function slug(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const dashed = input.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  let start = 0;
+  let end = dashed.length;
+  while (start < end && dashed[start] === "-") start++;
+  while (end > start && dashed[end - 1] === "-") end--;
+  return dashed.slice(start, end);
 }
 
 export async function shortHash(input: string): Promise<string> {
