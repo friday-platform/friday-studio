@@ -426,6 +426,22 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       }
     };
 
+    // On macOS, add common homebrew bin directories to PATH if not already present.
+    // Daemon processes launched via launchd or detached mode inherit a restricted
+    // PATH that often excludes /opt/homebrew/bin (Apple Silicon) and /usr/local/bin
+    // (Intel), so tools like uvx and npx aren't found even when installed.
+    if (process.platform === "darwin") {
+      const homebrewPaths = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"];
+      const currentPath = process.env.PATH ?? "";
+      const separator = ":";
+      const pathSegments = new Set(currentPath.split(separator));
+      const missing = homebrewPaths.filter((p) => !pathSegments.has(p));
+      if (missing.length > 0) {
+        process.env.PATH = [...missing, currentPath].join(separator);
+        logger.debug("Augmented PATH with homebrew directories", { added: missing });
+      }
+    }
+
     // Check for ATLAS_NPX_PATH and augment PATH if needed
     const npxPath = process.env.ATLAS_NPX_PATH;
     if (npxPath) {
@@ -440,6 +456,15 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       await augmentPathWithTool(nodePath, "node");
     } else {
       logger.debug("No ATLAS_NODE_PATH configured, bundled claude-code agent may not work");
+    }
+
+    // Check for ATLAS_UVX_PATH / ATLAS_UV_PATH and augment PATH if needed
+    // (for MCP servers using uvx/pipx — uvx ships alongside uv in the same bin dir)
+    const uvxPath = process.env.ATLAS_UVX_PATH ?? process.env.ATLAS_UV_PATH;
+    if (uvxPath) {
+      await augmentPathWithTool(uvxPath, "uvx");
+    } else {
+      logger.debug("No ATLAS_UVX_PATH or ATLAS_UV_PATH configured, MCP servers using uvx rely on PATH");
     }
 
     // Check for ATLAS_KEY and fetch credentials if present
