@@ -14,3 +14,12 @@ export const SLACK_APP_PROVIDER = "slack-app";
  * communicator-wiring contract).
  */
 export const TELEGRAM_PROVIDER = "telegram";
+
+/** Discord bot provider — apikey credential, mirrors the `kind: discord` literal. */
+export const DISCORD_PROVIDER = "discord";
+
+/** Microsoft Teams bot provider — apikey credential, mirrors the `kind: teams` literal. */
+export const TEAMS_PROVIDER = "teams";
+
+/** WhatsApp Business provider — apikey credential, mirrors the `kind: whatsapp` literal. */
+export const WHATSAPP_PROVIDER = "whatsapp";

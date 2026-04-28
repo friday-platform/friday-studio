@@ -29,10 +29,19 @@ import { CypherHttpClient } from "./cypher-client.ts";
 import { factory } from "./factory.ts";
 import { getMetrics, recordRequest } from "./metrics.ts";
 import { OAuthService } from "./oauth/service.ts";
-import { SLACK_APP_PROVIDER, TELEGRAM_PROVIDER } from "./providers/constants.ts";
+import {
+  DISCORD_PROVIDER,
+  SLACK_APP_PROVIDER,
+  TEAMS_PROVIDER,
+  TELEGRAM_PROVIDER,
+  WHATSAPP_PROVIDER,
+} from "./providers/constants.ts";
+import { discordProvider } from "./providers/discord.ts";
 import { registry } from "./providers/registry.ts";
 import { createSlackAppDynamicProvider } from "./providers/slack-app-dynamic.ts";
+import { teamsProvider } from "./providers/teams.ts";
 import { telegramProvider } from "./providers/telegram.ts";
+import { whatsappProvider } from "./providers/whatsapp.ts";
 import { createAppInstallRoutes } from "./routes/app-install.ts";
 import { createCallbackRoutes } from "./routes/callback.ts";
 import { createCommunicatorRoutes } from "./routes/communicator.ts";
@@ -165,6 +174,18 @@ export function createApp(
 
   if (!registry.has(TELEGRAM_PROVIDER)) {
     registry.register(telegramProvider);
+  }
+
+  if (!registry.has(DISCORD_PROVIDER)) {
+    registry.register(discordProvider);
+  }
+
+  if (!registry.has(TEAMS_PROVIDER)) {
+    registry.register(teamsProvider);
+  }
+
+  if (!registry.has(WHATSAPP_PROVIDER)) {
+    registry.register(whatsappProvider);
   }
 
   const slackAppService = new SlackAppService(storage, communicatorWiringRepo);

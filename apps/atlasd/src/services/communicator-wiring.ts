@@ -39,6 +39,17 @@ export const TelegramCredentialSecretSchema = z.object({
 });
 export type TelegramCredentialSecret = z.infer<typeof TelegramCredentialSecretSchema>;
 
+/**
+ * Per-kind credential secret schemas used for `deriveConnectionId` routing-key
+ * extraction. Each schema only asserts the field used as the connection_id; the
+ * full provider-side schema lives in `apps/link/src/providers/*.ts`.
+ */
+export const DiscordCredentialSecretSchema = z.object({ application_id: z.string().min(1) });
+
+export const TeamsCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
+
+export const WhatsappCredentialSecretSchema = z.object({ phone_number_id: z.string().min(1) });
+
 function getLinkServiceUrl(): string {
   return process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
 }
@@ -100,11 +111,12 @@ function getLinkAuthHeaders(): Record<string, string> {
 /**
  * Derive the routing-key (`connection_id`) for a credential, per kind.
  *
- * Telegram routes inbound webhooks by the post-colon segment of the bot token
- * — the segment Telegram echoes back in webhook URLs registered via
- * `setWebhook(url=…/platform/telegram/<SUFFIX>)`. See
- * `docs/integrations/telegram/README.md:104` for the suffix convention.
- * Other kinds default to `credential_id` itself, matching the Slack convention.
+ * Each kind picks the field that the platform echoes back to inbound webhooks
+ * (and that the daemon uses for `…/platform/{kind}/{connection_id}` routing):
+ *   - telegram: post-colon segment of `bot_token`
+ *   - discord:  `application_id` (Discord interactions arrive keyed on app)
+ *   - teams:    `app_id` (matches `recipient.id` Teams sends inbound)
+ *   - whatsapp: `phone_number_id` (Meta echoes via `metadata.phone_number_id`)
  */
 export async function deriveConnectionId(
   kind: NonSlackCommunicatorKind,
@@ -118,6 +130,21 @@ export async function deriveConnectionId(
       throw new Error(`Invalid telegram bot_token format for credential ${credentialId}`);
     }
     return suffix;
+  }
+  if (kind === "discord") {
+    const credential = await fetchLinkCredential(credentialId, logger);
+    const secret = DiscordCredentialSecretSchema.parse(credential.secret);
+    return secret.application_id;
+  }
+  if (kind === "teams") {
+    const credential = await fetchLinkCredential(credentialId, logger);
+    const secret = TeamsCredentialSecretSchema.parse(credential.secret);
+    return secret.app_id;
+  }
+  if (kind === "whatsapp") {
+    const credential = await fetchLinkCredential(credentialId, logger);
+    const secret = WhatsappCredentialSecretSchema.parse(credential.secret);
+    return secret.phone_number_id;
   }
   return credentialId;
 }
