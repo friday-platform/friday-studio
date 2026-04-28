@@ -59,3 +59,31 @@ jobs:
       - name: Run tests
         run: go test -v ./...
 
+  deadcode:
+    name: Go deadcode
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Install deadcode
+        run: go install golang.org/x/tools/cmd/deadcode@latest
+
+      - name: Run deadcode
+        # `deadcode` exits 0 even when reachability findings exist; turn any
+        # output into a hard failure so dead code can't drift back in.
+        run: |
+          out=$(deadcode -test ./...)
+          if [ -n "$out" ]; then
+            echo "::error::dead code found:"
+            echo "$out"
+            exit 1
+          fi
+          echo "no dead code"
+
