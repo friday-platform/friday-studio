@@ -29,9 +29,6 @@ import {
   createKVStorage,
   createLibraryStorage,
   createRegistryStorage,
-  type ImproverAgentInput,
-  type ImproverAgentResult,
-  ImproverResultDataSchema,
   StorageConfigs,
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
@@ -1100,8 +1097,6 @@ export class AtlasDaemon {
           agentExecutor: this.processAgentExecutor ?? undefined,
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
-          invokeImprover: this.createImproverCallback(workspace.id),
-          hasPendingRevision: !!workspace.metadata?.pendingRevision,
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
           onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
@@ -1558,55 +1553,6 @@ export class AtlasDaemon {
       }
       this.resetIdleTimeout(workspaceId);
     }
-  }
-
-  /**
-   * Create callback for workspace-improver agent invocation.
-   * Used by the improvement loop to invoke the agent without circular deps.
-   */
-  private createImproverCallback(
-    workspaceId: string,
-  ): (input: ImproverAgentInput) => Promise<ImproverAgentResult> {
-    return async (input: ImproverAgentInput): Promise<ImproverAgentResult> => {
-      const registry = this.agentRegistry;
-      if (!registry) {
-        return { ok: false, error: "Agent registry not initialized" };
-      }
-
-      const agent = await registry.getAgent("workspace-improver");
-      if (!agent) {
-        return { ok: false, error: "workspace-improver agent not found in registry" };
-      }
-
-      // workspace-improver agent accepts JSON string input (parses internally)
-      const payload = await agent.execute(JSON.stringify(input), {
-        tools: {},
-        session: { sessionId: `improver-${workspaceId}-${Date.now()}`, workspaceId },
-        env: {},
-        stream: undefined,
-        logger: logger.child({ component: "workspace-improver", workspaceId }),
-        platformModels: this.getPlatformModels(),
-      });
-
-      // Transform AgentPayload → ImproverAgentResult
-      if (!payload.ok) {
-        const errorPayload = payload.error;
-        return {
-          ok: false,
-          error:
-            typeof errorPayload === "object" && errorPayload !== null && "reason" in errorPayload
-              ? String(errorPayload.reason)
-              : String(errorPayload),
-        };
-      }
-
-      const parsed = ImproverResultDataSchema.safeParse(payload.data);
-      if (!parsed.success) {
-        return { ok: false, error: `Unexpected agent result shape: ${parsed.error.message}` };
-      }
-
-      return { ok: true, data: parsed.data };
-    };
   }
 
   /**

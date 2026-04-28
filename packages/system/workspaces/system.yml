@@ -10,20 +10,9 @@ version: '1.0'
 workspace:
   name: System
   description: >-
-    The canonical system workspace. Runs the FAST kernel — the single supervisory workspace. Many jobs, one purpose: identify potential self-improvements in any target workspace and either SURFACE them (human-gated) or AUTO-APPLY them (per the target's declared policy). Owns the autopilot-backlog memory, the cross-session reflector, the skill author/publisher pipeline, and the agent author pipeline. Target workspaces declare which improvement actions they accept in which mode via their workspace.yml `improvements:` block.
+    The canonical system workspace. Runs the FAST kernel — the single supervisory workspace. Owns the autopilot-backlog memory, the cross-session reflector, the skill author/publisher pipeline, and the agent author pipeline.
 # Why this workspace exists:
-#   FAST has ONE supervisory workspace — this one. It runs many jobs,
-#   each of which identifies a potential self-improvement to some target
-#   workspace and either:
-#     1) SURFACES it for review (e.g. reflect-on-last-run drops a
-#        proposed SKILL.md but does not publish), or
-#     2) AUTO-APPLIES it (e.g. apply-approved-reflection publishes the
-#        skill, dispatcher fires a signal at a target workspace).
-#
-# Each target workspace will eventually declare its own policy for which
-# improvements it accepts in surface vs. auto-apply mode (see backlog:
-# kernel-improvement-action-config). The kernel reads that policy and
-# routes accordingly.
+#   FAST has ONE supervisory workspace — this one. It runs many jobs.
 #
 # The planner is intentionally pure (READ backlog → DECIDE next action).
 # Dispatch goes through the dispatcher agent. Reflection feeds back into
@@ -2037,9 +2026,6 @@ jobs:
     outputs:
       memory: notes
       entryKind: finding
-    improvement_key_convention:
-      scoped: "jobs.{target_job_id}.improvement"
-      default: "workspace.improvement"
     scope_exclusions:
       - skills
       - source

@@ -2,14 +2,11 @@
  * Tests that workspace name propagates through the key paths:
  * - AgentSessionDataSchema includes workspaceName
  * - DocumentScope includes optional workspaceName
- * - ImprovementLoopInput includes workspaceName
- * - ImproverAgentInput includes workspaceName
  */
 
 import { AgentSessionDataSchema } from "@atlas/agent-sdk";
 import type { DocumentScope } from "@atlas/document-store";
 import { describe, expect, it } from "vitest";
-import type { ImprovementLoopInput, ImproverAgentInput } from "../improvement-loop.ts";
 
 describe("workspace name propagation", () => {
   describe("AgentSessionDataSchema", () => {
@@ -42,23 +39,4 @@ describe("workspace name propagation", () => {
     });
   });
 
-  describe("ImprovementLoopInput", () => {
-    it("requires workspaceName in the input shape", () => {
-      const input: Pick<ImprovementLoopInput, "workspaceId" | "workspaceName"> = {
-        workspaceId: "ws-123",
-        workspaceName: "My Workspace",
-      };
-      expect(input.workspaceName).toBe("My Workspace");
-    });
-  });
-
-  describe("ImproverAgentInput", () => {
-    it("requires workspaceName in the input shape", () => {
-      const input: Pick<ImproverAgentInput, "workspaceId" | "workspaceName"> = {
-        workspaceId: "ws-123",
-        workspaceName: "My Workspace",
-      };
-      expect(input.workspaceName).toBe("My Workspace");
-    });
-  });
 });

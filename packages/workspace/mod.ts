@@ -27,14 +27,6 @@ export {
   isCanonical,
   isCanonicalEntry,
 } from "./src/canonical.ts";
-// Improvement loop
-export type {
-  ImprovementLoopInput,
-  ImproverAgentInput,
-  ImproverAgentResult,
-  PendingRevision,
-} from "./src/improvement-loop.ts";
-export { ImproverResultDataSchema, runImprovementLoop } from "./src/improvement-loop.ts";
 export type { RuntimeInvalidateCallback } from "./src/manager.ts";
 // Export WorkspaceManagerOptions interface
 // Export main components
@@ -53,9 +45,6 @@ export {
   RegistryStorageAdapter,
   StorageConfigs,
 } from "./src/storage.ts";
-// Triage classifier (only public-facing exports; internals used by improvement-loop)
-export type { TriageInput } from "./src/triage-classifier.ts";
-export { classifyFailure } from "./src/triage-classifier.ts";
 // Export all types and schemas
 export type {
   WorkspaceEntry,
