@@ -464,7 +464,9 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     if (uvxPath) {
       await augmentPathWithTool(uvxPath, "uvx");
     } else {
-      logger.debug("No ATLAS_UVX_PATH or ATLAS_UV_PATH configured, MCP servers using uvx rely on PATH");
+      logger.debug(
+        "No ATLAS_UVX_PATH or ATLAS_UV_PATH configured, MCP servers using uvx rely on PATH",
+      );
     }
 
     // Check for ATLAS_KEY and fetch credentials if present
