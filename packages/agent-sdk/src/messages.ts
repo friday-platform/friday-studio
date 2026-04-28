@@ -310,20 +310,21 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
     return { ...m, id: crypto.randomUUID() };
   });
 
-  // Pass <AtlasUIMessage> explicitly so TS doesn't reverse-infer
-  // UI_MESSAGE from `dataSchemas` — that inference path expands
-  // `{ [NAME in keyof InferUIMessageData<UI_MESSAGE> & string]?: ... }`
-  // against AtlasDataEventSchemas's 30+ keys and triggers TS2589 in
-  // CI's fresh-cache environment (local survives via cached check
-  // results). With AtlasUIMessage = UIMessage<MessageMetadata>, the
-  // data-generic falls back to its UIDataTypes default, so dataSchemas's
-  // mapped-type stays at `Record<string, unknown>` shape — no deep
-  // expansion. Same family as the generateObject + Zod discriminated
-  // union issue called out in CLAUDE.md.
+  // Skip dataSchemas to validateUIMessages — passing
+  // AtlasDataEventSchemas (30+ keys) makes TS reverse-infer UI_MESSAGE
+  // through the deeply-mapped `{ [NAME in keyof InferUIMessageData<...> &
+  // string]?: FlexibleSchema<...> }` type, which trips TS2589 in CI's
+  // fresh-cache environment. (Local survives via cached check results.)
+  // Same family as the generateObject + Zod discriminated union issue
+  // called out in CLAUDE.md.
+  //
+  // Runtime validation of `data-*` parts is preserved by walking each
+  // message's parts post-validation and re-parsing through the Zod
+  // schema for that data type. Invalid parts are dropped (matches the
+  // SDK's strict validation behavior — bad data shouldn't propagate).
   const validated = await validateUIMessages<AtlasUIMessage>({
     messages: withIds,
     metadataSchema: MessageMetadataSchema.optional(),
-    dataSchemas: AtlasDataEventSchemas,
   });
 
   // The AI SDK validates metadata but discards the parsed result, so unknown
@@ -339,7 +340,25 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
       const parsed = MessageMetadataSchema.safeParse(m.metadata);
       metadata = parsed.success ? parsed.data : undefined;
     }
-    return { ...m, metadata };
+    const parts = m.parts.map((part, partIdx) => {
+      if (typeof part !== "object" || part === null || !("type" in part)) return part;
+      if (typeof part.type !== "string" || !part.type.startsWith("data-")) return part;
+      const dataName = part.type.slice("data-".length);
+      const schema = AtlasDataEventSchemas[dataName as keyof typeof AtlasDataEventSchemas];
+      if (!schema) {
+        throw new Error(
+          `validateAtlasUIMessages: no data schema for type="${part.type}" at message="${m.id}".parts[${partIdx}]`,
+        );
+      }
+      const result = schema.safeParse("data" in part ? part.data : undefined);
+      if (!result.success) {
+        throw new Error(
+          `validateAtlasUIMessages: invalid "${part.type}" payload at message="${m.id}".parts[${partIdx}]: ${result.error.message}`,
+        );
+      }
+      return { ...part, data: result.data };
+    });
+    return { ...m, metadata, parts };
   });
 }
 
