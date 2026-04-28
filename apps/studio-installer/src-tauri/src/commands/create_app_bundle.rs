@@ -15,8 +15,10 @@
 //   /Applications/Friday Studio.app/
 //   ├── Contents/
 //   │   ├── Info.plist          — bundle metadata (name, version, id)
-//   │   └── MacOS/
-//   │       └── Friday Studio   — copy of ~/.friday/local/friday-launcher
+//   │   ├── MacOS/
+//   │   │   └── Friday Studio   — copy of ~/.friday/local/friday-launcher
+//   │   └── Resources/
+//   │       └── AppIcon.icns    — embedded via include_bytes! at build time
 //
 // Why a copy and not a symlink:
 //   LaunchServices is finicky about symlinks pointing outside the
@@ -40,6 +42,15 @@ use std::path::{Path, PathBuf};
 const APP_BUNDLE_PATH: &str = "/Applications/Friday Studio.app";
 const APP_EXECUTABLE_NAME: &str = "Friday Studio";
 const APP_BUNDLE_IDENTIFIER: &str = "ai.hellofriday.studio";
+const APP_ICON_NAME: &str = "AppIcon.icns";
+
+// Embedded at compile time so the installer doesn't need to ship the
+// raw .icns file separately. Same icon as the installer's own bundle
+// (apps/studio-installer/src-tauri/icons/icon.icns) — Friday brand
+// glyph, full-color for dock/Spotlight rendering. Without this the
+// .app shows up with the macOS generic-document placeholder, which
+// looks broken in Spotlight results.
+const APP_ICON_DATA: &[u8] = include_bytes!("../../icons/icon.icns");
 
 #[tauri::command]
 pub fn create_app_bundle(launcher_path: String, version: String) -> Result<String, String> {
@@ -49,12 +60,17 @@ pub fn create_app_bundle(launcher_path: String, version: String) -> Result<Strin
     }
 
     let bundle = PathBuf::from(APP_BUNDLE_PATH);
-    let macos_dir = bundle.join("Contents").join("MacOS");
-    let info_plist_path = bundle.join("Contents").join("Info.plist");
+    let contents = bundle.join("Contents");
+    let macos_dir = contents.join("MacOS");
+    let resources_dir = contents.join("Resources");
+    let info_plist_path = contents.join("Info.plist");
     let exec_path = macos_dir.join(APP_EXECUTABLE_NAME);
+    let icon_path = resources_dir.join(APP_ICON_NAME);
 
     fs::create_dir_all(&macos_dir)
         .map_err(|e| format!("create {}: {e}", macos_dir.display()))?;
+    fs::create_dir_all(&resources_dir)
+        .map_err(|e| format!("create {}: {e}", resources_dir.display()))?;
 
     // Replace the launcher binary atomically to avoid leaving a
     // half-written file if the user kicks off another install while
@@ -65,6 +81,9 @@ pub fn create_app_bundle(launcher_path: String, version: String) -> Result<Strin
     set_executable(&tmp_exec)?;
     fs::rename(&tmp_exec, &exec_path)
         .map_err(|e| format!("rename {} → {}: {e}", tmp_exec.display(), exec_path.display()))?;
+
+    fs::write(&icon_path, APP_ICON_DATA)
+        .map_err(|e| format!("write {}: {e}", icon_path.display()))?;
 
     fs::write(&info_plist_path, info_plist(&version))
         .map_err(|e| format!("write {}: {e}", info_plist_path.display()))?;
@@ -90,6 +109,7 @@ fn info_plist(version: &str) -> String {
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>{APP_EXECUTABLE_NAME}</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>{APP_BUNDLE_IDENTIFIER}</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Friday Studio</string>
