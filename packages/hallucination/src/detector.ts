@@ -465,7 +465,7 @@ Return ONLY valid JSON:
 }
 
 /** Max chars per tool result sent to the validation LLM. */
-const MAX_TOOL_RESULT_CHARS = 150_000;
+const MAX_TOOL_RESULT_CHARS = 100_000;
 
 /**
  * Extract the human-readable content from a tool result's output.
