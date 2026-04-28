@@ -4,7 +4,7 @@ import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "chat [id]";
-export const desc = "View chat transcripts";
+export const desc = "View workspace chat transcripts";
 export const aliases = ["ch"];
 
 interface ChatArgs {
@@ -12,6 +12,7 @@ interface ChatArgs {
   human: boolean;
   limit: number;
   showPrompts: boolean;
+  workspace: string;
 }
 
 export function builder(y: YargsInstance) {
@@ -19,7 +20,13 @@ export function builder(y: YargsInstance) {
     .positional("id", { type: "string", describe: "Chat ID to view" })
     .option("human", { type: "boolean", default: false, describe: "Human-readable output" })
     .option("limit", { type: "number", default: 25, describe: "Max chats to list (1-100)" })
-    .option("show-prompts", { type: "boolean", default: false, describe: "Show system prompt" });
+    .option("show-prompts", { type: "boolean", default: false, describe: "Show system prompt" })
+    .option("workspace", {
+      type: "string",
+      alias: "w",
+      default: "user",
+      describe: "Workspace ID (defaults to user workspace)",
+    });
 }
 
 /**
@@ -67,9 +74,15 @@ function formatRelativeTime(iso: string): string {
 /**
  * Handle list chats command (no ID provided).
  */
-async function handleListChats(human: boolean, limit: number): Promise<void> {
+async function handleListChats(
+  workspaceId: string,
+  human: boolean,
+  limit: number,
+): Promise<void> {
   const daemonUrl = getAtlasDaemonUrl();
-  const response = await fetch(`${daemonUrl}/api/chat?limit=${limit}`);
+  const response = await fetch(
+    `${daemonUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/chat?limit=${limit}`,
+  );
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -114,11 +127,13 @@ async function handleListChats(human: boolean, limit: number): Promise<void> {
 export const handler = async (argv: ChatArgs): Promise<void> => {
   // If no ID, delegate to list
   if (!argv.id) {
-    return handleListChats(argv.human, argv.limit);
+    return handleListChats(argv.workspace, argv.human, argv.limit);
   }
 
   const daemonUrl = getAtlasDaemonUrl();
-  const response = await fetch(`${daemonUrl}/api/chat/${argv.id}`);
+  const response = await fetch(
+    `${daemonUrl}/api/workspaces/${encodeURIComponent(argv.workspace)}/chat/${argv.id}`,
+  );
 
   if (!response.ok) {
     if (response.status === 404) {
