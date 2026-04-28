@@ -22,7 +22,7 @@ vi.mock("@atlas/core/chat/storage", () => ({
 
 import process from "node:process";
 import type { Message, Thread } from "chat";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import { StreamRegistry } from "../stream-registry.ts";
 import {
@@ -1103,6 +1103,293 @@ describe("resolvePlatformCredentials", () => {
       // would cause the fetch path to run (debug-logged, but unnecessary).
       const result = await resolvePlatformCredentials("ws-1", "user-1", {}, undefined);
       expect(result).toEqual([]);
+    });
+  });
+
+  /**
+   * Link-first credential resolution for the apikey communicators (Discord,
+   * Teams, WhatsApp). Mirrors Jinju's Telegram tests: success case proves Link
+   * wins over yml inline; wiring-not-found and fetch-error cases prove fallback
+   * to legacy yml/env paths still works.
+   */
+  describe("link-first apikey communicators", () => {
+    /**
+     * Stub `fetch` so `findCommunicatorWiring` returns the given wiring tuple
+     * and `fetchLinkCredential` returns a credential with the given secret.
+     * Returns the spy so callers can assert call counts. Setting `fetchThrows`
+     * to true makes the credential fetch throw (simulating Link 5xx).
+     */
+    function stubLinkFetches(opts: {
+      provider: string;
+      wiring: { credential_id: string; connection_id: string | null } | null;
+      secret?: Record<string, unknown>;
+      fetchThrows?: boolean;
+    }): ReturnType<typeof vi.fn> {
+      process.env.LINK_SERVICE_URL = "http://link.test";
+      const fetchStub = vi.fn((input: string | URL | Request): Promise<Response> => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("/internal/v1/communicator/wiring")) {
+          if (!url.includes(`provider=${opts.provider}`)) {
+            return Promise.resolve(
+              new Response(JSON.stringify({ wiring: null }), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ wiring: opts.wiring }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }
+        if (opts.wiring && url.includes(`/internal/v1/credentials/${opts.wiring.credential_id}`)) {
+          if (opts.fetchThrows) {
+            return Promise.reject(new Error("Link credential fetch failed"));
+          }
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                credential: {
+                  id: opts.wiring.credential_id,
+                  type: "apikey",
+                  provider: opts.provider,
+                  userIdentifier: "user-1",
+                  label: opts.provider,
+                  secret: opts.secret ?? {},
+                  metadata: {},
+                },
+                status: "ready",
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }
+        return Promise.resolve(new Response("not stubbed", { status: 500 }));
+      });
+      vi.stubGlobal("fetch", fetchStub);
+      return fetchStub;
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      process.env.LINK_SERVICE_URL = "http://127.0.0.1:1";
+    });
+
+    // ─── Discord ────────────────────────────────────────────────────────────
+    it("Link wiring wins over yml inline config for discord", async () => {
+      stubLinkFetches({
+        provider: "discord",
+        wiring: { credential_id: "cred-disc", connection_id: "app-link" },
+        secret: { bot_token: "link-bot", public_key: "link-pub", application_id: "app-link" },
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "discord-chat": {
+          provider: "discord",
+          config: { bot_token: "yml-bot", public_key: "yml-pub", application_id: "yml-app" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "discord",
+        botToken: "link-bot",
+        publicKey: "link-pub",
+        applicationId: "app-link",
+      });
+      expect(result[0]?.credentialId).toBe("cred-disc");
+    });
+
+    it("discord: wiring-not-found falls through to yml inline config", async () => {
+      stubLinkFetches({ provider: "discord", wiring: null });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "discord-chat": {
+          provider: "discord",
+          config: { bot_token: "yml-bot", public_key: "yml-pub", application_id: "yml-app" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "discord",
+        botToken: "yml-bot",
+        publicKey: "yml-pub",
+        applicationId: "yml-app",
+      });
+      expect(result[0]?.credentialId).toBe("discord:yml-app");
+    });
+
+    it("discord: Link credential fetch error falls through to yml inline config", async () => {
+      stubLinkFetches({
+        provider: "discord",
+        wiring: { credential_id: "cred-disc", connection_id: "app-link" },
+        fetchThrows: true,
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "discord-chat": {
+          provider: "discord",
+          config: { bot_token: "yml-bot", public_key: "yml-pub", application_id: "yml-app" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentialId).toBe("discord:yml-app");
+    });
+
+    // ─── Teams ──────────────────────────────────────────────────────────────
+    it("Link wiring wins over yml inline config for teams", async () => {
+      stubLinkFetches({
+        provider: "teams",
+        wiring: { credential_id: "cred-teams", connection_id: "app-link" },
+        secret: {
+          app_id: "link-app",
+          app_password: "link-pw",
+          app_tenant_id: "link-tenant",
+          app_type: "SingleTenant",
+        },
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "teams-chat": {
+          provider: "teams",
+          config: {
+            app_id: "yml-app",
+            app_password: "yml-pw",
+            app_tenant_id: "yml-tenant",
+            app_type: "MultiTenant",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "teams",
+        appId: "link-app",
+        appPassword: "link-pw",
+        appTenantId: "link-tenant",
+        appType: "SingleTenant",
+      });
+      expect(result[0]?.credentialId).toBe("cred-teams");
+    });
+
+    it("teams: wiring-not-found falls through to yml inline config", async () => {
+      stubLinkFetches({ provider: "teams", wiring: null });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "teams-chat": {
+          provider: "teams",
+          config: {
+            app_id: "yml-app",
+            app_password: "yml-pw",
+            app_tenant_id: "yml-tenant",
+            app_type: "SingleTenant",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "teams",
+        appId: "yml-app",
+        appPassword: "yml-pw",
+        appTenantId: "yml-tenant",
+        appType: "SingleTenant",
+      });
+      expect(result[0]?.credentialId).toBe("teams:yml-app");
+    });
+
+    it("teams: Link credential fetch error falls through to yml inline config", async () => {
+      stubLinkFetches({
+        provider: "teams",
+        wiring: { credential_id: "cred-teams", connection_id: "app-link" },
+        fetchThrows: true,
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "teams-chat": {
+          provider: "teams",
+          config: {
+            app_id: "yml-app",
+            app_password: "yml-pw",
+            app_tenant_id: "yml-tenant",
+            app_type: "MultiTenant",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentialId).toBe("teams:yml-app");
+    });
+
+    // ─── WhatsApp ───────────────────────────────────────────────────────────
+    it("Link wiring wins over yml inline config for whatsapp", async () => {
+      stubLinkFetches({
+        provider: "whatsapp",
+        wiring: { credential_id: "cred-wa", connection_id: "111" },
+        secret: {
+          access_token: "link-tok",
+          app_secret: "link-sec",
+          phone_number_id: "111",
+          verify_token: "link-verify",
+        },
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "whatsapp-chat": {
+          provider: "whatsapp",
+          config: {
+            access_token: "yml-tok",
+            app_secret: "yml-sec",
+            phone_number_id: "999",
+            verify_token: "yml-verify",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "whatsapp",
+        accessToken: "link-tok",
+        appSecret: "link-sec",
+        phoneNumberId: "111",
+        verifyToken: "link-verify",
+      });
+      expect(result[0]?.credentialId).toBe("cred-wa");
+    });
+
+    it("whatsapp: wiring-not-found falls through to yml inline config", async () => {
+      stubLinkFetches({ provider: "whatsapp", wiring: null });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "whatsapp-chat": {
+          provider: "whatsapp",
+          config: {
+            access_token: "yml-tok",
+            app_secret: "yml-sec",
+            phone_number_id: "999",
+            verify_token: "yml-verify",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "whatsapp",
+        accessToken: "yml-tok",
+        appSecret: "yml-sec",
+        phoneNumberId: "999",
+        verifyToken: "yml-verify",
+      });
+      expect(result[0]?.credentialId).toBe("whatsapp:999");
+    });
+
+    it("whatsapp: Link credential fetch error falls through to yml inline config", async () => {
+      stubLinkFetches({
+        provider: "whatsapp",
+        wiring: { credential_id: "cred-wa", connection_id: "111" },
+        fetchThrows: true,
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "whatsapp-chat": {
+          provider: "whatsapp",
+          config: {
+            access_token: "yml-tok",
+            app_secret: "yml-sec",
+            phone_number_id: "999",
+            verify_token: "yml-verify",
+          },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentialId).toBe("whatsapp:999");
     });
   });
 });
