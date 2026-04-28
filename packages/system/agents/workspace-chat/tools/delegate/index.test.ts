@@ -7,7 +7,7 @@
  */
 
 import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { AtlasDataEventSchemas, repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
 import type { MCPServerCandidate } from "@atlas/core/mcp-registry/discovery";
 import { createStubPlatformModels } from "@atlas/llm";
@@ -695,10 +695,9 @@ describe("createDelegateTool", () => {
     expect(ledgerParts).toHaveLength(1);
     const ledgerPart = ledgerParts[0];
     if (ledgerPart?.type !== "data-delegate-ledger") throw new Error("type mismatch");
-    const ledgerData = AtlasDataEventSchemas["delegate-ledger"].parse(ledgerPart.data);
-    expect(ledgerData.delegateToolCallId).toBe("del-call-1");
-    expect(ledgerData.toolsUsed).toHaveLength(1);
-    const entry = ledgerData.toolsUsed[0];
+    expect(ledgerPart.data.delegateToolCallId).toBe("del-call-1");
+    expect(ledgerPart.data.toolsUsed).toHaveLength(1);
+    const entry = ledgerPart.data.toolsUsed[0];
     if (!entry) throw new Error("expected ledger entry");
     expect(entry.toolCallId).toBe("c1");
     expect(entry.name).toBe("web_search");
@@ -839,9 +838,7 @@ describe("createDelegateTool", () => {
     const delegateChunks = reloaded.parts.filter((p) => p.type === "data-delegate-chunk");
     const reloadedTerminators = delegateChunks.filter((p) => {
       if (p.type !== "data-delegate-chunk") return false;
-      const parsed = AtlasDataEventSchemas["delegate-chunk"].safeParse(p.data);
-      if (!parsed.success) return false;
-      const inner = parsed.data.chunk;
+      const inner = p.data?.chunk;
       if (typeof inner !== "object" || inner === null) return false;
       if (!("type" in inner) || inner.type !== "delegate-end") return false;
       return !("pendingToolCallIds" in inner);
@@ -853,8 +850,7 @@ describe("createDelegateTool", () => {
     expect(ledgerParts).toHaveLength(1);
     const ledgerPart = ledgerParts[0];
     if (ledgerPart?.type !== "data-delegate-ledger") throw new Error("type mismatch");
-    const ledgerData = AtlasDataEventSchemas["delegate-ledger"].parse(ledgerPart.data);
-    expect(ledgerData.toolsUsed.map((e) => e.toolCallId).sort()).toEqual(["c1", "c2"]);
+    expect(ledgerPart.data.toolsUsed.map((e) => e.toolCallId).sort()).toEqual(["c1", "c2"]);
   });
 
   it("delegate-end is the last data-delegate-chunk written for the delegateToolCallId on the happy path", async () => {
@@ -1249,9 +1245,13 @@ function extractLedgerData(chunk: AtlasUIMessageChunk): LedgerData | undefined {
   if (typeof chunk !== "object" || chunk === null) return undefined;
   if (!("type" in chunk) || chunk.type !== "data-delegate-ledger") return undefined;
   if (!("data" in chunk)) return undefined;
-  const parsed = AtlasDataEventSchemas["delegate-ledger"].safeParse(chunk.data);
-  if (!parsed.success) return undefined;
-  return { delegateToolCallId: parsed.data.delegateToolCallId, toolsUsed: parsed.data.toolsUsed };
+  const data = chunk.data;
+  if (typeof data !== "object" || data === null) return undefined;
+  if (!("delegateToolCallId" in data) || typeof data.delegateToolCallId !== "string") {
+    return undefined;
+  }
+  if (!("toolsUsed" in data) || !Array.isArray(data.toolsUsed)) return undefined;
+  return { delegateToolCallId: data.delegateToolCallId, toolsUsed: data.toolsUsed };
 }
 
 /**

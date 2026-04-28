@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AtlasDataEventSchemas, validateAtlasUIMessages } from "./messages.ts";
+import { validateAtlasUIMessages } from "./messages.ts";
 
 describe("validateAtlasUIMessages", () => {
   it("validates basic text message", async () => {
@@ -48,12 +48,7 @@ describe("validateAtlasUIMessages", () => {
     const dataPart = validated[0]?.parts[0];
     expect(dataPart?.type).toEqual("data-session-start");
     if (dataPart?.type === "data-session-start") {
-      // Zod-parse the runtime-validated `data` payload to recover
-      // typed access. AtlasUIMessage no longer narrows `part.data`
-      // to AtlasDataEvents at the type level — see comment on
-      // AtlasUIMessage in messages.ts for why.
-      const data = AtlasDataEventSchemas["session-start"].parse(dataPart.data);
-      expect(data.sessionId).toEqual("sess-123");
+      expect(dataPart.data.sessionId).toEqual("sess-123");
     }
   });
 
@@ -83,9 +78,8 @@ describe("validateAtlasUIMessages", () => {
     const dataPart = validated[0]?.parts[0];
     expect(dataPart?.type).toEqual("data-session-finish");
     if (dataPart?.type === "data-session-finish") {
-      const data = AtlasDataEventSchemas["session-finish"].parse(dataPart.data);
-      expect(data.status).toEqual("completed");
-      expect(data.duration).toEqual(5000);
+      expect(dataPart.data.status).toEqual("completed");
+      expect(dataPart.data.duration).toEqual(5000);
     }
   });
 
@@ -109,8 +103,7 @@ describe("validateAtlasUIMessages", () => {
     const dataPart = validated[0]?.parts[0];
     expect(dataPart?.type).toEqual("data-agent-error");
     if (dataPart?.type === "data-agent-error") {
-      const data = AtlasDataEventSchemas["agent-error"].parse(dataPart.data);
-      expect(data.error).toEqual("Timeout occurred");
+      expect(dataPart.data.error).toEqual("Timeout occurred");
     }
   });
 
@@ -129,8 +122,7 @@ describe("validateAtlasUIMessages", () => {
     const dataPart = validated[0]?.parts[0];
     expect(dataPart?.type).toEqual("data-user-message");
     if (dataPart?.type === "data-user-message") {
-      const data = AtlasDataEventSchemas["user-message"].parse(dataPart.data);
-      expect(data.content).toEqual("User sent this message");
+      expect(dataPart.data.content).toEqual("User sent this message");
     }
   });
 
@@ -154,8 +146,7 @@ describe("validateAtlasUIMessages", () => {
     const dataPart = validated[0]?.parts[0];
     expect(dataPart?.type).toEqual("data-tool-progress");
     if (dataPart?.type === "data-tool-progress") {
-      const data = AtlasDataEventSchemas["tool-progress"].parse(dataPart.data);
-      expect(data.toolName).toEqual("search");
+      expect(dataPart.data.toolName).toEqual("search");
     }
   });
 
@@ -173,8 +164,7 @@ describe("validateAtlasUIMessages", () => {
     const dataPart = validated[0]?.parts[0];
     expect(dataPart?.type).toEqual("data-session-start");
     if (dataPart?.type === "data-session-start") {
-      const data = AtlasDataEventSchemas["session-start"].parse(dataPart.data);
-      expect(data.sessionId).toEqual("sess-123");
+      expect(dataPart.data.sessionId).toEqual("sess-123");
     }
   });
 
@@ -366,10 +356,9 @@ describe("validateAtlasUIMessages", () => {
     expect(terminatorPart?.type).toEqual("data-delegate-chunk");
     expect(ledgerPart?.type).toEqual("data-delegate-ledger");
     if (ledgerPart?.type === "data-delegate-ledger") {
-      const data = AtlasDataEventSchemas["delegate-ledger"].parse(ledgerPart.data);
-      expect(data.delegateToolCallId).toEqual("tc-delegate-1");
-      expect(data.toolsUsed).toHaveLength(1);
-      expect(data.toolsUsed[0]?.outcome).toEqual("success");
+      expect(ledgerPart.data.delegateToolCallId).toEqual("tc-delegate-1");
+      expect(ledgerPart.data.toolsUsed).toHaveLength(1);
+      expect(ledgerPart.data.toolsUsed[0]?.outcome).toEqual("success");
     }
   });
 
@@ -395,9 +384,8 @@ describe("validateAtlasUIMessages", () => {
     const part = validated[0]?.parts[0];
     expect(part?.type).toEqual("data-nested-chunk");
     if (part?.type === "data-nested-chunk") {
-      const data = AtlasDataEventSchemas["nested-chunk"].parse(part.data);
-      expect(data.parentToolCallId).toEqual("tc-parent-1");
-      expect(data.chunk).toEqual({ type: "text-delta", id: "t1", delta: "hello from child" });
+      expect(part.data.parentToolCallId).toEqual("tc-parent-1");
+      expect(part.data.chunk).toEqual({ type: "text-delta", id: "t1", delta: "hello from child" });
     }
   });
 
@@ -424,9 +412,8 @@ describe("validateAtlasUIMessages", () => {
     const dataPart = validated[0]?.parts[0];
     expect(dataPart?.type).toEqual("data-skill-lint-warning");
     if (dataPart?.type === "data-skill-lint-warning") {
-      const data = AtlasDataEventSchemas["skill-lint-warning"].parse(dataPart.data);
-      expect(data.warnings).toHaveLength(1);
-      expect(data.warnings[0]?.rule).toEqual("body-lines");
+      expect(dataPart.data.warnings).toHaveLength(1);
+      expect(dataPart.data.warnings[0]?.rule).toEqual("body-lines");
     }
   });
 });

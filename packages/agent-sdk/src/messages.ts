@@ -6,7 +6,6 @@
 
 import {
   type InferUITools,
-  type UIDataTypes,
   type UIMessage,
   type UIMessageChunk,
   type UIMessagePart,
@@ -302,59 +301,27 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
     return [];
   }
 
-  // Pre-validation pass: auto-assign id, strip unknown metadata keys,
-  // and validate data-* part payloads. Doing this BEFORE validateUIMessages
-  // avoids a post-validation .map that the type system has trouble assigning
-  // back to AtlasUIMessage[] (deep instantiation through the SDK's
-  // dataSchemas mapped type can hit TS2589 in CI's fresh-cache environment;
-  // see comment on AtlasUIMessage definition for the full context).
-  const prepared = nonEmpty.map((m) => {
+  // Normalize: auto-assign id to messages missing one (defense-in-depth for
+  // clients that omit UIMessage.id — the AI SDK requires it).
+  const withIds = nonEmpty.map((m) => {
     if (typeof m !== "object" || m === null) return m;
-    const obj = m as { id?: unknown; metadata?: unknown; parts?: unknown[] };
-    const next: Record<string, unknown> = { ...obj };
-    if (typeof obj.id !== "string" || obj.id.length === 0) {
-      next.id = crypto.randomUUID();
-    }
-    if (obj.metadata != null) {
-      // Re-parse so unknown keys (e.g. `part` carrying full Anthropic
-      // request body) are stripped — the AI SDK validates metadata but
-      // discards the parsed result, so extras would otherwise persist
-      // across turns via mergeObjects. Throw on parse failure to match
-      // the SDK's strict-validation surface.
-      const parsed = MessageMetadataSchema.parse(obj.metadata);
-      next.metadata = parsed;
-    }
-    if (Array.isArray(obj.parts)) {
-      next.parts = obj.parts.map((part) => {
-        if (typeof part !== "object" || part === null || !("type" in part)) return part;
-        const partObj = part as { type?: unknown; data?: unknown };
-        if (typeof partObj.type !== "string" || !partObj.type.startsWith("data-")) return part;
-        const dataName = partObj.type.slice("data-".length);
-        const schema = AtlasDataEventSchemas[dataName as keyof typeof AtlasDataEventSchemas];
-        if (!schema) {
-          throw new Error(`validateAtlasUIMessages: no data schema for type="${partObj.type}"`);
-        }
-        const result = schema.safeParse(partObj.data);
-        if (!result.success) {
-          throw new Error(
-            `validateAtlasUIMessages: invalid "${partObj.type}" payload: ${result.error.message}`,
-          );
-        }
-        return { ...partObj, data: result.data };
-      });
-    }
-    return next;
+    if ("id" in m && typeof m.id === "string" && m.id.length > 0) return m;
+    return { ...m, id: crypto.randomUUID() };
   });
 
-  // Skip dataSchemas to validateUIMessages — we already validated data-*
-  // parts above. Passing AtlasDataEventSchemas (30+ keys) makes TS
-  // reverse-infer UI_MESSAGE through the deeply-mapped
-  // `{ [NAME in keyof InferUIMessageData<UI_MESSAGE> & string]?: ... }`
-  // type, which trips TS2589 in CI. Same family as the
-  // generateObject + Zod discriminated union issue in CLAUDE.md.
-  return await validateUIMessages<AtlasUIMessage>({
-    messages: prepared,
+  const validated = await validateUIMessages({
+    messages: withIds,
     metadataSchema: MessageMetadataSchema.optional(),
+    dataSchemas: AtlasDataEventSchemas,
+  });
+
+  // The AI SDK validates metadata but discards the parsed result, so unknown
+  // keys (e.g. `part` carrying the full Anthropic request body) survive
+  // validation and persist across turns via mergeObjects. Strip them here.
+  return validated.map((m) => {
+    if (m.metadata == null) return m;
+    const parsed = MessageMetadataSchema.safeParse(m.metadata);
+    return parsed.success ? { ...m, metadata: parsed.data } : m;
   });
 }
 
@@ -378,26 +345,6 @@ export const MessageMetadataSchema = z.object({
 
 export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
 
-// AtlasUIMessage intentionally does NOT pass AtlasDataEvents as the
-// data-generic to UIMessage. Threading it through (and through
-// validateUIMessages's <UI_MESSAGE> generic) triggers TS2589 — the
-// AI SDK's `dataSchemas: { [NAME in keyof InferUIMessageData<...> &
-// string]?: FlexibleSchema<...> }` mapped type combined with our
-// 30+ AtlasDataEvents keys exceeds TypeScript's instantiation depth
-// budget. Same family of issue called out in CLAUDE.md for
-// generateObject + Zod discriminated unions.
-//
-// Runtime narrowness is preserved: validateAtlasUIMessages passes
-// AtlasDataEventSchemas as `dataSchemas`, so each `data-*` part's
-// `data` field is parsed against the matching schema at runtime.
-// The static type just doesn't claim that narrowing — callers that
-// need to read `part.data` for a specific data-* type runtime-validate
-// via the relevant AtlasDataEventSchemas[key].
-//
-// Producers (e.g. nested-chunk-writer, stream-mapper) compose chunks
-// from typed sources and emit them through UIMessageStreamWriter; the
-// chunk shape is enforced at the call site, not via the AtlasUIMessage
-// type's data-generic.
-export type AtlasUIMessage = UIMessage<MessageMetadata>;
-export type AtlasUIMessageChunk = UIMessageChunk<MessageMetadata>;
-export type AtlasUIMessagePart = UIMessagePart<UIDataTypes, InferUITools<AtlasTools>>;
+export type AtlasUIMessage = UIMessage<MessageMetadata, AtlasDataEvents>;
+export type AtlasUIMessageChunk = UIMessageChunk<MessageMetadata, AtlasDataEvents>;
+export type AtlasUIMessagePart = UIMessagePart<AtlasDataEvents, InferUITools<AtlasTools>>;
