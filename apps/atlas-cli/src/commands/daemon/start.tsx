@@ -450,12 +450,12 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       logger.debug("No FRIDAY_NPX_PATH configured, MCP servers using npx may not work");
     }
 
-    // Check for ATLAS_NODE_PATH and augment PATH if needed (for bundled claude-code agent)
-    const nodePath = process.env.ATLAS_NODE_PATH;
+    // Check for FRIDAY_NODE_PATH and augment PATH if needed (for bundled claude-code agent)
+    const nodePath = process.env.FRIDAY_NODE_PATH;
     if (nodePath) {
       await augmentPathWithTool(nodePath, "node");
     } else {
-      logger.debug("No ATLAS_NODE_PATH configured, bundled claude-code agent may not work");
+      logger.debug("No FRIDAY_NODE_PATH configured, bundled claude-code agent may not work");
     }
 
     // Check for FRIDAY_UVX_PATH / ATLAS_UV_PATH and augment PATH if needed
