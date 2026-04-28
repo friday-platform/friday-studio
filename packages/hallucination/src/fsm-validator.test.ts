@@ -287,7 +287,7 @@ describe("formatToolResults", () => {
       title: `Issue title for ${3000 + i}`,
       status: ["Todo", "In Progress", "Done", "Backlog"][i % 4],
       priority: i % 5,
-      assignee: { name: "Eric Skram", email: "eric@tempest.team" },
+      assignee: { name: "Alex Doe", email: "alex@example.com" },
     }));
     const results = [mcpResult("linear_search_issues", JSON.stringify(issues))];
 

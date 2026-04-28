@@ -51,6 +51,6 @@ jobs:
         with:
           commit_message: "chore: update deno.lock [dependabot skip]"
           file_pattern: "deno.lock"
-          commit_user_name: "Lukasz Jagiello"
-          commit_user_email: "lukasz@tempest.team"
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
           push_options: "--force-with-lease"

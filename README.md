@@ -12,7 +12,7 @@ execute with MCP tool access.
 
 ```bash
 # Run
-deno task dev:full              # Start daemon (auto-restarts on changes)
+deno task dev                   # Start daemon (auto-restarts on changes)
 deno task atlas daemon status   # Check if daemon is running
 deno task atlas prompt "test"   # Send a test prompt
 
@@ -82,7 +82,7 @@ agent commit footers into CLAUDE.md.
 **Prerequisites:** Deno 2.4.0+, Go 1.22+ (for operator/auth/gist services)
 
 ```bash
-git clone https://github.com/friday-platform/friday-studio && cd atlas
+git clone https://github.com/friday-platform/friday-studio && cd friday-studio
 deno install                    # Install dependencies
 npx husky                       # Set up git hooks
 ```

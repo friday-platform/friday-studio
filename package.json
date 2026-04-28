@@ -1,7 +1,17 @@
 {
-  "name": "atlas",
+  "name": "friday-studio",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "description": "Friday Agent Studio & Toolkit (FAST) — AI agent orchestration platform. Workspaces define agents, signals, and jobs that run autonomously on HTTP, cron, and other triggers.",
+  "homepage": "https://github.com/friday-platform/friday-studio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/friday-platform/friday-studio.git"
+  },
+  "bugs": { "url": "https://github.com/friday-platform/friday-studio/issues" },
+  "author": "Tempest Labs, Inc.",
+  "license": "BUSL-1.1",
   "workspaces": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
   "dependencies": {
     "@atlas/activity": "workspace:*",
