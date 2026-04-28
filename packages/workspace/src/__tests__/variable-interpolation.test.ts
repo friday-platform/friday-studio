@@ -75,8 +75,10 @@ describe("interpolateConfig", () => {
       jobs: [{ steps: [{ workDir: "{{repo_root}}", url: "{{platform_url}}/api" }] }],
     };
     const result = interpolateConfig(config, VARS);
-    expect(result.jobs[0].steps[0].workDir).toBe("/home/user/code/atlas");
-    expect(result.jobs[0].steps[0].url).toBe("http://localhost:8080/api");
+    const step = result.jobs[0]?.steps[0];
+    if (!step) throw new Error("expected job[0].steps[0] in result");
+    expect(step.workDir).toBe("/home/user/code/atlas");
+    expect(step.url).toBe("http://localhost:8080/api");
   });
 
   it("replaces {{workspace_path}} variable", () => {

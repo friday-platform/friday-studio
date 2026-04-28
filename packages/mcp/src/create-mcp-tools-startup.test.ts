@@ -269,7 +269,9 @@ describe("connectHttp startup", () => {
     });
 
     // Spawn env must NOT contain the bearer token
-    const spawnEnv = mockSpawn.mock.calls[0][2].env as Record<string, string>;
+    const spawnCall = mockSpawn.mock.calls[0];
+    if (!spawnCall) throw new Error("expected mockSpawn to have been called");
+    const spawnEnv = spawnCall[2].env as Record<string, string>;
     expect(spawnEnv).not.toHaveProperty("MY_TOKEN");
     expect(spawnEnv).toHaveProperty("GOOGLE_OAUTH_CLIENT_ID", "client-id");
 
@@ -282,9 +284,9 @@ describe("connectHttp startup", () => {
         }),
       }),
     );
-    const callArgs = MockHTTPTransport.mock.calls[0][1] as {
-      requestInit: { headers: Record<string, string> };
-    };
+    const httpCall = MockHTTPTransport.mock.calls[0];
+    if (!httpCall) throw new Error("expected MockHTTPTransport to have been called");
+    const callArgs = httpCall[1] as { requestInit: { headers: Record<string, string> } };
     expect(callArgs.requestInit.headers).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
   });
 });

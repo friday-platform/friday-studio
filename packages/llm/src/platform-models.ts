@@ -160,7 +160,7 @@ function resolveRole(
   errors: ResolutionError[],
 ): LanguageModelV3 | null {
   if (userValue !== undefined) {
-    const chain: readonly string[] = Array.isArray(userValue) ? userValue : [userValue];
+    const chain: readonly string[] = typeof userValue === "string" ? [userValue] : userValue;
 
     // Pre-flight: every entry must at least parse and name a known
     // provider. A typo or unknown-provider in a chain is always an error;
@@ -192,7 +192,7 @@ function resolveRole(
     // (one entry, one credential check, error if missing).
     for (const entry of chain) {
       const parsed = parseModelId(entry);
-      if (parsed && hasCredential(parsed.provider)) {
+      if (parsed && isRegistryProvider(parsed.provider) && hasCredential(parsed.provider)) {
         return traceModel(
           registry.languageModel(buildRegistryModelId(parsed.provider, parsed.model)),
         );
