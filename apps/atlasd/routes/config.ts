@@ -202,7 +202,7 @@ const modelsPutResponseSchema = z.object({
  * (see `atlas-daemon.ts:260`). Keeps read and write consistent.
  */
 function getFridayYmlPath(): string {
-  const configDir = process.env.ATLAS_CONFIG_PATH ?? process.cwd();
+  const configDir = process.env.FRIDAY_CONFIG_PATH ?? process.cwd();
   return join(configDir, "friday.yml");
 }
 

@@ -69,11 +69,11 @@ const ENV_EXFIL: Rule = {
   reason: "References a provider secret env var — exfiltration risk.",
 };
 
-/** Generic `ATLAS_*_SECRET` variants not covered above. */
-const ATLAS_SECRET_EXFIL: Rule = {
+/** Generic `FRIDAY_*_SECRET` variants not covered above. */
+const FRIDAY_SECRET_EXFIL: Rule = {
   name: "env-var-exfiltration",
   severity: "critical",
-  pattern: /\bATLAS_[A-Z_]+_(?:SECRET|TOKEN|KEY)\b/,
+  pattern: /\bFRIDAY_[A-Z_]+_(?:SECRET|TOKEN|KEY)\b/,
   reason: "References an internal secret env var — exfiltration risk.",
 };
 
@@ -116,7 +116,7 @@ const PATH_TRAVERSAL_ETC: Rule = {
 const RULES: readonly Rule[] = [
   PROMPT_INJECTION,
   ENV_EXFIL,
-  ATLAS_SECRET_EXFIL,
+  FRIDAY_SECRET_EXFIL,
   SUDO,
   NETWORK_EGRESS,
   PATH_TRAVERSAL_CLIMB,

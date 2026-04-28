@@ -17,7 +17,7 @@ const CACHED_CWD = process.cwd();
 export function isSystemService(): boolean {
   // Check if running as system service by:
   // 1. Running as root (uid 0)
-  // 2. Or ATLAS_SYSTEM_MODE env var is set
+  // 2. Or FRIDAY_SYSTEM_MODE env var is set
   // 3. Or running as 'atlas' user
   if (process.platform === "win32") {
     return false; // Windows doesn't use this pattern
@@ -28,7 +28,7 @@ export function isSystemService(): boolean {
     return true; // Running as root
   }
 
-  if (process.env.ATLAS_SYSTEM_MODE === "true") {
+  if (process.env.FRIDAY_SYSTEM_MODE === "true") {
     return true; // Explicitly set to system mode
   }
 

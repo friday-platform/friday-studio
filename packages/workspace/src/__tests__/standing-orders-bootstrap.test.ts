@@ -173,7 +173,7 @@ function fireSignal(runtime: import("../runtime.ts").WorkspaceRuntime) {
 // ---------------------------------------------------------------------------
 
 describe("standing orders bootstrap injection", () => {
-  const originalEnv = process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP;
+  const originalEnv = process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP;
 
   beforeEach(() => {
     capturedPrompts.length = 0;
@@ -182,14 +182,14 @@ describe("standing orders bootstrap injection", () => {
 
   afterEach(() => {
     if (originalEnv !== undefined) {
-      process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = originalEnv;
+      process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = originalEnv;
     } else {
-      delete process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP;
+      delete process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP;
     }
   });
 
   it("loads global-level standing orders and prepends to prompt when flag=1", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
     mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL ORDER: never delete files"));
@@ -210,7 +210,7 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("loads workspace-level standing orders after global level", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
     mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL ORDER"));
@@ -237,7 +237,7 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("loads mounted standing orders after workspace level", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
     mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL ORDER"));
@@ -282,7 +282,7 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("all three levels concatenate separated by double newlines", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
     mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("GLOBAL"));
@@ -322,7 +322,7 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("silently skips missing memory at any level — other levels still included", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
     mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.reject(new Error("directory not found"));
@@ -347,7 +347,7 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("skips empty render results without spurious newlines", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
     mockStoreFn.mockImplementation((wsId: string, name: string): Promise<NarrativeStore> => {
       if (wsId === "_global" && name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock(""));
@@ -371,8 +371,8 @@ describe("standing orders bootstrap injection", () => {
     expect(prompt).not.toMatch(/^\n/);
   });
 
-  it("does not call adapter when ATLAS_STANDING_ORDERS_BOOTSTRAP is unset", async () => {
-    delete process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP;
+  it("does not call adapter when FRIDAY_STANDING_ORDERS_BOOTSTRAP is unset", async () => {
+    delete process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP;
     mockStoreFn.mockResolvedValue(makeNarrativeMock("SHOULD NOT APPEAR"));
 
     const adapter = buildMockAdapter();
@@ -386,8 +386,8 @@ describe("standing orders bootstrap injection", () => {
     expect(capturedPrompts[0]).not.toContain("SHOULD NOT APPEAR");
   });
 
-  it("does not call adapter when ATLAS_STANDING_ORDERS_BOOTSTRAP is '0'", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "0";
+  it("does not call adapter when FRIDAY_STANDING_ORDERS_BOOTSTRAP is '0'", async () => {
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "0";
     mockStoreFn.mockResolvedValue(makeNarrativeMock("SHOULD NOT APPEAR"));
 
     const adapter = buildMockAdapter();
@@ -401,8 +401,8 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("standing orders appear BEFORE the existing memory bootstrap in the final prompt", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
-    process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_MEMORY_BOOTSTRAP = "1";
 
     mockStoreFn.mockImplementation((_wsId: string, name: string): Promise<NarrativeStore> => {
       if (name === "standing-orders") {
@@ -415,16 +415,16 @@ describe("standing orders bootstrap injection", () => {
     adapter.store = mockStoreFn;
     adapter.bootstrap = vi.fn<() => Promise<string>>().mockResolvedValue("MEMORY BOOTSTRAP");
 
-    const originalMemEnv = process.env.ATLAS_MEMORY_BOOTSTRAP;
+    const originalMemEnv = process.env.FRIDAY_MEMORY_BOOTSTRAP;
 
     await withTestRuntime({ memoryAdapter: adapter }, async (runtime) => {
       await fireSignal(runtime);
     });
 
     if (originalMemEnv !== undefined) {
-      process.env.ATLAS_MEMORY_BOOTSTRAP = originalMemEnv;
+      process.env.FRIDAY_MEMORY_BOOTSTRAP = originalMemEnv;
     } else {
-      delete process.env.ATLAS_MEMORY_BOOTSTRAP;
+      delete process.env.FRIDAY_MEMORY_BOOTSTRAP;
     }
 
     expect(capturedPrompts).toHaveLength(1);
@@ -436,7 +436,7 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("error at one level does not prevent other levels from loading", async () => {
-    process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+    process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
 
     let callCount = 0;
     const failingMock = makeNarrativeMock("");
@@ -467,7 +467,7 @@ describe("standing orders bootstrap injection", () => {
   });
 
   it("hot-reads flag per-invocation — toggling env var mid-process takes effect on next signal", async () => {
-    delete process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP;
+    delete process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP;
     mockStoreFn.mockImplementation((_wsId: string, name: string): Promise<NarrativeStore> => {
       if (name === "standing-orders") {
         return Promise.resolve(makeNarrativeMock("STANDING ORDER"));
@@ -482,7 +482,7 @@ describe("standing orders bootstrap injection", () => {
       await fireSignal(runtime);
       expect(mockStoreFn).not.toHaveBeenCalled();
 
-      process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP = "1";
+      process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP = "1";
 
       await fireSignal(runtime);
       expect(mockStoreFn).toHaveBeenCalled();

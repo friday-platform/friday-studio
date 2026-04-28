@@ -91,7 +91,7 @@ export class NatsManager {
   private spawnServer(binary: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = ["--port", String(NATS_PORT), "--jetstream"];
-      if (process.env.ATLAS_NATS_MONITOR === "1") {
+      if (process.env.FRIDAY_NATS_MONITOR === "1") {
         args.push("--http_port", String(NATS_MONITOR_PORT));
         logger.info(`NATS monitoring enabled at http://localhost:${NATS_MONITOR_PORT}`);
       }

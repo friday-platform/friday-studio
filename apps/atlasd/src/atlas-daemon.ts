@@ -264,8 +264,8 @@ export class AtlasDaemon {
 
     // Load platform model configuration (friday.yml) and construct the resolver.
     // Runs eager validation — throws on malformed config or missing credentials.
-    // ATLAS_CONFIG_PATH can override the search directory (set by --atlas-config CLI flag).
-    const configDir = process.env.ATLAS_CONFIG_PATH ?? process.cwd();
+    // FRIDAY_CONFIG_PATH can override the search directory (set by --atlas-config CLI flag).
+    const configDir = process.env.FRIDAY_CONFIG_PATH ?? process.cwd();
     logger.info("Loading platform config", { configDir, configFile: `${configDir}/friday.yml` });
     const atlasConfigSource = new FilesystemAtlasConfigSource(configDir);
     const atlasConfig = await atlasConfigSource.load();
@@ -301,7 +301,7 @@ export class AtlasDaemon {
     logger.info("Initializing LibraryStorage...");
     this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
       // Use XDG-compliant default location, but allow environment override
-      contentDir: env.ATLAS_LIBRARY_DIR,
+      contentDir: env.FRIDAY_LIBRARY_DIR,
       organizeByDate: true,
     });
 

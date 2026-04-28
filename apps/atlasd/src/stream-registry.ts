@@ -46,10 +46,10 @@ function envInt(name: string, fallback: number): number {
  * buffering on overflow** and mark the stream non-replayable, so late
  * subscribers get a clean 204 instead of a corrupt partial replay.
  *
- * Override via `ATLAS_STREAM_MAX_EVENTS` — tenanted deployments typically
+ * Override via `FRIDAY_STREAM_MAX_EVENTS` — tenanted deployments typically
  * want a much smaller cap (e.g. 5000) to bound per-tenant memory.
  */
-const MAX_EVENTS = envInt("ATLAS_STREAM_MAX_EVENTS", 50_000);
+const MAX_EVENTS = envInt("FRIDAY_STREAM_MAX_EVENTS", 50_000);
 
 /**
  * Hard ceiling on buffered events across every active stream in the
@@ -59,9 +59,9 @@ const MAX_EVENTS = envInt("ATLAS_STREAM_MAX_EVENTS", 50_000);
  *
  * Single-tenant local daemons can leave the default (10M events, ≈5 GB
  * worst case at 500 B/event); multi-tenant pods should drop it via
- * `ATLAS_STREAM_TOTAL_EVENT_CEILING`.
+ * `FRIDAY_STREAM_TOTAL_EVENT_CEILING`.
  */
-const TOTAL_EVENT_CEILING = envInt("ATLAS_STREAM_TOTAL_EVENT_CEILING", 10_000_000);
+const TOTAL_EVENT_CEILING = envInt("FRIDAY_STREAM_TOTAL_EVENT_CEILING", 10_000_000);
 /** TTL for finished streams (5 minutes) */
 const FINISHED_TTL_MS = 5 * 60 * 1000;
 /** TTL for stale active streams (30 minutes) */

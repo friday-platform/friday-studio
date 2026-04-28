@@ -15,7 +15,7 @@ services:
         required: false
     environment:
       FRIDAY_LOG_LEVEL: ${FRIDAY_LOG_LEVEL:-info}
-      ATLAS_CONFIG_PATH: /app/user-config
+      FRIDAY_CONFIG_PATH: /app/user-config
       FRIDAY_DAEMON_PORT: ${FRIDAY_DAEMON_PORT:-18080}
       FRIDAY_LINK_PORT: ${FRIDAY_LINK_PORT:-13100}
       FRIDAY_STUDIO_PORT: ${FRIDAY_STUDIO_PORT:-15200}

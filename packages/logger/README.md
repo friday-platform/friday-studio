@@ -159,7 +159,7 @@ Error objects include full context:
 - `FRIDAY_LOGS_DIR` environment variable override
 - `.atlas` directory detection for compiled binaries
 - Windows/Unix home directory detection
-- System service detection (root user, `ATLAS_SYSTEM_MODE=true`, `atlas` user)
+- System service detection (root user, `FRIDAY_SYSTEM_MODE=true`, `atlas` user)
 
 ## API Reference
 

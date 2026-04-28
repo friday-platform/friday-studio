@@ -505,7 +505,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Set atlas config path if provided
     if (argv.atlasConfig) {
-      process.env.ATLAS_CONFIG_PATH = argv.atlasConfig;
+      process.env.FRIDAY_CONFIG_PATH = argv.atlasConfig;
     }
 
     if (argv.detached) {

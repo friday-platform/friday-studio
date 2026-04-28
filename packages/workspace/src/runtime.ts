@@ -262,7 +262,7 @@ interface WorkspaceRuntimeOptions {
   resourceStorage?: ResourceStorageAdapter;
   /** Activity storage adapter for creating activity feed items */
   activityStorage?: ActivityStorageAdapter;
-  /** Memory adapter for bootstrap injection (feature-flagged via ATLAS_MEMORY_BOOTSTRAP) */
+  /** Memory adapter for bootstrap injection (feature-flagged via FRIDAY_MEMORY_BOOTSTRAP) */
   memoryAdapter?: MemoryAdapter;
   /** Parsed memory.mounts from workspace config — resolved at initialize time */
   memoryMounts?: MemoryMount[];
@@ -1562,7 +1562,7 @@ export class WorkspaceRuntime {
     const prompt = buildFinalAgentPrompt(action.prompt, agentConfigPrompt, context);
 
     let standingOrdersBlock = "";
-    if (process.env.ATLAS_STANDING_ORDERS_BOOTSTRAP === "1" && this.options.memoryAdapter) {
+    if (process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP === "1" && this.options.memoryAdapter) {
       try {
         standingOrdersBlock = await this.loadStandingOrders();
       } catch (err) {
@@ -1576,7 +1576,7 @@ export class WorkspaceRuntime {
 
     // Bootstrap memory injection (feature-flagged)
     let bootstrapBlock = "";
-    if (process.env.ATLAS_MEMORY_BOOTSTRAP === "1" && this.options.memoryAdapter) {
+    if (process.env.FRIDAY_MEMORY_BOOTSTRAP === "1" && this.options.memoryAdapter) {
       try {
         bootstrapBlock = await this.options.memoryAdapter.bootstrap(this.workspace.id, agentId);
       } catch (err) {

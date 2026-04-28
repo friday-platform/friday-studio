@@ -1,7 +1,7 @@
 /**
  * Unit tests for memory bootstrap injection in WorkspaceRuntime.
  *
- * Verifies that when ATLAS_MEMORY_BOOTSTRAP=1 and a memoryAdapter is provided,
+ * Verifies that when FRIDAY_MEMORY_BOOTSTRAP=1 and a memoryAdapter is provided,
  * the bootstrap string is prepended to the prompt passed to the agent executor.
  *
  * Source: runtime.ts — bootstrap injection block in executeAgent()
@@ -132,7 +132,7 @@ async function withTestRuntime(
 // ---------------------------------------------------------------------------
 
 describe("memory bootstrap injection", () => {
-  const originalEnv = process.env.ATLAS_MEMORY_BOOTSTRAP;
+  const originalEnv = process.env.FRIDAY_MEMORY_BOOTSTRAP;
 
   beforeEach(() => {
     capturedPrompts.length = 0;
@@ -141,14 +141,14 @@ describe("memory bootstrap injection", () => {
 
   afterEach(() => {
     if (originalEnv !== undefined) {
-      process.env.ATLAS_MEMORY_BOOTSTRAP = originalEnv;
+      process.env.FRIDAY_MEMORY_BOOTSTRAP = originalEnv;
     } else {
-      delete process.env.ATLAS_MEMORY_BOOTSTRAP;
+      delete process.env.FRIDAY_MEMORY_BOOTSTRAP;
     }
   });
 
   it("prepends bootstrap string to prompt when flag=1 and adapter is provided", async () => {
-    process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
+    process.env.FRIDAY_MEMORY_BOOTSTRAP = "1";
     mockBootstrapFn.mockResolvedValue("## MEMORY CONTEXT\nsome important memory");
 
     await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
@@ -166,8 +166,8 @@ describe("memory bootstrap injection", () => {
     expect(capturedPrompts[0]).toContain("do the task");
   });
 
-  it("does not call bootstrap when ATLAS_MEMORY_BOOTSTRAP is unset", async () => {
-    delete process.env.ATLAS_MEMORY_BOOTSTRAP;
+  it("does not call bootstrap when FRIDAY_MEMORY_BOOTSTRAP is unset", async () => {
+    delete process.env.FRIDAY_MEMORY_BOOTSTRAP;
     mockBootstrapFn.mockResolvedValue("## MEMORY");
 
     await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
@@ -183,8 +183,8 @@ describe("memory bootstrap injection", () => {
     expect(capturedPrompts[0]).not.toContain("## MEMORY");
   });
 
-  it("does not call bootstrap when ATLAS_MEMORY_BOOTSTRAP is '0'", async () => {
-    process.env.ATLAS_MEMORY_BOOTSTRAP = "0";
+  it("does not call bootstrap when FRIDAY_MEMORY_BOOTSTRAP is '0'", async () => {
+    process.env.FRIDAY_MEMORY_BOOTSTRAP = "0";
     mockBootstrapFn.mockResolvedValue("## MEMORY");
 
     await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
@@ -200,7 +200,7 @@ describe("memory bootstrap injection", () => {
   });
 
   it("does not attempt bootstrap when memoryAdapter is undefined", async () => {
-    process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
+    process.env.FRIDAY_MEMORY_BOOTSTRAP = "1";
 
     await withTestRuntime({ memoryAdapter: undefined }, async (runtime) => {
       await runtime.processSignal({
@@ -218,7 +218,7 @@ describe("memory bootstrap injection", () => {
   });
 
   it("continues with original prompt when bootstrap throws", async () => {
-    process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
+    process.env.FRIDAY_MEMORY_BOOTSTRAP = "1";
     mockBootstrapFn.mockRejectedValue(new Error("store unavailable"));
 
     await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
@@ -240,7 +240,7 @@ describe("memory bootstrap injection", () => {
   });
 
   it("passes prompt unchanged when bootstrap returns empty string", async () => {
-    process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
+    process.env.FRIDAY_MEMORY_BOOTSTRAP = "1";
     mockBootstrapFn.mockResolvedValue("");
 
     await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
@@ -260,7 +260,7 @@ describe("memory bootstrap injection", () => {
   });
 
   it("hot-reads flag per-invocation — toggling env var mid-process takes effect", async () => {
-    delete process.env.ATLAS_MEMORY_BOOTSTRAP;
+    delete process.env.FRIDAY_MEMORY_BOOTSTRAP;
     mockBootstrapFn.mockResolvedValue("## MEMORY");
 
     await withTestRuntime({ memoryAdapter: { bootstrap: mockBootstrapFn } }, async (runtime) => {
@@ -272,7 +272,7 @@ describe("memory bootstrap injection", () => {
       });
       expect(mockBootstrapFn).not.toHaveBeenCalled();
 
-      process.env.ATLAS_MEMORY_BOOTSTRAP = "1";
+      process.env.FRIDAY_MEMORY_BOOTSTRAP = "1";
 
       await runtime.processSignal({
         id: "test-signal",

@@ -4,13 +4,13 @@
  */
 
 // This will be replaced during compilation by build scripts
-const COMPILED_VERSION = "__ATLAS_VERSION__";
-const COMPILED_GIT_SHA = "__ATLAS_GIT_SHA__";
+const COMPILED_VERSION = "__FRIDAY_VERSION__";
+const COMPILED_GIT_SHA = "__FRIDAY_GIT_SHA__";
 
 export function getAtlasVersion(): string {
   // Check if running as compiled binary (version was replaced during build)
   // Use computed string to avoid sed replacement
-  const versionPlaceholder = "__ATLAS_" + "VERSION__";
+  const versionPlaceholder = "__FRIDAY_" + "VERSION__";
 
   if (COMPILED_VERSION !== versionPlaceholder) {
     // This is a compiled binary - return the full version that was embedded
@@ -42,8 +42,8 @@ export function getAtlasVersion(): string {
 
 export function getVersionInfo() {
   const version = getAtlasVersion();
-  const versionPlaceholder = "__ATLAS_" + "VERSION__";
-  const shaPlaceholder = "__ATLAS_" + "GIT_SHA__";
+  const versionPlaceholder = "__FRIDAY_" + "VERSION__";
+  const shaPlaceholder = "__FRIDAY_" + "GIT_SHA__";
   const isCompiled = COMPILED_VERSION !== versionPlaceholder;
   const isNightly = version.startsWith("nightly-");
   const isDev = version.startsWith("dev");
