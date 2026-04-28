@@ -11,20 +11,20 @@
 -->
 
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import { page } from "$app/state";
   import { toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import MCPCatalogTree from "$lib/components/mcp/mcp-catalog-tree.svelte";
   import MCPRegistryImport from "$lib/components/mcp/mcp-registry-import.svelte";
   import MCPServerDetail from "$lib/components/mcp/mcp-server-detail.svelte";
-  import { mcpQueries } from "$lib/queries/mcp-queries";
   import {
     useCheckMCPUpdate,
     useDeleteMCPServer,
     useInstallMCPServer,
     usePullMCPUpdate,
   } from "$lib/queries/mcp";
+  import { mcpQueries } from "$lib/queries/mcp-queries";
 
   // ---------------------------------------------------------------------------
   // Selection from URL param
@@ -41,9 +41,7 @@
   const allServers = $derived(catalogQuery.data?.servers ?? []);
 
   const selectedServer = $derived(
-    selectedServerId
-      ? (allServers.find((s) => s.id === selectedServerId) ?? null)
-      : null,
+    selectedServerId ? (allServers.find((s) => s.id === selectedServerId) ?? null) : null,
   );
 
   // ---------------------------------------------------------------------------
@@ -151,9 +149,7 @@
     }
   }
 
-  const hasUpdate = $derived(
-    selectedServerId ? (updateState[selectedServerId] ?? false) : false,
-  );
+  const hasUpdate = $derived(selectedServerId ? (updateState[selectedServerId] ?? false) : false);
 </script>
 
 <div class="mcp-layout">
@@ -196,6 +192,7 @@
   }
 
   .mcp-sidebar {
+    border-inline-start: var(--size-px) solid var(--border);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;

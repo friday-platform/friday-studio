@@ -93,18 +93,18 @@
             </span>
           {/snippet}
         </Collapsible.Trigger>
-        <button class="add-space-btn" onclick={() => addDialogOpen.set(true)} aria-label="Add space">
+        <button
+          class="add-space-btn"
+          onclick={() => addDialogOpen.set(true)}
+          aria-label="Add space"
+        >
           <IconSmall.Plus />
         </button>
       </div>
       <Collapsible.Content>
         <ul class="section-list">
           <li>
-            <a
-              href="/discover"
-              class="nav-item"
-              class:active={pathname.startsWith("/discover")}
-            >
+            <a href="/discover" class="nav-item" class:active={pathname.startsWith("/discover")}>
               <IconLarge.OpenSquare />
               Discover Spaces
             </a>
@@ -173,7 +173,6 @@
               {/if}
             </li>
           {/each}
-
         </ul>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -246,7 +245,6 @@
 <style>
   .sidebar {
     background-color: var(--surface-dark);
-    border-inline-end: 1px solid var(--surface);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
