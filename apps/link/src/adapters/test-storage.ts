@@ -6,8 +6,8 @@ import type {
   SaveResult,
   StorageAdapter,
 } from "../types.ts";
+import type { CommunicatorWiringRepository } from "./communicator-wiring-repository.ts";
 import { type PlatformRouteRepository, RouteOwnershipError } from "./platform-route-repository.ts";
-import type { SlackAppWorkspaceRepository } from "./slack-app-workspace-repository.ts";
 
 export class TestStorageAdapter implements StorageAdapter {
   private credentials = new Map<string, Credential>();
@@ -179,49 +179,91 @@ export class TestPlatformRouteRepository implements PlatformRouteRepository {
  * every query is scoped by `userId`, and rows carry a user_id so tests can
  * exercise per-user isolation the same way production would.
  */
-export class TestSlackAppWorkspaceRepository implements SlackAppWorkspaceRepository {
-  private mappings = new Map<string, { workspaceId: string; userId: string }>();
+export class TestCommunicatorWiringRepository implements CommunicatorWiringRepository {
+  private rows: Array<{
+    userId: string;
+    credentialId: string;
+    workspaceId: string;
+    provider: string;
+    identifier: string;
+  }> = [];
 
-  insert(credentialId: string, workspaceId: string, userId: string): Promise<void> {
-    // Enforce per-user 1:1 (user_id, workspace_id). Mimics the unique index
-    // added by 20260408000000_add_user_id_to_slack_app_workspace.sql.
-    for (const [cid, entry] of this.mappings) {
-      if (entry.userId === userId && entry.workspaceId === workspaceId && cid !== credentialId) {
-        this.mappings.delete(cid);
-      }
-    }
-    this.mappings.set(credentialId, { workspaceId, userId });
+  insert(
+    userId: string,
+    credentialId: string,
+    workspaceId: string,
+    provider: string,
+    identifier: string,
+  ): Promise<void> {
+    this.rows = this.rows.filter(
+      (r) => !(r.userId === userId && r.workspaceId === workspaceId && r.provider === provider),
+    );
+    this.rows.push({ userId, credentialId, workspaceId, provider, identifier });
     return Promise.resolve();
   }
 
-  deleteByCredentialId(credentialId: string, userId: string): Promise<void> {
-    const entry = this.mappings.get(credentialId);
-    if (entry && entry.userId === userId) {
-      this.mappings.delete(credentialId);
-    }
+  deleteByWorkspaceAndProvider(
+    userId: string,
+    workspaceId: string,
+    provider: string,
+  ): Promise<{ credentialId: string } | null> {
+    const idx = this.rows.findIndex(
+      (r) => r.userId === userId && r.workspaceId === workspaceId && r.provider === provider,
+    );
+    if (idx === -1) return Promise.resolve(null);
+    const removed = this.rows.splice(idx, 1)[0];
+    if (!removed) return Promise.resolve(null);
+    return Promise.resolve({ credentialId: removed.credentialId });
+  }
+
+  deleteByCredentialId(userId: string, credentialId: string): Promise<void> {
+    this.rows = this.rows.filter((r) => !(r.userId === userId && r.credentialId === credentialId));
     return Promise.resolve();
   }
 
-  findByWorkspaceId(workspaceId: string, userId: string): Promise<{ credentialId: string } | null> {
-    for (const [credentialId, entry] of this.mappings) {
-      if (entry.workspaceId === workspaceId && entry.userId === userId) {
-        return Promise.resolve({ credentialId });
-      }
-    }
-    return Promise.resolve(null);
+  findByWorkspaceAndProvider(
+    userId: string,
+    workspaceId: string,
+    provider: string,
+  ): Promise<{ credentialId: string; identifier: string } | null> {
+    const row = this.rows.find(
+      (r) => r.userId === userId && r.workspaceId === workspaceId && r.provider === provider,
+    );
+    return Promise.resolve(
+      row ? { credentialId: row.credentialId, identifier: row.identifier } : null,
+    );
   }
 
   findByCredentialId(
-    credentialId: string,
     userId: string,
+    credentialId: string,
   ): Promise<{ workspaceId: string } | null> {
-    const entry = this.mappings.get(credentialId);
-    if (!entry || entry.userId !== userId) return Promise.resolve(null);
-    return Promise.resolve({ workspaceId: entry.workspaceId });
+    const row = this.rows.find((r) => r.userId === userId && r.credentialId === credentialId);
+    return Promise.resolve(row ? { workspaceId: row.workspaceId } : null);
+  }
+
+  listWiredWorkspaceIds(userId: string): Promise<string[]> {
+    const ids = [
+      ...new Set(this.rows.filter((r) => r.userId === userId).map((r) => r.workspaceId)),
+    ];
+    return Promise.resolve(ids);
+  }
+
+  findByConnectionAndProvider(
+    userId: string,
+    connectionId: string,
+    provider: string,
+  ): Promise<{ workspaceId: string; credentialId: string } | null> {
+    const row = this.rows.find(
+      (r) => r.userId === userId && r.identifier === connectionId && r.provider === provider,
+    );
+    return Promise.resolve(
+      row ? { workspaceId: row.workspaceId, credentialId: row.credentialId } : null,
+    );
   }
 
   /** Test helper — returns the stored workspace regardless of user. */
   getWorkspace(credentialId: string): string | undefined {
-    return this.mappings.get(credentialId)?.workspaceId;
+    return this.rows.find((r) => r.credentialId === credentialId)?.workspaceId;
   }
 }

@@ -3,9 +3,9 @@ import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { NoOpCommunicatorWiringRepository } from "../src/adapters/communicator-wiring-repository.ts";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
-import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
@@ -63,7 +63,7 @@ describe("OAuth Integration", async () => {
     storage,
     oauthService,
     new NoOpPlatformRouteRepository(),
-    new NoOpSlackAppWorkspaceRepository(),
+    new NoOpCommunicatorWiringRepository(),
   );
 
   let mockServer: MockOAuthServer | undefined;
@@ -564,7 +564,7 @@ describe("Static OAuth Integration", async () => {
     storage,
     oauthService,
     new NoOpPlatformRouteRepository(),
-    new NoOpSlackAppWorkspaceRepository(),
+    new NoOpCommunicatorWiringRepository(),
   );
 
   let mockServer: MockOAuthServer | undefined;

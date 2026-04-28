@@ -3,8 +3,9 @@
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
-import type { SlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
+import type { CommunicatorWiringRepository } from "../adapters/communicator-wiring-repository.ts";
 import { AppInstallError } from "../app-install/errors.ts";
+import { SLACK_APP_PROVIDER } from "../providers/constants.ts";
 import type { Credential, StorageAdapter } from "../types.ts";
 import {
   DESCRIPTION_MAX,
@@ -65,7 +66,7 @@ export type EventSubscriptionResult =
 export class SlackAppService {
   constructor(
     private storage: StorageAdapter,
-    private workspaceRepo: SlackAppWorkspaceRepository,
+    private wiringRepo: CommunicatorWiringRepository,
     private log = logger,
   ) {}
 
@@ -78,14 +79,14 @@ export class SlackAppService {
     workspaceDescription?: string,
   ): Promise<string> {
     const cred = await this.storage.get(credentialId, userId);
-    if (!cred || cred.provider !== "slack-app") {
+    if (!cred || cred.provider !== SLACK_APP_PROVIDER) {
       throw new AppInstallError(
         "CREDENTIAL_NOT_FOUND",
         `Slack app credential not found: ${credentialId}`,
       );
     }
 
-    const existing = await this.workspaceRepo.findByCredentialId(credentialId, userId);
+    const existing = await this.wiringRepo.findByCredentialId(userId, credentialId);
     if (existing) {
       throw new AppInstallError(
         "INVALID_CREDENTIAL",
@@ -130,7 +131,13 @@ export class SlackAppService {
       );
     }
 
-    await this.workspaceRepo.insert(credentialId, workspaceId, userId);
+    await this.wiringRepo.insert(
+      userId,
+      credentialId,
+      workspaceId,
+      SLACK_APP_PROVIDER,
+      credentialId,
+    );
     await this.storage.updateMetadata(credentialId, { displayName: workspaceName }, userId);
 
     this.log.info("slack_app_wired", {
@@ -151,7 +158,7 @@ export class SlackAppService {
     gatewayBase?: string,
   ): Promise<EventSubscriptionResult> {
     const cred = await this.storage.get(credentialId, userId);
-    if (!cred || cred.provider !== "slack-app") {
+    if (!cred || cred.provider !== SLACK_APP_PROVIDER) {
       throw new AppInstallError(
         "CREDENTIAL_NOT_FOUND",
         `Slack app credential not found: ${credentialId}`,
@@ -213,7 +220,7 @@ export class SlackAppService {
       return; // Idempotent — already deleted
     }
 
-    if (cred.provider !== "slack-app") {
+    if (cred.provider !== SLACK_APP_PROVIDER) {
       throw new AppInstallError(
         "CREDENTIAL_NOT_FOUND",
         `Credential ${credentialId} is not a slack-app`,
@@ -252,7 +259,7 @@ export class SlackAppService {
     }
 
     try {
-      await this.workspaceRepo.deleteByCredentialId(credentialId, userId);
+      await this.wiringRepo.deleteByCredentialId(userId, credentialId);
     } catch (err) {
       this.log.warn("slack_app_delete_workspace_mapping_failed", {
         credentialId,
@@ -266,7 +273,7 @@ export class SlackAppService {
 
   /** Delete by Slack app ID (resolves to credential, then delegates to deleteApp). Idempotent. */
   async deleteAppByAppId(appId: string, userId: string): Promise<void> {
-    const cred = await this.storage.findByProviderAndExternalId("slack-app", appId, userId);
+    const cred = await this.storage.findByProviderAndExternalId(SLACK_APP_PROVIDER, appId, userId);
     if (!cred) {
       this.log.debug("slack_app_delete_by_app_id_not_found", { appId, userId });
       return;
@@ -279,11 +286,15 @@ export class SlackAppService {
     workspaceId: string,
     userId: string,
   ): Promise<{ credentialId: string; appId: string } | null> {
-    const mapping = await this.workspaceRepo.findByWorkspaceId(workspaceId, userId);
+    const mapping = await this.wiringRepo.findByWorkspaceAndProvider(
+      userId,
+      workspaceId,
+      SLACK_APP_PROVIDER,
+    );
     if (!mapping) return null;
 
     const cred = await this.storage.get(mapping.credentialId, userId);
-    if (!cred || cred.provider !== "slack-app") return null;
+    if (!cred || cred.provider !== SLACK_APP_PROVIDER) return null;
 
     const secretResult = SlackAppSecretSchema.safeParse(cred.secret);
     if (!secretResult.success) return null;
@@ -298,9 +309,9 @@ export class SlackAppService {
     const summaries = await this.storage.list("oauth", userId);
 
     for (const summary of summaries) {
-      if (summary.provider !== "slack-app") continue;
+      if (summary.provider !== SLACK_APP_PROVIDER) continue;
 
-      const mapping = await this.workspaceRepo.findByCredentialId(summary.id, userId);
+      const mapping = await this.wiringRepo.findByCredentialId(userId, summary.id);
       if (mapping) continue;
 
       const cred = await this.storage.get(summary.id, userId);

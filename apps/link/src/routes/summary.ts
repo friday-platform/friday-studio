@@ -6,10 +6,13 @@
 import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
-import type { SlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
+import type { CommunicatorWiringRepository } from "../adapters/communicator-wiring-repository.ts";
 import { factory } from "../factory.ts";
+import { SLACK_APP_PROVIDER } from "../providers/constants.ts";
 import { registry } from "../providers/registry.ts";
 import type { Credential, StorageAdapter } from "../types.ts";
+
+const COMMUNICATOR_CREDENTIAL_PROVIDERS = [SLACK_APP_PROVIDER];
 
 function computeCredentialStatus(credential: Credential | null): "ready" | "expired" | "unknown" {
   if (!credential) return "unknown";
@@ -44,7 +47,7 @@ function computeCredentialStatus(credential: Credential | null): "ready" | "expi
 
 export function createSummaryRoutes(
   storage: StorageAdapter,
-  slackAppWorkspaceRepo: SlackAppWorkspaceRepository,
+  wiringRepo: CommunicatorWiringRepository,
 ) {
   return (
     factory
@@ -90,11 +93,11 @@ export function createSummaryRoutes(
             const full = await storage.get(cred.id, userId);
             const status = computeCredentialStatus(full);
 
-            if (cred.provider !== "slack-app") {
+            if (!COMMUNICATOR_CREDENTIAL_PROVIDERS.includes(cred.provider)) {
               credentials.push({ ...cred, status });
               continue;
             }
-            const mapping = await slackAppWorkspaceRepo.findByCredentialId(cred.id, userId);
+            const mapping = await wiringRepo.findByCredentialId(userId, cred.id);
             credentials.push({ ...cred, wiredWorkspaceId: mapping?.workspaceId ?? null, status });
           }
 

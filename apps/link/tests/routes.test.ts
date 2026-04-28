@@ -2,9 +2,9 @@ import { rm } from "node:fs/promises";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { NoOpCommunicatorWiringRepository } from "../src/adapters/communicator-wiring-repository.ts";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
-import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
 import { createApp } from "../src/index.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
@@ -142,7 +142,7 @@ describe("Link HTTP routes", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpSlackAppWorkspaceRepository(),
+      new NoOpCommunicatorWiringRepository(),
     );
 
     // Register all test providers once at setup

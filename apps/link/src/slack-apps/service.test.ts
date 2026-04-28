@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TestSlackAppWorkspaceRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
+import { TestCommunicatorWiringRepository, TestStorageAdapter } from "../adapters/test-storage.ts";
+import { SLACK_APP_PROVIDER } from "../providers/constants.ts";
 import { PENDING_TOKEN } from "./manifest.ts";
 import { SlackAppService } from "./service.ts";
 
 describe("SlackAppService", () => {
   let storage: TestStorageAdapter;
-  let workspaceRepo: TestSlackAppWorkspaceRepository;
+  let wiringRepo: TestCommunicatorWiringRepository;
   let service: SlackAppService;
   const userId = "user-1";
   let slackUserCredId: string;
@@ -35,8 +36,8 @@ describe("SlackAppService", () => {
 
   beforeEach(async () => {
     storage = new TestStorageAdapter();
-    workspaceRepo = new TestSlackAppWorkspaceRepository();
-    service = new SlackAppService(storage, workspaceRepo);
+    wiringRepo = new TestCommunicatorWiringRepository();
+    service = new SlackAppService(storage, wiringRepo);
 
     const { id } = await storage.save(
       {
@@ -227,7 +228,7 @@ describe("SlackAppService", () => {
         "A test workspace",
       );
 
-      expect(workspaceRepo.getWorkspace(slackAppCredentialId)).toBe("ws-123");
+      expect(wiringRepo.getWorkspace(slackAppCredentialId)).toBe("ws-123");
 
       const exportCall = vi.mocked(fetch).mock.calls[0];
       expect(exportCall?.[0]).toBe("https://slack.com/api/apps.manifest.export");
@@ -272,7 +273,7 @@ describe("SlackAppService", () => {
 
       await service.wireToWorkspace(slackAppCredentialId, userId, "ws-pending", "Pending WS");
 
-      expect(workspaceRepo.getWorkspace(slackAppCredentialId)).toBe("ws-pending");
+      expect(wiringRepo.getWorkspace(slackAppCredentialId)).toBe("ws-pending");
     });
 
     it("works on completed credential", async () => {
@@ -302,7 +303,7 @@ describe("SlackAppService", () => {
 
       await service.wireToWorkspace(slackAppCredentialId, userId, "ws-done", "Done WS");
 
-      expect(workspaceRepo.getWorkspace(slackAppCredentialId)).toBe("ws-done");
+      expect(wiringRepo.getWorkspace(slackAppCredentialId)).toBe("ws-done");
     });
 
     it("throws SLACK_API_ERROR when manifest update returns ok: false", async () => {
@@ -343,7 +344,13 @@ describe("SlackAppService", () => {
 
     beforeEach(async () => {
       slackAppCredentialId = await seedSlackApp();
-      await workspaceRepo.insert(slackAppCredentialId, "ws-to-delete", userId);
+      await wiringRepo.insert(
+        userId,
+        slackAppCredentialId,
+        "ws-to-delete",
+        SLACK_APP_PROVIDER,
+        slackAppCredentialId,
+      );
     });
 
     it("deletes app via Slack API and removes credential and workspace mapping", async () => {
@@ -356,7 +363,7 @@ describe("SlackAppService", () => {
 
       const cred = await storage.get(slackAppCredentialId, userId);
       expect(cred).toBeNull();
-      expect(workspaceRepo.getWorkspace(slackAppCredentialId)).toBeUndefined();
+      expect(wiringRepo.getWorkspace(slackAppCredentialId)).toBeUndefined();
 
       const fetchCall = vi.mocked(fetch).mock.calls[0];
       expect(fetchCall).toBeDefined();
@@ -412,12 +419,10 @@ describe("SlackAppService", () => {
     });
   });
 
-  // Regression: the previous adapter did a `DELETE ... WHERE workspace_id = $1`
-  // with no user scoping, so two users with colliding workspace IDs (trivial
-  // in a multi-tenant deployment where each atlasd generates IDs independently)
-  // could silently wipe each other's Slack wiring. The RLS migration + the
-  // user_id-scoped TestSlackAppWorkspaceRepository make that structurally
-  // impossible — this test pins the invariant.
+  // Asserts the API contract under user-scoped wiring (in-memory repo). Real
+  // DB-level RLS enforcement is verified in production via RLS policies on
+  // `public.communicator_wiring` (see migration `20260413000000`); a
+  // Postgres-backed integration test is deferred.
   describe("cross-user isolation", () => {
     it("wiring a workspace with a colliding id does not touch another user's mapping", async () => {
       const otherUserId = "user-2";
@@ -456,7 +461,13 @@ describe("SlackAppService", () => {
         },
         otherUserId,
       );
-      await workspaceRepo.insert(otherSlackApp.id, "ops", otherUserId);
+      await wiringRepo.insert(
+        otherUserId,
+        otherSlackApp.id,
+        "ops",
+        SLACK_APP_PROVIDER,
+        otherSlackApp.id,
+      );
 
       // user-1 (the default `userId` in this suite) wires their own slack-app
       // to a workspace that happens to share the id "ops".
@@ -482,39 +493,39 @@ describe("SlackAppService", () => {
       await service.wireToWorkspace(ourSlackAppId, userId, "ops", "Ops WS");
 
       // user-2's (otherSlackApp.id → "ops") mapping must still be intact.
-      const otherMapping = await workspaceRepo.findByCredentialId(otherSlackApp.id, otherUserId);
+      const otherMapping = await wiringRepo.findByCredentialId(otherUserId, otherSlackApp.id);
       expect(otherMapping).toEqual({ workspaceId: "ops" });
 
       // user-1 also has its own (ourSlackAppId → "ops") mapping.
-      const ourMapping = await workspaceRepo.findByCredentialId(ourSlackAppId, userId);
+      const ourMapping = await wiringRepo.findByCredentialId(userId, ourSlackAppId);
       expect(ourMapping).toEqual({ workspaceId: "ops" });
 
       // Cross-user lookups return null — user-1 cannot see user-2's mapping
       // and vice versa.
-      expect(await workspaceRepo.findByCredentialId(otherSlackApp.id, userId)).toBeNull();
-      expect(await workspaceRepo.findByCredentialId(ourSlackAppId, otherUserId)).toBeNull();
-      expect(await workspaceRepo.findByWorkspaceId("ops", userId)).toEqual({
-        credentialId: ourSlackAppId,
-      });
-      expect(await workspaceRepo.findByWorkspaceId("ops", otherUserId)).toEqual({
-        credentialId: otherSlackApp.id,
-      });
+      expect(await wiringRepo.findByCredentialId(userId, otherSlackApp.id)).toBeNull();
+      expect(await wiringRepo.findByCredentialId(otherUserId, ourSlackAppId)).toBeNull();
+      expect(
+        await wiringRepo.findByWorkspaceAndProvider(userId, "ops", SLACK_APP_PROVIDER),
+      ).toEqual({ credentialId: ourSlackAppId, identifier: ourSlackAppId });
+      expect(
+        await wiringRepo.findByWorkspaceAndProvider(otherUserId, "ops", SLACK_APP_PROVIDER),
+      ).toEqual({ credentialId: otherSlackApp.id, identifier: otherSlackApp.id });
     });
 
     it("deleteByCredentialId with the wrong userId is a silent no-op", async () => {
       const otherUserId = "user-2";
       const credentialId = await seedSlackApp({ accessToken: "xoxb-bot-token" });
-      await workspaceRepo.insert(credentialId, "ws-mine", userId);
+      await wiringRepo.insert(userId, credentialId, "ws-mine", SLACK_APP_PROVIDER, credentialId);
 
       // Another user calling delete against our credential must not wipe our row.
-      await workspaceRepo.deleteByCredentialId(credentialId, otherUserId);
+      await wiringRepo.deleteByCredentialId(otherUserId, credentialId);
 
       // Our mapping is intact under our own scope.
-      expect(await workspaceRepo.findByCredentialId(credentialId, userId)).toEqual({
+      expect(await wiringRepo.findByCredentialId(userId, credentialId)).toEqual({
         workspaceId: "ws-mine",
       });
       // And invisible to the other user.
-      expect(await workspaceRepo.findByCredentialId(credentialId, otherUserId)).toBeNull();
+      expect(await wiringRepo.findByCredentialId(otherUserId, credentialId)).toBeNull();
     });
   });
 });

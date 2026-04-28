@@ -12,9 +12,9 @@ async function makeTempFile(): Promise<string> {
   return join(dir, "key.pem");
 }
 
+import { NoOpCommunicatorWiringRepository } from "../src/adapters/communicator-wiring-repository.ts";
 import { FileSystemStorageAdapter } from "../src/adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../src/adapters/platform-route-repository.ts";
-import { NoOpSlackAppWorkspaceRepository } from "../src/adapters/slack-app-workspace-repository.ts";
 import { OAuthService } from "../src/oauth/service.ts";
 import { registry } from "../src/providers/registry.ts";
 import { CredentialSummarySchema } from "../src/types.ts";
@@ -84,7 +84,7 @@ async function setupProdAuthApp(
     storage,
     oauthService,
     new NoOpPlatformRouteRepository(),
-    new NoOpSlackAppWorkspaceRepository(),
+    new NoOpCommunicatorWiringRepository(),
   );
 
   return {
@@ -124,7 +124,7 @@ describe("auth middleware", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpSlackAppWorkspaceRepository(),
+      new NoOpCommunicatorWiringRepository(),
     );
 
     // Request without header should succeed with userId=dev
@@ -273,7 +273,7 @@ describe("tenancy middleware", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpSlackAppWorkspaceRepository(),
+      new NoOpCommunicatorWiringRepository(),
     );
 
     return {
@@ -330,7 +330,7 @@ describe("tenancy middleware", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpSlackAppWorkspaceRepository(),
+      new NoOpCommunicatorWiringRepository(),
     );
 
     // Create credential without X-Atlas-User-ID header

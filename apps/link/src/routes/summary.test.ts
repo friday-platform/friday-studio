@@ -8,9 +8,9 @@ async function makeTempDir(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "link-summary-test-"));
 }
 
+import { NoOpCommunicatorWiringRepository } from "../adapters/communicator-wiring-repository.ts";
 import { FileSystemStorageAdapter } from "../adapters/filesystem-adapter.ts";
 import { NoOpPlatformRouteRepository } from "../adapters/platform-route-repository.ts";
-import { NoOpSlackAppWorkspaceRepository } from "../adapters/slack-app-workspace-repository.ts";
 import { createApp } from "../index.ts";
 import { OAuthService } from "../oauth/service.ts";
 import { registry } from "../providers/registry.ts";
@@ -73,7 +73,7 @@ describe("GET /v1/summary endpoint", () => {
       storage,
       oauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpSlackAppWorkspaceRepository(),
+      new NoOpCommunicatorWiringRepository(),
     );
 
     // Register test providers
@@ -181,7 +181,7 @@ describe("GET /v1/summary endpoint", () => {
       emptyStorage,
       emptyOauthService,
       new NoOpPlatformRouteRepository(),
-      new NoOpSlackAppWorkspaceRepository(),
+      new NoOpCommunicatorWiringRepository(),
     );
 
     const res = await emptyApp.request("/v1/summary");

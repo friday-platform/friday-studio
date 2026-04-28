@@ -9,6 +9,7 @@ import { BOT_SCOPES, buildManifest, PENDING_TOKEN } from "../slack-apps/manifest
 import { SlackAppSecretSchema } from "../slack-apps/service.ts";
 import { callSlackApi } from "../slack-apps/slack-api-client.ts";
 import type { StorageAdapter } from "../types.ts";
+import { SLACK_APP_PROVIDER } from "./constants.ts";
 import { defineAppInstallProvider } from "./types.ts";
 
 /** @see https://api.slack.com/methods/oauth.v2.access */
@@ -69,7 +70,7 @@ async function findIncompleteCredential(
 ): Promise<{ credentialId: string; appId: string } | null> {
   const credentials = await st.list("oauth", userId);
   for (const c of credentials) {
-    if (c.provider !== "slack-app") continue;
+    if (c.provider !== SLACK_APP_PROVIDER) continue;
     const full = await st.get(c.id, userId);
     if (!full) continue;
     const secretResult = SlackAppSecretSchema.safeParse(full.secret);
@@ -83,7 +84,7 @@ async function findIncompleteCredential(
 
 export function createSlackAppDynamicProvider(storage: StorageAdapter) {
   return defineAppInstallProvider({
-    id: "slack-app",
+    id: SLACK_APP_PROVIDER,
     platform: "slack",
     usesRouteTable: false,
     displayName: "Slack Bot",
@@ -100,7 +101,7 @@ export function createSlackAppDynamicProvider(storage: StorageAdapter) {
       const existing = await findIncompleteCredential(storage, userId);
       if (existing) {
         const newState = await encodeAppInstallState({
-          p: "slack-app",
+          p: SLACK_APP_PROVIDER,
           r: decoded.r,
           u: userId,
           c: existing.credentialId,
@@ -165,7 +166,7 @@ export function createSlackAppDynamicProvider(storage: StorageAdapter) {
       const { id: credentialId } = await storage.save(
         {
           type: "oauth",
-          provider: "slack-app",
+          provider: SLACK_APP_PROVIDER,
           label: `Slack Bot (${parsed.app_id})`,
           secret: {
             platform: "slack" as const,
@@ -184,7 +185,7 @@ export function createSlackAppDynamicProvider(storage: StorageAdapter) {
 
       // Re-encode state with the new credentialId so completeInstallation can find it
       const newState = await encodeAppInstallState({
-        p: "slack-app",
+        p: SLACK_APP_PROVIDER,
         r: decoded.r,
         u: userId,
         c: credentialId,
@@ -214,7 +215,7 @@ export function createSlackAppDynamicProvider(storage: StorageAdapter) {
       }
 
       const credential = await storage.get(credentialId, userId);
-      if (!credential || credential.provider !== "slack-app") {
+      if (!credential || credential.provider !== SLACK_APP_PROVIDER) {
         throw new AppInstallError(
           "CREDENTIAL_NOT_FOUND",
           `Incomplete slack-app credential not found: ${credentialId}`,
@@ -272,7 +273,7 @@ export function createSlackAppDynamicProvider(storage: StorageAdapter) {
         externalName: parsed.team.name,
         credential: {
           type: "oauth" as const,
-          provider: "slack-app",
+          provider: SLACK_APP_PROVIDER,
           label: `${parsed.team.name} (${secret.externalId})`,
           secret: {
             platform: "slack" as const,
