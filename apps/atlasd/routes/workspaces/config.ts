@@ -44,6 +44,7 @@ import {
   withBlueprintMutation,
 } from "./blueprint-recompile.ts";
 import { injectBundledAgentRefs } from "./index.ts";
+import { applyDraftAwareMutation, getEditableConfig } from "./draft-helpers.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 
 /**
@@ -347,7 +348,16 @@ async function handleUpdateCredential(
       );
     }
 
-    const credentials = extractCredentials(config.workspace);
+    // Load editable config (draft if exists, live otherwise) for credential lookup
+    const editableResult = await getEditableConfig(workspace.path);
+    if (!editableResult.ok) {
+      return c.json(
+        { success: false, error: "internal", message: editableResult.error },
+        500,
+      );
+    }
+
+    const credentials = extractCredentials(editableResult.value);
     const current = credentials.find((cred) => cred.path === path);
     if (!current) {
       return c.json(
@@ -448,10 +458,10 @@ async function handleUpdateCredential(
       return c.json({ ok: true });
     }
 
-    // No blueprint — direct workspace.yml mutation
+    // No blueprint — draft-aware mutation (goes to draft if one exists)
     const mutationFn = (cfg: WorkspaceConfig) =>
       updateCredential(cfg, path, newCredentialId, newCredential.provider);
-    const result = await applyMutation(workspace.path, mutationFn, {
+    const { result, wroteToDraft } = await applyDraftAwareMutation(workspace.path, mutationFn, {
       onBeforeWrite: async () => {
         await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
           throwOnError: true,
@@ -484,10 +494,13 @@ async function handleUpdateCredential(
       );
     }
 
-    // Destroy runtime if active so it reloads config on next request.
-    const runtime = ctx.getWorkspaceRuntime(workspace.id);
-    if (runtime) {
-      await ctx.destroyWorkspaceRuntime(workspace.id);
+    // Destroy runtime only when writing directly to live config.
+    // Draft writes defer reload until publish triggers it.
+    if (!wroteToDraft) {
+      const runtime = ctx.getWorkspaceRuntime(workspace.id);
+      if (runtime) {
+        await ctx.destroyWorkspaceRuntime(workspace.id);
+      }
     }
 
     return c.json({ ok: true });

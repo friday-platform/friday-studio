@@ -52,18 +52,24 @@ import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDelegateTool } from "./tools/delegate/index.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
+import { createBoundDraftTools } from "./tools/draft-tools.ts";
+import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
 import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListMCPServersTool } from "./tools/list-mcp-servers.ts";
+import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
 import { createGetWorkspaceMcpStatusTool } from "./tools/workspace-mcp-status.ts";
-import { createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
+import {
+  createBoundWorkspaceOpsTools,
+  createWorkspaceOpsTools,
+} from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
 
@@ -602,6 +608,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const installMcpServerTool = createInstallMcpServerTool(logger);
         const createMcpServerTool = createCreateMcpServerTool(logger);
 
+        // MCP tool discovery (registry-scoped, no workspace state modified)
+        const listMcpToolsTool = createListMcpToolsTool(logger);
+
         // Workspace-scoped MCP management tools
         const getWorkspaceMcpStatusTool = createGetWorkspaceMcpStatusTool(workspaceId, logger);
         const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
@@ -723,6 +732,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...runCodeTool,
           ...fileIOTools,
           ...createWorkspaceOpsTools(logger),
+          ...createBoundWorkspaceOpsTools(logger, workspaceId),
+          ...createBoundDraftTools(logger, workspaceId),
+          ...createBoundUpsertTools(logger, workspaceId),
           ...listMcpServersTool,
           ...searchMcpServersTool,
           ...installMcpServerTool,
@@ -730,6 +742,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...getWorkspaceMcpStatusTool,
           ...enableMcpServerTool,
           ...disableMcpServerTool,
+          ...listMcpToolsTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };

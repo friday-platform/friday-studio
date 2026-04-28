@@ -7,10 +7,17 @@ import { createEnableMcpServerTool } from "./enable-mcp-server.ts";
 // ---------------------------------------------------------------------------
 
 const mockPut = vi.hoisted(() => vi.fn());
+const mockWorkspaceMcp = vi.hoisted(() => vi.fn());
 
 vi.mock("@atlas/client/v2", () => ({
-  client: { workspaceMcp: () => ({ ":serverId": { $put: mockPut } }) },
+  client: { workspaceMcp: mockWorkspaceMcp },
 }));
+
+function setupMock(workspaceId: string) {
+  mockWorkspaceMcp.mockReturnValue({
+    ":serverId": { $put: mockPut },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,6 +50,7 @@ describe("createEnableMcpServerTool", () => {
 
   beforeEach(() => {
     mockPut.mockReset();
+    mockWorkspaceMcp.mockReset();
   });
 
   it("returns object with enable_mcp_server key", () => {
@@ -52,6 +60,7 @@ describe("createEnableMcpServerTool", () => {
   });
 
   it("returns success on 200 with server info", async () => {
+    setupMock("ws-1");
     mockPut.mockResolvedValueOnce({
       status: 200,
       json: () => Promise.resolve({ server: { id: "github", name: "GitHub" } }),
@@ -65,10 +74,12 @@ describe("createEnableMcpServerTool", () => {
       server: { id: "github", name: "GitHub" },
       message: "MCP server 'GitHub' is now enabled in this workspace.",
     });
+    expect(mockWorkspaceMcp).toHaveBeenCalledWith("ws-1");
     expect(mockPut).toHaveBeenCalledWith({ param: { serverId: "github" } });
   });
 
   it("returns success on 200 without server info fallback", async () => {
+    setupMock("ws-1");
     mockPut.mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({}) });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
@@ -82,6 +93,7 @@ describe("createEnableMcpServerTool", () => {
   });
 
   it("returns error on 404", async () => {
+    setupMock("ws-1");
     mockPut.mockResolvedValueOnce({
       status: 404,
       json: () => Promise.resolve({ message: 'Server "github" not found in catalog.' }),
@@ -94,6 +106,7 @@ describe("createEnableMcpServerTool", () => {
   });
 
   it("returns error on 422 blueprint", async () => {
+    setupMock("ws-1");
     mockPut.mockResolvedValueOnce({
       status: 422,
       json: () =>
@@ -112,6 +125,7 @@ describe("createEnableMcpServerTool", () => {
   });
 
   it("returns error on unexpected status", async () => {
+    setupMock("ws-1");
     mockPut.mockResolvedValueOnce({
       status: 500,
       json: () => Promise.resolve({ message: "Internal server error" }),
@@ -124,6 +138,7 @@ describe("createEnableMcpServerTool", () => {
   });
 
   it("returns error when fetch throws", async () => {
+    setupMock("ws-1");
     mockPut.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createEnableMcpServerTool("ws-1", logger);
@@ -138,5 +153,27 @@ describe("createEnableMcpServerTool", () => {
         error: "Network failure",
       }),
     );
+  });
+
+  it("uses provided workspaceId instead of bound workspaceId", async () => {
+    setupMock("ws-other");
+    mockPut.mockResolvedValueOnce({
+      status: 200,
+      json: () => Promise.resolve({ server: { id: "github", name: "GitHub" } }),
+    });
+
+    const tools = createEnableMcpServerTool("ws-1", logger);
+    const result = await tools.enable_mcp_server!.execute(
+      { serverId: "github", workspaceId: "ws-other" },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      server: { id: "github", name: "GitHub" },
+      message: "MCP server 'GitHub' is now enabled in this workspace.",
+    });
+    expect(mockWorkspaceMcp).toHaveBeenCalledWith("ws-other");
+    expect(mockPut).toHaveBeenCalledWith({ param: { serverId: "github" } });
   });
 });

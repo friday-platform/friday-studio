@@ -11,7 +11,7 @@
 
 import type { MCPServerConfig } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
-import { applyMutation, disableMCPServer, enableMCPServer } from "@atlas/config/mutations";
+import { disableMCPServer, enableMCPServer } from "@atlas/config/mutations";
 import { discoverMCPServers } from "@atlas/core/mcp-registry/discovery";
 import { getWorkspaceMCPStatus } from "@atlas/core/mcp-registry/workspace-mcp";
 import { createLogger } from "@atlas/logger";
@@ -21,6 +21,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { AppVariables } from "../../src/factory.ts";
 import { daemonFactory } from "../../src/factory.ts";
+import { applyDraftAwareMutation, getEditableConfig } from "./draft-helpers.ts";
 import { mapMutationError } from "./mutation-errors.ts";
 
 const logger = createLogger({ component: "workspace-mcp-routes" });
@@ -70,15 +71,24 @@ const handleGetMCPStatus = async (c: import("hono").Context<AppVariables>) => {
       );
     }
 
-    const config = await manager.getWorkspaceConfig(workspace.id);
-    if (!config) {
-      return c.json(
-        { success: false, error: "internal", message: "Failed to load workspace configuration" },
-        500,
-      );
+    // Prefer editable config (draft if exists, live otherwise) so the MCP
+    // status reflects staged changes during draft mode.
+    let config: WorkspaceConfig;
+    const editableResult = await getEditableConfig(workspace.path);
+    if (editableResult.ok) {
+      config = editableResult.value;
+    } else {
+      const liveConfig = await manager.getWorkspaceConfig(workspace.id);
+      if (!liveConfig) {
+        return c.json(
+          { success: false, error: "internal", message: "Failed to load workspace configuration" },
+          500,
+        );
+      }
+      config = liveConfig.workspace;
     }
 
-    const status = await getWorkspaceMCPStatus(workspaceId, config.workspace);
+    const status = await getWorkspaceMCPStatus(workspaceId, config);
     return c.json(status);
   } catch (error) {
     logger.error("Failed to get workspace MCP status", {
@@ -149,18 +159,28 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
       );
     }
 
+    // Load editable config (draft if exists, live otherwise) for idempotency and catalog lookup
+    const editableResult = await getEditableConfig(workspace.path);
+    if (!editableResult.ok) {
+      return c.json(
+        { success: false, error: "internal", message: editableResult.error },
+        500,
+      );
+    }
+    const editableConfig = editableResult.value;
+
     // Idempotent check — if already enabled, return 200 immediately
-    const existingServers = config.workspace.tools?.mcp?.servers ?? {};
+    const existingServers = editableConfig.tools?.mcp?.servers ?? {};
     if (serverId in existingServers) {
       // Still need catalog metadata for the name; discover with explicit config
-      const candidates = await discoverMCPServers(workspaceId, config.workspace);
+      const candidates = await discoverMCPServers(workspaceId, editableConfig);
       const candidate = candidates.find((c) => c.metadata.id === serverId);
       const name = candidate?.metadata.name ?? serverId;
       return c.json({ server: { id: serverId, name } }, 200);
     }
 
     // Look up server in consolidated catalog
-    const candidates = await discoverMCPServers(workspaceId, config.workspace);
+    const candidates = await discoverMCPServers(workspaceId, editableConfig);
     const candidate = candidates.find((c) => c.metadata.id === serverId);
     if (!candidate) {
       return c.json(
@@ -172,7 +192,7 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
     const mutationFn = (cfg: WorkspaceConfig) =>
       enableMCPServer(cfg, serverId, candidate.metadata.configTemplate as MCPServerConfig);
 
-    const result = await applyMutation(workspace.path, mutationFn, {
+    const { result, wroteToDraft } = await applyDraftAwareMutation(workspace.path, mutationFn, {
       onBeforeWrite: async () => {
         await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
           throwOnError: true,
@@ -184,8 +204,9 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
       return mapMutationError(c, result.error);
     }
 
-    // Destroy runtime if active so next request picks up new tools.mcp.servers
-    if (ctx.getWorkspaceRuntime(workspace.id)) {
+    // Destroy runtime only when writing directly to live config.
+    // Draft writes defer startup until publish triggers a reload.
+    if (!wroteToDraft && ctx.getWorkspaceRuntime(workspace.id)) {
       await ctx.destroyWorkspaceRuntime(workspace.id);
     }
 
@@ -263,7 +284,7 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
 
     const mutationFn = (cfg: WorkspaceConfig) => disableMCPServer(cfg, serverId, { force });
 
-    const result = await applyMutation(workspace.path, mutationFn, {
+    const { result, wroteToDraft } = await applyDraftAwareMutation(workspace.path, mutationFn, {
       onBeforeWrite: async () => {
         await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
           throwOnError: true,
@@ -288,7 +309,9 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
       return mapMutationError(c, result.error);
     }
 
-    if (ctx.getWorkspaceRuntime(workspace.id)) {
+    // Destroy runtime only when writing directly to live config.
+    // Draft writes defer startup until publish triggers a reload.
+    if (!wroteToDraft && ctx.getWorkspaceRuntime(workspace.id)) {
       await ctx.destroyWorkspaceRuntime(workspace.id);
     }
 

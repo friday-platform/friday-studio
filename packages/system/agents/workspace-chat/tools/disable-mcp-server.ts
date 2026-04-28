@@ -17,6 +17,13 @@ const DisableInputSchema = z.object({
       "If true, forcibly removes the server and strips all references from agents and jobs. " +
         "If false (default), the call fails with a conflict listing referencing agents/jobs.",
     ),
+  workspaceId: z
+    .string()
+    .optional()
+    .describe(
+      "Optional target workspace ID. Defaults to the current session workspace. " +
+        "Use this to disable a server in a workspace other than the current chat session.",
+    ),
 });
 
 interface DisableSuccess {
@@ -55,10 +62,12 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
         "Safe by default — if agents or jobs still reference it, the call fails and lists them. " +
         "Set force=true to override and strip all references automatically.",
       inputSchema: DisableInputSchema,
-      execute: async ({ serverId, force }): Promise<DisableResult> => {
+      execute: async ({ serverId, force, workspaceId: targetWorkspaceId }): Promise<DisableResult> => {
+        const effectiveWorkspaceId = targetWorkspaceId ?? workspaceId;
+
         try {
           const res = await client
-            .workspaceMcp(workspaceId)
+            .workspaceMcp(effectiveWorkspaceId)
             [":serverId"].$delete({
               param: { serverId },
               query: force ? { force: "true" as const } : {},
@@ -66,7 +75,7 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
           const body = await res.json();
 
           if (res.status === 200) {
-            logger.info("disable_mcp_server succeeded", { workspaceId, serverId, force });
+            logger.info("disable_mcp_server succeeded", { workspaceId: effectiveWorkspaceId, serverId, force });
             return {
               success: true,
               removed: serverId,
@@ -79,7 +88,7 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
             const errorMsg = String(
               errorBody.message ?? `Server "${serverId}" is not enabled in this workspace.`,
             );
-            logger.info("disable_mcp_server: not enabled", { workspaceId, serverId });
+            logger.info("disable_mcp_server: not enabled", { workspaceId: effectiveWorkspaceId, serverId });
             return { success: false, error: errorMsg };
           }
 
@@ -96,7 +105,7 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
                 })
               : undefined;
 
-            logger.info("disable_mcp_server: conflict", { workspaceId, serverId, willUnlinkFrom });
+            logger.info("disable_mcp_server: conflict", { workspaceId: effectiveWorkspaceId, serverId, willUnlinkFrom });
             return {
               success: false,
               error: errorMsg,
@@ -110,7 +119,7 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
               errorBody.message ??
                 "This workspace uses a blueprint — direct config mutations are not supported.",
             );
-            logger.info("disable_mcp_server: blueprint rejected", { workspaceId, serverId });
+            logger.info("disable_mcp_server: blueprint rejected", { workspaceId: effectiveWorkspaceId, serverId });
             return { success: false, error: errorMsg };
           }
 
@@ -119,7 +128,7 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
               ? String(body.message)
               : `Disable failed: ${res.status}`;
           logger.warn("disable_mcp_server failed", {
-            workspaceId,
+            workspaceId: effectiveWorkspaceId,
             serverId,
             status: res.status,
             error: errorMsg,
@@ -127,7 +136,7 @@ export function createDisableMcpServerTool(workspaceId: string, logger: Logger):
           return { success: false, error: errorMsg };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          logger.warn("disable_mcp_server threw", { workspaceId, serverId, error: message });
+          logger.warn("disable_mcp_server threw", { workspaceId: effectiveWorkspaceId, serverId, error: message });
           return { success: false, error: `Disable failed: ${message}` };
         }
       },

@@ -236,6 +236,67 @@ describe("findServerReferences", () => {
     expect(refs.agentIds).toEqual(["a1"]);
     expect(refs.jobIds).toEqual(["j1"]);
   });
+
+  test("finds top-level LLM agent with prefixed tool names (server-id/tool-name)", () => {
+    const config = createTestConfig({
+      agents: {
+        "gmail-agent": llmAgent({
+          description: "Gmail agent",
+          tools: ["google-gmail/search_gmail_messages", "google-gmail/draft_gmail_message", "memory_read"],
+        }),
+      },
+    });
+
+    const refs = findServerReferences(config, "google-gmail");
+    expect(refs.agentIds).toEqual(["gmail-agent"]);
+    expect(refs.jobIds).toEqual([]);
+  });
+
+  test("finds FSM job step with prefixed tool names (server-id/tool-name)", () => {
+    const config = createTestConfig({
+      jobs: {
+        "email-job": {
+          name: "email-job",
+          fsm: {
+            id: "email-job",
+            initial: "s0",
+            states: {
+              s0: {
+                entry: [
+                  {
+                    type: "llm",
+                    provider: "openai",
+                    model: "gpt-4",
+                    prompt: "p",
+                    tools: ["google-gmail/search_gmail_messages"],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const refs = findServerReferences(config, "google-gmail");
+    expect(refs.agentIds).toEqual([]);
+    expect(refs.jobIds).toEqual(["email-job"]);
+  });
+
+  test("does not match partial server-id prefixes", () => {
+    const config = createTestConfig({
+      agents: {
+        agent: llmAgent({
+          description: "Agent",
+          tools: ["google-gmail-extra/search"],
+        }),
+      },
+    });
+
+    // "google-gmail" should NOT match "google-gmail-extra/search"
+    const refs = findServerReferences(config, "google-gmail");
+    expect(refs.agentIds).toEqual([]);
+  });
 });
 
 // ==============================================================================

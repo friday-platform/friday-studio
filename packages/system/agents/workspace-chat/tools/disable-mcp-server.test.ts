@@ -7,10 +7,17 @@ import { createDisableMcpServerTool } from "./disable-mcp-server.ts";
 // ---------------------------------------------------------------------------
 
 const mockDelete = vi.hoisted(() => vi.fn());
+const mockWorkspaceMcp = vi.hoisted(() => vi.fn());
 
 vi.mock("@atlas/client/v2", () => ({
-  client: { workspaceMcp: () => ({ ":serverId": { $delete: mockDelete } }) },
+  client: { workspaceMcp: mockWorkspaceMcp },
 }));
+
+function setupMock(workspaceId: string) {
+  mockWorkspaceMcp.mockReturnValue({
+    ":serverId": { $delete: mockDelete },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,6 +50,7 @@ describe("createDisableMcpServerTool", () => {
 
   beforeEach(() => {
     mockDelete.mockReset();
+    mockWorkspaceMcp.mockReset();
   });
 
   it("returns object with disable_mcp_server key", () => {
@@ -52,6 +60,7 @@ describe("createDisableMcpServerTool", () => {
   });
 
   it("returns success on 200", async () => {
+    setupMock("ws-1");
     mockDelete.mockResolvedValueOnce({
       status: 200,
       json: () => Promise.resolve({ removed: "github" }),
@@ -65,9 +74,11 @@ describe("createDisableMcpServerTool", () => {
       removed: "github",
       message: "MCP server 'github' has been disabled from this workspace.",
     });
+    expect(mockWorkspaceMcp).toHaveBeenCalledWith("ws-1");
   });
 
   it("passes force=true as query param", async () => {
+    setupMock("ws-1");
     mockDelete.mockResolvedValueOnce({
       status: 200,
       json: () => Promise.resolve({ removed: "github" }),
@@ -82,6 +93,7 @@ describe("createDisableMcpServerTool", () => {
   });
 
   it("passes force=false without query param", async () => {
+    setupMock("ws-1");
     mockDelete.mockResolvedValueOnce({
       status: 200,
       json: () => Promise.resolve({ removed: "github" }),
@@ -96,6 +108,7 @@ describe("createDisableMcpServerTool", () => {
   });
 
   it("returns error on 404", async () => {
+    setupMock("ws-1");
     mockDelete.mockResolvedValueOnce({
       status: 404,
       json: () => Promise.resolve({ message: 'Server "github" is not enabled in this workspace.' }),
@@ -111,6 +124,7 @@ describe("createDisableMcpServerTool", () => {
   });
 
   it("returns conflict on 409 with willUnlinkFrom", async () => {
+    setupMock("ws-1");
     mockDelete.mockResolvedValueOnce({
       status: 409,
       json: () =>
@@ -137,6 +151,7 @@ describe("createDisableMcpServerTool", () => {
   });
 
   it("returns error on 422 blueprint", async () => {
+    setupMock("ws-1");
     mockDelete.mockResolvedValueOnce({
       status: 422,
       json: () =>
@@ -155,6 +170,7 @@ describe("createDisableMcpServerTool", () => {
   });
 
   it("returns error on unexpected status", async () => {
+    setupMock("ws-1");
     mockDelete.mockResolvedValueOnce({
       status: 500,
       json: () => Promise.resolve({ message: "Internal server error" }),
@@ -167,6 +183,7 @@ describe("createDisableMcpServerTool", () => {
   });
 
   it("returns error when fetch throws", async () => {
+    setupMock("ws-1");
     mockDelete.mockRejectedValueOnce(new Error("Network failure"));
 
     const tools = createDisableMcpServerTool("ws-1", logger);
@@ -180,6 +197,30 @@ describe("createDisableMcpServerTool", () => {
         serverId: "github",
         error: "Network failure",
       }),
+    );
+  });
+
+  it("uses provided workspaceId instead of bound workspaceId", async () => {
+    setupMock("ws-other");
+    mockDelete.mockResolvedValueOnce({
+      status: 200,
+      json: () => Promise.resolve({ removed: "github" }),
+    });
+
+    const tools = createDisableMcpServerTool("ws-1", logger);
+    const result = await tools.disable_mcp_server!.execute(
+      { serverId: "github", workspaceId: "ws-other" },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      removed: "github",
+      message: "MCP server 'github' has been disabled from this workspace.",
+    });
+    expect(mockWorkspaceMcp).toHaveBeenCalledWith("ws-other");
+    expect(mockDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ param: { serverId: "github" } }),
     );
   });
 });

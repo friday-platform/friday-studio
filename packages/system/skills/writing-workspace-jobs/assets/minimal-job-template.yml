@@ -1,0 +1,22 @@
+# Minimal valid FSM job — copy, paste, adapt.
+#
+# This is the smallest job that actually runs. Every other field is optional.
+# The runtime dispatches signals to jobs, then the FSM handles them.
+# The initial state MUST have an `on` handler for the trigger signal name.
+
+jobs:
+  my-job:
+    description: "One-line description of what this job does"
+    triggers:
+      - signal: my-signal
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            my-signal: { target: run }
+        run:
+          entry:
+            - type: agent
+              agentId: my-agent
+          type: final

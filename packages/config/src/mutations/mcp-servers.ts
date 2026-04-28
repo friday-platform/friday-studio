@@ -55,7 +55,7 @@ export function findServerReferences(config: WorkspaceConfig, serverId: string):
     for (const [agentId, agentConfig] of Object.entries(config.agents)) {
       if (agentConfig.type !== "llm") continue;
       const tools = agentConfig.config.tools;
-      if (tools && tools.includes(serverId)) {
+      if (tools && tools.some((t) => t === serverId || t.startsWith(`${serverId}/`))) {
         agentIdSet.add(agentId);
       }
     }
@@ -79,7 +79,7 @@ export function findServerReferences(config: WorkspaceConfig, serverId: string):
         for (const action of state.entry) {
           if (action?.type === "llm") {
             const tools = action.tools;
-            if (Array.isArray(tools) && tools.includes(serverId)) {
+            if (Array.isArray(tools) && tools.some((t) => t === serverId || t.startsWith(`${serverId}/`))) {
               jobIdSet.add(jobId);
               break; // deduplicate per job
             }

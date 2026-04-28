@@ -1,0 +1,39 @@
+# Multi-step FSM job — chained agent pipeline.
+#
+# Each step state runs an agent, emits DONE, and transitions to the next step.
+# The final step transitions to completed (type: final).
+# Use this when one agent's output feeds into the next agent's input.
+
+jobs:
+  my-pipeline:
+    description: "Two-step pipeline: fetch then summarize"
+    triggers:
+      - signal: start-pipeline
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            start-pipeline: { target: fetch }
+        fetch:
+          entry:
+            - type: agent
+              agentId: fetcher
+              outputTo: fetch-result
+              prompt: "Fetch the data and return it structured"
+            - type: emit
+              event: DONE
+          on:
+            DONE: { target: summarize }
+        summarize:
+          entry:
+            - type: agent
+              agentId: summarizer
+              inputFrom: fetch-result
+              prompt: "Summarize the fetched data"
+            - type: emit
+              event: DONE
+          on:
+            DONE: { target: completed }
+        completed:
+          type: final
