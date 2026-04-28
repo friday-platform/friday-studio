@@ -27,7 +27,7 @@ func writeStartupErrorLog(reason string, details map[string]string) string {
 	if logPath == "" {
 		return ""
 	}
-	f, err := os.OpenFile(
+	f, err := os.OpenFile( //nolint:gosec // G304: launcher-controlled path
 		logPath,
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
 		0o644,
@@ -35,14 +35,14 @@ func writeStartupErrorLog(reason string, details map[string]string) string {
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	fmt.Fprintf(f, "%s startup error: %s\n",
+	_, _ = fmt.Fprintf(f, "%s startup error: %s\n",
 		time.Now().UTC().Format(time.RFC3339), reason)
 	for k, v := range details {
-		fmt.Fprintf(f, "  %s: %s\n", k, v)
+		_, _ = fmt.Fprintf(f, "  %s: %s\n", k, v)
 	}
-	fmt.Fprintln(f, "")
+	_, _ = fmt.Fprintln(f, "")
 	return logPath
 }
 
@@ -50,7 +50,7 @@ func startupErrorLogPath() string {
 	home, err := os.UserHomeDir()
 	if err == nil {
 		dir := filepath.Join(home, ".friday", "local", "logs")
-		if err := os.MkdirAll(dir, 0o755); err == nil {
+		if err := os.MkdirAll(dir, 0o755); err == nil { //nolint:gosec // G301: matches existing logs/ perms
 			return filepath.Join(dir, "launcher-startup.log")
 		}
 	}
