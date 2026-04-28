@@ -154,7 +154,9 @@ export const WhatsAppProviderConfigSchema = z.strictObject({
   default_destination: z
     .string()
     .optional()
-    .describe("Default WhatsApp recipient phone number for outbound broadcasts (E.164, e.g. +14155552671)."),
+    .describe(
+      "Default WhatsApp recipient phone number for outbound broadcasts (E.164, e.g. +14155552671).",
+    ),
 });
 export type WhatsAppProviderConfig = z.infer<typeof WhatsAppProviderConfigSchema>;
 

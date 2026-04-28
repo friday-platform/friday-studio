@@ -10,18 +10,11 @@ describe("CommunicatorConfigSchema", () => {
         bot_token: "xoxb-test",
         signing_secret: "shhh",
       });
-      expect(parsed).toEqual({
-        kind: "slack",
-        bot_token: "xoxb-test",
-        signing_secret: "shhh",
-      });
+      expect(parsed).toEqual({ kind: "slack", bot_token: "xoxb-test", signing_secret: "shhh" });
     });
 
     it("parses a telegram communicator", () => {
-      const parsed = CommunicatorConfigSchema.parse({
-        kind: "telegram",
-        bot_token: "123:abc",
-      });
+      const parsed = CommunicatorConfigSchema.parse({ kind: "telegram", bot_token: "123:abc" });
       expect(parsed).toEqual({ kind: "telegram", bot_token: "123:abc" });
     });
 
@@ -44,11 +37,7 @@ describe("CommunicatorConfigSchema", () => {
         app_id: "azure-app-id",
         app_type: "MultiTenant",
       });
-      expect(parsed).toEqual({
-        kind: "teams",
-        app_id: "azure-app-id",
-        app_type: "MultiTenant",
-      });
+      expect(parsed).toEqual({ kind: "teams", app_id: "azure-app-id", app_type: "MultiTenant" });
     });
 
     it("parses a whatsapp communicator", () => {
@@ -113,11 +102,7 @@ describe("WorkspaceConfigSchema with communicators", () => {
       version: "1.0",
       workspace: { id: "legacy", name: "Legacy" },
       signals: {
-        webhook: {
-          provider: "http",
-          description: "Inbound webhook",
-          config: { path: "/hook" },
-        },
+        webhook: { provider: "http", description: "Inbound webhook", config: { path: "/hook" } },
         slack_inbound: {
           provider: "slack",
           description: "Slack inbound",

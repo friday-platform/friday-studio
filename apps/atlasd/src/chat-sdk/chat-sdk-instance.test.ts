@@ -951,7 +951,15 @@ describe("resolvePlatformCredentials", () => {
       const result = await resolvePlatformCredentials(
         "ws-1",
         { "telegram-chat": { provider: "telegram", config: { bot_token: "111:signal" } } },
-        { ops: { kind: "whatsapp", access_token: "tok", app_secret: "sec", phone_number_id: "1", verify_token: "v" } },
+        {
+          ops: {
+            kind: "whatsapp",
+            access_token: "tok",
+            app_secret: "sec",
+            phone_number_id: "1",
+            verify_token: "v",
+          },
+        },
       );
       const kinds = result.map((r) => r.credentials.kind).sort();
       expect(kinds).toEqual(["telegram", "whatsapp"]);

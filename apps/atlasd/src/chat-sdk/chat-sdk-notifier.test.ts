@@ -7,13 +7,13 @@
 
 import { describe, expect, it } from "vitest";
 import type { StreamRegistry } from "../stream-registry.ts";
+import { makeMockAdapter } from "./__test-utils__/mock-adapter.ts";
 import { AtlasWebAdapter } from "./atlas-web-adapter.ts";
 import {
   ChatSdkNotifier,
   type NotifierPostable,
   UnknownCommunicatorError,
 } from "./chat-sdk-notifier.ts";
-import { makeMockAdapter } from "./__test-utils__/mock-adapter.ts";
 
 describe("ChatSdkNotifier.list", () => {
   it("returns deliverable adapters with name and kind", () => {
@@ -50,10 +50,7 @@ describe("ChatSdkNotifier.list", () => {
       streamRegistry: {} as StreamRegistry,
       workspaceId: "ws-test",
     });
-    const notifier = new ChatSdkNotifier({
-      atlas: atlasWeb,
-      slack: makeMockAdapter("slack"),
-    });
+    const notifier = new ChatSdkNotifier({ atlas: atlasWeb, slack: makeMockAdapter("slack") });
     expect(notifier.list()).toEqual([{ name: "slack", kind: "slack" }]);
   });
 });
@@ -161,9 +158,7 @@ describe("ChatSdkNotifier.openDM", () => {
     // descriptive error instead so the caller can log + skip.
     const slack = makeMockAdapter("slack", { withOpenDM: false });
     const notifier = new ChatSdkNotifier({ slack });
-    await expect(notifier.openDM("slack", "user-1")).rejects.toThrow(
-      /does not implement openDM/,
-    );
+    await expect(notifier.openDM("slack", "user-1")).rejects.toThrow(/does not implement openDM/);
   });
 
   it("propagates adapter openDM errors unchanged", async () => {

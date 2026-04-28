@@ -103,7 +103,9 @@ export function createJobTools(
         const result = await parseResult(
           client.workspace[":workspaceId"].signals[":signalId"].$post({
             param: { workspaceId, signalId: triggerSignal },
-            json: parentStreamId ? { payload: input, streamId: parentStreamId } : { payload: input },
+            json: parentStreamId
+              ? { payload: input, streamId: parentStreamId }
+              : { payload: input },
           }),
         );
 

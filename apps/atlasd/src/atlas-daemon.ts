@@ -1137,7 +1137,14 @@ export class AtlasDaemon {
           blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
-          onSessionComplete: async ({ workspaceId, sessionId, streamId, status, finalOutput, jobName }) => {
+          onSessionComplete: async ({
+            workspaceId,
+            sessionId,
+            streamId,
+            status,
+            finalOutput,
+            jobName,
+          }) => {
             // Broadcast the session's final agent output across configured chat
             // communicators — but ONLY for non-chat-triggered sessions (cron,
             // HTTP webhooks, etc.). Chat sessions already deliver their reply

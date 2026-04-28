@@ -16,9 +16,7 @@ import {
  * compatibility, while the new declaration site uses the new "communicator"
  * vocabulary.
  */
-const SlackCommunicatorSchema = SlackProviderConfigSchema.extend({
-  kind: z.literal("slack"),
-});
+const SlackCommunicatorSchema = SlackProviderConfigSchema.extend({ kind: z.literal("slack") });
 
 const TelegramCommunicatorSchema = TelegramProviderConfigSchema.extend({
   kind: z.literal("telegram"),
@@ -28,9 +26,7 @@ const DiscordCommunicatorSchema = DiscordProviderConfigSchema.extend({
   kind: z.literal("discord"),
 });
 
-const TeamsCommunicatorSchema = TeamsProviderConfigSchema.extend({
-  kind: z.literal("teams"),
-});
+const TeamsCommunicatorSchema = TeamsProviderConfigSchema.extend({ kind: z.literal("teams") });
 
 const WhatsAppCommunicatorSchema = WhatsAppProviderConfigSchema.extend({
   kind: z.literal("whatsapp"),

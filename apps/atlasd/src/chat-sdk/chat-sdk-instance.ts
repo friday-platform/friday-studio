@@ -104,9 +104,8 @@ function collectBroadcastDestinations(
   const out: Record<string, string> = {};
   for (const kind of ["slack", "telegram", "discord", "teams", "whatsapp"] as const) {
     const config = pickConfigForKind(kind, signals ?? {}, communicators);
-    const dest = config && typeof config.default_destination === "string"
-      ? config.default_destination
-      : null;
+    const dest =
+      config && typeof config.default_destination === "string" ? config.default_destination : null;
     if (dest) out[kind] = dest;
   }
   return out;

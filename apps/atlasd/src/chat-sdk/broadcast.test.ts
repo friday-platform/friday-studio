@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { makeMockAdapter } from "./__test-utils__/mock-adapter.ts";
 import { broadcastJobOutput } from "./broadcast.ts";
 import { ChatSdkNotifier } from "./chat-sdk-notifier.ts";
-import { makeMockAdapter } from "./__test-utils__/mock-adapter.ts";
 
 const WORKSPACE_ID = "ws-broadcast-test";
 
@@ -29,9 +29,7 @@ describe("broadcastJobOutput", () => {
     expect(slack.postMessage).toHaveBeenCalledWith("slack:C123:", { markdown: "hi" });
     // openDM should resolve user:user-7 to a discord threadId, then post.
     expect(discord.openDM).toHaveBeenCalledWith("user-7");
-    expect(discord.postMessage).toHaveBeenCalledWith("discord:@me:dm-discord", {
-      markdown: "hi",
-    });
+    expect(discord.postMessage).toHaveBeenCalledWith("discord:@me:dm-discord", { markdown: "hi" });
   });
 
   it("skips the source communicator", async () => {
