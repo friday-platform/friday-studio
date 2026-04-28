@@ -139,15 +139,31 @@ fn applescript_string(s: &str) -> String {
 #[cfg(target_os = "macos")]
 fn spawn_detached_cleanup(volume: &std::path::Path) {
     let volume_str = volume.display().to_string();
-    let escaped = shell_single_quote(&volume_str);
+    let escaped_volume = shell_single_quote(&volume_str);
+    // Volume name = last path component of /Volumes/<name>. Used to
+    // tell Finder which window to close after the unmount.
+    let volume_name = volume
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let escaped_volume_name_as = applescript_string(&volume_name);
     let script = format!(
         r#"sleep 2
 hdiutil detach {volume} -force >/dev/null 2>&1 || true
+# hdiutil unmounts the disk but leaves the Finder window that was
+# auto-opened when the DMG was first mounted hanging around. Tell
+# Finder to close any window whose name matches the (now-detached)
+# volume label so the user doesn't see a stale ghost window after
+# we exit. Errors are silent — if Finder isn't running or
+# AppleScript is restricted, the window will close when the user
+# clicks the red dot.
+osascript -e 'tell application "Finder" to close (every window whose name is {volume_name_as})' >/dev/null 2>&1 || true
 dmg=$(mdfind 'kMDItemFSName == "FridayStudioInstaller_*.dmg"' 2>/dev/null | head -1)
 if [ -n "$dmg" ] && [ -e "$dmg" ]; then
   mv "$dmg" "$HOME/.Trash/" 2>/dev/null || true
 fi"#,
-        volume = escaped,
+        volume = escaped_volume,
+        volume_name_as = escaped_volume_name_as,
     );
     // nohup + sh -c + & detaches the job from our process group, so
     // it survives our app.exit(0). stdin/stdout/stderr go to
