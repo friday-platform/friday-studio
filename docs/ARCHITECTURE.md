@@ -49,10 +49,11 @@ Where to start reading depends on what you're doing:
   dispatched — either via MCP (distributed) or as wrapped LLM calls (in-process).
 - **Understanding config**: `packages/config/src/workspace.ts` has the Zod
   schemas for `workspace.yml`. This is the contract.
-- **Working on the web client**: `apps/web-client/` is a SvelteKit 2 app. Routes
-  are file-based under `src/routes/`.
-- **Working on Go services**: Each lives in its own `apps/` subdirectory with
-  standard Go project layout.
+- **Working on the web client**: `tools/agent-playground/` is a SvelteKit 2 app
+  (package `@atlas/agent-playground`). Routes are file-based under `src/routes/`.
+- **Working on Go services**: Go binaries live under `tools/` (e.g.
+  `tools/webhook-tunnel/`, `tools/pty-server/`, `tools/friday-launcher/`).
+  There is a single root `go.mod`.
 
 ## Directory Overview
 
@@ -60,27 +61,51 @@ Where to start reading depends on what you're doing:
 apps/
   atlas-cli/           CLI — HTTP client to daemon
   atlasd/              Daemon — HTTP API, workspace lifecycle
-  web-client/          Svelte web UI (primary deployment target)
+  ledger/              Workspace-scoped versioned resource storage (SQLite, port 3200)
   link/                Credential management and OAuth orchestration
-  webhook-tunnel/      Webhook tunneling for local development
   studio-installer/    Tauri-based desktop installer
 
-packages/
-  @atlas/config        YAML config loading + Zod schemas
-  @atlas/core          Core types, agent registry, orchestration
-  @atlas/fsm-engine    FSM execution engine (YAML → state machines)
-  @atlas/mcp           MCP client management
-  @atlas/signals       Signal types, routing, providers
-  @atlas/storage       Persistence layer
-  @atlas/workspace     Workspace runtime, lifecycle management, registry
-  @atlas/agent-sdk     SDK for building agents
-  @atlas/llm           LLM provider abstraction
-  @atlas/logger        Structured logging + telemetry
-  …and ~18 more
+packages/                                       (TypeScript, all @atlas/*)
+  config            YAML config loading + Zod schemas
+  core              Core types, agent registry, orchestration, agent server
+  fsm-engine        FSM execution engine (YAML → state machines)
+  mcp               Ephemeral MCP client (no pooling)
+  mcp-server        Platform MCP server exposing workspace operations
+  signals           Signal types, providers (HTTP, file-watch), registry
+  cron              Cron signal manager
+  fs-watch          File-system watcher backing fs-watch signals
+  document-store    FSM working memory (typed JSON documents per session)
+  workspace         Workspace runtime, lifecycle management, registry
+  workspace-builder Tooling for assembling workspaces
+  bundled-agents    First-party system agents shipped with the daemon
+  agent-sdk         SDK for building agents (leaf, no @atlas/* deps)
+  sdk-ts            Public TypeScript SDK
+  client            Type-safe Hono RPC client for the daemon API
+  llm               LLM provider abstraction
+  logger            Structured logging + telemetry
+  storage           Persistence layer
+  adapters-md       Markdown adapter
+  adapters-memory   In-memory adapter
+  schemas           Shared Zod schemas
+  skills            Skill loading / scoping
+  resources         Resource primitives
+  memory            Agent memory primitives
+  document-store, hallucination, system, ui, activity,
+  analytics, sentry, openapi-client, bundle, utils
+
+tools/
+  agent-playground/    SvelteKit 2 web client (active UI)
+  webhook-tunnel/      Go — Cloudflare-tunneled webhook ingestion → daemon HTTP signal
+  pty-server/          Go — WebSocket bridge for PTY spawning
+  friday-launcher/     Go — desktop tray launcher (win/mac/linux)
+  evals/               Eval runner (TypeScript)
+  test-agents/         Test-only agent fixtures
 ```
 
-The `apps/` directory contains deployable services. The `packages/` directory
-contains internal TypeScript packages used across apps.
+The `apps/` directory contains long-running deployable services. The
+`packages/` directory contains internal TypeScript packages used across apps.
+The `tools/` directory contains developer tooling, the web client, and Go
+helpers that are not full daemon services.
 
 ## The Pipeline
 
@@ -93,12 +118,15 @@ A signal is an external event that triggers agent execution. Friday supports
 several signal providers:
 
 - **HTTP** — REST endpoints defined in `workspace.yml`. The daemon registers
-  routes on startup.
-- **Cron** — Scheduled triggers managed by `CronManager`.
-- **File system** — Watches managed by `FsWatchSignalRegistrar`.
-- **Slack / Discord** — External events routed through the `signal-gateway` Go
-  service.
-- **System** — Internal platform signals (health checks, lifecycle events).
+  routes on startup. (`packages/signals/src/providers/http-signal.ts`)
+- **Cron** — Scheduled triggers managed by `CronManager` in `packages/cron/`.
+- **File system** — `FileWatchSignalProvider` in
+  `packages/signals/src/providers/fs-watch-signal.ts`, backed by
+  `packages/fs-watch/`.
+- **External webhooks** — Forwarded into the daemon over HTTP by
+  `tools/webhook-tunnel/` (Cloudflare-tunneled), which POSTs to
+  `/hook/{provider}/{workspaceId}/{signalId}`. Slack/Discord arrive this way;
+  there is no separate `signal-gateway` service.
 
 Signal definitions live in `packages/signals/`. Each provider implements a
 standard interface for registration and teardown.
@@ -119,13 +147,16 @@ startup:
 - **Hono HTTP server** — Routes for signals, chat, workspace management
   (default port 8080).
 - **WorkspaceManager** — Registry of known workspaces, creates runtimes on
-  demand.
-- **GlobalMCPServerPool** — Shared MCP server connections, pooled across
-  workspaces.
+  demand. Owns the per-workspace idle-timeout (default 5 minutes, see
+  `idleTimeoutMs` in `apps/atlasd/src/atlas-daemon.ts`).
 - **CronManager** — Registers and fires cron-based signals.
-- **StreamRegistry** — Tracks active SSE connections for real-time updates.
-- **AgentRegistry** — Discovers bundled system agents and workspace-defined
-  agents.
+- **StreamRegistry** — Tracks active SSE connections for real-time updates
+  (`apps/atlasd/src/stream-registry.ts`).
+- **AgentRegistry** — `CoreAgentRegistry` discovers bundled system agents and
+  workspace-defined agents.
+
+MCP connections are **not pooled** — `@atlas/mcp` (`packages/mcp/`) creates an
+ephemeral client per use and disposes it. There is no global pool.
 
 Signal routing: HTTP request hits the daemon's signal route
 (`apps/atlasd/routes/signals/`) → daemon calls
@@ -151,8 +182,9 @@ appropriate FSM engine.
 
 **Architecture Invariant**: Workspace runtimes are created lazily on first signal
 and destroyed after an idle timeout (default 5 minutes with no active sessions).
-This means the system's memory footprint scales with active workspaces, not
-registered workspaces.
+The timeout is enforced by the daemon's `WorkspaceManager`, not the runtime
+itself — the runtime just exposes idle state. This means the system's memory
+footprint scales with active workspaces, not registered workspaces.
 
 ### FSM Engine
 
@@ -167,13 +199,17 @@ A `.fsm.yaml` file declares:
 - **Actions** — Work performed on entry or transition.
 - **Document types** — Typed JSON schemas for data passed between states.
 
-Action types:
+Action types (see the discriminated union in `packages/fsm-engine/schema.ts`):
 
 - `agent` — Dispatch an agent via the orchestrator.
-- `code` — Execute a TypeScript function.
 - `emit` — Fire an event to trigger a transition.
-- `document` — Read/write the session's document store.
-- `llm` — Direct LLM call (deprecated — use `agent`).
+- `llm` — Direct LLM call. Still supported alongside `agent`.
+
+Document I/O is implicit, not a distinct action type: `agent` and `llm` actions
+read inputs via `inputFrom` and write outputs via `outputTo` against the
+session's document store. There is no separate `code` or `document` action
+type today; reusable logic is registered via the `functions` and `tools` maps
+on the FSM definition.
 
 The document store is the FSM's working memory. Each session gets an isolated
 store where states can write typed JSON documents. Downstream states read these
@@ -201,7 +237,7 @@ need tool access.
 ```
 FSM action (type: agent)
   → AgentOrchestrator
-    → atlas-agents MCP server (StreamableHTTP)
+    → AtlasAgentsMCPServer (StreamableHTTP, packages/core/src/agent-server/)
       → Agent executes with tool access
         → SSE stream back to orchestrator
 ```
@@ -209,7 +245,8 @@ FSM action (type: agent)
 **Wrapped Agents (in-process)**: Lightweight LLM agents defined directly in
 `workspace.yml`. These bypass MCP overhead — the orchestrator makes a direct LLM
 call with tool schemas injected. Good for simple agents that don't need
-isolation.
+isolation. Routing between the two paths happens inside `AgentOrchestrator`
+based on how the agent is registered.
 
 ```
 FSM action (type: agent)
@@ -232,12 +269,11 @@ Agents access external capabilities through the Model Context Protocol. MCP is
 Friday's standard integration pattern — file systems, APIs, databases, and
 custom tools all surface as MCP servers.
 
-The `GlobalMCPServerPool` (`packages/core/src/mcp-server-pool.ts`) manages
-shared MCP server connections across workspaces:
-
-- Lazy initialization — connections open when first requested.
-- Connection pooling — multiple agents can share a server.
-- Lifecycle management — cleanup on workspace teardown.
+`@atlas/mcp` (`packages/mcp/`) is the MCP client layer. It is deliberately
+**ephemeral** — `createMCPTools()` opens a connection, returns the tools plus a
+dispose callback, and the caller is responsible for cleanup. There is no
+pooling, sharing, or ref counting; each call site owns its own connection
+lifecycle.
 
 Tool access is configured per-workspace in `workspace.yml` under `tools.mcp`.
 Each MCP server declaration specifies transport (stdio, SSE, or StreamableHTTP),
@@ -247,8 +283,9 @@ Friday also exposes its own platform capabilities as MCP servers:
 
 - **Platform MCP server** (`packages/mcp-server/`) — Workspace operations
   (create conversations, list sessions) available as tools.
-- **Atlas agents MCP server** (`packages/core/src/agent-server/`) — Bundled
-  agents available as callable tools, with per-session isolation.
+- **Atlas agents MCP server** (`packages/core/src/agent-server/`,
+  `AtlasAgentsMCPServer`) — Bundled agents available as callable tools, with
+  per-session isolation.
 
 **Architecture Invariant**: MCP is the only way agents access external tools.
 There is no "call this API directly" escape hatch. This ensures tool access is
@@ -293,12 +330,15 @@ varies by environment:
 
 - **Local development** — Flat files on disk. Simple, inspectable, no
   dependencies.
-- **Remote / production** — Cortex (Go service) or PostgreSQL, accessed through
-  the same adapter interface.
+- **Remote / production** — Cortex or PostgreSQL, accessed through the same
+  adapter interface.
 
 You can see this pattern in `apps/link/src/providers/storage/` — an `adapter.ts`
 interface with `local-adapter.ts` and `cortex-adapter.ts` implementations. This
 pattern is being made consistent across all services.
+
+Workspace-scoped resource storage (versioned, draft/publish, JSONB over SQLite)
+is its own service: `apps/ledger/`, an HTTP service on port 3200.
 
 Current storage concerns:
 
@@ -306,15 +346,18 @@ Current storage concerns:
   timestamps).
 - **Session history** — Timeline events for completed sessions.
 - **Library / artifacts** — Files produced by agent execution, organized by date.
+- **Resources** — Workspace-scoped versioned data, served by `ledger`.
 
 **Architecture Invariant**: Storage adapters are the boundary between business
 logic and persistence. No service directly reads or writes to a specific
 backend — it goes through the adapter interface.
 
-### Deno → Bun Migration
+### Deno API → Node API Migration
 
-Friday is gradually migrating from Deno to Bun as its TypeScript runtime. The
-migration is incremental:
+The runtime stays Deno (`deno task start` boots the daemon, the workspace is
+defined in `deno.json`). What's migrating is **the APIs the code calls**:
+away from the `Deno.*` namespace, toward Node-compatible equivalents that
+also work under non-Deno runtimes.
 
 - **What's changed**: Dependencies go in `package.json`, not `deno.json`. Use
   `process.env` from `node:process`, not `Deno.env`. Static imports only.
@@ -324,31 +367,38 @@ migration is incremental:
   `Deno.readFile`) are being replaced with Node-compatible equivalents. When
   working in a module, prefer Node/standard APIs over Deno APIs.
 
-The migration doesn't affect the architecture — it's a runtime swap, not a
-redesign.
+The migration doesn't affect the architecture — it's an API surface cleanup,
+not a runtime swap.
 
 ### Deployment
 
-Friday deploys primarily as a **web application**. The daemon (`atlasd`) runs as
-a service, the web client (`web-client`) serves the UI, and Go services handle
-auth, storage, and signal ingestion.
+Friday deploys primarily as a **web application**. The daemon (`atlasd`) runs
+as a service, the web client (`tools/agent-playground/`) serves the UI, `link`
+handles credentials, `ledger` serves workspace resources, and the Go binaries
+under `tools/` handle webhook ingestion and desktop integration.
 
 - **Local development**: The daemon runs on `localhost:8080` with file-based
   storage. No K8s required.
 
 ## Go Services
 
-Friday's Go services handle concerns that benefit from Go's deployment model
-(single binary, low memory, strong concurrency):
+Friday's Go binaries handle concerns that benefit from Go's deployment model
+(single binary, low memory, strong concurrency). They live under `tools/`,
+not `apps/`, and share a single root `go.mod`:
 
-- **gist** (`apps/gist/`) — File service. Upload/download, presigned URL
-  generation for S3/GCS, artifact storage.
-- **signal-gateway** (`apps/signal-gateway/`) — External signal ingestion.
-  Receives events from Slack, Discord, and other platforms, routes them to the
-  appropriate workspace via the daemon API.
+- **webhook-tunnel** (`tools/webhook-tunnel/`) — External signal ingestion.
+  Cloudflare-tunneled HTTP endpoint that forwards `/hook/{provider}/{workspaceId}/{signalId}`
+  POSTs into the daemon as HTTP signals. This is how Slack, Discord, and other
+  third-party events reach Friday.
+- **pty-server** (`tools/pty-server/`) — WebSocket bridge for spawning PTYs,
+  used by terminal-style agent surfaces.
+- **friday-launcher** (`tools/friday-launcher/`) — Desktop tray launcher
+  (Windows/macOS/Linux) that supervises a local daemon.
 
-These services share common Go packages under `pkg/` for TLS, metrics,
-analytics, and profiling.
+Naming history: earlier docs referenced `gist` (file service) and
+`signal-gateway` (external event router) as separate Go services. Neither
+exists today — `webhook-tunnel` covers external ingestion, and artifact
+storage is handled by the TypeScript side plus `ledger`.
 
 **Architecture Invariant**: Go services communicate with the daemon over HTTP.
 They don't import TypeScript packages or share code with the TS side — the HTTP
