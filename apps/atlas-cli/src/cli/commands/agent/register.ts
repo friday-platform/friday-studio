@@ -37,7 +37,7 @@ export const registerCommand = define({
       process.exit(1);
     }
 
-    const daemonUrl = process.env.ATLAS_DAEMON_URL ?? "http://localhost:8080";
+    const daemonUrl = process.env.FRIDAY_DAEMON_URL ?? "http://localhost:8080";
 
     let response: Response;
     try {

@@ -16,7 +16,7 @@ declare const __DEV_MODE__: boolean | undefined;
  * 1. Dev mode (Vite dev server) → http://127.0.0.1:8080 (direct connection)
  * 2. Production web builds (browser) → window.location.origin (same-origin, routed by Traefik)
  * 3. Production web builds (SSR) → "" (relative URLs for SvelteKit's fetch)
- * 4. process.env.ATLAS_DAEMON_URL (Node.js)
+ * 4. process.env.FRIDAY_DAEMON_URL (Node.js)
  * 5. Default: http://127.0.0.1:8080
  */
 export function getAtlasDaemonUrl(): string {
@@ -33,7 +33,7 @@ export function getAtlasDaemonUrl(): string {
   // Try to get from environment
   let daemonUrl: string | undefined;
   if (process?.env) {
-    daemonUrl = process.env.ATLAS_DAEMON_URL;
+    daemonUrl = process.env.FRIDAY_DAEMON_URL;
   }
 
   return daemonUrl || "http://127.0.0.1:8080";

@@ -9,7 +9,7 @@ import { z } from "zod";
 
 /**
  * Get the Atlas daemon URL with validation
- * Reads from ATLAS_DAEMON_URL environment variable or falls back to default
+ * Reads from FRIDAY_DAEMON_URL environment variable or falls back to default
  *
  * @returns The daemon URL (validated or default if invalid)
  */
@@ -17,12 +17,12 @@ export function getAtlasDaemonUrl(): string {
   const url = getAtlasDaemonUrlBase();
 
   // Validate the URL if it came from environment
-  if (env.ATLAS_DAEMON_URL) {
+  if (env.FRIDAY_DAEMON_URL) {
     try {
       new URL(url);
     } catch {
       logger.warn(
-        `Invalid ATLAS_DAEMON_URL: "${url}". Must be a valid URL (e.g., http://127.0.0.1:8080). Using default.`,
+        `Invalid FRIDAY_DAEMON_URL: "${url}". Must be a valid URL (e.g., http://127.0.0.1:8080). Using default.`,
       );
       return "http://127.0.0.1:8080";
     }

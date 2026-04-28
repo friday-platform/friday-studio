@@ -960,6 +960,6 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
   },
   environment: {
     required: [],
-    optional: [{ name: "ATLAS_DAEMON_URL", description: "Platform MCP server URL" }],
+    optional: [{ name: "FRIDAY_DAEMON_URL", description: "Platform MCP server URL" }],
   },
 });
