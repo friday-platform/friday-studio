@@ -11,11 +11,11 @@
 -->
 
 <script lang="ts">
+  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import { IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import { mcpQueries } from "$lib/queries/mcp-queries";
 
   interface Props {
@@ -108,9 +108,7 @@
     }
   }
 
-  function isOfficialServer(
-    server: (typeof allServers)[number],
-  ): boolean {
+  function isOfficialServer(server: (typeof allServers)[number]): boolean {
     if (server.source === "static") return true;
     if (server.upstream?.canonicalName) {
       return isOfficialCanonicalName(server.upstream.canonicalName);
@@ -322,14 +320,16 @@
     color: var(--color-text);
     cursor: pointer;
     display: flex;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-4);
     gap: var(--size-1-5);
     inline-size: 100%;
     opacity: 0.85;
     padding: var(--size-1) var(--size-2);
     text-align: start;
-    transition: background-color 100ms ease, opacity 100ms ease;
+    transition:
+      background-color 100ms ease,
+      opacity 100ms ease;
   }
 
   .tree-item:hover {
@@ -338,7 +338,7 @@
   }
 
   .tree-item.active {
-    background-color: var(--color-surface-2);
+    background-color: var(--highlight);
     font-weight: var(--font-weight-5);
     opacity: 1;
   }
