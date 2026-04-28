@@ -30,8 +30,8 @@ import {
 } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
+import { ValidationFailedError } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
-import type { ValidationVerdict } from "@atlas/hallucination";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
@@ -284,22 +284,6 @@ function findRequestDocumentLegacy(
 }
 
 type LLMResult = AgentResult<string, FSMLLMOutput>;
-
-/**
- * Thrown when an LLM action fails validation on both the initial attempt and the retry.
- * The terminal verdict travels on the error so downstream consumers (system error chunk
- * renderer, observability tooling) can surface category/severity/citations without
- * re-parsing freeform strings.
- */
-export class ValidationFailedError extends Error {
-  constructor(
-    message: string,
-    public readonly verdict: ValidationVerdict,
-  ) {
-    super(message);
-    this.name = "ValidationFailedError";
-  }
-}
 
 /** Extract `complete` tool args from LLM result, or structured data if already extracted */
 function findCompleteToolArgs(result: LLMResult): Record<string, unknown> | undefined {
@@ -1426,12 +1410,7 @@ export class FSMEngine {
                     });
                     // Attach the verdict to the error so callers (Task #29 system error
                     // chunk renderer) can inspect issues without re-parsing strings.
-                    throw new ValidationFailedError(
-                      `LLM action failed validation after retry: ${
-                        retryVerdict.retryGuidance || "no guidance"
-                      }`,
-                      retryVerdict,
-                    );
+                    throw new ValidationFailedError(retryVerdict, llmAgentId);
                   }
 
                   logger.info("LLM action passed validation on retry", {

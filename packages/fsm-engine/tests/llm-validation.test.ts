@@ -1,14 +1,9 @@
 import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
-import type { ValidationVerdict } from "@atlas/hallucination";
+import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
 import { InMemoryDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
-import {
-  buildLLMActionTrace,
-  FSMEngine,
-  formatToolResultsForRetry,
-  ValidationFailedError,
-} from "../fsm-engine.ts";
+import { buildLLMActionTrace, FSMEngine, formatToolResultsForRetry } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMActionTrace, OutputValidator } from "../types.ts";
 
 /** Helper: pass verdict (high confidence, above threshold). */
@@ -361,7 +356,8 @@ describe("LLM Action Validation Hook", () => {
       error = e as Error;
     }
     expect(error).toBeInstanceOf(ValidationFailedError);
-    expect(error?.message).toContain("failed validation after retry");
+    // Message format owned by @atlas/hallucination's ValidationFailedError.
+    expect(error?.message).toContain("Validation failed");
     expect(error?.message).toContain("Still wrong");
     // Verdict travels on the error so consumers (system error chunk, observability)
     // can render category/severity/citations without parsing strings.

@@ -19,7 +19,7 @@ export type {
   AgentExecutor,
   FSMEngineOptions,
 } from "./fsm-engine.ts";
-export { FSMEngine, ValidationFailedError } from "./fsm-engine.ts";
+export { FSMEngine } from "./fsm-engine.ts";
 // LLM integration
 export { AtlasLLMProviderAdapter } from "./llm-provider-adapter.ts";
 // FSM loader with validation
