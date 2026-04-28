@@ -29,7 +29,7 @@ const skillsShClient = new SkillsShClient();
 
 /** Opt-out flag. Install is enabled by default; set to "false" to kill. */
 function remoteInstallEnabled(): boolean {
-  return process.env.ATLAS_ALLOW_REMOTE_SKILLS !== "false";
+  return process.env.FRIDAY_ALLOW_REMOTE_SKILLS !== "false";
 }
 
 // ==============================================================================
