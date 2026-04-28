@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+interface MutationConfig {
+  mutationFn: (vars: unknown) => Promise<unknown>;
+  onSuccess?: () => void;
+}
+
 // Mock svelte-query so .svelte imports from node_modules don't break node tests
 vi.mock("@tanstack/svelte-query", () => ({
-  createMutation: (fn: () => unknown) => {
+  createMutation: (fn: () => MutationConfig) => {
     const config = fn();
     return {
       mutateAsync: async (vars: unknown) => {
@@ -26,7 +31,7 @@ vi.mock("@tanstack/svelte-query", () => ({
       error: null,
     };
   },
-  queryOptions: (opts: Record<string, unknown>) => opts,
+  queryOptions: <T extends object>(opts: T): T => opts,
   skipToken: Symbol.for("skipToken"),
   useQueryClient: () => ({
     invalidateQueries: vi.fn(),
@@ -185,10 +190,10 @@ describe("useDisableMCPServer", () => {
 
 describe("testChatEventStream", () => {
   const originalFetch = globalThis.fetch;
-  let fetchSpy: ReturnType<typeof vi.fn>;
+  let fetchSpy: ReturnType<typeof vi.fn<typeof fetch>>;
 
   beforeEach(() => {
-    fetchSpy = vi.fn();
+    fetchSpy = vi.fn<typeof fetch>();
     globalThis.fetch = fetchSpy;
   });
 
@@ -216,10 +221,7 @@ describe("testChatEventStream", () => {
     };
     (parseSSEStream as ReturnType<typeof vi.fn>).mockImplementation(mockStream);
 
-    fetchSpy.mockResolvedValue({
-      ok: true,
-      body: new ReadableStream(),
-    });
+    fetchSpy.mockResolvedValue(new Response(new ReadableStream()));
 
     const stream = testChatEventStream("github", "hello", "ws-1");
     const events: unknown[] = [];
@@ -254,10 +256,7 @@ describe("testChatEventStream", () => {
     };
     (parseSSEStream as ReturnType<typeof vi.fn>).mockImplementation(mockStream);
 
-    fetchSpy.mockResolvedValue({
-      ok: true,
-      body: new ReadableStream(),
-    });
+    fetchSpy.mockResolvedValue(new Response(new ReadableStream()));
 
     const stream = testChatEventStream("github", "hello");
     const events: unknown[] = [];

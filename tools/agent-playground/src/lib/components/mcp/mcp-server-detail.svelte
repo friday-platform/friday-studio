@@ -137,7 +137,7 @@
     if (t.type === "http") {
       return t.url ?? "HTTP endpoint";
     }
-    return t.type;
+    return "unknown";
   }
 
   function securityLabel(rating: string | undefined): string {

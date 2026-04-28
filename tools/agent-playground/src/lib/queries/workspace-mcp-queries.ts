@@ -47,7 +47,7 @@ const ErrorResponseSchema = z.object({
   success: z.boolean().optional(),
   error: z.string(),
   message: z.string().optional(),
-  willUnlinkFrom: z.array(z.record(z.unknown())).optional(),
+  willUnlinkFrom: z.array(z.record(z.string(), z.unknown())).optional(),
 });
 
 /** A single parsed test-chat SSE event. */
@@ -131,7 +131,7 @@ export function useDisableMCPServer() {
       const client = getDaemonClient();
       const res = await client.workspaceMcp(input.workspaceId)[":serverId"].$delete({
         param: { serverId: input.serverId },
-        query: input.force ? { force: "true" } : undefined,
+        query: input.force ? { force: "true" as const } : {},
       });
       const body: unknown = await res.json().catch(() => ({}));
       if (!res.ok) {

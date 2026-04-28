@@ -58,6 +58,22 @@ const ToolsProbeFailureSchema = z.object({
 const ToolsProbeResponseSchema = z.union([ToolsProbeSuccessSchema, ToolsProbeFailureSchema]);
 
 export type SearchResult = z.infer<typeof SearchResultSchema>;
+export type ToolsProbeResponse = z.infer<typeof ToolsProbeResponseSchema>;
+
+/**
+ * Fetch and parse the MCP tool probe response for a server. Exported so tests
+ * can call it directly without going through TanStack's QueryFunction wrapper
+ * (which requires a QueryFunctionContext arg this test doesn't need to mock).
+ */
+export async function fetchToolsProbe(id: string): Promise<ToolsProbeResponse> {
+  const client = getDaemonClient();
+  const res = await client.mcp[":id"].tools.$get({ param: { id } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Failed to probe MCP tools: ${res.status} ${JSON.stringify(body)}`);
+  }
+  return ToolsProbeResponseSchema.parse(await res.json());
+}
 
 // ==============================================================================
 // QUERY FACTORIES
@@ -92,7 +108,7 @@ export const mcpQueries = {
           ? async () => {
               const client = getDaemonClient();
               const res = await client.mcp.search.$get({
-                query: { q: query, limit: 20 },
+                query: { q: query, limit: "20" },
               });
               if (!res.ok) throw new Error(`Failed to search MCP registry: ${res.status}`);
               return SearchResponseSchema.parse(await res.json());
@@ -123,15 +139,7 @@ export const mcpQueries = {
   toolsProbe: (id: string) =>
     queryOptions({
       queryKey: ["daemon", "mcp", "tools", id] as const,
-      queryFn: async () => {
-        const client = getDaemonClient();
-        const res = await client.mcp[":id"].tools.$get({ param: { id } });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(`Failed to probe MCP tools: ${res.status} ${JSON.stringify(body)}`);
-        }
-        return ToolsProbeResponseSchema.parse(await res.json());
-      },
+      queryFn: () => fetchToolsProbe(id),
       staleTime: 0,
     }),
 };

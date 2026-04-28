@@ -15,7 +15,7 @@ import {
 } from "@atlas/core/mcp-registry/official-servers";
 import { fetchReadme } from "@atlas/core/mcp-registry/readme-fetcher";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
-import { MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
+import { type MCPServerMetadata, MCPServerMetadataSchema } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import {
   type DynamicApiKeyProviderInput,
@@ -705,8 +705,7 @@ export const mcpRegistryRouter = daemonFactory
     async (c) => {
       const { id } = c.req.valid("param");
 
-      const staticServer = mcpServersRegistry.servers[id];
-      let server = staticServer;
+      let server: MCPServerMetadata | undefined = mcpServersRegistry.servers[id];
       if (!server) {
         const adapter = await getMCPRegistryAdapter();
         server = (await adapter.get(id)) ?? undefined;
@@ -760,8 +759,7 @@ export const mcpRegistryRouter = daemonFactory
       const { workspaceId } = c.req.valid("query");
       const { message } = c.req.valid("json");
 
-      const staticServer = mcpServersRegistry.servers[id];
-      let server = staticServer;
+      let server: MCPServerMetadata | undefined = mcpServersRegistry.servers[id];
       if (!server) {
         const adapter = await getMCPRegistryAdapter();
         server = (await adapter.get(id)) ?? undefined;

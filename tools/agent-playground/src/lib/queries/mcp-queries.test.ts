@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock TanStack Query so .svelte imports from node_modules don't break node tests
 vi.mock("@tanstack/svelte-query", () => ({
-  queryOptions: (opts: Record<string, unknown>) => opts,
+  queryOptions: <T extends object>(opts: T): T => opts,
   skipToken: Symbol.for("skipToken"),
 }));
 
@@ -20,7 +20,7 @@ vi.mock("../daemon-client.ts", () => ({
   }),
 }));
 
-const { mcpQueries } = await import("./mcp-queries.ts");
+const { mcpQueries, fetchToolsProbe } = await import("./mcp-queries.ts");
 
 describe("mcpQueries.toolsProbe", () => {
   beforeEach(() => {
@@ -44,8 +44,7 @@ describe("mcpQueries.toolsProbe", () => {
       }),
     });
 
-    const options = mcpQueries.toolsProbe("github");
-    const result = await options.queryFn();
+    const result = await fetchToolsProbe("github");
 
     expect(mockToolsGet).toHaveBeenCalledWith({ param: { id: "github" } });
     expect(result.ok).toBe(true);
@@ -69,8 +68,7 @@ describe("mcpQueries.toolsProbe", () => {
       }),
     });
 
-    const options = mcpQueries.toolsProbe("github");
-    const result = await options.queryFn();
+    const result = await fetchToolsProbe("github");
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -86,8 +84,7 @@ describe("mcpQueries.toolsProbe", () => {
       json: vi.fn().mockResolvedValue({ error: "Server not found" }),
     });
 
-    const options = mcpQueries.toolsProbe("unknown");
-    await expect(options.queryFn()).rejects.toThrow("Failed to probe MCP tools: 404");
+    await expect(fetchToolsProbe("unknown")).rejects.toThrow("Failed to probe MCP tools: 404");
   });
 
   it("throws on invalid response body", async () => {
@@ -96,7 +93,6 @@ describe("mcpQueries.toolsProbe", () => {
       json: vi.fn().mockResolvedValue({ unexpected: true }),
     });
 
-    const options = mcpQueries.toolsProbe("github");
-    await expect(options.queryFn()).rejects.toThrow();
+    await expect(fetchToolsProbe("github")).rejects.toThrow();
   });
 });

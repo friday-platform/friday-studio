@@ -1,8 +1,13 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
+interface MutationConfig {
+  mutationFn: (vars: unknown) => Promise<unknown>;
+  onSuccess?: () => void;
+}
+
 // Mock svelte-query so .svelte imports from node_modules don't break node tests
 vi.mock("@tanstack/svelte-query", () => ({
-  createMutation: (fn: () => unknown) => {
+  createMutation: (fn: () => MutationConfig) => {
     const config = fn();
     return {
       mutateAsync: async (vars: unknown) => {
@@ -35,10 +40,10 @@ vi.mock("@tanstack/svelte-query", () => ({
 const originalFetch = globalThis.fetch;
 
 describe("link-credentials mutations — fetch behavior", () => {
-  let fetchSpy: ReturnType<typeof vi.fn>;
+  let fetchSpy: ReturnType<typeof vi.fn<typeof fetch>>;
 
   beforeEach(() => {
-    fetchSpy = vi.fn();
+    fetchSpy = vi.fn<typeof fetch>();
     globalThis.fetch = fetchSpy;
   });
 
