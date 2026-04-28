@@ -31,7 +31,6 @@ COPY deno.json deno.lock package.json ./
 COPY apps/atlasd/deno.json apps/atlasd/package.json* ./apps/atlasd/
 COPY apps/atlas-cli/deno.json apps/atlas-cli/package.json* ./apps/atlas-cli/
 COPY apps/link/deno.json apps/link/package.json* ./apps/link/
-COPY apps/ledger/deno.json apps/ledger/package.json* ./apps/ledger/
 COPY tools/agent-playground/deno.json tools/agent-playground/package.json ./tools/agent-playground/
 COPY tools/evals/deno.json tools/evals/package.json ./tools/evals/
 COPY packages/ ./packages/
@@ -79,11 +78,6 @@ RUN RUST_MIN_STACK=16777216 deno compile -q --no-check --allow-all \
     --unstable-kv \
     --output /app/bin/link \
     apps/link/src/index.ts
-
-# Ledger service (resources + activity backend).
-RUN RUST_MIN_STACK=16777216 deno compile -q --no-check --allow-all \
-    --output /app/bin/ledger \
-    apps/ledger/src/index.ts
 
 # ============================================================================
 # Stage 2: Go builder — compile webhook-tunnel and pty-server binaries
@@ -167,7 +161,6 @@ RUN mkdir -p /data/atlas /data/link /tmp/.npm /app/config && \
 # ── Install compiled binaries (no layer duplication) ─────────────────────────
 COPY --from=deno-builder /app/bin/atlas         /usr/local/bin/atlas
 COPY --from=deno-builder /app/bin/link          /usr/local/bin/link
-COPY --from=deno-builder /app/bin/ledger        /usr/local/bin/ledger
 COPY --from=go-builder   /out/webhook-tunnel    /usr/local/bin/webhook-tunnel
 COPY --from=go-builder   /out/pty-server        /usr/local/bin/pty-server
 
@@ -247,12 +240,11 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     DEV_MODE=true \
     SHELL=/bin/bash
 
-EXPOSE 8080 3100 3200 5200 7681 9090
+EXPOSE 8080 3100 5200 7681 9090
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -sf http://localhost:8080/health > /dev/null && \
         curl -sf http://localhost:3100/health > /dev/null && \
-        curl -sf http://localhost:3200/health > /dev/null && \
         curl -sf http://localhost:7681/health > /dev/null && \
         curl -sf http://localhost:9090/health > /dev/null || exit 1
 
