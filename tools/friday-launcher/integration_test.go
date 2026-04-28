@@ -157,6 +157,13 @@ func startLauncher(t *testing.T, launcherPath, binDir string) (*exec.Cmd, string
 		"--bin-dir="+binDir, "--no-browser")
 	env := append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+homeLocal,
+		// FRIDAY_LAUNCHER_BROWSER_DISABLED is the absolute test
+		// override for openBrowser. --no-browser only suppresses
+		// auto-open at first-healthy; tray-click + second-instance-wake
+		// still open under that flag, which would pop tabs on the
+		// developer's machine when integration tests exercise those
+		// paths.
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
 	)
 	env = append(env, portEnv()...)
 	cmd.Env = env
@@ -371,6 +378,7 @@ func TestSecondInstanceWakeUp(t *testing.T) {
 	second := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
 	second.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
 	)
 	second.Env = append(second.Env, portEnv()...)
 	out, err := second.CombinedOutput()
@@ -407,6 +415,7 @@ func TestStalePidFileHandling(t *testing.T) {
 	cmd := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
 	cmd.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
 	)
 	cmd.Env = append(cmd.Env, portEnv()...)
 	cmd.Stderr = os.Stderr
@@ -471,6 +480,7 @@ func TestOrphanCleanup(t *testing.T) {
 	cmd := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
 	cmd.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
 	)
 	cmd.Env = append(cmd.Env, portEnv()...)
 	cmd.Stderr = os.Stderr
@@ -632,6 +642,7 @@ func TestAutostartStalenessRepair(t *testing.T) {
 	cmd2 := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
 	cmd2.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
 	)
 	cmd2.Env = append(cmd2.Env, portEnv()...)
 	cmd2.Stderr = os.Stderr
@@ -673,6 +684,7 @@ func TestUninstall(t *testing.T) {
 	cmd := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
 	cmd.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
 	)
 	cmd.Env = append(cmd.Env, portEnv()...)
 	cmd.Stderr = os.Stderr
@@ -729,6 +741,7 @@ func TestUninstall(t *testing.T) {
 	uninst := exec.Command(launcher, "--uninstall")
 	uninst.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
 	)
 	out, err := uninst.CombinedOutput()
 	if err != nil {
@@ -757,5 +770,114 @@ func TestUninstall(t *testing.T) {
 		if _, err := os.Stat(plistPath); !os.IsNotExist(err) {
 			t.Errorf("plist still present: err=%v", err)
 		}
+	}
+}
+
+// TestUninstall_SweepsOrphansWhenLauncherDead reproduces the
+// 2026-04-27 incident: launcher already dead but its supervised
+// children still alive (e.g. user did `kill -9 <launcher>` then
+// ran --uninstall hoping to clean up). Without Decision #9's
+// unconditional SweepByBinaryPath, --uninstall reports success
+// while leaving the orphans running.
+//
+// The test spawns a stub binary directly — NO launcher running —
+// then runs --uninstall pointed at the same binDir. The HTTP
+// shutdown POST will fail (connection refused, nothing on 5199),
+// the SIGTERM-fallback will skip (no launcher.pid), and finally
+// the unconditional SweepByBinaryPath fires; that's the only step
+// that catches the stub. Asserts the stub's pid is dead post-
+// uninstall + the user-facing output mentions "swept".
+//
+// Decision #24 alignment: the stub MUST be a real OS process. A
+// goroutine wouldn't show up in `ps -eo pid=,comm=` — which is
+// what SweepByBinaryPath reads — so the test would silently green
+// without exercising the sweep path.
+func TestUninstall_SweepsOrphansWhenLauncherDead(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("SweepByBinaryPath is a no-op on Windows (Job Object covers this)")
+	}
+	launcher, binDir := buildLauncherAndStubs(t)
+	home := filepath.Join(t.TempDir(), ".friday", "local")
+	if err := os.MkdirAll(filepath.Join(home, "pids"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Spawn one wrapper directly. The wrapper exec's into
+	// binDir/_stub, so the kernel-level program path under that
+	// pid lands under binDir — exactly what SweepByBinaryPath
+	// matches against.
+	stub := exec.Command(filepath.Join(binDir, "playground"))
+	stub.Env = append(os.Environ(), portEnv()...)
+	stub.Stderr = os.Stderr
+	if err := stub.Start(); err != nil {
+		t.Fatalf("start stub: %v", err)
+	}
+	stubPid := stub.Process.Pid
+
+	// Reap the stub asynchronously. processkit.ProcessAlive uses
+	// kill(pid, 0) which returns success even for zombie
+	// processes — so without an explicit Wait the test would
+	// see "still alive" forever after SIGTERM. Run Wait in a
+	// goroutine and signal completion by closing a channel; the
+	// assertion below races against a 5s timeout. Closing
+	// (rather than buffered-send) means receive-after-drain
+	// returns the zero value immediately, so the defer cleanup
+	// can re-receive without blocking.
+	stubExited := make(chan struct{})
+	go func() {
+		_ = stub.Wait()
+		close(stubExited)
+	}()
+	defer func() {
+		// Final-resort cleanup if SIGTERM didn't reach the stub.
+		select {
+		case <-stubExited:
+		default:
+			_ = stub.Process.Kill()
+			<-stubExited
+		}
+	}()
+
+	// Give exec(2) time to swap bash → env → _stub. SweepByBinaryPath
+	// reads `ps -eo pid=,comm=` whose `comm` is the executable
+	// path AFTER all execs settle; until that's done the pid
+	// might still report `bash` and the prefix-match wouldn't fire.
+	time.Sleep(500 * time.Millisecond)
+	select {
+	case <-stubExited:
+		t.Fatal("stub exited before --uninstall")
+	default:
+	}
+
+	// Run --uninstall. No launcher is running, so:
+	//   - HTTP shutdown POST → connection refused (5199 not bound)
+	//   - SIGTERM-fallback → no-op (pid file doesn't exist)
+	//   - SweepByBinaryPath → the only step that catches the stub
+	uninst := exec.Command(launcher, "--uninstall", "--bin-dir="+binDir)
+	uninst.Env = append(os.Environ(),
+		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
+	)
+	out, err := uninst.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--uninstall failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "swept") {
+		t.Errorf("expected 'swept' in output, got:\n%s", out)
+	}
+
+	// Stub should now be exiting. Race the goroutine's Wait
+	// against a 5s timeout; SweepByBinaryPath sends SIGTERM,
+	// which the stub honors via its signal handler within tens
+	// of ms in normal operation.
+	select {
+	case <-stubExited:
+		return // success — sweep killed it, Wait reaped it
+	case <-time.After(5 * time.Second):
+		t.Errorf("stub pid %d did not exit 5s after --uninstall:\n%s",
+			stubPid, out)
 	}
 }

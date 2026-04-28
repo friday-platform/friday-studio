@@ -8,11 +8,25 @@ import (
 	"github.com/pkg/browser"
 )
 
+// openURLInBrowserOverride is a test hook. When non-nil it replaces
+// the default pkg/browser delegation in openURLInBrowser. Production
+// code never sets it (zero value is nil); test code reassigns +
+// restores via t.Cleanup so the tray's --no-browser semantic refinement
+// + browserDisabled env override can be exercised without launching a
+// real browser.
+var openURLInBrowserOverride func(url string) error
+
 // openURLInBrowser delegates to pkg/browser for a real http(s) URL.
 // pkg/browser is fine for URLs but does NOT do the right thing for
 // directory file:// paths (opens a directory listing in the browser
 // instead of in Finder/Explorer) — for that, see openInFileBrowser.
+//
+// Tests set openURLInBrowserOverride to capture or count calls
+// without spawning the host browser.
 func openURLInBrowser(url string) error {
+	if openURLInBrowserOverride != nil {
+		return openURLInBrowserOverride(url)
+	}
 	return browser.OpenURL(url)
 }
 

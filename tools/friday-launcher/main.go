@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -29,11 +30,25 @@ import (
 // to both stderr and a lumberjack-rotated launcher.log.
 var log = logger.New("friday-launcher")
 
-// noBrowser is set from --no-browser; controls the auto-open behavior
-// when all processes report ready. Stored as a package-level var
-// because the tray controller needs to consult it from goroutines
-// that don't have a reference to the parsed flag set.
+// noBrowser is set from --no-browser; suppresses the auto-open on
+// the first-healthy transition. User-initiated opens (tray click,
+// second-instance wake) are NOT affected — those always open the
+// browser even with --no-browser, because silently doing nothing in
+// response to a click is worse UX than honoring the flag would buy.
+// Stored as a package-level var because the tray controller needs
+// to consult it from goroutines that don't have a reference to the
+// parsed flag set.
 var noBrowser bool
+
+// browserDisabled is an INTERNAL kill-switch set from the
+// FRIDAY_LAUNCHER_BROWSER_DISABLED env var. Unlike --no-browser,
+// this absolutely suppresses every openBrowser call regardless of
+// reason. Used by integration tests so spawning the launcher
+// subprocess in `go test` doesn't pop browser tabs on the
+// developer's machine, even when the test exercises tray-click /
+// second-instance-wake paths. Not documented in CLI help — internal
+// only.
+var browserDisabled bool
 
 // binDir is set from --bin-dir; defaults to the launcher's own
 // directory (so the launcher and supervised binaries co-locate in
@@ -73,8 +88,29 @@ var pidLock *pidFileLock
 // child via KILL_ON_JOB_CLOSE. No-op on Unix.
 var jobHandle *processkit.JobObject
 
+// healthCache is the launcher's per-service status record + SSE
+// fan-out hub. Created in main() before systray.Run so the bind
+// error on port 5199 surfaces via the osascript dialog (Decision
+// #28) before the tray boots. Read by tray bucket logic, GET +
+// SSE handlers, and the POST shutdown handler's 409 probe.
+var healthCache *HealthCache
+
+// healthSrv is the http.Server backing /api/launcher-health[/stream]
+// and /api/launcher-shutdown. Closed as the LAST step of
+// performShutdown (after sweep, before releasePidLock) per
+// Decision #18 lifecycle.
+var healthSrv *http.Server
+
+// healthPollCancel cancels the 500ms-poll goroutine created in
+// onReady once the supervisor exists. Called from performShutdown
+// before supervisor.Shutdown so the goroutine doesn't observe a
+// torn-down supervisor mid-poll.
+var healthPollCancel context.CancelFunc
+
 func main() {
 	autostartCmd, uninstall := parseFlags()
+	// Internal test override — see browserDisabled comment.
+	browserDisabled = os.Getenv("FRIDAY_LAUNCHER_BROWSER_DISABLED") == "1"
 	if err := ensureDirs(); err != nil {
 		fmt.Fprintf(os.Stderr, "friday-launcher: %s\n", err)
 		os.Exit(1)
@@ -143,6 +179,22 @@ func main() {
 	}
 
 	setupSignalHandlers()
+
+	// Bind the health server BEFORE systray.Run so a port-5199
+	// collision surfaces via the osascript dialog (Decision #28)
+	// before the tray boots — same UX as pre-flight failures
+	// (Stack 3 will add missing-binaries here too). HealthCache
+	// itself is created with the global &shuttingDown atomic per
+	// Decision #33; the poll goroutine that fills the cache is
+	// spawned in onReady once supervisor exists.
+	healthCache = NewHealthCache(&shuttingDown)
+	srv, err := startHealthServer(healthCache, performShutdown)
+	if err != nil {
+		log.Error("startHealthServer", "error", err)
+		showPortInUseDialog()
+		os.Exit(1)
+	}
+	healthSrv = srv
 
 	// systray.Run BLOCKS on macOS NSApp event loop. Everything else
 	// must spawn from onReady.
@@ -237,9 +289,31 @@ func onReady() {
 	// Goroutine A: wraps runner.Run() with watchdog.
 	go sup.runAndWatch()
 
-	// Tray controller (goroutine B + click handlers).
-	trayCtl = newTrayController(sup, &shuttingDown)
+	// Goroutine F: 500ms-poll cache update. Reads supervisor.State()
+	// and pushes into healthCache. Cancelled in performShutdown
+	// before supervisor.Shutdown so the goroutine doesn't observe a
+	// torn-down supervisor mid-poll. Per Decision #18 lifecycle the
+	// HTTP server itself stays up across Restart-all and only closes
+	// in performShutdown's last step.
+	// pollCancel is stored in the package-level healthPollCancel
+	// and called from performShutdown; gosec G118 doesn't trace
+	// through the package-var assignment, hence the nolint.
+	pollCtx, pollCancel := context.WithCancel(context.Background()) //nolint:gosec // G118: cancel stored in healthPollCancel
+	healthPollCancel = pollCancel
+	go runHealthPoll(pollCtx, sup, healthCache)
+
+	// Tray controller (goroutine B + click handlers). healthCache
+	// drives the bucket logic per Decision #4 — the existing
+	// state.IsReady() heuristic is gone.
+	trayCtl = newTrayController(sup, &shuttingDown, healthCache)
 	trayCtl.onReady()
+
+	// Register the NSApp will-terminate observer so external
+	// termination (system shutdown, force-quit, OS-level kill)
+	// gets a chance to drive performShutdown synchronously
+	// (Decision #13). No-op on Linux/Windows. MUST be after
+	// systray.Run brought NSApp up — i.e. inside onReady.
+	registerNSAppWillTerminate()
 
 	// Goroutine D: sentinel-file watcher (Windows only; no-op on Unix).
 	startSentinelWatcher(func() {
@@ -266,13 +340,42 @@ func onExit() {
 // ShutDownProject in a goroutine, wait on a done channel with a 30 s
 // safety deadline so we never hang forever even if a child binary
 // ignores SIGTERM.
+//
+// Lifecycle (Decision #18 + cross-cutting §):
+//  1. shutdownStarted CAS gate (one-shot for ALL trigger paths —
+//     signal handler, onExit, HTTP POST shutdown). Decision #33.
+//  2. shuttingDown.Store(true) — visibility flag the tray-poll
+//     goroutine + HTTP /api/launcher-health 503 + 409 conflict
+//     probe all read.
+//  3. cancel healthPoll goroutine (so it doesn't observe a torn-
+//     down supervisor mid-poll).
+//  4. supervisor.Shutdown() with 30s deadline.
+//  5. processkit.SweepByBinaryPath(binDir) — Decision #5: catch
+//     orphans whose parent died externally even when the SIGTERM
+//     cascade didn't propagate.
+//  6. healthSrv.Shutdown(ctx) with 2s deadline — LAST step, after
+//     sweep so the wizard during update flow keeps seeing
+//     /api/launcher-health (503 + shutting_down: true) until
+//     teardown is complete.
+//  7. releasePidLock + closeJob.
 func performShutdown(reason string) {
 	if !shutdownStarted.CompareAndSwap(false, true) {
 		return // another caller beat us; let them finish
 	}
 	log.Info("performShutdown starting", "reason", reason)
 	shuttingDown.Store(true)
+
+	// Stop the cache-update goroutine before tearing down the
+	// supervisor it polls. Best-effort: nil-check because
+	// performShutdown can run from the signal handler before
+	// onReady has executed (e.g. SIGTERM during single-instance
+	// sweep / before supervisor exists).
+	if healthPollCancel != nil {
+		healthPollCancel()
+	}
+
 	if supervisor == nil {
+		shutdownHealthServer()
 		releasePidLock()
 		closeJob()
 		return
@@ -294,8 +397,48 @@ func performShutdown(reason string) {
 	case <-ctx.Done():
 		log.Warn("ShutDownProject did not complete in 30s; exiting anyway")
 	}
+
+	// Post-shutdown sweep (Decision #5). Catches orphans whose
+	// parent process-compose lost track of (Deno workers spawned
+	// by friday/link, or anything that ignored SIGTERM). Best-
+	// effort: log + continue on error.
+	if killed, err := processkit.SweepByBinaryPath(binDir); err != nil {
+		log.Warn("post-shutdown SweepByBinaryPath (non-fatal)",
+			"error", err)
+	} else if killed > 0 {
+		log.Info("post-shutdown sweep killed orphans",
+			"count", killed)
+	}
+
+	shutdownHealthServer()
 	releasePidLock()
 	closeJob()
+
+	// Unblock systray.Run so main() can return. Required for
+	// trigger paths that didn't enter through systray itself
+	// (HTTP /api/launcher-shutdown, NSApp will-terminate, signal
+	// handler — though the signal handler calls Quit externally
+	// too as a backup, double-call is safe per systray's contract).
+	// For the systray-Quit-menu path, performShutdown ran from
+	// inside onExit which itself was called by systray.Quit; the
+	// re-entry here is a no-op.
+	systray.Quit()
+}
+
+// shutdownHealthServer closes the loopback HTTP listener with a
+// short deadline. Called LAST in performShutdown (after sweep)
+// per Decision #18 so polling clients keep seeing the 503 +
+// shutting_down: true response until the listener actually drops.
+func shutdownHealthServer() {
+	if healthSrv == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 2*time.Second)
+	defer cancel()
+	if err := healthSrv.Shutdown(ctx); err != nil {
+		log.Warn("health HTTP server shutdown", "error", err)
+	}
 }
 
 func releasePidLock() {

@@ -272,6 +272,55 @@ propagate to the other. Both need explicit wiring for new context.
 kebab-case identifier — use `agent.id` for planner identity, never
 `agent.name`.
 
+## Friday Studio Platform Layout
+
+These facts pertain to `tools/friday-launcher` and the `apps/studio-installer`
+wizard / installer pipeline. Worth knowing when touching either.
+
+**Port 5199** — the launcher's HTTP health server. Endpoints:
+- `GET /api/launcher-health` — JSON snapshot of per-service status
+- `GET /api/launcher-health/stream` — SSE; emits an event every time any
+  service's status transitions
+- `POST /api/launcher-shutdown` — async orderly-shutdown trigger
+  (returns 202 Accepted; second call returns 409 Conflict)
+
+Loopback only (binds `127.0.0.1:5199`). If the port is already in use,
+the launcher shows an osascript dialog explaining + exits 1.
+
+**Two-atomic shutdown pattern.** `tools/friday-launcher/main.go` has
+`shutdownStarted` (one-shot CAS gate inside `performShutdown`) AND
+`shuttingDown` (visibility flag). Don't conflate them. Don't add a
+third atomic. Concurrent shutdown triggers (signal handler, tray Quit,
+NSApp will-terminate, HTTP POST) all funnel through `performShutdown`;
+`shutdownStarted.CompareAndSwap` makes the body run exactly once.
+HTTP handlers + the tray-poll goroutine read `shuttingDown` for the
+"shutting down" view.
+
+**`--no-browser` semantic.** Suppresses auto-open at the first-healthy
+transition. User-initiated opens (tray click, second-instance wake)
+still open. Tests use the internal env-var `FRIDAY_LAUNCHER_BROWSER_DISABLED=1`
+to absolutely suppress every `openBrowser` call without affecting the
+flag's user-facing semantic.
+
+**`--uninstall` runs unconditional `SweepByBinaryPath`.** Even when the
+launcher is already dead. Catches orphans whose parent died externally
+and never got a chance to shut its supervised processes down. The 2026-04-27
+incident was exactly this case — `--uninstall` reported success while
+leaving `pty-server`, `webhook-tunnel`, and `playground` running.
+
+**Startup-error diagnostic log.** Pre-flight + bind-failure dialogs
+write a log entry to `~/.friday/local/logs/launcher-startup.log` (with
+`os.TempDir()/friday-launcher-startup.log` as the fallback when
+`~/.friday` isn't writable). Append-mode — repeated failures
+accumulate in the same file. Dialog body embeds the log path so users
+can attach it to support requests.
+
+**Launcher integration tests** are gated behind the `integration` build
+tag (real subprocesses on fixed ports 18222, 18080, 13100, 17681,
+19090, 15200). Run with `go test -tags=integration ./tools/friday-launcher/...`.
+Default `go test ./...` skips them so accidental port collisions
+don't fail unrelated work.
+
 ## Local Development with CLI
 
 Daemon runs on `localhost:8080`. Auto-restarts on code changes.
