@@ -6,70 +6,41 @@ user-invocable: false
 
 # Workspace API
 
-Create and manage Friday workspaces. This skill teaches the shape; the
-`workspace_create` tool enforces it. Companion skill for signals/sessions:
-`friday-cli`.
+Create and manage Friday workspaces. This skill is where LLM judgment lives: when to use each tool, in what order, and how to recover when stuck. Companion skills: `friday-cli` (daemon lifecycle, signals, sessions) and `using-mcp-servers` (MCP catalog, install/enable, credentials).
 
-## Preflight
+## Cheat sheet
 
-```bash
-curl -sf http://localhost:8080/health && echo OK
-```
+**Reachability model.** Signals trigger jobs. Jobs run agents. Agents call MCP tools and read/write memory. Nothing else triggers anything else. An agent declared without a wrapping job is unreachable. Memory is accessed by agents, not signals or jobs directly.
 
-If that fails, see `friday-cli` for daemon lifecycle.
+**7-step recipe.**
+1. Identify required MCP servers from the user's intent.
+2. For each not yet enabled: `enable_mcp_server` (see `using-mcp-servers` skill).
+3. For each provider needing credentials: `connect_service`.
+4. Decide direct vs draft: single atomic change → direct; multi-entity build → draft.
+5. If draft: `begin_draft`. Then `upsert_agent` → `upsert_job` → `upsert_signal` in dependency order (agents before jobs, jobs before signals).
+6. `validate_workspace` — fix errors, address warnings or accept them.
+7. If draft: `publish_draft` after user confirms. If direct: done.
 
----
+**Direct vs draft.**
+- Direct: upserts write live `workspace.yml`, full validation runs immediately, runtime reloads. Best for one change.
+- Draft: upserts stage to `workspace.yml.draft`, permissive per-entity validation, cross-entity checks at `validate_workspace` + `publish_draft`. Best for new workspaces or pipelines.
 
-## Tool selection — daemon HTTP operations
+**Tool selection.**
+- Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `remove_item`, `validate_workspace`, `publish_draft`, `discard_draft`.
+- Daemon CRUD (list, get, delete): `run_code` bash + curl to `localhost:8080`.
+- MCP install/enable/credentials: `using-mcp-servers` skill.
+- Codebase edits: `agent_claude-code`.
 
-**For any HTTP call to the daemon (list, read, update, delete, fire a signal):
-use `run_code` (bash or JavaScript). Do not use `agent_claude-code`.**
-
-`agent_claude-code` runs in an isolated sandbox without access to localhost. It is
-the wrong tool for anything that talks to the daemon API. `run_code` bash + curl is
-always the right call for these operations — it's one command, the output is
-immediate, and errors are obvious.
-
-*Exception:* `workspace_create` is a typed wrapper around `POST /api/workspaces` —
-always use the tool for creation so you get structured validation errors.
-
----
-
-## Top gotchas — read before writing any config
-
-1. **Jobs must use `fsm:`, not `execution:`.** The schema accepts both; the
-   runtime silently skips any job lacking `fsm:` and signal dispatch fails
-   at runtime with `"No FSM job handles signal '<name>'"`.
-
-2. **FSM shape is XState-style.** States are
-   `{ entry: [...actions], on: { EVENT: { target: 'next' } } }` or
-   `{ type: 'final' }`. Do **not** use `type: action, action: {...}, next: ...`
-   — the validator rejects it with `fsm_structural_error`.
-
-3. **`write_file` writes to scratch only** (`{ATLAS_HOME}/scratch/{sessionId}/`).
-   To edit a workspace on disk, use `run_code` with an absolute path.
-
-4. **Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*`.**
-   There are no platform-default filesystem tools. Listing a tool name without
-   a configured MCP server that provides it is a no-op. *Exception:* the
-   platform ships memory tools (`memory_save`, `memory_read`, `memory_remove`)
-   and state tools (`state_{append,filter,lookup}`) for both chat and FSM LLM
-   agents without any MCP server config.
-
-5. **Never report "saved to memory" without verifying.** Setup can look
-   successful end-to-end and still silently fail. Before reporting success:
-   1. Fire the signal once with a canary payload.
-   2. Poll `GET /api/sessions/:id` until terminal (`completed` / `failed`).
-   3. Read back with `GET /api/memory/:workspaceId/narrative/:memoryName`.
-   4. Surface any mismatch explicitly — don't paper over it.
+**Key one-liners.**
+- Jobs must use `fsm:`, not `execution:` — the runtime silently skips jobs without `fsm:`.
+- `write_file` writes to scratch only; use `run_code` with an absolute path to edit `workspace.yml`.
+- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*`; there are no platform-default filesystem tools outside MCP.
 
 ---
 
-## How chat reaches your workspace — the contract
+## Reachability model — the runtime call chain
 
-**Chat interacts with your workspace through `jobs`. Nothing else.** Agents
-and MCP servers are internals of the jobs that wrap them. This is the single
-most important mental model to get right:
+Friday workspaces have a fixed call chain:
 
 ```
 user message → workspace-chat (platform meta-agent)
@@ -82,436 +53,184 @@ user message → workspace-chat (platform meta-agent)
                                                         (all internal to this job)
 ```
 
-**What this means for authoring:**
+**Chat interacts with your workspace through jobs. Nothing else.** Agents and MCP servers are internals of the jobs that wrap them. This is the single most important mental model to get right:
 
-- **Declaring an agent without a job that invokes it makes the agent
-  unreachable from chat.** Chat can't call agents directly, only jobs. A
-  lone `agents.kb-agent` with MCP tools attached will sit idle while the
-  user's save/retrieve requests get handled by chat's defaults. The
-  validator rejects this shape with `unreachable_agent`.
-- **For trivial save-and-recall** (notes, URLs, quotes, reading list),
-  **skip jobs and agents entirely.** Declare only a `memory.own.notes`
-  corpus — chat will use `memory_save` to save and auto-read
-  the entries out of its prompt. Zero agents, zero MCP, zero FSM. See
-  `assets/example-kb-workspace.yml`.
-- **For anything non-trivial** (structured data, signal-triggered
-  automation, multi-step work), **express it as one or more jobs.** Each
-  job declares a signal, an FSM, and agents internal to that FSM. Chat
-  sees the jobs as tools (via `createJobTools`) and calls them with
-  typed input. See `assets/example-jobs-pipeline.yml`.
+- **An agent declared without a job that invokes it is unreachable.** Chat cannot call agents directly, only jobs. A lone `agents.kb-agent` with MCP tools attached will sit idle. The validator catches this as `orphan_agent`.
+- **Memory is accessed by agents, not signals or jobs directly.** Agents see narrative memory auto-injected into their prompts. Agents call `memory_save`, `memory_read`, `memory_remove` explicitly for older entries or specific filters.
+- **Tools belong to agents** (via the agent's `tools:` array), and the tools have to be enabled at workspace scope (in `tools.mcp.servers`) for the agent to use them.
 
-There is no third path. "Standalone conversation agent with MCP tools, no
-jobs" is a dead-end shape.
+**What this means for authoring:** work backward from the trigger. What signal fires this? What job does that signal start? What agents does that job invoke? What tools do those agents need? Declare agents first, then jobs that reference them, then signals that trigger those jobs.
 
 ---
 
-## Quick start — create a workspace
+## Recipe: build or modify a workspace
 
-**Always call the `workspace_create` tool. Never shell out to curl.** One
-typed call, structured errors on 422, fix-and-retry in the same conversation.
+Follow this order exactly. Skipping steps produces the failure modes documented in real chat transcripts.
 
-### Pick a template — match to the use case
+### 1. Identify required MCP servers
 
-**Trivial save-and-recall → `assets/example-kb-workspace.yml`.** No jobs,
-no agents, no MCP. Just a `memory.own.notes` corpus. Chat uses
-`memory_save` to save; recent entries auto-inject into
-chat's prompt on every turn for retrieval. Use for notes, URLs, quotes,
-reading list, journaling, "second brain" — anything unstructured.
+From the user's intent, list every external tool the workspace needs (SQLite, GitHub, filesystem, fetch, etc.). For each, check if it's already in the workspace's `tools.mcp.servers`. If not, plan to enable it.
 
-**Signal-triggered or multi-step work → `assets/example-jobs-pipeline.yml`.**
-One signal per user-invokable operation; each signal has a job with an
-FSM; agents live inside the FSM. Chat sees the jobs as tools. Use for
-anything structured (tag-filtered bookmarks, expense tracker, invoice
-processor), anything signal-driven (webhook / cron / fs-watch), or
-anything multi-step (triage → classify → respond pipelines).
+### 2. Enable MCP servers
 
-If neither template fits, read the schema below and build from scratch —
-but verify first: trivial save-and-recall almost always fits the first
-template, and anything beyond that almost always fits the second.
+For each missing server, call `enable_mcp_server`. If the server isn't in the platform catalog yet, call `search_mcp_servers` → `install_mcp_server` first. See the `using-mcp-servers` skill for the full decision tree (install vs enable vs create custom).
 
-```
-workspace_create({
-  config: {
-    version: "1.0",
-    workspace: { name: "my-space", description: "What it does" }
-  },
-  workspaceName: "my-space"   // optional; kebab-case directory name
-})
-```
+### 3. Connect credentials
 
-### Fix-and-retry loop (worked example)
+If an enabled server requires credentials (GitHub token, API key, OAuth), call `connect_service(provider)` before any agent references the server's tools. The user will be prompted to authenticate; on `data-credential-linked`, continue.
 
-**Attempt 1 — wrong package name:**
+### 4. Decide direct vs draft mode
 
-```
-workspace_create({ config: { ..., tools: { mcp: { servers: { sqlite: {
-  transport: { command: "npx", args: ["-y", "mcp-sqlite"] }
-} } } } } })
-// → 422 {
-//   code: "npm_package_not_found",
-//   path: "tools.mcp.servers.sqlite.transport.args",
-//   message: "npm package 'mcp-sqlite' returned 404"
-// }
-```
+**Direct mode** — use when the change is a single atomic operation:
+- Add one signal to an existing workspace.
+- Update one agent's prompt or model.
+- Remove one entity with `remove_item`.
 
-**Attempt 2 — corrected (SQLite ships on PyPI, use `uvx`):**
+**Draft mode** — use when the change is a multi-entity coherent build:
+- Creating a new workspace from scratch.
+- Adding a pipeline (agent + job + signal together).
+- Restructuring an FSM or replacing multiple agents.
+
+Draft mode is opt-in: call `begin_draft` to start it. If a draft already exists, ALL mutations write to the draft automatically; direct mode is blocked until you publish or discard.
+
+### 5. Upsert in dependency order
+
+Inside draft (or direct), create entities in this order:
+
+1. **Agents first** — because jobs reference `agentId` in their FSM `entry` actions.
+2. **Jobs second** — because they wire agents into the orchestration layer.
+3. **Signals last** — because they are external entry points; nothing else depends on them. Jobs reference signals by name in `triggers`, but the runtime resolves those at execution time, so signal existence is not a hard dependency for job creation.
+
+Call `upsert_agent({ id, config })`, `upsert_job({ id, config })`, `upsert_signal({ id, config })`. Each returns `{ ok, diff, structural_issues }`. Read `diff` to confirm intent. If `structural_issues` is non-null, fix them before proceeding — structural issues block the write.
+
+Common structural issue codes: `unknown_agent_id` (job references an agent you haven't upserted yet — fix by ordering correctly), `fsm_structural_error` (states malformed), `npm_package_not_found` / `pypi_package_not_found` (MCP server transport args point to a bad package).
+
+### 6. Validate
+
+Call `validate_workspace`. It returns a report:
 
 ```
-workspace_create({ config: { ..., tools: { mcp: { servers: { sqlite: {
-  transport: { command: "uvx",
-               args: ["mcp-server-sqlite", "--db-path", "/abs/path/kb.sqlite"] }
-} } } } } })
-// → 201 {
-//   success: true,
-//   workspace: { id: "buttery_gouda", name: "my-space", path: "..." },
-//   ...
-// }
+{
+  status: "ok" | "warning" | "error",
+  errors: [{ code, path, message }],     // blocks publish
+  warnings: [{ code, path, message }]   // does not block
+}
 ```
 
-Read every issue in `result.error.detail.data.report.issues[]` and fix them
-all before retrying — a second 422 with the same code signals a real
-misunderstanding, not a typo. Common codes: `npm_package_not_found`,
-`pypi_package_not_found`, `unknown_agent_id`, `unknown_signal_name`,
-`unknown_mcp_server_ref`, `unknown_memory_corpus`, `fsm_structural_error`.
+**Fix every error before publishing.** Errors mean the workspace will not load or will fail at runtime. Warnings are advisory (`orphan_agent`, `dead_signal`, `missing_tools_array`, `cron_parse_failed`) — address them or accept them explicitly.
 
-Never hardcode the runtime id (`buttery_gouda`-style, random per daemon) —
-resolve via `GET /api/workspaces`.
+### 7. Publish (draft only)
+
+If you used draft mode, propose the changes to the user: "I've drafted X, Y, Z — want me to publish?" On confirmation, call `publish_draft`. It runs the full validator atomically; if any error exists, the draft is left untouched and you get the report to fix. If it succeeds, the draft renames over `workspace.yml` and the runtime reloads.
+
+To abandon a draft: `discard_draft`.
 
 ---
 
-## The workspace.yml schema
+## Direct mode vs draft mode — full behavior
 
-Every key lives inside `config.` when sent to `workspace_create`. `version` is
-pinned to `"1.0"`. Unknown keys are rejected. Duration format everywhere:
-`\d+[smh]` → `30s`, `5m`, `2h`.
+| Aspect | Direct mode | Draft mode |
+|---|---|---|
+| Default state | Yes | Opt-in via `begin_draft` |
+| Where mutations write | `workspace.yml` | `workspace.yml.draft` |
+| Per-mutation validation | Full strict (entire post-mutation config) | Permissive structural (just that entity) |
+| Cross-entity validation | At every mutation | At `validate_workspace` and `publish_draft` |
+| Behavior on partial state | Refuses if invalid; order matters | Allowed; intermediate state legitimately incomplete |
+| Best for | Single atomic ops | Multi-entity coherent builds |
+| MCP enable/disable | Writes live | Writes draft (existing tools are draft-aware) |
 
-Top-level keys covered below: `workspace`, `signals`, `jobs`, `agents`,
-`memory`, `resources`, `skills`, `server`, `tools`. Plus a top-level
-`improvement: "surface" | "auto"` flag.
+**Mutually exclusive.** If `workspace.yml.draft` exists, ALL mutations write to the draft. Direct mode is blocked. Publish or discard to return to direct mode.
 
-### `workspace` — identity and timeouts
-
-```yaml
-workspace:
-  id: "stable-id"              # optional (platform workspaces pin this)
-  name: "display-name"         # required, non-empty
-  description: "What this does"
-  timeout:                     # defaults: progressTimeout 2m, maxTotalTimeout 30m
-    progressTimeout: "2m"
-    maxTotalTimeout: "30m"
-```
-
-### `signals` — triggers
-
-```yaml
-signals:
-  run-now:                     # HTTP webhook — POST only
-    provider: http
-    description: "External webhook"
-    schema: { type: object, properties: { ... } }
-    config:
-      path: "/run-now"
-      timeout: "5m"            # optional
-
-  daily-summary:               # Cron
-    provider: schedule
-    config:
-      schedule: "0 9 * * 1-5"                    # cron-parser compatible
-      timezone: "America/Los_Angeles"            # default "UTC"
-
-  on-drop:                     # Filesystem watcher
-    provider: fs-watch
-    config:
-      path: "./inbox"                            # abs or workspace-relative
-      recursive: true
-
-  boot:                        # Platform-internal only
-    provider: system
-```
-
-Messaging providers (Slack, Telegram, WhatsApp): see
-`references/messaging-signals.md`.
-
-### `jobs` — FSM pipelines
-
-Keyed by **MCP tool name** (`[a-zA-Z0-9_-]+`). Every job has an `fsm:` block
-with `id`, `initial`, and `states`. Each state is either:
-
-- An action state: `{ entry: [...actions], on: { EVENT: { target: 'next' } } }`
-- A terminal state: `{ type: 'final' }`
-
-**Entry action types:**
-- `{ type: agent, agentId, outputTo, outputType, prompt }` — invoke a declared agent
-- `{ type: emit, event: 'EVENT_NAME' }` — fire an event routed by this state's `on` map
-
-Minimal FSM job (one agent, triggered by a signal):
-
-```yaml
-jobs:
-  summarize:
-    title: "Daily Summary"
-    triggers: [ { signal: daily-summary } ]
-    fsm:
-      id: summarize-pipeline
-      initial: idle
-      states:
-        idle:
-          'on':
-            daily-summary: { target: step_summarize }
-        step_summarize:
-          entry:
-            - type: agent
-              agentId: summarizer                # matches agents.summarizer
-              outputTo: summary-output
-              outputType: summary-result
-              prompt: "Summarize today's notes."
-            - type: emit
-              event: ADVANCE
-          'on':
-            ADVANCE: { target: done }
-        done: { type: final }
-    outputs: { memory: "notes", entryKind: "summary" }
-    config: { timeout: "10m", max_steps: 10 }
-```
-
-Multi-step pipelines chain states — each agent state emits `ADVANCE`, the next
-state's `on.ADVANCE.target` advances it. Keep states small; route with events,
-not nested conditionals.
-
-Other optional job fields: `prompt` (supervisor guidance), `inputs` (JSON
-schema exposed as MCP tool params), `context.files` (glob patterns +
-`base_path` + `max_file_size`), `success.{condition,schema}`, `error.condition`,
-`config.supervision.{level,skip_planning}`, loose `config.<key>` keys (read via
-`context.config.<key>`), `scope_exclusions`, `improvement: "surface"|"auto"`.
-
-### `agents` — per-workspace agent definitions
-
-Keyed by stable kebab-case id. Discriminated on `type` — three options:
-
-```yaml
-agents:
-  summarizer:                   # type: llm — inline LLM agent (most common)
-    type: llm
-    description: "Summarizes incoming docs"
-    config:
-      provider: "anthropic"                       # required
-      model: "claude-sonnet-4-6"                  # required
-      prompt: "You summarize..."                  # required
-      temperature: 0.3                            # default 0.3
-      max_tokens: 2000
-      max_steps: 10
-      tool_choice: "auto"                         # "auto" | "required" | "none"
-      tools: ["fetch_mcp_tool_name"]              # resolves via tools.mcp.servers.*
-
-  my-code-agent:                # type: user — SDK agent (Python/TS, registered via POST /api/agents/register)
-    type: user
-    agent: "my-code-agent"                        # matches registered agent id
-    prompt: "Additional workspace context"        # optional
-    env:                                          # strings OR credential refs
-      GITHUB_TOKEN: { credentialId: "cred_abc123" }
-      STATIC_VAR: "literal-value"
-    # To register the agent before referencing it here, see the `writing-friday-agents` skill.
-
-  kb-agent:                     # type: atlas — agent from the Atlas registry
-    type: atlas
-    agent: "kb-agent"                             # Atlas Agent ID from registry
-    description: "Knowledge base agent"
-    prompt: "You are a knowledge base assistant..."
-    config:                                       # agent-specific config (optional)
-      some_setting: "value"
-    env:
-      API_KEY: { credentialId: "cred_abc123" }
-```
-
-### `memory` — corpora and cross-workspace mounts
-
-```yaml
-memory:
-  own:                          # corpora this workspace creates
-    - { name: "notes",   type: "short_term", strategy: "narrative" }
-    - { name: "memory",  type: "long_term",  strategy: "narrative" }
-
-  mounts:                       # read/write other workspaces' memory
-    - name: "backlog"
-      source: "thick_endive/narrative/autopilot-backlog"  # {wsId|_global}/{kind}/{name}
-      mode: "ro"                                  # "ro" | "rw"
-      scope: "workspace"                          # "workspace" | "job" | "agent"
-      scopeTarget: "summarize"                    # required when scope != workspace
-      filter:                                     # optional
-        status: ["open", "triaged"]
-        since: "2026-04-01T00:00:00Z"
-
-  shareable:
-    list: ["notes"]
-    allowedWorkspaces: ["fuzzy_plum"]
-```
-
-**Baseline:** include the three `own` corpora above unless the user says
-otherwise. Persistent state across sessions lives here.
-
-**Reads auto-inject into chat system prompts.** The chat runtime fetches every
-declared narrative corpus on every turn and flattens entries into
-`<memory>` blocks. Agents see recent entries without calling anything —
-reach for `memory_read` only for older entries, a specific `since`
-cutoff, or more than 20 entries.
-
-**Writes** go through
-`memory_save({ workspaceId, memoryName, text, metadata? })`.
-The tool validates `memoryName` against `memory.own` / `memory.mounts`; `ro`
-mounts reject writes; `rw` mounts rewrite transparently to the source workspace.
-Companion tools: `memory_read`, `memory_remove`.
-**FSM `type: llm` agents can call these three tools** — they're in the FSM
-LLM allowlist.
-
-**Memory vs session state.** Narrative memory persists across sessions — use
-for anything the user should see next time. `state_{append,filter,lookup}` are
-session-scoped (per-workspace `state.db`) — use for working data inside a job
-pipeline.
-
-### `resources` — declared data references
-
-Tagged union on `type`. Every variant needs `slug`, `name`, `description`.
-
-- `document` — `schema: {...}` (JSON Schema for document structure)
-- `prose` — free-form; no extra fields
-- `artifact_ref` — `artifactId: "..."`
-- `external_ref` — `provider: "notion|drive|..."`, optional `ref` (URL), `metadata: {...}`
-
-### `skills` — global and inline skill entries
-
-```yaml
-skills:
-  - { name: "@tempest/debugging-friday", version: 3 }   # global ref; omit version for latest
-  - name: "ad-hoc-skill"                                # inline (workspace-local)
-    inline: true
-    description: "Short prose (no < or > chars)"
-    instructions: |
-      Skill body in markdown.
-```
-
-Reserved words (`anthropic`, `claude`) are rejected.
-
-### `server` — expose this workspace as an MCP server
-
-```yaml
-server:
-  mcp:
-    enabled: false
-    discoverable:
-      capabilities: ["workspace_*"]
-      jobs: ["review-*"]
-```
-
-Extended fields (`transport`, `auth`, `rate_limits`) require `friday.yml`
-— see `references/platform-friday-yml.md`.
-
-### `tools` — external MCP servers agents can call
-
-```yaml
-tools:
-  mcp:
-    client_config:
-      timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" }
-    servers:
-      filesystem:
-        transport:
-          type: stdio
-          command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/friday-scratch"]
-```
-
-Tool names exposed by these servers are what you list in `agents.*.config.tools`.
-
-**Common MCP servers:**
-
-| Need | Transport | Command | Args |
-|---|---|---|---|
-| SQLite | stdio | `uvx` | `mcp-server-sqlite`, `--db-path`, `${ATLAS_HOME}/workspaces/<ws-name>/<db>.sqlite` |
-| Filesystem | stdio | `npx` | `-y`, `@modelcontextprotocol/server-filesystem`, `<root>` |
-| GitHub | stdio | `npx` | `-y`, `@modelcontextprotocol/server-github` |
-| Postgres | stdio | `npx` | `-y`, `@modelcontextprotocol/server-postgres`, `<conn-str>` |
-| Fetch | stdio | `uvx` | `mcp-server-fetch` |
-| Time | stdio | `uvx` | `mcp-server-time` |
-
-**Path placeholders in MCP args.** The daemon expands `${HOME}` and
-`${ATLAS_HOME}` in every `args` entry at MCP spawn time. **Always prefer
-these over hardcoded `/Users/<name>/...` paths** — guessing the username
-is the single most common silent-failure mode (the sqlite process can't
-open the file, the MCP server dies, the agent's SQL tools vanish, and
-"saving" produces apologetic text while nothing persists). There is no
-`${WORKSPACE_PATH}` placeholder today; build the path from `${ATLAS_HOME}`
-plus the workspace name.
-
-For other servers, search the MCP registry. Validator flags `npm_package_not_found`
-/ `pypi_package_not_found` if a package doesn't exist — fix and retry.
+**Draft is a fork, not a branch.** `begin_draft` snapshots the live config at creation time. If live changes after the draft begins, publish blindly overwrites them. There is no merge logic.
 
 ---
 
-## Updating an existing workspace
+## Tool selection — when to use what
 
-**Default: `POST /api/workspaces/:id/update`** — validates the full config, writes
-`workspace.yml`, and destroys the runtime so it rebuilds on the next signal. The
-disk file does not auto-reload a live workspace; this endpoint is the correct path.
+**For workspace shape changes (agents, jobs, signals, validation):** always use the dedicated tools (`create_workspace`, `upsert_*`, `validate_workspace`, `publish_draft`, etc.). They are typed, return structured diffs and issues, and handle draft/live switching automatically. Never shell out to curl for these.
 
-```javascript
-// run_code, language: javascript
-const id = "layered_ham";   // runtime id, not the workspace name
-const cfg = await fetch(`http://localhost:8080/api/workspaces/${id}/config`).then(r => r.json());
+**For daemon CRUD (list workspaces, get config, delete workspace):** use `run_code` bash + curl to `localhost:8080`. These are one-liners; the output is immediate and errors are obvious. Do not spawn `agent_claude-code` for a `DELETE` or a `GET`.
 
-// mutate cfg.config ...
+**For MCP server questions (install vs enable, credentials, catalog search):** load the `using-mcp-servers` skill. `workspace-api` does not cover MCP scope.
 
-const res = await fetch(`http://localhost:8080/api/workspaces/${id}/update`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ config: cfg.config }),
-});
-console.log(JSON.stringify(await res.json()));
-// → { success: true, workspace: {...}, runtimeReloaded: true }
-```
+**For codebase exploration or multi-file edits:** `agent_claude-code` is the right tool.
 
-Pass `backup: true` to preserve a timestamped `workspace.yml.backup-<ts>` before
-overwriting. Pass `force: true` to override the active-session guard (use with care).
-
-**Surgical endpoints** — prefer these over a full update when only one thing changes:
-
-| Change | Endpoint |
-|---|---|
-| Add/update/delete a signal | `POST`/`PUT`/`PATCH`/`DELETE /api/workspaces/:id/config/signals[/:id]` |
-| Update an agent's prompt / model / tools | `PUT /api/workspaces/:id/config/agents/:id` |
-| Swap a credential reference | `PUT /api/workspaces/:id/config/credentials/:path` |
-| Rename / recolor metadata | `PATCH /api/workspaces/:id/metadata` |
-
-**Never DELETE+CREATE** — loses the runtime id, kills active sessions, breaks anything
-holding the old id (cron targets, cross-workspace mounts, hardcoded refs).
+The failure mode this prevents: reaching for `agent_claude-code` as a panic button when uncertain, turning a 5-second curl into an 8-minute agent call.
 
 ---
 
-## Deleting a workspace
+## CRUD reference — curl examples
 
-`DELETE /api/workspaces/:id` — removes the workspace, its config, and its runtime
-entry. The id is the **runtime id** (`layered_ham`-style), not the workspace name.
+All examples assume the daemon is on `localhost:8080`. Confirm first:
 
 ```bash
-# run_code, language: bash
-curl -sf -X DELETE http://localhost:8080/api/workspaces/layered_ham
-# → {"success": true, "id": "layered_ham"}
+curl -sf http://localhost:8080/health && echo OK
 ```
 
-**Rejects with 403** for system workspaces (`system`, `user`, `thick_endive`).
-Do not attempt to delete those.
-
-**Resolve name → id first** when you only have the display name:
+### List workspaces
 
 ```bash
-curl -sf http://localhost:8080/api/workspaces | \
+curl -s http://localhost:8080/api/workspaces | jq
+```
+
+Resolve a display name to a runtime id:
+
+```bash
+curl -s http://localhost:8080/api/workspaces | \
   jq -r '.[] | select(.name == "my-workspace") | .id'
 ```
 
-### Batch delete — by name prefix
+### Get workspace + config
 
 ```bash
-# run_code, language: bash
-curl -sf http://localhost:8080/api/workspaces | \
+# Summary (id, name, status, path)
+curl -s http://localhost:8080/api/workspaces/$WS | jq
+
+# Full parsed config
+curl -s http://localhost:8080/api/workspaces/$WS/config | jq
+```
+
+### Update workspace (full replacement)
+
+```bash
+curl -s -X POST http://localhost:8080/api/workspaces/$WS/update \
+  -H 'Content-Type: application/json' \
+  -d '{"config": {"version":"1.0","workspace":{"name":"new-name"}}, "backup": true}'
+```
+
+Pass `backup: true` to preserve a timestamped `workspace.yml.backup-<ts>`. Pass `force: true` to override the active-session guard.
+
+**Prefer partial updates for single-entity changes** — they preserve runtime state and reload only the runtime:
+
+```bash
+# Add or replace a signal
+curl -s -X POST http://localhost:8080/api/workspaces/$WS/config/signals \
+  -H 'Content-Type: application/json' \
+  -d '{"signalId": "run-now", "signal": {"provider":"http","config":{"path":"/run-now"}}}'
+
+# Update agent prompt + model + tools
+curl -s -X PUT http://localhost:8080/api/workspaces/$WS/config/agents/summarizer \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"You summarize rigorously.","model":"claude-sonnet-4-6","tools":["fetch"]}'
+
+# Patch signal schedule
+curl -s -X PATCH http://localhost:8080/api/workspaces/$WS/config/signals/daily-summary \
+  -H 'Content-Type: application/json' \
+  -d '{"config":{"schedule":"*/15 * * * *","timezone":"UTC"}}'
+```
+
+### Delete a workspace (single)
+
+```bash
+curl -sf -X DELETE http://localhost:8080/api/workspaces/$WS
+```
+
+**Rejects 403** for system workspaces (`system`, `user`, `thick_endive`). Resolve name → id first; never guess runtime IDs.
+
+### Delete workspaces (batch — by name prefix)
+
+```bash
+curl -s http://localhost:8080/api/workspaces | \
   jq -r '.[] | select(.name | startswith("test-")) | .id' | \
   while read -r id; do
     result=$(curl -sf -X DELETE "http://localhost:8080/api/workspaces/$id")
@@ -519,39 +238,103 @@ curl -sf http://localhost:8080/api/workspaces | \
   done
 ```
 
-### Batch delete — by explicit id list
+**Dry-run first** — list names before deleting:
 
 ```bash
-# run_code, language: bash
+curl -s http://localhost:8080/api/workspaces | \
+  jq -r '.[] | select(.name | startswith("test-")) | "\(.id)  \(.name)"'
+```
+
+### Delete workspaces (batch — explicit id list)
+
+```bash
 for id in layered_ham smoky_almond ripe_eggplant; do
   result=$(curl -sf -X DELETE "http://localhost:8080/api/workspaces/$id")
   echo "$id: $result"
 done
 ```
 
-**Dry-run first** — list the names before deleting to confirm you have the right set:
+---
 
-```bash
-curl -sf http://localhost:8080/api/workspaces | \
-  jq -r '.[] | select(.name | startswith("test-")) | "\(.id)  \(.name)"'
-```
+## Stuck-recovery heuristic
+
+If validation fails 3+ times on the same operation and the error path is unclear, stop iterating on the current shape. Use binary search:
+
+1. Build the **minimum viable config** (just `version: "1.0"` + `workspace.name`) and confirm it validates cleanly.
+2. Add **one section at a time** in this order: signals → agents → jobs.
+3. Call `validate_workspace` after each addition.
+4. The **first section that breaks** is the one to debug. Fix it before adding the next.
+
+This removes the panic-driven shotgun debugging that produces orphaned agents, malformed FSMs, and circular retries.
 
 ---
 
-## Error codes
+## Workshop-then-crystallize
 
-`workspace_create` → 400 / 409 / 422 / 500. Partial-update → 404 / 405 / 409
-/ 422. `DELETE /api/workspaces/:id` → 403 for system workspaces. Response
-body has details; 422 includes `report.issues[]`.
+A common pattern: the user and chat prove out a flow interactively using real MCP tools, then the user says "save this as a recurring job."
+
+**How to crystallize:**
+
+1. The chat distills its own conversation into one agent prompt + a `tools:` array. No new tool is needed for this — the model is good at summarizing its own behavior into a config shape.
+2. Propose an **agent + job + signal triple**:
+   - Agent: the distilled prompt and tool set.
+   - Job: an FSM with one state that invokes the agent.
+   - Signal: the trigger (cron, HTTP webhook, or fs-watch) that starts the job.
+3. Use **draft mode by default** for crystallization. The user reviews the triple as a unit before publish.
+4. **Address the structural shift.** Interactive flows often need approval steps when made autonomous. Example: if the workshopped flow books meetings, the crystallized version should add a separate `book-meeting` HTTP signal for human-approved actions, or an FSM state that pauses for confirmation.
+5. **Suggest organically.** After a successful interactive demonstration: "This worked well. Want me to save it as a daily-automation job? I can draft the agent, job, and signal for you to review before publishing."
+
+---
+
+## LLM vs Python agent decision matrix
+
+Workspaces support two agent types: `type: llm` (inline LLM, most common) and `type: user` (Python/TS SDK agent, registered via NATS).
+
+| Use `type: llm` when | Use `type: user` (Python) when |
+|---|---|
+| The logic is "figure out what to do" — classification, summarization, routing decisions, creative generation. | The work is mechanical — parsing, transforming, multipart uploads, deterministic routing, heavy data crunching. |
+| The task benefits from reasoning inside the prompt and tool-calling loop. | The LLM-loop tax (token latency, cost) dominates the value of the task. |
+| One focused `generate_text` or `generate_object` call with a strong prompt suffices. | The task requires libraries unavailable to the LLM (Pandas, PIL, custom compiled code). |
+| Speed of iteration matters more than runtime cost. | The task runs unattended at high frequency and cost must be minimized. |
+
+**Examples:**
+- A triage agent that reads an email and decides "urgent / tracking / ignore" → `llm`.
+- A parser that extracts structured fields from 10,000 PDFs and writes to SQLite → `user` (Python).
+- A map-builder that calls an LLM for design but Python for tile rendering → hybrid: `llm` agent delegates to a `user` agent for the render step.
+
+Python agent creation is an out-of-flow step the user kicks off explicitly. See the `writing-friday-agents` skill for authoring, deploying, and registering SDK agents.
+
+---
+
+## Top gotchas — read before writing any config
+
+1. **Jobs must use `fsm:`, not `execution:`**. The schema accepts both; the runtime silently skips any job lacking `fsm:` and signal dispatch fails at runtime with `"No FSM job handles signal '<name>'"`.
+
+2. **FSM shape is XState-style.** States are `{ entry: [...actions], on: { EVENT: { target: 'next' } } }` or `{ type: 'final' }`. Do **not** use `type: action, action: {...}, next: ...` — the validator rejects it with `fsm_structural_error`.
+
+3. **`write_file` writes to scratch only** (`{ATLAS_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
+
+4. **Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*`.** There are no platform-default filesystem tools. Listing a tool name without a configured MCP server that provides it is a no-op. *Exception:* the platform ships memory tools (`memory_save`, `memory_read`, `memory_remove`) and state tools (`state_{append,filter,lookup}`) for both chat and FSM LLM agents without any MCP server config.
+
+5. **Never report "saved to memory" without verifying.** Setup can look successful end-to-end and still silently fail. Before reporting success:
+   1. Fire the signal once with a canary payload.
+   2. Poll `GET /api/sessions/:id` until terminal (`completed` / `failed`).
+   3. Read back with `GET /api/memory/:workspaceId/narrative/:memoryName`.
+   4. Surface any mismatch explicitly — don't paper over it.
+
+6. **Always resolve workspace IDs from the API.** Runtime IDs like `layered_ham` are random per daemon. Never hardcode them.
+
+7. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
 ---
 
 ## Go deeper
 
-All references are cited inline at the point of use. Dir map:
-- `assets/example-kb-workspace.yml` — narrative-memory-only, for trivial
-  save-and-recall.
-- `assets/example-jobs-pipeline.yml` — signals + jobs + FSM + MCP, for
-  structured or signal-triggered work.
-- `references/` — messaging signals, workspace editing, `friday.yml`
-  platform superset.
+- `assets/example-kb-workspace.yml` — narrative-memory-only workspace. No jobs, no agents, no MCP. Use for trivial save-and-recall (notes, URLs, quotes, reading list).
+- `assets/example-jobs-pipeline.yml` — signals + jobs + FSM + MCP. Use for structured storage, signal-triggered work, or multi-step pipelines.
+- `references/updating-workspaces.md` — partial-update API details, disk-edit path, when to use each.
+- `references/messaging-signals.md` — Slack, Telegram, WhatsApp signal configuration.
+- `references/platform-friday-yml.md` — platform-level overrides (transport, auth, rate limits).
+- `using-mcp-servers` skill — MCP catalog, install/enable/disable, credentials, delegation.
+- `writing-friday-agents` skill — authoring and registering Python/TS SDK agents.
+- `friday-cli` skill — daemon lifecycle, signal triggering, session streaming, log forensics.
