@@ -428,10 +428,17 @@ export function getPlaygroundService(): ServiceStatus | undefined {
 }
 
 /**
- * Open the playground in the user's browser and close the wizard.
- * The launcher is detached from the wizard at spawn time, so closing
- * the wizard window does NOT kill the platform — the launcher keeps
- * supervising its services. Same close logic for "Open anyway".
+ * Open the playground in the user's browser and exit the wizard.
+ * The launcher is detached from the wizard at spawn time, so exiting
+ * the wizard does NOT kill the platform — the launcher keeps
+ * supervising its services. Same exit logic for "Open anyway".
+ *
+ * We invoke a Rust-side `exit_installer` command rather than calling
+ * `getCurrentWindow().close()` from JS — close() is permissioned and
+ * doesn't always terminate the app on macOS (Tauri's default
+ * close-requested handler can call preventDefault, leaving the
+ * window up after openUrl resolves). `app.exit(0)` from Rust
+ * bypasses every JS-level prevention path.
  */
 export async function openPlaygroundAndExit(): Promise<void> {
   try {
@@ -441,10 +448,9 @@ export async function openPlaygroundAndExit(): Promise<void> {
     // ignore — browser might already be open or plugin unavailable
   }
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().close();
+    await invoke("exit_installer");
   } catch {
-    // ignore — window already closing or API unavailable
+    // ignore — installer already exiting
   }
 }
 

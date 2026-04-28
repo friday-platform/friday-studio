@@ -3,6 +3,7 @@ pub mod delete_partial;
 pub mod download;
 pub mod download_checkpoint;
 pub mod env_file;
+pub mod exit_installer;
 pub mod extract;
 pub mod fetch_manifest;
 pub mod installed_marker;
