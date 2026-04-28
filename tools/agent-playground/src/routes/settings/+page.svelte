@@ -21,6 +21,10 @@
   import { Button, toast } from "@atlas/ui";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
+  import { EXTERNAL_TUNNEL_URL } from "$lib/daemon-url";
+  import { z } from "zod";
+
+  const TunnelStatusSchema = z.object({ url: z.string().nullable() });
 
   // ─── Types mirroring the daemon's route shapes ─────────────────────
 
@@ -141,6 +145,44 @@
   let catalogError = $state<string | null>(null);
   let successFlash = $state<string | null>(null);
 
+  // ─── Tunnel state ──────────────────────────────────────────────────
+
+  let tunnelUrl = $state<string | null>(null);
+  let tunnelLoading = $state(true);
+  let tunnelError = $state<string | null>(null);
+
+  async function loadTunnel(): Promise<void> {
+    tunnelLoading = true;
+    tunnelError = null;
+    try {
+      const res = await fetch(`${EXTERNAL_TUNNEL_URL}/status`);
+      if (!res.ok) {
+        tunnelError = `Tunnel unreachable (HTTP ${res.status})`;
+        return;
+      }
+      const parsed = TunnelStatusSchema.safeParse(await res.json());
+      if (parsed.success) {
+        tunnelUrl = parsed.data.url;
+      } else {
+        tunnelError = "Tunnel response did not match expected shape";
+      }
+    } catch (err) {
+      tunnelError = err instanceof Error ? err.message : String(err);
+    } finally {
+      tunnelLoading = false;
+    }
+  }
+
+  function copyTunnelUrl(): void {
+    if (!tunnelUrl) return;
+    if (navigator.clipboard) {
+      navigator.clipboard
+        .writeText(tunnelUrl)
+        .then(() => toast({ title: "Tunnel URL copied" }))
+        .catch(() => toast({ title: "Copy failed", error: true }));
+    }
+  }
+
   // ─── Loaders ───────────────────────────────────────────────────────
 
   async function loadEnv(): Promise<EnvRow[]> {
@@ -193,9 +235,7 @@
         Array.isArray((data as { models: unknown }).models)
       ) {
         const fetched = (data as { models: ModelInfo[] }).models;
-        models = [...fetched].sort(
-          (a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role),
-        );
+        models = [...fetched].sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role));
         const nextChains: Record<ModelRole, ModelChoice[]> = {
           labels: [],
           classifier: [],
@@ -539,7 +579,7 @@
   $effect(() => {
     void (async () => {
       await loadEnv();
-      await Promise.all([loadModels(), loadCatalog()]);
+      await Promise.all([loadModels(), loadCatalog(), loadTunnel()]);
     })();
   });
 
@@ -592,10 +632,7 @@
       const res = await fetch(url);
       if (!res.ok) {
         const body = await res.text();
-        toast({
-          title: `Export failed: ${body.slice(0, 200)}`,
-          error: true,
-        });
+        toast({ title: `Export failed: ${body.slice(0, 200)}`, error: true });
         return;
       }
       const blob = await res.blob();
@@ -649,7 +686,9 @@
               },
             ]
           : [],
-      errors: Array.isArray(body.errors) ? (body.errors as { name?: string; error?: string }[]) : [],
+      errors: Array.isArray(body.errors)
+        ? (body.errors as { name?: string; error?: string }[])
+        : [],
       globalSkills: (body.globalSkills as { kind?: string } | null | undefined) ?? null,
       raw: body,
     };
@@ -662,7 +701,8 @@
     singleResult = null;
     try {
       singleResult = await postBundle("/api/daemon/api/workspaces/import-bundle", file);
-      if (singleResult.ok) toast({ title: `Imported: ${singleResult.imported[0]?.name ?? "workspace"}` });
+      if (singleResult.ok)
+        toast({ title: `Imported: ${singleResult.imported[0]?.name ?? "workspace"}` });
       else toast({ title: singleResult.message ?? "Import failed", error: true });
     } finally {
       singleBusy = false;
@@ -789,6 +829,36 @@
     {/if}
   </section>
 
+  <!-- ─── Tunnel section ─────────────────────────────────────── -->
+  <section class="section">
+    <div class="section-header-row">
+      <div class="section-header">
+        <h2>Webhook tunnel</h2>
+        <p class="section-sub">
+          Public URL of the local Cloudflare tunnel (
+          <code>webhook-tunnel</code>
+          ). Use it as the base for inbound webhooks.
+        </p>
+      </div>
+      <div class="section-meta">
+        {tunnelLoading ? "…" : tunnelUrl ? "active" : "inactive"}
+      </div>
+    </div>
+
+    {#if tunnelLoading}
+      <div class="loading">Checking tunnel…</div>
+    {:else if tunnelUrl}
+      <div class="tunnel-row">
+        <code class="tunnel-url">{tunnelUrl}</code>
+        <Button variant="secondary" onclick={copyTunnelUrl}>Copy</Button>
+      </div>
+    {:else}
+      <div class="warn-banner">
+        {tunnelError ?? "No tunnel URL available — webhook-tunnel may not be running."}
+      </div>
+    {/if}
+  </section>
+
   <!-- ─── Env vars section ───────────────────────────────────── -->
   <section class="section">
     <details class="env-details">
@@ -878,9 +948,9 @@
       <div class="section-header">
         <h2>Backup &amp; restore</h2>
         <p class="section-sub">
-          Export your workspaces as a portable zip, and re-import them on another machine.
-          Imports never overwrite existing data — if a conflict is detected, the incoming copy
-          lands next to the existing one so you can merge manually.
+          Export your workspaces as a portable zip, and re-import them on another machine. Imports
+          never overwrite existing data — if a conflict is detected, the incoming copy lands next to
+          the existing one so you can merge manually.
         </p>
       </div>
     </div>
@@ -927,7 +997,9 @@
         {#if singleResult}
           <div class="backup-result" class:err={!singleResult.ok}>
             {#if singleResult.ok}
-              <div>Imported: <strong>{singleResult.imported[0]?.name ?? "?"}</strong></div>
+              <div>
+                Imported: <strong>{singleResult.imported[0]?.name ?? "?"}</strong>
+              </div>
               {#if memoryLabel(singleResult.imported[0]?.memory?.kind)}
                 <div class="muted">{memoryLabel(singleResult.imported[0]?.memory?.kind)}</div>
               {/if}
@@ -969,7 +1041,7 @@
                     <li>
                       <strong>{entry.name ?? "?"}</strong>
                       {#if memoryLabel(entry.memory?.kind)}
-                        <span class="muted"> — {memoryLabel(entry.memory?.kind)}</span>
+                        <span class="muted">— {memoryLabel(entry.memory?.kind)}</span>
                       {/if}
                     </li>
                   {/each}
@@ -985,7 +1057,10 @@
                   <strong>{fullResult.errors.length} error(s):</strong>
                   <ul class="backup-list">
                     {#each fullResult.errors as e, i (i)}
-                      <li><strong>{e.name ?? "?"}</strong>: {e.error ?? "?"}</li>
+                      <li>
+                        <strong>{e.name ?? "?"}</strong>
+                        : {e.error ?? "?"}
+                      </li>
                     {/each}
                   </ul>
                 </div>
@@ -1201,6 +1276,31 @@
     color: var(--color-text);
     font-size: 12px;
     padding: 8px 12px;
+  }
+
+  /* ─── Tunnel section ─── */
+
+  .tunnel-row {
+    align-items: center;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: 10px;
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .tunnel-url {
+    background: var(--color-surface-3);
+    border-radius: 6px;
+    color: var(--color-text);
+    flex: 1;
+    font-family: var(--font-family-monospace);
+    font-size: 13px;
+    overflow: hidden;
+    padding: 8px 12px;
+    text-overflow: ellipsis;
+    user-select: all;
+    white-space: nowrap;
   }
 
   /* ─── Env vars section ─── */
