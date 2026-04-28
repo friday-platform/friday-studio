@@ -115,7 +115,7 @@
         <div class="detail-stack">
           <div class="detail-headerbar">
             <Button variant="secondary" onclick={handleImport} disabled={importing}>
-              {importing ? "Importing…" : "Add Now"}
+              {importing ? "Importing…" : "Add Space"}
             </Button>
 
             <p class="meta">

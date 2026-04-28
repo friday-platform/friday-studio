@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PageLayout } from "@atlas/ui";
+  import { Button, PageLayout } from "@atlas/ui";
   import { getClient } from "$lib/client.ts";
 
   interface DiscoverItem {
@@ -62,10 +62,6 @@
         {#if loading}
           {#each SKELETON_SPACES as space (space)}
             <div class="space-card skeleton-shimmer">
-              <div class="card-header">
-                <div class="card-dot"></div>
-                <div class="card-badge"></div>
-              </div>
               <div class="card-title-line"></div>
               <div class="card-sub-line" style="inline-size: 80%"></div>
               <div class="card-sub-line" style="inline-size: 60%"></div>
@@ -74,15 +70,11 @@
         {:else}
           {#each items as item (item.slug)}
             <a class="space-card" href={`/discover/${item.slug}`}>
-              <div class="card-header">
-                <div class="card-dot"></div>
-              </div>
-              <h3 class="card-title">{item.name}</h3>
+              <h2 class="card-title">{item.name}</h2>
               {#if item.description}
                 <p class="card-desc">{item.description}</p>
-              {:else}
-                <p class="card-desc muted">{item.slug}</p>
               {/if}
+              <Button variant="secondary" noninteractive>See Details</Button>
             </a>
           {/each}
           {#if items.length === 0 && !errorMsg}
@@ -119,70 +111,36 @@
 
   .space-grid {
     display: grid;
-    gap: var(--size-4);
+    gap: var(--size-12);
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   }
 
   .space-card {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
+    align-items: flex-start;
     color: inherit;
     display: flex;
     flex-direction: column;
-    gap: var(--size-3);
-    padding: var(--size-5);
+    gap: var(--size-1);
     text-decoration: none;
-    transition:
-      border-color 120ms ease,
-      transform 120ms ease;
   }
 
-  a.space-card:hover {
-    border-color: var(--color-border-2);
-    transform: translateY(-1px);
-  }
-
-  .card-header {
-    align-items: center;
-    display: flex;
-    justify-content: space-between;
-    min-block-size: var(--size-4);
-  }
-
-  .card-dot {
-    background: color-mix(in srgb, var(--color-accent, #1171df), transparent 50%);
-    block-size: 10px;
-    border-radius: 50%;
-    inline-size: 10px;
-  }
-
-  .card-badge {
-    background: color-mix(in srgb, var(--color-text), transparent 90%);
-    border-radius: var(--radius-round);
-    block-size: var(--size-4);
-    inline-size: 64px;
+  .space-card :global(.button) {
+    margin-block-start: var(--size-2);
   }
 
   .card-title {
-    color: var(--color-text);
-    font-size: 15px;
+    color: var(--text-bright);
+    font-size: var(--font-size-5);
     font-weight: 600;
     letter-spacing: -0.005em;
     margin: 0;
   }
 
   .card-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    font-size: 13px;
+    color: var(--text-faded);
+    font-size: var(--font-size-4);
     line-height: 1.45;
     margin: 0;
-  }
-
-  .card-desc.muted {
-    color: color-mix(in srgb, var(--color-text), transparent 60%);
-    font-family: var(--font-family-monospace);
-    font-size: 12px;
   }
 
   .card-title-line {

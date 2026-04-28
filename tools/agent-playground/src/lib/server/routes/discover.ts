@@ -257,45 +257,71 @@ async function fetchWorkspaceMeta(
 
 const ItemQuerySchema = z.object({ slug: z.string().min(1) });
 
+// Stubbed catalog while the real discover repo is still TBD. Each entry maps
+// 1:1 to a card on /discover. Slug is derived from name and used to look up
+// the entry on the detail page.
+const STUB_LIST: { name: string; description: string }[] = [
+  {
+    name: "GitHub Digest",
+    description:
+      "Summarizes your GitHub notifications and open PRs into a scheduled morning and evening digest.",
+  },
+  {
+    name: "Competitor Monitor",
+    description:
+      "Automatically scans for competitors every Monday for pricing, product, and GTM changes, then delivers a clustered, action-ready intelligence brief in Discord.",
+  },
+  {
+    name: "Daily Operating Memo",
+    description: "Reads your Jira, Gmail, and GCal, and sends a daily operating memo.",
+  },
+  {
+    name: "Personal CRM Lite",
+    description:
+      "Lightweight contact memory system — log interactions and pull relationship context via Telegram.",
+  },
+  {
+    name: "GitHub PR Reviewer",
+    description:
+      "Reviews pull requests and posts inline comments on GitHub. Supports initial reviews and follow-up rounds where it responds to author feedback.",
+  },
+  {
+    name: "BitBucket PR Reviewer",
+    description:
+      "Reviews pull requests and posts inline comments on Bitbucket. Supports initial reviews and follow-up rounds where it responds to author feedback.",
+  },
+  {
+    name: "Jira/BitBucket Bug Fix",
+    description:
+      "Fixes bugs from Jira tickets. Reads the issue, implements a fix, and opens a PR on Bitbucket.",
+  },
+  { name: "Home Listings Search", description: "" },
+  {
+    name: "Query Data for Insights",
+    description: "Connect a data source (.csv? Snowflake?) and query the data in chat.",
+  },
+  { name: "Brand Monitor", description: "" },
+  { name: "Track Price Changes", description: "" },
+  { name: "Workout Tracker", description: "" },
+  { name: "Email Management", description: "" },
+];
+
+function toSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export const discoverRoute = new Hono()
-  .get("/list", async (c) => {
-    const apiUrl = `https://api.github.com/repos/${REPO}/contents/${PATH}?ref=${REF}`;
-    const { status, text } = await cachedFetch(apiUrl);
-    if (status < 200 || status >= 300) {
-      return c.json(
-        { error: `GitHub API ${status}: ${text}`, items: [] },
-        status === 404 ? 404 : 502,
-      );
-    }
-    let raw: unknown;
-    try {
-      raw = JSON.parse(text);
-    } catch {
-      return c.json({ error: "GitHub returned non-JSON response", items: [] }, 502);
-    }
-    const parsed = ContentsResponseSchema.safeParse(raw);
-    if (!parsed.success) {
-      return c.json({ error: "Unexpected GitHub response shape", items: [] }, 502);
-    }
-
-    const dirs = parsed.data.filter((e) => e.type === "dir");
-    const items: DiscoverItem[] = await Promise.all(
-      dirs.map(async (d) => {
-        const meta = await fetchWorkspaceMeta(REPO, REF, d.path);
-        return {
-          slug: d.name,
-          name: meta.name ?? d.name,
-          description: meta.description ?? "",
-          hasWorkspaceYml: meta.hasWorkspaceYml,
-          counts: {
-            signals: meta.signals.length,
-            agents: meta.agents.length,
-            jobs: meta.jobs.length,
-          },
-        };
-      }),
-    );
-
+  .get("/list", (c) => {
+    const items: DiscoverItem[] = STUB_LIST.map((entry) => ({
+      slug: toSlug(entry.name),
+      name: entry.name,
+      description: entry.description,
+      hasWorkspaceYml: false,
+      counts: { signals: 0, agents: 0, jobs: 0 },
+    }));
     return c.json({ source: { repo: REPO, path: PATH, ref: REF }, items });
   })
   .get("/item", zValidator("query", ItemQuerySchema), async (c) => {
