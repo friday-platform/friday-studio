@@ -396,15 +396,11 @@
     }
 
     &.active {
-      background-color: var(--surface);
+      background-color: var(--highlight);
       color: var(--text-bright);
 
       :global(svg) {
         opacity: 1;
-      }
-
-      @media (prefers-color-scheme: light) {
-        background-color: color-mix(in srgb, black 5%, transparent);
       }
     }
   }
