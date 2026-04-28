@@ -428,6 +428,23 @@ export function getPlaygroundService(): ServiceStatus | undefined {
 }
 
 /**
+ * Ask any previous-version launcher to shut down before this run's
+ * Launch step spawns a fresh one. Returns true if a launcher was
+ * actually stopped, false if nothing was running. Errors bubble up
+ * so the UI can surface them — the most likely cause of an error is
+ * the old launcher being unresponsive on the HTTP shutdown endpoint
+ * (state we'd want to know about, not silently ignore).
+ *
+ * Without this, an in-place upgrade (existing launcher still alive,
+ * binding port 5199) collides with the new launcher's bind attempt
+ * and the user sees the "Port 5199 already in use" dialog with no
+ * obvious recovery path other than `pkill` from a terminal.
+ */
+export function stopRunningLauncher(): Promise<boolean> {
+  return invoke<boolean>("stop_running_launcher");
+}
+
+/**
  * Create /Applications/Friday Studio.app on darwin so Spotlight can
  * index the launcher and the user can re-open it from Finder /
  * Spotlight after they Quit. No-op (and quiet failure) on other

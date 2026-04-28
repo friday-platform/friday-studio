@@ -1,5 +1,5 @@
 <script lang="ts">
-import { advanceStep } from "../lib/installer.ts";
+import { advanceStep, stopRunningLauncher } from "../lib/installer.ts";
 import type { InstallMode } from "../lib/store.svelte.ts";
 
 interface Props {
@@ -11,10 +11,41 @@ interface Props {
 
 const { mode, installedVersion, availableVersion, studioRunning }: Props = $props();
 
+let stopping = $state(false);
+let stopError = $state<string | null>(null);
+
 async function openStudio(): Promise<void> {
   // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl("http://localhost:5200");
+}
+
+// Update / re-install path for mode === "update": if the previous
+// launcher is still running we need to shut it down before download
+// + extract + launch, otherwise:
+//   - the new launcher's port 5199 bind will collide and surface
+//     the port-in-use dialog
+//   - extract may fail to overwrite a running binary on Windows
+//
+// We do this BEFORE download (not before launch) so the user isn't
+// waiting through a 500MB tarball just to find out we couldn't free
+// the port. The "Friday Studio is currently running. The update will
+// stop it briefly." warning above the button is the consent — by
+// clicking the button the user has already opted in.
+async function stopThenAdvance(): Promise<void> {
+  stopError = null;
+  if (studioRunning) {
+    stopping = true;
+    try {
+      await stopRunningLauncher();
+    } catch (err) {
+      stopError = err instanceof Error ? err.message : String(err);
+      stopping = false;
+      return;
+    }
+    stopping = false;
+  }
+  advanceStep();
 }
 </script>
 
@@ -42,9 +73,19 @@ async function openStudio(): Promise<void> {
           <span class="warning-icon" aria-hidden="true">⚠</span>
           Friday Studio is currently running. The update will stop it briefly.
         </div>
+        {#if stopError !== null}
+          <div class="warning">
+            <span class="warning-icon" aria-hidden="true">⚠</span>
+            Could not stop the running Studio: {stopError}
+          </div>
+        {/if}
         <div class="actions">
-          <button class="primary" onclick={advanceStep}>Update Studio</button>
-          <button class="secondary" onclick={openStudio}>Open Studio</button>
+          <button class="primary" onclick={stopThenAdvance} disabled={stopping}>
+            {stopping ? "Stopping Studio…" : "Update Studio"}
+          </button>
+          <button class="secondary" onclick={openStudio} disabled={stopping}>
+            Open Studio
+          </button>
         </div>
       {:else}
         <p class="subtitle">
