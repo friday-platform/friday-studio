@@ -94,7 +94,7 @@ func validateCwd(raw, fallback string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cwd does not exist: %w", err)
 	}
-	info, err := os.Stat(resolved) //nolint:gosec // path is canonicalized via Clean + Abs + EvalSymlinks above.
+	info, err := os.Stat(resolved)
 	if err != nil {
 		return "", fmt.Errorf("cwd does not exist: %w", err)
 	}
