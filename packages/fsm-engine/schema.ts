@@ -71,10 +71,21 @@ export const AgentActionSchema = z.object({
   inputFrom: z.union([z.string(), z.array(z.string()).min(1)]).optional(),
 });
 
+export const NotificationActionSchema = z.object({
+  type: z.literal("notification"),
+  message: z.string(),
+  /**
+   * Optional allowlist of communicator kinds. Omitted = broadcast to every
+   * configured communicator with a `default_destination`.
+   */
+  communicators: z.array(z.string()).optional(),
+});
+
 export const ActionSchema = z.discriminatedUnion("type", [
   LLMActionSchema,
   EmitActionSchema,
   AgentActionSchema,
+  NotificationActionSchema,
 ]);
 
 export const TransitionDefinitionSchema = z.object({

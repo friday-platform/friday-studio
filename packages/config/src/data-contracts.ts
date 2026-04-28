@@ -68,13 +68,14 @@ export function deriveDataContracts(config: WorkspaceConfig): DataContract[] {
     for (const [stateId, state] of Object.entries(fsm.states)) {
       if (!state.entry) continue;
 
-      // Find the first entry action with an outputType
+      // Find the first entry action with an outputType. Only agent/llm carry
+      // `outputType`; the value-level guard below re-narrows because `Array.find`
+      // returns `Action | undefined`, not the predicate-narrowed shape.
       const producerAction = state.entry.find(
         (a) => (a.type === "agent" || a.type === "llm") && a.outputType,
       );
-      if (!producerAction || producerAction.type === "emit") {
-        continue;
-      }
+      if (!producerAction) continue;
+      if (producerAction.type !== "agent" && producerAction.type !== "llm") continue;
 
       const outputType = producerAction.outputType;
       if (!outputType) continue;

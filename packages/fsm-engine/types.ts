@@ -57,7 +57,7 @@ export interface TransitionDefinition {
   actions?: Action[];
 }
 
-export type Action = LLMAction | EmitAction | AgentAction;
+export type Action = LLMAction | EmitAction | AgentAction | NotificationAction;
 
 export interface LLMAction {
   type: "llm";
@@ -94,6 +94,30 @@ export interface AgentAction {
    * execution time.
    */
   inputFrom?: string | string[];
+}
+
+export interface NotificationAction {
+  type: "notification";
+  message: string;
+  /**
+   * Optional allowlist of communicator kinds (e.g. "slack", "telegram").
+   * When omitted, the message is broadcast to every configured communicator
+   * with a `default_destination`. When provided, only the listed kinds receive
+   * the message.
+   */
+  communicators?: string[];
+}
+
+/**
+ * Structural contract the FSM engine uses to fan a notification out to chat
+ * platforms. Implementations live outside fsm-engine (e.g. atlasd wraps
+ * ChatSdkNotifier + broadcastDestinations) — the engine just calls broadcast.
+ *
+ * Per-platform delivery failures must be swallowed inside the implementation;
+ * the engine treats a thrown error as a hard FSM failure.
+ */
+export interface FSMBroadcastNotifier {
+  broadcast(args: { message: string; communicators?: string[] }): Promise<void>;
 }
 
 export interface Context {

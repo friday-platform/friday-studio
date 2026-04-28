@@ -86,6 +86,7 @@ import {
   resolveDiscordCredentials,
   resolvePlatformCredentials,
 } from "./chat-sdk/chat-sdk-instance.ts";
+import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
 import { NatsManager } from "./nats-manager.ts";
@@ -1154,6 +1155,10 @@ export class AtlasDaemon {
           agentExecutor: this.processAgentExecutor ?? undefined,
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
           blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
+          broadcastNotifier: createFSMBroadcastNotifier({
+            workspaceId: workspace.id,
+            getInstance: (id) => this.getOrCreateChatSdkInstance(id),
+          }),
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
           onSessionComplete: async ({
