@@ -110,28 +110,47 @@ async fn attempt_download(
         return Ok(());
     }
 
-    if !response.status().is_success()
-        && response.status() != reqwest::StatusCode::PARTIAL_CONTENT
-    {
+    if !response.status().is_success() {
         return Err(format!("HTTP error: {}", response.status()));
     }
 
+    // Resume vs restart decision:
+    //   - We sent Range AND server replied 206 → resume (append).
+    //   - We sent Range AND server replied 200 → CDN/server ignored
+    //     Range and is sending the full body from byte 0. We MUST
+    //     truncate the stale partial; otherwise we'd append a fresh
+    //     full-file body to the partial and produce a corrupt blob
+    //     that fails SHA verification. (Observed against the CDN
+    //     fronting download.fridayplatform.io, 2026-04-28.)
+    //   - First attempt (existing_size == 0) → fresh download.
+    let resuming = existing_size > 0
+        && response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
+
     let content_length = response.content_length().unwrap_or(0);
-    let total = if existing_size > 0 {
+    let total = if resuming {
         existing_size + content_length
     } else {
         content_length
     };
 
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(existing_size > 0)
-        .write(!existing_size > 0 || existing_size == 0)
-        .open(dest)
-        .await
-        .map_err(|e| format!("Failed to open destination file: {e}"))?;
+    let mut file = if resuming {
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dest)
+            .await
+            .map_err(|e| format!("Failed to open destination file: {e}"))?
+    } else {
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(dest)
+            .await
+            .map_err(|e| format!("Failed to open destination file: {e}"))?
+    };
 
-    let mut downloaded = existing_size;
+    let mut downloaded = if resuming { existing_size } else { 0 };
     let mut stream = response.bytes_stream();
     let start = Instant::now();
     let mut last_report_time = start;
