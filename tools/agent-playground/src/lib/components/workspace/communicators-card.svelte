@@ -2,10 +2,9 @@
   Dashboard card listing chat communicators (slack, telegram, discord, teams,
   whatsapp) with Connect/Disconnect controls.
 
-  Slack uses its app-install flow via `useConnectSlack` / `useDisconnectSlack`.
-  All non-Slack kinds use the generic apikey path: clicking Connect expands an
-  inline form driven by `linkProviderQueries.providerDetails(kind)`; on submit
-  the credential is created via `useCredentialConnect(kind).submitApiKey` and
+  All kinds use the generic apikey path: clicking Connect expands an inline
+  form driven by `linkProviderQueries.providerDetails(kind)`; on submit the
+  credential is created via `useCredentialConnect(kind).submitApiKey` and
   then wired via `useConnectCommunicator()`.
 
   Source priority:
@@ -18,20 +17,16 @@
 -->
 
 <script lang="ts">
-  import { browser } from "$app/environment";
   import { Button } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
   import {
     useConnectCommunicator,
-    useConnectSlack,
     useDisconnectCommunicator,
-    useDisconnectSlack,
     wiringQueries,
   } from "$lib/queries";
   import { linkProviderQueries } from "$lib/queries/link-provider-queries.ts";
-  import { SLACK_APP_PROVIDER } from "$lib/providers/constants.ts";
   import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
 
   type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
@@ -80,70 +75,7 @@
     return SUPPORTED_KINDS.map((kind) => ({ id: kind, kind }));
   });
 
-  /**
-   * For non-Slack kinds, the wiring `provider` value is the kind itself
-   * (`telegram`, `discord`, ...). Slack uses the special `slack-app`
-   * provider literal because of its app-install flow.
-   */
-  function wiringProviderFor(kind: CommunicatorKind): string {
-    return kind === "slack" ? SLACK_APP_PROVIDER : kind;
-  }
-
-  // ── Slack-specific wiring (app-install flow) ──────────────────────────────
-
-  const slackWiringQuery = createQuery(() =>
-    wiringQueries.workspace(workspaceId, SLACK_APP_PROVIDER),
-  );
-
-  const slackConnect = useCredentialConnect(SLACK_APP_PROVIDER);
-  const connectSlack = useConnectSlack();
-  const disconnectSlack = useDisconnectSlack();
-
-  const isSlackConnected = $derived(slackWiringQuery.data != null);
-
-  let slackError = $state<string | null>(null);
-  const isSlackPending = $derived(connectSlack.isPending || disconnectSlack.isPending);
-
-  $effect(() => {
-    if (!browser) return;
-
-    const cleanup = slackConnect.listenForCallback(({ credentialId }) => {
-      slackError = null;
-      connectSlack.mutate(
-        { workspaceId, credentialId },
-        { onError: (err) => (slackError = err.message) },
-      );
-    });
-
-    return () => cleanup();
-  });
-
-  function handleSlackConnect() {
-    slackError = null;
-    connectSlack.mutate(
-      { workspaceId },
-      {
-        onSuccess: (data) => {
-          if ("installRequired" in data) {
-            slackConnect.startAppInstall();
-          }
-        },
-        onError: (err) => (slackError = err.message),
-      },
-    );
-  }
-
-  function handleSlackDisconnect() {
-    slackError = null;
-    disconnectSlack.mutate(
-      { workspaceId },
-      { onError: (err) => (slackError = err.message) },
-    );
-  }
-
-  // ── Generic apikey wiring (telegram, discord, teams, whatsapp) ────────────
-
-  /** Which non-Slack row currently has its inline form expanded, if any. */
+  /** Which row currently has its inline form expanded, if any. */
   let expandedKind = $state<CommunicatorKind | null>(null);
 
   /** Per-kind error surfaced from `submitApiKey` or wire mutation. */
@@ -183,7 +115,7 @@
   }
 
   async function handleApikeySubmit(
-    kind: Exclude<CommunicatorKind, "slack">,
+    kind: CommunicatorKind,
     label: string,
     secret: Record<string, string>,
   ) {
@@ -208,7 +140,7 @@
     );
   }
 
-  function handleApikeyDisconnect(kind: Exclude<CommunicatorKind, "slack">) {
+  function handleApikeyDisconnect(kind: CommunicatorKind) {
     rowError[kind] = null;
     pendingDisconnectKind = kind;
     disconnectMut.mutate(
@@ -235,9 +167,8 @@
 
   <div class="rows">
     {#each rows as row (row.id)}
-      {@const provider = wiringProviderFor(row.kind)}
-      {@const wiringQuery = createQuery(() => wiringQueries.workspace(workspaceId, provider))}
-      {@const isWired = row.kind === "slack" ? isSlackConnected : wiringQuery.data != null}
+      {@const wiringQuery = createQuery(() => wiringQueries.workspace(workspaceId, row.kind))}
+      {@const isWired = wiringQuery.data != null}
       {@const isExpanded = expandedKind === row.kind}
       {@const isDisconnectPending = pendingDisconnectKind === row.kind}
 
@@ -250,27 +181,7 @@
             {isWired ? "Connected" : "Not connected"}
           </span>
 
-          {#if row.kind === "slack"}
-            {#if isSlackConnected}
-              <Button
-                variant="secondary"
-                size="small"
-                disabled={isSlackPending}
-                onclick={handleSlackDisconnect}
-              >
-                Disconnect
-              </Button>
-            {:else}
-              <Button
-                variant="primary"
-                size="small"
-                disabled={isSlackPending}
-                onclick={handleSlackConnect}
-              >
-                Connect
-              </Button>
-            {/if}
-          {:else if isWired}
+          {#if isWired}
             <Button
               variant="secondary"
               size="small"
@@ -290,7 +201,7 @@
           {/if}
         </div>
 
-        {#if isExpanded && row.kind !== "slack"}
+        {#if isExpanded}
           {@const detailsQuery = createQuery(() =>
             linkProviderQueries.providerDetails(row.kind),
           )}
@@ -321,19 +232,6 @@
         {/if}
       </div>
     {/each}
-
-    {#if slackConnect.popupBlocked && slackConnect.blockedUrl}
-      <div class="popup-blocked">
-        <p>Popup was blocked by your browser.</p>
-        <a href={slackConnect.blockedUrl} target="_blank" rel="noopener" class="fallback-link">
-          Continue in this tab instead
-        </a>
-      </div>
-    {/if}
-
-    {#if slackError}
-      <p class="error">{slackError}</p>
-    {/if}
   </div>
 </div>
 
@@ -435,30 +333,5 @@
 
   .status-text.connected {
     color: color-mix(in srgb, var(--color-text), transparent 30%);
-  }
-
-  .popup-blocked {
-    background: color-mix(in srgb, var(--color-surface-2), var(--color-text) 5%);
-    border-radius: var(--radius-2);
-    font-size: var(--font-size-1);
-    margin-block-start: var(--size-2);
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .popup-blocked p {
-    margin: 0 0 var(--size-1) 0;
-    opacity: 0.8;
-  }
-
-  .fallback-link {
-    color: var(--color-accent);
-    font-size: var(--font-size-1);
-    text-decoration: underline;
-  }
-
-  .error {
-    color: var(--color-error);
-    font-size: var(--font-size-1);
-    margin-block: var(--size-1) 0;
   }
 </style>
