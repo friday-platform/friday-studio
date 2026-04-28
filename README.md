@@ -29,8 +29,7 @@ in production.
 ```bash
 git clone https://github.com/friday-platform/friday-studio
 cd friday-studio
-deno install                    # install JS/TS deps
-npx husky                       # install git hooks
+deno install                    # install JS/TS deps (also runs husky via prepare hook)
 ```
 
 ### 2. Configure environment
@@ -113,7 +112,7 @@ Open http://localhost:5200.
 ```bash
 # Daemon lifecycle
 deno task atlas daemon start --detached   # start (background)
-deno task atlas:dev daemon start          # start with hot-reload
+deno task atlas:dev daemon start          # start with auto-restart (session-aware)
 deno task atlas daemon status             # health check
 deno task atlas daemon stop               # stop
 
@@ -140,8 +139,9 @@ apps/
   atlasd/             # Daemon — HTTP API, workspace lifecycle (TS/Deno)
   atlas-cli/          # CLI entry point — `deno task atlas` (TS/Deno)
   link/               # Credential / OAuth service (TS/Deno)
-  ledger/             # Ledger service (TS/Deno)
-  studio-installer/   # Desktop installer (Tauri/Rust)
+  ledger/             # Resource & activity storage service (TS/Deno)
+  studio-installer/   # Friday Studio launcher app — tray, daemon
+                      # supervisor, autostart (Tauri/Rust)
 packages/             # @atlas/* libraries — core, agent-sdk, config,
                       # fsm-engine, llm, logger, mcp, memory, skills,
                       # storage, workspace, signals, …
@@ -151,11 +151,12 @@ examples/             # Self-contained workspace.yml examples
                       # (claude-code-smoke, pr-review-github,
                       # jira-bugfix-labeled, …)
 tools/
-  agent-playground/   # Svelte dev UI (the active web client)
-  evals/              # Eval runner CLI
-  friday-launcher/    # Friday launcher (Go)
-  pty-server/         # WebSocket terminal (Go)
-  webhook-tunnel/     # Local webhook receiver (Go)
+  agent-playground/   # Web client (SvelteKit) — dev tool and the
+                      # production UI bundled in Friday Studio
+  evals/              # Agent eval harness CLI
+  friday-launcher/    # System tray launcher + daemon supervisor (Go)
+  pty-server/         # WebSocket → PTY shell bridge (Go)
+  webhook-tunnel/     # Cloudflare tunnel → daemon webhook forwarder (Go)
 ```
 
 Config: `friday.yml` (platform-wide — see
