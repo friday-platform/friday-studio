@@ -16,7 +16,7 @@ import { api } from "./src/lib/server/router.ts";
 
 const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
 const HOST = process.env.PLAYGROUND_HOST ?? "127.0.0.1";
-const DAEMON_URL = process.env.ATLASD_URL ?? "http://localhost:8080";
+const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a

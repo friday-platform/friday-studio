@@ -29,7 +29,7 @@ func loadConfig() (*Config, error) {
 		}
 		port = n
 	}
-	atlasdURL := os.Getenv("ATLASD_URL")
+	atlasdURL := os.Getenv("FRIDAYD_URL")
 	if atlasdURL == "" {
 		atlasdURL = "http://localhost:8080"
 	}

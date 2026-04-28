@@ -5,7 +5,7 @@
 //
 // Environment:
 //
-//	ATLASD_URL      — Daemon API URL (default http://localhost:8080)
+//	FRIDAYD_URL      — Daemon API URL (default http://localhost:8080)
 //	WEBHOOK_SECRET  — Shared secret for HMAC verification
 //	                  (auto-generated diceware passphrase if unset)
 //	TUNNEL_PORT     — Local listener port (default 9090)
