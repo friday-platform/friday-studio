@@ -310,15 +310,17 @@ export async function validateAtlasUIMessages(messages: unknown[]): Promise<Atla
     return { ...m, id: crypto.randomUUID() };
   });
 
-  // validateUIMessages without an explicit <UI_MESSAGE> returns
-  // UIMessage<unknown, UIDataTypes, UITools>[] — its constraint
-  // default. AtlasUIMessage = UIMessage<MessageMetadata>, which only
-  // narrows the metadata generic, so the .map below structurally
-  // produces AtlasUIMessage by overriding metadata; the parts type
-  // already matches because AtlasUIMessage uses the SDK's default
-  // UIDataTypes too (see comment on AtlasUIMessage definition for
-  // why we don't tighten the data generic).
-  const validated = await validateUIMessages({
+  // Pass <AtlasUIMessage> explicitly so TS doesn't reverse-infer
+  // UI_MESSAGE from `dataSchemas` — that inference path expands
+  // `{ [NAME in keyof InferUIMessageData<UI_MESSAGE> & string]?: ... }`
+  // against AtlasDataEventSchemas's 30+ keys and triggers TS2589 in
+  // CI's fresh-cache environment (local survives via cached check
+  // results). With AtlasUIMessage = UIMessage<MessageMetadata>, the
+  // data-generic falls back to its UIDataTypes default, so dataSchemas's
+  // mapped-type stays at `Record<string, unknown>` shape — no deep
+  // expansion. Same family as the generateObject + Zod discriminated
+  // union issue called out in CLAUDE.md.
+  const validated = await validateUIMessages<AtlasUIMessage>({
     messages: withIds,
     metadataSchema: MessageMetadataSchema.optional(),
     dataSchemas: AtlasDataEventSchemas,
