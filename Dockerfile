@@ -1,10 +1,10 @@
-# Atlas Platform image: atlasd + link + agent-playground
+# Friday Platform image: atlasd + link + agent-playground
 #
 # Build:
-#   docker build -f Dockerfile-platform -t atlas-platform .
+#   docker build -t friday-platform .
 #
 # Run:
-#   docker run --env-file .env -p 18080:8080 -p 13100:3100 -p 15200:5200 -p 17681:7681 -p 19090:9090 atlas-platform
+#   docker run --env-file .env -p 18080:8080 -p 13100:3100 -p 15200:5200 -p 17681:7681 -p 19090:9090 friday-platform
 #
 # Ports:
 #   18080  atlasd (daemon API) - mapped to container port 8080

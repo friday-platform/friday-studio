@@ -3,7 +3,7 @@ services:
     image: friday-platform:latest
     build:
       context: .
-      dockerfile: Dockerfile-platform
+      dockerfile: Dockerfile
     ports:
       - "${FRIDAY_DAEMON_PORT:-18080}:8080"  # Friday daemon API
       - "${FRIDAY_LINK_PORT:-13100}:3100"    # Link (credential/auth service)

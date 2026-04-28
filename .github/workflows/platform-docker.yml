@@ -67,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile-platform
+          file: Dockerfile
           push: true
           build-args: |
             VERSION=${{ steps.version.outputs.version }}

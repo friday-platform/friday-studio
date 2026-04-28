@@ -13,7 +13,7 @@ No Google Cloud credentials required — everything runs via GitHub Actions.
 
 ### `build-fast.sh` — Build a new FAST image
 
-Triggers a GitHub Action that builds `Dockerfile-platform` and pushes it to GAR
+Triggers a GitHub Action that builds `Dockerfile` and pushes it to GAR
 with an auto-incremented version tag (e.g. `0.0.17`).
 
 ```bash

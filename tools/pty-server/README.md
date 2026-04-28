@@ -16,7 +16,7 @@ GOOS=windows GOARCH=amd64 go build -o pty-server.exe ./tools/pty-server
 
 CI builds are produced by:
 - `.github/workflows/go-ci.yml` (build sanity check on every PR)
-- `Dockerfile-platform`'s `go-builder` stage (Linux binary baked into the platform image)
+- `Dockerfile`'s `go-builder` stage (Linux binary baked into the platform image)
 
 ## Run
 
