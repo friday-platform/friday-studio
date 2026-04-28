@@ -103,7 +103,7 @@ function prettyName(name: string): string {
     case "webhook-tunnel":
       return "Webhook tunnel";
     case "playground":
-      return "Playground UI";
+      return "Studio UI";
     default:
       return name;
   }
@@ -128,7 +128,7 @@ function prettyName(name: string): string {
         <div class="check-icon" aria-hidden="true">✓</div>
         <h2>Friday Studio is ready</h2>
         <p class="subtitle">
-          All services are healthy. Click below to open the Playground.
+          All services are healthy. Click below to open Friday Studio.
         </p>
         {#each store.services as svc (svc.name)}
           <div class="row">
