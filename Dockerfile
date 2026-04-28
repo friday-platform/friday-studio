@@ -86,9 +86,8 @@ FROM golang:1.26-bookworm AS go-builder
 
 WORKDIR /src
 
-# go.work uses `.` (single module), so the entire repo is one Go module.
-# Copy module manifests first for layer caching.
-COPY go.mod go.sum go.work go.work.sum ./
+# Single root Go module — copy manifests first for layer caching.
+COPY go.mod go.sum ./
 
 # Copy every directory referenced by the root Go module.
 COPY pkg ./pkg
