@@ -19,7 +19,7 @@ Conventions:
 `daemon start [--port 8080] [--hostname 127.0.0.1] [--detached] [--max-workspaces 10] [--idle-timeout 300] [--log-level info] [--atlas-config <path>]`
 
 Starts the HTTP server. `--detached` forks and returns; otherwise runs in
-foreground. Exits 1 if already running or port unavailable. With `ATLAS_KEY`
+foreground. Exits 1 if already running or port unavailable. With `FRIDAY_KEY`
 set, fetches credentials and re-execs with OTEL env.
 
 Aliases: `daemon run`

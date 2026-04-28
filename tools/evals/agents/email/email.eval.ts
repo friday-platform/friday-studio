@@ -3,7 +3,7 @@
  *
  * Tests refusal of unfulfillable requests, rejection of hallucinated
  * recipients, valid composition, sender validation, recipient domain
- * restrictions, and missing ATLAS_KEY handling.
+ * restrictions, and missing FRIDAY_KEY handling.
  *
  * Ported from evals-2/agents/email-agent.eval.ts.
  */
@@ -388,13 +388,13 @@ const recipientEvals = recipientCases.map((testCase) =>
     config: {
       input: testCase.input,
       run: (input, context) => {
-        const originalAtlasKey = process.env.ATLAS_KEY;
-        process.env.ATLAS_KEY = generateMockJWT(testCase.userEmail);
+        const originalAtlasKey = process.env.FRIDAY_KEY;
+        process.env.FRIDAY_KEY = generateMockJWT(testCase.userEmail);
         return emailAgent.execute(input, context).finally(() => {
           if (originalAtlasKey) {
-            process.env.ATLAS_KEY = originalAtlasKey;
+            process.env.FRIDAY_KEY = originalAtlasKey;
           } else {
-            delete process.env.ATLAS_KEY;
+            delete process.env.FRIDAY_KEY;
           }
         });
       },
@@ -419,7 +419,7 @@ const recipientEvals = recipientCases.map((testCase) =>
 );
 
 // ---------------------------------------------------------------------------
-// 6. Missing ATLAS_KEY rejection (TEM-3362)
+// 6. Missing FRIDAY_KEY rejection (TEM-3362)
 // ---------------------------------------------------------------------------
 
 interface EnvCase extends BaseEvalCase {
@@ -430,10 +430,10 @@ interface EnvCase extends BaseEvalCase {
 const envCases: EnvCase[] = [
   {
     id: "missing-atlas-key",
-    name: "env - missing ATLAS_KEY rejection",
+    name: "env - missing FRIDAY_KEY rejection",
     input:
-      "Send an email to someone@example.com with subject 'Test' saying: This should fail without ATLAS_KEY.",
-    removeEnvVar: "ATLAS_KEY",
+      "Send an email to someone@example.com with subject 'Test' saying: This should fail without FRIDAY_KEY.",
+    removeEnvVar: "FRIDAY_KEY",
   },
 ];
 
@@ -460,19 +460,19 @@ const envEvals = envCases.map((testCase) =>
         }
         const reason = result.error.reason;
         const hasRequiredError =
-          reason.includes("User email required") || reason.includes("ATLAS_KEY");
+          reason.includes("User email required") || reason.includes("FRIDAY_KEY");
         if (!hasRequiredError) {
-          throw new Error(`Expected ATLAS_KEY error, got: ${reason}`);
+          throw new Error(`Expected FRIDAY_KEY error, got: ${reason}`);
         }
       },
       score: (result) => {
         if (result.ok) {
-          return [createScore("ATLAS_KEY required error", 0, "Email was sent without ATLAS_KEY")];
+          return [createScore("FRIDAY_KEY required error", 0, "Email was sent without FRIDAY_KEY")];
         }
         const reason = result.error.reason;
         const hasRequiredError =
-          reason.includes("User email required") || reason.includes("ATLAS_KEY");
-        return [createScore("ATLAS_KEY required error", hasRequiredError ? 1 : 0, reason)];
+          reason.includes("User email required") || reason.includes("FRIDAY_KEY");
+        return [createScore("FRIDAY_KEY required error", hasRequiredError ? 1 : 0, reason)];
       },
     },
   }),

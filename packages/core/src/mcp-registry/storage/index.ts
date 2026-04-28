@@ -16,7 +16,7 @@ let cachedKv: Deno.Kv | null = null;
  * Get or create MCP registry storage adapter.
  *
  * Auto-detects adapter from CORTEX_URL presence:
- * - If CORTEX_URL is set: Uses Cortex adapter (requires ATLAS_KEY)
+ * - If CORTEX_URL is set: Uses Cortex adapter (requires FRIDAY_KEY)
  * - Otherwise: Uses local adapter
  */
 export async function getMCPRegistryAdapter(): Promise<MCPRegistryStorageAdapter> {
@@ -25,9 +25,9 @@ export async function getMCPRegistryAdapter(): Promise<MCPRegistryStorageAdapter
   const cortexUrl = process.env.CORTEX_URL;
 
   if (cortexUrl) {
-    const atlasKey = process.env.ATLAS_KEY;
+    const atlasKey = process.env.FRIDAY_KEY;
     if (!atlasKey) {
-      throw new Error("ATLAS_KEY required when CORTEX_URL is set");
+      throw new Error("FRIDAY_KEY required when CORTEX_URL is set");
     }
     cachedAdapter = new CortexMCPRegistryAdapter(cortexUrl, atlasKey);
   } else {

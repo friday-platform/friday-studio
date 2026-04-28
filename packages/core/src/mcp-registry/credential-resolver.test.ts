@@ -156,7 +156,7 @@ let originalDevMode: string | undefined;
 beforeEach(() => {
   originalFetch = globalThis.fetch;
   originalDevMode = process.env.LINK_DEV_MODE;
-  process.env.LINK_DEV_MODE = "true"; // Use dev mode to skip ATLAS_KEY auth
+  process.env.LINK_DEV_MODE = "true"; // Use dev mode to skip FRIDAY_KEY auth
 });
 
 afterEach(() => {

@@ -25,9 +25,9 @@ function createMockDeps(): CredentialDeps & {
 }
 
 describe("loadCredentials", () => {
-  it("fetches credentials with ATLAS_KEY and pipes to setEnv", async () => {
-    const hadKey = !!process.env.ATLAS_KEY;
-    if (!hadKey) process.env.ATLAS_KEY = "test-key";
+  it("fetches credentials with FRIDAY_KEY and pipes to setEnv", async () => {
+    const hadKey = !!process.env.FRIDAY_KEY;
+    if (!hadKey) process.env.FRIDAY_KEY = "test-key";
 
     try {
       const deps = createMockDeps();
@@ -37,13 +37,13 @@ describe("loadCredentials", () => {
       expect(deps.setEnvCalls).toHaveLength(1);
       expect(deps.setEnvCalls[0]).toMatchObject({ OPENAI_API_KEY: "sk-test" });
     } finally {
-      if (!hadKey) delete process.env.ATLAS_KEY;
+      if (!hadKey) delete process.env.FRIDAY_KEY;
     }
   });
 
-  it("throws when ATLAS_KEY missing after dotenv load", async () => {
-    const saved = process.env.ATLAS_KEY;
-    delete process.env.ATLAS_KEY;
+  it("throws when FRIDAY_KEY missing after dotenv load", async () => {
+    const saved = process.env.FRIDAY_KEY;
+    delete process.env.FRIDAY_KEY;
 
     const savedHome = process.env.HOME;
     process.env.HOME = "/nonexistent";
@@ -53,12 +53,12 @@ describe("loadCredentials", () => {
     try {
       const deps = createMockDeps();
       await expect(loadCredentials(deps)).rejects.toThrow(
-        "ATLAS_KEY environment variable is not set",
+        "FRIDAY_KEY environment variable is not set",
       );
 
       expect(deps.fetchCalls).toHaveLength(0);
     } finally {
-      if (saved !== undefined) process.env.ATLAS_KEY = saved;
+      if (saved !== undefined) process.env.FRIDAY_KEY = saved;
       if (savedHome !== undefined) process.env.HOME = savedHome;
       if (savedAtlasHome !== undefined) process.env.FRIDAY_HOME = savedAtlasHome;
     }

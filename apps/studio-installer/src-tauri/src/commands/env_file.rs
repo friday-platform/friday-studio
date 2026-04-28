@@ -83,7 +83,7 @@ pub fn write_env_file(
         ("FRIDAY_LOCAL_ONLY", "true"),
         ("LINK_DEV_MODE", "true"),
         (
-            "ATLAS_KEY",
+            "FRIDAY_KEY",
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsb2NhbC11c2VyIn0.local",
         ),
         ("ATLASD_URL", "http://localhost:8080"),

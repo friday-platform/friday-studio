@@ -24,11 +24,11 @@ const listChatsQuerySchema = z.object({
 });
 
 /**
- * Extract userId from ATLAS_KEY JWT.
- * Falls back to "default-user" in dev mode (no ATLAS_KEY).
+ * Extract userId from FRIDAY_KEY JWT.
+ * Falls back to "default-user" in dev mode (no FRIDAY_KEY).
  */
 function getUserId(): string {
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
   return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
 }
 

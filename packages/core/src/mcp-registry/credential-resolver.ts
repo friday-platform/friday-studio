@@ -77,11 +77,11 @@ export class LinkCredentialExpiredError extends Error {
 function getLinkAuthHeaders(): Record<string, string> {
   if (process.env.LINK_DEV_MODE === "true") return {};
 
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
   if (!atlasKey) {
     throw new Error(
-      "ATLAS_KEY is required for Link authentication in production mode. " +
-        "Set LINK_DEV_MODE=true for development, or ensure ATLAS_KEY is available.",
+      "FRIDAY_KEY is required for Link authentication in production mode. " +
+        "Set LINK_DEV_MODE=true for development, or ensure FRIDAY_KEY is available.",
     );
   }
   return { Authorization: `Bearer ${atlasKey}` };
@@ -255,7 +255,7 @@ async function fetchDefaultCredential(provider: string, logger: Logger): Promise
 
 /**
  * Fetches a credential from Link service.
- * Uses ATLAS_KEY (obtained from Cypher) for authentication in production mode.
+ * Uses FRIDAY_KEY (obtained from Cypher) for authentication in production mode.
  * In dev mode (LINK_DEV_MODE=true), no authentication is required.
  */
 export async function fetchLinkCredential(

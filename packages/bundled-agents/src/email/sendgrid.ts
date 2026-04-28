@@ -20,9 +20,9 @@ export async function sendEmail(
     throw new Error("FRIDAY_GATEWAY_URL not set");
   }
 
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
   if (!atlasKey) {
-    throw new Error("ATLAS_KEY not set");
+    throw new Error("FRIDAY_KEY not set");
   }
 
   const customHeaders = buildCustomHeaders(options?.workspaceId);
@@ -64,7 +64,7 @@ export async function sendEmail(
 function buildCustomHeaders(workspaceId?: string): Record<string, string> {
   const headers: Record<string, string> = {};
 
-  const userEmail = process.env.ATLAS_KEY ? extractUserFromJWT(process.env.ATLAS_KEY) : null;
+  const userEmail = process.env.FRIDAY_KEY ? extractUserFromJWT(process.env.FRIDAY_KEY) : null;
   if (userEmail) {
     headers["X-Atlas-User"] = userEmail;
   }

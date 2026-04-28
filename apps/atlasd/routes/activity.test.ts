@@ -17,7 +17,7 @@ function createTestJwt(payload: Record<string, unknown>): string {
   return `${encode(header)}.${encode(payload)}.`;
 }
 
-process.env.ATLAS_KEY = createTestJwt({
+process.env.FRIDAY_KEY = createTestJwt({
   email: "test@example.com",
   sub: "test-user-id",
   user_metadata: { tempest_user_id: "test-tempest-id" },
@@ -165,8 +165,8 @@ describe("Activity API Routes", () => {
     });
 
     it("returns 401 without auth", async () => {
-      const savedKey = process.env.ATLAS_KEY;
-      delete process.env.ATLAS_KEY;
+      const savedKey = process.env.FRIDAY_KEY;
+      delete process.env.FRIDAY_KEY;
 
       try {
         const res = await app.request("/api/activity");
@@ -174,7 +174,7 @@ describe("Activity API Routes", () => {
         const body = ErrorSchema.parse(await res.json());
         expect(body.error).toBe("Unauthorized");
       } finally {
-        process.env.ATLAS_KEY = savedKey;
+        process.env.FRIDAY_KEY = savedKey;
       }
     });
   });
@@ -209,14 +209,14 @@ describe("Activity API Routes", () => {
     });
 
     it("returns 401 without auth", async () => {
-      const savedKey = process.env.ATLAS_KEY;
-      delete process.env.ATLAS_KEY;
+      const savedKey = process.env.FRIDAY_KEY;
+      delete process.env.FRIDAY_KEY;
 
       try {
         const res = await app.request("/api/activity/unread-count");
         expect(res.status).toBe(401);
       } finally {
-        process.env.ATLAS_KEY = savedKey;
+        process.env.FRIDAY_KEY = savedKey;
       }
     });
   });
@@ -304,8 +304,8 @@ describe("Activity API Routes", () => {
     });
 
     it("returns 401 without auth", async () => {
-      const savedKey = process.env.ATLAS_KEY;
-      delete process.env.ATLAS_KEY;
+      const savedKey = process.env.FRIDAY_KEY;
+      delete process.env.FRIDAY_KEY;
 
       try {
         const res = await app.request("/api/activity/mark", {
@@ -315,7 +315,7 @@ describe("Activity API Routes", () => {
         });
         expect(res.status).toBe(401);
       } finally {
-        process.env.ATLAS_KEY = savedKey;
+        process.env.FRIDAY_KEY = savedKey;
       }
     });
   });
@@ -330,14 +330,14 @@ describe("Activity API Routes", () => {
     });
 
     it("returns 401 without auth", async () => {
-      const savedKey = process.env.ATLAS_KEY;
-      delete process.env.ATLAS_KEY;
+      const savedKey = process.env.FRIDAY_KEY;
+      delete process.env.FRIDAY_KEY;
 
       try {
         const res = await app.request("/api/activity/stream");
         expect(res.status).toBe(401);
       } finally {
-        process.env.ATLAS_KEY = savedKey;
+        process.env.FRIDAY_KEY = savedKey;
       }
     });
 

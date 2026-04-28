@@ -11,7 +11,7 @@ import { type UserIdentity, UserIdentitySchema } from "./schemas.ts";
 const logger = createLogger({ name: "user-identity" });
 const TIMEOUT_MS = 10_000;
 
-// Cached user ID - extracted from ATLAS_KEY, constant for daemon lifetime
+// Cached user ID - extracted from FRIDAY_KEY, constant for daemon lifetime
 let cachedUserId: string | null = null;
 let userIdResolved = false;
 
@@ -19,12 +19,12 @@ let userIdResolved = false;
  * Get user identity from configured source.
  *
  * - Remote (default when PERSONA_URL set): Fetches from persona service
- * - Local (fallback or USER_IDENTITY_ADAPTER=local): Extracts from ATLAS_KEY JWT
+ * - Local (fallback or USER_IDENTITY_ADAPTER=local): Extracts from FRIDAY_KEY JWT
  *   and merges any saved profile overrides from profile.json
  */
 export async function getCurrentUser(): Promise<Result<UserIdentity | null, string>> {
   const personaUrl = process.env.PERSONA_URL;
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
 
   // Remote mode: when PERSONA_URL is set (unless forced local)
   if (personaUrl && atlasKey && process.env.USER_IDENTITY_ADAPTER !== "local") {
@@ -79,7 +79,7 @@ function extractFromJwt(atlasKey: string | undefined): Result<UserIdentity | nul
       usage: 0,
     });
   } catch (error) {
-    logger.error("Failed to decode ATLAS_KEY JWT", { error: stringifyError(error) });
+    logger.error("Failed to decode FRIDAY_KEY JWT", { error: stringifyError(error) });
     return fail(`Failed to decode JWT: ${stringifyError(error)}`);
   }
 }
@@ -99,7 +99,7 @@ async function fetchFromPersonaService(
 
     if (response.status === 401) {
       await response.text();
-      return fail("Authentication failed: invalid ATLAS_KEY");
+      return fail("Authentication failed: invalid FRIDAY_KEY");
     }
     if (response.status === 503) {
       await response.text();
@@ -147,7 +147,7 @@ export function updateCurrentUser(
   fields: UpdateProfileFields,
 ): Promise<Result<UserIdentity | null, string>> {
   const personaUrl = process.env.PERSONA_URL;
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
 
   if (personaUrl && atlasKey && process.env.USER_IDENTITY_ADAPTER !== "local") {
     return patchPersonaService(personaUrl, atlasKey, fields);
@@ -182,7 +182,7 @@ async function patchPersonaService(
 
     if (response.status === 401) {
       await response.text();
-      return fail("Authentication failed: invalid ATLAS_KEY");
+      return fail("Authentication failed: invalid FRIDAY_KEY");
     }
     if (response.status === 400) {
       const ErrorSchema = z.object({ error: z.string().optional() });

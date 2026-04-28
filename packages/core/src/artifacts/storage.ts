@@ -11,19 +11,19 @@ const logger = createLogger({ name: "artifact-storage" });
  * Create artifact storage adapter based on environment configuration.
  *
  * Auto-detects adapter from CORTEX_URL presence:
- * - If CORTEX_URL is set: Uses Cortex adapter (ATLAS_KEY read at request time)
+ * - If CORTEX_URL is set: Uses Cortex adapter (FRIDAY_KEY read at request time)
  * - Otherwise: Uses local adapter
  *
  * Environment Variables:
  * - CORTEX_URL: Cortex service URL (presence enables Cortex adapter)
- * - ATLAS_KEY: JWT token for Cortex authentication (read at request time, not startup)
+ * - FRIDAY_KEY: JWT token for Cortex authentication (read at request time, not startup)
  * - ARTIFACT_STORAGE_PATH: Override default KV path (local only)
  */
 function createArtifactStorageAdapter(): ArtifactStorageAdapter {
   const cortexUrl = process.env.CORTEX_URL;
 
   if (cortexUrl) {
-    // ATLAS_KEY is read from env at request time, not module load (same pattern as Link routes)
+    // FRIDAY_KEY is read from env at request time, not module load (same pattern as Link routes)
     logger.info("Using CortexStorageAdapter", { cortexUrl });
     return new CortexStorageAdapter(cortexUrl);
   }

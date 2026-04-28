@@ -17,7 +17,7 @@ const prodDeps: CredentialDeps = { fetch: fetchCredentials, setEnv: setToEnv };
  * Loads `.env` files and fetches bundled API credentials into `process.env`.
  *
  * Reads `.env` from cwd first, then falls back to `~/.atlas/.env`.
- * Requires `ATLAS_KEY` to be present after dotenv loading.
+ * Requires `FRIDAY_KEY` to be present after dotenv loading.
  */
 export async function loadCredentials(deps: CredentialDeps = prodDeps) {
   dotenv.config();
@@ -27,9 +27,9 @@ export async function loadCredentials(deps: CredentialDeps = prodDeps) {
     dotenv.config({ path: globalAtlasEnv, override: true });
   }
 
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
   if (!atlasKey) {
-    throw new Error("ATLAS_KEY environment variable is not set");
+    throw new Error("FRIDAY_KEY environment variable is not set");
   }
 
   const credentials = await deps.fetch({ atlasKey, retries: 3, retryDelay: 2000 });

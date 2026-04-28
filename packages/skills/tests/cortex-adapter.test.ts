@@ -141,8 +141,8 @@ let adapter: CortexSkillAdapter;
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
-  originalAtlasKey = process.env.ATLAS_KEY;
-  process.env.ATLAS_KEY = "test-atlas-key";
+  originalAtlasKey = process.env.FRIDAY_KEY;
+  process.env.FRIDAY_KEY = "test-atlas-key";
 
   store = createMockStore();
   globalThis.fetch = createMockFetch(store);
@@ -152,9 +152,9 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalAtlasKey === undefined) {
-    delete process.env.ATLAS_KEY;
+    delete process.env.FRIDAY_KEY;
   } else {
-    process.env.ATLAS_KEY = originalAtlasKey;
+    process.env.FRIDAY_KEY = originalAtlasKey;
   }
 });
 
@@ -527,8 +527,8 @@ describe("CortexSkillAdapter", () => {
   });
 
   describe("authentication", () => {
-    it("fails when ATLAS_KEY is not set", async () => {
-      delete process.env.ATLAS_KEY;
+    it("fails when FRIDAY_KEY is not set", async () => {
+      delete process.env.FRIDAY_KEY;
 
       const result = await adapter.publish("atlas", "no-auth", "user-1", {
         description: "Test",
@@ -537,7 +537,7 @@ describe("CortexSkillAdapter", () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.error.includes("ATLAS_KEY")).toBe(true);
+      expect(result.error.includes("FRIDAY_KEY")).toBe(true);
     });
   });
 });

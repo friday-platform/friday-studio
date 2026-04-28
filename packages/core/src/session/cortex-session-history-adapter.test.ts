@@ -87,7 +87,7 @@ const mockFetch = vi.fn<(input: string | URL | Request, init?: RequestInit) => P
 
 beforeEach(() => {
   vi.stubGlobal("fetch", mockFetch);
-  vi.stubEnv("ATLAS_KEY", "test-key");
+  vi.stubEnv("FRIDAY_KEY", "test-key");
 });
 
 afterEach(() => {
@@ -288,11 +288,11 @@ describe("listByWorkspace", () => {
 // ---------------------------------------------------------------------------
 
 describe("authentication", () => {
-  test("throws when ATLAS_KEY is missing", async () => {
-    vi.stubEnv("ATLAS_KEY", "");
+  test("throws when FRIDAY_KEY is missing", async () => {
+    vi.stubEnv("FRIDAY_KEY", "");
 
     const events: SessionStreamEvent[] = [sessionStart()];
-    await expect(adapter.save("sess-1", events, sessionSummary())).rejects.toThrow("ATLAS_KEY");
+    await expect(adapter.save("sess-1", events, sessionSummary())).rejects.toThrow("FRIDAY_KEY");
   });
 
   test("includes Bearer token in requests", async () => {

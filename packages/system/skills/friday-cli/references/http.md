@@ -137,7 +137,7 @@ Mount: `/api/chat`. Default workspace: `atlas-conversation`.
 ## Workspace chat
 
 Mount: `/api/workspaces/:id/chat`. Same shape as global chat. Header
-`X-Atlas-User-Id` auto-injected from `ATLAS_KEY` JWT.
+`X-Atlas-User-Id` auto-injected from `FRIDAY_KEY` JWT.
 
 ## Chat storage RPC
 
@@ -239,7 +239,7 @@ Mount: `/api/activity`. Auth required.
 
 ## Link
 
-- `ALL /api/link/*` — proxy to `LINK_SERVICE_URL` (default `http://localhost:3100`). Maps `/api/link/foo` → `/v1/foo`. Forwards `Authorization: Bearer $ATLAS_KEY`.
+- `ALL /api/link/*` — proxy to `LINK_SERVICE_URL` (default `http://localhost:3100`). Maps `/api/link/foo` → `/v1/foo`. Forwards `Authorization: Bearer $FRIDAY_KEY`.
 
 ## Scratchpad
 

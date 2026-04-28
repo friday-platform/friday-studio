@@ -78,9 +78,9 @@ export async function storeToCortex(
   content: unknown,
   metadata: WorkspaceConfigMetadata,
 ): Promise<string> {
-  const token = process.env.ATLAS_KEY;
+  const token = process.env.FRIDAY_KEY;
   if (!token) {
-    throw new Error("ATLAS_KEY not available for Cortex authentication");
+    throw new Error("FRIDAY_KEY not available for Cortex authentication");
   }
 
   let url = baseUrl;

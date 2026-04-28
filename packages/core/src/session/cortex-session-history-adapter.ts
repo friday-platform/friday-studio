@@ -169,9 +169,9 @@ export class CortexSessionHistoryAdapter implements SessionHistoryAdapter {
   // ---------------------------------------------------------------------------
 
   private getAuthToken(): string {
-    const token = process.env.ATLAS_KEY;
+    const token = process.env.FRIDAY_KEY;
     if (!token) {
-      throw new Error("ATLAS_KEY not available for Cortex authentication");
+      throw new Error("FRIDAY_KEY not available for Cortex authentication");
     }
     return token;
   }
@@ -201,7 +201,7 @@ export class CortexSessionHistoryAdapter implements SessionHistoryAdapter {
 
       if (response.status === 401) {
         await response.text();
-        throw new Error("Authentication failed: invalid ATLAS_KEY");
+        throw new Error("Authentication failed: invalid FRIDAY_KEY");
       }
 
       if (response.status === 404) {

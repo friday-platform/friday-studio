@@ -107,12 +107,12 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   }
 
   /**
-   * Get ATLAS_KEY from environment for Cortex authentication.
+   * Get FRIDAY_KEY from environment for Cortex authentication.
    */
   private getAuthToken(): string {
-    const token = process.env.ATLAS_KEY;
+    const token = process.env.FRIDAY_KEY;
     if (!token) {
-      throw new Error("ATLAS_KEY not available for Cortex authentication");
+      throw new Error("FRIDAY_KEY not available for Cortex authentication");
     }
     return token;
   }
@@ -170,7 +170,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
       if (response.status === 401) {
         await response.text();
-        throw new Error("Authentication failed: invalid ATLAS_KEY");
+        throw new Error("Authentication failed: invalid FRIDAY_KEY");
       }
       if (response.status === 503) {
         await response.text();

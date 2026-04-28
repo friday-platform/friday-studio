@@ -33,7 +33,7 @@ export const webAgent = createAgent<string, WebAgentResult>({
   constraints:
     "Requires `agent-browser` CLI for browser interaction. " +
     "Web search is available when a search provider key is configured " +
-    "(`PARALLEL_API_KEY` or `FRIDAY_GATEWAY_URL`+`ATLAS_KEY`); without one " +
+    "(`PARALLEL_API_KEY` or `FRIDAY_GATEWAY_URL`+`FRIDAY_KEY`); without one " +
     "the agent can still fetch URLs and browse but cannot search. " +
     "Set `AGENT_BROWSER_AUTO_CONNECT=1` to attach to your already-running Chrome " +
     "(note: in this mode all concurrent invocations share that browser — isolation " +

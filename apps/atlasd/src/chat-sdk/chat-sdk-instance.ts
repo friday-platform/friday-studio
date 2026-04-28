@@ -325,7 +325,7 @@ async function resolveSlackFromLink(workspaceId: string): Promise<ResolvedCreden
 
   const headers: Record<string, string> = {};
   if (process.env.LINK_DEV_MODE !== "true") {
-    const atlasKey = process.env.ATLAS_KEY;
+    const atlasKey = process.env.FRIDAY_KEY;
     if (atlasKey) {
       headers.Authorization = `Bearer ${atlasKey}`;
     }

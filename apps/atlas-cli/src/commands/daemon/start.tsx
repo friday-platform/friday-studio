@@ -18,7 +18,7 @@ import type { YargsInstance } from "../../utils/yargs.ts";
 // OTEL Configuration Strategy:
 // - OTEL must be configured via env vars BEFORE Deno starts (Deno bug #27851, fixed in PR #29240)
 // - Kubernetes: OTEL vars set in pod spec
-// - Desktop: Auto-configured via re-exec when ATLAS_KEY is present
+// - Desktop: Auto-configured via re-exec when FRIDAY_KEY is present
 const OTEL_ENDPOINT = "https://otel.hellofriday.ai";
 
 // Shared deno run flags - single source of truth
@@ -78,7 +78,7 @@ function buildDaemonArgs(argv: StartArgs): string[] {
 }
 
 /**
- * Build OTEL environment variables from ATLAS_KEY.
+ * Build OTEL environment variables from FRIDAY_KEY.
  * The Authorization header must be URL-encoded (space becomes %20).
  * Resource attributes are added for telemetry identification.
  */
@@ -116,7 +116,7 @@ function buildOtelEnv(atlasKey: string): Record<string, string> {
 }
 
 /**
- * Try to read ATLAS_KEY from env files OR fetch from cypher.
+ * Try to read FRIDAY_KEY from env files OR fetch from cypher.
  * Cypher fetch happens first if CYPHER_TOKEN_URL is set.
  */
 async function peekAtlasKey(): Promise<string | undefined> {
@@ -126,7 +126,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
     try {
       const token = await fetchCypherToken(cypherUrl);
       // Set to environment so later checks find it
-      process.env.ATLAS_KEY = token;
+      process.env.FRIDAY_KEY = token;
       return token;
     } catch (error) {
       // Log but don't fail - fall through to other methods
@@ -138,7 +138,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
   }
 
   // Priority 2: Check if already in environment (from shell or --env-file)
-  const fromEnv = process.env.ATLAS_KEY;
+  const fromEnv = process.env.FRIDAY_KEY;
   if (fromEnv) return fromEnv;
 
   // Priority 3: Check ~/.atlas/.env
@@ -147,7 +147,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
     if (await exists(globalEnvPath)) {
       const content = await readFile(globalEnvPath, "utf-8");
       const parsed = parse(content);
-      if (parsed.ATLAS_KEY) return parsed.ATLAS_KEY;
+      if (parsed.FRIDAY_KEY) return parsed.FRIDAY_KEY;
     }
   } catch {
     // Ignore read errors
@@ -160,7 +160,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
       if (await exists(systemEnvPath)) {
         const content = await readFile(systemEnvPath, "utf-8");
         const parsed = parse(content);
-        if (parsed.ATLAS_KEY) return parsed.ATLAS_KEY;
+        if (parsed.FRIDAY_KEY) return parsed.FRIDAY_KEY;
       }
     } catch {
       // Ignore read errors
@@ -289,14 +289,14 @@ export function builder(y: YargsInstance) {
 }
 
 export const handler = async (argv: StartArgs): Promise<void> => {
-  // Fetch ATLAS_KEY early - needed for both OTEL config and credentials.
+  // Fetch FRIDAY_KEY early - needed for both OTEL config and credentials.
   // In Kubernetes: fetches from cypher via CYPHER_TOKEN_URL
   // On desktop: reads from .env files or environment
   const atlasKey = await peekAtlasKey();
 
   // OTEL re-exec check: Must happen BEFORE any other initialization.
   // OTEL in Deno initializes before JavaScript runs, so we need to re-exec
-  // with proper env vars if ATLAS_KEY is present but OTEL isn't configured.
+  // with proper env vars if FRIDAY_KEY is present but OTEL isn't configured.
   // After re-exec, isOtelConfigured() returns true, preventing infinite loops.
   // Note: In Kubernetes, OTEL is pre-configured in pod spec, so we skip re-exec.
   if (!isOtelConfigured() && atlasKey) {
@@ -469,8 +469,8 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       );
     }
 
-    // Check for ATLAS_KEY and fetch credentials if present
-    const atlasKey = process.env.ATLAS_KEY;
+    // Check for FRIDAY_KEY and fetch credentials if present
+    const atlasKey = process.env.FRIDAY_KEY;
     const localOnlyMode = isLocalOnlyMode(process.env.FRIDAY_LOCAL_ONLY);
 
     if (atlasKey && !localOnlyMode) {
@@ -489,8 +489,8 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         );
         logger.error("Continuing with existing environment variables...");
 
-        errorOutput("\nFailed to fetch credentials with ATLAS_KEY.");
-        errorOutput("Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.");
+        errorOutput("\nFailed to fetch credentials with FRIDAY_KEY.");
+        errorOutput("Please check your FRIDAY_KEY in ~/.atlas/.env and restart the daemon.");
         process.exit(1);
       }
     } else if (atlasKey && localOnlyMode) {

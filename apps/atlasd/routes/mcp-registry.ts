@@ -135,7 +135,7 @@ async function createLinkProvider(
   const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
   const url = `${linkServiceUrl}/v1/providers`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
   if (atlasKey) {
     headers.Authorization = `Bearer ${atlasKey}`;
   }

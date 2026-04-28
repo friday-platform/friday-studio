@@ -214,10 +214,10 @@ CONTENT GUIDELINES (for composeEmail):
     const params = composedEmail as z.infer<typeof composeEmailSchema>;
 
     // Validate recipient based on user's email domain
-    const atlasUserEmail = env.ATLAS_KEY ? extractUserFromJWT(env.ATLAS_KEY) : null;
+    const atlasUserEmail = env.FRIDAY_KEY ? extractUserFromJWT(env.FRIDAY_KEY) : null;
     if (!atlasUserEmail) {
       return err(
-        "User email required from ATLAS_KEY to send emails. Please ensure you are authenticated.",
+        "User email required from FRIDAY_KEY to send emails. Please ensure you are authenticated.",
       );
     }
 

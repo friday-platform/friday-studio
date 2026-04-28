@@ -73,13 +73,13 @@ beforeAll(async () => {
   testKv = await Deno.openKv(":memory:");
   testAdapter = new LocalMCPRegistryAdapter(testKv);
   process.env.LINK_SERVICE_URL = "http://localhost:3100";
-  process.env.ATLAS_KEY = "test-atlas-key";
+  process.env.FRIDAY_KEY = "test-atlas-key";
 });
 
 afterAll(() => {
   testKv.close();
   delete process.env.LINK_SERVICE_URL;
-  delete process.env.ATLAS_KEY;
+  delete process.env.FRIDAY_KEY;
 });
 
 beforeEach(() => {

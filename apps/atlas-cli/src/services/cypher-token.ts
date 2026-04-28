@@ -11,7 +11,7 @@ const TokenResponseSchema = z.object({
 });
 
 /**
- * Fetches ATLAS_KEY from cypher service using Kubernetes service account token.
+ * Fetches FRIDAY_KEY from cypher service using Kubernetes service account token.
  * TLS verification uses DENO_CERT env var (already set in Kubernetes deployment).
  *
  * @throws Error if fetch fails, response is not OK, or response fails validation
@@ -33,7 +33,7 @@ export async function fetchCypherToken(url: string): Promise<string> {
 
   const data = TokenResponseSchema.parse(await response.json());
 
-  logger.info("Obtained ATLAS_KEY from cypher", { expires_at: data.expires_at });
+  logger.info("Obtained FRIDAY_KEY from cypher", { expires_at: data.expires_at });
 
   return data.token;
 }

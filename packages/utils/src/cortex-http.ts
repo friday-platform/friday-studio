@@ -10,13 +10,13 @@ export interface CortexRequestOptions {
 }
 
 /**
- * Get the ATLAS_KEY from environment for Cortex authentication.
+ * Get the FRIDAY_KEY from environment for Cortex authentication.
  * Throws if not available.
  */
 export function getCortexAuthToken(): string {
-  const token = process.env.ATLAS_KEY;
+  const token = process.env.FRIDAY_KEY;
   if (!token) {
-    throw new Error("ATLAS_KEY not available for Cortex authentication");
+    throw new Error("FRIDAY_KEY not available for Cortex authentication");
   }
   return token;
 }
@@ -25,7 +25,7 @@ export function getCortexAuthToken(): string {
  * Makes an authenticated HTTP request to a Cortex endpoint.
  *
  * Features:
- * - JWT authentication via ATLAS_KEY
+ * - JWT authentication via FRIDAY_KEY
  * - Request timeout with AbortController
  * - Consistent error handling for 401, 404, 503
  * - Optional JSON parsing
@@ -61,7 +61,7 @@ export async function cortexRequest<T>(
 
     if (response.status === 401) {
       await response.text(); // Consume body to prevent resource leak
-      throw new Error("Authentication failed: invalid ATLAS_KEY");
+      throw new Error("Authentication failed: invalid FRIDAY_KEY");
     }
 
     if (response.status === 503) {

@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Reset env vars
   delete process.env.CORTEX_URL;
-  delete process.env.ATLAS_KEY;
+  delete process.env.FRIDAY_KEY;
 });
 
 afterEach(() => {
@@ -38,7 +38,7 @@ describe("storeToCortex", () => {
   const baseUrl = "https://cortex.example.com";
 
   beforeEach(() => {
-    process.env.ATLAS_KEY = "test-api-key";
+    process.env.FRIDAY_KEY = "test-api-key";
   });
 
   test("returns cortex object ID on success", async () => {
@@ -121,8 +121,8 @@ describe("storeToCortex", () => {
     );
   });
 
-  test("throws when ATLAS_KEY not set", async () => {
-    delete process.env.ATLAS_KEY;
+  test("throws when FRIDAY_KEY not set", async () => {
+    delete process.env.FRIDAY_KEY;
 
     await expect(
       storeToCortex(
@@ -136,7 +136,7 @@ describe("storeToCortex", () => {
           created_at: new Date().toISOString(),
         },
       ),
-    ).rejects.toThrow("ATLAS_KEY not available for Cortex authentication");
+    ).rejects.toThrow("FRIDAY_KEY not available for Cortex authentication");
   });
 
   test("throws on storage HTTP error", async () => {
@@ -243,7 +243,7 @@ describe("storeToCortex", () => {
 describe("storeWorkspaceHistory", () => {
   beforeEach(() => {
     process.env.CORTEX_URL = "https://cortex.example.com";
-    process.env.ATLAS_KEY = "test-api-key";
+    process.env.FRIDAY_KEY = "test-api-key";
   });
 
   test("stores config for non-system workspace", async () => {

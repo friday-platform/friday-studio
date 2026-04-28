@@ -34,16 +34,16 @@ let originalAtlasKey: string | undefined;
 
 beforeEach(() => {
   tempDir = makeTempDir({ prefix: "cortex-adapter-test-" });
-  originalAtlasKey = process.env.ATLAS_KEY;
-  process.env.ATLAS_KEY = "test-token";
+  originalAtlasKey = process.env.FRIDAY_KEY;
+  process.env.FRIDAY_KEY = "test-token";
 });
 
 afterEach(async () => {
   vi.restoreAllMocks();
   if (originalAtlasKey !== undefined) {
-    process.env.ATLAS_KEY = originalAtlasKey;
+    process.env.FRIDAY_KEY = originalAtlasKey;
   } else {
-    delete process.env.ATLAS_KEY;
+    delete process.env.FRIDAY_KEY;
   }
   try {
     await rm(tempDir, { recursive: true });

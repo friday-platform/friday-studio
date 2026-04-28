@@ -24,7 +24,7 @@ import { runPipeline, type StopAt } from "./src/lib/server/lib/workspace/pipelin
 import type { ExecutionReport } from "./src/lib/server/lib/workspace/run-fsm.ts";
 
 // Proto CLI always runs in local dev mode — set LINK_DEV_MODE so credential
-// resolution through Link works without ATLAS_KEY.
+// resolution through Link works without FRIDAY_KEY.
 if (!process.env.LINK_DEV_MODE) {
   process.env.LINK_DEV_MODE = "true";
 }

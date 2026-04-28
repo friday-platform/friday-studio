@@ -97,7 +97,7 @@ export function createLinkWireClient(): SlackAutoWireDeps["wireToWorkspace"] {
     const url = `${linkServiceUrl}/internal/v1/slack-apps/${encodeURIComponent(credentialId)}/wire`;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-    const atlasKey = process.env.ATLAS_KEY;
+    const atlasKey = process.env.FRIDAY_KEY;
     if (atlasKey) {
       headers.Authorization = `Bearer ${atlasKey}`;
     }
@@ -128,7 +128,7 @@ async function setSlackEventSubscriptions(credentialId: string, enable: boolean)
   const url = `${linkServiceUrl}/internal/v1/slack-apps/${encodeURIComponent(credentialId)}/events`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
   if (atlasKey) {
     headers.Authorization = `Bearer ${atlasKey}`;
   }
@@ -172,7 +172,7 @@ export function createLinkUnwiredClient(): SlackAutoWireDeps["findUnwired"] {
     const url = `${linkServiceUrl}/internal/v1/slack-apps/unwired`;
     const headers: Record<string, string> = {};
 
-    const atlasKey = process.env.ATLAS_KEY;
+    const atlasKey = process.env.FRIDAY_KEY;
     if (atlasKey) {
       headers.Authorization = `Bearer ${atlasKey}`;
     }

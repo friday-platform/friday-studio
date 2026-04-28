@@ -17,7 +17,7 @@ const reportRoutes = daemonFactory
     const { userId, chatId, sessionId } = c.req.valid("json");
 
     const gatewayUrl = process.env.FRIDAY_GATEWAY_URL;
-    const atlasKey = process.env.ATLAS_KEY;
+    const atlasKey = process.env.FRIDAY_KEY;
 
     if (!gatewayUrl || !atlasKey) {
       return c.json({ error: "Email gateway not configured" }, 503);

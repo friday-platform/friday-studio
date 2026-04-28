@@ -52,7 +52,7 @@ export interface ValidationResult {
  * For bundled agents without Link refs: validates environment variables only.
  * For MCP servers with configTemplate: resolves Link credential references by provider.
  *
- * Link credential resolution uses ATLAS_KEY from environment for authentication.
+ * Link credential resolution uses FRIDAY_KEY from environment for authentication.
  * The user ID is extracted from the JWT by the Link service.
  *
  * @param requiredConfig - Required configuration fields from matched integration

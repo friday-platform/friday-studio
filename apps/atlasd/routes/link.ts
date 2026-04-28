@@ -16,8 +16,8 @@ const PROXY_PREFIX = "/api/link";
 
 /**
  * Proxy all Link requests from /api/link/* to Link service /v1/*
- * Forwards Authorization header with ATLAS_KEY for Link authentication.
- * Authenticates with Link using ATLAS_KEY from env.
+ * Forwards Authorization header with FRIDAY_KEY for Link authentication.
+ * Authenticates with Link using FRIDAY_KEY from env.
  */
 linkRoutes.all("/*", (c) => {
   // Transform path: /api/link/foo → /v1/foo, /api/link/v1/foo → /v1/foo
@@ -39,8 +39,8 @@ linkRoutes.all("/*", (c) => {
     "X-Forwarded-Prefix": PROXY_PREFIX,
   };
 
-  // Authenticate with Link using service ATLAS_KEY (read at request time, not module load)
-  const atlasKey = process.env.ATLAS_KEY;
+  // Authenticate with Link using service FRIDAY_KEY (read at request time, not module load)
+  const atlasKey = process.env.FRIDAY_KEY;
   if (atlasKey) {
     headers.Authorization = `Bearer ${atlasKey}`;
   }

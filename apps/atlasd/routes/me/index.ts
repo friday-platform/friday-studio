@@ -21,7 +21,7 @@ const UpdateMeSchema = z.object({
  * /api/me - user identity and profile management.
  *
  * Uses adapter pattern for local/remote switching:
- * - Local (default when no PERSONA_URL): Extracts user from ATLAS_KEY JWT
+ * - Local (default when no PERSONA_URL): Extracts user from FRIDAY_KEY JWT
  * - Remote (when PERSONA_URL is set): Fetches from persona service
  *
  * Set USER_IDENTITY_ADAPTER=local to force local mode.

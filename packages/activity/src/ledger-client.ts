@@ -10,7 +10,7 @@ type LedgerClient = ReturnType<typeof hc<LedgerApp>>;
 /** Creates a Ledger HTTP client implementing ActivityStorageAdapter. */
 export function createActivityLedgerClient(baseUrl?: string): ActivityStorageAdapter {
   const url = baseUrl ?? process.env.LEDGER_URL ?? "http://localhost:3200";
-  const atlasKey = process.env.ATLAS_KEY;
+  const atlasKey = process.env.FRIDAY_KEY;
   const client: LedgerClient = hc<LedgerApp>(url, {
     headers: atlasKey ? { Authorization: `Bearer ${atlasKey}` } : {},
   });

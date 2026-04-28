@@ -157,14 +157,14 @@ describe("createSearchTool", () => {
     expect(result).toBe("Search unavailable: FRIDAY_GATEWAY_URL or PARALLEL_API_KEY is required");
   });
 
-  it("returns error when gateway URL set but ATLAS_KEY missing", async () => {
+  it("returns error when gateway URL set but FRIDAY_KEY missing", async () => {
     delete process.env.PARALLEL_API_KEY;
     process.env.FRIDAY_GATEWAY_URL = "https://gateway.test";
-    delete process.env.ATLAS_KEY;
+    delete process.env.FRIDAY_KEY;
 
     const result = await executeSearch(makeCtx(), { objective: "test" });
 
-    expect(result).toBe("Search unavailable: ATLAS_KEY is required when using FRIDAY_GATEWAY_URL");
+    expect(result).toBe("Search unavailable: FRIDAY_KEY is required when using FRIDAY_GATEWAY_URL");
   });
 
   it("runs full pipeline and returns summary + sources as JSON", async () => {

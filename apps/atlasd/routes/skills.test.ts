@@ -21,7 +21,7 @@ function createTestJwt(payload: Record<string, unknown>): string {
 // Tests publish into the @friday namespace, which is gated to the
 // bootstrap-loader sentinel id "system" via isFridayNamespaceBlockedForUser.
 // Use that id here so the publish path isn't 403'd out.
-process.env.ATLAS_KEY = createTestJwt({
+process.env.FRIDAY_KEY = createTestJwt({
   email: "test@example.com",
   sub: "system",
   user_metadata: { tempest_user_id: "system" },
@@ -340,8 +340,8 @@ describe("Skills API Routes - Global Catalog", () => {
     });
 
     it("returns 401 without auth", async () => {
-      const savedKey = process.env.ATLAS_KEY;
-      delete process.env.ATLAS_KEY;
+      const savedKey = process.env.FRIDAY_KEY;
+      delete process.env.FRIDAY_KEY;
 
       try {
         const response = await skillsRoutes.request("/", { method: "POST" });
@@ -349,7 +349,7 @@ describe("Skills API Routes - Global Catalog", () => {
         const body = ErrorSchema.parse(await response.json());
         expect(body.error).toBe("Unauthorized");
       } finally {
-        process.env.ATLAS_KEY = savedKey;
+        process.env.FRIDAY_KEY = savedKey;
       }
     });
   });
@@ -663,8 +663,8 @@ describe("Skills API Routes - Archive Files", () => {
 
 describe("Skills API Routes - Unauthorized Access", () => {
   it("returns 401 for POST without auth", async () => {
-    const savedKey = process.env.ATLAS_KEY;
-    delete process.env.ATLAS_KEY;
+    const savedKey = process.env.FRIDAY_KEY;
+    delete process.env.FRIDAY_KEY;
 
     try {
       const response = await skillsRoutes.request("/@atlas/test", {
@@ -677,13 +677,13 @@ describe("Skills API Routes - Unauthorized Access", () => {
       const body = ErrorSchema.parse(await response.json());
       expect(body.error).toBe("Unauthorized");
     } finally {
-      process.env.ATLAS_KEY = savedKey;
+      process.env.FRIDAY_KEY = savedKey;
     }
   });
 
   it("returns 401 for DELETE without auth", async () => {
-    const savedKey = process.env.ATLAS_KEY;
-    delete process.env.ATLAS_KEY;
+    const savedKey = process.env.FRIDAY_KEY;
+    delete process.env.FRIDAY_KEY;
 
     try {
       const response = await skillsRoutes.request("/@atlas/test/1", { method: "DELETE" });
@@ -692,7 +692,7 @@ describe("Skills API Routes - Unauthorized Access", () => {
       const body = ErrorSchema.parse(await response.json());
       expect(body.error).toBe("Unauthorized");
     } finally {
-      process.env.ATLAS_KEY = savedKey;
+      process.env.FRIDAY_KEY = savedKey;
     }
   });
 });

@@ -188,14 +188,14 @@ export function createSearchTool(ctx: SearchToolContext) {
       logger.info(`[search] ${objective.slice(0, 120)}`);
 
       const gatewayUrl = process.env.FRIDAY_GATEWAY_URL;
-      const atlasKey = process.env.ATLAS_KEY;
+      const atlasKey = process.env.FRIDAY_KEY;
       const apiKey = process.env.PARALLEL_API_KEY;
 
       if (!gatewayUrl && !apiKey) {
         return "Search unavailable: FRIDAY_GATEWAY_URL or PARALLEL_API_KEY is required";
       }
       if (gatewayUrl && !atlasKey) {
-        return "Search unavailable: ATLAS_KEY is required when using FRIDAY_GATEWAY_URL";
+        return "Search unavailable: FRIDAY_KEY is required when using FRIDAY_GATEWAY_URL";
       }
 
       const parallelClient = new Parallel({

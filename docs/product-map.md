@@ -138,7 +138,7 @@ deno task atlas logs --level error,warn
 
 ## Auth in Dev Mode
 
-- No ATLAS_KEY needed — falls back to "default-user" identity
+- No FRIDAY_KEY needed — falls back to "default-user" identity
 - No login page — daemon accepts requests without authentication
 - OAuth integrations (Google, Slack, GitHub, etc.) require real credentials
   configured via Settings page
