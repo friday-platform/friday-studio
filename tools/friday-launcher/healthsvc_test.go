@@ -374,6 +374,82 @@ func TestHealthCache_Subscribe_SlowSubscriber(t *testing.T) {
 	}
 }
 
+// TestHealthCache_Subscribe_SlowDoesNotStarveFast asserts the
+// fan-out invariant: a slow subscriber that never drains its buffer
+// does NOT prevent a fast subscriber from receiving ticks. The
+// non-blocking-send loop in notifySubscribers is what protects this;
+// a regression that uses blocking sends (or a single shared channel)
+// would stall the fast consumer behind the slow one.
+//
+// "Fast" gets at least one tick within a short bound while "slow"
+// is held idle the whole time.
+func TestHealthCache_Subscribe_SlowDoesNotStarveFast(t *testing.T) {
+	var sd atomic.Bool
+	c := NewHealthCache(&sd)
+
+	slow := c.Subscribe()
+	defer c.Unsubscribe(slow)
+	fast := c.Subscribe()
+	defer c.Unsubscribe(fast)
+	// Fill slow's buffer (capacity 1) so subsequent notifies hit
+	// the non-blocking-send default branch on it.
+	c.Update(makeStates(runningNotReady("a")))
+
+	// Drive a transition; both subscribers' buffers should now be
+	// full (slow had one queued already → coalesced; fast just got
+	// the new one).
+	c.Update(makeStates(runningReady("a")))
+
+	// Fast must observe the tick within a short bound. If the
+	// writer were blocked on slow, fast would never see this.
+	select {
+	case <-fast:
+	case <-time.After(1 * time.Second):
+		t.Fatal("fast subscriber starved by slow subscriber")
+	}
+
+	// Subsequent updates must continue to land on fast even though
+	// slow remains undrained — the writer must keep iterating
+	// through subscribers, not stop at the first blocked one.
+	for i := range 10 {
+		if i%2 == 0 {
+			c.Update(makeStates(runningNotReady("a")))
+		} else {
+			c.Update(makeStates(runningReady("a")))
+		}
+		select {
+		case <-fast:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("fast subscriber missed tick %d (slow still undrained)", i)
+		}
+	}
+}
+
+// TestHealthCache_Subscribe_RejectsBeyondCap verifies Subscribe
+// returns nil once maxSubscribers is reached. Loopback-only
+// mitigates the threat surface but a misbehaving local client
+// could otherwise pin RAM by opening thousands of SSE streams.
+func TestHealthCache_Subscribe_RejectsBeyondCap(t *testing.T) {
+	var sd atomic.Bool
+	c := NewHealthCache(&sd)
+	subs := make([]chan struct{}, 0, maxSubscribers)
+	for range maxSubscribers {
+		ch := c.Subscribe()
+		if ch == nil {
+			t.Fatal("Subscribe returned nil before reaching cap")
+		}
+		subs = append(subs, ch)
+	}
+	defer func() {
+		for _, ch := range subs {
+			c.Unsubscribe(ch)
+		}
+	}()
+	if c.Subscribe() != nil {
+		t.Errorf("Subscribe at cap+1 should return nil, got non-nil")
+	}
+}
+
 // TestHealthCache_UptimeSecsMonotonic confirms UptimeSecs and the
 // uptime field of Snapshot are coherent with cache age. Used by
 // the tray bucket to enforce the 30s cold-start grace.

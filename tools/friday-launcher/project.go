@@ -161,7 +161,7 @@ func newProjectFromSpecs(specs []processSpec) *types.Project {
 			RestartPolicy: types.RestartPolicyConfig{
 				Restart:        types.RestartPolicyAlways,
 				BackoffSeconds: 2,
-				MaxRestarts:    5,
+				MaxRestarts:    supervisedMaxRestarts,
 			},
 			ReadinessProbe: &health.Probe{
 				InitialDelay:     2, // seconds

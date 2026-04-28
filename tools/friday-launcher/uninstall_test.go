@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // withFakeHealthServer points the uninstall HTTP client at a test
@@ -108,21 +109,48 @@ func TestHttpShutdownLauncher_ConnRefusedFallsThrough(t *testing.T) {
 }
 
 // TestHttpShutdownLauncher_TimeoutFallsThrough: a hung launcher
-// that accepts the connection but never writes headers. The 5s
+// that accepts the connection but never writes headers. The
 // client timeout fires; caller falls through to SIGTERM.
 //
-// We use a handler that blocks indefinitely (until the test's
-// context cancels via Cleanup → server.Close). The client should
-// give up after its Timeout.
+// We override the package-level httpShutdownTimeout so the test
+// finishes in well under a second — a real 5s wait would slow
+// `go test` for everyone. The handler blocks until the test's
+// Cleanup closes the server.
 func TestHttpShutdownLauncher_TimeoutFallsThrough(t *testing.T) {
-	if testing.Short() {
-		t.Skip("5s timeout test")
+	// Block the handler until the server closes. The client should
+	// hit our shortened timeout long before this fires.
+	hang := make(chan struct{})
+	t.Cleanup(func() { close(hang) })
+	withFakeHealthServer(t, http.HandlerFunc(
+		func(_ http.ResponseWriter, r *http.Request) {
+			select {
+			case <-hang:
+			case <-r.Context().Done():
+			}
+		}))
+
+	orig := httpShutdownTimeout
+	t.Cleanup(func() { httpShutdownTimeout = orig })
+	httpShutdownTimeout = 100 * time.Millisecond
+
+	start := time.Now()
+	err := httpShutdownLauncher()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
 	}
-	// We can't easily simulate a hung server without a long-lived
-	// server-side block. Instead, override the http.Client's
-	// timeout to a short value and make the server hang. The
-	// httpShutdownLauncher function uses a hardcoded 5s — bypass
-	// by binding to a server that hangs but checking only that
-	// SOME error is returned within reasonable time.
-	t.Skip("manual: 5s timeout exercised via blocking handler")
+	// net/http surfaces the timeout via the canonical "deadline
+	// exceeded" sentinel in the wrapped chain; "Client.Timeout
+	// exceeded" appears for client.Timeout-driven cancellations.
+	msg := err.Error()
+	if !strings.Contains(msg, "deadline exceeded") &&
+		!strings.Contains(msg, "Timeout") &&
+		!strings.Contains(msg, "timeout") {
+		t.Errorf("error %q should mention timeout/deadline", err)
+	}
+	// Sanity: we shouldn't have waited the full 5s default.
+	if elapsed > 2*time.Second {
+		t.Errorf("client waited %v; httpShutdownTimeout override didn't apply", elapsed)
+	}
 }

@@ -142,45 +142,57 @@ func TestComputeBucket_NilCacheAmber(t *testing.T) {
 	}
 }
 
-// TestOpenBrowser_NoBrowserSuppressesFirstHealthyOnly verifies the
-// Stack 1.0 semantic refinement. Tray-click and second-instance
-// wake reasons must still trigger openBrowser even when --no-browser
-// is set. Only "first healthy" gets suppressed.
+// withBrowserGlobals snapshots and restores ALL package-level
+// browser state (noBrowser, browserDisabled, openURLInBrowserOverride)
+// so individual openBrowser tests don't depend on entry-state from
+// sibling tests. Robust under `go test -shuffle=on` and tolerant
+// of future test reorderings. Returns a counter the caller can read
+// to verify call counts on the stub opener.
 //
-// We test by injecting a stub that sets an `opened` flag instead
-// of actually launching a browser. browserDisabled (the test
-// override) is held false here so we exercise the --no-browser
-// path specifically.
-func TestOpenBrowser_NoBrowserSuppressesFirstHealthyOnly(t *testing.T) {
-	t.Setenv("FRIDAY_LAUNCHER_BROWSER_DISABLED", "")
-	browserDisabled = false
-	noBrowser = true
-	t.Cleanup(func() { noBrowser = false })
-
-	// Replace openURLInBrowser with a counter so we don't hit the
-	// real browser. This is the only place we cheat — the rest of
-	// the function under test runs untouched.
+// `t.Parallel()` is still unsafe (these are package-globals), but
+// the symmetric save+restore makes the failure mode obvious if
+// anyone adds it later — every test starts from the same baseline.
+func withBrowserGlobals(t *testing.T) *int {
+	t.Helper()
+	origNoBrowser := noBrowser
+	origBrowserDisabled := browserDisabled
 	origOpener := openURLInBrowserOverride
-	defer func() { openURLInBrowserOverride = origOpener }()
+	t.Cleanup(func() {
+		noBrowser = origNoBrowser
+		browserDisabled = origBrowserDisabled
+		openURLInBrowserOverride = origOpener
+	})
 	calls := 0
 	openURLInBrowserOverride = func(string) error {
 		calls++
 		return nil
 	}
+	return &calls
+}
+
+// TestOpenBrowser_NoBrowserSuppressesFirstHealthyOnly verifies the
+// Stack 1.0 semantic refinement. Tray-click and second-instance
+// wake reasons must still trigger openBrowser even when --no-browser
+// is set. Only "first healthy" gets suppressed.
+func TestOpenBrowser_NoBrowserSuppressesFirstHealthyOnly(t *testing.T) {
+	t.Setenv("FRIDAY_LAUNCHER_BROWSER_DISABLED", "")
+	calls := withBrowserGlobals(t)
+	noBrowser = true
+	browserDisabled = false
 
 	tc := &trayController{}
 
 	tc.openBrowser("first healthy")
-	if calls != 0 {
-		t.Errorf("first-healthy + --no-browser: calls = %d, want 0", calls)
+	if *calls != 0 {
+		t.Errorf("first-healthy + --no-browser: calls = %d, want 0", *calls)
 	}
 	tc.openBrowser("user click")
-	if calls != 1 {
-		t.Errorf("user-click + --no-browser: calls = %d, want 1", calls)
+	if *calls != 1 {
+		t.Errorf("user-click + --no-browser: calls = %d, want 1", *calls)
 	}
 	tc.openBrowser("second-instance wake")
-	if calls != 2 {
-		t.Errorf("wake + --no-browser: calls = %d, want 2", calls)
+	if *calls != 2 {
+		t.Errorf("wake + --no-browser: calls = %d, want 2", *calls)
 	}
 }
 
@@ -189,16 +201,8 @@ func TestOpenBrowser_NoBrowserSuppressesFirstHealthyOnly(t *testing.T) {
 // by integration tests that exercise tray-click / wake paths but
 // don't want to pop tabs on the developer's machine.
 func TestOpenBrowser_BrowserDisabledOverride(t *testing.T) {
+	calls := withBrowserGlobals(t)
 	browserDisabled = true
-	t.Cleanup(func() { browserDisabled = false })
-
-	origOpener := openURLInBrowserOverride
-	defer func() { openURLInBrowserOverride = origOpener }()
-	calls := 0
-	openURLInBrowserOverride = func(string) error {
-		calls++
-		return nil
-	}
 
 	tc := &trayController{}
 	for _, reason := range []string{
@@ -206,7 +210,7 @@ func TestOpenBrowser_BrowserDisabledOverride(t *testing.T) {
 	} {
 		tc.openBrowser(reason)
 	}
-	if calls != 0 {
-		t.Errorf("browserDisabled: calls = %d, want 0", calls)
+	if *calls != 0 {
+		t.Errorf("browserDisabled: calls = %d, want 0", *calls)
 	}
 }

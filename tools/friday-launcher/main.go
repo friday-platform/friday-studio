@@ -332,6 +332,30 @@ func onExit() {
 	performShutdown("systray:onExit")
 }
 
+// shutdownGate is the CAS one-shot gate that protects
+// performShutdown's body from running more than once across all
+// trigger paths (signal handler, onExit, HTTP POST, NSApp
+// will-terminate). Returns true to the FIRST caller, false to all
+// subsequent callers — they must return without performing cleanup.
+//
+// Two atomics, by design (see CLAUDE.md "two-atomic shutdown
+// pattern" + Decision #33):
+//   - shutdownStarted: one-shot CAS — winner runs cleanup
+//   - shuttingDown: visibility flag — read by tray-poll, HTTP
+//     handlers (503 + 409), and the SSE shutting_down field
+//
+// Extracted from performShutdown so the exactly-once invariant is
+// independently testable; performShutdown's body is too entangled
+// with real subprocess teardown to drive from a test directly.
+func shutdownGate(reason string) bool {
+	if !shutdownStarted.CompareAndSwap(false, true) {
+		return false
+	}
+	log.Info("performShutdown starting", "reason", reason)
+	shuttingDown.Store(true)
+	return true
+}
+
 // performShutdown is the single source of truth for the orderly
 // shutdown path. Idempotent: a second caller is a no-op.
 //
@@ -359,11 +383,9 @@ func onExit() {
 //     teardown is complete.
 //  7. releasePidLock + closeJob.
 func performShutdown(reason string) {
-	if !shutdownStarted.CompareAndSwap(false, true) {
+	if !shutdownGate(reason) {
 		return // another caller beat us; let them finish
 	}
-	log.Info("performShutdown starting", "reason", reason)
-	shuttingDown.Store(true)
 
 	// Stop the cache-update goroutine before tearing down the
 	// supervisor it polls. Best-effort: nil-check because

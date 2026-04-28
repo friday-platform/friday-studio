@@ -773,6 +773,147 @@ func TestUninstall(t *testing.T) {
 	}
 }
 
+// TestUninstall_AlwaysSweepsEvenWhenLauncherStopsCleanly verifies
+// the symmetric case to TestUninstall_SweepsOrphansWhenLauncherDead:
+// launcher is running cleanly, HTTP shutdown succeeds, AND there's
+// a stray process in binDir that the supervisor never knew about.
+// The unconditional SweepByBinaryPath (Decision #9) is the ONLY
+// step that catches that orphan — a regression that makes sweep
+// conditional on "HTTP shutdown failed" would leave it alive.
+//
+// The orphan is a wrapper at binDir/orphan-test that exec's into
+// the same _stub binary the supervised wrappers use; after exec,
+// `comm` reports a path under binDir and SweepByBinaryPath kills
+// it. The wrapper is NOT registered with process-compose, so the
+// supervisor's normal SIGTERM cascade skips it.
+func TestUninstall_AlwaysSweepsEvenWhenLauncherStopsCleanly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("SweepByBinaryPath is a no-op on Windows (Job Object covers this)")
+	}
+	launcher, binDir := buildLauncherAndStubs(t)
+	home := filepath.Join(t.TempDir(), ".friday", "local")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(launcher, "--bin-dir="+binDir, "--no-browser")
+	cmd.Env = append(os.Environ(),
+		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
+	)
+	cmd.Env = append(cmd.Env, portEnv()...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	launcherExited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(launcherExited)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-launcherExited:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+		}
+		_ = exec.Command("pkill", "-KILL", "-f",
+			filepath.Join(binDir, "_stub")).Run()
+	})
+	pidFile := filepath.Join(home, "pids", "launcher.pid")
+	for range 50 {
+		if _, err := os.Stat(pidFile); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	waitHealthy(t)
+
+	// Plant a wrapper for a name the supervisor doesn't know about,
+	// then spawn it directly. SweepByBinaryPath matches by binary
+	// path (anything under binDir), so any executable launched out
+	// of binDir is fair game.
+	stubBin := filepath.Join(binDir, "_stub")
+	writeWrapper(t, binDir, "orphan-test", stubBin, "29999", "/health", "")
+	orphan := exec.Command(filepath.Join(binDir, "orphan-test"))
+	orphan.Stderr = os.Stderr
+	if err := orphan.Start(); err != nil {
+		t.Fatalf("start orphan: %v", err)
+	}
+	orphanPid := orphan.Process.Pid
+	orphanExited := make(chan struct{})
+	go func() {
+		_ = orphan.Wait()
+		close(orphanExited)
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-orphanExited:
+		default:
+			_ = orphan.Process.Kill()
+			<-orphanExited
+		}
+	})
+	// Let exec(2) settle so `comm` reports the post-exec path.
+	time.Sleep(500 * time.Millisecond)
+	select {
+	case <-orphanExited:
+		t.Fatal("orphan exited before --uninstall")
+	default:
+	}
+
+	// Save/restore plist on darwin (uninstall removes it).
+	var plistPath string
+	var backup []byte
+	if runtime.GOOS == "darwin" {
+		plistPath = filepath.Join(os.Getenv("HOME"),
+			"Library/LaunchAgents/ai.hellofriday.studio.plist")
+		backup, _ = os.ReadFile(plistPath)
+	}
+	t.Cleanup(func() {
+		if plistPath != "" && backup != nil {
+			_ = os.WriteFile(plistPath, backup, 0o600)
+		}
+	})
+
+	uninst := exec.Command(launcher, "--uninstall")
+	uninst.Env = append(os.Environ(),
+		"FRIDAY_LAUNCHER_HOME="+home,
+		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
+	)
+	out, err := uninst.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--uninstall failed: %v\n%s", err, out)
+	}
+
+	// Launcher must have stopped (HTTP path succeeded).
+	select {
+	case <-launcherExited:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("launcher pid %d did not exit after --uninstall:\n%s",
+			cmd.Process.Pid, out)
+	}
+
+	// Output should mention "swept" — proves the unconditional sweep
+	// fired even after the HTTP path succeeded.
+	if !strings.Contains(string(out), "swept") {
+		t.Errorf("expected 'swept' in output (always-sweep claim), got:\n%s", out)
+	}
+
+	// The planted orphan must be dead. The supervisor never knew
+	// about it, so only SweepByBinaryPath could have killed it.
+	select {
+	case <-orphanExited:
+		// Good — sweep killed the unsupervised orphan.
+	case <-time.After(5 * time.Second):
+		t.Errorf("orphan pid %d did not exit 5s after --uninstall — "+
+			"unconditional sweep regressed:\n%s", orphanPid, out)
+	}
+}
+
 // TestUninstall_SweepsOrphansWhenLauncherDead reproduces the
 // 2026-04-27 incident: launcher already dead but its supervised
 // children still alive (e.g. user did `kill -9 <launcher>` then

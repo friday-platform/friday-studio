@@ -1,17 +1,20 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/friday-platform/friday-studio/pkg/processkit"
 )
+
+// httpShutdownTimeout caps the POST to /api/launcher-shutdown.
+// The launcher's handler returns 202/409 in microseconds; anything
+// slower means the handler is hung. Test-only override hook so
+// timeout-fallback tests don't have to wait the full 5 seconds.
+var httpShutdownTimeout = 5 * time.Second
 
 // runUninstall removes Friday Launcher's OS-level footprint:
 //  1. Stop the running launcher. Try `POST /api/launcher-shutdown`
@@ -66,7 +69,8 @@ func runUninstall() {
 	}
 
 	// 4. Remove pids/ + state.json. Logs are preserved.
-	if err := removeIfExists(statePath()); err != nil {
+	// os.RemoveAll handles ENOENT silently — same idiom for both.
+	if err := os.RemoveAll(statePath()); err != nil {
 		step("remove state.json", err)
 	} else {
 		step("state.json removed", nil)
@@ -148,41 +152,24 @@ func resolveHealthServerAddr() string {
 // interprets the response per the v15 § Caller response-handling
 // table:
 //
-//	connection refused / EOF / 4xx / 5xx / >5s read timeout → error
-//	202 Accepted                                            → nil
-//	409 Conflict (already shutting down)                    → nil
+//	connection refused / EOF / 4xx / 5xx / timeout → error (caller falls back to SIGTERM)
+//	202 Accepted                                   → nil
+//	409 Conflict (already shutting down)           → nil
 //
-// Returns nil iff the launcher accepted the request and the
-// caller should poll launcher.pid for removal. Any error means
-// "fall through to SIGTERM".
+// All transport errors (connect / EOF / DNS / TLS / deadline) and
+// all non-2xx/4xx-409 statuses funnel into "fall back to SIGTERM",
+// so we don't bother classifying — the caller treats every non-nil
+// error identically.
 func httpShutdownLauncher() error {
 	url := "http://" + resolveHealthServerAddr() + "/api/launcher-shutdown"
-	client := &http.Client{
-		// Total timeout for the POST itself (header read + body
-		// drain). The launcher's handler returns 202/409 in microseconds
-		// — anything slower means the handler is hung. 5s gives us
-		// plenty of headroom.
-		Timeout: 5 * time.Second,
-	}
+	client := &http.Client{Timeout: httpShutdownTimeout}
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
 		return fmt.Errorf("build POST: %w", err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		// Connection refused / EOF / DNS error / TLS error →
-		// classify as "endpoint unavailable, fall back".
-		var opErr *net.OpError
-		switch {
-		case errors.As(err, &opErr):
-			return fmt.Errorf("connect: %w", err)
-		case strings.Contains(err.Error(), "connection refused"):
-			return fmt.Errorf("connection refused")
-		case strings.Contains(err.Error(), "deadline exceeded"):
-			return fmt.Errorf("post timeout")
-		default:
-			return fmt.Errorf("post: %w", err)
-		}
+		return fmt.Errorf("post: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// Drain body so the connection can be reused (or properly
@@ -213,12 +200,4 @@ func waitForLauncherExit(pid int, deadline time.Duration) bool {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return false
-}
-
-func removeIfExists(path string) error {
-	err := os.Remove(path)
-	if err == nil || os.IsNotExist(err) {
-		return nil
-	}
-	return err
 }

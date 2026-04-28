@@ -5,61 +5,16 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"syscall"
-	"time"
 	"unsafe"
 )
 
 // Windows-side parity for preflight_dialog_darwin.go. Same Go API
-// surface (`writeStartupErrorLog`, `showPortInUseDialog`) so main.go
-// dispatches uniformly per GOOS. Stack 3 will extend with the
-// missing-binaries variant.
-
-const startupErrorLogFallback = "friday-launcher-startup.log"
-
-// writeStartupErrorLog mirrors the darwin implementation: primary
-// path %USERPROFILE%\.friday\local\logs\launcher-startup.log,
-// fallback os.TempDir()\friday-launcher-startup.log.
-func writeStartupErrorLog(reason string, details map[string]string) string {
-	logPath := startupErrorLogPath()
-	if logPath == "" {
-		return ""
-	}
-	f, err := os.OpenFile( //nolint:gosec // G304: launcher-controlled path
-		logPath,
-		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
-		0o644,
-	)
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = f.Close() }()
-
-	_, _ = fmt.Fprintf(f, "%s startup error: %s\n",
-		time.Now().UTC().Format(time.RFC3339), reason)
-	for k, v := range details {
-		_, _ = fmt.Fprintf(f, "  %s: %s\n", k, v)
-	}
-	_, _ = fmt.Fprintln(f, "")
-	return logPath
-}
-
-func startupErrorLogPath() string {
-	home, err := os.UserHomeDir()
-	if err == nil {
-		dir := filepath.Join(home, ".friday", "local", "logs")
-		if err := os.MkdirAll(dir, 0o755); err == nil { //nolint:gosec // G301: matches existing logs/ perms
-			return filepath.Join(dir, "launcher-startup.log")
-		}
-	}
-	tmp := os.TempDir()
-	if tmp == "" {
-		return ""
-	}
-	return filepath.Join(tmp, startupErrorLogFallback)
-}
+// surface (`showPortInUseDialog`) so main.go dispatches uniformly
+// per GOOS. Stack 3 will extend with the missing-binaries variant.
+// writeStartupErrorLog + startupErrorLogPath live in preflight_log.go
+// (shared across platforms — log file format is identical).
 
 // showPortInUseDialog renders a Windows MessageBoxW with the same
 // content + log path as the darwin variant. MB_ICONSTOP (red x)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/f1bonacc1/process-compose/src/types"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 // healthServerPort is the loopback HTTP port on which the launcher
@@ -31,6 +32,20 @@ const healthServerAddr = "127.0.0.1:" + healthServerPort
 // fast enough for the wizard's checklist UX without burning CPU on
 // the host.
 const healthPollInterval = 500 * time.Millisecond
+
+// supervisedMaxRestarts is the per-service restart cap configured in
+// project.go's RestartPolicyConfig. deriveStatus reads the same value
+// to flip a service to "failed" once process-compose has exhausted
+// restarts. Both sites must agree — if they drift, services either
+// get marked failed too early (restarts < cap → "failed") or never
+// (restarts >= cap → still "starting"). Single const enforces it.
+const supervisedMaxRestarts = 5
+
+// maxSubscribers caps concurrent SSE subscriber registrations.
+// Loopback-only mitigates the threat surface, but a misbehaving
+// local client could otherwise open thousands of connections and
+// pin RAM. Subscribe() rejects past this bound.
+const maxSubscribers = 100
 
 // ServiceStatus is one row of the per-service health checklist
 // returned by GET /api/launcher-health. Fields match the JSON shape
@@ -203,11 +218,10 @@ func deriveStatus(ps types.ProcessState) string {
 	case types.ProcessStatePending, types.ProcessStateDisabled, types.ProcessStateScheduled:
 		return statusPending
 	case types.ProcessStateError:
-		// MaxRestarts is configured to 5 in newProjectFromSpecs.
 		// process-compose flips to Status=Error AFTER restarts are
 		// exhausted, so this branch fires when the service has
 		// hit the terminal state.
-		if ps.Restarts >= 5 {
+		if ps.Restarts >= supervisedMaxRestarts {
 			return statusFailed
 		}
 		return statusStarting
@@ -217,7 +231,7 @@ func deriveStatus(ps types.ProcessState) string {
 		// ExitCode == 0 means clean exit; nonzero means it crashed.
 		// Either way, a server that exited isn't healthy. Restarts
 		// gating mirrors the Error branch.
-		if ps.Restarts >= 5 {
+		if ps.Restarts >= supervisedMaxRestarts {
 			return statusFailed
 		}
 		return statusStarting
@@ -312,11 +326,16 @@ func (c *HealthCache) UptimeSecs() int64 {
 // consumer will read one buffered tick and re-snapshot). This is
 // fine because SSE consumers always re-Snapshot() on tick to get
 // the current state, not a delta.
+//
+// Returns nil if maxSubscribers is reached. Callers must check.
 func (c *HealthCache) Subscribe() chan struct{} {
-	ch := make(chan struct{}, 1)
 	c.subsMu.Lock()
+	defer c.subsMu.Unlock()
+	if len(c.subs) >= maxSubscribers {
+		return nil
+	}
+	ch := make(chan struct{}, 1)
 	c.subs[ch] = struct{}{}
-	c.subsMu.Unlock()
 	return ch
 }
 
@@ -412,6 +431,10 @@ func handleHealthStream(c *HealthCache) http.HandlerFunc {
 		w.Header().Set("X-Accel-Buffering", "no")
 
 		ch := c.Subscribe()
+		if ch == nil {
+			http.Error(w, "subscriber limit reached", http.StatusServiceUnavailable)
+			return
+		}
 		defer c.Unsubscribe(ch)
 
 		emit := func() bool {
@@ -439,6 +462,15 @@ func handleHealthStream(c *HealthCache) http.HandlerFunc {
 		// alternative ("wait for first transition before emitting")
 		// would leave the wizard with a blank checklist on services
 		// that came up before subscribe.
+		//
+		// Drain any tick that arrived between Subscribe and the
+		// initial emit — otherwise the loop below would re-emit the
+		// same snapshot a second time. (`select default` makes this
+		// non-blocking; if no tick is queued we fall through.)
+		select {
+		case <-ch:
+		default:
+		}
 		if !emit() {
 			return
 		}
@@ -447,17 +479,10 @@ func handleHealthStream(c *HealthCache) http.HandlerFunc {
 		for {
 			select {
 			case <-ctx.Done():
-				// Client disconnected — exit so Unsubscribe runs.
+				// Client disconnected (or srv.Shutdown cancelled
+				// the request context) — exit so Unsubscribe runs.
 				return
-			case _, ok := <-ch:
-				if !ok {
-					// Cache shut down; emit a final shutdown
-					// event then close.
-					_, _ = fmt.Fprintf(w,
-						"data: {\"shutting_down\":true}\n\n")
-					flusher.Flush()
-					return
-				}
+			case <-ch:
 				if !emit() {
 					return
 				}
@@ -512,6 +537,9 @@ func startHealthServer(
 	perform func(reason string),
 ) (*http.Server, error) {
 	r := chi.NewRouter()
+	// Panic recovery so a future handler bug doesn't kill the server
+	// goroutine and leave the health endpoint silently unreachable.
+	r.Use(middleware.Recoverer)
 	r.Get("/api/launcher-health", handleHealth(cache))
 	r.Get("/api/launcher-health/stream", handleHealthStream(cache))
 	r.Post("/api/launcher-shutdown", handleShutdown(cache, perform))
