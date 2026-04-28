@@ -97,3 +97,20 @@ export function judgeErrorVerdict(threshold: number, message: string): Validatio
     retryGuidance: "",
   };
 }
+
+/**
+ * Thrown by validation consumers when a verdict's status is `fail`.
+ * Carries the full verdict so callers can render structured issues, log
+ * confidence, or attach the payload to a lifecycle event.
+ */
+export class ValidationFailedError extends Error {
+  constructor(
+    public readonly verdict: ValidationVerdict,
+    agentId?: string,
+  ) {
+    const subject = agentId ? `agent ${agentId}` : "agent output";
+    const guidance = verdict.retryGuidance || "no retry guidance";
+    super(`Validation failed for ${subject}: ${guidance}`);
+    this.name = "ValidationFailedError";
+  }
+}

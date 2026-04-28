@@ -11,6 +11,7 @@ import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
 import {
   type HallucinationDetectorConfig,
   SupervisionLevel,
+  ValidationFailedError,
   validate as validateOutput,
 } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
@@ -234,42 +235,25 @@ export async function validateAgentOutput(
       logger: logger.child({ component: "hallucination-detector" }),
     };
 
-    try {
-      // TODO(#26): finish verdict integration — surface verdict.issues, attach the
-      // verdict to the thrown error, and replace the joined-string feedback with
-      // structured per-issue rendering. This call site is the bare-minimum
-      // migration that came with #20 (the helpers it used to call were deleted).
-      const verdict = await validateOutput(result, supervisionLevel, hallucinationDetectorConfig);
+    const verdict = await validateOutput(result, supervisionLevel, hallucinationDetectorConfig);
 
-      logger.info("Agent confidence validation", {
+    logger.info("Agent output validation", {
+      agentId: result.agentId,
+      status: verdict.status,
+      confidence: verdict.confidence,
+      threshold: verdict.threshold,
+      issuesCount: verdict.issues.length,
+      issues: verdict.issues,
+    });
+
+    if (verdict.status === "fail") {
+      logger.error("Agent output failed validation", {
         agentId: result.agentId,
         confidence: verdict.confidence,
-        status: verdict.status,
+        retryGuidance: verdict.retryGuidance,
         issues: verdict.issues,
-        issuesCount: verdict.issues.length,
       });
-
-      if (verdict.status === "fail") {
-        logger.error("SEVERE HALLUCINATION DETECTED", {
-          agentId: result.agentId,
-          confidence: verdict.confidence,
-          retryGuidance: verdict.retryGuidance,
-          issues: verdict.issues,
-        });
-
-        throw new Error(`Agent ${result.agentId} hallucinated: ${verdict.retryGuidance}`);
-      }
-    } catch (error) {
-      // If the error is from our validation above, re-throw it
-      if (error instanceof Error && error.message.includes("hallucinated")) {
-        throw error;
-      }
-
-      // Otherwise log and continue (validation system failure shouldn't block execution)
-      logger.error("Failed to validate agent result", {
-        agentId: result.agentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      throw new ValidationFailedError(verdict, result.agentId);
     }
   } else if (agentType === "llm") {
     logger.debug("Skipping hallucination detection — no platformModels injected", {

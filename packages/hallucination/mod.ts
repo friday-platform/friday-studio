@@ -12,6 +12,7 @@ export {
   type IssueCategory,
   type IssueSeverity,
   severityForCategory,
+  ValidationFailedError,
   type ValidationIssue,
   type ValidationVerdict,
   type VerdictStatus,

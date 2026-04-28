@@ -7,17 +7,34 @@
  * 3. If neither exists, returns context only
  */
 
+import type { AgentResult } from "@atlas/agent-sdk";
+import type { Context } from "@atlas/fsm-engine";
+import {
+  ValidationFailedError,
+  type ValidationVerdict,
+  type VerdictStatus,
+} from "@atlas/hallucination";
 import type { ResourceMetadata, ResourceStorageAdapter } from "@atlas/ledger";
-import { describe, expect, it, vi } from "vitest";
+import type { PlatformModels } from "@atlas/llm";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAgentPrompt,
   buildFinalAgentPrompt,
   extractAgentConfigPrompt,
+  validateAgentOutput,
 } from "./agent-helpers.ts";
 
 vi.mock("@atlas/fsm-engine", () => ({
   expandArtifactRefsInDocuments: vi.fn((docs: unknown[]) => Promise.resolve(docs)),
 }));
+
+const mockValidate = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<ValidationVerdict>>());
+
+vi.mock("@atlas/hallucination", async () => {
+  const actual =
+    await vi.importActual<typeof import("@atlas/hallucination")>("@atlas/hallucination");
+  return { ...actual, validate: mockValidate };
+});
 
 describe("extractAgentConfigPrompt", () => {
   it("returns empty string for undefined config", () => {
@@ -404,5 +421,106 @@ describe("buildAgentPrompt", () => {
       // External refs are filtered — ResourceMetadata lacks provider/ref
       expect(result).not.toContain("External Resources:");
     });
+  });
+});
+
+describe("validateAgentOutput", () => {
+  const fsmContext: Context = { documents: [], state: "idle", results: {} };
+  const platformModels = {} as PlatformModels;
+
+  function buildSuccessResult(data: unknown = "agent output"): AgentResult {
+    return {
+      agentId: "test-agent",
+      timestamp: "2026-04-28T00:00:00Z",
+      input: "test input",
+      ok: true,
+      data,
+      durationMs: 1,
+    };
+  }
+
+  function buildVerdict(
+    status: VerdictStatus,
+    overrides: Partial<ValidationVerdict> = {},
+  ): ValidationVerdict {
+    return {
+      status,
+      confidence: status === "pass" ? 0.8 : status === "uncertain" ? 0.4 : 0.2,
+      threshold: 0.45,
+      issues: [],
+      retryGuidance: "",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    mockValidate.mockReset();
+  });
+
+  it("does not throw when verdict status is pass", async () => {
+    mockValidate.mockResolvedValue(buildVerdict("pass"));
+
+    await expect(
+      validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels),
+    ).resolves.toBeUndefined();
+
+    expect(mockValidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not throw when verdict status is uncertain", async () => {
+    mockValidate.mockResolvedValue(buildVerdict("uncertain"));
+
+    await expect(
+      validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels),
+    ).resolves.toBeUndefined();
+
+    expect(mockValidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws ValidationFailedError carrying the verdict when status is fail", async () => {
+    const verdict = buildVerdict("fail", {
+      retryGuidance: "agent fabricated data",
+      issues: [
+        {
+          category: "sourcing",
+          severity: "error",
+          claim: "company has 500 employees",
+          reasoning: "no tools called",
+          citation: null,
+        },
+      ],
+    });
+    mockValidate.mockResolvedValue(verdict);
+
+    let thrown: unknown;
+    try {
+      await validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ValidationFailedError);
+    expect(thrown).toBeInstanceOf(Error);
+    if (thrown instanceof ValidationFailedError) {
+      expect(thrown.verdict).toBe(verdict);
+      expect(thrown.message).toContain("test-agent");
+      expect(thrown.message).toContain("agent fabricated data");
+    }
+  });
+
+  it("skips hallucination detection for non-LLM agents", async () => {
+    await expect(
+      validateAgentOutput(buildSuccessResult(), fsmContext, "system", platformModels),
+    ).resolves.toBeUndefined();
+
+    expect(mockValidate).not.toHaveBeenCalled();
+  });
+
+  it("skips hallucination detection when platformModels is missing", async () => {
+    await expect(
+      validateAgentOutput(buildSuccessResult(), fsmContext, "llm"),
+    ).resolves.toBeUndefined();
+
+    expect(mockValidate).not.toHaveBeenCalled();
   });
 });
