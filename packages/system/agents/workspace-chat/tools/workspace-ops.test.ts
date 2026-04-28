@@ -190,7 +190,6 @@ describe("createBoundWorkspaceOpsTools", () => {
       mockResponse(true, 200, {
         ok: true,
         livePath: "/tmp/ws-1/workspace.yml",
-        runtimeReloaded: false,
       }),
     );
 
@@ -206,7 +205,6 @@ describe("createBoundWorkspaceOpsTools", () => {
     expect(result).toEqual({
       ok: true,
       livePath: "/tmp/ws-1/workspace.yml",
-      runtimeReloaded: false,
     });
   });
 

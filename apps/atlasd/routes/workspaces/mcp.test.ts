@@ -311,7 +311,7 @@ describe("PUT /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.server).toMatchObject({ id: "github", name: "GitHub" });
-    expect(destroyWorkspaceRuntime).toHaveBeenCalledWith("ws-test-id");
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
   test("writes to draft when draft exists, leaving live unchanged and deferring runtime startup", async () => {
@@ -453,7 +453,7 @@ describe("DELETE /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.removed).toBe("github");
-    expect(destroyWorkspaceRuntime).toHaveBeenCalledWith("ws-test-id");
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
   test("returns 409 when server referenced by agent without force", async () => {
@@ -522,7 +522,7 @@ describe("DELETE /mcp/:serverId", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.removed).toBe("github");
-    expect(destroyWorkspaceRuntime).toHaveBeenCalledWith("ws-test-id");
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
   test("writes to draft when draft exists, leaving live unchanged and deferring runtime teardown", async () => {

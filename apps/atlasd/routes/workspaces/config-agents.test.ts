@@ -114,7 +114,7 @@ describe("PUT /config/agents/:agentId", () => {
     expect(body.message).toContain("action type");
   });
 
-  test("updates FSM inline LLM successfully and destroys runtime", async () => {
+  test("updates FSM inline LLM successfully without eagerly destroying runtime", async () => {
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
     const configData = createTestConfig({
@@ -151,8 +151,7 @@ describe("PUT /config/agents/:agentId", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as JsonBody;
     expect(body.ok).toBe(true);
-    expect(destroyWorkspaceRuntime).toHaveBeenCalledOnce();
-    expect(destroyWorkspaceRuntime).toHaveBeenCalledWith("ws-test-id");
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 
   test("updates FSM bundled agent prompt successfully", async () => {

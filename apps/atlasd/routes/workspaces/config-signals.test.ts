@@ -72,7 +72,7 @@ describe("PUT /config/signals/:signalId", () => {
     expect(body.ok).toBe(true);
   });
 
-  test("updates signal successfully and destroys runtime", async () => {
+  test("updates signal successfully without eagerly destroying runtime", async () => {
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
     const configData = createTestConfig({ signals: { webhook: httpSignal({ path: "/old" }) } });
@@ -97,7 +97,7 @@ describe("PUT /config/signals/:signalId", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as JsonBody;
     expect(body.ok).toBe(true);
-    expect(destroyWorkspaceRuntime).toHaveBeenCalledOnce();
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 });
 
@@ -237,7 +237,7 @@ describe("POST /config/signals", () => {
     expect(body.message).toContain("already exists");
   });
 
-  test("creates signal successfully with 201 status", async () => {
+  test("creates signal successfully with 201 status without eagerly destroying runtime", async () => {
     const testDir = getTestDir();
     const workspace = createMockWorkspace({ path: testDir });
     await writeFile(join(testDir, "workspace.yml"), stringify(createTestConfig()));
@@ -260,6 +260,6 @@ describe("POST /config/signals", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as JsonBody;
     expect(body.ok).toBe(true);
-    expect(destroyWorkspaceRuntime).toHaveBeenCalledOnce();
+    expect(destroyWorkspaceRuntime).not.toHaveBeenCalled();
   });
 });

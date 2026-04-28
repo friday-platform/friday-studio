@@ -152,7 +152,7 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
 
         const data = await res.json();
         logger.info("publish_draft succeeded", { workspaceId: targetId });
-        return { success: true, livePath: data.livePath, runtimeReloaded: data.runtimeReloaded };
+        return { success: true, livePath: data.livePath };
       },
     }),
 

@@ -162,7 +162,7 @@ export function createBoundWorkspaceOpsTools(logger: Logger, workspaceId: string
 
         const data = await res.json();
         logger.info("remove_item succeeded", { workspaceId: targetId, kind, id });
-        return { ok: true, livePath: data.livePath, runtimeReloaded: data.runtimeReloaded };
+        return { ok: true, livePath: data.livePath };
       },
     }),
   };

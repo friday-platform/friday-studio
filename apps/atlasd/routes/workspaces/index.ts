@@ -2025,7 +2025,6 @@ const workspacesRoutes = daemonFactory
           workspaceId,
           artifactId: loaded.artifactId,
           revision: loaded.revision,
-          runtimeReloaded: result.runtimeReloaded,
         });
       } catch (error) {
         logger.error("Failed to recompile workspace", { workspaceId, error });
@@ -2640,16 +2639,7 @@ const workspacesRoutes = daemonFactory
           return c.json({ success: false, error: result.error, report: result.report }, 422);
         }
 
-        // Reload runtime so the live config is picked up
-        const runtime = ctx.getWorkspaceRuntime(workspace.id);
-        if (runtime) {
-          await ctx.destroyWorkspaceRuntime(workspace.id);
-        }
-        await ctx.getOrCreateWorkspaceRuntime(workspace.id);
-        return c.json(
-          { success: true, livePath: result.value.livePath, runtimeReloaded: true },
-          200,
-        );
+        return c.json({ success: true, livePath: result.value.livePath }, 200);
       } catch (error) {
         return c.json({ success: false, error: stringifyError(error) }, 500);
       }
@@ -2716,13 +2706,7 @@ const workspacesRoutes = daemonFactory
         if (!value.ok) {
           return c.json(responseBody, 422);
         }
-        // Reload runtime so the live config is picked up
-        const runtime = ctx.getWorkspaceRuntime(workspace.id);
-        if (runtime) {
-          await ctx.destroyWorkspaceRuntime(workspace.id);
-        }
-        await ctx.getOrCreateWorkspaceRuntime(workspace.id);
-        return c.json({ ...responseBody, runtimeReloaded: true }, 200);
+        return c.json(responseBody, 200);
       } catch (error) {
         return c.json({ ok: false, error: stringifyError(error) }, 500);
       }
@@ -2761,13 +2745,7 @@ const workspacesRoutes = daemonFactory
           const status = result.error.includes("not found") ? 404 : 500;
           return c.json({ ok: false, error: result.error }, status);
         }
-        // Reload runtime so the live config is picked up
-        const runtime = ctx.getWorkspaceRuntime(workspace.id);
-        if (runtime) {
-          await ctx.destroyWorkspaceRuntime(workspace.id);
-        }
-        await ctx.getOrCreateWorkspaceRuntime(workspace.id);
-        return c.json({ ok: true, livePath: result.livePath, runtimeReloaded: true }, 200);
+        return c.json({ ok: true, livePath: result.livePath }, 200);
       } catch (error) {
         return c.json({ ok: false, error: stringifyError(error) }, 500);
       }

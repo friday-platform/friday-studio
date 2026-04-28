@@ -458,7 +458,7 @@ async function handleUpdateCredential(
     // No blueprint — draft-aware mutation (goes to draft if one exists)
     const mutationFn = (cfg: WorkspaceConfig) =>
       updateCredential(cfg, path, newCredentialId, newCredential.provider);
-    const { result, wroteToDraft } = await applyDraftAwareMutation(workspace.path, mutationFn, {
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
       onBeforeWrite: async () => {
         await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
           throwOnError: true,
@@ -489,15 +489,6 @@ async function handleUpdateCredential(
         { success: false, error: "internal", message: `Mutation failed: ${error.type}` },
         500,
       );
-    }
-
-    // Destroy runtime only when writing directly to live config.
-    // Draft writes defer reload until publish triggers it.
-    if (!wroteToDraft) {
-      const runtime = ctx.getWorkspaceRuntime(workspace.id);
-      if (runtime) {
-        await ctx.destroyWorkspaceRuntime(workspace.id);
-      }
     }
 
     return c.json({ ok: true });
@@ -683,11 +674,6 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
             )(input, params, referenceCount)
           : `${handlerConfig.entityName} is referenced by ${referenceCount} ${referenceCount === 1 ? "entity" : "entities"}. Use ?force=true to cascade delete.`;
         return mapMutationError(c, result.error, conflictMessage);
-      }
-
-      // Destroy runtime if active so it reloads config on next request.
-      if (ctx.getWorkspaceRuntime(workspace.id)) {
-        await ctx.destroyWorkspaceRuntime(workspace.id);
       }
 
       // Return success

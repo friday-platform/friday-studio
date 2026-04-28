@@ -189,7 +189,7 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
     const mutationFn = (cfg: WorkspaceConfig) =>
       enableMCPServer(cfg, serverId, candidate.metadata.configTemplate as MCPServerConfig);
 
-    const { result, wroteToDraft } = await applyDraftAwareMutation(workspace.path, mutationFn, {
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
       onBeforeWrite: async () => {
         await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
           throwOnError: true,
@@ -199,12 +199,6 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
 
     if (!result.ok) {
       return mapMutationError(c, result.error);
-    }
-
-    // Destroy runtime only when writing directly to live config.
-    // Draft writes defer startup until publish triggers a reload.
-    if (!wroteToDraft && ctx.getWorkspaceRuntime(workspace.id)) {
-      await ctx.destroyWorkspaceRuntime(workspace.id);
     }
 
     return c.json({ server: { id: serverId, name: candidate.metadata.name } }, 200);
@@ -281,7 +275,7 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
 
     const mutationFn = (cfg: WorkspaceConfig) => disableMCPServer(cfg, serverId, { force });
 
-    const { result, wroteToDraft } = await applyDraftAwareMutation(workspace.path, mutationFn, {
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
       onBeforeWrite: async () => {
         await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
           throwOnError: true,
@@ -304,12 +298,6 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
         );
       }
       return mapMutationError(c, result.error);
-    }
-
-    // Destroy runtime only when writing directly to live config.
-    // Draft writes defer startup until publish triggers a reload.
-    if (!wroteToDraft && ctx.getWorkspaceRuntime(workspace.id)) {
-      await ctx.destroyWorkspaceRuntime(workspace.id);
     }
 
     return c.json({ removed: serverId }, 200);

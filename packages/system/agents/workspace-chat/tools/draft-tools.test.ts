@@ -147,7 +147,6 @@ describe("createBoundDraftTools", () => {
       mockResponse(true, 200, {
         success: true,
         livePath: "/tmp/ws-1/workspace.yml",
-        runtimeReloaded: false,
       }),
     );
 
@@ -158,7 +157,6 @@ describe("createBoundDraftTools", () => {
     expect(result).toEqual({
       success: true,
       livePath: "/tmp/ws-1/workspace.yml",
-      runtimeReloaded: false,
     });
   });
 

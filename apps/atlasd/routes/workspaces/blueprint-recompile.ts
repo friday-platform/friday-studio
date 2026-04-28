@@ -25,7 +25,6 @@ const logger = createLogger({ component: "blueprint-recompile" });
 export interface RecompileResult {
   ok: true;
   revision: number;
-  runtimeReloaded: boolean;
 }
 
 export interface RecompileError {
@@ -159,19 +158,13 @@ export async function applyBlueprint(
     ...(blueprintName && blueprintName !== workspace.name ? { name: blueprintName } : {}),
   });
 
-  // Destroy runtime if active — forces reload on next request
-  const runtime = ctx.getWorkspaceRuntime(workspace.id);
-  if (runtime) {
-    await ctx.destroyWorkspaceRuntime(workspace.id);
-  }
-
   logger.info("Blueprint compiled and applied", {
     workspaceId: workspace.id,
     artifactId,
     revision,
   });
 
-  return { ok: true, revision, runtimeReloaded: !!runtime };
+  return { ok: true, revision };
 }
 
 /**

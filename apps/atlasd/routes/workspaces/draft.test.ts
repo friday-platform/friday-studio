@@ -191,7 +191,7 @@ describe("Draft file flow", () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body).toMatchObject({ success: true, runtimeReloaded: true });
+    expect(body).toMatchObject({ success: true });
 
     // Draft should be gone
     expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);
@@ -311,9 +311,9 @@ describe("Draft file flow", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toMatchObject({ success: true, runtimeReloaded: true });
-    expect(destroySpy).toHaveBeenCalledWith(workspaceId);
-    expect(createRuntimeSpy).toHaveBeenCalledWith(workspaceId);
+    expect(body).toMatchObject({ success: true });
+    expect(destroySpy).not.toHaveBeenCalled();
+    expect(createRuntimeSpy).not.toHaveBeenCalled();
   });
 
   test("publish eagerly starts runtime when none exists", async () => {
@@ -374,9 +374,9 @@ describe("Draft file flow", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toMatchObject({ success: true, runtimeReloaded: true });
+    expect(body).toMatchObject({ success: true });
     expect(destroySpy).not.toHaveBeenCalled();
-    expect(createRuntimeSpy).toHaveBeenCalledWith(workspaceId);
+    expect(createRuntimeSpy).not.toHaveBeenCalled();
   });
 
   test("read draft returns 409 when no draft exists", async () => {
@@ -526,10 +526,9 @@ describe("Draft file flow", () => {
         ok: z.boolean(),
         diff: z.record(z.string(), z.unknown()),
         structural_issues: z.null(),
-        runtimeReloaded: z.boolean(),
       })
       .parse(await res.json());
-    expect(body).toMatchObject({ ok: true, runtimeReloaded: true });
+    expect(body).toMatchObject({ ok: true });
 
     const liveContent = await readFile(join(tempDir, "workspace.yml"), "utf-8");
     expect(liveContent).toContain("live-agent");
@@ -846,7 +845,7 @@ describe("Draft file flow", () => {
     });
     expect(publishRes.status).toBe(200);
     const publishBody = await publishRes.json();
-    expect(publishBody).toMatchObject({ success: true, runtimeReloaded: true });
+    expect(publishBody).toMatchObject({ success: true });
 
     // Draft should be gone
     expect(await fileExists(join(tempDir, "workspace.yml.draft"))).toBe(false);
