@@ -159,7 +159,7 @@ describe("createEnableMcpServerTool", () => {
     });
 
     const tools = createEnableMcpServerTool("ws-1", logger);
-    const result = await tools.enable_mcp_server!.execute(
+    const result = await tools.enable_mcp_server!.execute!(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );

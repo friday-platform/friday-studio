@@ -13,6 +13,8 @@ import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
 
+const ErrorBodySchema = z.object({ error: z.string().optional(), report: z.unknown().optional() });
+
 export function createDraftTools(_logger: Logger): AtlasTools {
   return {
     begin_draft: tool({
@@ -102,7 +104,12 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
         });
 
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "begin_draft failed" }));
+          let body: z.infer<typeof ErrorBodySchema>;
+          try {
+            body = ErrorBodySchema.parse(await res.json());
+          } catch {
+            body = { error: "begin_draft failed" };
+          }
           logger.warn("begin_draft failed", { error: body.error, workspaceId: targetId });
           return { success: false, error: body.error ?? "begin_draft failed" };
         }
@@ -129,7 +136,12 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
         });
 
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "publish_draft failed" }));
+          let body: z.infer<typeof ErrorBodySchema>;
+          try {
+            body = ErrorBodySchema.parse(await res.json());
+          } catch {
+            body = { error: "publish_draft failed" };
+          }
           logger.warn("publish_draft failed", { error: body.error, workspaceId: targetId });
           return {
             success: false,
@@ -177,7 +189,12 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
             return data.report;
           }
 
-          const body = await lintRes.json().catch(() => ({ error: "Live validation failed" }));
+          let body: z.infer<typeof ErrorBodySchema>;
+          try {
+            body = ErrorBodySchema.parse(await lintRes.json());
+          } catch {
+            body = { error: "Live validation failed" };
+          }
           logger.warn("validate_workspace live validation failed", {
             error: body.error,
             workspaceId: targetId,
@@ -185,7 +202,12 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
           return { success: false, error: body.error ?? "Live validation failed" };
         }
 
-        const body = await draftRes.json().catch(() => ({ error: "Draft validation failed" }));
+        let body: z.infer<typeof ErrorBodySchema>;
+        try {
+          body = ErrorBodySchema.parse(await draftRes.json());
+        } catch {
+          body = { error: "Draft validation failed" };
+        }
         logger.warn("validate_workspace draft validation failed", {
           error: body.error,
           workspaceId: targetId,
@@ -215,7 +237,12 @@ export function createBoundDraftTools(logger: Logger, workspaceId: string): Atla
           return { success: true, noOp: res.status === 409 };
         }
 
-        const body = await res.json().catch(() => ({ error: "discard_draft failed" }));
+        let body: z.infer<typeof ErrorBodySchema>;
+        try {
+          body = ErrorBodySchema.parse(await res.json());
+        } catch {
+          body = { error: "discard_draft failed" };
+        }
         logger.warn("discard_draft failed", { error: body.error, workspaceId: targetId });
         return { success: false, error: body.error ?? "discard_draft failed" };
       },

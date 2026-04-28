@@ -43,6 +43,7 @@ import {
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { createDefaultResolvers } from "@atlas/core/mcp-registry/resolvers";
+import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import type { ResourceMetadata, ResourceVersion } from "@atlas/ledger";
 import { createLogger, logger } from "@atlas/logger";
@@ -165,8 +166,7 @@ async function buildMcpToolRegistry(config: WorkspaceConfig): Promise<Registry> 
 
   for (const serverId of declaredServers) {
     try {
-      const staticServer = mcpServersRegistry.servers[serverId];
-      let server = staticServer;
+      let server: MCPServerMetadata | undefined = mcpServersRegistry.servers[serverId];
       if (!server) {
         const adapter = await getMCPRegistryAdapter();
         server = (await adapter.get(serverId)) ?? undefined;

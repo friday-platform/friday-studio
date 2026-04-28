@@ -13,6 +13,31 @@ import type { AtlasTools } from "@atlas/agent-sdk";
 import { client } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
 import { jsonSchema, tool } from "ai";
+import { z } from "zod";
+
+const StructuralIssueSchema = z.object({ code: z.string(), path: z.string(), message: z.string() });
+
+const FieldDiffEntrySchema = z.union([
+  z.object({ from: z.unknown().optional(), to: z.unknown().optional() }),
+  z.object({ added: z.array(z.unknown()).optional(), removed: z.array(z.unknown()).optional() }),
+]);
+
+const FieldDiffSchema = z.record(z.string(), FieldDiffEntrySchema);
+
+const UpsertErrorBodySchema = z.object({
+  error: z.string().optional(),
+  diff: FieldDiffSchema.optional(),
+  structuralIssues: z.array(StructuralIssueSchema).nullable().optional(),
+  structural_issues: z.array(StructuralIssueSchema).nullable().optional(),
+});
+
+type UpsertErrorBody = z.infer<typeof UpsertErrorBodySchema>;
+
+function parseStructuralIssues(
+  body: UpsertErrorBody,
+): Array<{ code: string; path: string; message: string }> | null {
+  return body.structuralIssues ?? body.structural_issues ?? null;
+}
 
 export interface FieldDiff {
   [field: string]: { from?: unknown; to?: unknown } | { added?: unknown[]; removed?: unknown[] };
@@ -107,11 +132,14 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
       });
 
       if (!directRes.ok) {
-        const body = await directRes
-          .json()
-          .catch(() => ({ error: `Direct ${kind} upsert failed` }));
-        const structuralIssues = body.structuralIssues ?? body.structural_issues ?? null;
-        const hasStructuredIssues = Array.isArray(structuralIssues) && structuralIssues.length > 0;
+        let body: UpsertErrorBody;
+        try {
+          body = UpsertErrorBodySchema.parse(await directRes.json());
+        } catch {
+          body = { error: `Direct ${kind} upsert failed` };
+        }
+        const structuralIssues = parseStructuralIssues(body);
+        const hasStructuredIssues = structuralIssues !== null && structuralIssues.length > 0;
         logger.warn(`Direct ${kind} upsert failed`, {
           workspaceId: targetWorkspaceId,
           id,
@@ -133,12 +161,17 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
       return {
         ok: body.ok,
         diff: body.diff ?? {},
-        structural_issues: body.structuralIssues ?? body.structural_issues ?? null,
+        structural_issues: body.structural_issues ?? null,
       };
     }
 
     if (!draftRes.ok) {
-      const body = await draftRes.json().catch(() => ({ error: `Draft ${kind} upsert failed` }));
+      let body: UpsertErrorBody;
+      try {
+        body = UpsertErrorBodySchema.parse(await draftRes.json());
+      } catch {
+        body = { error: `Draft ${kind} upsert failed` };
+      }
       logger.warn(`Draft ${kind} upsert failed`, {
         workspaceId: targetWorkspaceId,
         id,
@@ -157,7 +190,7 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
     return {
       ok: body.ok,
       diff: body.diff ?? {},
-      structural_issues: body.structuralIssues ?? body.structural_issues ?? null,
+      structural_issues: body.structural_issues ?? null,
     };
   }
 

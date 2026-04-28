@@ -168,9 +168,8 @@ function checkToolReferences(config: WorkspaceConfig, registry: Registry, issues
       if (validTools.has(tool)) continue;
 
       const prefix = tool.split("/")[0];
-      const bareName = tool.slice(prefix.length + 1);
-
       if (prefix) {
+        const bareName = tool.slice(prefix.length + 1);
         if (serverTools.has(prefix)) {
           // Registry has resolved tools for this server — verify the bare name exists
           if (serverTools.get(prefix)?.has(bareName)) continue;

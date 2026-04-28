@@ -199,7 +199,7 @@ describe("GET /mcp", () => {
     const res = await app.request("/ws-test-id/mcp");
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as JsonBody;
+    const body = (await res.json()) as { enabled: JsonBody[]; available: JsonBody[] };
     expect(body.enabled).toHaveLength(1);
     expect(body.enabled[0]).toMatchObject({ id: "github", name: "GitHub" });
     expect(body.available).toHaveLength(0);
@@ -474,7 +474,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
     const { app, destroyWorkspaceRuntime } = createTestApp({
       workspace,
@@ -509,7 +509,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(config));
     const { app, destroyWorkspaceRuntime } = createTestApp({
       workspace,
@@ -542,7 +542,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     // Draft has the server enabled; live does too (draft was copied from live)
     const draftConfig = {
       ...makeWorkspaceConfig({ github: { transport: { type: "stdio", command: "echo" } } }),
@@ -558,7 +558,7 @@ describe("DELETE /mcp/:serverId", () => {
           },
         },
       },
-    } as WorkspaceConfig;
+    } as unknown as WorkspaceConfig;
     await writeFile(join(testDir, "workspace.yml"), stringify(liveConfig));
     await writeFile(join(testDir, "workspace.yml.draft"), stringify(draftConfig));
     const { app, destroyWorkspaceRuntime } = createTestApp({

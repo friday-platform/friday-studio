@@ -25,7 +25,7 @@ const CREATE_WORKSPACE_INPUT_SCHEMA = {
     },
   },
   required: ["name"],
-} as const;
+};
 
 const WORKSPACE_DELETE_INPUT_SCHEMA = z.object({
   workspaceId: z
@@ -44,7 +44,7 @@ const REMOVE_ITEM_INPUT_SCHEMA = {
   properties: {
     kind: {
       type: "string" as const,
-      enum: ["agent", "signal", "job"] as const,
+      enum: ["agent", "signal", "job"],
       description: "Type of entity to remove",
     },
     id: { type: "string" as const, description: "Unique identifier of the entity to remove" },
@@ -55,7 +55,7 @@ const REMOVE_ITEM_INPUT_SCHEMA = {
     },
   },
   required: ["kind", "id"],
-} as const;
+};
 
 export function createWorkspaceOpsTools(logger: Logger): AtlasTools {
   return {
@@ -149,7 +149,13 @@ export function createBoundWorkspaceOpsTools(logger: Logger, workspaceId: string
         });
 
         if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: "remove_item failed" }));
+          const errorSchema = z.object({ error: z.unknown().optional() });
+          let body: z.infer<typeof errorSchema>;
+          try {
+            body = errorSchema.parse(await res.json());
+          } catch {
+            body = { error: "remove_item failed" };
+          }
           logger.warn("remove_item failed", { workspaceId: targetId, kind, id, error: body.error });
           return { ok: false, error: body.error ?? "remove_item failed" };
         }

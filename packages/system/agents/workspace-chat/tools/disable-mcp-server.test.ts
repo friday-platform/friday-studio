@@ -204,7 +204,7 @@ describe("createDisableMcpServerTool", () => {
     });
 
     const tools = createDisableMcpServerTool("ws-1", logger);
-    const result = await tools.disable_mcp_server!.execute(
+    const result = await tools.disable_mcp_server!.execute!(
       { serverId: "github", workspaceId: "ws-other" },
       TOOL_CALL_OPTS,
     );
