@@ -64,7 +64,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
         name: "SLACK_MCP_XOXP_TOKEN",
         description: "Slack user token used by slack-mcp-server to access Slack APIs",
         validation: "^(xoxb|xoxc|xoxp|xoxd)-",
-        linkRef: { provider: "slack-app", key: "access_token" },
+        linkRef: { provider: "slack", key: "access_token" },
       },
     ],
   },
@@ -74,7 +74,7 @@ export const slackCommunicatorAgent = createAgent<string, SlackOutput>({
       env: {
         SLACK_MCP_XOXP_TOKEN: {
           from: "link",
-          provider: "slack-app",
+          provider: "slack",
           key: "access_token",
         } satisfies LinkCredentialRef,
         SLACK_MCP_ADD_MESSAGE_TOOL: "true",

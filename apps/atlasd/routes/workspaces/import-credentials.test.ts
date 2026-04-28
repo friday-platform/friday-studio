@@ -1474,14 +1474,14 @@ describe("POST /create — credential resolution", () => {
     );
   });
 
-  test("imports bundled agent with slack-app provider → requires_setup when no credential", async () => {
+  test("imports bundled agent with slack provider → requires_setup when no credential", async () => {
     const { app, mockRegisterWorkspace } = createImportTestApp();
     await mountRoutes(app);
 
     const { CredentialNotFoundError } = await import(
       "@atlas/core/mcp-registry/credential-resolver"
     );
-    mockResolveCredentialsByProvider.mockRejectedValue(new CredentialNotFoundError("slack-app"));
+    mockResolveCredentialsByProvider.mockRejectedValue(new CredentialNotFoundError("slack"));
 
     const config = makeConfig({
       agents: {
