@@ -27,7 +27,6 @@ import {
   UserConfigurationError,
   WorkspaceNotFoundError,
 } from "@atlas/core";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import {
   type ValidationContext,
   validateWorkspaceConfig,

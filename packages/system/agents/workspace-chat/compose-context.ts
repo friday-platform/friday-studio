@@ -21,14 +21,6 @@ export interface ComposedForegroundContext {
   resourceEntries: ResourceEntry[];
 }
 
-interface ComposedContext {
-  workspaceSections: string;
-  mergedSkills: SkillSummary[];
-  foregroundTools: Record<string, AtlasTools>;
-  mergedResources: ResourceEntry[];
-  memoryBootstrapBlocks: string[];
-}
-
 export async function fetchForegroundContexts(
   foregroundIds: string[],
   logger: Logger,

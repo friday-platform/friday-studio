@@ -188,6 +188,8 @@ function createTestApp(overrides: Partial<ResourceStorageAdapter> = {}) {
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   const app = new Hono<AppVariables>();

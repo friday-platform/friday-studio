@@ -1,6 +1,7 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import JSZip from "jszip";
@@ -113,6 +114,8 @@ function createApp(opts: {
     evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   mockGetAtlasHome.mockReturnValue(opts.homeDir);
