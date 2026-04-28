@@ -24,10 +24,6 @@ import {
   findCommunicatorWiring,
   TelegramCredentialSecretSchema,
 } from "../services/communicator-wiring.ts";
-import {
-  ByWorkspaceResponseSchema,
-  SlackCredentialSecretSchema,
-} from "../services/slack-credentials.ts";
 import { isClientSafeEvent } from "../stream-event-filter.ts";
 import type { StreamRegistry } from "../stream-registry.ts";
 import {
@@ -71,6 +67,12 @@ const WhatsappLinkSecretSchema = z.object({
   app_secret: z.string().min(1),
   phone_number_id: z.string().min(1),
   verify_token: z.string().min(1),
+});
+
+const SlackLinkSecretSchema = z.object({
+  bot_token: z.string().min(1),
+  signing_secret: z.string().min(1),
+  app_id: z.string().min(1),
 });
 
 export interface ChatSdkInstanceConfig {
@@ -153,11 +155,11 @@ function collectBroadcastDestinations(
  * Resolve every platform credential a workspace has wired. Each provider is
  * resolved independently from a single config block — drawn from the top-level
  * `communicators` map first, then from a matching signal's `config` — plus env
- * vars. The Link service is consulted for Slack (workspace→app mapping) and
- * for the four apikey communicators (Telegram, Discord, Teams, WhatsApp) via
- * the `communicator_wiring` table. Resolution priority for those four is:
- * Link → yml inline → env var; the latter two stay as backward-compat
- * fallbacks for env-only and BYO-token setups.
+ * vars. The Link service is consulted for the five apikey communicators
+ * (Slack, Telegram, Discord, Teams, WhatsApp) via the `communicator_wiring`
+ * table. Resolution priority for all five is: Link → yml inline → env var;
+ * the latter two stay as backward-compat fallbacks for env-only and BYO-token
+ * setups.
  */
 export async function resolvePlatformCredentials(
   workspaceId: string,
@@ -193,32 +195,8 @@ export async function resolvePlatformCredentials(
 
   const slackConfig = pickConfigForKind("slack", signals, communicators);
   if (slackConfig) {
-    const slackInlineCreds = resolveSlackFromConfig(slackConfig);
-    if (slackInlineCreds) {
-      resolved.push(slackInlineCreds);
-      return resolved;
-    }
-  }
-
-  // Only consult Link for a Slack credential if the workspace actually
-  // declares slack via communicators or signals. A workspace with only
-  // teams / discord / telegram / whatsapp has no business pinging Link — it's
-  // a pointless HTTP round-trip, and a Link 5xx here would drop the
-  // already-resolved creds from the other providers on the floor.
-  //
-  // The outer try/catch is defense-in-depth: even when slack is declared,
-  // a transient Link 5xx should downgrade to a warn, not disable every chat
-  // adapter on the workspace.
-  if (slackConfig) {
-    try {
-      const slackLinkCreds = await resolveSlackFromLink(workspaceId);
-      if (slackLinkCreds) resolved.push(slackLinkCreds);
-    } catch (error) {
-      logger.warn("chat_sdk_slack_link_fallback_failed", {
-        workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    const creds = await resolveSlackCredentials(workspaceId, userId, slackConfig);
+    if (creds) resolved.push(creds);
   }
 
   return resolved;
@@ -663,7 +641,23 @@ async function resolveTeamsFromLink(
   };
 }
 
-function resolveSlackFromConfig(config: Record<string, unknown>): ResolvedCredentials | null {
+/**
+ * Resolve Slack credentials in priority order:
+ * 1. Link wiring (`communicator_wiring` table → credential secret) — preferred,
+ *    workspace.yml carries `{ kind: slack }` only and Link owns the secrets.
+ * 2. yml inline — legacy BYO-token setups where workspace.yml stashes
+ *    `bot_token` / `signing_secret` / `app_id` directly under the
+ *    signal/communicator config.
+ * 3. `SLACK_*` env vars — single-bot dev setups.
+ */
+async function resolveSlackCredentials(
+  workspaceId: string,
+  userId: string,
+  config: Record<string, unknown>,
+): Promise<ResolvedCredentials | null> {
+  const linkCreds = await resolveSlackFromLink(workspaceId, userId);
+  if (linkCreds) return linkCreds;
+
   const parsed = SlackProviderConfigSchema.safeParse(config);
   if (!parsed.success) {
     logger.debug("slack_invalid_config", { error: parsed.error.message });
@@ -694,68 +688,62 @@ function resolveSlackFromConfig(config: Record<string, unknown>): ResolvedCreden
   };
 }
 
-async function resolveSlackFromLink(workspaceId: string): Promise<ResolvedCredentials | null> {
-  const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
-  const url = `${linkServiceUrl}/internal/v1/slack-apps/by-workspace/${encodeURIComponent(
-    workspaceId,
-  )}`;
-
-  const headers: Record<string, string> = {};
-  if (process.env.LINK_DEV_MODE !== "true") {
-    const atlasKey = process.env.FRIDAY_KEY;
-    if (atlasKey) {
-      headers.Authorization = `Bearer ${atlasKey}`;
-    }
-  }
-
-  let res: Response;
+/**
+ * Look up the workspace's Slack wiring in Link. Returns null on no wiring,
+ * invalid stored secret, or transient Link errors — those fall through to the
+ * legacy yml/env paths instead of failing loudly. A 5xx from Link should not
+ * disable a workspace whose secrets could be served from yml.
+ */
+async function resolveSlackFromLink(
+  workspaceId: string,
+  userId: string,
+): Promise<ResolvedCredentials | null> {
+  let wiring: { credentialId: string; connectionId: string | null } | null;
   try {
-    res = await fetch(url, { headers });
+    wiring = await findCommunicatorWiring(workspaceId, "slack");
   } catch (error) {
-    // Link unreachable (dev without the service running, CI, transient net).
-    // Treat identically to 404 — no Slack app wired for this workspace.
-    logger.debug("chat_sdk_link_unreachable", {
+    logger.warn("slack_link_wiring_lookup_failed", {
       workspaceId,
+      userId,
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
 
-  if (res.status === 404) {
-    logger.debug("chat_sdk_no_credential_for_workspace", { workspaceId });
+  if (!wiring) return null;
+
+  let credential: Awaited<ReturnType<typeof fetchLinkCredential>>;
+  try {
+    credential = await fetchLinkCredential(wiring.credentialId, logger);
+  } catch (error) {
+    logger.warn("slack_link_credential_fetch_failed", {
+      workspaceId,
+      userId,
+      credentialId: wiring.credentialId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(
-      `Failed to resolve slack-app for workspace '${workspaceId}': ${res.status} ${body}`,
-    );
-  }
-
-  const { credential_id, app_id } = ByWorkspaceResponseSchema.parse(await res.json());
-
-  const credential = await fetchLinkCredential(credential_id, logger);
-  const secret = SlackCredentialSecretSchema.parse(credential.secret);
-
-  if (secret.access_token === "pending") {
-    logger.debug("chat_sdk_credential_pending", { workspaceId, credentialId: credential_id });
+  const secretParse = SlackLinkSecretSchema.safeParse(credential.secret);
+  if (!secretParse.success) {
+    logger.warn("slack_link_credential_invalid_secret", {
+      workspaceId,
+      credentialId: wiring.credentialId,
+      issues: secretParse.error.issues,
+    });
     return null;
   }
 
-  if (!secret.signing_secret) {
-    logger.warn("chat_sdk_missing_signing_secret", { workspaceId, credentialId: credential_id });
-    return null;
-  }
-
+  const { bot_token, signing_secret, app_id } = secretParse.data;
   return {
     credentials: {
       kind: "slack",
-      botToken: secret.access_token,
-      signingSecret: secret.signing_secret,
+      botToken: bot_token,
+      signingSecret: signing_secret,
       appId: app_id,
     },
-    credentialId: credential_id,
+    credentialId: wiring.credentialId,
   };
 }
 

@@ -763,17 +763,6 @@ describe("resolvePlatformCredentials", () => {
     }
   });
 
-  it("slack signal short-circuits the Link service lookup", async () => {
-    // If Link were consulted, a reachable (but 404-returning) LINK_SERVICE_URL
-    // would log chat_sdk_no_credential_for_workspace. We can't easily assert
-    // on that here, so instead assert the resolver succeeds purely from signal
-    // data — no network required. The unreachable LINK URL in beforeEach would
-    // surface as a thrown error on `!res.ok` if it were actually called.
-    const result = await resolvePlatformCredentials("ws-1", "user-1", slackSignal);
-    expect(result).toHaveLength(1);
-    expect(result[0]?.credentials.kind).toBe("slack");
-  });
-
   const teamsEnvKeys = [
     "TEAMS_APP_ID",
     "TEAMS_APP_PASSWORD",
@@ -1390,6 +1379,80 @@ describe("resolvePlatformCredentials", () => {
       });
       expect(result).toHaveLength(1);
       expect(result[0]?.credentialId).toBe("whatsapp:999");
+    });
+
+    // ─── Slack ──────────────────────────────────────────────────────────────
+    it("Link wiring wins over yml inline config for slack", async () => {
+      stubLinkFetches({
+        provider: "slack",
+        wiring: { credential_id: "cred-slack", connection_id: "ALINK" },
+        secret: { bot_token: "xoxb-link-token", signing_secret: "link-signing", app_id: "ALINK" },
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "slack-chat": {
+          provider: "slack",
+          config: { bot_token: "xoxb-yml-token", signing_secret: "yml-signing", app_id: "AYML" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "slack",
+        botToken: "xoxb-link-token",
+        signingSecret: "link-signing",
+        appId: "ALINK",
+      });
+      expect(result[0]?.credentialId).toBe("cred-slack");
+    });
+
+    it("slack: wiring-not-found falls through to yml inline config", async () => {
+      stubLinkFetches({ provider: "slack", wiring: null });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "slack-chat": {
+          provider: "slack",
+          config: { bot_token: "xoxb-yml-token", signing_secret: "yml-signing", app_id: "AYML" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "slack",
+        botToken: "xoxb-yml-token",
+        signingSecret: "yml-signing",
+        appId: "AYML",
+      });
+      expect(result[0]?.credentialId).toBe("slack:AYML");
+    });
+
+    it("slack: Link credential fetch error falls through to yml inline config", async () => {
+      stubLinkFetches({
+        provider: "slack",
+        wiring: { credential_id: "cred-slack", connection_id: "ALINK" },
+        fetchThrows: true,
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "slack-chat": {
+          provider: "slack",
+          config: { bot_token: "xoxb-yml-token", signing_secret: "yml-signing", app_id: "AYML" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentialId).toBe("slack:AYML");
+    });
+
+    it("slack: invalid Link secret falls through to yml inline config", async () => {
+      stubLinkFetches({
+        provider: "slack",
+        wiring: { credential_id: "cred-slack", connection_id: "ALINK" },
+        // Missing signing_secret — fails SlackLinkSecretSchema, should fall through.
+        secret: { bot_token: "xoxb-link-token", app_id: "ALINK" },
+      });
+      const result = await resolvePlatformCredentials("ws-1", "user-1", {
+        "slack-chat": {
+          provider: "slack",
+          config: { bot_token: "xoxb-yml-token", signing_secret: "yml-signing", app_id: "AYML" },
+        },
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentialId).toBe("slack:AYML");
     });
   });
 });
