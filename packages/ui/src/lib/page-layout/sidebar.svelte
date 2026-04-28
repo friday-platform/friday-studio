@@ -4,7 +4,7 @@
   let { children }: { children: Snippet } = $props();
 </script>
 
-<aside class="sidebar" data-friday-page-layout-sidebar>
+<aside class="sidebar" data-friday-pagelayout-sidebar>
   {@render children()}
 </aside>
 

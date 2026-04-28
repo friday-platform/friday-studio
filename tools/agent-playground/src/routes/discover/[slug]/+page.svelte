@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Button, MarkdownRendered, PageLayout, markdownToHTML, toast } from "@atlas/ui";
-  import DOMPurify from "dompurify";
+  import { Button, MarkdownRendered, markdownToHTML, PageLayout, toast } from "@atlas/ui";
   import { page } from "$app/state";
   import { getClient } from "$lib/client.ts";
+  import DOMPurify from "dompurify";
 
   interface SignalSummary {
     id: string;
@@ -100,10 +100,7 @@
 
 <PageLayout.Root>
   <PageLayout.Breadcrumbs
-    crumbs={[
-      { label: "Discover Spaces", href: "/discover" },
-      { label: item?.name ?? slug },
-    ]}
+    crumbs={[{ label: "Discover Spaces", href: "/discover" }, { label: item?.name ?? slug }]}
   />
   <PageLayout.Body>
     <PageLayout.Content>
@@ -117,79 +114,16 @@
       {:else if item}
         <div class="detail-stack">
           <div class="detail-headerbar">
+            <Button variant="secondary" onclick={handleImport} disabled={importing}>
+              {importing ? "Importing…" : "Add Now"}
+            </Button>
+
             <p class="meta">
               <a href={item.source.htmlUrl} target="_blank" rel="noopener noreferrer">
-                <code>{item.source.repo}/{item.source.path}</code>
+                View in GitHub
               </a>
             </p>
-            <Button variant="primary" onclick={handleImport} disabled={importing}>
-              {importing ? "Importing…" : "Import workspace"}
-            </Button>
           </div>
-
-          {#if item.signals.length > 0 || item.agents.length > 0 || item.jobs.length > 0}
-            <section class="manifest">
-              {#if item.signals.length > 0}
-                <div class="manifest-group">
-                  <h2 class="manifest-h">Signals <span class="count">{item.signals.length}</span></h2>
-                  <ul class="manifest-list">
-                    {#each item.signals as s (s.id)}
-                      <li class="manifest-row">
-                        <div class="row-main">
-                          <code class="row-id">{s.id}</code>
-                          {#if s.title}
-                            <span class="row-title">{s.title}</span>
-                          {/if}
-                        </div>
-                        {#if s.provider}
-                          <span class="pill" data-kind={s.provider}>{s.provider}</span>
-                        {/if}
-                      </li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-
-              {#if item.agents.length > 0}
-                <div class="manifest-group">
-                  <h2 class="manifest-h">Agents <span class="count">{item.agents.length}</span></h2>
-                  <ul class="manifest-list">
-                    {#each item.agents as a (a.id)}
-                      <li class="manifest-row">
-                        <div class="row-main">
-                          <code class="row-id">{a.id}</code>
-                          {#if a.description}
-                            <span class="row-title">{a.description}</span>
-                          {/if}
-                        </div>
-                        {#if a.type}
-                          <span class="pill" data-kind={a.type}>{a.type}</span>
-                        {/if}
-                      </li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-
-              {#if item.jobs.length > 0}
-                <div class="manifest-group">
-                  <h2 class="manifest-h">Jobs <span class="count">{item.jobs.length}</span></h2>
-                  <ul class="manifest-list">
-                    {#each item.jobs as j (j.id)}
-                      <li class="manifest-row">
-                        <div class="row-main">
-                          <code class="row-id">{j.id}</code>
-                          {#if j.title}
-                            <span class="row-title">{j.title}</span>
-                          {/if}
-                        </div>
-                      </li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-            </section>
-          {/if}
 
           {#if item.readme}
             <section class="readme">
@@ -203,6 +137,66 @@
         </div>
       {/if}
     </PageLayout.Content>
+
+    {#if item && (item.signals.length > 0 || item.agents.length > 0 || item.jobs.length > 0)}
+      <PageLayout.Sidebar>
+        <section class="manifest">
+          {#if item.signals.length > 0}
+            <div class="manifest-group">
+              <h2 class="manifest-h">Signals</h2>
+              <ul class="manifest-list">
+                {#each item.signals as s (s.id)}
+                  <li class="manifest-row">
+                    <div class="row-main">
+                      <code class="row-id">{s.id}</code>
+                      {#if s.title}
+                        <span class="row-title">{s.title}</span>
+                      {/if}
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+
+          {#if item.agents.length > 0}
+            <div class="manifest-group">
+              <h2 class="manifest-h">Agents</h2>
+              <ul class="manifest-list">
+                {#each item.agents as a (a.id)}
+                  <li class="manifest-row">
+                    <div class="row-main">
+                      <code class="row-id">{a.id}</code>
+                      {#if a.description}
+                        <span class="row-title">{a.description}</span>
+                      {/if}
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+
+          {#if item.jobs.length > 0}
+            <div class="manifest-group">
+              <h2 class="manifest-h">Jobs</h2>
+              <ul class="manifest-list">
+                {#each item.jobs as j (j.id)}
+                  <li class="manifest-row">
+                    <div class="row-main">
+                      <code class="row-id">{j.id}</code>
+                      {#if j.title}
+                        <span class="row-title">{j.title}</span>
+                      {/if}
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+        </section>
+      </PageLayout.Sidebar>
+    {/if}
   </PageLayout.Body>
 </PageLayout.Root>
 
@@ -217,7 +211,6 @@
     align-items: center;
     display: flex;
     gap: var(--size-4);
-    justify-content: space-between;
   }
 
   .meta {
@@ -235,30 +228,22 @@
   }
 
   .meta code {
-    background: var(--color-surface-3);
-    border-radius: 4px;
+    font-family: var(--font-family-monospace);
     font-size: 12px;
-    padding: 2px 8px;
   }
 
   .readme {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
-    padding: var(--size-6);
+    padding-block: var(--size-2);
   }
 
   .manifest {
     display: flex;
     flex-direction: column;
-    gap: var(--size-5);
+    gap: var(--size-6);
   }
 
   .manifest-group {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
-    padding: var(--size-4) var(--size-5);
+    padding-block: var(--size-2);
   }
 
   .manifest-h {
@@ -273,90 +258,41 @@
     text-transform: uppercase;
   }
 
-  .manifest-h .count {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
-    font-family: var(--font-family-monospace);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-
   .manifest-list {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: var(--size-4);
     list-style: none;
     margin: 0;
     padding: 0;
   }
 
   .manifest-row {
-    align-items: center;
-    border-block-start: 1px solid var(--color-border-1);
+    align-items: flex-start;
     display: flex;
-    gap: var(--size-3);
+    gap: var(--size-2);
     justify-content: space-between;
-    padding: var(--size-2) 0;
-  }
-
-  .manifest-row:first-child {
-    border-block-start: none;
   }
 
   .row-main {
-    align-items: center;
     display: flex;
-    gap: var(--size-3);
+    flex-direction: column;
+    gap: 2px;
     min-width: 0;
   }
 
   .row-id {
-    background: var(--color-surface-3);
-    border-radius: 4px;
     color: var(--color-text);
-    font-family: var(--font-family-monospace);
-    font-size: 12px;
-    padding: 2px 8px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
     white-space: nowrap;
   }
 
   .row-title {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .pill {
-    background: color-mix(in srgb, var(--color-text), transparent 90%);
-    border-radius: var(--radius-round);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    padding: 2px 8px;
-    text-transform: uppercase;
-  }
-
-  .pill[data-kind="http"],
-  .pill[data-kind="atlas"] {
-    background: color-mix(in srgb, var(--color-accent, #1171df), transparent 85%);
-    color: var(--color-accent, #1171df);
-  }
-
-  .pill[data-kind="schedule"],
-  .pill[data-kind="user"] {
-    background: color-mix(in srgb, #a855f7, transparent 85%);
-    color: #a855f7;
-  }
-
-  .pill[data-kind="llm"] {
-    background: color-mix(in srgb, #10b981, transparent 85%);
-    color: #10b981;
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-size: 12px;
+    line-height: 1.4;
   }
 
   .loading,

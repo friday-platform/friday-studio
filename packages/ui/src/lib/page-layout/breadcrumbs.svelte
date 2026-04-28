@@ -33,7 +33,7 @@
     mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
     inset-block-start: 0;
     inset-inline: 0;
-    inline-size: 100%;
+    inline-size: calc(100% - var(--size-8));
     position: absolute;
     z-index: var(--layer-2);
   }
