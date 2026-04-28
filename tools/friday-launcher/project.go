@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -12,6 +13,74 @@ import (
 
 // osGetenv is var-bound so tests can stub it.
 var osGetenv = os.Getenv
+
+// fridayEnv builds the env-var list passed to the friday daemon
+// process. Currently only carries FRIDAY_CLAUDE_PATH (when we can
+// find a Claude Code binary on the user's machine); kept as a
+// helper so future per-process env additions land here cleanly
+// instead of inlining a slice into the spec literal.
+//
+// FRIDAY_CLAUDE_PATH discovery order:
+//  1. Explicit user override via FRIDAY_CLAUDE_PATH set in the
+//     launcher's own environment (e.g. someone debugging with a
+//     specific build).
+//  2. exec.LookPath("claude") — picks up the user's PATH-installed
+//     binary regardless of how it was installed (npm global,
+//     homebrew, the official native installer, etc.).
+//  3. Common install paths the launcher checks even when PATH
+//     doesn't include them — relevant when the launcher is
+//     spawned from /Applications/Friday Studio.app via Finder /
+//     Spotlight, where the inherited PATH is the macOS minimal
+//     /usr/bin:/bin:/usr/sbin:/sbin and misses ~/.local/bin or
+//     /opt/homebrew/bin.
+//
+// If none of the above resolves to a real file, we leave the env
+// var unset — the SDK then surfaces its native "binary not found"
+// error to the user, which is at least specific enough to act on.
+func fridayEnv() []string {
+	if path := discoverClaudeBinary(); path != "" {
+		return []string{"FRIDAY_CLAUDE_PATH=" + path}
+	}
+	return nil
+}
+
+func discoverClaudeBinary() string {
+	if v := osGetenv("FRIDAY_CLAUDE_PATH"); v != "" {
+		if info, err := os.Stat(v); err == nil && !info.IsDir() {
+			return v
+		}
+	}
+	if path, err := exec.LookPath("claude"); err == nil {
+		return path
+	}
+	candidates := []string{
+		// Anthropic's native installer: ~/.local/bin/claude is a
+		// symlink into ~/.local/share/claude/versions/<v>.
+		filepath.Join(homeDir(), ".local", "bin", "claude"),
+		// Anthropic's older claude-code home dir.
+		filepath.Join(homeDir(), ".claude", "local", "claude"),
+		// Apple Silicon homebrew default.
+		"/opt/homebrew/bin/claude",
+		// Intel homebrew / generic Unix prefix.
+		"/usr/local/bin/claude",
+	}
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return c
+		}
+	}
+	return ""
+}
+
+func homeDir() string {
+	if h, err := os.UserHomeDir(); err == nil {
+		return h
+	}
+	return ""
+}
 
 // signalSIGTERM is the literal POSIX SIGTERM value (15). Using a
 // literal here (rather than int(syscall.SIGTERM)) keeps this file
@@ -106,9 +175,22 @@ func supervisedProcesses(binDir string) []processSpec {
 		// subcommand it errors with "No command specified" and exits;
 		// `daemon start` runs the workspace server in foreground (we
 		// own background-ness via process-compose, so no --detached).
+		//
+		// FRIDAY_CLAUDE_PATH points at the Claude Code native binary
+		// the agent SDK invokes per request. The deno-compiled friday
+		// binary doesn't bundle the platform-specific
+		// claude-agent-sdk-darwin-arm64 / -windows-x64 native package,
+		// so without this env var the SDK fails with "Claude Code
+		// native binary not found". We discover the user's installed
+		// claude on PATH (and a few common install dirs) at launcher
+		// startup and surface it here. Agents fail loudly in friday
+		// when this var is unset OR the path doesn't exist; users
+		// without claude installed see the original SDK error message
+		// (which now points them at a working install command).
 		{
 			name: "friday", binary: filepath.Join(binDir, "friday"),
 			args:       []string{"daemon", "start"},
+			env:        fridayEnv(),
 			healthPort: "8080", healthPath: "/health",
 		},
 		// `link` requires LINK_DEV_MODE=true to skip the
