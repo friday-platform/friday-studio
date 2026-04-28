@@ -15,6 +15,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MergedConfig, WorkspaceConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -105,6 +106,8 @@ export function createTestApp(options: {
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   const app = new Hono<AppVariables>();

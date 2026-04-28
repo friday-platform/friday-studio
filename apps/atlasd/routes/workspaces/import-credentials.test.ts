@@ -5,6 +5,7 @@ import {
   LinkCredentialNotFoundError,
   type resolveCredentialsByProvider,
 } from "@atlas/core/mcp-registry/credential-resolver";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { parse } from "@std/yaml";
 import { Hono } from "hono";
@@ -121,6 +122,8 @@ function createImportTestApp() {
     evictChatSdkInstance: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   const app = new Hono<AppVariables>();

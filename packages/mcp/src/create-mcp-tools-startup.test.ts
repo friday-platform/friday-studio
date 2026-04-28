@@ -186,7 +186,7 @@ describe("connectHttp startup", () => {
       fetch: mockFetch,
     }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(MCPStartupError);
+    if (!(error instanceof MCPStartupError)) throw new Error("expected MCPStartupError");
     expect(error.kind).toBe("timeout");
     expect(error.serverId).toBe("timeout-server");
     expect(error.command).toBe("uvx");

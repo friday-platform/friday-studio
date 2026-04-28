@@ -8,6 +8,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import { stringify } from "@std/yaml";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -74,6 +75,8 @@ function createTestApp(options: {
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   const app = new Hono<AppVariables>();

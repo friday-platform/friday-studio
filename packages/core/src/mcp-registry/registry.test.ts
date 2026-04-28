@@ -105,6 +105,7 @@ describe("mcpServersRegistry", () => {
 
     it.each(googleIds)("'%s' has startup config with command, args, and env", (id) => {
       const server = mcpServersRegistry.servers[id];
+      if (!server) throw new Error(`missing server '${id}' in registry`);
       const startup = server.configTemplate.startup;
       expect(startup).toBeDefined();
       expect(startup!.type).toBe("command");
@@ -122,6 +123,7 @@ describe("mcpServersRegistry", () => {
 
     it.each(googleIds)("'%s' ready_url matches transport URL", (id) => {
       const server = mcpServersRegistry.servers[id];
+      if (!server) throw new Error(`missing server '${id}' in registry`);
       const transportUrl =
         server.configTemplate.transport.type === "http" ? server.configTemplate.transport.url : "";
       expect(server.configTemplate.startup!.ready_url).toBe(transportUrl);
@@ -129,6 +131,7 @@ describe("mcpServersRegistry", () => {
 
     it.each(googleIds)("'%s' startup env uses plain strings or Link refs", (id) => {
       const server = mcpServersRegistry.servers[id];
+      if (!server) throw new Error(`missing server '${id}' in registry`);
       const env = server.configTemplate.startup!.env!;
       for (const [_key, value] of Object.entries(env)) {
         const isValid =

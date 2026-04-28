@@ -1,4 +1,5 @@
 import type { MergedConfig, WorkspaceConfig } from "@atlas/config";
+import { createStubPlatformModels } from "@atlas/llm";
 import type { WorkspaceManager } from "@atlas/workspace";
 import { Hono } from "hono";
 import { describe, expect, test, vi } from "vitest";
@@ -48,6 +49,8 @@ function createJobsTestApp(options: { config?: MergedConfig | null }) {
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
+    exposeKernel: false,
+    platformModels: createStubPlatformModels(),
   };
 
   const app = new Hono<AppVariables>();
