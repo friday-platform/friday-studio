@@ -25,7 +25,11 @@ import type { Message, Thread } from "chat";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import { StreamRegistry } from "../stream-registry.ts";
-import { createMessageHandler, resolvePlatformCredentials } from "./chat-sdk-instance.ts";
+import {
+  createMessageHandler,
+  initializeChatSdkInstance,
+  resolvePlatformCredentials,
+} from "./chat-sdk-instance.ts";
 
 function makeMessage(overrides?: Partial<Message>): Message {
   return {
@@ -917,6 +921,187 @@ describe("resolvePlatformCredentials", () => {
       expect(kinds).toEqual(["slack", "teams"]);
     } finally {
       restore();
+    }
+  });
+
+  describe("communicators map", () => {
+    it("resolves telegram when only declared in communicators (no signal)", async () => {
+      const result = await resolvePlatformCredentials(
+        "ws-1",
+        {},
+        { ops: { kind: "telegram", bot_token: "555:top-token" } },
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials.kind).toBe("telegram");
+      expect(result[0]?.credentialId).toBe("telegram:555");
+    });
+
+    it("communicators wins when both communicators and signal declare the same kind", async () => {
+      const result = await resolvePlatformCredentials(
+        "ws-1",
+        { "telegram-chat": { provider: "telegram", config: { bot_token: "111:signal" } } },
+        { ops: { kind: "telegram", bot_token: "999:top" } },
+      );
+      expect(result).toHaveLength(1);
+      // Top-level config drives credentials — signal-side bot_token is ignored.
+      expect(result[0]?.credentialId).toBe("telegram:999");
+    });
+
+    it("falls back to signal when kind is absent from communicators", async () => {
+      const result = await resolvePlatformCredentials(
+        "ws-1",
+        { "telegram-chat": { provider: "telegram", config: { bot_token: "111:signal" } } },
+        {
+          ops: {
+            kind: "whatsapp",
+            access_token: "tok",
+            app_secret: "sec",
+            phone_number_id: "1",
+            verify_token: "v",
+          },
+        },
+      );
+      const kinds = result.map((r) => r.credentials.kind).sort();
+      expect(kinds).toEqual(["telegram", "whatsapp"]);
+      const telegram = result.find((r) => r.credentials.kind === "telegram");
+      expect(telegram?.credentialId).toBe("telegram:111");
+    });
+
+    it("resolves multiple kinds from a single communicators map", async () => {
+      const result = await resolvePlatformCredentials(
+        "ws-1",
+        {},
+        {
+          ops_telegram: { kind: "telegram", bot_token: "111:tg" },
+          ops_slack: { kind: "slack", bot_token: "xoxb-top", signing_secret: "ss", app_id: "A1" },
+        },
+      );
+      const kinds = result.map((r) => r.credentials.kind).sort();
+      expect(kinds).toEqual(["slack", "telegram"]);
+    });
+
+    it("resolves slack from communicators map (skips Link fallback when inline succeeds)", async () => {
+      const result = await resolvePlatformCredentials(
+        "ws-1",
+        {},
+        {
+          ops: {
+            kind: "slack",
+            bot_token: "xoxb-top",
+            signing_secret: "top-secret",
+            app_id: "A-TOP",
+          },
+        },
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0]?.credentials).toEqual({
+        kind: "slack",
+        botToken: "xoxb-top",
+        signingSecret: "top-secret",
+        appId: "A-TOP",
+      });
+    });
+
+    it("returns empty when communicators is undefined and signals empty", async () => {
+      const result = await resolvePlatformCredentials("ws-1", {}, undefined);
+      expect(result).toEqual([]);
+    });
+
+    it("merges per-field: communicators inline + env fallback", async () => {
+      const restore = withEnv(discordEnvKeys, {
+        DISCORD_BOT_TOKEN: "env-bot",
+        DISCORD_PUBLIC_KEY: "env-pub",
+        DISCORD_APPLICATION_ID: "env-app",
+      });
+      try {
+        const result = await resolvePlatformCredentials(
+          "ws-1",
+          {},
+          { ops: { kind: "discord", application_id: "top-app" } },
+        );
+        expect(result).toHaveLength(1);
+        // bot_token + public_key from env, application_id from communicators.
+        expect(result[0]?.credentials).toEqual({
+          kind: "discord",
+          botToken: "env-bot",
+          publicKey: "env-pub",
+          applicationId: "top-app",
+        });
+      } finally {
+        restore();
+      }
+    });
+
+    it("does not consult Link when slack is declared in neither communicators nor signals", async () => {
+      // Signals empty, communicators absent → no slack declaration at all.
+      // Resolver must skip Link entirely; otherwise the unreachable LINK_SERVICE_URL
+      // would cause the fetch path to run (debug-logged, but unnecessary).
+      const result = await resolvePlatformCredentials("ws-1", {}, undefined);
+      expect(result).toEqual([]);
+    });
+  });
+});
+
+describe("initializeChatSdkInstance — notifier wiring", () => {
+  const triggerFn = vi.fn(() => Promise.resolve({ sessionId: "sess-1" }));
+
+  it("exposes a notifier whose list() excludes the AtlasWebAdapter stub", async () => {
+    const instance = await initializeChatSdkInstance(
+      {
+        workspaceId: "ws-notif-1",
+        userId: "user-1",
+        signals: { "telegram-chat": { provider: "telegram", config: {} } },
+        streamRegistry: new StreamRegistry(),
+        triggerFn,
+      },
+      { kind: "telegram", botToken: "111:test", secretToken: "wh", appId: "111" },
+    );
+
+    try {
+      // Adapter map contains both atlas (always) and telegram (from creds).
+      // Notifier filters atlas via outboundDeliverable: false marker.
+      expect(instance.notifier.list()).toEqual([{ name: "telegram", kind: "telegram" }]);
+    } finally {
+      await instance.teardown();
+    }
+  });
+
+  it("notifier and chat dispatch through the SAME adapter instance for the same kind", async () => {
+    const instance = await initializeChatSdkInstance(
+      {
+        workspaceId: "ws-notif-2",
+        userId: "user-1",
+        signals: { "telegram-chat": { provider: "telegram", config: {} } },
+        streamRegistry: new StreamRegistry(),
+        triggerFn,
+      },
+      { kind: "telegram", botToken: "111:test", secretToken: "wh", appId: "111" },
+    );
+
+    try {
+      // Grab the adapter instance Chat holds, install a spy on postMessage,
+      // then prove the notifier reaches the SAME instance by calling post().
+      // If initializeChatSdkInstance built two separate adapter maps, the spy
+      // would not be hit.
+      const chatAdapter = instance.chat.getAdapter("telegram");
+      const spy = vi
+        .spyOn(chatAdapter, "postMessage")
+        .mockResolvedValue({ id: "tg-msg-1", threadId: "telegram:c:t", raw: { ok: true } });
+
+      const result = await instance.notifier.post({
+        communicator: "telegram",
+        destination: "telegram:c:t",
+        message: "hi",
+      });
+
+      expect(spy).toHaveBeenCalledWith("telegram:c:t", "hi");
+      expect(result).toEqual({
+        messageId: "tg-msg-1",
+        threadId: "telegram:c:t",
+        raw: { ok: true },
+      });
+    } finally {
+      await instance.teardown();
     }
   });
 });

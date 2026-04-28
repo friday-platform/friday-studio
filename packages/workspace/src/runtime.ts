@@ -258,6 +258,23 @@ interface WorkspaceRuntimeOptions {
     finishedAt: string;
     summary?: string;
   }) => void | Promise<void>;
+  /**
+   * Fires once per session right after the session view is built but before
+   * teardown. Provides the last completed agent block's output, the inbound
+   * `streamId`, and the `jobName`. Source platform (when relevant for
+   * downstream side-effects like broadcasting) is recoverable from the
+   * `streamId` prefix — chat thread IDs are canonically `<platform>:...`.
+   * Errors thrown here are caught and logged; they do not affect session
+   * status.
+   */
+  onSessionComplete?: (data: {
+    workspaceId: string;
+    sessionId: string;
+    streamId: string | undefined;
+    status: WorkspaceSessionStatusType;
+    finalOutput: string | undefined;
+    jobName: string;
+  }) => Promise<void>;
   /** Ledger storage adapter for versioned workspace resources (auto-publish) */
   resourceStorage?: ResourceStorageAdapter;
   /** Activity storage adapter for creating activity feed items */
@@ -319,6 +336,37 @@ interface SessionResult {
 }
 
 const analytics = createAnalyticsClient();
+
+/**
+ * Pull a printable string out of an agent block's `output: unknown`. Agents
+ * emit a few different shapes — a plain string, `{ text }`, or a wrapped
+ * `{ data: { text } }` — and `String({...})` would land "[object Object]" on
+ * the consumer. JSON-stringify is the last resort for unknown shapes.
+ */
+export function extractTextFromAgentOutput(output: unknown): string | undefined {
+  if (output === undefined || output === null) return undefined;
+  if (typeof output === "string") return output;
+  if (typeof output !== "object") return String(output);
+
+  const o = output as Record<string, unknown>;
+  // Direct fields first (some agents emit the text at the top level).
+  for (const key of ["text", "response", "result", "output", "content", "message"]) {
+    if (typeof o[key] === "string") return o[key] as string;
+  }
+  // Then walk one level into `data` (the FSM-document shape).
+  if (typeof o.data === "object" && o.data !== null) {
+    const inner = o.data as Record<string, unknown>;
+    for (const key of ["text", "response", "result", "output", "content", "message"]) {
+      if (typeof inner[key] === "string") return inner[key] as string;
+    }
+  }
+  // Last resort: stringify the whole thing (better than dropping the broadcast).
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * WorkspaceRuntime coordinates multiple FSM executions (jobs) within a workspace.
@@ -1389,6 +1437,43 @@ export class WorkspaceRuntime {
               logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
             });
 
+            // Side-effect hook for the daemon to broadcast the final output
+            // across chat communicators. Errors are isolated — a failed
+            // broadcast must not affect session status.
+            if (this.options.onSessionComplete) {
+              // Prefer the AgentResult / *-result FSM document over agentBlock
+              // output. The chat-handler job stores its reply in a `chat-result`
+              // document (`{ type: "AgentResult", data: { text } }`) while the
+              // raw agentBlock.output is a structured wrapper that stringifies
+              // to "[object Object]". Doc lookup matches the same precedence
+              // the session-finish event uses (line 2751).
+              const resultDoc = job.engine?.documents.find(
+                (doc) => doc.type === "AgentResult" || doc.id.endsWith("-result"),
+              );
+              const finalOutput =
+                extractTextFromAgentOutput(resultDoc?.data) ??
+                extractTextFromAgentOutput(
+                  [...executedBlocks].reverse().find((b) => b.output)?.output,
+                );
+              const inboundStreamId =
+                typeof signal.data?.streamId === "string" ? signal.data.streamId : undefined;
+              try {
+                await this.options.onSessionComplete({
+                  workspaceId: this.workspace.id,
+                  sessionId,
+                  streamId: inboundStreamId,
+                  status: view.status,
+                  finalOutput,
+                  jobName: job.name,
+                });
+              } catch (hookError) {
+                logger.warn("onSessionComplete hook failed", {
+                  sessionId,
+                  error: hookError instanceof Error ? hookError.message : String(hookError),
+                });
+              }
+            }
+
             // Replace "running" activity with final activity for terminal sessions.
             // Skip for code-only sessions (no agent blocks) — no meaningful output to title.
             if (
@@ -2170,14 +2255,22 @@ export class WorkspaceRuntime {
   async triggerSignalWithSession(
     signalName: string,
     payload?: Record<string, unknown>,
-    _streamId?: string,
+    streamId?: string,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
   ): Promise<IWorkspaceSession> {
+    // Top-level `streamId` arg wins over any payload.streamId. The runtime
+    // reads the merged value via `signal.data.streamId` (see processSignalForJob
+    // ~line 1595 where streamId is derived). Both surfaces stay supported so
+    // existing callers (chat-SDK, job-tools forwarding) keep working.
+    const data: Record<string, unknown> = payload ? { ...payload } : {};
+    if (streamId !== undefined) {
+      data.streamId = streamId;
+    }
     const signal: WorkspaceRuntimeSignal = {
       id: signalName,
       type: signalName,
-      data: payload || {},
+      data,
       timestamp: new Date(),
     };
 

@@ -5,7 +5,7 @@ import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import MarkdownIt from "markdown-it";
-import { create, extract, list } from "tar";
+import { create, extract, list, type WriteEntry } from "tar";
 
 const logger = createLogger({ name: "skill-archive" });
 
@@ -27,8 +27,13 @@ export async function packSkillArchive(dirPath: string): Promise<Buffer> {
       gzip: true,
       file: tmpFile,
       cwd: dirPath,
-      onWriteEntry: (entry) => {
-        entry.mode = entry.type === "Directory" ? 0o755 : 0o644;
+      onWriteEntry: (entry: WriteEntry) => {
+        // tar's [HEADER] step reads `this.stat.mode` to compute the archive
+        // entry's mode (write-entry.js line ~188). Mutating `entry.stat.mode`
+        // before [HEADER] runs is what actually overrides the bits.
+        if (entry.stat) {
+          entry.stat.mode = entry.type === "Directory" ? 0o755 : 0o644;
+        }
       },
     },
     ["."],

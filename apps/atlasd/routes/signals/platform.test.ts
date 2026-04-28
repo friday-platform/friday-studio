@@ -78,7 +78,12 @@ function makeChatSdkInstance(
     webhooks[webhookKey] = handler;
   }
 
-  return { chat: { webhooks } as unknown as Chat, teardown: vi.fn().mockResolvedValue(undefined) };
+  return {
+    chat: { webhooks } as unknown as Chat,
+    notifier: { list: vi.fn(() => []), post: vi.fn() } as unknown as ChatSdkInstance["notifier"],
+    broadcastDestinations: {},
+    teardown: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 /** Build a mock daemon for routing tests. */

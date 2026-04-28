@@ -51,6 +51,12 @@ export const SlackProviderConfigSchema = z.strictObject({
     .describe(
       "Slack signing secret for x-slack-signature verification. Falls back to SLACK_SIGNING_SECRET env var.",
     ),
+  default_destination: z
+    .string()
+    .optional()
+    .describe(
+      "Default channel ID for outbound broadcasts (e.g. CXXXX for #ops). Used by job-output broadcast hook when this communicator is not the source of the triggering signal.",
+    ),
 });
 export type SlackProviderConfig = z.infer<typeof SlackProviderConfigSchema>;
 
@@ -64,6 +70,12 @@ export const TelegramProviderConfigSchema = z.strictObject({
     .optional()
     .describe(
       "Webhook secret for x-telegram-bot-api-secret-token verification. Falls back to TELEGRAM_WEBHOOK_SECRET env var.",
+    ),
+  default_destination: z
+    .string()
+    .optional()
+    .describe(
+      "Default chat ID (numeric, as string) for outbound broadcasts. Positive for users, negative for groups.",
     ),
 });
 export type TelegramProviderConfig = z.infer<typeof TelegramProviderConfigSchema>;
@@ -83,6 +95,10 @@ export const DiscordProviderConfigSchema = z.strictObject({
     .string()
     .optional()
     .describe("Discord application ID. Falls back to DISCORD_APPLICATION_ID env var."),
+  default_destination: z
+    .string()
+    .optional()
+    .describe("Default channel ID for outbound broadcasts."),
 });
 export type DiscordProviderConfig = z.infer<typeof DiscordProviderConfigSchema>;
 
@@ -102,6 +118,10 @@ export const TeamsProviderConfigSchema = z.strictObject({
     .enum(["MultiTenant", "SingleTenant"])
     .optional()
     .describe("Azure Bot app type. Defaults to MultiTenant."),
+  default_destination: z
+    .string()
+    .optional()
+    .describe("Default conversation ID for outbound broadcasts."),
 });
 export type TeamsProviderConfig = z.infer<typeof TeamsProviderConfigSchema>;
 
@@ -131,6 +151,12 @@ export const WhatsAppProviderConfigSchema = z.strictObject({
       "User-defined secret string echoed back during Meta's GET verification handshake. Falls back to WHATSAPP_VERIFY_TOKEN env var.",
     ),
   api_version: z.string().optional().describe("Graph API version (defaults to v21.0 when omitted)"),
+  default_destination: z
+    .string()
+    .optional()
+    .describe(
+      "Default WhatsApp recipient phone number for outbound broadcasts (E.164, e.g. +14155552671).",
+    ),
 });
 export type WhatsAppProviderConfig = z.infer<typeof WhatsAppProviderConfigSchema>;
 

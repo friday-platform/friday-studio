@@ -75,7 +75,8 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
-import type { PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
+import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
+import { broadcastJobOutput } from "./chat-sdk/broadcast.ts";
 import {
   type ChatSdkInstance,
   type ChatSdkInstanceConfig,
@@ -102,6 +103,43 @@ export interface AtlasDaemonOptions {
   idleTimeoutMs?: number;
   sseHeartbeatIntervalMs?: number;
   sseConnectionTimeoutMs?: number;
+}
+
+/**
+ * Cheap pre-flight for the broadcast hook: returns `true` iff the workspace
+ * declares any chat-platform config carrying a `default_destination`. Lets
+ * `onSessionComplete` skip chat-SDK construction entirely for pure cron/HTTP
+ * workspaces (the common case for non-chat jobs). Walks both the new
+ * top-level `communicators` map and the legacy `signals.<n>.config` shape
+ * since either can carry the destination.
+ */
+function workspaceHasBroadcastDestination(workspace: {
+  signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>;
+  communicators?: Record<string, { kind?: string } & Record<string, unknown>>;
+}): boolean {
+  for (const entry of Object.values(workspace.communicators ?? {})) {
+    if (
+      typeof entry?.kind === "string" &&
+      (CHAT_PROVIDERS as readonly string[]).includes(entry.kind) &&
+      typeof entry.default_destination === "string" &&
+      entry.default_destination.length > 0
+    ) {
+      return true;
+    }
+  }
+  for (const signal of Object.values(workspace.signals ?? {})) {
+    const provider = signal?.provider;
+    const dest = signal?.config?.default_destination;
+    if (
+      typeof provider === "string" &&
+      (CHAT_PROVIDERS as readonly string[]).includes(provider) &&
+      typeof dest === "string" &&
+      dest.length > 0
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -1099,6 +1137,93 @@ export class AtlasDaemon {
           blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
+          onSessionComplete: async ({
+            workspaceId,
+            sessionId,
+            streamId,
+            status,
+            finalOutput,
+            jobName,
+          }) => {
+            // Broadcast the session's final agent output across configured chat
+            // communicators — but ONLY for non-chat-triggered sessions (cron,
+            // HTTP webhooks, etc.). Chat sessions already deliver their reply
+            // via the inbound adapter's `thread.post(stream)` path; running
+            // the broadcast on top would just spam the originating channel
+            // and any other configured destinations with the same message
+            // the user already saw.
+            //
+            // Detection: the runtime auto-injects a `handle-chat` FSM job for
+            // every workspace (see runtime.ts:529–560) — every chat-triggered
+            // session, regardless of inbound platform (Slack/Telegram/Atlas
+            // Web/API), runs through that job. Skipping by jobName catches
+            // them all, including API-triggered tests where no chat record
+            // exists yet.
+            if (status !== WorkspaceSessionStatus.COMPLETED || !finalOutput) return;
+            if (jobName === "handle-chat") {
+              logger.debug("broadcast_skipped_chat_job", { workspaceId, sessionId, jobName });
+              return;
+            }
+            // Cheap-out before paying for chat-SDK construction: if the
+            // workspace declares no chat platform with a `default_destination`,
+            // there's nothing for the broadcaster to do. Spinning up `Chat` +
+            // adapters just to discover an empty destinations map is wasted
+            // work for pure cron/HTTP workspaces. Reads from the already-cached
+            // workspace config; falls through (and thus initializes) on lookup
+            // failure so legitimate broadcasts aren't accidentally dropped.
+            try {
+              const cfg = await this.getWorkspaceManager().getWorkspaceConfig(workspaceId);
+              if (cfg && !workspaceHasBroadcastDestination(cfg.workspace)) {
+                logger.debug("broadcast_skipped_no_destinations", { workspaceId, sessionId });
+                return;
+              }
+            } catch {
+              // If config lookup fails, fall through to the lazy init path so
+              // we don't silently swallow a real broadcast. The init itself has
+              // its own error handling below.
+            }
+            // Lazy-init the chat-sdk for the workspace. Workspaces that never
+            // received an inbound chat message wouldn't otherwise have an
+            // instance built — but the broadcast path still needs the notifier
+            // and destination map.
+            let instance: ChatSdkInstance;
+            try {
+              instance = await this.getOrCreateChatSdkInstance(workspaceId);
+            } catch (err) {
+              logger.warn("broadcast_chat_sdk_init_failed", {
+                workspaceId,
+                sessionId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              return;
+            }
+            // Source identification: chat thread IDs are canonically
+            // `<platform>:<channel>:<thread>` (the chat-SDK threadId
+            // convention every adapter follows). The streamId prefix IS
+            // the source platform — for chat-platform inbounds, for
+            // nested job sessions invoked via the chat agent's job tool
+            // (which inherit the parent chat's streamId), and for any
+            // future caller that passes a chat threadId. Atlas-web
+            // streams use `chat_XXXXX` (no colon) and plain HTTP/cron
+            // triggers use the session UUID — both fall through to
+            // `null`, so every configured destination broadcasts.
+            const prefix = streamId?.includes(":") ? streamId.split(":")[0] : null;
+            const sourceCommunicator =
+              prefix && (CHAT_PROVIDERS as readonly string[]).includes(prefix) ? prefix : null;
+            await broadcastJobOutput({
+              workspaceId,
+              notifier: instance.notifier,
+              destinations: instance.broadcastDestinations,
+              sourceCommunicator,
+              output: { markdown: finalOutput },
+            }).catch((err) => {
+              logger.warn("broadcast_job_output_failed", {
+                workspaceId,
+                sessionId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          },
           onSessionFinished: async ({ workspaceId, sessionId, status, finishedAt, summary }) => {
             // Record session completion metric
             // "skipped" = user config error (OAuth not connected, missing env vars) - NOT a platform failure
@@ -1259,7 +1384,10 @@ export class AtlasDaemon {
         string,
         { provider?: string; config?: Record<string, unknown> }
       >;
-      const resolved = await resolvePlatformCredentials(workspaceId, signals);
+      const communicators = config.workspace?.communicators as
+        | Record<string, { kind?: string } & Record<string, unknown>>
+        | undefined;
+      const resolved = await resolvePlatformCredentials(workspaceId, signals, communicators);
       if (resolved.length > 0) {
         credentials = resolved.map((r) => r.credentials);
       }
@@ -1272,6 +1400,9 @@ export class AtlasDaemon {
       userId,
       signals: config.workspace?.signals as
         | Record<string, { provider?: string; config?: Record<string, unknown> }>
+        | undefined,
+      communicators: config.workspace?.communicators as
+        | Record<string, { kind?: string } & Record<string, unknown>>
         | undefined,
       streamRegistry: this.streamRegistry,
       exposeKernel: process.env.FRIDAY_EXPOSE_KERNEL === "1",
@@ -1865,11 +1996,32 @@ export class AtlasDaemon {
       for (const workspace of workspaces) {
         const config = await manager.getWorkspaceConfig(workspace.id);
         const signals = config?.workspace.signals;
-        if (!signals) continue;
-        const hasDiscord = Object.values(signals).some((s) => s.provider === "discord");
-        if (!hasDiscord) continue;
+        const communicators = config?.workspace.communicators;
 
-        const creds = resolveDiscordCredentials(signals);
+        // Top-level `communicators` map wins for adapter discovery; only
+        // fall back to a discord-provider signal when the kind isn't
+        // declared at the new top-level site.
+        let discordConfig: Record<string, unknown> | null = null;
+        if (communicators) {
+          for (const entry of Object.values(communicators)) {
+            if (entry?.kind === "discord") {
+              const { kind: _kind, ...rest } = entry;
+              discordConfig = rest;
+              break;
+            }
+          }
+        }
+        if (!discordConfig && signals) {
+          for (const signal of Object.values(signals)) {
+            if (signal.provider === "discord") {
+              discordConfig = signal.config ?? {};
+              break;
+            }
+          }
+        }
+        if (!discordConfig) continue;
+
+        const creds = resolveDiscordCredentials(discordConfig);
         if (!creds || creds.credentials.kind !== "discord") continue;
         const { botToken, publicKey, applicationId } = creds.credentials;
         workspaceResolved.push({

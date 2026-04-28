@@ -121,3 +121,44 @@ describe("buildChatSdkAdapters", () => {
     }
   });
 });
+
+describe("buildChatSdkAdapters — communicators map", () => {
+  it("discovers a kind declared only in communicators (no signal of that provider)", () => {
+    const adapters = build({
+      communicators: { ops: { kind: "telegram", bot_token: "111:abc" } },
+      credentials: telegramCreds,
+    });
+    expect(Object.keys(adapters).sort()).toEqual(["atlas", "telegram"]);
+  });
+
+  it("falls back to signals when a kind is absent from communicators", () => {
+    const adapters = build({
+      communicators: { ops: { kind: "telegram", bot_token: "111:abc" } },
+      signals: slackSignals,
+      credentials: [telegramCreds, slackCreds],
+    });
+    expect(Object.keys(adapters).sort()).toEqual(["atlas", "slack", "telegram"]);
+  });
+
+  it("does not double-construct when the same kind is declared in both", () => {
+    const adapters = build({
+      communicators: { ops: { kind: "slack", bot_token: "xoxb-top" } },
+      signals: slackSignals,
+      credentials: slackCreds,
+    });
+    expect(Object.keys(adapters).sort()).toEqual(["atlas", "slack"]);
+  });
+
+  it("ignores communicator entries with non-chat kinds", () => {
+    const adapters = build({
+      communicators: { mail: { kind: "email", address: "ops@example.com" } },
+      credentials: [],
+    });
+    expect(Object.keys(adapters).sort()).toEqual(["atlas"]);
+  });
+
+  it("returns only atlas when communicators is empty and signals are absent", () => {
+    const adapters = build({ communicators: {} });
+    expect(Object.keys(adapters).sort()).toEqual(["atlas"]);
+  });
+});
