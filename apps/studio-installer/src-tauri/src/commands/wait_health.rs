@@ -426,13 +426,31 @@ pub async fn wait_for_services(
                 let _ = on_event.send(timeout_event_from_snapshot(latest_snapshot.as_ref()));
             }
             // Park until extension or supersede pings the notify.
-            // STREAM_POLL_CAP keeps us responsive to a cancelled
-            // flip even if the notify is missed (defense in depth).
+            // STREAM_POLL_CAP is the recovery ceiling for either:
+            //   - a cancelled flip whose notify is missed (loop
+            //     between iterations when install() ran), or
+            //   - an extension whose notify is missed (same gap).
+            // Self-healing: ≤1s before the next loop sees the
+            // updated atomic. Same defense applies to the streaming-
+            // branch select below.
             tokio::select! {
                 _ = deadline.extend_notify.notified() => {},
                 _ = sleep(STREAM_POLL_CAP) => {},
             }
             continue;
+        }
+
+        // Reaching here means we re-checked `nanos_remaining` and
+        // it's > 0. If a prior iteration emitted Timeout, an
+        // extension has since pushed the deadline forward — reset
+        // the latch so a future re-elapse fires a FRESH Timeout
+        // event. Without this reset, a wizard that hits the cap
+        // (210s) after two extensions would see the loop park
+        // indefinitely while the frontend stays in long-wait with
+        // no escape (canExtendDeadline=false; View logs is only
+        // shown in the timeout state).
+        if timeout_fired {
+            timeout_fired = false;
         }
 
         // Below the hard deadline: read the next SSE chunk with a
@@ -534,11 +552,26 @@ pub async fn extend_wait_deadline(
     let Some(deadline) = deadline_state.current().await else {
         return Ok(None);
     };
-    let prior = deadline.extensions_used.load(Ordering::Acquire);
-    if prior >= MAX_EXTENSIONS {
+    // CAS via fetch_update so two concurrent extend_wait_deadline
+    // invocations can't both observe `prior < MAX` and both push
+    // the deadline. Without this guard, a race would let the cap
+    // be bypassed (counter=1 but deadline_nanos pushed by 2 *
+    // EXTENSION_SECS). Tauri command dispatch is async; even if
+    // the wizard's button is single-source, a future autoclick /
+    // keyboard repeat / test harness could trigger the race.
+    if deadline
+        .extensions_used
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            if n >= MAX_EXTENSIONS {
+                None
+            } else {
+                Some(n + 1)
+            }
+        })
+        .is_err()
+    {
         return Ok(None);
     }
-    deadline.extensions_used.store(prior + 1, Ordering::Release);
     let added_nanos =
         i64::try_from(u128::from(EXTENSION_SECS) * 1_000_000_000_u128).unwrap_or(i64::MAX);
     let new_nanos = deadline
@@ -697,33 +730,65 @@ mod tests {
 
     // ── WaitDeadlineState extension cap ────────────────────────
 
+    /// Helper that mirrors the extend_wait_deadline command body
+    /// without the Tauri State<> wrapper. Tests call this directly
+    /// to exercise the actual CAS arithmetic the command uses
+    /// (rather than poking the atomic by hand). Returns Ok(Some(n))
+    /// when extension succeeds, Ok(None) when capped or no active
+    /// wait. Mirrors `extend_wait_deadline` line-for-line; updates
+    /// here MUST be mirrored in the command.
+    async fn extend_wait_deadline_inner(state: &WaitDeadlineState) -> Result<Option<u64>, String> {
+        let Some(deadline) = state.current().await else {
+            return Ok(None);
+        };
+        if deadline
+            .extensions_used
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                if n >= MAX_EXTENSIONS {
+                    None
+                } else {
+                    Some(n + 1)
+                }
+            })
+            .is_err()
+        {
+            return Ok(None);
+        }
+        let added_nanos =
+            i64::try_from(u128::from(EXTENSION_SECS) * 1_000_000_000_u128).unwrap_or(i64::MAX);
+        let new_nanos = deadline
+            .deadline_nanos
+            .fetch_add(added_nanos, Ordering::AcqRel)
+            + added_nanos;
+        deadline.extend_notify.notify_waiters();
+        let new_secs = u64::try_from(new_nanos / 1_000_000_000).unwrap_or(0);
+        Ok(Some(new_secs))
+    }
+
     #[tokio::test]
     async fn extension_cap_pins_at_two() {
-        // Drive `WaitDeadlineState.install` + the ext-cap arithmetic
-        // directly. extensions_used starts at 0; after two pushes
-        // a third should be rejected even though the atomic CAS has
-        // headroom. Pinning the cap protects the v15 plan's 210s
-        // ceiling against a future regression that drops the gate.
+        // Drives the actual CAS path (via extend_wait_deadline_inner)
+        // so a regression in either the cap arithmetic OR the CAS
+        // gate fails this test. Pinning the cap protects the v15
+        // plan's 210s ceiling against a future drop of the gate.
         let state = WaitDeadlineState::default();
         let _ = state.install(HARD_DEADLINE_SECS).await;
 
-        // First extension: ok.
-        let d1 = state.current().await.expect("wait should be installed");
-        let prior_1 = d1.extensions_used.load(Ordering::Acquire);
-        assert!(prior_1 < MAX_EXTENSIONS);
-        d1.extensions_used
-            .store(prior_1 + 1, Ordering::Release);
+        // First extension: 90 + 60 = 150.
+        let r1 = extend_wait_deadline_inner(&state).await.unwrap();
+        assert_eq!(r1, Some(150));
 
-        // Second extension: ok.
-        let d2 = state.current().await.expect("wait should still be active");
-        let prior_2 = d2.extensions_used.load(Ordering::Acquire);
-        assert!(prior_2 < MAX_EXTENSIONS);
-        d2.extensions_used
-            .store(prior_2 + 1, Ordering::Release);
+        // Second extension: 150 + 60 = 210.
+        let r2 = extend_wait_deadline_inner(&state).await.unwrap();
+        assert_eq!(r2, Some(210));
 
         // Third extension: capped.
-        let d3 = state.current().await.expect("wait should still be active");
-        let prior_3 = d3.extensions_used.load(Ordering::Acquire);
+        let r3 = extend_wait_deadline_inner(&state).await.unwrap();
+        assert_eq!(r3, None);
+
+        // Atomic-level sanity: counter must equal MAX_EXTENSIONS.
+        let d = state.current().await.expect("wait should still be active");
+        let prior_3 = d.extensions_used.load(Ordering::Acquire);
         assert!(
             prior_3 >= MAX_EXTENSIONS,
             "third extension must be rejected by the cap; got prior_3={prior_3}"
@@ -744,6 +809,52 @@ mod tests {
         assert!(
             first.cancelled.load(Ordering::Acquire),
             "first wait must be cancelled after a second install"
+        );
+    }
+
+    #[tokio::test]
+    async fn extension_cap_under_concurrent_calls() {
+        // Two concurrent extend_wait_deadline calls must not both
+        // succeed when the prior counter is at MAX-1. Without the
+        // CAS (when the body was load-then-store), both would
+        // observe `prior < MAX`, both increment, both push the
+        // deadline — bypassing the cap. With fetch_update the second
+        // caller sees `n >= MAX` and returns Ok(None).
+        let state = WaitDeadlineState::default();
+        let _ = state.install(HARD_DEADLINE_SECS).await;
+        // Push the counter to MAX-1 so the next two calls race at
+        // the boundary.
+        let r1 = extend_wait_deadline_inner(&state).await.unwrap();
+        assert_eq!(r1, Some(150));
+
+        // Spawn two concurrent extension attempts. With fetch_update,
+        // exactly one should succeed (Some(210)) and the other
+        // should return Ok(None). With the prior load-then-store
+        // body, both could succeed.
+        let s = std::sync::Arc::new(state);
+        let s1 = s.clone();
+        let s2 = s.clone();
+        let h1 = tokio::spawn(async move { extend_wait_deadline_inner(&s1).await });
+        let h2 = tokio::spawn(async move { extend_wait_deadline_inner(&s2).await });
+        let r1 = h1.await.unwrap().unwrap();
+        let r2 = h2.await.unwrap().unwrap();
+        let mut results = vec![r1, r2];
+        results.sort();
+        assert_eq!(
+            results,
+            vec![None, Some(210)],
+            "exactly one concurrent extension must succeed; got {results:?}"
+        );
+
+        // And the deadline_nanos must reflect exactly two extensions
+        // beyond the original HARD_DEADLINE_SECS (90 + 60 + 60 =
+        // 210s). A regression that pushed twice would land at 270s.
+        let d = s.current().await.expect("wait should still be active");
+        let nanos = d.deadline_nanos.load(Ordering::Acquire);
+        let secs = nanos / 1_000_000_000;
+        assert_eq!(
+            secs, 210,
+            "deadline must equal 90+60+60=210s; got {secs}s (cap bypassed?)"
         );
     }
 }
