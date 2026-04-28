@@ -833,14 +833,13 @@
     column-gap: var(--size-3);
     display: grid;
     grid-template-columns: 1fr auto auto;
-    padding: var(--size-2-5) var(--size-1);
+    padding: var(--size-2-5) var(--size-3);
     position: relative;
     z-index: 1;
   }
 
   .list-row::before {
     background-color: var(--color-surface-2);
-    border-radius: var(--radius-4);
     content: "";
     inset: 0;
     opacity: 0;
@@ -975,7 +974,7 @@
     border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
     border-radius: 0;
     box-shadow: none;
-    padding-inline: var(--size-1);
+    padding-inline: var(--size-3);
     position: relative;
     transition: border-color 250ms ease;
     z-index: 1;
@@ -983,7 +982,6 @@
 
   .runs-card > :global(.progress-card)::before {
     background-color: var(--color-surface-2);
-    border-radius: var(--radius-4);
     content: "";
     inset: 0;
     opacity: 0;

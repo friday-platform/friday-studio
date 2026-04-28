@@ -238,7 +238,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
-    padding-block: var(--size-2-5);
+    padding: var(--size-2-5) var(--size-3);
     position: relative;
     text-decoration: none;
     transition: border-color 250ms ease;
@@ -251,7 +251,6 @@
 
   .row::before {
     background-color: var(--color-surface-2);
-    border-radius: var(--radius-4);
     content: "";
     inset: 0;
     opacity: 0;
