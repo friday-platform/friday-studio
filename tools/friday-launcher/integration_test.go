@@ -202,8 +202,11 @@ func startLauncher(t *testing.T, launcherPath, binDir string) (*exec.Cmd, string
 
 // testStubPorts is the fixed-port set every integration test pins
 // against. Listed once so killStaleStubs and the post-shutdown port
-// assertion stay in sync.
-var testStubPorts = []int{18222, 18080, 13100, 17681, 19090, 15200}
+// assertion stay in sync. Port 29999 is the unsupervised "orphan-test"
+// wrapper used by TestUninstall_AlwaysSweepsEvenWhenLauncherStopsCleanly;
+// added here so a prior interrupted run doesn't leave a 29999 stub
+// alive that interferes with the next run's launcher startup.
+var testStubPorts = []int{18222, 18080, 13100, 17681, 19090, 15200, 29999}
 
 // killStaleStubs frees the test ports before a test starts. Each test
 // runs in its own t.TempDir() bin path; the per-test cleanup only
@@ -581,9 +584,14 @@ func TestAutostartSelfRegister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plist not written: %v", err)
 	}
-	if !strings.Contains(string(data), launcher) {
-		t.Errorf("plist doesn't reference launcher path %q\n--- plist ---\n%s",
-			launcher, string(data))
+	// Stack 3: ProgramArguments is the bundle-ID variant
+	// `["/usr/bin/open", "-b", "ai.hellofriday.studio-launcher", ...]`
+	// rather than a raw exe path. Decision #29.
+	if !strings.Contains(string(data), "<string>/usr/bin/open</string>") {
+		t.Errorf("plist missing /usr/bin/open\n--- plist ---\n%s", string(data))
+	}
+	if !strings.Contains(string(data), "<string>ai.hellofriday.studio-launcher</string>") {
+		t.Errorf("plist missing bundle id\n--- plist ---\n%s", string(data))
 	}
 	if !strings.Contains(string(data), "<string>--no-browser</string>") {
 		t.Error("plist missing --no-browser arg")
@@ -658,11 +666,15 @@ func TestAutostartStalenessRepair(t *testing.T) {
 		_ = cmd2.Process.Signal(syscall.SIGTERM)
 		_ = cmd2.Wait()
 	})
-	// Poll for the plist to be repaired.
+	// Poll for the plist to be repaired. Stack 3 plists target the
+	// bundle ID rather than a raw path, so success is "stale path
+	// gone AND bundle ID present" rather than "launcher path
+	// present" (the launcher binary path is no longer in the
+	// plist).
 	for range 60 {
 		data, err := os.ReadFile(plistPath)
-		if err == nil && strings.Contains(string(data), launcher) &&
-			!strings.Contains(string(data), stalePath) {
+		if err == nil && !strings.Contains(string(data), stalePath) &&
+			strings.Contains(string(data), "ai.hellofriday.studio-launcher") {
 			return // success
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -743,7 +755,9 @@ func TestUninstall(t *testing.T) {
 		}
 	})
 
-	uninst := exec.Command(launcher, "--uninstall")
+	// --bin-dir is required post-Stack-3 because the default
+	// (~/.friday/local/bin/) doesn't match the per-test binDir.
+	uninst := exec.Command(launcher, "--uninstall", "--bin-dir="+binDir)
 	uninst.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
 		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",
@@ -884,7 +898,7 @@ func TestUninstall_AlwaysSweepsEvenWhenLauncherStopsCleanly(t *testing.T) {
 		}
 	})
 
-	uninst := exec.Command(launcher, "--uninstall")
+	uninst := exec.Command(launcher, "--uninstall", "--bin-dir="+binDir)
 	uninst.Env = append(os.Environ(),
 		"FRIDAY_LAUNCHER_HOME="+home,
 		"FRIDAY_LAUNCHER_BROWSER_DISABLED=1",

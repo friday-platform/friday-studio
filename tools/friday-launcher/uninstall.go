@@ -70,6 +70,15 @@ func runUninstall() {
 
 	// 4. Remove pids/ + state.json. Logs are preserved.
 	// os.RemoveAll handles ENOENT silently — same idiom for both.
+	//
+	// State removal happens BEFORE .app bundle removal: if .app
+	// removal fails (permission denied on /Applications when the
+	// bundle was sudo-installed by an admin), we still want
+	// state.json + pids/ cleared so a subsequent re-install or
+	// `--uninstall` retry starts from a known-clean home dir.
+	// The .app sitting in /Applications without state is recoverable
+	// (Spotlight finds it; user can drag-to-trash); state.json
+	// referencing a vanished .app is more confusing.
 	if err := os.RemoveAll(statePath()); err != nil {
 		step("remove state.json", err)
 	} else {
@@ -81,6 +90,16 @@ func runUninstall() {
 	} else {
 		step("pids/ directory removed", nil)
 	}
+
+	// 5. Remove the .app bundle from /Applications (Stack 3,
+	// darwin-only). Last step so a permission failure on
+	// /Applications doesn't leave state.json + pids/ in place
+	// (see comment on step 4 ordering). The launcher is currently
+	// running from inside the bundle; the OS holds the executable
+	// open until our process exits, so we can RM the surrounding
+	// directory now — the kernel reference-counts the deleted inode
+	// and our exec stays valid until exit.
+	removeAppBundleIfPresent(step)
 
 	fmt.Println()
 	fmt.Printf("Logs preserved at: %s\n", logsDir())
@@ -200,4 +219,42 @@ func waitForLauncherExit(pid int, deadline time.Duration) bool {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return false
+}
+
+// removeAppBundleIfPresent deletes /Applications/Friday Studio.app
+// on darwin (and is a no-op on other platforms). Best-effort: the
+// .app may not exist (devs running flat builds, or installers that
+// don't land it in /Applications), so absence is reported as a
+// noop step rather than a failure.
+//
+// Safety: the launcher's own executable lives inside the bundle.
+// Removing the bundle from disk while we're running is safe — the
+// kernel reference-counts the open inode, our exec stays valid
+// until process exit. Same trick Sparkle uses.
+func removeAppBundleIfPresent(step func(string, error)) {
+	path := appBundlePath()
+	if path == "" {
+		// Non-darwin or otherwise no-op platform.
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			step("no .app bundle to remove", nil)
+			return
+		}
+		step("stat "+path, err)
+		return
+	}
+	if !info.IsDir() {
+		// Something else at that path — don't touch it. Surface
+		// for the operator's attention rather than blindly rm.
+		step(fmt.Sprintf("%s is not a directory; skipping", path), nil)
+		return
+	}
+	if err := os.RemoveAll(path); err != nil {
+		step("remove "+path, err)
+		return
+	}
+	step(".app bundle removed from /Applications", nil)
 }

@@ -210,8 +210,8 @@ export function getInputSnapshot(
     // item with its id so the consuming LLM can tell sources apart.
     const task = Array.isArray(inputFrom)
       ? items
-        .map(({ id, data }) => `${id}: ${typeof data === "string" ? data : JSON.stringify(data)}`)
-        .join("\n\n")
+          .map(({ id, data }) => `${id}: ${typeof data === "string" ? data : JSON.stringify(data)}`)
+          .join("\n\n")
       : typeof items[0]!.data === "string"
         ? (items[0]!.data as string)
         : JSON.stringify(items[0]!.data);

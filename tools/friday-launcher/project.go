@@ -57,6 +57,22 @@ type processSpec struct {
 	healthPath string
 }
 
+// supervisedProcessNames returns just the names of the supervised
+// processes — used by pre-flight (which only needs names, not full
+// specs) without paying the cost of building processSpecs that get
+// thrown away. Single source of truth for the cardinality + ordering
+// of the supervised set.
+func supervisedProcessNames() []string {
+	return []string{
+		"nats-server",
+		"friday",
+		"link",
+		"pty-server",
+		"webhook-tunnel",
+		"playground",
+	}
+}
+
 // supervisedProcesses returns the launcher's view of the 5 platform
 // binaries. Each entry pairs a process name with its on-disk binary
 // and health probe target.

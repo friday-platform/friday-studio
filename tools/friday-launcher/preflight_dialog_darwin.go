@@ -50,6 +50,58 @@ func showStartupErrorDialog(title, body string, buttons []string) string {
 	return parseClickedButton(string(out), buttons)
 }
 
+// startupErrorButtonOpenDownload is the second button label on the
+// missing-binaries dialog. Clicking it opens the Friday Studio
+// downloads page so the user can re-download the installer; the
+// reason a binary is missing is almost always a botched install.
+const startupErrorButtonOpenDownload = "Open downloads page"
+
+// downloadsPageURL is where users land when they hit "Open downloads
+// page" on the missing-binaries dialog. The host is the Cloudflare-
+// fronted gateway used by the manifest fetcher (download.fridayplatform.io).
+const downloadsPageURL = "https://download.fridayplatform.io/studio/"
+
+// showMissingBinariesDialog renders the pre-flight missing-binaries
+// dialog (Decision #12). Triggered by `runPreflight` in preflight.go
+// when one or more supervised binaries are missing from binDir, or
+// on a stat error reading binDir. Two buttons: "Quit" (default) and
+// "Open downloads page" — the latter opens downloadsPageURL via
+// `open` (macOS native dispatcher).
+//
+// `missing` is the list of binaries by name; empty when the cause
+// is a stat error (the `errMsg` argument carries the OS message).
+// `logPath` is the diagnostic log path written by `runPreflight`
+// (single source of truth — the dialog only renders, doesn't write).
+func showMissingBinariesDialog(binDir string, missing []string, errMsg, logPath string) {
+	var body string
+	if errMsg != "" {
+		body = fmt.Sprintf(
+			"Friday Studio cannot start.\n\n"+
+				"Could not read the binaries directory:\n%s\n\n"+
+				"%s\n\n"+
+				"Reinstalling Friday Studio usually fixes this.",
+			binDir, errMsg)
+	} else {
+		body = fmt.Sprintf(
+			"Friday Studio cannot start.\n\n"+
+				"The following binaries are missing from\n%s:\n  • %s\n\n"+
+				"Reinstalling Friday Studio will restore them.",
+			binDir, strings.Join(missing, "\n  • "))
+	}
+	if logPath != "" {
+		body += "\n\nDiagnostic log: " + logPath
+	}
+	clicked := showStartupErrorDialog("Friday Studio", body,
+		[]string{startupErrorButtonOpenDownload, startupErrorButtonQuit})
+	if clicked == startupErrorButtonOpenDownload {
+		// `open <url>` is macOS's native URL dispatcher — no
+		// dependency on the user having Chrome/Safari/etc. set as
+		// default; LaunchServices picks the user's default. gosec
+		// G204 is a false positive: the URL is launcher-controlled.
+		_ = exec.Command("open", downloadsPageURL).Run()
+	}
+}
+
 // showPortInUseDialog renders the port-5199-already-in-use dialog
 // (Decision #28). Single button: Quit. Body explains the diagnosis
 // command and (when writeStartupErrorLog succeeds) the log path

@@ -315,11 +315,7 @@ export async function connectHttp(
   resolvedEnv: Record<string, string>,
   serverId: string,
   logger: Logger,
-  deps: {
-    spawn?: typeof defaultSpawn;
-    fetch?: typeof fetch;
-    pidFile?: PidFileWriter;
-  } = {},
+  deps: { spawn?: typeof defaultSpawn; fetch?: typeof fetch; pidFile?: PidFileWriter } = {},
 ): Promise<ConnectedServer> {
   const { transport, auth, startup } = config;
   if (transport.type !== "http") {
