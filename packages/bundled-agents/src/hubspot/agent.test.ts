@@ -252,7 +252,7 @@ describe("hubspotAgent deterministic path", () => {
 
     const prompt = JSON.stringify({
       operation: "send-thread-comment",
-      threadId: "11306536687",
+      threadId: "99000000001",
       text: "Hello from the deterministic path",
     });
 
@@ -261,13 +261,13 @@ describe("hubspotAgent deterministic path", () => {
     expect(result.ok).toBe(true);
     expect.assert(result.ok);
     expect(result.data).toMatchObject({
-      response: "Comment posted to thread 11306536687",
+      response: "Comment posted to thread 99000000001",
       operation: "send-thread-comment",
       success: true,
     });
     expect(result.data.data).toMatchObject({
       id: "c87bc7e6-d84f-455d-86cd-b271573760cd",
-      threadId: "11306536687",
+      threadId: "99000000001",
     });
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
@@ -384,7 +384,7 @@ describe("hubspotAgent deterministic path", () => {
       "```json",
       JSON.stringify({
         operation: "send-thread-comment",
-        threadId: "11306536687",
+        threadId: "99000000001",
         text: "Hello from the deterministic path",
       }),
       "```",

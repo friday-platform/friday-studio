@@ -1281,7 +1281,7 @@ describe("createGetConversationThreadsTool", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     const execute = getExecute(createGetConversationThreadsTool("test-token"));
-    await execute({ status: "OPEN", inboxId: "1543478871", limit: 20 }, TOOL_CONTEXT);
+    await execute({ status: "OPEN", inboxId: "400000000001", limit: 20 }, TOOL_CONTEXT);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const url = new URL(mockFetch.mock.calls[0]?.[0] as string);
@@ -1290,7 +1290,7 @@ describe("createGetConversationThreadsTool", () => {
     );
     expect(url.searchParams.get("association")).toBe("TICKET");
     expect(url.searchParams.get("status")).toBe("OPEN");
-    expect(url.searchParams.get("inboxId")).toBe("1543478871");
+    expect(url.searchParams.get("inboxId")).toBe("400000000001");
     expect(url.searchParams.get("limit")).toBe("20");
 
     const headers = mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>;
@@ -1312,10 +1312,10 @@ describe("createGetConversationThreadsTool", () => {
           status: "OPEN",
           createdAt: "2026-03-27T17:53:39Z",
           closedAt: undefined,
-          inboxId: "1543478871",
+          inboxId: "400000000001",
           assignedTo: undefined,
-          associatedContactId: "441473942215",
-          associatedTicketId: "304819620563",
+          associatedContactId: "100000000002",
+          associatedTicketId: "300000000001",
           latestMessageTimestamp: "2026-03-27T17:53:39Z",
           spam: false,
         },
@@ -1324,22 +1324,22 @@ describe("createGetConversationThreadsTool", () => {
           status: "OPEN",
           createdAt: "2026-03-27T17:59:11Z",
           closedAt: undefined,
-          inboxId: "1543478871",
+          inboxId: "400000000001",
           assignedTo: undefined,
-          associatedContactId: "462631283404",
-          associatedTicketId: "304775208692",
+          associatedContactId: "100000000001",
+          associatedTicketId: "300000000002",
           latestMessageTimestamp: "2026-03-27T18:11:55.536Z",
           spam: false,
         },
         {
-          id: "11306536687",
+          id: "99000000001",
           status: "OPEN",
           createdAt: "2026-03-27T21:18:05Z",
           closedAt: undefined,
-          inboxId: "1543478871",
+          inboxId: "400000000001",
           assignedTo: undefined,
-          associatedContactId: "462631283404",
-          associatedTicketId: "304762850035",
+          associatedContactId: "100000000001",
+          associatedTicketId: "300000000003",
           latestMessageTimestamp: "2026-03-31T15:37:16.351Z",
           spam: false,
         },
@@ -1348,9 +1348,9 @@ describe("createGetConversationThreadsTool", () => {
           status: "OPEN",
           createdAt: "2026-03-30T08:01:44Z",
           closedAt: undefined,
-          inboxId: "1543478871",
+          inboxId: "400000000001",
           assignedTo: undefined,
-          associatedContactId: "463427994352",
+          associatedContactId: "100000000003",
           associatedTicketId: undefined,
           latestMessageTimestamp: "2026-03-30T08:01:44Z",
           spam: true,
@@ -1427,12 +1427,12 @@ describe("createGetThreadMessagesTool", () => {
     const { client } = createMockOwnerClient();
 
     const execute = getExecute(createGetThreadMessagesTool("test-token", client));
-    await execute({ threadId: "11306536687", limit: 50, includeRichText: false }, TOOL_CONTEXT);
+    await execute({ threadId: "99000000001", limit: 50, includeRichText: false }, TOOL_CONTEXT);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const url = new URL(mockFetch.mock.calls[0]?.[0] as string);
     expect(url.origin + url.pathname).toBe(
-      "https://api.hubapi.com/conversations/v3/conversations/threads/11306536687/messages",
+      "https://api.hubapi.com/conversations/v3/conversations/threads/99000000001/messages",
     );
     expect(url.searchParams.get("limit")).toBe("50");
 
@@ -1445,13 +1445,13 @@ describe("createGetThreadMessagesTool", () => {
   it("resolves A-prefixed actor IDs to owner names via SDK client", async () => {
     vi.stubGlobal("fetch", createMockFetch(messagesFixture));
     const { client, getPage } = createMockOwnerClient([
-      { userId: 163365429, firstName: "Eric", lastName: "Skram" },
-      { userId: 88914248, firstName: "Yena", lastName: "Oh" },
+      { userId: 100000001, firstName: "Test", lastName: "Author" },
+      { userId: 100000002, firstName: "Test", lastName: "User" },
     ]);
 
     const execute = getExecute(createGetThreadMessagesTool("test-token", client));
     const result = await execute(
-      { threadId: "11306536687", limit: 50, includeRichText: false },
+      { threadId: "99000000001", limit: 50, includeRichText: false },
       TOOL_CONTEXT,
     );
 
@@ -1459,13 +1459,13 @@ describe("createGetThreadMessagesTool", () => {
 
     const messages = (result as { messages: Array<{ senderName?: string; createdBy: string }> })
       .messages;
-    // COMMENT by A-163365429 → "Eric Skram"
-    expect(messages[0]?.senderName).toBe("Eric Skram");
-    // COMMENT by A-88914248 → "Yena Oh"
-    expect(messages[1]?.senderName).toBe("Yena Oh");
+    // COMMENT by A-100000001 → "Test Author"
+    expect(messages[0]?.senderName).toBe("Test Author");
+    // COMMENT by A-100000002 → "Test User"
+    expect(messages[1]?.senderName).toBe("Test User");
     // THREAD_STATUS_CHANGE by S-hubspot → no resolution (not A-prefix)
     expect(messages[2]?.senderName).toBeUndefined();
-    // MESSAGE by V-462631283404 → no resolution (not A-prefix)
+    // MESSAGE by V-100000000001 → no resolution (not A-prefix)
     expect(messages[3]?.senderName).toBeUndefined();
 
     vi.unstubAllGlobals();
@@ -1478,7 +1478,7 @@ describe("createGetThreadMessagesTool", () => {
 
     const execute = getExecute(createGetThreadMessagesTool("test-token", client));
     const result = await execute(
-      { threadId: "11306536687", limit: 50, includeRichText: false },
+      { threadId: "99000000001", limit: 50, includeRichText: false },
       TOOL_CONTEXT,
     );
 
@@ -1486,7 +1486,7 @@ describe("createGetThreadMessagesTool", () => {
     const messages = (result as { messages: Array<{ createdBy: string; senderName?: string }> })
       .messages;
     expect(messages).toHaveLength(4);
-    expect(messages[0]?.createdBy).toBe("A-163365429");
+    expect(messages[0]?.createdBy).toBe("A-100000001");
     expect(messages[0]?.senderName).toBeUndefined();
 
     vi.unstubAllGlobals();
@@ -1499,7 +1499,7 @@ describe("createGetThreadMessagesTool", () => {
     vi.stubGlobal("fetch", createMockFetch(messagesFixture));
     const execute = getExecute(createGetThreadMessagesTool("test-token", client));
     const resultDefault = await execute(
-      { threadId: "11306536687", limit: 50, includeRichText: false },
+      { threadId: "99000000001", limit: 50, includeRichText: false },
       TOOL_CONTEXT,
     );
     const messagesDefault = (resultDefault as { messages: Array<{ richText?: string }> }).messages;
@@ -1512,7 +1512,7 @@ describe("createGetThreadMessagesTool", () => {
     vi.stubGlobal("fetch", createMockFetch(messagesFixture));
     const executeRich = getExecute(createGetThreadMessagesTool("test-token", client));
     const resultRich = await executeRich(
-      { threadId: "11306536687", limit: 50, includeRichText: true },
+      { threadId: "99000000001", limit: 50, includeRichText: true },
       TOOL_CONTEXT,
     );
     const messagesRich = (resultRich as { messages: Array<{ richText?: string; text?: string }> })
@@ -1539,7 +1539,7 @@ describe("createGetThreadMessagesTool", () => {
 
     const execute = getExecute(createGetThreadMessagesTool("test-token", client));
     const result = await execute(
-      { threadId: "11306536687", limit: 50, includeRichText: false },
+      { threadId: "99000000001", limit: 50, includeRichText: false },
       TOOL_CONTEXT,
     );
 
@@ -1572,14 +1572,14 @@ describe("createSendThreadCommentTool", () => {
 
     const execute = getExecute(createSendThreadCommentTool("test-token"));
     await execute(
-      { threadId: "11306536687", text: "Fixture capture — test comment from CLI" },
+      { threadId: "99000000001", text: "Fixture capture — test comment from CLI" },
       TOOL_CONTEXT,
     );
 
     expect(mockFetch).toHaveBeenCalledOnce();
     const url = new URL(mockFetch.mock.calls[0]?.[0] as string);
     expect(url.origin + url.pathname).toBe(
-      "https://api.hubapi.com/conversations/v3/conversations/threads/11306536687/messages",
+      "https://api.hubapi.com/conversations/v3/conversations/threads/99000000001/messages",
     );
 
     const init = mockFetch.mock.calls[0]?.[1];
@@ -1598,7 +1598,7 @@ describe("createSendThreadCommentTool", () => {
 
     const execute1 = getExecute(createSendThreadCommentTool("test-token"));
     await execute1(
-      { threadId: "11306536687", text: "test", senderActorId: "A-163365429" },
+      { threadId: "99000000001", text: "test", senderActorId: "A-100000001" },
       TOOL_CONTEXT,
     );
 
@@ -1606,7 +1606,7 @@ describe("createSendThreadCommentTool", () => {
       string,
       unknown
     >;
-    expect(body1.senderActorId).toBe("A-163365429");
+    expect(body1.senderActorId).toBe("A-100000001");
     vi.unstubAllGlobals();
 
     // Without senderActorId
@@ -1614,7 +1614,7 @@ describe("createSendThreadCommentTool", () => {
     vi.stubGlobal("fetch", mockFetch2);
 
     const execute2 = getExecute(createSendThreadCommentTool("test-token"));
-    await execute2({ threadId: "11306536687", text: "test" }, TOOL_CONTEXT);
+    await execute2({ threadId: "99000000001", text: "test" }, TOOL_CONTEXT);
 
     const body2 = JSON.parse(mockFetch2.mock.calls[0]?.[1]?.body as string) as Record<
       string,
@@ -1629,13 +1629,13 @@ describe("createSendThreadCommentTool", () => {
 
     const execute = getExecute(createSendThreadCommentTool("test-token"));
     const result = await execute(
-      { threadId: "11306536687", text: "Fixture capture — test comment from CLI" },
+      { threadId: "99000000001", text: "Fixture capture — test comment from CLI" },
       TOOL_CONTEXT,
     );
 
     expect(result).toEqual({
       id: "c87bc7e6-d84f-455d-86cd-b271573760cd",
-      threadId: "11306536687",
+      threadId: "99000000001",
       createdAt: "2026-03-31T15:37:16.351Z",
       text: "Fixture capture — test comment from CLI",
     });

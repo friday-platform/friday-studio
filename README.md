@@ -15,7 +15,7 @@ execute with MCP tool access.
 | Tool | Version | Why |
 | --- | --- | --- |
 | [Deno](https://deno.com/) | `2.7.0+` | Runs the daemon, CLI, and TypeScript packages |
-| [Go](https://go.dev/) | `1.26+` | Builds `bounce` (auth), `gist`, and `atlas-operator` |
+| [Go](https://go.dev/) | `1.26+` | Builds the Go services under `tools/` (pty-server, webhook-tunnel, friday-launcher) |
 | [Node.js](https://nodejs.org/) | `24+` | Needed for `npx`, Vite, and the web playground |
 | [git](https://git-scm.com/) | any recent | — |
 | Docker (optional) | any recent | Alternative path: run the full stack with `docker compose up` |
@@ -137,27 +137,24 @@ golangci-lint run
 
 ```
 apps/
-  atlasd/           # Daemon - HTTP API, workspace lifecycle
-  atlas-cli/        # CLI entry point (`deno task atlas`)
-  atlas-operator/   # K8s operator (Go)
-  bounce/           # Auth service (Go)
-  gist/             # File service (Go)
-  link/             # Credential / OAuth service
-  web-client/       # Svelte web UI
-packages/
-  @atlas/config     # YAML config loading + Zod schemas
-  @atlas/core       # Core types, artifacts, errors
-  @atlas/llm        # LLM provider adapters
-  @atlas/logger     # Structured logging
-  @atlas/mcp        # MCP client implementation
-  @atlas/signals    # Signal types and routing
-  @atlas/storage    # Persistence layer
-examples/           # Bundled workspace.yml examples
+  atlasd/             # Daemon — HTTP API, workspace lifecycle (TS/Deno)
+  atlas-cli/          # CLI entry point — `deno task atlas` (TS/Deno)
+  link/               # Credential / OAuth service (TS/Deno)
+  ledger/             # Ledger service (TS/Deno)
+  studio-installer/   # Desktop installer (Tauri/Rust)
+packages/             # @atlas/* libraries — core, agent-sdk, config,
+                      # fsm-engine, llm, logger, mcp, memory, skills,
+                      # storage, workspace, signals, …
+agents/               # Bundled Python WASM agents (planner, dispatcher,
+                      # reflector, skill-author, …)
+examples/             # Self-contained workspace.yml examples
+                      # (claude-code-smoke, pr-review-github, voices, …)
 tools/
-  agent-playground/ # Svelte dev UI
-  evals/            # Eval runner
-  pty-server/       # WebSocket terminal (Go)
-  webhook-tunnel/   # Local webhook receiver (Go)
+  agent-playground/   # Svelte dev UI (the active web client)
+  evals/              # Eval runner CLI
+  friday-launcher/    # Friday launcher (Go)
+  pty-server/         # WebSocket terminal (Go)
+  webhook-tunnel/     # Local webhook receiver (Go)
 ```
 
 Config: `friday.yml` (platform-wide) · `workspace.yml` (per-workspace) ·

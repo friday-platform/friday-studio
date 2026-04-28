@@ -129,8 +129,8 @@ curl -s -X POST http://localhost:8080/api/skills/scoping/$SKILL_ID/assignments \
 
 ## Build + register Python WASM agent
 
-**Full authoring workflow: use `writing-friday-agents` skill at
-`/Users/ericskram/code/tempest/agent-sdk/.claude/skills/writing-friday-agents/`.**
+**Full authoring workflow: use the `writing-friday-agents` skill (shipped
+with the agent-sdk repo).**
 It covers `@agent` decorator, `ctx.*` APIs, `ok()`/`err()`, JSON Schema strict
 mode gotchas, and file structure.
 

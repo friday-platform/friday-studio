@@ -25,7 +25,7 @@ unset OTEL_DENO
 # In Docker, credentials come from .env (not the Atlas API). Set local-only
 # mode to skip remote credential fetching, and auto-generate ATLAS_KEY for
 # user identity if not provided.
-export ATLAS_LOCAL_ONLY="${ATLAS_LOCAL_ONLY:-true}"
+export FRIDAY_LOCAL_ONLY="${FRIDAY_LOCAL_ONLY:-true}"
 
 if [ -z "${ATLAS_KEY:-}" ]; then
     ATLAS_KEY=$(node -e "

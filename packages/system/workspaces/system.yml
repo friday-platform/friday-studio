@@ -6,6 +6,14 @@
 # new findings and append them back to autopilot-backlog as pending tasks via
 # the discovery-to-task helper, closing the loop without human authoring for
 # auto_apply tasks and surfacing surface-policy tasks to the Studio inbox.
+#
+# OPERATOR NOTE — before deploying this workspace, replace the placeholders
+# `<FRIDAY_REPO_ROOT>` and `<AGENT_SDK_ROOT>` (used in agent prompts and FSM
+# action `config:` blocks below) with absolute paths on your machine, e.g.
+#   <FRIDAY_REPO_ROOT>  → /path/to/checkout/of/friday-studio
+#   <AGENT_SDK_ROOT>   → /path/to/checkout/of/agent-sdk
+# Several architect/coder/reviewer agents read source files from these
+# locations at runtime and will fail loudly if the placeholders are left in.
 version: '1.0'
 workspace:
   name: System
@@ -127,7 +135,7 @@ signals:
           type: string
           title: Example to model after
           description: >-
-            Optional. Path under /Users/kenneth/tempest/agent-sdk/packages/python/examples/ of the closest canonical example. If omitted the architect picks the nearest match.
+            Optional. Path under <AGENT_SDK_ROOT>/packages/python/examples/ of the closest canonical example. If omitted the architect picks the nearest match.
       required:
         - agent_id
         - agent_brief
@@ -393,7 +401,7 @@ agents:
       updates to @tempest/fast-self-modification.
 
       The FAST daemon is reachable at {platformUrl} (provided in
-      your config). The atlas monorepo is at /Users/kenneth/tempest/atlas
+      your config). The atlas monorepo is at <FRIDAY_REPO_ROOT>
       (target_repo, provided in config).
 
       ## Protocol
@@ -728,12 +736,12 @@ agents:
     prompt: |
       You are the architect for a Python WASM agent authoring task.
       Your job: produce a design memo for a new agent at
-      /Users/kenneth/tempest/atlas/agents/<agent_id>/agent.py.
+      <FRIDAY_REPO_ROOT>/agents/<agent_id>/agent.py.
 
       ## Required reading (every task)
 
       1. Read at least one canonical example from
-         /Users/kenneth/tempest/agent-sdk/packages/python/examples/. Default to
+         <AGENT_SDK_ROOT>/packages/python/examples/. Default to
          llm-http-agent if no example_to_match is given. The example
          shows the canonical patterns:
          - `from friday_agent_sdk._bridge import Agent  # noqa: F401`
@@ -742,15 +750,15 @@ agents:
          - `def execute(prompt, ctx)` handler
          - `ctx.llm.generate()`, `ctx.http.fetch()`, `ctx.tools.call()`
          - Return `ok({...})` or `err("message")`
-      2. Read /Users/kenneth/tempest/atlas/packages/sdk-python/friday_agent_sdk/_types.py
+      2. Read <FRIDAY_REPO_ROOT>/packages/sdk-python/friday_agent_sdk/_types.py
          for ctx.* method signatures (ctx.llm, ctx.http, ctx.tools,
          ctx.stream).
-      3. Read /Users/kenneth/tempest/atlas/packages/sdk-python/friday_agent_sdk/_decorator.py
+      3. Read <FRIDAY_REPO_ROOT>/packages/sdk-python/friday_agent_sdk/_decorator.py
          for the @agent decorator field list.
       4. If the brief mentions structured output: ctx.llm.generate_object
          needs a JSON schema with `additionalProperties: false` on
          every object level (strict mode requirement).
-      5. Read any existing agent at /Users/kenneth/tempest/atlas/agents/<agent_id>/
+      5. Read any existing agent at <FRIDAY_REPO_ROOT>/agents/<agent_id>/
          if updating instead of creating.
 
       ## Hard rules from real failures
@@ -783,11 +791,11 @@ agents:
     type: atlas
     agent: claude-code
     description: >-
-      Writes the agent.py file per the architect's design memo. Workdir is /Users/kenneth/tempest/atlas. Agents auto-build on next daemon restart, so the coder does not run a build itself.
+      Writes the agent.py file per the architect's design memo. Workdir is <FRIDAY_REPO_ROOT>. Agents auto-build on next daemon restart, so the coder does not run a build itself.
     prompt: |
       You are the coder for a Python WASM agent authoring task.
       Your input contains a design memo with file_to_create
-      pointing at /Users/kenneth/tempest/atlas/agents/<agent_id>/agent.py.
+      pointing at <FRIDAY_REPO_ROOT>/agents/<agent_id>/agent.py.
 
       Rules:
       1. Create the directory if missing.
@@ -816,14 +824,14 @@ agents:
       Cross-references the coder's agent.py against canonical SDK example patterns and componentize-py constraints. Catches common build-blocking mistakes before next restart.
     prompt: |
       You are the reviewer for a Python WASM agent authoring task.
-      The agent.py is at /Users/kenneth/tempest/atlas/agents/<agent_id>/agent.py.
+      The agent.py is at <FRIDAY_REPO_ROOT>/agents/<agent_id>/agent.py.
 
       ## Review protocol
 
       1. Read the coder's agent.py.
       2. Read at least one canonical example from
-         /Users/kenneth/tempest/agent-sdk/packages/python/examples/.
-      3. Read /Users/kenneth/tempest/atlas/packages/sdk-python/friday_agent_sdk/_types.py
+         <AGENT_SDK_ROOT>/packages/python/examples/.
+      3. Read <FRIDAY_REPO_ROOT>/packages/sdk-python/friday_agent_sdk/_types.py
          for ctx.* method signatures.
       4. Cross-reference for build-blocking patterns:
 
@@ -853,7 +861,7 @@ agents:
          - BLOCK: fundamental issue, architect should re-engage
 
       6. Findings MUST cite a plan_line — either a path under
-         /Users/kenneth/tempest/agent-sdk/packages/python/examples/ for pattern
+         <AGENT_SDK_ROOT>/packages/python/examples/ for pattern
          deviations, or _types.py / _decorator.py line for SDK shape
          issues.
     env:
@@ -1009,7 +1017,7 @@ agents:
       3. If scaffold.reference_files has entries, create a
          <tmpdir>/references/ directory and write each file there
       4. Run: deno task atlas skill publish <tmpdir>
-         (from /Users/kenneth/tempest/atlas as working directory)
+         (from <FRIDAY_REPO_ROOT> as working directory)
       5. Parse the CLI output for the version number
 
       ## Output contract: skill-publish-result
@@ -1022,7 +1030,7 @@ agents:
 
       ## Rules
 
-      - Always use /Users/kenneth/tempest/atlas as working directory
+      - Always use <FRIDAY_REPO_ROOT> as working directory
         for deno task commands
       - Do not modify the scaffold content — publish exactly what was
         reviewed
@@ -1834,9 +1842,9 @@ jobs:
                   agent_id: agentId,
                   agent_brief: brief,
                   example_to_match: example,
-                  agent_dir: '/Users/kenneth/tempest/atlas/agents/' + agentId,
-                  examples_root: '/Users/kenneth/tempest/agent-sdk/packages/python/examples',
-                  sdk_root: '/Users/kenneth/tempest/atlas/packages/sdk-python',
+                  agent_dir: '<FRIDAY_REPO_ROOT>/agents/' + agentId,
+                  examples_root: '<AGENT_SDK_ROOT>/packages/python/examples',
+                  sdk_root: '<FRIDAY_REPO_ROOT>/packages/sdk-python',
                 },
               };
             }
@@ -1857,9 +1865,9 @@ jobs:
               return {
                 task: 'Implement agent ' + task.agentId,
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '<FRIDAY_REPO_ROOT>',
                   agent_id: task.agentId,
-                  agent_dir: '/Users/kenneth/tempest/atlas/agents/' + task.agentId,
+                  agent_dir: '<FRIDAY_REPO_ROOT>/agents/' + task.agentId,
                   memo: memo,
                 },
               };
@@ -1883,13 +1891,13 @@ jobs:
               return {
                 task: 'Review agent ' + task.agentId,
                 config: {
-                  workDir: '/Users/kenneth/tempest/atlas',
+                  workDir: '<FRIDAY_REPO_ROOT>',
                   agent_id: task.agentId,
-                  agent_dir: '/Users/kenneth/tempest/atlas/agents/' + task.agentId,
+                  agent_dir: '<FRIDAY_REPO_ROOT>/agents/' + task.agentId,
                   memo: memo,
                   changes: impl,
-                  examples_root: '/Users/kenneth/tempest/agent-sdk/packages/python/examples',
-                  sdk_root: '/Users/kenneth/tempest/atlas/packages/sdk-python',
+                  examples_root: '<AGENT_SDK_ROOT>/packages/python/examples',
+                  sdk_root: '<FRIDAY_REPO_ROOT>/packages/sdk-python',
                 },
               };
             }

@@ -471,7 +471,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Check for ATLAS_KEY and fetch credentials if present
     const atlasKey = process.env.ATLAS_KEY;
-    const localOnlyMode = isLocalOnlyMode(process.env.ATLAS_LOCAL_ONLY);
+    const localOnlyMode = isLocalOnlyMode(process.env.FRIDAY_LOCAL_ONLY);
 
     if (atlasKey && !localOnlyMode) {
       logger.info("Atlas key detected, fetching credentials...");
@@ -494,13 +494,13 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         process.exit(1);
       }
     } else if (atlasKey && localOnlyMode) {
-      logger.info("ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
+      logger.info("FRIDAY_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
       logger.info("Using only locally configured environment variables");
       logger.info(
         "Ensure all required API keys (ANTHROPIC_API_KEY, etc.) are set in your environment",
       );
     } else if (localOnlyMode) {
-      logger.info("ATLAS_LOCAL_ONLY mode enabled - using only local environment variables");
+      logger.info("FRIDAY_LOCAL_ONLY mode enabled - using only local environment variables");
     }
 
     // Set atlas config path if provided
@@ -521,7 +521,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 };
 
 /**
- * Check if ATLAS_LOCAL_ONLY mode is enabled
+ * Check if FRIDAY_LOCAL_ONLY mode is enabled
  */
 function isLocalOnlyMode(value: string | undefined): boolean {
   if (!value) return false;

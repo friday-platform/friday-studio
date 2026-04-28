@@ -1,8 +1,8 @@
 """
 hello-py: Python test agent exercising LLM + tools via the NATS protocol.
 
-Requires friday_agent_sdk installed from /Users/kenneth/tempest/agent-sdk/packages/python:
-    pip install -e /Users/kenneth/tempest/agent-sdk/packages/python
+Requires friday_agent_sdk. From a checkout of friday-platform/agent-sdk:
+    pip install -e ./packages/python
 """
 
 from friday_agent_sdk import AgentContext, agent, err, ok

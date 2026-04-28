@@ -1,7 +1,9 @@
 services:
   platform:
-    image: atlas-platform:latest
-    pull_policy: never    # always pull latest; set to "never" for local builds
+    image: friday-platform:latest
+    build:
+      context: .
+      dockerfile: Dockerfile-platform
     ports:
       - "${FRIDAY_DAEMON_PORT:-18080}:8080"  # Friday daemon API
       - "${FRIDAY_LINK_PORT:-13100}:3100"    # Link (credential/auth service)

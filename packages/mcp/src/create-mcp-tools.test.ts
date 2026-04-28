@@ -828,15 +828,14 @@ describe("createMCPTools", () => {
   });
 
   describe("stdio arg placeholder expansion", () => {
-    // Regression: Friday kept hallucinating absolute paths like
-    // `/Users/yena/.atlas/...` when the real user was `yenaoh`. Expanding
-    // `${HOME}` / `${ATLAS_HOME}` at spawn time makes templates portable
-    // and removes the hallucinated-username failure mode.
+    // Regression: Friday kept guessing wrong usernames in absolute paths.
+    // Expanding `${HOME}` / `${ATLAS_HOME}` at spawn time makes templates
+    // portable and removes the hallucinated-username failure mode.
     it("expands ${HOME} and ${ATLAS_HOME} in stdio args before spawning", async () => {
       const originalHome = process.env.HOME;
       const originalAtlasHome = process.env.ATLAS_HOME;
-      process.env.HOME = "/Users/yenaoh";
-      process.env.ATLAS_HOME = "/Users/yenaoh/.atlas";
+      process.env.HOME = "/Users/alice";
+      process.env.ATLAS_HOME = "/Users/alice/.atlas";
 
       try {
         mockTools.mockResolvedValue({ write_query: { description: "x", parameters: {} } });
@@ -866,9 +865,9 @@ describe("createMCPTools", () => {
             args: [
               "mcp-server-sqlite",
               "--db-path",
-              "/Users/yenaoh/.atlas/workspaces/knowledge-base/kb.sqlite",
+              "/Users/alice/.atlas/workspaces/knowledge-base/kb.sqlite",
               "--fallback",
-              "/Users/yenaoh/Documents/kb.sqlite",
+              "/Users/alice/Documents/kb.sqlite",
             ],
           }),
         );
