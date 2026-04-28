@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
@@ -12,16 +12,52 @@ const logger = createLogger({ name: "skill-archive" });
 /**
  * Packs a skill directory into a gzipped tarball.
  * All files are stored relative to the directory root.
+ *
+ * `onWriteEntry` forces sane mode bits on every entry. When the skill
+ * source lives inside the deno-compiled binary's virtual fs,
+ * `fs.stat()` reports mode 0 for everything; without this normalization
+ * the resulting archive has unusable `d---------` directories and
+ * extraction fails with EACCES.
  */
 export async function packSkillArchive(dirPath: string): Promise<Buffer> {
   const tmpDir = makeTempDir({ prefix: "atlas-archive-" });
   const tmpFile = join(tmpDir, "skill.tar.gz");
-  await create({ gzip: true, file: tmpFile, cwd: dirPath }, ["."]);
+  await create(
+    {
+      gzip: true,
+      file: tmpFile,
+      cwd: dirPath,
+      onWriteEntry: (entry) => {
+        entry.mode = entry.type === "Directory" ? 0o755 : 0o644;
+      },
+    },
+    ["."],
+  );
   const buf = await readFile(tmpFile);
   await rm(tmpDir, { recursive: true, force: true }).catch((e) =>
     logger.debug("cleanup failed", { error: stringifyError(e) }),
   );
   return Buffer.from(buf);
+}
+
+/**
+ * Recursively chmod an extracted skill tree to sane defaults
+ * (0755 dirs, 0644 files). Necessary because packSkillArchive runs
+ * from inside the deno-compiled binary's virtual fs, which reports
+ * mode 0 for every entry — without this fixup, extracted directories
+ * come out as `d---------` and writes inside them fail with EACCES.
+ */
+async function fixExtractedModes(dir: string): Promise<void> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await chmod(fullPath, 0o755);
+      await fixExtractedModes(fullPath);
+    } else if (entry.isFile()) {
+      await chmod(fullPath, 0o644);
+    }
+  }
 }
 
 /**
@@ -35,11 +71,14 @@ export async function extractSkillArchive(archive: Buffer, prefix?: string): Pro
   await extract({
     file: tmpFile,
     cwd: dir,
+    dmode: 0o755,
+    fmode: 0o644,
     filter: (path) => !path.startsWith("/") && !path.includes(".."),
   });
   await rm(tmpFile, { force: true }).catch((e) =>
     logger.debug("cleanup failed", { error: stringifyError(e) }),
   );
+  await fixExtractedModes(dir);
   return dir;
 }
 
@@ -92,6 +131,8 @@ export async function readArchiveFile(
   await extract({
     file: tmpFile,
     cwd: tmpDir,
+    dmode: 0o755,
+    fmode: 0o644,
     filter: (p) => {
       const clean = p.replace(/^\.\//, "");
       return clean === normalized;
