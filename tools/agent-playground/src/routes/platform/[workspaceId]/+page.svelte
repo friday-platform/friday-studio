@@ -450,8 +450,8 @@
                   <a href="/platform/{workspaceId}/chat/{chat.id}" class="row-link">
                     <span class="row-name">{chat.title ?? "Untitled"}</span>
                   </a>
-                  <span class="chat-source source-{chat.source}">{chatSourceLabel(chat.source)}</span>
                   <span class="row-time">{formatRelativeTime(chat.updatedAt)}</span>
+                  <span class="chat-source source-{chat.source}">{chatSourceLabel(chat.source)}</span>
                 </div>
               {/each}
             </div>
