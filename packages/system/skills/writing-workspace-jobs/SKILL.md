@@ -236,7 +236,8 @@ These pass validation but fail or misbehave at runtime.
 The config schema accepts `execution:` for backward compatibility, but the
 runtime **only executes FSM jobs**. Non-FSM jobs are silently skipped.
 
-Symptom: `"No FSM job handles signal '<name>'"`  
+Symptom: `"No FSM job handles signal '<name>'"`
+
 Fix: Rewrite as `fsm:` with `initial` and `states`.
 
 ### Initial state with no signal handler
@@ -244,7 +245,8 @@ Fix: Rewrite as `fsm:` with `initial` and `states`.
 The `initial` state must handle the trigger signal name in its `on` map.
 Without it, the signal is silently ignored.
 
-Symptom: Job triggers but produces no output, no error, no session.  
+Symptom: Job triggers but produces no output, no error, no session.
+
 Fix: Add `on: { <signal-name>: { target: <work-state> } }` to the initial state.
 
 ### Non-final state with no outgoing transitions
@@ -253,7 +255,8 @@ The FSM engine catches this in `validateFSMStructure`, but the workspace
 config validator does not validate FSM internals (fsm is `z.any()` in
 `JobSpecificationSchema`).
 
-Symptom: FSM reaches a stuck state and the session hangs.  
+Symptom: FSM reaches a stuck state and the session hangs.
+
 Fix: Add transitions to every non-final state, or mark it `type: final`.
 
 ### `type: action` in states
@@ -262,7 +265,8 @@ The FSM engine supports `agent`, `llm`, and `emit` action types. `type: action`
 is a legacy pre-FSM shape.
 
 Symptom: `fsm_structural_error` at the MCP-registry validator (the second
-validation layer).  
+validation layer).
+
 Fix: Use `entry: [ { type: agent, agentId: ... } ]`.
 
 ### Emit / transition name mismatch
@@ -281,7 +285,8 @@ on:
 If you emit `COMPLETE` but transition on `DONE`, the event is queued but
 never consumed.
 
-Symptom: Agent runs but session never completes.  
+Symptom: Agent runs but session never completes.
+
 Fix: Match emit event name to `on` key exactly.
 
 ### Missing `outputTo` in pipelines
@@ -289,7 +294,8 @@ Fix: Match emit event name to `on` key exactly.
 Without `outputTo`, an agent's result is not saved as a document. The next
 step's `inputFrom` has nothing to read.
 
-Symptom: Second agent receives empty or undefined input.  
+Symptom: Second agent receives empty or undefined input.
+
 Fix: Add `outputTo: <doc-id>` to the producer and `inputFrom: <same-doc-id>`
 to the consumer.
 
