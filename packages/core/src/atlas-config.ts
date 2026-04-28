@@ -4,14 +4,14 @@ import process from "node:process";
  * Centralized Atlas configuration utilities
  */
 
-const DEFAULT_ATLAS_URL = "https://atlas.tempestdx.com";
+const DEFAULT_FRIDAY_URL = "https://atlas.tempestdx.com";
 
 /**
  * Gets the base Atlas API URL from environment or default
  * Supports both http (local testing) and https (production)
  */
 export function getAtlasBaseUrl(): string {
-  return process.env.ATLAS_URL || DEFAULT_ATLAS_URL;
+  return process.env.FRIDAY_URL || DEFAULT_FRIDAY_URL;
 }
 
 /**
