@@ -32,12 +32,14 @@ import { OAuthService } from "./oauth/service.ts";
 import {
   DISCORD_PROVIDER,
   SLACK_APP_PROVIDER,
+  SLACK_PROVIDER,
   TEAMS_PROVIDER,
   TELEGRAM_PROVIDER,
   WHATSAPP_PROVIDER,
 } from "./providers/constants.ts";
 import { discordProvider } from "./providers/discord.ts";
 import { registry } from "./providers/registry.ts";
+import { slackProvider } from "./providers/slack.ts";
 import { createSlackAppDynamicProvider } from "./providers/slack-app-dynamic.ts";
 import { teamsProvider } from "./providers/teams.ts";
 import { telegramProvider } from "./providers/telegram.ts";
@@ -170,6 +172,10 @@ export function createApp(
 
   if (!registry.has(SLACK_APP_PROVIDER)) {
     registry.register(createSlackAppDynamicProvider(storage));
+  }
+
+  if (!registry.has(SLACK_PROVIDER)) {
+    registry.register(slackProvider);
   }
 
   if (!registry.has(TELEGRAM_PROVIDER)) {

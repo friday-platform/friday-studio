@@ -9,6 +9,13 @@
 export const SLACK_APP_PROVIDER = "slack-app";
 
 /**
+ * Slack bot apikey provider — mirrors the `kind: slack` communicator literal.
+ * Replaces the OAuth-based `slack-app` flow; users paste `bot_token`,
+ * `signing_secret`, and `app_id` from api.slack.com/apps directly.
+ */
+export const SLACK_PROVIDER = "slack";
+
+/**
  * Telegram bot provider — apikey credential, mirrors the `kind: telegram`
  * communicator literal directly (no `-bot` suffix per the
  * communicator-wiring contract).
