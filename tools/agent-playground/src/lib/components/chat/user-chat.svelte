@@ -23,6 +23,12 @@
   import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
+  import {
+    accumulateValidationAttempts,
+    type ValidationAttemptDisplay,
+  } from "./validation-accumulator.ts";
+  import type { SessionStreamEvent } from "@atlas/core/session/session-events";
+  import { sessionEventStream } from "$lib/utils/session-event-stream";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
   const configQuery = createQuery(() => workspaceQueries.config(wsId));
@@ -313,6 +319,9 @@
     // Queued sends belong to the old chat's Chat; don't cross-post them
     // into the chat we're switching to.
     queuedMessages = [];
+    // Validation pills are per-session; on chat switch any old pills
+    // belong to a different conversation's sessions and must clear.
+    validationEventsBySession = new Map();
 
     shouldResumeStream = true;
     const token = ++rehydrateToken;
@@ -486,6 +495,76 @@
   });
 
   let stopping = $state(false);
+
+  /**
+   * Validation lifecycle events received from the daemon's session SSE
+   * stream, grouped by sessionId so each assistant message can read pills
+   * for its own session via `metadata.sessionId`. Per-session arrays are
+   * appended in stream order; the accumulator dedupes by `(actionId,
+   * attempt)` and handles out-of-order events.
+   *
+   * Events accumulate for the lifetime of the chat-page mount; we don't
+   * tear down on session boundaries because pills must remain visible
+   * after the turn settles. They're cleared on chat switch alongside the
+   * other per-chat state.
+   */
+  let validationEventsBySession: Map<string, SessionStreamEvent[]> = $state(new Map());
+
+  /**
+   * Subscribe to the active session's SSE stream and route every
+   * `step:validation` event into `validationEventsBySession`. The
+   * subscription tears down when `activeSessionId` flips or the
+   * component unmounts; SSE 404 is benign (session ended before we
+   * subscribed) and the JSON fallback inside `sessionEventStream`
+   * yields any persisted events.
+   *
+   * Reads of `validationEventsBySession` happen inside `untrack` so
+   * appending events does not re-trigger this effect.
+   */
+  $effect(() => {
+    const sid = activeSessionId;
+    if (!sid) return;
+
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        for await (const event of sessionEventStream(sid)) {
+          if (controller.signal.aborted) return;
+          if ("type" in event && event.type === "step:validation") {
+            untrack(() => {
+              const next = new Map(validationEventsBySession);
+              const list = next.get(sid) ?? [];
+              next.set(sid, [...list, event]);
+              validationEventsBySession = next;
+            });
+          }
+        }
+      } catch (err) {
+        // Subscription failures are non-fatal — pills just won't appear
+        // for this session. The chat itself keeps working.
+        console.warn("validation SSE subscription failed", { sid, err });
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  });
+
+  /**
+   * Per-session map of validation attempts keyed by FSM `actionId`.
+   * Recomputed whenever new events arrive; the accumulator is pure and
+   * cheap so deriving on every change is fine.
+   */
+  const validationAttemptsBySession = $derived.by<Map<string, Map<string, ValidationAttemptDisplay[]>>>(() => {
+    const out = new Map<string, Map<string, ValidationAttemptDisplay[]>>();
+    for (const [sid, events] of validationEventsBySession) {
+      const attempts = accumulateValidationAttempts(events);
+      if (attempts.size > 0) out.set(sid, attempts);
+    }
+    return out;
+  });
 
   /**
    * Abort the in-flight turn both client-side (`chat.stop()` tears down the
@@ -1065,6 +1144,7 @@
         onScheduleAction={handleScheduleAction}
         onCredentialConnected={handleCredentialConnected}
         {thinking}
+        {validationAttemptsBySession}
       />
 
       {#if wasInterrupted}
