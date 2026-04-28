@@ -188,10 +188,20 @@ func newProjectFromSpecs(specs []processSpec) *types.Project {
 				MaxRestarts:    supervisedMaxRestarts,
 			},
 			ReadinessProbe: &health.Probe{
-				InitialDelay:     2, // seconds
+				// Cold-start tolerance: 2s initial + 30 failures × 2s
+				// = 62s window before process-compose declares the
+				// process unhealthy and restarts it. The friday daemon
+				// alone takes ~24s on first boot (workspace scan + skill
+				// bundle hashing + cron registration), and playground's
+				// SvelteKit-first-render takes another ~6-8s. The old
+				// 12s window (5 × 2s) was enough for warm restarts but
+				// not for the very first launch after install — every
+				// supervised process bounced 1-3 times before stabilizing,
+				// surfacing as a "Daemon unreachable" flash in the UI.
+				InitialDelay:     2,
 				PeriodSeconds:    2,
 				TimeoutSeconds:   2,
-				FailureThreshold: 5,
+				FailureThreshold: 30,
 				SuccessThreshold: 1,
 				HttpGet: &health.HttpProbe{
 					Host:   "127.0.0.1",
