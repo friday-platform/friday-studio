@@ -76,6 +76,7 @@ func (b trayBucket) tooltip() string {
 type trayController struct {
 	sup          *Supervisor
 	shuttingDown *atomic.Bool
+	healthCache  *HealthCache
 
 	openedBrowserOnce atomic.Bool
 
@@ -89,8 +90,16 @@ type trayController struct {
 	currentBucket trayBucket
 }
 
-func newTrayController(sup *Supervisor, shuttingDown *atomic.Bool) *trayController {
-	return &trayController{sup: sup, shuttingDown: shuttingDown}
+func newTrayController(
+	sup *Supervisor,
+	shuttingDown *atomic.Bool,
+	healthCache *HealthCache,
+) *trayController {
+	return &trayController{
+		sup:          sup,
+		shuttingDown: shuttingDown,
+		healthCache:  healthCache,
+	}
 }
 
 func (t *trayController) onReady() {
@@ -154,6 +163,25 @@ func (t *trayController) handleClicks() {
 			}
 		case <-t.quitItem.ClickedCh:
 			log.Info("Quit requested from tray")
+			// Decision #2: confirmation modal before tearing down
+			// services. Cancel returns to the menu without
+			// affecting state. confirmQuit blocks the click
+			// handler for the duration of the dialog (acceptable
+			// — the user is interacting with us synchronously).
+			if !confirmQuit() {
+				log.Info("Quit cancelled by user")
+				continue
+			}
+			// Flip the menubar title to "Stopping…" before
+			// systray.Quit so the user sees feedback during the
+			// up-to-30s teardown. shuttingDown is set inside
+			// performShutdown (which onExit calls), but the title
+			// update here gives instant visual confirmation —
+			// otherwise the menubar shows the previous bucket
+			// label until the next pollLoop tick.
+			t.shuttingDown.Store(true)
+			systray.SetTitle(bucketGrey.titleText())
+			systray.SetTooltip(bucketGrey.tooltip())
 			systray.Quit()
 			return
 		}
@@ -189,7 +217,23 @@ func (t *trayController) tick() {
 	}
 }
 
-// computeBucket implements the Tray Color Matrix.
+// computeBucket implements the Tray Color Matrix using the health
+// cache as the single source of truth (Decision #4 + #18). The
+// previous heuristic (state.IsReady() over ProcessesState) suffered
+// from the v0.1.15 "stuck on Starting…" bug because it required
+// every process's readiness probe to fire green AND every state's
+// IsReady to be non-nil; one mis-configured probe wedged the bucket
+// forever. The cache decouples our state machine from process-
+// compose's so we can give honest UX even when an upstream probe
+// is broken.
+//
+// Order matters:
+//  1. shuttingDown trumps everything (grey).
+//  2. SupervisorExited (the runner.Run() returned unexpectedly)
+//     trumps everything else (red).
+//  3. AllHealthy → green.
+//  4. AnyFailed past the cold-start grace → red.
+//  5. Otherwise amber (pending / starting / cold-start grace).
 func (t *trayController) computeBucket() trayBucket {
 	if t.shuttingDown.Load() {
 		return bucketGrey
@@ -197,33 +241,38 @@ func (t *trayController) computeBucket() trayBucket {
 	if t.sup.SupervisorExited() {
 		return bucketRed
 	}
-	state, err := t.sup.State()
-	if err != nil || state == nil {
+	if t.healthCache == nil {
+		// Defensive: if we somehow got here before the cache was
+		// wired, render amber to avoid mis-rendering as red.
 		return bucketAmber
 	}
-	if state.IsReady() && len(state.States) > 0 {
+	if t.healthCache.AllHealthy() {
 		return bucketGreen
 	}
-	// Cold-start grace: stay amber regardless of "looks broken" signals
-	// for the first 30 s.
-	if time.Since(t.sup.StartedAt()) < 30*time.Second {
-		return bucketAmber
-	}
-	// Past grace: any process in Error, or restarting >= max → RED.
-	for _, ps := range state.States {
-		if ps.Status == "Error" {
-			return bucketRed
-		}
+	if t.healthCache.AnyFailed() &&
+		time.Since(t.sup.StartedAt()) >= 30*time.Second {
+		return bucketRed
 	}
 	return bucketAmber
 }
 
 func (t *trayController) openBrowser(reason string) {
-	// --no-browser is an absolute kill-switch: every code path that would
-	// otherwise open the browser bails out here. Critical for `go test`,
-	// which boots the launcher subprocess with the flag and would
-	// otherwise pop tabs on the developer's machine.
-	if noBrowser {
+	// --no-browser only suppresses the auto-open on first-healthy
+	// transition. User-initiated actions (tray click, second-instance
+	// wake-up) always open — otherwise the menu item silently does
+	// nothing, which is worse than honoring the flag would buy us.
+	//
+	// Test isolation uses a separate env-var override
+	// (FRIDAY_LAUNCHER_BROWSER_DISABLED) so `go test` can spawn the
+	// launcher subprocess without popping tabs on the developer's
+	// machine. The env var is internal — never documented in user-
+	// facing CLI help — and is the only way to absolutely suppress
+	// every openBrowser call.
+	if browserDisabled {
+		log.Info("browser-open suppressed by env var", "reason", reason)
+		return
+	}
+	if noBrowser && reason == "first healthy" {
 		log.Info("browser-open suppressed by --no-browser", "reason", reason)
 		return
 	}
