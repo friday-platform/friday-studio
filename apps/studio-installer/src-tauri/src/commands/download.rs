@@ -1,6 +1,6 @@
 use futures_util::StreamExt;
 use serde::Serialize;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
@@ -32,6 +32,23 @@ pub enum DownloadEvent {
 const PROGRESS_INTERVAL_MS: u128 = 500;
 const MAX_RETRIES: u32 = 5;
 
+// Idle timeout per chunk read. Cloudflare's HTTP/2 framing has been
+// observed to keep the stream open after delivering all bytes (no
+// END_STREAM flag) AND to occasionally deliver content_length-1 bytes
+// then idle, which left stream.next().await pending indefinitely:
+// download_file never returned, JS `await invoke` never resolved, the
+// wizard sat at "100% · ETA 0s" forever. 30s is well above any realistic
+// chunk gap on a working connection; if no bytes arrive in that window
+// we treat the stream as stalled and surface as a retryable error.
+const CHUNK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+// Hard cap on the entire download. 10 min is enough to pull 1.5 GB on
+// the slowest broadband we'd ship to. If a single attempt is still
+// running past that, something is wrong (DNS flapping, server stuck on
+// transfer-encoding chunked, etc.) and the retry path is more useful
+// than waiting longer.
+const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(600);
+
 #[tauri::command]
 pub async fn download_file(
     url: String,
@@ -47,7 +64,15 @@ pub async fn download_file(
     let mut backoff_secs = 1u64;
 
     loop {
-        match attempt_download(&client, &url, &dest, &on_progress).await {
+        let attempt_fut = attempt_download(&client, &url, &dest, &on_progress);
+        let result = match tokio::time::timeout(ATTEMPT_TIMEOUT, attempt_fut).await {
+            Ok(r) => r,
+            Err(_) => Err(format!(
+                "download attempt exceeded {}s; aborting",
+                ATTEMPT_TIMEOUT.as_secs()
+            )),
+        };
+        match result {
             Ok(()) => {
                 let _ = on_progress.send(DownloadEvent::Done);
                 return Ok(());
@@ -156,8 +181,24 @@ async fn attempt_download(
     let mut last_report_time = start;
     let mut bytes_since_speed_calc = 0u64;
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Stream error: {e}"))?;
+    loop {
+        // Per-chunk idle timeout. A bare `stream.next().await` would hang
+        // forever if the server delivered every byte but never closed the
+        // stream (Cloudflare HTTP/2 missing END_STREAM, observed
+        // 2026-04-28). Wrapping in tokio::time::timeout means the worst
+        // case is bounded — we surface the stall as a stream error and
+        // let the outer retry loop start a fresh attempt.
+        let chunk = match tokio::time::timeout(CHUNK_IDLE_TIMEOUT, stream.next()).await {
+            Ok(Some(Ok(chunk))) => chunk,
+            Ok(Some(Err(e))) => return Err(format!("Stream error: {e}")),
+            Ok(None) => break, // stream cleanly ended
+            Err(_) => {
+                return Err(format!(
+                    "stream stalled with no data for {}s (downloaded {downloaded} / {total})",
+                    CHUNK_IDLE_TIMEOUT.as_secs()
+                ))
+            }
+        };
         file.write_all(&chunk)
             .await
             .map_err(|e| format!("Write error: {e}"))?;
