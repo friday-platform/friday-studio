@@ -73,7 +73,7 @@ export interface ExportAllOptions {
   global?: { skills?: Uint8Array };
 }
 
-export async function exportAll(opts: ExportAllOptions): Promise<Uint8Array> {
+export function exportAll(opts: ExportAllOptions): Promise<Uint8Array> {
   const zip = new JSZip();
   const createdAt = (opts.now ? opts.now() : new Date()).toISOString();
 

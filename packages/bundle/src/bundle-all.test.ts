@@ -13,7 +13,7 @@ async function seedWorkspace(dir: string, name: string, includeAgent = true) {
   }
 }
 
-async function buildBundle(workDir: string, name: string): Promise<Uint8Array> {
+function buildBundle(workDir: string, name: string): Promise<Uint8Array> {
   return exportBundle({
     workspaceDir: workDir,
     workspaceYml: `version: '1.0'\nworkspace:\n  name: ${name}\n`,

@@ -37,5 +37,8 @@ interface SpeechRecognitionConstructor {
   new (): SpeechRecognition;
 }
 
+// `declare var` is the only valid syntax for ambient globals in .d.ts files.
+// deno-lint-ignore no-var
 declare var SpeechRecognition: SpeechRecognitionConstructor | undefined;
+// deno-lint-ignore no-var
 declare var webkitSpeechRecognition: SpeechRecognitionConstructor | undefined;
