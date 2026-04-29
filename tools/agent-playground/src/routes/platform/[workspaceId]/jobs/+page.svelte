@@ -27,12 +27,9 @@
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
+  import { humanizeCronSchedule } from "$lib/cron-humanize";
   import { externalDaemonUrl } from "$lib/daemon-url";
-  import {
-    integrationQueries,
-    workspaceQueries,
-    type IntegrationStatus,
-  } from "$lib/queries";
+  import { integrationQueries, workspaceQueries, type IntegrationStatus } from "$lib/queries";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
@@ -298,7 +295,9 @@
       </section>
 
       {#if jobEntries.length === 0}
-        <p class="empty-hint">No jobs configured. Add jobs to your workspace.yml to see them here.</p>
+        <p class="empty-hint">
+          No jobs configured. Add jobs to your workspace.yml to see them here.
+        </p>
       {:else if filteredJobEntries.length === 0}
         <p class="empty-hint">No jobs match your filter.</p>
       {:else}
@@ -334,7 +333,9 @@
                     workspaceId: workspaceId ?? "",
                     jobName: job.id,
                   })}
-                >Manage</Button>
+                >
+                  Manage
+                </Button>
                 {#if workspaceId && job.triggers.length > 0}
                   <RunJobDialog
                     {workspaceId}
@@ -395,10 +396,22 @@
               {/if}
 
               {#if jobSignals.length > 0}
-                <div class="row-signals">
-                  <span class="signal-label">Signals</span>
+                <div class="row-signals" aria-label="Triggers">
                   {#each jobSignals as signal (signal.name)}
-                    <p class="row-config">{triggerStrip(signal)}</p>
+                    <div class="signal-config">
+                      <span class="signal-type">
+                        {signal.provider === "schedule"
+                          ? "Schedule"
+                          : providerLabel(signal.provider)}
+                      </span>
+                      {#if signal.provider === "schedule" && signal.schedule}
+                        <span class="signal-summary" title={signal.schedule}>
+                          {humanizeCronSchedule(signal.schedule, signal.timezone ?? "UTC")}
+                        </span>
+                      {:else}
+                        <span class="signal-summary">{triggerStrip(signal)}</span>
+                      {/if}
+                    </div>
                   {/each}
                 </div>
               {/if}
@@ -627,27 +640,37 @@
   }
 
   .row-signals {
-    align-items: baseline;
     display: flex;
-    gap: var(--size-2);
+    flex-direction: column;
+    gap: var(--size-1);
     grid-column: 1 / -1;
     padding-block-start: var(--size-3);
     padding-inline-start: calc(8px + var(--size-3));
   }
 
-  .signal-label {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-6);
-    letter-spacing: var(--font-letterspacing-1);
-    text-transform: uppercase;
+  .signal-config {
+    align-items: baseline;
+    color: color-mix(in srgb, var(--color-text), transparent 28%);
+    display: flex;
+    gap: var(--size-2);
+    min-inline-size: 0;
   }
 
-  .row-config {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-family: var(--font-family-monospace);
+  .signal-config::before {
+    color: color-mix(in srgb, var(--color-text), transparent 60%);
+    content: "•";
+  }
+
+  .signal-type {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    flex: 0 0 auto;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-6);
+  }
+
+  .signal-summary {
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
     font-size: var(--font-size-3);
-    margin: 0;
   }
 
   .row-details {
@@ -754,6 +777,5 @@
     .row-details {
       grid-template-columns: 1fr;
     }
-
   }
 </style>
