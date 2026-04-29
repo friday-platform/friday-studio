@@ -1,5 +1,5 @@
 import type { SessionStreamEvent } from "@atlas/core/session/session-events";
-import type { ValidationVerdict } from "@atlas/hallucination";
+import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 import { describe, expect, it, vi } from "vitest";
 import { accumulateValidationAttempts } from "./validation-accumulator.ts";
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { IconSmall } from "@atlas/ui";
-  import type { ValidationIssue, ValidationVerdict } from "@atlas/hallucination";
+  import type { ValidationIssue, ValidationVerdict } from "@atlas/hallucination/verdict";
 
   /**
    * Pure presentational pill row for a single validation attempt.

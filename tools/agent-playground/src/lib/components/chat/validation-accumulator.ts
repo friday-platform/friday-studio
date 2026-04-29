@@ -12,7 +12,7 @@
  */
 
 import type { SessionStreamEvent } from "@atlas/core/session/session-events";
-import type { ValidationVerdict } from "@atlas/hallucination";
+import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 
 /**
  * Per-attempt display row consumed by `<ValidationPillRow>`. One entry exists

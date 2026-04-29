@@ -2,7 +2,7 @@
   "name": "@atlas/hallucination",
   "version": "1.0.0",
   "type": "module",
-  "exports": { ".": "./mod.ts" },
+  "exports": { ".": "./mod.ts", "./verdict": "./src/verdict.ts" },
   "main": "./mod.ts",
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
