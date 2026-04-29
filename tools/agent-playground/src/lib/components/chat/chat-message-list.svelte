@@ -161,12 +161,7 @@
    */
   let userToggledGroups: Map<string, boolean> = $state(new Map());
 
-  function handleGroupToggleClick(e: MouseEvent, messageId: string, anyRunning: boolean) {
-    // Take over the default <summary> click. We manage `open` via the
-    // `userToggledGroups` latch; flipping the current effective state here
-    // keeps the animation in sync without the browser fighting Svelte's
-    // reactive `open` attribute on the next anyRunning tick.
-    e.preventDefault();
+  function handleGroupToggleClick(e: Event, messageId: string, anyRunning: boolean) {
     const prev = userToggledGroups.get(messageId);
     const currentOpen = prev ?? anyRunning;
     const next = new Map(userToggledGroups);
@@ -295,10 +290,13 @@
               -->
               {@const userChoice = userToggledGroups.get(message.id)}
               {@const isOpen = userChoice ?? anyRunning}
-              <details class="tool-call-group" open={isOpen}>
-                <summary
+              <div class="tool-call-group" class:open={isOpen}>
+                <div
                   class="tool-call-group-summary"
+                  role="button"
+                  tabindex="0"
                   onclick={(e) => handleGroupToggleClick(e, message.id, anyRunning)}
+                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") handleGroupToggleClick(e, message.id, anyRunning); }}
                 >
                   <span class="group-icon" aria-hidden="true">
                     {#if anyRunning}
@@ -317,13 +315,15 @@
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
                     {/if}
                   </span>
-                </summary>
-                <div class="tool-call-list">
-                  {#each regularCalls as call (call.toolCallId || call.toolName)}
-                    <ToolCallCard {call} {onCredentialConnected} />
-                  {/each}
                 </div>
-              </details>
+                {#if isOpen}
+                  <div class="tool-call-list">
+                    {#each regularCalls as call (call.toolCallId || call.toolName)}
+                      <ToolCallCard {call} {onCredentialConnected} />
+                    {/each}
+                  </div>
+                {/if}
+              </div>
             {:else if regularCalls.length > 0}
               <div class="tool-call-list">
                 {#each regularCalls as call (call.toolCallId || call.toolName)}
@@ -794,13 +794,8 @@
     display: flex;
     font-size: var(--font-size-1);
     gap: var(--size-2);
-    list-style: none;
     padding: var(--size-1-5) var(--size-2-5);
     user-select: none;
-  }
-
-  .tool-call-group-summary::-webkit-details-marker {
-    display: none;
   }
 
   .group-icon {
@@ -857,11 +852,11 @@
     transition: transform 150ms ease;
   }
 
-  .tool-call-group[open] > .tool-call-group-summary .group-chevron {
+  .tool-call-group.open > .tool-call-group-summary .group-chevron {
     transform: rotate(90deg);
   }
 
-  .tool-call-group[open] > .tool-call-list {
+  .tool-call-group.open > .tool-call-list {
     border-block-start: 1px solid var(--color-border-1);
     padding: var(--size-1-5);
   }

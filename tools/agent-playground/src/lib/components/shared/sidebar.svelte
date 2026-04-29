@@ -256,11 +256,13 @@
 
   .sidebar-header {
     align-items: center;
+    background: linear-gradient(to bottom, var(--surface-dark) 60%, transparent);
     display: flex;
     flex-shrink: 0;
     gap: var(--size-2);
-    padding-block: var(--size-5) var(--size-1);
+    padding-block: var(--size-5) var(--size-3);
     padding-inline: var(--size-5);
+    position: sticky;
     top: 0;
     z-index: 1;
 

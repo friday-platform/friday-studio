@@ -153,8 +153,7 @@
 
   let userToggled = $state(false);
 
-  function handleToggleClick(e: MouseEvent, childrenRunning: boolean) {
-    e.preventDefault();
+  function handleToggleClick(e: Event, childrenRunning: boolean) {
     userToggled = !userToggled;
   }
 
@@ -326,16 +325,19 @@
   </div>
 {:else if call.children && call.children.length > 0}
   {@const childrenRunning = childrenAnyRunning(call.children)}
-  <details
+  <div
     class="tool-card with-children"
+    class:open={delegateOpen}
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
-    open={delegateOpen}
     style="border-left: 3px solid {meta.color}"
   >
-    <summary
+    <div
       class="tool-card-header"
+      role="button"
+      tabindex="0"
       onclick={(e) => handleToggleClick(e, childrenRunning)}
+      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") handleToggleClick(e, childrenRunning); }}
     >
       <div class="tool-card-inner">
         <div class="tool-card-content">
@@ -375,38 +377,40 @@
           <IconSmall.ChevronRight />
         {/if}
       </span>
-    </summary>
-    {#if call.reasoning || call.progress}
-      <div class="delegate-ephemeral">
-        {#if call.reasoning}
-          <div class="reasoning-feed">
-            {#each call.reasoning.split("\n").filter(l => l.trim()) as line}
-              <div class="reasoning-line">
-                <span class="reasoning-dot" aria-hidden="true"></span>
-                <span class="reasoning-text">{line}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-        {#if call.progress}
-          <div class="progress-feed">
-            {#each call.progress as line}
-              <div class="progress-line">
-                <span class="progress-dot" aria-hidden="true"></span>
-                <span class="progress-text">{line}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-    <div class="tool-call-children" style="--depth: {depth}">
-      {#each call.children as child (child.toolCallId || child.toolName)}
-        <Self call={child} {onCredentialConnected} depth={depth + 1} />
-      {/each}
     </div>
-    {@render outputDrawer(call)}
-  </details>
+    {#if delegateOpen}
+      {#if call.reasoning || call.progress}
+        <div class="delegate-ephemeral">
+          {#if call.reasoning}
+            <div class="reasoning-feed">
+              {#each call.reasoning.split("\n").filter(l => l.trim()) as line}
+                <div class="reasoning-line">
+                  <span class="reasoning-dot" aria-hidden="true"></span>
+                  <span class="reasoning-text">{line}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          {#if call.progress}
+            <div class="progress-feed">
+              {#each call.progress as line}
+                <div class="progress-line">
+                  <span class="progress-dot" aria-hidden="true"></span>
+                  <span class="progress-text">{line}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+      <div class="tool-call-children" style="--depth: {depth}">
+        {#each call.children as child (child.toolCallId || child.toolName)}
+          <Self call={child} {onCredentialConnected} depth={depth + 1} />
+        {/each}
+      </div>
+      {@render outputDrawer(call)}
+    {/if}
+  </div>
 {:else}
   <div
     class="tool-card"
@@ -579,17 +583,12 @@
     border: none;
   }
 
-  .tool-card.with-children > summary {
+  .tool-card.with-children > .tool-card-header {
     cursor: pointer;
-    list-style: none;
     user-select: none;
   }
 
-  .tool-card.with-children > summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .tool-card.with-children > summary .delegate-chevron {
+  .tool-card.with-children > .tool-card-header .delegate-chevron {
     color: var(--text-faded);
     display: inline-flex;
     flex-shrink: 0;
@@ -600,12 +599,12 @@
     transition: transform 150ms ease;
   }
 
-  .tool-card.with-children > summary .delegate-chevron :global(svg) {
+  .tool-card.with-children > .tool-card-header .delegate-chevron :global(svg) {
     inline-size: 100%;
     block-size: 100%;
   }
 
-  .tool-card.with-children > summary .tool-card-inner {
+  .tool-card.with-children > .tool-card-header .tool-card-inner {
     flex: 1;
   }
 
@@ -678,10 +677,6 @@
     border-inline-start: 1px solid var(--color-border-1);
   }
 
-  .tool-card.with-children[open] > .tool-call-children {
-    display: flex;
-  }
-
   /* ─── Output drawer ────────────────────────────────────────────────── */
 
   .tool-card-drawer {
@@ -689,14 +684,6 @@
     flex-direction: column;
     gap: var(--size-1);
     padding: 0 var(--size-2-5) var(--size-1-5);
-  }
-
-  .tool-card.with-children > .tool-card-drawer {
-    display: none;
-  }
-
-  .tool-card.with-children[open] > .tool-card-drawer {
-    display: flex;
   }
 
   .tool-card-details {

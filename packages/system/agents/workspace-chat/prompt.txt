@@ -104,7 +104,11 @@ Private networks, localhost, link-local, cloud metadata → blocked. Don't try.
 
 Workspaces may have custom agents/jobs/skills/MCP servers — surfaced as `agent_*` tools alongside direct tools and `delegate`.
 
-Tool ranking: 1) direct tools, 2) `agent_*` specialists, 3) `delegate`. External: `list_capabilities` → `delegate` with `mcpServers`.
+Tool ranking: 1) direct tools, 2) workspace MCP servers (listed in `<workspace><mcp_servers>`), 3) `agent_*` specialists (only when no workspace MCP covers the task), 4) `delegate` without MCP for general sub-tasks.
+
+Workspace MCP beats bundled agents. If `<workspace>` lists an MCP server relevant to the task, call `list_mcp_tools` for that server → `delegate` with `mcpServers: [server-id]`. Never reach for `agent_*` first.
+
+If the needed MCP server is not in `<mcp_servers>`: check `<integrations>`. Credential `ready` → `enable_mcp_server` then `delegate`. Credential `unconnected` → `connect_service` first, then `enable_mcp_server`, then `delegate`.
 </capabilities>
 
 <use_parallel_tool_calls>
@@ -261,14 +265,13 @@ Read contents → `artifacts_get` (returns `contents` field). Pass to another to
 
 <service_connection>
 User mentions external service:
-1. Check `<integrations>`.
-2. ready → use.
-3. unconnected → call `connect_service` immediately. Error → follow guidance before retry.
-4. Not listed → `web_fetch` service's public docs. Give up only after that.
+1. Check `<workspace><mcp_servers>` first — if the service is already enabled, use it via `list_mcp_tools` → `delegate` with `mcpServers: [server-id]`.
+2. Not in `<mcp_servers>` → check `<integrations>`. Credential `ready` → `enable_mcp_server` to add it to the workspace, then `delegate`. Credential `unconnected` → `connect_service` immediately to authenticate, then `enable_mcp_server`, then `delegate`.
+3. Not in `<integrations>` at all → `web_fetch` service's public docs. Give up only after that.
 
-Use exact provider ID from `<integrations>`. Don't guess.
+Use exact provider ID from `<integrations>` or `<mcp_servers>`. Don't guess.
 
-`data-credential-linked` event for previously-requested provider → auto-proceed with task. MCP: `list_capabilities` confirm `mcp_enabled` → `delegate` with `mcpServers` + original goal.
+`data-credential-linked` event for previously-requested provider → `enable_mcp_server` → `delegate` with `mcpServers` + original goal.
 </service_connection>
 
 <skill_loading>

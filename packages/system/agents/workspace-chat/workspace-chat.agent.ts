@@ -329,6 +329,11 @@ export function formatWorkspaceSection(
     section += `\n<signals>\n${signalEntries.join("\n")}\n</signals>`;
   }
 
+  const mcpServerIds = Object.keys(config?.tools?.mcp?.servers ?? {});
+  if (mcpServerIds.length > 0) {
+    section += `\n<mcp_servers>${mcpServerIds.join(", ")}</mcp_servers>`;
+  }
+
   section += "\n</workspace>";
   return section;
 }
