@@ -49,10 +49,30 @@ interface ExternalCliPin {
   outName: (target: string) => string;
 }
 
+/** A bundle is a directory tree (e.g. Node's full distribution) extracted
+ * verbatim into a subdirectory of the staging tree. Single-file pins go
+ * through ExternalCliPin; trees go through this. The archive's top-level
+ * directory (e.g. node-v24.15.0-darwin-arm64/) is stripped during extract
+ * so the staged contents land flat under outDir. */
+interface ExternalBundlePin {
+  name: string;
+  version: string;
+  url: (target: string) => string;
+  /** Top-level directory inside the archive that we strip on extract. */
+  archiveRoot: (target: string) => string;
+  /** Subdirectory of staging where the contents land. */
+  outDir: string;
+  /** URL of a SHASUMS256-style file. The lookup key is the asset filename
+   * (last URL segment); the matching line's hex digest is verified before
+   * extraction. */
+  shasumsUrl: (target: string) => string;
+}
+
 const GH_VERSION = "2.92.0";
 const CLOUDFLARED_VERSION = "2026.3.0";
 const NATS_SERVER_VERSION = "2.12.8";
 const UV_VERSION = "0.11.8";
+const NODE_VERSION = "24.15.0";
 
 const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
   {
@@ -153,6 +173,40 @@ const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
     },
     outName: (t) => (t.endsWith("windows-msvc") ? `${bin}.exe` : bin),
   })),
+];
+
+// Directory bundles — assets that ship as a tree, not a single binary.
+// Currently just Node.js: npm and npx are shell shims that delegate to
+// `bin/node` and require the sibling `lib/node_modules/npm` tree to
+// resolve their entry-point JS files. Stripping the layout breaks npm,
+// so we ship the whole distribution under node-runtime/.
+//
+// Without this the daemon logs:
+//   No FRIDAY_NPX_PATH configured, MCP servers using npx may not work
+//   No FRIDAY_NODE_PATH configured, bundled claude-code agent may not work
+const EXTERNAL_BUNDLES: readonly ExternalBundlePin[] = [
+  {
+    name: "node",
+    version: NODE_VERSION,
+    url: (t) => {
+      const map: Record<string, string> = {
+        "aarch64-apple-darwin": `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-arm64.tar.gz`,
+        "x86_64-apple-darwin": `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-x64.tar.gz`,
+        "x86_64-pc-windows-msvc": `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip`,
+      };
+      const url = map[t];
+      if (!url) throw new Error(`node: unsupported target ${t}`);
+      return url;
+    },
+    archiveRoot: (t) => {
+      if (t === "aarch64-apple-darwin") return `node-v${NODE_VERSION}-darwin-arm64`;
+      if (t === "x86_64-apple-darwin") return `node-v${NODE_VERSION}-darwin-x64`;
+      if (t === "x86_64-pc-windows-msvc") return `node-v${NODE_VERSION}-win-x64`;
+      throw new Error(`node: unsupported target ${t}`);
+    },
+    outDir: "node-runtime",
+    shasumsUrl: () => `https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`,
+  },
 ];
 
 // Pure-Go binaries built from the repo's go.mod. Cross-compile via GOOS/GOARCH;
@@ -360,6 +414,53 @@ async function extractArchive(archivePath: string, outDir: string): Promise<void
   }
 }
 
+/** Fetches a SHASUMS256-style file and returns the hex digest matching
+ * the given asset filename. Throws if the asset isn't listed. */
+async function fetchShasum(shasumsUrl: string, assetName: string): Promise<string> {
+  const resp = await fetch(shasumsUrl, { redirect: "follow" });
+  if (!resp.ok) throw new Error(`SHASUMS fetch ${shasumsUrl} → HTTP ${resp.status}`);
+  const body = await resp.text();
+  for (const line of body.split("\n")) {
+    const [hex, name] = line.trim().split(/\s+/);
+    if (name === assetName || name === `*${assetName}`) {
+      if (!hex || hex.length !== 64)
+        throw new Error(`SHASUMS: bad digest for ${assetName}: ${hex}`);
+      return hex.toLowerCase();
+    }
+  }
+  throw new Error(`SHASUMS: ${assetName} not listed in ${shasumsUrl}`);
+}
+
+async function bundleExternalBundle(
+  target: string,
+  bundle: ExternalBundlePin,
+  outDir: string,
+  scratch: string,
+): Promise<void> {
+  const url = bundle.url(target);
+  const fileName = url.split("/").pop();
+  if (!fileName) throw new Error(`${bundle.name}: cannot derive filename from URL: ${url}`);
+  const downloadPath = join(scratch, fileName);
+  await downloadFile(url, downloadPath);
+
+  const want = await fetchShasum(bundle.shasumsUrl(target), fileName);
+  const got = await sha256OfFile(downloadPath);
+  if (got !== want) {
+    throw new Error(`${bundle.name}: sha256 mismatch for ${fileName}: got=${got} want=${want}`);
+  }
+
+  const extractDir = join(scratch, `${bundle.name}-extract`);
+  await rmRf(extractDir);
+  await extractArchive(downloadPath, extractDir);
+
+  // Strip the archive's top-level dir by moving its contents up.
+  const innerRoot = join(extractDir, bundle.archiveRoot(target));
+  const dest = join(outDir, bundle.outDir);
+  await rmRf(dest);
+  await ensureDir(outDir);
+  await Deno.rename(innerRoot, dest);
+}
+
 async function bundleExternalCli(
   target: string,
   cli: ExternalCliPin,
@@ -511,6 +612,9 @@ async function main(): Promise<void> {
   if (!opts.skipExternal) {
     for (const cli of EXTERNAL_CLIS) {
       await bundleExternalCli(opts.target, cli, stagingDir, scratchDir);
+    }
+    for (const bundle of EXTERNAL_BUNDLES) {
+      await bundleExternalBundle(opts.target, bundle, stagingDir, scratchDir);
     }
   } else {
     console.log("[build-studio] --skip-external set, skipping CLI bundling");

@@ -28,11 +28,11 @@ func commonServiceEnv() []string {
 }
 
 // fridayEnv builds the env-var list specific to the friday daemon
-// process. Carries FRIDAY_CLAUDE_PATH, FRIDAY_UV_PATH, FRIDAY_UVX_PATH
-// (when bundled binaries are present in binDir), plus the .env baseline.
-// Without merging .env in here friday's platform-model validation fails
-// on every fresh install — the daemon needs ANTHROPIC_API_KEY in its
-// process environment.
+// process. Carries FRIDAY_CLAUDE_PATH, FRIDAY_UV_PATH, FRIDAY_UVX_PATH,
+// FRIDAY_NODE_PATH, FRIDAY_NPX_PATH (when bundled binaries are present
+// in binDir), plus the .env baseline. Without merging .env in here
+// friday's platform-model validation fails on every fresh install —
+// the daemon needs ANTHROPIC_API_KEY in its process environment.
 //
 // FRIDAY_CLAUDE_PATH discovery order:
 //  1. Explicit user override via FRIDAY_CLAUDE_PATH set in the
@@ -63,6 +63,30 @@ func fridayEnv(binDir string) []string {
 		}
 		if _, err := os.Stat(bin); err == nil {
 			env = append(env, "FRIDAY_"+strings.ToUpper(name)+"_PATH="+bin)
+		}
+	}
+	// Bundled Node distribution. Windows zip lays node.exe / npx.cmd flat
+	// at the runtime root; macOS tarball nests under bin/. node-runtime/
+	// is the directory the build-studio.ts EXTERNAL_BUNDLES entry stages
+	// into.
+	nodeRuntime := filepath.Join(binDir, "node-runtime")
+	type nodeBin struct {
+		envName     string
+		unixSubpath string // e.g. bin/node
+		winName     string // e.g. node.exe
+	}
+	for _, b := range []nodeBin{
+		{envName: "FRIDAY_NODE_PATH", unixSubpath: "bin/node", winName: "node.exe"},
+		{envName: "FRIDAY_NPX_PATH", unixSubpath: "bin/npx", winName: "npx.cmd"},
+	} {
+		var bin string
+		if runtime.GOOS == "windows" {
+			bin = filepath.Join(nodeRuntime, b.winName)
+		} else {
+			bin = filepath.Join(nodeRuntime, b.unixSubpath)
+		}
+		if _, err := os.Stat(bin); err == nil {
+			env = append(env, b.envName+"="+bin)
 		}
 	}
 	env = append(env, commonServiceEnv()...)
