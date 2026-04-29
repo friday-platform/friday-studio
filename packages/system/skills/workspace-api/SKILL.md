@@ -227,24 +227,7 @@ curl -s -X POST http://localhost:8080/api/workspaces/$WS/update \
 
 Pass `backup: true` to preserve a timestamped `workspace.yml.backup-<ts>`. Pass `force: true` to override the active-session guard.
 
-**Prefer partial updates for single-entity changes** — they preserve runtime state and reload only the runtime:
-
-```bash
-# Add or replace a signal
-curl -s -X POST http://localhost:8080/api/workspaces/$WS/config/signals \
-  -H 'Content-Type: application/json' \
-  -d '{"signalId": "run-now", "signal": {"provider":"http","config":{"path":"/run-now"}}}'
-
-# Update agent prompt + model + tools
-curl -s -X PUT http://localhost:8080/api/workspaces/$WS/config/agents/summarizer \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"You summarize rigorously.","model":"claude-sonnet-4-6","tools":["fetch"]}'
-
-# Patch signal schedule
-curl -s -X PATCH http://localhost:8080/api/workspaces/$WS/config/signals/daily-summary \
-  -H 'Content-Type: application/json' \
-  -d '{"config":{"schedule":"*/15 * * * *","timezone":"UTC"}}'
-```
+**For single-entity changes (add/update an agent, job, or signal), always use the upsert tools — not curl.** `upsert_agent`, `upsert_job`, and `upsert_signal` are typed, return structured diffs, and handle draft/live switching automatically. The raw HTTP partial-update endpoints (`PUT /config/agents/:id`, `PATCH /config/signals/:id`, `POST /config/signals`) require the full entity shape including fields the model may not know (e.g. `type`), produce opaque errors, and bypass draft mode. Never use them for agent/job/signal edits.
 
 ### Delete a workspace (single)
 
