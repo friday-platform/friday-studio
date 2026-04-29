@@ -11,6 +11,7 @@
 
 import { spawn as defaultSpawn } from "node:child_process";
 import process from "node:process";
+import { Writable } from "node:stream";
 import { experimental_createMCPClient as createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import type { MCPServerConfig, MCPServerToolFilter } from "@atlas/config";
@@ -162,9 +163,13 @@ export async function createMCPTools(
           ? `${config.transport.command} ${(config.transport.args ?? []).join(" ")}`.trim()
           : config.transport.url;
       const reason = actualError instanceof Error ? actualError.message : String(actualError);
+      // Omit the generic install hint when the reason already contains specific
+      // process output (e.g. ENOENT from a bad root path) — it's misleading there.
+      const hint = reason.includes("\n") || reason.includes("ENOENT") || reason.includes("Error:")
+        ? ""
+        : " Check that the command is installed and available in the container.";
       throw new Error(
-        `MCP server "${serverId}" failed to start (${command}): ${reason}. ` +
-          `Check that the command is installed and available in the container.`,
+        `MCP server "${serverId}" failed to start (${command}): ${reason}.${hint}`,
       );
     }
   }
@@ -259,8 +264,23 @@ async function connectStdio(
       attempt,
     });
 
+    // Capture subprocess stderr so startup errors (e.g. ENOENT on a root path)
+    // are included in the thrown error instead of silently dropped.
+    const stderrChunks: Buffer[] = [];
+    const stderrCapture = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        stderrChunks.push(chunk);
+        callback();
+      },
+    });
+
     const client = await createMCPClient({
-      transport: new StdioMCPTransport({ command, args: expandedArgs, env: mergedEnv }),
+      transport: new StdioMCPTransport({
+        command,
+        args: expandedArgs,
+        env: mergedEnv,
+        stderr: stderrCapture,
+      }),
     });
 
     // Verify the subprocess is actually responding AND capture tools in one call.
@@ -269,14 +289,22 @@ async function connectStdio(
     try {
       tools = await client.tools();
     } catch (err) {
+      // Close the client to kill the orphaned subprocess before retry
+      await client.close().catch(() => {});
+      const stderrOutput = Buffer.concat(stderrChunks).toString("utf8").trim();
       logger.debug(`MCP stdio tools() failed on attempt ${attempt} for "${serverId}"`, {
         operation: "mcp_connect",
         serverId,
         attempt,
         error: err instanceof Error ? err.message : String(err),
+        stderrOutput: stderrOutput || undefined,
       });
-      // Close the client to kill the orphaned subprocess before retry
-      await client.close().catch(() => {});
+      // Prepend subprocess stderr to the error message so callers see the
+      // actual failure reason (e.g. "ENOENT: no such file or directory")
+      // rather than just the generic "Connection closed" from the transport.
+      if (stderrOutput && err instanceof Error) {
+        err.message = `${stderrOutput} (${err.message})`;
+      }
       throw err;
     }
 
