@@ -32,6 +32,7 @@ import {
   streamText,
 } from "ai";
 import { z } from "zod";
+import { CommunicatorKindSchema } from "../../../../apps/atlasd/src/services/communicator-wiring.ts";
 import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
 import {
   composeMemoryBlocks,
@@ -331,6 +332,14 @@ export function formatWorkspaceSection(
   const mcpServerIds = Object.keys(config?.tools?.mcp?.servers ?? {});
   if (mcpServerIds.length > 0) {
     section += `\n<mcp_servers>${mcpServerIds.join(", ")}</mcp_servers>`;
+  }
+
+  if (config?.communicators) {
+    const wired = config.communicators;
+    const entries = CommunicatorKindSchema.options.map(
+      (kind) => `<communicator kind="${kind}" wired="${kind in wired ? "true" : "false"}"/>`,
+    );
+    section += `\n<communicators>\n${entries.join("\n")}\n</communicators>`;
   }
 
   section += "\n</workspace>";
