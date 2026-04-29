@@ -898,11 +898,11 @@
   }
 
   .empty-state p {
-    font-size: var(--font-size-3);
+    font-size: var(--font-size-4);
   }
 
   .empty-state .hint {
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
     max-inline-size: 400px;
   }
 </style>
