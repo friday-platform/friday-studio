@@ -2,10 +2,9 @@
   Dashboard card listing chat communicators (slack, telegram, discord, teams,
   whatsapp) with Connect/Disconnect controls.
 
-  All kinds use the generic apikey path: clicking Connect expands an inline
-  form driven by `linkProviderQueries.providerDetails(kind)`; on submit the
-  credential is created via `useCredentialConnect(kind).submitApiKey` and
-  then wired via `useConnectCommunicator()`.
+  Connect uses the generic apikey path via `<CommunicatorApiKeyForm>`, which
+  fetches the provider's secretSchema from Link and wires through
+  `useConnectCommunicator()` on submit.
 
   Source priority:
     1. `config.communicators` — render its declared entries.
@@ -20,14 +19,8 @@
   import { Button } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
-  import CredentialSecretForm from "$lib/components/credential-secret-form.svelte";
-  import {
-    useConnectCommunicator,
-    useDisconnectCommunicator,
-    wiringQueries,
-  } from "$lib/queries";
-  import { linkProviderQueries } from "$lib/queries/link-provider-queries.ts";
-  import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
+  import CommunicatorApiKeyForm from "$lib/components/shared/communicator-apikey-form.svelte";
+  import { useDisconnectCommunicator, wiringQueries } from "$lib/queries";
 
   type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
 
@@ -78,32 +71,13 @@
   /** Which row currently has its inline form expanded, if any. */
   let expandedKind = $state<CommunicatorKind | null>(null);
 
-  /** Per-kind error surfaced from `submitApiKey` or wire mutation. */
+  /** Per-kind error surfaced from the disconnect mutation. */
   let rowError = $state<Record<string, string | null>>({});
 
   /** Tracks the kind currently mid-disconnect for per-row pending state. */
   let pendingDisconnectKind = $state<CommunicatorKind | null>(null);
 
-  const connectMut = useConnectCommunicator();
   const disconnectMut = useDisconnectCommunicator();
-
-  /**
-   * Per-kind `useCredentialConnect` instances. Cached so the reactive state
-   * inside each instance survives re-renders.
-   */
-  const apikeyConnectByKind = new Map<
-    CommunicatorKind,
-    ReturnType<typeof useCredentialConnect>
-  >();
-
-  function getApikeyConnect(kind: CommunicatorKind) {
-    let connect = apikeyConnectByKind.get(kind);
-    if (!connect) {
-      connect = useCredentialConnect(kind);
-      apikeyConnectByKind.set(kind, connect);
-    }
-    return connect;
-  }
 
   function handleExpand(kind: CommunicatorKind) {
     rowError[kind] = null;
@@ -112,32 +86,6 @@
 
   function handleCollapse() {
     expandedKind = null;
-  }
-
-  async function handleApikeySubmit(
-    kind: CommunicatorKind,
-    label: string,
-    secret: Record<string, string>,
-  ) {
-    rowError[kind] = null;
-    const connect = getApikeyConnect(kind);
-    const credentialId = await connect.submitApiKey(label, secret);
-    if (!credentialId) {
-      // submitApiKey set its own error on the connect state; surfaced via the form.
-      return;
-    }
-
-    connectMut.mutate(
-      { workspaceId, kind, credentialId },
-      {
-        onSuccess: () => {
-          expandedKind = null;
-        },
-        onError: (err) => {
-          rowError[kind] = err.message;
-        },
-      },
-    );
   }
 
   function handleApikeyDisconnect(kind: CommunicatorKind) {
@@ -201,33 +149,18 @@
           {/if}
         </div>
 
+        {#if rowError[row.kind]}
+          <p class="form-error row-error">{rowError[row.kind]}</p>
+        {/if}
+
         {#if isExpanded}
-          {@const detailsQuery = createQuery(() =>
-            linkProviderQueries.providerDetails(row.kind),
-          )}
-          {@const connect = getApikeyConnect(row.kind)}
           <div class="expand">
-            {#if detailsQuery.isLoading}
-              <p class="loading">Loading {row.kind} provider…</p>
-            {:else if detailsQuery.error}
-              <p class="form-error">
-                Failed to load {row.kind} provider: {detailsQuery.error.message}
-              </p>
-              <Button variant="secondary" size="small" onclick={handleCollapse}>Cancel</Button>
-            {:else if !detailsQuery.data?.secretSchema}
-              <p class="form-error">
-                Provider {row.kind} is not yet registered in Link.
-              </p>
-              <Button variant="secondary" size="small" onclick={handleCollapse}>Cancel</Button>
-            {:else}
-              <CredentialSecretForm
-                secretSchema={detailsQuery.data.secretSchema}
-                submitting={connect.submitting || connectMut.isPending}
-                error={rowError[row.kind] ?? connect.error}
-                onSubmit={(label, secret) => handleApikeySubmit(row.kind, label, secret)}
-                onCancel={handleCollapse}
-              />
-            {/if}
+            <CommunicatorApiKeyForm
+              {workspaceId}
+              kind={row.kind}
+              onConnected={handleCollapse}
+              onCancel={handleCollapse}
+            />
           </div>
         {/if}
       </div>
@@ -289,12 +222,6 @@
     padding: var(--size-3);
   }
 
-  .loading {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-1);
-    margin: 0;
-  }
-
   .form-error {
     background: color-mix(in srgb, var(--color-error), transparent 90%);
     border: 1px solid var(--color-error);
@@ -303,6 +230,11 @@
     font-size: var(--font-size-1);
     margin: 0;
     padding: var(--size-2) var(--size-3);
+  }
+
+  .row-error {
+    margin-block-end: var(--size-2);
+    margin-inline: var(--size-3);
   }
 
   .status-dot {
