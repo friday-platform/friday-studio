@@ -10,7 +10,7 @@ import "../config.ts";
 import { anthropicProvider } from "./anthropic.ts";
 import { atlassianProvider } from "./atlassian.ts";
 import { hydrateDynamicProvider } from "./dynamic.ts";
-import { createGitHubAppInstallProvider } from "./github-app.ts";
+import { githubProvider } from "./github.ts";
 import {
   createGoogleCalendarProvider,
   createGoogleDocsProvider,
@@ -149,12 +149,7 @@ if (slackUserProvider) {
   );
 }
 
-const githubAppProvider = createGitHubAppInstallProvider();
-if (githubAppProvider) {
-  registry.register(githubAppProvider);
-} else {
-  logger.info("Skipping GitHub App provider: env vars not set");
-}
+registry.register(githubProvider);
 
 registry.register(anthropicProvider);
 registry.register(notionProvider);
