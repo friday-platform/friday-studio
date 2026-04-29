@@ -1173,7 +1173,7 @@
     <span class="workspace-badge">{workspaceName}</span>
     <span class="header-spacer"></span>
     {#if chat && chat.messages.length > 0}
-      <button class="new-chat-button" onclick={startNewChat} disabled={streaming}>New Chat</button>
+      <button class="new-chat-button" onclick={startNewChat}>New Chat</button>
     {/if}
   </header>
 

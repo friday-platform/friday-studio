@@ -1,7 +1,14 @@
 /** Multi-FSM coordinator: manages jobs and sessions within a workspace. */
 
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import process from "node:process";
@@ -64,7 +71,9 @@ import {
   buildWorkspaceMeta,
   type Context,
   createEngine,
+  type Document as FSMDocument,
   type FSMActionExecutionEvent,
+  type FSMDefinition,
   FSMDefinitionSchema,
   type FSMEngine,
   type FSMEvent,
@@ -72,18 +81,25 @@ import {
   type SignalWithContext,
   validateFSMStructure,
 } from "@atlas/fsm-engine";
-import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
+import {
+  createFSMOutputValidator,
+  SupervisionLevel,
+} from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import {
-  type GenerateSessionTitleInput,
   generateSessionTitle,
+  type GenerateSessionTitleInput,
   type PlatformModels,
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { publishDirtyDrafts } from "@atlas/resources";
-import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
+import {
+  extractArchiveContents,
+  SkillStorage,
+  validateSkillReferences,
+} from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { withOtelSpan } from "@atlas/utils/telemetry.server";
@@ -113,12 +129,21 @@ import {
 import { createBashTool } from "./bash-tool.ts";
 import type { CodeAgentExecutorOptions } from "./agent-executor-utils.ts";
 import type { MemoryMount } from "./config-schema.ts";
-import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
-import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
+import {
+  compileExecutionToFsm,
+  ExecutionCompileError,
+} from "./execution-to-fsm.ts";
+import {
+  assertGlobalWriteAllowed,
+  isGlobalWriteAttempt,
+} from "./global-scope-guard.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { mountRegistry } from "./mount-registry.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
-import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
+import {
+  interpolateConfig,
+  resolveWorkspaceVariables,
+} from "./variable-interpolation.ts";
 
 /**
  * Classify an error to determine session status.
@@ -127,8 +152,12 @@ import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpo
  *
  * @internal Exported for testing
  */
-export function classifySessionError(error: unknown): WorkspaceSessionStatusType {
-  if (error instanceof UserConfigurationError) return WorkspaceSessionStatus.SKIPPED;
+export function classifySessionError(
+  error: unknown,
+): WorkspaceSessionStatusType {
+  if (error instanceof UserConfigurationError) {
+    return WorkspaceSessionStatus.SKIPPED;
+  }
   // Deleted/expired credentials are user configuration issues, not platform bugs.
   // Classify as "skipped" to prevent false production failure alerts.
   if (hasUnusableCredentialCause(error)) return WorkspaceSessionStatus.SKIPPED;
@@ -309,6 +338,8 @@ interface WorkspaceRuntimeOptions {
   };
 }
 
+type JobConcurrencyPolicy = "single-flight" | "isolated";
+
 interface FSMJob {
   name: string;
   fsmPath: string;
@@ -320,6 +351,8 @@ interface FSMJob {
   description?: string;
   /** Max LLM tool-calling steps for FSM actions */
   maxSteps?: number;
+  /** Internal execution isolation policy. Not exposed in workspace.yml yet. */
+  concurrency?: JobConcurrencyPolicy;
 }
 
 interface ActiveSession {
@@ -343,6 +376,9 @@ interface SessionResult {
   userId?: string;
   /** Captured FSM events (state transitions and action executions) for batch persistence */
   collectedFsmEvents?: FSMEvent[];
+  /** Snapshot of the engine that processed this session (isolated jobs do not use job.engine). */
+  engineDocuments?: FSMDocument[];
+  finalState?: string;
 }
 
 const analytics = createAnalyticsClient();
@@ -353,20 +389,33 @@ const analytics = createAnalyticsClient();
  * `{ data: { text } }` — and `String({...})` would land "[object Object]" on
  * the consumer. JSON-stringify is the last resort for unknown shapes.
  */
-export function extractTextFromAgentOutput(output: unknown): string | undefined {
+export function extractTextFromAgentOutput(
+  output: unknown,
+): string | undefined {
   if (output === undefined || output === null) return undefined;
   if (typeof output === "string") return output;
   if (typeof output !== "object") return String(output);
 
   const o = output as Record<string, unknown>;
   // Direct fields first (some agents emit the text at the top level).
-  for (const key of ["text", "response", "result", "output", "content", "message"]) {
+  for (
+    const key of ["text", "response", "result", "output", "content", "message"]
+  ) {
     if (typeof o[key] === "string") return o[key] as string;
   }
   // Then walk one level into `data` (the FSM-document shape).
   if (typeof o.data === "object" && o.data !== null) {
     const inner = o.data as Record<string, unknown>;
-    for (const key of ["text", "response", "result", "output", "content", "message"]) {
+    for (
+      const key of [
+        "text",
+        "response",
+        "result",
+        "output",
+        "content",
+        "message",
+      ]
+    ) {
       if (typeof inner[key] === "string") return inner[key] as string;
     }
   }
@@ -426,10 +475,14 @@ export class WorkspaceRuntime {
    * abortSignal parameter.
    */
   private activeAbortControllers = new Map<string, AbortController>();
+  private activeJobExecutions = new Map<string, string>();
 
   // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
   // Populated by executeAgent, consumed by onEvent callback for step:complete events
-  private agentResultSideChannel = new Map<string, Map<string, AgentResultData>>();
+  private agentResultSideChannel = new Map<
+    string,
+    Map<string, AgentResultData>
+  >();
 
   // Resolved store mount bindings, keyed by mount name
   private mountBindings = new Map<string, MountedStoreBinding>();
@@ -471,7 +524,10 @@ export class WorkspaceRuntime {
    * Declarative-only: warnings don't block job registration or auto-create
    * assignments. Fires once per (workspace, job) per runtime lifetime.
    */
-  private async warnOnDeclarativeJobSkills(jobName: string, refs: string[]): Promise<void> {
+  private async warnOnDeclarativeJobSkills(
+    jobName: string,
+    refs: string[],
+  ): Promise<void> {
     const key = `${this.workspace.id}/${jobName}`;
     if (this.warnedJobs.has(key)) return;
     this.warnedJobs.add(key);
@@ -484,7 +540,9 @@ export class WorkspaceRuntime {
 
       const catalog = catalogResult.ok ? catalogResult.data : [];
       const assignedRefs = new Set(
-        (assignedResult.ok ? assignedResult.data : []).map((s) => `@${s.namespace}/${s.name}`),
+        (assignedResult.ok ? assignedResult.data : []).map((s) =>
+          `@${s.namespace}/${s.name}`
+        ),
       );
       const catalogRefs = new Set(
         catalog
@@ -493,26 +551,33 @@ export class WorkspaceRuntime {
       );
 
       const unresolved = refs.filter((r) => !catalogRefs.has(r));
-      const missingAssignments = refs.filter((r) => catalogRefs.has(r) && !assignedRefs.has(r));
+      const missingAssignments = refs.filter((r) =>
+        catalogRefs.has(r) && !assignedRefs.has(r)
+      );
 
       for (const ref of unresolved) {
         logger.warn("jobs.*.skills ref not in catalog", {
           workspaceId: this.workspace.id,
           jobName,
           ref,
-          hint: "Declarative only; no assignment will be created. Install the skill or remove the ref.",
+          hint:
+            "Declarative only; no assignment will be created. Install the skill or remove the ref.",
         });
       }
 
       if (missingAssignments.length > 0) {
-        logger.warn("jobs.*.skills declares refs with no matching assignments", {
-          workspaceId: this.workspace.id,
-          jobName,
-          declared: refs.length,
-          unassigned: missingAssignments.length,
-          refs: missingAssignments,
-          hint: "Use the Job Skills UI (/platform/:ws/jobs/:jobName) or the scoping API to create the assignments.",
-        });
+        logger.warn(
+          "jobs.*.skills declares refs with no matching assignments",
+          {
+            workspaceId: this.workspace.id,
+            jobName,
+            declared: refs.length,
+            unassigned: missingAssignments.length,
+            refs: missingAssignments,
+            hint:
+              "Use the Job Skills UI (/platform/:ws/jobs/:jobName) or the scoping API to create the assignments.",
+          },
+        );
       }
     } catch (error) {
       logger.debug("Failed to run declarative skills audit", {
@@ -541,7 +606,10 @@ export class WorkspaceRuntime {
         daemonUrl: options.daemonUrl,
         requestTimeoutMs: 900000,
       },
-      logger.child({ component: "AgentOrchestrator", workspaceId: workspace.id }),
+      logger.child({
+        component: "AgentOrchestrator",
+        workspaceId: workspace.id,
+      }),
     );
   }
 
@@ -556,13 +624,18 @@ export class WorkspaceRuntime {
   /** Discover and load all FSM definitions. */
   async initialize(): Promise<void> {
     if (this.initialized) {
-      logger.debug("Runtime already initialized", { workspaceId: this.workspace.id });
+      logger.debug("Runtime already initialized", {
+        workspaceId: this.workspace.id,
+      });
       return;
     }
 
-    logger.info("Initializing multi-FSM workspace runtime", { workspaceId: this.workspace.id });
+    logger.info("Initializing multi-FSM workspace runtime", {
+      workspaceId: this.workspace.id,
+    });
 
-    const workspacePath = this.options.workspacePath || `.atlas/workspaces/${this.workspace.id}`;
+    const workspacePath = this.options.workspacePath ||
+      `.atlas/workspaces/${this.workspace.id}`;
 
     // Resolve workspace variables and interpolate config placeholders ({{repo_root}}, etc.)
     const wsVars = await resolveWorkspaceVariables(
@@ -571,9 +644,15 @@ export class WorkspaceRuntime {
       this.options.daemonUrl,
     );
     if (wsVars) {
-      this.config = { ...this.config, workspace: interpolateConfig(this.config.workspace, wsVars) };
+      this.config = {
+        ...this.config,
+        workspace: interpolateConfig(this.config.workspace, wsVars),
+      };
       if (this.config.atlas) {
-        this.config = { ...this.config, atlas: interpolateConfig(this.config.atlas, wsVars) };
+        this.config = {
+          ...this.config,
+          atlas: interpolateConfig(this.config.atlas, wsVars),
+        };
       }
     }
 
@@ -600,7 +679,11 @@ export class WorkspaceRuntime {
           idle: { on: { chat: { target: "processing" } } },
           processing: {
             entry: [
-              { type: "agent", agentId: "workspace-chat", outputTo: "chat-result" },
+              {
+                type: "agent",
+                agentId: "workspace-chat",
+                outputTo: "chat-result",
+              },
               { type: "emit", event: "chat_complete" },
             ],
             on: { chat_complete: { target: "idle" } },
@@ -614,6 +697,7 @@ export class WorkspaceRuntime {
         signals: ["chat"],
         fsmDefinition: chatFSM,
         description: "Direct chat with workspace",
+        concurrency: "isolated",
       });
 
       this.emitJobDefined("handle-chat");
@@ -639,21 +723,28 @@ export class WorkspaceRuntime {
           });
         } catch (error) {
           if (error instanceof ExecutionCompileError) {
-            logger.warn("Could not compile execution block to FSM — skipping job", {
-              jobName,
-              reason: error.message,
-            });
+            logger.warn(
+              "Could not compile execution block to FSM — skipping job",
+              {
+                jobName,
+                reason: error.message,
+              },
+            );
             continue;
           }
           throw error;
         }
       }
       if (!fsmDefinition) {
-        logger.debug("Skipping job with neither fsm nor execution", { jobName });
+        logger.debug("Skipping job with neither fsm nor execution", {
+          jobName,
+        });
         continue;
       }
 
-      const signals = (jobSpec.triggers || []).map((t) => t.signal).filter(Boolean);
+      const signals = (jobSpec.triggers || []).map((t) => t.signal).filter(
+        Boolean,
+      );
 
       this.jobs.set(jobName, {
         name: jobName,
@@ -693,7 +784,9 @@ export class WorkspaceRuntime {
 
       // Skip if already registered from config
       if (this.jobs.has(jobName)) {
-        logger.debug("Skipping duplicate job from file (already in config)", { jobName });
+        logger.debug("Skipping duplicate job from file (already in config)", {
+          jobName,
+        });
         continue;
       }
 
@@ -704,7 +797,11 @@ export class WorkspaceRuntime {
 
       this.emitJobDefined(jobName);
 
-      logger.debug("Registered standalone FSM job", { jobName, fsmPath: fsmFile, signals });
+      logger.debug("Registered standalone FSM job", {
+        jobName,
+        fsmPath: fsmFile,
+        signals,
+      });
     }
 
     // Resolve memory mounts — fail loud if any source store is missing
@@ -732,7 +829,9 @@ export class WorkspaceRuntime {
   private async resolveMounts(mounts: MemoryMount[]): Promise<void> {
     const adapter = this.options.memoryAdapter;
     if (!adapter) {
-      throw new Error("memoryMounts requires memoryAdapter in WorkspaceRuntimeOptions");
+      throw new Error(
+        "memoryMounts requires memoryAdapter in WorkspaceRuntimeOptions",
+      );
     }
 
     // TODO(phase-1b): Enforce shareable validation before resolving each mount.
@@ -767,17 +866,25 @@ export class WorkspaceRuntime {
       }
 
       if (isGlobalWriteAttempt(sourceWsId, mount.mode)) {
-        assertGlobalWriteAllowed(this.workspace.id, this.options.kernelWorkspaceId);
+        assertGlobalWriteAllowed(
+          this.workspace.id,
+          this.options.kernelWorkspaceId,
+        );
       }
 
-      mountRegistry.registerSource(sourceId, () =>
-        adapter.store(sourceWsId, memoryName, "narrative"),
+      mountRegistry.registerSource(
+        sourceId,
+        () => adapter.store(sourceWsId, memoryName, "narrative"),
       );
       mountRegistry.addConsumer(sourceId, this.workspace.id);
 
       let resolvedStore: NarrativeStore;
       try {
-        resolvedStore = await adapter.store(sourceWsId, memoryName, "narrative");
+        resolvedStore = await adapter.store(
+          sourceWsId,
+          memoryName,
+          "narrative",
+        );
       } catch {
         throw new MountSourceNotFoundError(
           sourceId,
@@ -808,7 +915,10 @@ export class WorkspaceRuntime {
     }
   }
 
-  getMountsForAgent(agentId: string, jobName?: string): Record<string, StoreMountBinding> {
+  getMountsForAgent(
+    agentId: string,
+    jobName?: string,
+  ): Record<string, StoreMountBinding> {
     const result: Record<string, StoreMountBinding> = {};
     for (const binding of this.mountBindings.values()) {
       switch (binding.scope) {
@@ -854,26 +964,25 @@ export class WorkspaceRuntime {
     return fsmFiles;
   }
 
-  /** Lazy-initialize a job's FSM engine. */
-  private async initializeJobEngine(job: FSMJob): Promise<void> {
-    if (job.engine) {
-      return; // Already initialized
-    }
-
-    logger.info("Initializing FSM engine for job", {
-      jobName: job.name,
-      workspaceId: this.workspace.id,
-    });
-
+  private async createJobEngine(
+    job: FSMJob,
+    sessionId?: string,
+  ): Promise<{ engine: FSMEngine; documentStore: FileSystemDocumentStore }> {
     const stateStoragePath = path.join(getAtlasHome(), "workspaces");
-    job.documentStore = new FileSystemDocumentStore({ basePath: stateStoragePath });
+    const documentStore = new FileSystemDocumentStore({
+      basePath: stateStoragePath,
+    });
 
     const agentExecutor: AgentExecutor = (action, context, signal, options) =>
       this.executeAgent(action, context, job, signal, options);
 
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
 
-    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name };
+    const scope = {
+      workspaceId: this.workspace.id,
+      workspaceName: this.workspace.name,
+      ...(sessionId ? { sessionId } : {}),
+    };
     const platformModels = this.options.platformModels;
     if (!platformModels) {
       throw new Error(
@@ -881,11 +990,14 @@ export class WorkspaceRuntime {
       );
     }
     const engineOptions = {
-      documentStore: job.documentStore,
+      documentStore,
       scope,
-      llmProvider: new AtlasLLMProviderAdapter(platformModels.get("conversational"), {
-        maxSteps: job.maxSteps,
-      }),
+      llmProvider: new AtlasLLMProviderAdapter(
+        platformModels.get("conversational"),
+        {
+          maxSteps: job.maxSteps,
+        },
+      ),
       agentExecutor,
       mcpServerConfigs,
       validateOutput: createFSMOutputValidator(
@@ -896,10 +1008,12 @@ export class WorkspaceRuntime {
       resourceAdapter: this.options.resourceStorage,
     };
 
+    let definition: FSMDefinition;
     if (job.fsmDefinition) {
       logger.debug("Loading FSM from inline definition", {
         workspaceId: this.workspace.id,
         jobName: job.name,
+        isolated: sessionId !== undefined,
       });
 
       // Inline FSMs in workspace.yml jobs don't include `id` — the job name is the identity.
@@ -909,31 +1023,56 @@ export class WorkspaceRuntime {
           ? { id: job.name, ...job.fsmDefinition }
           : job.fsmDefinition,
       );
-      const definition = expandAgentActions(parsed, this.config.workspace.agents ?? {});
-
-      job.engine = createEngine(definition, engineOptions);
-      await job.engine.initialize();
+      definition = expandAgentActions(
+        parsed,
+        this.config.workspace.agents ?? {},
+      );
     } else {
-      const configPath =
-        this.options.workspacePath || path.join(getAtlasHome(), "workspaces", this.workspace.id);
-      const fsmPath = job.fsmPath || path.join(configPath, "workspace.fsm.yaml");
+      const configPath = this.options.workspacePath ||
+        path.join(getAtlasHome(), "workspaces", this.workspace.id);
+      const fsmPath = job.fsmPath ||
+        path.join(configPath, "workspace.fsm.yaml");
 
-      logger.debug("Loading FSM from file", { workspaceId: this.workspace.id, fsmPath });
+      logger.debug("Loading FSM from file", {
+        workspaceId: this.workspace.id,
+        fsmPath,
+      });
 
       const yaml = await readFile(fsmPath, "utf-8");
       const raw = z.object({ fsm: FSMDefinitionSchema }).parse(parseYAML(yaml));
 
-      const parsed = raw.fsm;
-      const definition = expandAgentActions(parsed, this.config.workspace.agents ?? {});
+      definition = expandAgentActions(
+        raw.fsm,
+        this.config.workspace.agents ?? {},
+      );
 
       const validation = validateFSMStructure(definition);
       if (!validation.valid) {
-        throw new Error(`FSM validation failed:\n${validation.errors.join("\n")}`);
+        throw new Error(
+          `FSM validation failed:\n${validation.errors.join("\n")}`,
+        );
       }
-
-      job.engine = createEngine(definition, engineOptions);
-      await job.engine.initialize();
     }
+
+    const engine = createEngine(definition, engineOptions);
+    await engine.initialize();
+    return { engine, documentStore };
+  }
+
+  /** Lazy-initialize a job's shared FSM engine. */
+  private async initializeJobEngine(job: FSMJob): Promise<void> {
+    if (job.engine) {
+      return; // Already initialized
+    }
+
+    logger.info("Initializing FSM engine for job", {
+      jobName: job.name,
+      workspaceId: this.workspace.id,
+    });
+
+    const { engine, documentStore } = await this.createJobEngine(job);
+    job.engine = engine;
+    job.documentStore = documentStore;
 
     logger.info("FSM engine initialized for job", {
       jobName: job.name,
@@ -959,7 +1098,7 @@ export class WorkspaceRuntime {
     });
 
     const matchingJobs = Array.from(this.jobs.values()).filter((job) =>
-      job.signals.includes(signal.id),
+      job.signals.includes(signal.id)
     );
 
     if (matchingJobs.length === 0) {
@@ -975,17 +1114,25 @@ export class WorkspaceRuntime {
       throw new Error(`No job found after filtering - this should not happen`);
     }
 
-    logger.debug("Found matching job for signal", { signalId: signal.id, jobName: job.name });
+    logger.debug("Found matching job for signal", {
+      signalId: signal.id,
+      jobName: job.name,
+    });
 
     const signalConfig = this.config.workspace.signals?.[signal.id];
     if (signalConfig) {
       const validation = validateSignalPayload(signalConfig, signal.data);
       if (!validation.success) {
-        throw new Error(`Signal payload validation failed for '${signal.id}': ${validation.error}`);
+        throw new Error(
+          `Signal payload validation failed for '${signal.id}': ${validation.error}`,
+        );
       }
     }
 
-    await this.initializeJobEngine(job);
+    const policy = job.concurrency ?? "single-flight";
+    if (policy === "single-flight") {
+      await this.initializeJobEngine(job);
+    }
     const sessionResult = await this.processSignalForJob(
       job,
       signal,
@@ -1004,48 +1151,81 @@ export class WorkspaceRuntime {
     abortSignal?: AbortSignal,
     skipStates?: string[],
   ): Promise<SessionResult> {
-    if (!job.engine) {
-      throw new Error(`Job ${job.name} engine not initialized`);
-    }
-    const engine = job.engine;
-
-    const isTriggerSignal = this.isTriggerSignal(signal.id);
-
-    if (isTriggerSignal) {
-      logger.info("Trigger signal detected - clearing persisted state for fresh execution", {
-        signalId: signal.id,
-        workspaceId: this.workspace.id,
-        jobName: job.name,
-      });
-      await this.clearPersistedState(job);
-
-      await engine.reset();
-
-      logger.debug("Engine reset to initial state", {
-        workspaceId: this.workspace.id,
-        jobName: job.name,
-        initialState: engine.state,
-      });
-    } else {
-      logger.debug("Continuation signal - state preserved", {
-        signalId: signal.id,
-        currentState: engine.state,
-      });
-    }
-
-    // Seed __meta into engine results so code actions can reference
-    // workspace_path, repo_root, workspace_id, and platform_url via
-    // context.results['__meta'] without hardcoding operator paths.
-    const workspacePath = this.options.workspacePath ?? `.atlas/workspaces/${this.workspace.id}`;
-    engine.seedResults({
-      __meta: buildWorkspaceMeta({
-        workspacePath,
-        workspaceId: this.workspace.id,
-        daemonUrl: this.options.daemonUrl,
-      }),
-    });
-
     const sessionId = crypto.randomUUID();
+    const policy = job.concurrency ?? "single-flight";
+    const activeSessionId = this.activeJobExecutions.get(job.name);
+    if (policy === "single-flight" && activeSessionId) {
+      throw new Error(
+        `Job '${job.name}' in workspace '${this.workspace.id}' is already processing session '${activeSessionId}'`,
+      );
+    }
+    if (policy === "single-flight") {
+      this.activeJobExecutions.set(job.name, sessionId);
+    }
+
+    let engine: FSMEngine;
+    let isolatedEngine = false;
+    const isTriggerSignal = this.isTriggerSignal(signal.id);
+    try {
+      if (policy === "isolated") {
+        const created = await this.createJobEngine(job, sessionId);
+        engine = created.engine;
+        isolatedEngine = true;
+      } else {
+        if (!job.engine) {
+          throw new Error(`Job ${job.name} engine not initialized`);
+        }
+        engine = job.engine;
+      }
+
+      if (isTriggerSignal && !isolatedEngine) {
+        logger.info(
+          "Trigger signal detected - clearing persisted state for fresh execution",
+          {
+            signalId: signal.id,
+            workspaceId: this.workspace.id,
+            jobName: job.name,
+          },
+        );
+        await this.clearPersistedState(job);
+
+        await engine.reset();
+
+        logger.debug("Engine reset to initial state", {
+          workspaceId: this.workspace.id,
+          jobName: job.name,
+          initialState: engine.state,
+        });
+      } else {
+        logger.debug(
+          isolatedEngine
+            ? "Isolated signal - using fresh engine"
+            : "Continuation signal - state preserved",
+          {
+            signalId: signal.id,
+            currentState: engine.state,
+          },
+        );
+      }
+
+      // Seed __meta into engine results so code actions can reference
+      // workspace_path, repo_root, workspace_id, and platform_url via
+      // context.results['__meta'] without hardcoding operator paths.
+      const workspacePath = this.options.workspacePath ??
+        `.atlas/workspaces/${this.workspace.id}`;
+      engine.seedResults({
+        __meta: buildWorkspaceMeta({
+          workspacePath,
+          workspaceId: this.workspace.id,
+          daemonUrl: this.options.daemonUrl,
+        }),
+      });
+    } catch (error) {
+      if (policy === "single-flight") {
+        this.activeJobExecutions.delete(job.name);
+      }
+      throw error;
+    }
 
     // Per-session AbortController. Composes with any parent signal passed in
     // (so a canceled HTTP request still propagates) and is registered in
@@ -1077,7 +1257,9 @@ export class WorkspaceRuntime {
       },
       async (otelSpan) => {
         // Extract userId from signal data for analytics
-        const userId = typeof signal.data?.userId === "string" ? signal.data.userId : undefined;
+        const userId = typeof signal.data?.userId === "string"
+          ? signal.data.userId
+          : undefined;
         const session: SessionResult = {
           id: sessionId,
           workspaceId: this.workspace.id,
@@ -1115,22 +1297,24 @@ export class WorkspaceRuntime {
         }
 
         const rawPlannedSteps = extractPlannedSteps(engine.definition);
-        const plannedSteps =
-          rawPlannedSteps.length > 0
-            ? rawPlannedSteps.map((step) => ({
-                agentName: step.agentName,
-                stateId: step.stateId,
-                task: this.config.workspace.agents?.[step.agentName]?.description ?? step.agentName,
-                actionType: step.actionType,
-              }))
-            : undefined;
+        const plannedSteps = rawPlannedSteps.length > 0
+          ? rawPlannedSteps.map((step) => ({
+            agentName: step.agentName,
+            stateId: step.stateId,
+            task: this.config.workspace.agents?.[step.agentName]?.description ??
+              step.agentName,
+            actionType: step.actionType,
+          }))
+          : undefined;
 
         sessionStream?.emit({
           type: "session:start",
           sessionId,
           workspaceId: this.workspace.id,
           jobName: job.name,
-          task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
+          task: typeof signal.data?.task === "string"
+            ? signal.data.task
+            : job.name,
           plannedSteps,
           timestamp: session.startedAt.toISOString(),
         });
@@ -1140,18 +1324,24 @@ export class WorkspaceRuntime {
         // covers live streaming — for persistence across page reloads, the
         // conversation agent also injects this part before saving to chat storage.
         if (onStreamEvent) {
-          await onStreamEvent({ type: "data-session-start", data: { sessionId } });
+          await onStreamEvent({
+            type: "data-session-start",
+            data: { sessionId },
+          });
         }
 
         // Create "running" activity item (skip conversations)
-        const isConversation =
-          this.workspace.id === "friday-conversation" || job.name === "handle-chat";
+        const isConversation = this.workspace.id === "friday-conversation" ||
+          job.name === "handle-chat";
         if (this.options.activityStorage && !isConversation) {
           if (!this.createdByUserId) {
-            logger.warn("Skipping activity creation: workspace has no createdByUserId", {
-              workspaceId: this.workspace.id,
-              sessionId,
-            });
+            logger.warn(
+              "Skipping activity creation: workspace has no createdByUserId",
+              {
+                workspaceId: this.workspace.id,
+                sessionId,
+              },
+            );
           } else {
             try {
               const title = `${kebabToSentenceCase(job.name)} is running`;
@@ -1165,7 +1355,10 @@ export class WorkspaceRuntime {
                 title,
               });
             } catch (err) {
-              logger.warn("Failed to create running activity", { sessionId, error: String(err) });
+              logger.warn("Failed to create running activity", {
+                sessionId,
+                error: String(err),
+              });
             }
           }
         }
@@ -1195,7 +1388,9 @@ export class WorkspaceRuntime {
                   const actionEvent = event as FSMActionExecutionEvent;
                   if (actionEvent.data.status === "started") {
                     stepCounter++;
-                    sessionStream.emit(mapActionToStepStart(actionEvent, stepCounter));
+                    sessionStream.emit(
+                      mapActionToStepStart(actionEvent, stepCounter),
+                    );
                   } else if (
                     actionEvent.data.status === "completed" ||
                     actionEvent.data.status === "failed"
@@ -1209,12 +1404,17 @@ export class WorkspaceRuntime {
                       // Side-channel key must use job.name (workspace-level key) to match
                       // what executeAgent stores — NOT actionEvent.data.jobName which is
                       // the FSM definition's id (may differ from the workspace job key).
-                      const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
+                      const sideChannelKey =
+                        `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
                       agentResult = sideChannel.get(sideChannelKey);
                       sideChannel.delete(sideChannelKey);
                     }
                     sessionStream.emit(
-                      mapActionToStepComplete(actionEvent, agentResult, stepCounter),
+                      mapActionToStepComplete(
+                        actionEvent,
+                        agentResult,
+                        stepCounter,
+                      ),
                     );
                   }
                 }
@@ -1234,13 +1434,17 @@ export class WorkspaceRuntime {
 
                 // Session history v2: map skipped states to step:skipped events
                 if (sessionStream && event.type === "data-fsm-state-skipped") {
-                  sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
+                  sessionStream.emit(
+                    mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent),
+                  );
                 }
 
                 // mapValidationAttemptToStepValidation returns null when the
                 // source event is missing actionId — keeps the wire schema's
                 // actionId required without emitting orphan UI pills.
-                if (sessionStream && event.type === "data-fsm-validation-attempt") {
+                if (
+                  sessionStream && event.type === "data-fsm-validation-attempt"
+                ) {
                   const stepEvent = mapValidationAttemptToStepValidation(event);
                   if (stepEvent) sessionStream.emit(stepEvent);
                 }
@@ -1249,7 +1453,10 @@ export class WorkspaceRuntime {
               // this separate channel, bypassing the FSMEvent-typed onEvent callback
               onStreamEvent: (chunk) => {
                 onStreamEvent?.(chunk);
-                sessionStream?.emitEphemeral({ stepNumber: stepCounter, chunk });
+                sessionStream?.emitEphemeral({
+                  stepNumber: stepCounter,
+                  chunk,
+                });
               },
             },
           );
@@ -1277,7 +1484,9 @@ export class WorkspaceRuntime {
           });
         } catch (error) {
           session.completedAt = new Date();
-          session.error = error instanceof Error ? error : new Error(String(error));
+          session.error = error instanceof Error
+            ? error
+            : new Error(String(error));
           // Prefer the explicit cancel signal over error-name pattern matching —
           // a downstream `AbortError` isn't always what bubbles up from MCP.
           if (effectiveAbortSignal.aborted) {
@@ -1288,7 +1497,10 @@ export class WorkspaceRuntime {
 
           if (otelSpan) {
             if (error instanceof Error) otelSpan.recordException(error);
-            otelSpan.setStatus({ code: 2 /* SpanStatusCode.ERROR */, message: String(error) });
+            otelSpan.setStatus({
+              code: 2, /* SpanStatusCode.ERROR */
+              message: String(error),
+            });
           }
 
           if (session.status === WorkspaceSessionStatus.SKIPPED) {
@@ -1312,7 +1524,9 @@ export class WorkspaceRuntime {
           // block stays "pending", incorrectly swept to "skipped" by session:complete.
           // This attributes the error to the correct step.
           if (sessionStream && plannedSteps && failedActionStateId) {
-            const failedStep = plannedSteps.find((s) => s.stateId === failedActionStateId);
+            const failedStep = plannedSteps.find((s) =>
+              s.stateId === failedActionStateId
+            );
             if (failedStep) {
               const now = new Date().toISOString();
               stepCounter++;
@@ -1347,7 +1561,10 @@ export class WorkspaceRuntime {
             try {
               await onStreamEvent({
                 type: "data-error",
-                data: { error: stringifyError(session.error), errorCause: session.error },
+                data: {
+                  error: stringifyError(session.error),
+                  errorCause: session.error,
+                },
               });
             } catch (emitError) {
               logger.error("Failed to emit error event", {
@@ -1360,16 +1577,22 @@ export class WorkspaceRuntime {
           // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
           if (this.options.resourceStorage) {
             try {
-              await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id, {
-                jobId: job.name,
-                userId: this.createdByUserId,
-                activityStorage: this.options.activityStorage,
-                platformModels: this.options.platformModels,
-              });
+              await publishDirtyDrafts(
+                this.options.resourceStorage,
+                this.workspace.id,
+                {
+                  jobId: job.name,
+                  userId: this.createdByUserId,
+                  activityStorage: this.options.activityStorage,
+                  platformModels: this.options.platformModels,
+                },
+              );
             } catch (publishError) {
               logger.warn("Auto-publish at session teardown failed", {
                 sessionId: session.id,
-                error: publishError instanceof Error ? publishError.message : String(publishError),
+                error: publishError instanceof Error
+                  ? publishError.message
+                  : String(publishError),
               });
             }
           }
@@ -1403,7 +1626,9 @@ export class WorkspaceRuntime {
               // `active` can only happen via an unreachable codepath (entry is
               // default-initialized); fall back to "completed" so the stream
               // never emits a half-open terminal event.
-              status: session.status === "active" ? "completed" : session.status,
+              status: session.status === "active"
+                ? "completed"
+                : session.status,
               durationMs,
               error: session.error?.message,
               timestamp: (session.completedAt ?? new Date()).toISOString(),
@@ -1419,15 +1644,14 @@ export class WorkspaceRuntime {
             const platformModels = this.options.platformModels;
             // Skip AI summarization for code-only sessions (no agent blocks) —
             // nothing meaningful to summarize and it adds ~2s of LLM latency per invocation.
-            const aiSummary =
-              platformModels && executedBlocks.length > 0
-                ? await generateSessionSummary(
-                    view,
-                    { platformModels },
-                    job.description,
-                    this.workspace.name,
-                  )
-                : undefined;
+            const aiSummary = platformModels && executedBlocks.length > 0
+              ? await generateSessionSummary(
+                view,
+                { platformModels },
+                job.description,
+                this.workspace.name,
+              )
+              : undefined;
             if (aiSummary) {
               sessionStream.emit({
                 type: "session:summary",
@@ -1440,7 +1664,9 @@ export class WorkspaceRuntime {
               sessionId,
               workspaceId: this.workspace.id,
               jobName: job.name,
-              task: typeof signal.data?.task === "string" ? signal.data.task : job.name,
+              task: typeof signal.data?.task === "string"
+                ? signal.data.task
+                : job.name,
               status: view.status,
               startedAt: session.startedAt.toISOString(),
               completedAt: (session.completedAt ?? new Date()).toISOString(),
@@ -1452,7 +1678,10 @@ export class WorkspaceRuntime {
             };
 
             await sessionStream.finalize(summaryV2).catch((err) => {
-              logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
+              logger.warn("Failed to finalize session stream", {
+                sessionId,
+                error: String(err),
+              });
             });
 
             // Side-effect hook for the daemon to broadcast the final output
@@ -1465,16 +1694,17 @@ export class WorkspaceRuntime {
               // raw agentBlock.output is a structured wrapper that stringifies
               // to "[object Object]". Doc lookup matches the same precedence
               // the session-finish event uses (line 2751).
-              const resultDoc = job.engine?.documents.find(
-                (doc) => doc.type === "AgentResult" || doc.id.endsWith("-result"),
+              const resultDoc = engine.documents.find(
+                (doc) =>
+                  doc.type === "AgentResult" || doc.id.endsWith("-result"),
               );
-              const finalOutput =
-                extractTextFromAgentOutput(resultDoc?.data) ??
+              const finalOutput = extractTextFromAgentOutput(resultDoc?.data) ??
                 extractTextFromAgentOutput(
                   [...executedBlocks].reverse().find((b) => b.output)?.output,
                 );
-              const inboundStreamId =
-                typeof signal.data?.streamId === "string" ? signal.data.streamId : undefined;
+              const inboundStreamId = typeof signal.data?.streamId === "string"
+                ? signal.data.streamId
+                : undefined;
               try {
                 await this.options.onSessionComplete({
                   workspaceId: this.workspace.id,
@@ -1487,7 +1717,9 @@ export class WorkspaceRuntime {
               } catch (hookError) {
                 logger.warn("onSessionComplete hook failed", {
                   sessionId,
-                  error: hookError instanceof Error ? hookError.message : String(hookError),
+                  error: hookError instanceof Error
+                    ? hookError.message
+                    : String(hookError),
                 });
               }
             }
@@ -1504,14 +1736,22 @@ export class WorkspaceRuntime {
             ) {
               const titlePlatformModels = this.options.platformModels;
               // Delete the "running" activity first
-              await this.options.activityStorage.deleteByReferenceId(sessionId).catch((err) => {
-                logger.warn("Failed to delete running activity", { sessionId, error: String(err) });
-              });
+              await this.options.activityStorage.deleteByReferenceId(sessionId)
+                .catch((err) => {
+                  logger.warn("Failed to delete running activity", {
+                    sessionId,
+                    error: String(err),
+                  });
+                });
 
               try {
                 // Extract final output from the last completed agent block
-                const lastBlock = [...executedBlocks].reverse().find((b) => b.output);
-                const finalOutput = lastBlock?.output ? String(lastBlock.output) : undefined;
+                const lastBlock = [...executedBlocks].reverse().find((b) =>
+                  b.output
+                );
+                const finalOutput = lastBlock?.output
+                  ? String(lastBlock.output)
+                  : undefined;
 
                 const title = await generateSessionActivityTitle({
                   platformModels: titlePlatformModels,
@@ -1531,13 +1771,21 @@ export class WorkspaceRuntime {
                   title,
                 });
               } catch (err) {
-                logger.warn("Failed to create session activity", { sessionId, error: String(err) });
+                logger.warn("Failed to create session activity", {
+                  sessionId,
+                  error: String(err),
+                });
               }
             }
           }
 
+          session.engineDocuments = engine.documents;
+          session.finalState = engine.state;
           this.agentResultSideChannel.delete(sessionId);
           this.activeAbortControllers.delete(sessionId);
+          if (policy === "single-flight") {
+            this.activeJobExecutions.delete(job.name);
+          }
         }
 
         if (otelSpan) {
@@ -1559,7 +1807,7 @@ export class WorkspaceRuntime {
   ): Promise<IWorkspaceSession> {
     this.sessionResults.set(sessionResult.id, sessionResult);
 
-    const workspaceSession = this.toWorkspaceSession(sessionResult, job);
+    const workspaceSession = this.toWorkspaceSession(sessionResult);
 
     const activeSession: ActiveSession = {
       id: sessionResult.id,
@@ -1576,7 +1824,10 @@ export class WorkspaceRuntime {
     }
 
     if (sessionResult.status !== WorkspaceSessionStatus.ACTIVE) {
-      this.sessionCompletionEmitter.emit(`session:${sessionResult.id}`, sessionResult);
+      this.sessionCompletionEmitter.emit(
+        `session:${sessionResult.id}`,
+        sessionResult,
+      );
     }
 
     // Call onSessionFinished callback and cleanup
@@ -1604,14 +1855,21 @@ export class WorkspaceRuntime {
     }
 
     try {
-      const wsMemory = await adapter.store(this.workspace.id, STANDING_ORDERS_NAME, "narrative");
+      const wsMemory = await adapter.store(
+        this.workspace.id,
+        STANDING_ORDERS_NAME,
+        "narrative",
+      );
       parts.push(await wsMemory.render());
     } catch {
       // Workspace level missing or unreadable — skip silently
     }
 
     for (const mount of this._resolvedMemory?.mounts ?? []) {
-      if (mount.sourceStoreName === STANDING_ORDERS_NAME && mount.sourceStoreKind === "narrative") {
+      if (
+        mount.sourceStoreName === STANDING_ORDERS_NAME &&
+        mount.sourceStoreKind === "narrative"
+      ) {
         try {
           const mountedMemory = await adapter.store(
             mount.sourceWorkspaceId,
@@ -1662,10 +1920,17 @@ export class WorkspaceRuntime {
       ArtifactStorage,
     );
 
-    const prompt = buildFinalAgentPrompt(action.prompt, agentConfigPrompt, context);
+    const prompt = buildFinalAgentPrompt(
+      action.prompt,
+      agentConfigPrompt,
+      context,
+    );
 
     let standingOrdersBlock = "";
-    if (process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP === "1" && this.options.memoryAdapter) {
+    if (
+      process.env.FRIDAY_STANDING_ORDERS_BOOTSTRAP === "1" &&
+      this.options.memoryAdapter
+    ) {
       try {
         standingOrdersBlock = await this.loadStandingOrders();
       } catch (err) {
@@ -1679,9 +1944,14 @@ export class WorkspaceRuntime {
 
     // Bootstrap memory injection (feature-flagged)
     let bootstrapBlock = "";
-    if (process.env.FRIDAY_MEMORY_BOOTSTRAP === "1" && this.options.memoryAdapter) {
+    if (
+      process.env.FRIDAY_MEMORY_BOOTSTRAP === "1" && this.options.memoryAdapter
+    ) {
       try {
-        bootstrapBlock = await this.options.memoryAdapter.bootstrap(this.workspace.id, agentId);
+        bootstrapBlock = await this.options.memoryAdapter.bootstrap(
+          this.workspace.id,
+          agentId,
+        );
       } catch (err) {
         logger.warn("Memory bootstrap failed, continuing without it", {
           agentId,
@@ -1691,22 +1961,25 @@ export class WorkspaceRuntime {
       }
     }
 
-    const finalPrompt = [standingOrdersBlock, bootstrapBlock, prompt].filter(Boolean).join("\n\n");
+    const finalPrompt = [standingOrdersBlock, bootstrapBlock, prompt].filter(
+      Boolean,
+    ).join("\n\n");
 
     // Use streamId from signal data (e.g. chatId for conversations), fall back to sessionId
-    const streamId =
-      typeof signal.data?.streamId === "string" ? signal.data.streamId : signal._context?.sessionId;
+    const streamId = typeof signal.data?.streamId === "string"
+      ? signal.data.streamId
+      : signal._context?.sessionId;
 
     const datetime = signal.data?.datetime as
       | {
-          timezone: string;
-          timestamp: string;
-          localDate: string;
-          localTime: string;
-          timezoneOffset: string;
-          latitude?: string;
-          longitude?: string;
-        }
+        timezone: string;
+        timestamp: string;
+        localDate: string;
+        localTime: string;
+        timezoneOffset: string;
+        latitude?: string;
+        longitude?: string;
+      }
       | undefined;
 
     const rawFgIds = signal.data?.foregroundWorkspaceIds;
@@ -1734,8 +2007,11 @@ export class WorkspaceRuntime {
 
     // Map config types to validateAgentOutput's expected parameter.
     // "atlas" and "user" agents map to "sdk"; default to "sdk" for unconfigured agents.
-    const agentType: "llm" | "system" | "sdk" =
-      agentConfig?.type === "llm" ? "llm" : agentConfig?.type === "system" ? "system" : "sdk";
+    const agentType: "llm" | "system" | "sdk" = agentConfig?.type === "llm"
+      ? "llm"
+      : agentConfig?.type === "system"
+      ? "system"
+      : "sdk";
 
     // Merge workspace agent config with prepare function's config.
     // Prepare config (from FSM `return { task, config }`) takes precedence
@@ -1774,47 +2050,51 @@ export class WorkspaceRuntime {
       },
       async (agentOtelSpan) => {
         // User agents bypass the MCP orchestrator — execute via ProcessAgentExecutor (NATS)
-        const agentResult =
-          agentConfig?.type === "user"
-            ? await this.executeCodeAgent(agentConfig.agent, finalPrompt, {
-                sessionId,
-                workspaceId,
-                streamId,
-                onStreamEvent: signal._context?.onStreamEvent,
-                config: mergedConfig,
-                outputSchema: options?.outputSchema,
-                datetime,
-                agentEnv: agentConfig.env,
-                foregroundWorkspaceIds,
-              })
-            : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
-                sessionId,
-                workspaceId,
-                streamId,
-                datetime,
-                memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
-                foregroundWorkspaceIds,
-                jobName: job.name,
-                // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
-                // keeping the FSM onEvent callback clean (FSMEvent types only)
-                onStreamEvent: signal._context?.onStreamEvent,
-                additionalContext: { documents: fsmContext.documents },
-                config: mergedConfig,
-                outputSchema: options?.outputSchema,
-                // Propagate session cancellation to the agent MCP transport —
-                // the orchestrator already listens for this on line ~296 and
-                // sends `notifications/cancelled` to the agents server, so
-                // DELETE /api/sessions/:id actually stops in-flight LLM work
-                // instead of just detaching the client.
-                abortSignal: signal._context?.abortSignal,
-              });
+        const agentResult = agentConfig?.type === "user"
+          ? await this.executeCodeAgent(agentConfig.agent, finalPrompt, {
+            sessionId,
+            workspaceId,
+            streamId,
+            onStreamEvent: signal._context?.onStreamEvent,
+            config: mergedConfig,
+            outputSchema: options?.outputSchema,
+            datetime,
+            agentEnv: agentConfig.env,
+            foregroundWorkspaceIds,
+          })
+          : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
+            sessionId,
+            workspaceId,
+            streamId,
+            datetime,
+            memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
+            foregroundWorkspaceIds,
+            jobName: job.name,
+            // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
+            // keeping the FSM onEvent callback clean (FSMEvent types only)
+            onStreamEvent: signal._context?.onStreamEvent,
+            additionalContext: { documents: fsmContext.documents },
+            config: mergedConfig,
+            outputSchema: options?.outputSchema,
+            // Propagate session cancellation to the agent MCP transport —
+            // the orchestrator already listens for this on line ~296 and
+            // sends `notifications/cancelled` to the agents server, so
+            // DELETE /api/sessions/:id actually stops in-flight LLM work
+            // instead of just detaching the client.
+            abortSignal: signal._context?.abortSignal,
+          });
 
         if (agentOtelSpan) {
           agentOtelSpan.setAttribute("atlas.agent.result.ok", agentResult.ok);
         }
 
         // Validate agent output (hallucination detection only runs for LLM agents)
-        await validateAgentOutput(agentResult, fsmContext, agentType, this.options.platformModels);
+        await validateAgentOutput(
+          agentResult,
+          fsmContext,
+          agentType,
+          this.options.platformModels,
+        );
 
         // Auto-publish dirty resource drafts after agent turn completion
         if (this.options.resourceStorage && workspaceId) {
@@ -1836,7 +2116,9 @@ export class WorkspaceRuntime {
       if (sideChannel) {
         const key = `${job.name}/${action.agentId}/${fsmContext.state}`;
         const resultsByCallId = new Map(
-          (result.ok ? result.toolResults : undefined)?.map((tr) => [tr.toolCallId, tr.output]) ??
+          (result.ok ? result.toolResults : undefined)?.map((
+            tr,
+          ) => [tr.toolCallId, tr.output]) ??
             [],
         );
         const toolCalls =
@@ -1895,10 +2177,16 @@ export class WorkspaceRuntime {
     let resolvedSkills: AgentSkill[] | undefined;
     let skillsTempDir: string | undefined;
 
-    if (agentSource.metadata.useWorkspaceSkills && this.config.workspace.skills) {
+    if (
+      agentSource.metadata.useWorkspaceSkills && this.config.workspace.skills
+    ) {
       const skillEntries = this.config.workspace.skills;
-      const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig => "inline" in e);
-      const globalRefs = skillEntries.filter((e): e is GlobalSkillRefConfig => !("inline" in e));
+      const inlineSkills = skillEntries.filter((e): e is InlineSkillConfig =>
+        "inline" in e
+      );
+      const globalRefs = skillEntries.filter((e): e is GlobalSkillRefConfig =>
+        !("inline" in e)
+      );
 
       const allResolved: AgentSkill[] = inlineSkills.map((s) => ({
         name: s.name,
@@ -1930,7 +2218,9 @@ export class WorkspaceRuntime {
             let referenceFiles: Record<string, string> | undefined;
             if (skill.archive) {
               try {
-                referenceFiles = await extractArchiveContents(new Uint8Array(skill.archive));
+                referenceFiles = await extractArchiveContents(
+                  new Uint8Array(skill.archive),
+                );
               } catch (e) {
                 logger.warn("Failed to extract skill archive", {
                   skill: ref.name,
@@ -1939,10 +2229,18 @@ export class WorkspaceRuntime {
               }
             }
 
-            const archiveFileList = referenceFiles ? Object.keys(referenceFiles) : [];
-            const deadLinks = validateSkillReferences(skill.instructions, archiveFileList);
+            const archiveFileList = referenceFiles
+              ? Object.keys(referenceFiles)
+              : [];
+            const deadLinks = validateSkillReferences(
+              skill.instructions,
+              archiveFileList,
+            );
             if (deadLinks.length > 0) {
-              logger.warn("Skill has dead file references", { skill: ref.name, deadLinks });
+              logger.warn("Skill has dead file references", {
+                skill: ref.name,
+                deadLinks,
+              });
             }
 
             return {
@@ -1966,24 +2264,29 @@ export class WorkspaceRuntime {
         // Write skills to existing workDir (FSM clone path) or create a temp dir.
         // FSM pipelines set config.workDir to the cloned repo — skills must coexist there
         // so the claude-code provider discovers them at {cwd}/.claude/skills/.
-        const existingWorkDir =
-          opts.config && typeof opts.config === "object"
-            ? (opts.config as Record<string, unknown>).workDir
-            : undefined;
-        const skillsBaseDir =
-          typeof existingWorkDir === "string"
-            ? existingWorkDir
-            : await mkdtemp(path.join(tmpdir(), "atlas-skills-"));
+        const existingWorkDir = opts.config && typeof opts.config === "object"
+          ? (opts.config as Record<string, unknown>).workDir
+          : undefined;
+        const skillsBaseDir = typeof existingWorkDir === "string"
+          ? existingWorkDir
+          : await mkdtemp(path.join(tmpdir(), "atlas-skills-"));
         if (typeof existingWorkDir !== "string") {
           skillsTempDir = skillsBaseDir; // Only track for cleanup if we created it
         }
 
         for (const skill of allResolved) {
-          const skillDirPath = path.join(skillsBaseDir, ".claude", "skills", skill.name);
+          const skillDirPath = path.join(
+            skillsBaseDir,
+            ".claude",
+            "skills",
+            skill.name,
+          );
           await mkdir(skillDirPath, { recursive: true });
 
           if (skill.referenceFiles) {
-            for (const [relPath, content] of Object.entries(skill.referenceFiles)) {
+            for (
+              const [relPath, content] of Object.entries(skill.referenceFiles)
+            ) {
               const filePath = path.resolve(skillDirPath, relPath);
               if (!filePath.startsWith(`${skillDirPath}/`)) continue;
               await mkdir(path.dirname(filePath), { recursive: true });
@@ -1991,7 +2294,10 @@ export class WorkspaceRuntime {
             }
           }
 
-          const resolvedInstructions = skill.instructions.replaceAll("$SKILL_DIR/", "");
+          const resolvedInstructions = skill.instructions.replaceAll(
+            "$SKILL_DIR/",
+            "",
+          );
           const safeDescription = JSON.stringify(skill.description);
           await writeFile(
             path.join(skillDirPath, "SKILL.md"),
@@ -2028,7 +2334,10 @@ export class WorkspaceRuntime {
       }
     }
 
-    const { tools: mcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
+    const { tools: mcpTools, dispose } = await createMCPTools(
+      mcpConfigs,
+      logger,
+    );
 
     // Inject built-in bash tool so code agents can shell out
     mcpTools.bash = createBashTool();
@@ -2036,37 +2345,45 @@ export class WorkspaceRuntime {
     // Inject workDir for claude-code agents that discover skills from disk
     let agentConfig = opts.config;
     if (resolvedSkills && skillsTempDir) {
-      const existingWorkDir =
-        agentConfig && typeof agentConfig === "object"
-          ? (agentConfig as Record<string, unknown>).workDir
-          : undefined;
+      const existingWorkDir = agentConfig && typeof agentConfig === "object"
+        ? (agentConfig as Record<string, unknown>).workDir
+        : undefined;
       if (!existingWorkDir) {
         agentConfig = { ...agentConfig, workDir: skillsTempDir };
       }
     }
 
     const executor = this.options.agentExecutor;
-    if (!executor) throw new Error("No agentExecutor configured — ProcessAgentExecutor required");
+    if (!executor) {
+      throw new Error(
+        "No agentExecutor configured — ProcessAgentExecutor required",
+      );
+    }
     try {
       return await executor.execute(sourceLocation, prompt, {
         env: opts.agentEnv
           ? await resolveEnvValues(opts.agentEnv, logger)
           : Object.fromEntries(
-              Object.entries(process.env).filter(
-                (e): e is [string, string] => typeof e[1] === "string",
-              ),
+            Object.entries(process.env).filter(
+              (e): e is [string, string] => typeof e[1] === "string",
             ),
+          ),
         logger: logger.child({ component: "CodeAgent", agentId: userAgentId }),
         streamEmitter: opts.onStreamEvent
           ? {
-              emit: (event) =>
-                opts.onStreamEvent?.({ type: event.type, data: event.data } as AtlasUIMessageChunk),
-            }
+            emit: (event) =>
+              opts.onStreamEvent?.(
+                { type: event.type, data: event.data } as AtlasUIMessageChunk,
+              ),
+          }
           : undefined,
         mcpToolCall: async (name, args) => {
           const tool = mcpTools[name];
           if (!tool?.execute) throw new Error(`Unknown tool: ${name}`);
-          return await tool.execute(args, { toolCallId: crypto.randomUUID(), messages: [] });
+          return await tool.execute(args, {
+            toolCallId: crypto.randomUUID(),
+            messages: [],
+          });
         },
         mcpListTools: () =>
           Promise.resolve(
@@ -2093,7 +2410,9 @@ export class WorkspaceRuntime {
     } finally {
       await dispose();
       if (skillsTempDir) {
-        await rm(skillsTempDir, { recursive: true, force: true }).catch(() => {});
+        await rm(skillsTempDir, { recursive: true, force: true }).catch(
+          () => {},
+        );
       }
     }
   }
@@ -2122,15 +2441,14 @@ export class WorkspaceRuntime {
       }));
   }
 
-  private createSessionSummary(sessionResult: SessionResult, job: FSMJob): SessionSummary {
+  private createSessionSummary(sessionResult: SessionResult): SessionSummary {
     const duration = sessionResult.completedAt
       ? sessionResult.completedAt.getTime() - sessionResult.startedAt.getTime()
       : 0;
 
-    const stateTransitions =
-      job.engine?.documents.filter(
-        (doc) => doc.type === "state-transition" || doc.type === "fsm-state",
-      ) || [];
+    const stateTransitions = sessionResult.engineDocuments?.filter(
+      (doc) => doc.type === "state-transition" || doc.type === "fsm-state",
+    ) || [];
 
     const totalPhases = stateTransitions.length || 1;
     const completedPhases =
@@ -2151,7 +2469,7 @@ export class WorkspaceRuntime {
     };
   }
 
-  private toWorkspaceSession(session: SessionResult, job: FSMJob): IWorkspaceSession {
+  private toWorkspaceSession(session: SessionResult): IWorkspaceSession {
     return {
       id: session.id,
       workspaceId: session.workspaceId,
@@ -2180,20 +2498,28 @@ export class WorkspaceRuntime {
       waitForCompletion: (): Promise<SessionSummary> => {
         // If already completed, return immediately
         const currentResult = this.sessionResults.get(session.id);
-        if (currentResult && currentResult.status !== WorkspaceSessionStatus.ACTIVE) {
-          return Promise.resolve(this.createSessionSummary(currentResult, job));
+        if (
+          currentResult &&
+          currentResult.status !== WorkspaceSessionStatus.ACTIVE
+        ) {
+          return Promise.resolve(this.createSessionSummary(currentResult));
         }
 
         // Otherwise, wait for completion event
         return new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
-            reject(new Error(`Session ${session.id} timed out after 15 minutes`));
+            reject(
+              new Error(`Session ${session.id} timed out after 15 minutes`),
+            );
           }, 900000); // 15 minute timeout
 
-          this.sessionCompletionEmitter.once(`session:${session.id}`, (result: SessionResult) => {
-            clearTimeout(timeout);
-            resolve(this.createSessionSummary(result, job));
-          });
+          this.sessionCompletionEmitter.once(
+            `session:${session.id}`,
+            (result: SessionResult) => {
+              clearTimeout(timeout);
+              resolve(this.createSessionSummary(result));
+            },
+          );
         });
       },
       // IAtlasScope methods (minimal implementation)
@@ -2238,13 +2564,18 @@ export class WorkspaceRuntime {
       throw new Error("Cannot clear state - engine not initialized");
     }
 
-    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name };
+    const scope = {
+      workspaceId: this.workspace.id,
+      workspaceName: this.workspace.name,
+    };
     const fsmId = job.engine.definition.id;
 
     // Clear persisted state file (no schema, null value — cannot fail validation)
     const clearResult = await job.documentStore.saveState(scope, fsmId, null);
     if (!clearResult.ok) {
-      logger.warn("Failed to clear persisted state", { error: clearResult.error });
+      logger.warn("Failed to clear persisted state", {
+        error: clearResult.error,
+      });
     }
 
     const existingDocIds = await job.documentStore.list(scope, fsmId);
@@ -2259,7 +2590,10 @@ export class WorkspaceRuntime {
     });
   }
 
-  async triggerSignal(signalName: string, payload?: Record<string, unknown>): Promise<void> {
+  async triggerSignal(
+    signalName: string,
+    payload?: Record<string, unknown>,
+  ): Promise<void> {
     const signal: WorkspaceRuntimeSignal = {
       id: signalName,
       type: signalName,
@@ -2292,14 +2626,21 @@ export class WorkspaceRuntime {
       timestamp: new Date(),
     };
 
-    return await this.processSignal(signal, onStreamEvent, undefined, skipStates);
+    return await this.processSignal(
+      signal,
+      onStreamEvent,
+      undefined,
+      skipStates,
+    );
   }
 
   /**
    * Shutdown the runtime
    */
   async shutdown(): Promise<void> {
-    logger.info("Shutting down workspace runtime", { workspaceId: this.workspace.id });
+    logger.info("Shutting down workspace runtime", {
+      workspaceId: this.workspace.id,
+    });
 
     for (const job of this.jobs.values()) {
       if (job.engine) {
@@ -2310,6 +2651,7 @@ export class WorkspaceRuntime {
     await this.orchestrator.shutdown();
 
     this.sessions.clear();
+    this.activeJobExecutions.clear();
     this.jobs.clear();
     this.mountBindings.clear();
     mountRegistry.clear();
@@ -2347,7 +2689,9 @@ export class WorkspaceRuntime {
     return Array.from(this.sessions.values());
   }
 
-  listSessions(): Array<{ id: string; jobName: string; status: string; startedAt: string }> {
+  listSessions(): Array<
+    { id: string; jobName: string; status: string; startedAt: string }
+  > {
     return Array.from(this.sessions.values()).map((s) => ({
       id: s.id,
       jobName: s.jobName,
@@ -2408,7 +2752,9 @@ export class WorkspaceRuntime {
   cancelSession(sessionId: string): void {
     const controller = this.activeAbortControllers.get(sessionId);
     if (!controller) {
-      throw new Error(`Session ${sessionId} is not active (already finished or unknown)`);
+      throw new Error(
+        `Session ${sessionId} is not active (already finished or unknown)`,
+      );
     }
 
     // Use a named AbortError so classifySessionError routes this to CANCELLED.
@@ -2416,7 +2762,10 @@ export class WorkspaceRuntime {
     reason.name = "AbortError";
     controller.abort(reason);
 
-    logger.info("Session cancel requested", { sessionId, workspaceId: this.workspace.id });
+    logger.info("Session cancel requested", {
+      sessionId,
+      workspaceId: this.workspace.id,
+    });
   }
 
   /**
@@ -2454,19 +2803,35 @@ export class WorkspaceRuntime {
    */
   describeAgent(
     agentId: string,
-  ): { id: string; type: string; description?: string; config: unknown } | undefined {
+  ):
+    | { id: string; type: string; description?: string; config: unknown }
+    | undefined {
     const agents = this.config.workspace.agents || {};
     const config = agents[agentId];
     if (!config) return undefined;
 
-    return { id: agentId, type: config.type, description: config.description, config };
+    return {
+      id: agentId,
+      type: config.type,
+      description: config.description,
+      config,
+    };
   }
 
   /**
    * Check if there are active sessions for a signal
    */
   hasActiveSessionsForSignal(signalId: string): boolean {
-    return Array.from(this.sessions.values()).some((s) => s.signalId === signalId);
+    const hasRecordedSession = Array.from(this.sessions.values()).some((s) =>
+      s.signalId === signalId
+    );
+    if (hasRecordedSession) return true;
+
+    return Array.from(this.jobs.values()).some(
+      (job) =>
+        job.signals.includes(signalId) &&
+        this.activeJobExecutions.has(job.name),
+    );
   }
 
   /**
@@ -2494,7 +2859,9 @@ export class WorkspaceRuntime {
     return signals[signalId]?.provider;
   }
 
-  private async handleSessionCompletion(sessionResult: SessionResult): Promise<void> {
+  private async handleSessionCompletion(
+    sessionResult: SessionResult,
+  ): Promise<void> {
     const { status, userId } = sessionResult;
     if (status === WorkspaceSessionStatus.ACTIVE) return;
 
@@ -2504,18 +2871,19 @@ export class WorkspaceRuntime {
       userId: userId ?? "NOT_SET",
       willEmitAnalytics: Boolean(
         userId &&
-          (status === WorkspaceSessionStatus.COMPLETED || status === WorkspaceSessionStatus.FAILED),
+          (status === WorkspaceSessionStatus.COMPLETED ||
+            status === WorkspaceSessionStatus.FAILED),
       ),
     });
 
     if (
       userId &&
-      (status === WorkspaceSessionStatus.COMPLETED || status === WorkspaceSessionStatus.FAILED)
+      (status === WorkspaceSessionStatus.COMPLETED ||
+        status === WorkspaceSessionStatus.FAILED)
     ) {
-      const eventName =
-        status === WorkspaceSessionStatus.COMPLETED
-          ? EventNames.SESSION_COMPLETED
-          : EventNames.SESSION_FAILED;
+      const eventName = status === WorkspaceSessionStatus.COMPLETED
+        ? EventNames.SESSION_COMPLETED
+        : EventNames.SESSION_FAILED;
       const jobName = this.sessions.get(sessionResult.id)?.jobName;
 
       logger.debug("Emitting session analytics", {
@@ -2543,16 +2911,20 @@ export class WorkspaceRuntime {
     // their result doc, then the HTTP response is `output: []`.
     const active = this.sessions.get(sessionResult.id);
     if (active) {
-      const job = this.jobs.get(active.jobName);
       const plumbingTypes = new Set([
         "state-transition",
         "fsm-state",
         "ChatContext",
         "signal-payload",
       ]);
-      const docs = job?.engine?.documents.filter((d) => !plumbingTypes.has(d.type)) ?? [];
+      const docs = (sessionResult.engineDocuments ?? []).filter((d) =>
+        !plumbingTypes.has(d.type)
+      );
       this.completedSessionDocuments.set(sessionResult.id, docs);
-      setTimeout(() => this.completedSessionDocuments.delete(sessionResult.id), 60_000);
+      setTimeout(
+        () => this.completedSessionDocuments.delete(sessionResult.id),
+        60_000,
+      );
     }
 
     if (this.options.onSessionFinished) {
@@ -2616,15 +2988,24 @@ export class WorkspaceRuntime {
   ): Promise<void> {
     const platformModels = this.options.platformModels;
     if (!platformModels) {
-      logger.debug("Skipping session title generation: platformModels not configured", {
-        sessionId,
-      });
+      logger.debug(
+        "Skipping session title generation: platformModels not configured",
+        {
+          sessionId,
+        },
+      );
       return;
     }
     const title = await generateSessionTitle({ ...input, platformModels });
-    const result = await SessionHistoryStorage.updateSessionTitle(sessionId, title);
+    const result = await SessionHistoryStorage.updateSessionTitle(
+      sessionId,
+      title,
+    );
     if (!result.ok) {
-      logger.warn("Failed to store session title", { sessionId, error: result.error });
+      logger.warn("Failed to store session title", {
+        sessionId,
+        error: result.error,
+      });
     }
   }
 
@@ -2693,19 +3074,25 @@ export class WorkspaceRuntime {
       // serialization throws (e.g. an undefined slipped into the FSM
       // definition), it's just metadata for one event — we shouldn't fail
       // the entire history persistence over it.
-      const fsmId = safeReadFsmId(job.engine);
+      const fsmId = safeReadFsmId(job.engine) ?? job.name;
       await SessionHistoryStorage.appendSessionEvent({
         sessionId: sessionResult.id,
         emittedBy: "workspace-runtime",
         event: {
           type: "session-start",
           context: { metadata: { jobName: job.name, fsmId } },
-          data: { status: historyStatus, message: `Started FSM job: ${job.name}` },
+          data: {
+            status: historyStatus,
+            message: `Started FSM job: ${job.name}`,
+          },
         },
       });
 
       // Persist FSM events: use captured events if available, fallback to document conversion
-      if (sessionResult.collectedFsmEvents && sessionResult.collectedFsmEvents.length > 0) {
+      if (
+        sessionResult.collectedFsmEvents &&
+        sessionResult.collectedFsmEvents.length > 0
+      ) {
         const sortedEvents = [...sessionResult.collectedFsmEvents].sort(
           (a, b) => a.data.timestamp - b.data.timestamp,
         );
@@ -2716,7 +3103,8 @@ export class WorkspaceRuntime {
         for (const fsmEvent of sortedEvents) {
           try {
             const mappedEvent = mapFsmEventToSessionEvent(fsmEvent);
-            const originalTimestamp = new Date(fsmEvent.data.timestamp).toISOString();
+            const originalTimestamp = new Date(fsmEvent.data.timestamp)
+              .toISOString();
             await SessionHistoryStorage.appendSessionEvent({
               sessionId: sessionResult.id,
               emittedBy: "workspace-runtime",
@@ -2752,21 +3140,21 @@ export class WorkspaceRuntime {
       // and the session metadata (markSessionComplete). These are independent file writes,
       // so if one fails mid-persist the two sources can diverge. Readers should prefer
       // the session-finish event as the authoritative source; metadata is a convenience copy.
-      const output = job.engine?.documents
-        .filter((doc) => doc.type === "result" || doc.id.endsWith("_result"))
+      const output = sessionResult.engineDocuments
+        ?.filter((doc) => doc.type === "result" || doc.id.endsWith("_result"))
         .map((doc) => ({ id: doc.id, data: doc.data }));
 
-      const durationMs =
-        sessionResult.completedAt && sessionResult.startedAt
-          ? sessionResult.completedAt.getTime() - sessionResult.startedAt.getTime()
-          : 0;
+      const durationMs = sessionResult.completedAt && sessionResult.startedAt
+        ? sessionResult.completedAt.getTime() -
+          sessionResult.startedAt.getTime()
+        : 0;
 
       await SessionHistoryStorage.appendSessionEvent({
         sessionId: sessionResult.id,
         emittedBy: "workspace-runtime",
         event: {
           type: "session-finish",
-          context: { metadata: { finalState: job.engine?.state } },
+          context: { metadata: { finalState: sessionResult.finalState } },
           data: {
             status: historyStatus,
             durationMs,
