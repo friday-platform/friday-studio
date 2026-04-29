@@ -1,8 +1,8 @@
 import type { AtlasTools, LinkCredentialRef } from "@atlas/agent-sdk";
 import {
   type BundledAgentConfigField,
-  bundledAgents,
   bundledAgentsRegistry,
+  discoverableBundledAgents,
 } from "@atlas/bundled-agents";
 import type { WorkspaceConfig } from "@atlas/config";
 import {
@@ -113,7 +113,7 @@ function mcpProvider(candidate: MCPServerCandidate): string {
 }
 
 function buildBundledCapabilities(): Capability[] {
-  return bundledAgents.map((agent) => {
+  return discoverableBundledAgents.map((agent) => {
     const registryEntry = bundledAgentsRegistry[agent.metadata.id];
     const requiresConfig = registryEntry ? bundledRequiresConfig(registryEntry.requiredConfig) : [];
 

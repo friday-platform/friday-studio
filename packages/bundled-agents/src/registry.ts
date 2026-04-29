@@ -46,6 +46,14 @@ export const bundledAgents: AtlasAgent[] = [
   knowledgeHybridAgent,
 ];
 
+/** Agents hidden from discovery surfaces (list_capabilities, system prompts). */
+const HIDDEN_FROM_DISCOVERY = new Set(["email", "csv-filter-sampler", "fathom-get-transcript"]);
+
+/** Subset of bundled agents advertised in discovery surfaces. */
+export const discoverableBundledAgents = bundledAgents.filter(
+  (a) => !HIDDEN_FROM_DISCOVERY.has(a.metadata.id),
+);
+
 /**
  * Configuration field for bundled agents.
  *

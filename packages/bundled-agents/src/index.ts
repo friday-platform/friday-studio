@@ -38,6 +38,7 @@ export {
   type BundledAgentRegistryEntry,
   bundledAgents,
   bundledAgentsRegistry,
+  discoverableBundledAgents,
 } from "./registry.ts";
 
 export type {

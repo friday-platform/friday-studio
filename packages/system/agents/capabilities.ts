@@ -1,4 +1,4 @@
-import { bundledAgents } from "@atlas/bundled-agents";
+import { discoverableBundledAgents } from "@atlas/bundled-agents";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 
@@ -16,7 +16,7 @@ import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
  * @param dynamicServers - Runtime-registered MCP servers from KV (not in static registry)
  */
 export function getCapabilitiesSection(dynamicServers?: MCPServerMetadata[]): string {
-  const agentsXml = bundledAgents
+  const agentsXml = discoverableBundledAgents
     .map((agent) => {
       const constraints = agent.metadata.constraints
         ? `\n  <constraints>${agent.metadata.constraints}</constraints>`

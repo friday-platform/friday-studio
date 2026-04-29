@@ -14,13 +14,13 @@ describe("getCapabilitiesSection", () => {
 
     expect(output).toContain("<bundled_agents>");
     expect(output).toContain("</bundled_agents>");
-    expect(output).toContain('<agent id="email"');
+    expect(output).toContain('<agent id="slack"');
   });
 
   it("bundled agents include constraints", () => {
     const output = getCapabilitiesSection();
 
-    // Email agent should have constraints about recipient restrictions
+    // Web agent should have constraints (CAPTCHA, JS, etc.)
     expect(output).toContain("<constraints>");
     expect(output).toContain("</constraints>");
   });
@@ -49,14 +49,8 @@ describe("getCapabilitiesSection", () => {
     expect(mcpSection).toContain("<constraints>");
   });
 
-  it("email vs gmail disambiguation is clear", () => {
+  it("google-gmail inbox capability is advertised", () => {
     const output = getCapabilitiesSection();
-
-    // The output should make notification vs inbox access distinction clear
-    // Bundled email agent: for sending notifications (no OAuth)
-    // google-gmail: for inbox access (requires OAuth)
-
-    expect(output).toContain("notification");
 
     // google-gmail should have guidance about inbox access
     const gmailServerMatch = output.match(/<server id="google-gmail"[^>]*>[\s\S]*?<\/server>/);

@@ -1,4 +1,4 @@
-import { bundledAgents, bundledAgentsRegistry, webAgent } from "@atlas/bundled-agents";
+import { bundledAgentsRegistry, discoverableBundledAgents, webAgent } from "@atlas/bundled-agents";
 import { type WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
 import type { LinkSummary, MCPServerCandidate } from "@atlas/core/mcp-registry/discovery";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
@@ -179,7 +179,7 @@ describe("createListCapabilitiesTool", () => {
     expect(bundledIds).not.toContain("browser");
     expect(bundledIds).not.toContain("research");
     expect(bundledIds).toContain("web");
-    expect(bundledIds.length).toBe(bundledAgents.length);
+    expect(bundledIds.length).toBe(discoverableBundledAgents.length);
   });
 
   it("returns only bundled entries when workspace has zero MCP servers", async () => {
