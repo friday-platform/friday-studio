@@ -1,3 +1,9 @@
+// deno-lint-ignore-file require-await
+// AI SDK v6's `tool({ execute })` types the callback as returning a Promise,
+// so the mock executes here are structurally `async` even though their bodies
+// are pure synchronous fixture code. File-level disable keeps the per-callback
+// surface clean.
+
 /**
  * Bundled-agent default behavior — anti-regression eval.
  *
@@ -53,8 +59,8 @@ import { bundledAgents } from "@atlas/bundled-agents";
 import {
   buildRegistryModelId,
   isRegistryProvider,
-  registry,
   type RegistryModelId,
+  registry,
   traceModel,
 } from "@atlas/llm";
 import { getAtlasHome } from "@atlas/utils/paths.server";
@@ -126,19 +132,22 @@ interface SyntheticMCP {
 const SYNTHETIC_MCP_CATALOG: SyntheticMCP[] = [
   {
     id: "playwright-mcp",
-    description: "Playwright browser automation MCP — drive a real browser to scrape JS-rendered pages.",
+    description:
+      "Playwright browser automation MCP — drive a real browser to scrape JS-rendered pages.",
     provider: "playwright-mcp",
     requiresConfig: [],
   },
   {
     id: "puppeteer-mcp",
-    description: "Puppeteer browser automation MCP — Chromium control for scraping and form-filling.",
+    description:
+      "Puppeteer browser automation MCP — Chromium control for scraping and form-filling.",
     provider: "puppeteer-mcp",
     requiresConfig: [],
   },
   {
     id: "smtp-mcp",
-    description: "SMTP email transport MCP — send transactional email via a configured SMTP server.",
+    description:
+      "SMTP email transport MCP — send transactional email via a configured SMTP server.",
     provider: "smtp-mcp",
     requiresConfig: ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"],
   },
@@ -227,10 +236,7 @@ const UPSERT_INPUT_SCHEMA = {
 };
 
 const UpsertConfigSchema = z
-  .object({
-    type: z.string().optional(),
-    agent: z.string().optional(),
-  })
+  .object({ type: z.string().optional(), agent: z.string().optional() })
   .catchall(z.unknown());
 
 const UpsertInputSchema = z.object({
@@ -425,9 +431,7 @@ function resolveModelId(): RegistryModelId {
 
   const colonIdx = raw.indexOf(":");
   if (colonIdx === -1) {
-    throw new Error(
-      `WORKSPACE_CHAT_EVAL_MODEL must be in "provider:model" form, got "${raw}".`,
-    );
+    throw new Error(`WORKSPACE_CHAT_EVAL_MODEL must be in "provider:model" form, got "${raw}".`);
   }
 
   const provider = raw.slice(0, colonIdx);
@@ -497,8 +501,7 @@ const cases: BundledAgentCase[] = [
   {
     id: "scrape-hacker-news",
     name: "scrape - daily Hacker News headlines",
-    input:
-      "I want a workspace that scrapes the top headlines from Hacker News every morning.",
+    input: "I want a workspace that scrapes the top headlines from Hacker News every morning.",
     expectedType: "atlas",
     expectedAgent: "web",
     forbiddenMcpIds: BROWSER_MCP_IDS,
