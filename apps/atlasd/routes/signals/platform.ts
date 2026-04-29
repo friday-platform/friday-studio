@@ -11,7 +11,10 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
-import { resolveCommunicatorByConnection } from "../../src/services/communicator-wiring.ts";
+import {
+  CommunicatorKindSchema,
+  resolveCommunicatorByConnection,
+} from "../../src/services/communicator-wiring.ts";
 
 const logger = createLogger({ component: "platform-signal-route" });
 
@@ -380,6 +383,12 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
  * `communicators[provider]` declaration — the new yml shape carries
  * `{ kind: <provider> }` with no inline config, so the configKey/value
  * branch only applies to the legacy `signals.<x>.config` path.
+ *
+ * Wiring-first: when `configValue` looks like a routing key for a
+ * communicator-managed provider (slack/telegram/discord/teams/whatsapp), the
+ * Link `communicator_wiring` table is the source of truth. Consult it before
+ * iterating yml signal-configs so stale legacy `signals.<x>.config` blocks
+ * (e.g. left over from prior tests) cannot misroute inbound events.
  */
 async function findWorkspaceByProvider(
   daemon: AtlasDaemon,
@@ -387,6 +396,22 @@ async function findWorkspaceByProvider(
   configKey?: string,
   configValue?: string,
 ): Promise<string | null> {
+  if (configValue) {
+    const wiringKind = CommunicatorKindSchema.safeParse(provider);
+    if (wiringKind.success) {
+      const resolved = await resolveCommunicatorByConnection(configValue, wiringKind.data).catch(
+        (error) => {
+          logger.warn("communicator_wiring_resolve_failed", {
+            provider,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        },
+      );
+      if (resolved) return resolved.workspaceId;
+    }
+  }
+
   const workspaces = await daemon.getWorkspaceManager().list();
 
   for (const ws of workspaces) {
@@ -437,17 +462,32 @@ async function listWorkspacesByProviderWithoutConfigKey(
 
   for (const ws of workspaces) {
     const config = await daemon.getWorkspaceManager().getWorkspaceConfig(ws.id);
-    const signals = config?.workspace.signals;
-    if (!signals) continue;
+    if (!config) continue;
 
-    for (const signal of Object.values(signals)) {
-      if (signal?.provider !== provider) continue;
-      const cfg = "config" in signal ? signal.config : undefined;
-      const rawValue = cfg && typeof cfg === "object" ? Reflect.get(cfg, configKey) : undefined;
-      const hasKey = typeof rawValue === "string" && rawValue.length > 0;
-      if (!hasKey) {
-        matches.push(ws.id);
-        break;
+    let matched = false;
+    const signals = config.workspace.signals;
+    if (signals) {
+      for (const signal of Object.values(signals)) {
+        if (signal?.provider !== provider) continue;
+        const cfg = "config" in signal ? signal.config : undefined;
+        const rawValue = cfg && typeof cfg === "object" ? Reflect.get(cfg, configKey) : undefined;
+        const hasKey = typeof rawValue === "string" && rawValue.length > 0;
+        if (!hasKey) {
+          matches.push(ws.id);
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    // `communicators` entries carry no inline config, so they always qualify
+    // as "without configKey". Skip if the workspace already matched via signals.
+    if (!matched && config.workspace.communicators) {
+      for (const entry of Object.values(config.workspace.communicators)) {
+        if (entry?.kind === provider) {
+          matches.push(ws.id);
+          break;
+        }
       }
     }
   }
@@ -465,10 +505,23 @@ async function listWorkspacesByProvider(daemon: AtlasDaemon, provider: string): 
 
   for (const ws of workspaces) {
     const config = await daemon.getWorkspaceManager().getWorkspaceConfig(ws.id);
-    const signals = config?.workspace.signals;
-    if (!signals) continue;
-    if (Object.values(signals).some((s) => s?.provider === provider)) {
+    if (!config) continue;
+
+    const signals = config.workspace.signals;
+    if (signals && Object.values(signals).some((s) => s?.provider === provider)) {
       matches.push(ws.id);
+      continue;
+    }
+
+    // Mirror findWorkspaceByProvider: workspaces declared via the new
+    // `communicators` map (no `signals.<provider>` entry) still own the provider.
+    if (config.workspace.communicators) {
+      for (const entry of Object.values(config.workspace.communicators)) {
+        if (entry?.kind === provider) {
+          matches.push(ws.id);
+          break;
+        }
+      }
     }
   }
 

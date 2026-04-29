@@ -6,12 +6,10 @@
 export { agentQueries, invalidateAgentPreflight } from "./agent-queries.ts";
 export type { AgentMetadata, AgentPreflightCredential, AgentPreflightResponse } from "./agent-queries.ts";
 export { integrationQueries } from "./integration-queries.ts";
-export type { ConnectSlackResponse, WorkspaceWiring } from "./link-wiring-queries.ts";
+export type { WorkspaceWiring } from "./link-wiring-queries.ts";
 export {
   useConnectCommunicator,
-  useConnectSlack,
   useDisconnectCommunicator,
-  useDisconnectSlack,
   wiringQueries,
 } from "./link-wiring-queries.ts";
 export { jobQueries } from "./job-queries.ts";

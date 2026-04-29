@@ -21,7 +21,6 @@ const mockStreamText = vi.hoisted(() => vi.fn());
 const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: n })));
 const mockDiscoverMCPServers = vi.hoisted(() => vi.fn());
 const mockCreateMCPTools = vi.hoisted(() => vi.fn());
-const mockInjectSlackAppCredentialId = vi.hoisted(() => vi.fn());
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
@@ -33,10 +32,6 @@ vi.mock("@atlas/core/mcp-registry/discovery", () => ({
 }));
 
 vi.mock("@atlas/mcp", () => ({ createMCPTools: mockCreateMCPTools }));
-
-vi.mock("@atlas/core/agent-context", () => ({
-  injectSlackAppCredentialId: mockInjectSlackAppCredentialId,
-}));
 
 import { createDelegateTool, type DelegateResult } from "./index.ts";
 
@@ -228,7 +223,6 @@ describe("createDelegateTool", () => {
     mockStepCountIs.mockClear();
     mockDiscoverMCPServers.mockReset();
     mockCreateMCPTools.mockReset();
-    mockInjectSlackAppCredentialId.mockReset();
   });
 
   it("happy path — finish ok=true drives answer, envelopes carry namespaced toolCallIds", async () => {
@@ -911,7 +905,6 @@ describe("createDelegateTool", () => {
         configured: false,
       },
     ] satisfies MCPServerCandidate[]);
-    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
 
     const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
       workspaceConfig: {} as unknown as WorkspaceConfig,
@@ -942,7 +935,6 @@ describe("createDelegateTool", () => {
         configured: true,
       },
     ] satisfies MCPServerCandidate[]);
-    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
     const mockDispose = vi.fn();
     mockCreateMCPTools.mockResolvedValue({ tools: { tool_a: dummyTool }, dispose: mockDispose });
 
@@ -995,7 +987,6 @@ describe("createDelegateTool", () => {
         configured: true,
       },
     ] satisfies MCPServerCandidate[]);
-    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
     const dispose1 = vi.fn();
     const dispose2 = vi.fn();
     mockCreateMCPTools
@@ -1060,7 +1051,6 @@ describe("createDelegateTool", () => {
         configured: true,
       },
     ] satisfies MCPServerCandidate[]);
-    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
     const disposeGood = vi.fn();
     mockCreateMCPTools
       .mockResolvedValueOnce({ tools: { tool_good: dummyTool }, dispose: disposeGood })
@@ -1115,7 +1105,6 @@ describe("createDelegateTool", () => {
         configured: true,
       },
     ] satisfies MCPServerCandidate[]);
-    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
     mockCreateMCPTools.mockRejectedValue(new Error("boom"));
 
     const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
@@ -1134,30 +1123,6 @@ describe("createDelegateTool", () => {
     });
   });
 
-  it("returns ok=false when injectSlackAppCredentialId throws", async () => {
-    mockDiscoverMCPServers.mockResolvedValue([
-      {
-        metadata: {
-          id: "slack",
-          name: "Slack",
-          source: "workspace",
-          securityRating: "unverified",
-          configTemplate: { transport: { type: "stdio", command: "slack" } },
-        },
-        mergedConfig: { transport: { type: "stdio", command: "slack" } },
-        configured: true,
-      },
-    ] satisfies MCPServerCandidate[]);
-    mockInjectSlackAppCredentialId.mockRejectedValue(new Error("missing slack-app credential"));
-
-    const { delegateTool } = makeDelegate(undefined, undefined, undefined, undefined, {
-      workspaceConfig: {} as unknown as WorkspaceConfig,
-    });
-    const result = await runDelegate(delegateTool, "del-call-1", { mcpServers: ["slack"] });
-
-    expect(result).toEqual({ ok: false, reason: "missing slack-app credential", toolsUsed: [] });
-  });
-
   it("disposes MCP connections in finally even when child stream throws", async () => {
     mockDiscoverMCPServers.mockResolvedValue([
       {
@@ -1172,7 +1137,6 @@ describe("createDelegateTool", () => {
         configured: true,
       },
     ] satisfies MCPServerCandidate[]);
-    mockInjectSlackAppCredentialId.mockResolvedValue(undefined);
     const mockDispose = vi.fn();
     mockCreateMCPTools.mockResolvedValue({ tools: { mcp_tool: dummyTool }, dispose: mockDispose });
 

@@ -1,12 +1,11 @@
 /** Provider identifiers used as discriminators across credential, wiring, and summary code. */
 
 /**
- * Slack App provider — joins to `credential.provider` and
- * `communicator_wiring.provider`. Deliberately distinct from the legacy
- * `"slack"` literal so wiring rows reference the bot installation, not the
- * user OAuth credential.
+ * Slack bot apikey provider — mirrors the `kind: slack` communicator literal.
+ * Users paste `bot_token`, `signing_secret`, and `app_id` from
+ * api.slack.com/apps directly.
  */
-export const SLACK_APP_PROVIDER = "slack-app";
+export const SLACK_PROVIDER = "slack";
 
 /**
  * Telegram bot provider — apikey credential, mirrors the `kind: telegram`

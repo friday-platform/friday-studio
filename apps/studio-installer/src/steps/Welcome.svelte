@@ -1,6 +1,6 @@
 <script lang="ts">
-import { advanceStep } from "../lib/installer.ts";
-import type { InstallMode } from "../lib/store.svelte.ts";
+import { advanceStep, stopRunningLauncher } from "../lib/installer.ts";
+import { type InstallMode, store } from "../lib/store.svelte.ts";
 
 interface Props {
   mode: InstallMode;
@@ -11,10 +11,63 @@ interface Props {
 
 const { mode, installedVersion, availableVersion, studioRunning }: Props = $props();
 
+let stopping = $state(false);
+let stopError = $state<string | null>(null);
+
 async function openStudio(): Promise<void> {
   // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl("http://localhost:5200");
+}
+
+// Update / re-install path: if the previous launcher is still
+// running we need to shut it down before download + extract +
+// launch, otherwise:
+//   - the new launcher's port 5199 bind will collide and surface
+//     the port-in-use dialog
+//   - extract may fail to overwrite a running binary on Windows
+//
+// We do this BEFORE download (not before launch) so the user isn't
+// waiting through a 500MB tarball just to find out we couldn't free
+// the port. The "Friday Studio is currently running" warning above
+// the button is the consent — by clicking the button the user has
+// already opted in.
+//
+// `forceFullInstall` forces the wizard into the download path even
+// when mode === "current" (the user clicked "Reinstall" — they want
+// a full re-run, not the relaunch-existing-install shortcut that
+// advanceStep("welcome") routes to). For mode === "update" /
+// "fresh", advanceStep already routes through download, so we leave
+// the default behaviour alone.
+async function stopThenAdvance(forceFullInstall = false): Promise<void> {
+  stopError = null;
+  if (studioRunning) {
+    stopping = true;
+    try {
+      await stopRunningLauncher();
+    } catch (err) {
+      stopError = err instanceof Error ? err.message : String(err);
+      stopping = false;
+      return;
+    }
+    stopping = false;
+  }
+  if (forceFullInstall) {
+    // Skip welcome's "current → launch" shortcut; go straight to
+    // download. License/API keys are already on disk from the
+    // previous install, so we follow the update-flow elision and
+    // skip them too.
+    store.step = "download";
+  } else {
+    advanceStep();
+  }
+}
+
+function reinstall(): void {
+  // mode === "current" + studio NOT running: nothing to stop, just
+  // jump into the download flow. Same shortcut as stopThenAdvance's
+  // forceFullInstall branch, without the stop-launcher detour.
+  store.step = "download";
 }
 </script>
 
@@ -29,9 +82,35 @@ async function openStudio(): Promise<void> {
       <p class="subtitle">
         Orchestrate agentic workflows from a single config file.<br />Versionable, shareable, repeatable.
       </p>
-      <div class="actions">
-        <button class="primary" onclick={advanceStep}>Install</button>
-      </div>
+      {#if studioRunning}
+        <!--
+          studioRunning + mode==="fresh" means the install marker
+          (~/.friday/local/.installed) is missing while a launcher
+          is alive — typically a previous install from before the
+          marker was written, or the file was wiped. Treat this the
+          same as the update path so we don't blunder into a port
+          collision later. Same warning, same stop button.
+        -->
+        <div class="warning">
+          <span class="warning-icon" aria-hidden="true">⚠</span>
+          A previous Friday Studio is currently running. Installing will stop it briefly.
+        </div>
+        {#if stopError !== null}
+          <div class="warning">
+            <span class="warning-icon" aria-hidden="true">⚠</span>
+            Could not stop the running Studio: {stopError}
+          </div>
+        {/if}
+        <div class="actions">
+          <button class="primary" onclick={stopThenAdvance} disabled={stopping}>
+            {stopping ? "Stopping Studio…" : "Install"}
+          </button>
+        </div>
+      {:else}
+        <div class="actions">
+          <button class="primary" onclick={advanceStep}>Install</button>
+        </div>
+      {/if}
     {:else if mode === "update"}
       <h1>Update Available</h1>
       <p class="version-badge">
@@ -42,9 +121,19 @@ async function openStudio(): Promise<void> {
           <span class="warning-icon" aria-hidden="true">⚠</span>
           Friday Studio is currently running. The update will stop it briefly.
         </div>
+        {#if stopError !== null}
+          <div class="warning">
+            <span class="warning-icon" aria-hidden="true">⚠</span>
+            Could not stop the running Studio: {stopError}
+          </div>
+        {/if}
         <div class="actions">
-          <button class="primary" onclick={advanceStep}>Update Studio</button>
-          <button class="secondary" onclick={openStudio}>Open Studio</button>
+          <button class="primary" onclick={stopThenAdvance} disabled={stopping}>
+            {stopping ? "Stopping Studio…" : "Update Studio"}
+          </button>
+          <button class="secondary" onclick={openStudio} disabled={stopping}>
+            Open Studio
+          </button>
         </div>
       {:else}
         <p class="subtitle">
@@ -58,13 +147,43 @@ async function openStudio(): Promise<void> {
       <h1>You're up to date</h1>
       <p class="version-badge">v{installedVersion ?? availableVersion}</p>
       <p class="subtitle">Friday Studio is already at the latest version.</p>
-      <div class="actions">
-        {#if studioRunning}
-          <button class="primary" onclick={openStudio}>Open Studio</button>
-        {:else}
-          <button class="primary" onclick={advanceStep}>Launch Studio</button>
+      {#if studioRunning}
+        <div class="warning">
+          <span class="warning-icon" aria-hidden="true">⚠</span>
+          Friday Studio is currently running. Reinstalling will stop it briefly.
+        </div>
+        {#if stopError !== null}
+          <div class="warning">
+            <span class="warning-icon" aria-hidden="true">⚠</span>
+            Could not stop the running Studio: {stopError}
+          </div>
         {/if}
-      </div>
+        <div class="actions">
+          <!--
+            Both buttons remain available even when the version is
+            current. Reinstall is the primary path because that's what
+            most people opening an installer.dmg actually want to do
+            ("I'm running the installer, install something"). Open
+            Studio stays as the no-op shortcut for users who only
+            wanted to relaunch from a fresh window.
+          -->
+          <button
+            class="primary"
+            onclick={() => stopThenAdvance(true)}
+            disabled={stopping}
+          >
+            {stopping ? "Stopping Studio…" : "Reinstall"}
+          </button>
+          <button class="secondary" onclick={openStudio} disabled={stopping}>
+            Open Studio
+          </button>
+        </div>
+      {:else}
+        <div class="actions">
+          <button class="primary" onclick={reinstall}>Reinstall</button>
+          <button class="secondary" onclick={advanceStep}>Launch Studio</button>
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -119,7 +238,7 @@ async function openStudio(): Promise<void> {
 
   .version-badge {
     font-size: 13px;
-    color: #6b72f0;
+    color: var(--color-primary);
     background: rgba(107, 114, 240, 0.12);
     padding: 4px 12px;
     border-radius: 20px;
@@ -131,7 +250,7 @@ async function openStudio(): Promise<void> {
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    color: #fbbf24;
+    color: var(--color-warning);
     background: rgba(251, 191, 36, 0.1);
     border: 1px solid rgba(251, 191, 36, 0.25);
     border-radius: 8px;
@@ -161,22 +280,22 @@ async function openStudio(): Promise<void> {
   }
 
   .primary {
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
   }
 
   .primary:hover {
-    background: #5a62e0;
+    background: var(--color-primary); opacity: 0.9;
   }
 
   .secondary {
-    background: light-dark(#e8e8e8, #2a2a2a);
-    color: light-dark(#444, #ccc);
-    border: 1px solid light-dark(#d0d0d0, #3a3a3a);
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-1);
   }
 
   .secondary:hover {
-    background: light-dark(#ddd, #333);
+    opacity: 0.85;
   }
 
   .step-dots {
@@ -194,6 +313,6 @@ async function openStudio(): Promise<void> {
   }
 
   .dot.active {
-    background: #6b72f0;
+    background: var(--color-primary);
   }
 </style>

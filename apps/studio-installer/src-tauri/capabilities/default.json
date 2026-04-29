@@ -6,6 +6,10 @@
     "os:default",
     "opener:allow-default-urls",
     { "identifier": "opener:allow-open-url", "allow": [{ "url": "http://localhost:5200" }] },
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$HOME/.friday/local/logs" }, { "path": "$HOME/.friday/local/logs/**" }]
+    },
     "core:window:default",
     "core:event:default",
     "core:path:default"

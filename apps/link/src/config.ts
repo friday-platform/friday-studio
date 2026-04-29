@@ -52,9 +52,6 @@ export function readConfig() {
     postgresConnection: process.env.POSTGRES_CONNECTION,
 
     postgresPool: postgresPoolConfig,
-
-    /** Base URL for signal-gateway (used to build Slack webhook URLs) */
-    gatewayBase: process.env.GATEWAY_BASE,
   } as const;
 }
 

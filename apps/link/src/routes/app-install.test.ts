@@ -82,6 +82,17 @@ describe("App Install Routes", () => {
     },
   });
 
+  /** Mock secret shaped to satisfy AppInstallCredentialSecretSchema (github-only). */
+  function mockSecret(externalId: string) {
+    return {
+      platform: "github" as const,
+      externalId,
+      access_token: `tok-${externalId}`,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      github: { installationId: 0, organizationName: "Test", organizationId: 0 },
+    };
+  }
+
   const mockProvider = defineAppInstallProvider({
     id: "test-slack",
     platform: "slack",
@@ -94,7 +105,6 @@ describe("App Install Routes", () => {
       );
     },
     completeInstallation(code, _callbackUrl) {
-      // Slack-like providers require authorization code
       if (!code) {
         throw new AppInstallError("MISSING_CODE", "No authorization code provided");
       }
@@ -108,12 +118,7 @@ describe("App Install Routes", () => {
           type: "oauth",
           provider: "test-slack",
           label: "Test Workspace",
-          secret: {
-            platform: "slack",
-            externalId: `team-${code}`,
-            access_token: `xoxb-${code}`,
-            token_type: "bot",
-          },
+          secret: mockSecret(`team-${code}`),
         },
       });
     },

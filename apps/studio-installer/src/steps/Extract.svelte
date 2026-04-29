@@ -1,9 +1,12 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import { invoke } from "@tauri-apps/api/core";
 import { advanceStep, createAppBundleIfDarwin, installDir, runExtract } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
 
-let extracting = $state(true);
+type Phase = "extracting" | "claude";
+
+let phase = $state<Phase>("extracting");
 
 onMount(async () => {
   const src = store.downloadPath;
@@ -18,10 +21,34 @@ onMount(async () => {
     // the launcher and the user can re-launch after they Quit.
     // Non-fatal if it fails — see createAppBundleIfDarwin.
     await createAppBundleIfDarwin(dest, store.availableVersion);
-    extracting = false;
+    // Make sure Claude Code is on the user's machine so the friday
+    // daemon's agent SDK has a binary to invoke. ensure_claude_code
+    // is idempotent: it short-circuits when claude is already
+    // discoverable, and runs Anthropic's official install script
+    // (~10–30s) only on a fresh machine. The launcher's
+    // FRIDAY_CLAUDE_PATH discovery picks up the resulting binary at
+    // its next startup. Non-fatal: friday will surface its own
+    // "binary not found" error at first agent run if this fails,
+    // which is at least specific enough to act on.
+    phase = "claude";
+    try {
+      await invoke("ensure_claude_code");
+    } catch (err) {
+      console.warn("ensure_claude_code failed (non-fatal):", err);
+    }
+    // Persist the install marker so the wizard's mode detection on
+    // the next run sees mode==="current" / "update" instead of
+    // re-treating the install as "fresh". Without this, every run
+    // re-runs the full Welcome → license → keys → download flow,
+    // and the studioRunning warning never surfaces. Best-effort:
+    // a marker write failure shouldn't block the user's install.
+    try {
+      await invoke("write_installed", { version: store.availableVersion });
+    } catch (err) {
+      console.warn("write_installed failed (non-fatal):", err);
+    }
     advanceStep();
   } catch {
-    extracting = false;
     // store.error is already set by runExtract
   }
 });
@@ -38,7 +65,16 @@ onMount(async () => {
           The previous installation has been restored if it existed.
         </p>
       </div>
-    {:else if extracting}
+    {:else if phase === "claude"}
+      <div class="extracting-state">
+        <div class="spinner" aria-label="Installing Claude Code"></div>
+        <h2>Setting up Claude Code…</h2>
+        <p class="subtitle">
+          Installing the Claude Code binary so Friday Studio agents have
+          something to talk to. This usually takes 10–30 seconds.
+        </p>
+      </div>
+    {:else}
       <div class="extracting-state">
         <div class="spinner" aria-label="Installing"></div>
         <h2>Installing…</h2>
@@ -49,11 +85,6 @@ onMount(async () => {
             Extracting Friday Studio files. This may take a moment.
           {/if}
         </p>
-      </div>
-    {:else}
-      <div class="success-state">
-        <div class="check-icon" aria-hidden="true">✓</div>
-        <h2>Installation complete</h2>
       </div>
     {/if}
   </div>
@@ -80,12 +111,12 @@ onMount(async () => {
   h2 {
     font-size: 22px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: var(--color-text);
   }
 
   .subtitle {
     font-size: 14px;
-    color: #777;
+    color: var(--color-text-muted);
     max-width: 340px;
     line-height: 1.5;
   }
@@ -93,8 +124,8 @@ onMount(async () => {
   .spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid #1e1e1e;
-    border-top-color: #6b72f0;
+    border: 4px solid var(--color-border-1);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.9s linear infinite;
   }
@@ -110,7 +141,7 @@ onMount(async () => {
     height: 48px;
     border-radius: 50%;
     background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
+    color: var(--color-success);
     font-size: 24px;
     display: flex;
     align-items: center;
@@ -122,7 +153,7 @@ onMount(async () => {
     height: 48px;
     border-radius: 50%;
     background: rgba(248, 113, 113, 0.15);
-    color: #f87171;
+    color: var(--color-error);
     font-size: 22px;
     display: flex;
     align-items: center;
@@ -137,12 +168,12 @@ onMount(async () => {
   }
 
   .error-state h2 {
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .error-detail {
     font-size: 13px;
-    color: #888;
+    color: var(--color-text-muted);
     max-width: 380px;
     word-break: break-word;
     background: rgba(248, 113, 113, 0.08);
@@ -153,7 +184,7 @@ onMount(async () => {
 
   .error-hint {
     font-size: 12px;
-    color: #555;
+    color: var(--color-text-muted);
   }
 
   .extracting-state,

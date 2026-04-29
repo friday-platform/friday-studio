@@ -257,45 +257,43 @@ async function fetchWorkspaceMeta(
 
 const ItemQuerySchema = z.object({ slug: z.string().min(1) });
 
+function humanizeSlug(slug: string): string {
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+async function fetchFolderListing(
+  repo: string,
+  ref: string,
+  path: string,
+): Promise<string[] | null> {
+  const url = `https://api.github.com/repos/${repo}/contents/${path}?ref=${ref}`;
+  const { status, text } = await cachedFetch(url);
+  if (status < 200 || status >= 300) return null;
+  try {
+    const parsed = ContentsResponseSchema.parse(JSON.parse(text));
+    return parsed.filter((e) => e.type === "dir").map((e) => e.name);
+  } catch {
+    return null;
+  }
+}
+
 export const discoverRoute = new Hono()
   .get("/list", async (c) => {
-    const apiUrl = `https://api.github.com/repos/${REPO}/contents/${PATH}?ref=${REF}`;
-    const { status, text } = await cachedFetch(apiUrl);
-    if (status < 200 || status >= 300) {
-      return c.json(
-        { error: `GitHub API ${status}: ${text}`, items: [] },
-        status === 404 ? 404 : 502,
-      );
+    const folders = await fetchFolderListing(REPO, REF, PATH);
+    if (!folders) {
+      return c.json({ error: `Failed to list folders at ${REPO}/${REF}/${PATH}` }, 502);
     }
-    let raw: unknown;
-    try {
-      raw = JSON.parse(text);
-    } catch {
-      return c.json({ error: "GitHub returned non-JSON response", items: [] }, 502);
-    }
-    const parsed = ContentsResponseSchema.safeParse(raw);
-    if (!parsed.success) {
-      return c.json({ error: "Unexpected GitHub response shape", items: [] }, 502);
-    }
-
-    const dirs = parsed.data.filter((e) => e.type === "dir");
-    const items: DiscoverItem[] = await Promise.all(
-      dirs.map(async (d) => {
-        const meta = await fetchWorkspaceMeta(REPO, REF, d.path);
-        return {
-          slug: d.name,
-          name: meta.name ?? d.name,
-          description: meta.description ?? "",
-          hasWorkspaceYml: meta.hasWorkspaceYml,
-          counts: {
-            signals: meta.signals.length,
-            agents: meta.agents.length,
-            jobs: meta.jobs.length,
-          },
-        };
-      }),
-    );
-
+    const items: DiscoverItem[] = folders.map((folder) => ({
+      slug: folder,
+      name: humanizeSlug(folder),
+      description: "",
+      hasWorkspaceYml: false,
+      counts: { signals: 0, agents: 0, jobs: 0 },
+    }));
     return c.json({ source: { repo: REPO, path: PATH, ref: REF }, items });
   })
   .get("/item", zValidator("query", ItemQuerySchema), async (c) => {

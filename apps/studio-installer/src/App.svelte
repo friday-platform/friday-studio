@@ -75,9 +75,35 @@ onMount(async () => {
     padding: 0;
   }
 
+  :global(:root) {
+    color-scheme: light dark;
+
+    /*
+      Color tokens — mirror @atlas/ui/tokens.css so the installer
+      shares the same palette as the agent-playground (and any other
+      surface in the monorepo that consumes those tokens). Same
+      light-dark() pattern, same semantic naming. Inlined here
+      rather than imported because the installer is a leaf Tauri
+      app with no @atlas/* deps; if we ever pull in @atlas/ui we
+      should drop these and import tokens.css instead.
+    */
+    --color-text: light-dark(hsl(230 32% 14%), hsl(40 12% 95%));
+    --color-text-muted: light-dark(hsl(230 12% 40%), hsl(40 6% 65%));
+    --color-text-subtle: light-dark(hsl(230 8% 55%), hsl(40 4% 50%));
+    --color-surface-1: light-dark(hsl(0 0% 100%), hsl(228 2% 7%));
+    --color-surface-2: light-dark(hsl(240 12% 95%), hsl(228 2% 9%));
+    --color-surface-3: light-dark(hsl(220 16% 93%), hsl(228 4% 16%));
+    --color-border-1: light-dark(hsl(220 24% 90%), hsl(230 10% 24%));
+    --color-border-2: light-dark(hsl(240 3% 94%), hsl(230 10% 18%));
+    --color-primary: light-dark(hsl(212 97% 40%), hsl(212 80% 55%));
+    --color-primary-text: hsl(0 0% 100%);
+    --color-error: light-dark(hsl(10 100% 38%), hsl(10 100% 65%));
+    --color-success: light-dark(hsl(142 71% 35%), hsl(142 71% 55%));
+    --color-warning: light-dark(hsl(38 92% 40%), hsl(38 92% 55%));
+  }
+
   :global(html) {
     height: 100%;
-    color-scheme: light dark;
   }
 
   :global(body) {
@@ -89,8 +115,8 @@ onMount(async () => {
       Roboto,
       sans-serif;
     font-size: 15px;
-    background: light-dark(#f5f5f5, #0f0f0f);
-    color: light-dark(#1a1a1a, #e8e8e8);
+    background: var(--color-surface-2);
+    color: var(--color-text);
     overflow: hidden;
     user-select: none;
   }
@@ -110,14 +136,14 @@ onMount(async () => {
     align-items: center;
     justify-content: center;
     gap: 16px;
-    color: light-dark(#888, #999);
+    color: var(--color-text-muted);
   }
 
   .spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid light-dark(#ddd, #333);
-    border-top-color: #6b72f0;
+    border: 3px solid var(--color-border-1);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -142,34 +168,34 @@ onMount(async () => {
 
   .error-screen h2 {
     font-size: 20px;
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .error-detail {
     font-size: 13px;
-    color: #888;
+    color: var(--color-text-muted);
     max-width: 400px;
     word-break: break-word;
   }
 
   .done-screen h2 {
     font-size: 22px;
-    color: #6b72f0;
+    color: var(--color-primary);
   }
 
   button {
     margin-top: 8px;
     padding: 10px 24px;
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
     border: none;
     border-radius: 6px;
     font-size: 14px;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.15s, opacity 0.15s;
   }
 
   button:hover {
-    background: #5a62e0;
+    opacity: 0.9;
   }
 </style>

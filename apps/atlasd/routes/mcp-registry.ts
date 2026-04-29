@@ -1,7 +1,6 @@
 import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
-import { injectSlackAppCredentialId } from "@atlas/core/agent-context";
 import { buildBearerAuthConfig } from "@atlas/core/mcp-registry/auth-config";
 import {
   LinkCredentialExpiredError,
@@ -820,7 +819,6 @@ export const mcpRegistryRouter = daemonFactory
               if (candidate) {
                 resolvedConfig = candidate.mergedConfig;
               }
-              await injectSlackAppCredentialId({ [id]: resolvedConfig }, workspaceId);
             }
 
             mcpResult = await createMCPTools({ [id]: resolvedConfig }, logger, {

@@ -64,6 +64,15 @@ function createStore() {
   let installedVersion = $state<string | null>(null);
   let availableVersion = $state<string>("");
   let studioRunning = $state(false);
+  // True when ~/.friday/local/.env contains a non-empty provider
+  // API key (any of ANTHROPIC/OPENAI/GEMINI/GROQ). Set by
+  // detectInstallState + refreshed after each successful writeKeys.
+  // Drives advanceStep's update-mode reroute through API Keys when
+  // the marker exists but the .env doesn't carry a key.
+  let envHasProviderKey = $state(false);
+  // Absolute path of the .env file as written by write_env_file.
+  // Surfaced for diagnostic UI on a failed-launch screen.
+  let envFilePath = $state<string>("");
 
   // License
   let licenseAccepted = $state(false);
@@ -150,6 +159,20 @@ function createStore() {
     },
     set studioRunning(v: boolean) {
       studioRunning = v;
+    },
+
+    get envHasProviderKey() {
+      return envHasProviderKey;
+    },
+    set envHasProviderKey(v: boolean) {
+      envHasProviderKey = v;
+    },
+
+    get envFilePath() {
+      return envFilePath;
+    },
+    set envFilePath(v: string) {
+      envFilePath = v;
     },
 
     get licenseAccepted() {

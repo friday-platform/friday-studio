@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "@db/sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SqliteCommunicatorWiringRepository } from "./sqlite-communicator-wiring-repository.ts";
 
@@ -73,8 +74,8 @@ describe("SqliteCommunicatorWiringRepository", () => {
 
   it("listWiredWorkspaceIds returns distinct workspaces for the user", async () => {
     await repo.insert("alice", "cred-1", "ws-1", "telegram", "conn-1");
-    await repo.insert("alice", "cred-2", "ws-2", "slack-app", "conn-2");
-    await repo.insert("alice", "cred-3", "ws-1", "slack-app", "conn-3");
+    await repo.insert("alice", "cred-2", "ws-2", "slack", "conn-2");
+    await repo.insert("alice", "cred-3", "ws-1", "slack", "conn-3");
 
     const ids = await repo.listWiredWorkspaceIds("alice");
     expect(ids.sort()).toEqual(["ws-1", "ws-2"]);
@@ -87,6 +88,39 @@ describe("SqliteCommunicatorWiringRepository", () => {
       credentialId: "cred-1",
     });
     // Wrong provider returns null
-    expect(await repo.findByConnectionAndProvider("alice", "conn-1", "slack-app")).toBeNull();
+    expect(await repo.findByConnectionAndProvider("alice", "conn-1", "discord")).toBeNull();
+  });
+
+  it("renames legacy 'slack-app' rows to 'slack' on init (idempotent)", async () => {
+    // Pre-seed a legacy row by raw INSERT then close, simulating a database
+    // produced by the now-deleted OAuth flow at apps/link/src/slack-apps/.
+    repo.close();
+    const raw = new Database(dbPath);
+    raw
+      .prepare(
+        `INSERT INTO communicator_wiring (id, user_id, credential_id, workspace_id, provider, connection_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run("legacy-id", "alice", "cred-legacy", "ws-legacy", "slack-app", "conn-legacy");
+    raw.close();
+
+    // Re-instantiate against the same db path — constructor runs the rename DDL.
+    repo = new SqliteCommunicatorWiringRepository(dbPath);
+
+    // The row is now reachable under provider='slack'.
+    expect(await repo.findByWorkspaceAndProvider("alice", "ws-legacy", "slack")).toEqual({
+      credentialId: "cred-legacy",
+      identifier: "conn-legacy",
+    });
+    // And no longer under the legacy literal.
+    expect(await repo.findByWorkspaceAndProvider("alice", "ws-legacy", "slack-app")).toBeNull();
+
+    // Re-running the constructor again is a no-op.
+    repo.close();
+    repo = new SqliteCommunicatorWiringRepository(dbPath);
+    expect(await repo.findByWorkspaceAndProvider("alice", "ws-legacy", "slack")).toEqual({
+      credentialId: "cred-legacy",
+      identifier: "conn-legacy",
+    });
   });
 });

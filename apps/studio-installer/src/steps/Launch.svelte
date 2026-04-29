@@ -17,6 +17,17 @@ import { store } from "../lib/store.svelte.ts";
 // so a launcher-spawn failure shows a different UX than a wait-healthy
 // timeout.
 onMount(async () => {
+  // Hard-check the .env before spawning: friday's platform-model
+  // validation crashes in a restart loop with "missing credentials"
+  // if no provider key is on disk. Catching it here lets us drive
+  // the user back to API Keys with a specific message instead of
+  // letting them wait through the timeout watching it bounce.
+  const { invoke } = await import("@tauri-apps/api/core");
+  const hasKey = await invoke<boolean>("env_file_has_provider_key").catch(() => false);
+  if (!hasKey) {
+    needsApiKey = true;
+    return;
+  }
   try {
     const dir = await installDir();
     await runLaunch(dir);
@@ -32,6 +43,15 @@ onMount(async () => {
   await waitForServices();
 });
 
+let needsApiKey = $state(false);
+
+function goSetApiKey(): void {
+  // Bypasses advanceStep — the user explicitly chose to fix the
+  // missing key, take them straight to the API Keys form.
+  store.error = null;
+  store.step = "api-keys";
+}
+
 async function onWait60More(): Promise<void> {
   // Push the deadline out by 60s. The Rust side caps at 2 extensions
   // total (so max wait = 90 + 60 + 60 = 210s); on the cap, the helper
@@ -45,22 +65,34 @@ async function onOpenLogs(): Promise<void> {
   // hands off to the OS file viewer (Finder / Explorer). We open
   // the log directory rather than the file so the user can see all
   // service logs at once.
+  //
+  // Permission: opener:allow-open-path with the logs subtree in
+  // capabilities/default.json. Without it the call rejects with a
+  // permission error instead of opening anything; we surface that
+  // error rather than silently swallowing it (the previous catch
+  // {} hid this exact bug — user clicked View logs, nothing
+  // happened, no clue why).
   try {
     const { openPath } = await import("@tauri-apps/plugin-opener");
     const dir = await installDir();
     await openPath(`${dir}/logs`);
-  } catch {
-    // plugin failure is non-fatal — the log directory exists
-    // regardless; the user can navigate there manually.
+  } catch (err) {
+    console.error("openPath failed:", err);
+    store.error = `Could not open logs folder: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
 // "Open anyway" gate: only show when playground is healthy at the
-// timeout. If the user's playground is stuck the browser would hit
-// connection-refused, which is exactly the v3-and-prior bug Stack 2
-// is fixing.
+// timeout AND nothing's outright failed. If the user's playground
+// is stuck or another service is in failed state the browser would
+// hit a daemon that isn't going to recover, so we'd be sending the
+// user into a broken UI. Bail-out belongs to Exit instead.
+let hasFailedService = $derived.by(() =>
+  store.services.some((s) => s.status === "failed"),
+);
 let canOpenAnyway = $derived.by(() => {
   if (store.launchStage !== "timeout") return false;
+  if (hasFailedService) return false;
   const playground = getPlaygroundService();
   return playground?.status === "healthy";
 });
@@ -69,6 +101,26 @@ let canOpenAnyway = $derived.by(() => {
 // Pre-cap the button is shown alongside View logs / Open anyway in
 // the timeout state.
 let canExtendDeadline = $derived(store.waitDeadlineExtensions < 2);
+
+// Sort services alphabetically by their display name. The launcher
+// emits whatever order process-compose's status map iterates, which
+// is map-iteration-order, which is non-deterministic across runs.
+// Without this, users see "Friday daemon" first one boot, "Message
+// bus" first the next, etc. Alphabetical by display name keeps the
+// list stable: Authentication → Friday daemon → Message bus →
+// Studio UI → Terminal → Webhook tunnel.
+let sortedServices = $derived(
+  [...store.services].sort((a, b) => prettyName(a.name).localeCompare(prettyName(b.name))),
+);
+
+async function onExitInstaller(): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("exit_installer");
+  } catch {
+    // ignore — wizard already closing or backend unreachable
+  }
+}
 
 // Status pip glyph for each service row. Failed renders as ✗ in the
 // timeout treatment; pending/starting both render as a spinner so
@@ -112,7 +164,22 @@ function prettyName(name: string): string {
 
 <div class="screen">
   <div class="content">
-    {#if store.error !== null}
+    {#if needsApiKey}
+      <!-- Pre-launch env check failed: no provider key on disk.
+           Send the user back to the API Keys form rather than
+           letting friday crash-loop on missing credentials. -->
+      <div class="error-state">
+        <div class="error-icon" aria-hidden="true">!</div>
+        <h2>API key missing</h2>
+        <p class="error-detail">
+          Friday Studio needs an AI provider API key before it can
+          start. We didn't find one in <code>~/.friday/local/.env</code>.
+        </p>
+        <div class="actions">
+          <button class="primary" onclick={goSetApiKey}>Set API key</button>
+        </div>
+      </div>
+    {:else if store.error !== null}
       <!-- Launcher spawn failed (runLaunch threw). Distinct from
            wait-healthy errors which surface via launchStage. -->
       <div class="error-state">
@@ -130,7 +197,7 @@ function prettyName(name: string): string {
         <p class="subtitle">
           All services are healthy. Click below to open Friday Studio.
         </p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
@@ -175,7 +242,7 @@ function prettyName(name: string): string {
             become ready.
           {/if}
         </p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
@@ -185,7 +252,18 @@ function prettyName(name: string): string {
         {/each}
         <div class="actions">
           <button class="secondary" onclick={onOpenLogs}>View logs</button>
-          {#if canOpenAnyway}
+          {#if hasFailedService}
+            <!--
+              At least one supervised process is in a failed state
+              (a real "✗", not just "starting…"). Opening the
+              playground would hit a daemon that isn't going to
+              recover; offering "Open anyway" would just send the
+              user into a broken UI. Show Exit instead so they can
+              close the wizard, fix the underlying error (usually
+              a missing API key), and try again.
+            -->
+            <button class="primary" onclick={onExitInstaller}>Exit</button>
+          {:else if canOpenAnyway}
             <button class="primary" onclick={openPlaygroundAndExit}
               >Open anyway</button
             >
@@ -204,7 +282,7 @@ function prettyName(name: string): string {
         <p class="subtitle">
           This is taking longer than usual — services are still booting.
         </p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
@@ -236,7 +314,7 @@ function prettyName(name: string): string {
         <div class="spinner" aria-label="Starting Studio"></div>
         <h2>Starting Friday Studio…</h2>
         <p class="subtitle">Waiting for services to report healthy.</p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
@@ -271,21 +349,24 @@ function prettyName(name: string): string {
   h2 {
     font-size: 22px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: var(--color-text);
   }
 
   .subtitle {
     font-size: 14px;
-    color: #888;
+    color: var(--color-text-muted);
     max-width: 380px;
     line-height: 1.5;
   }
 
+  /* Spinner ring contrast: in light mode the ring needs to be a
+     darker grey than the background so the spin is visible; in
+     dark mode the ring is the dark grey behind the bright top-color. */
   .spinner {
     width: 40px;
     height: 40px;
-    border: 4px solid #1e1e1e;
-    border-top-color: #6b72f0;
+    border: 4px solid var(--color-border-1);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.9s linear infinite;
   }
@@ -309,12 +390,12 @@ function prettyName(name: string): string {
 
   .check-icon {
     background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
+    color: var(--color-success);
   }
 
   .error-icon {
     background: rgba(248, 113, 113, 0.15);
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .launching-state,
@@ -329,16 +410,16 @@ function prettyName(name: string): string {
   }
 
   .timeout-state h2 {
-    color: #fbbf24;
+    color: var(--color-warning);
   }
 
   .error-state h2 {
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .error-detail {
     font-size: 13px;
-    color: #888;
+    color: var(--color-text-muted);
     max-width: 380px;
     word-break: break-word;
     background: rgba(248, 113, 113, 0.08);
@@ -353,7 +434,7 @@ function prettyName(name: string): string {
     align-items: center;
     gap: 10px;
     font-size: 13px;
-    color: #ccc;
+    color: var(--color-text);
     padding: 4px 12px;
     width: 100%;
     max-width: 320px;
@@ -378,17 +459,17 @@ function prettyName(name: string): string {
 
   .pip-healthy {
     background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
+    color: var(--color-success);
   }
 
   .pip-failed {
     background: rgba(248, 113, 113, 0.15);
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .pip-spinner {
     background: rgba(107, 114, 240, 0.15);
-    color: #6b72f0;
+    color: var(--color-primary);
     animation: pulse 1.4s ease-in-out infinite;
   }
 
@@ -421,21 +502,21 @@ function prettyName(name: string): string {
   }
 
   .primary {
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
   }
 
   .primary:hover {
-    background: #5a62e0;
+    background: var(--color-primary); opacity: 0.9;
   }
 
   .secondary {
-    background: #1e1e1e;
-    color: #ccc;
-    border: 1px solid #2e2e2e;
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-1);
   }
 
   .secondary:hover {
-    background: #252525;
+    background: var(--color-surface-2);
   }
 </style>

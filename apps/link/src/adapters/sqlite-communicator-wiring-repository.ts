@@ -29,6 +29,13 @@ const SCHEMA_DDL = `
     ON communicator_wiring(connection_id, provider);
   CREATE INDEX IF NOT EXISTS idx_communicator_wiring_user_id
     ON communicator_wiring(user_id);
+  -- Rename legacy 'slack-app' rows produced by the now-deleted OAuth flow
+  -- (apps/link/src/slack-apps/) to 'slack' so the apikey-provider resolver
+  -- (chat-sdk-instance.ts → findCommunicatorWiring(workspaceId, "slack"))
+  -- sees them. Idempotent: zero rows after first apply. Remove this DDL
+  -- statement in a future cleanup once no legacy rows remain in any deployed
+  -- instance.
+  UPDATE communicator_wiring SET provider = 'slack' WHERE provider = 'slack-app';
 `;
 
 const CredentialIdRow = z.object({ credential_id: z.string() });

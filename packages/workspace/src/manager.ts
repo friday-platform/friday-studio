@@ -7,7 +7,6 @@ import { env } from "node:process";
 import { MdMemoryAdapter } from "@atlas/adapters-md";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { MissingEnvironmentError } from "@atlas/core";
-import { deleteSlackApp } from "@atlas/core/mcp-registry/credential-resolver";
 import { logger } from "@atlas/logger";
 import { seedMemories } from "@atlas/memory";
 import { FilesystemConfigAdapter } from "@atlas/storage";
@@ -514,35 +513,6 @@ export class WorkspaceManager {
     }
 
     await this.unregisterWithRegistrars(id);
-
-    try {
-      const config = await this.getWorkspaceConfig(id);
-      if (config) {
-        const signals = config.workspace.signals ?? {};
-        for (const [signalName, signal] of Object.entries(signals)) {
-          if (signal.provider !== "slack") continue;
-          const appId = signal.config.app_id;
-          if (!appId) continue;
-          try {
-            await deleteSlackApp(appId);
-            logger.info("Slack app deleted during workspace cleanup", {
-              appId,
-              signalName,
-              workspaceId: id,
-            });
-          } catch (error) {
-            logger.warn("Failed to delete Slack app during workspace cleanup", {
-              appId,
-              signalName,
-              workspaceId: id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      }
-    } catch (error) {
-      logger.warn("Pre-deletion Slack cleanup failed (best-effort)", { id, error });
-    }
 
     const runtime = this.runtimes.get(id);
     if (runtime) {

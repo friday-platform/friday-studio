@@ -210,19 +210,29 @@ describe("POST /:workspaceId/connect-communicator", () => {
     expect(written.communicators).toEqual({ telegram: { kind: "telegram" } });
   });
 
-  test("400 on kind: slack — directs caller to /connect-slack", async () => {
+  test("kind: slack flows through the generic path and wires Link", async () => {
     await writeWorkspaceConfig(emptyConfig());
     const { app } = await createTestApp();
 
     const res = await app.request("/ws-1/connect-communicator", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "slack", credential_id: "cred-77" }),
+      body: JSON.stringify({ kind: "slack", credential_id: "cred-slack" }),
     });
 
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Use /connect-slack for Slack" });
-    expect(mockWireCommunicator).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, kind: "slack" });
+
+    expect(mockDeriveConnectionId).toHaveBeenCalledWith("slack", "cred-slack");
+    expect(mockWireCommunicator).toHaveBeenCalledWith(
+      "ws-1",
+      "slack",
+      "cred-slack",
+      "derived-connection-id",
+      "https://tunnel.example.com",
+    );
+    const written = (await readWorkspaceConfig()) as { communicators?: Record<string, unknown> };
+    expect(written.communicators).toEqual({ slack: { kind: "slack" } });
   });
 
   test("404 on unknown workspace", async () => {
@@ -313,8 +323,12 @@ describe("POST /:workspaceId/disconnect-communicator", () => {
     expect(await res.json()).toEqual({ ok: true, credential_id: null });
   });
 
-  test("400 on kind: slack — directs caller to /disconnect-slack", async () => {
-    await writeWorkspaceConfig(emptyConfig());
+  test("kind: slack flows through generic disconnect and calls Link", async () => {
+    await writeWorkspaceConfig({
+      version: "1.0",
+      workspace: { id: "ws-1", name: "Test" },
+      communicators: { slack: { kind: "slack" } },
+    });
     const { app } = await createTestApp();
 
     const res = await app.request("/ws-1/disconnect-communicator", {
@@ -323,8 +337,14 @@ describe("POST /:workspaceId/disconnect-communicator", () => {
       body: JSON.stringify({ kind: "slack" }),
     });
 
-    expect(res.status).toBe(400);
-    expect(mockDisconnectCommunicator).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(mockDisconnectCommunicator).toHaveBeenCalledWith(
+      "ws-1",
+      "slack",
+      "https://tunnel.example.com",
+    );
+    const written = (await readWorkspaceConfig()) as { communicators?: Record<string, unknown> };
+    expect(written.communicators).toBeUndefined();
   });
 
   test("tunnel unavailable: disconnect proceeds with empty callback URL", async () => {

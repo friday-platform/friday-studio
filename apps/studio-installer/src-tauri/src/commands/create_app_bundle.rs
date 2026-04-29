@@ -118,7 +118,17 @@ fn info_plist(version: &str) -> String {
   <key>CFBundleShortVersionString</key><string>{escaped_version}</string>
   <key>CFBundleVersion</key><string>{escaped_version}</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
-  <key>LSUIElement</key><false/>
+  <!--
+    LSUIElement=true makes Friday Studio a menu-bar-only "agent"
+    app: no Dock icon, no Cmd+Tab entry, no application menu. The
+    tray icon is the only surface. Without this the .app shows up
+    in the Dock with a generic icon while the launcher (which runs
+    headless apart from its NSStatusItem tray) provides no Dock
+    interactions — clicking it does nothing useful.
+    Quit still works via the tray menu, autostart still works, and
+    Spotlight still finds the app for re-launch after Quit.
+  -->
+  <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

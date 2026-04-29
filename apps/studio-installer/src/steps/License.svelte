@@ -56,22 +56,22 @@ function accept() {
   h2 {
     font-size: 20px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: var(--color-text);
     margin-bottom: 4px;
   }
 
   .hint {
     font-size: 12px;
-    color: #666;
+    color: var(--color-text-muted);
   }
 
   .license-scroll {
     flex: 1;
     overflow: auto; /* allow horizontal scroll if window narrower than 76ch */
     margin: 0 32px;
-    border: 1px solid #2a2a2a;
+    border: 1px solid var(--color-border-1);
     border-radius: 8px;
-    background: #131313;
+    background: var(--color-surface-3);
     padding: 20px;
   }
 
@@ -79,7 +79,7 @@ function accept() {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
     font-size: 11px;
     line-height: 1.55;
-    color: #aaa;
+    color: var(--color-text);
     /* Source LICENSE hard-wraps at ~76 chars and uses indented continuation
        blocks (Parameters table). Use `pre` (no soft-wrap) so the rendered
        layout matches the source exactly — no orphaned words from CSS
@@ -106,12 +106,12 @@ function accept() {
   }
 
   .primary {
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
   }
 
   .primary:hover:not(:disabled) {
-    background: #5a62e0;
+    background: var(--color-primary); opacity: 0.9;
   }
 
   .primary:disabled {
@@ -121,6 +121,6 @@ function accept() {
 
   .scroll-hint {
     font-size: 12px;
-    color: #555;
+    color: var(--color-text-muted);
   }
 </style>

@@ -21,6 +21,10 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["full"] }
 dirs = "5"
 hex = "0.4"
+# Mirrors exec.LookPath for our claude discovery so the wizard
+# agrees with the launcher about whether claude is already
+# installed.
+which = "6"
 futures-util = "0.3"
 flate2 = "1"
 tar = "0.4"
