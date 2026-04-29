@@ -87,9 +87,7 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
           );
 
           if (draftResponse.ok && draftResponse.data.contents) {
-            const parsed = SkillDraftSchema.safeParse(
-              JSON.parse(draftResponse.data.contents),
-            );
+            const parsed = SkillDraftSchema.safeParse(JSON.parse(draftResponse.data.contents));
             if (parsed.success) {
               existingDraft = parsed.data;
               logger.info("Loaded existing draft for revision");

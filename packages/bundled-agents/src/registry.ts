@@ -4,6 +4,7 @@ import { z } from "zod";
 import { bbAgent } from "./bb/agent.ts";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
 import { csvFilterSamplerAgent } from "./csv/filter.ts";
+import { dataAnalystAgent } from "./data-analyst/agent.ts";
 import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { ghAgent } from "./gh/agent.ts";
@@ -32,6 +33,7 @@ export const bundledAgents: AtlasAgent[] = [
   bbAgent,
   jiraAgent,
   csvFilterSamplerAgent,
+  dataAnalystAgent,
   transcriptionAgent,
   hubspotAgent,
   imageGenerationAgent,

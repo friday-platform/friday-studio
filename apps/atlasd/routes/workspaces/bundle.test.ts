@@ -83,10 +83,7 @@ function createApp(opts: {
       .fn()
       .mockResolvedValue({
         atlas: null,
-        workspace: {
-          version: "1.0",
-          workspace: { name: "demo-space" },
-        },
+        workspace: { version: "1.0", workspace: { name: "demo-space" } },
       }),
     registerWorkspace: registerSpy,
     list: vi.fn().mockResolvedValue([]),

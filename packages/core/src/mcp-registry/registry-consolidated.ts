@@ -94,9 +94,7 @@ function createGoogleWorkspaceEntry(
         type: "command",
         command: "uvx",
         args: ["workspace-mcp", "--tools", spec.toolFlag, "--transport", "streamable-http"],
-        env: {
-          WORKSPACE_MCP_PORT: String(spec.defaultPort),
-        },
+        env: { WORKSPACE_MCP_PORT: String(spec.defaultPort) },
         ready_url: defaultUrl,
       },
     },

@@ -407,7 +407,11 @@ export class AtlasDaemon {
       try {
         await this.getOrCreateWorkspaceRuntime(workspaceId);
       } catch (error) {
-        logger.error("Failed to wake workspace runtime for signal", { workspaceId, signalId, error });
+        logger.error("Failed to wake workspace runtime for signal", {
+          workspaceId,
+          signalId,
+          error,
+        });
         return;
       }
 

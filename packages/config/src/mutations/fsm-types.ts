@@ -35,14 +35,6 @@ export type { FSMAction, FSMAgentAction, FSMLLMAction };
 export type FSMOtherAction = Exclude<FSMAction, FSMAgentAction | FSMLLMAction>;
 
 /**
- * Parse an FSM definition and return the validated result.
- * Use when you need both validation and the parsed data.
- */
-export function parseFSMDefinition(fsm: unknown) {
-  return FSMDefinitionSchema.safeParse(fsm);
-}
-
-/**
  * Parse an inline FSM embedded in a workspace job config.
  *
  * Inline FSMs in workspace.yml don't include `id` — the job name is the identity.
@@ -55,7 +47,6 @@ export function parseFSMDefinition(fsm: unknown) {
  * @returns Safe parse result with injected id if needed
  */
 export function parseInlineFSM(fsm: unknown, jobId: string) {
-  const fsmWithId =
-    typeof fsm === "object" && fsm !== null ? { id: jobId, ...fsm } : fsm;
+  const fsmWithId = typeof fsm === "object" && fsm !== null ? { id: jobId, ...fsm } : fsm;
   return FSMDefinitionSchema.safeParse(fsmWithId);
 }

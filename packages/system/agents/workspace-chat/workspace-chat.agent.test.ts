@@ -150,6 +150,65 @@ describe("formatWorkspaceSection", () => {
     expect(result).not.toContain("<resources>");
   });
 
+  it("omits communicators block when config has no communicators", () => {
+    const result = formatWorkspaceSection("ws-no-comms", makeDetails(), {
+      version: "1.0",
+      workspace: { name: "ws-no-comms" },
+    } as never);
+    expect(result).not.toContain("<communicators>");
+  });
+
+  it("omits communicators block when config is undefined", () => {
+    const result = formatWorkspaceSection("ws-no-config", makeDetails());
+    expect(result).not.toContain("<communicators>");
+  });
+
+  it("renders all 5 kinds with wired=false when communicators is empty object", () => {
+    const result = formatWorkspaceSection("ws-empty-comms", makeDetails(), {
+      version: "1.0",
+      workspace: { name: "ws-empty-comms" },
+      communicators: {},
+    } as never);
+    expect(result).toContain(
+      '<communicators>\n' +
+        '<communicator kind="slack" wired="false"/>\n' +
+        '<communicator kind="telegram" wired="false"/>\n' +
+        '<communicator kind="discord" wired="false"/>\n' +
+        '<communicator kind="teams" wired="false"/>\n' +
+        '<communicator kind="whatsapp" wired="false"/>\n' +
+        '</communicators>',
+    );
+  });
+
+  it("marks one wired communicator and the rest unwired", () => {
+    const result = formatWorkspaceSection("ws-one-wired", makeDetails(), {
+      version: "1.0",
+      workspace: { name: "ws-one-wired" },
+      communicators: { telegram: { kind: "telegram" } },
+    } as never);
+    expect(result).toContain('<communicator kind="telegram" wired="true"/>');
+    expect(result).toContain('<communicator kind="slack" wired="false"/>');
+    expect(result).toContain('<communicator kind="discord" wired="false"/>');
+    expect(result).toContain('<communicator kind="teams" wired="false"/>');
+    expect(result).toContain('<communicator kind="whatsapp" wired="false"/>');
+  });
+
+  it("marks two wired communicators", () => {
+    const result = formatWorkspaceSection("ws-two-wired", makeDetails(), {
+      version: "1.0",
+      workspace: { name: "ws-two-wired" },
+      communicators: {
+        slack: { kind: "slack" },
+        telegram: { kind: "telegram" },
+      },
+    } as never);
+    expect(result).toContain('<communicator kind="slack" wired="true"/>');
+    expect(result).toContain('<communicator kind="telegram" wired="true"/>');
+    expect(result).toContain('<communicator kind="discord" wired="false"/>');
+    expect(result).toContain('<communicator kind="teams" wired="false"/>');
+    expect(result).toContain('<communicator kind="whatsapp" wired="false"/>');
+  });
+
   it("renders all sections together", () => {
     const result = formatWorkspaceSection(
       "ws-full",

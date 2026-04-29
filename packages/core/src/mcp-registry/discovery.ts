@@ -128,10 +128,7 @@ function applyPlatformEnv(
   if (!config.startup) return config;
   return {
     ...config,
-    startup: {
-      ...config.startup,
-      env: { ...platformEnv, ...config.startup.env },
-    },
+    startup: { ...config.startup, env: { ...platformEnv, ...config.startup.env } },
   };
 }
 

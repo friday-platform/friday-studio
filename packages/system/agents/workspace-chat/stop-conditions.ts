@@ -23,3 +23,26 @@ export const connectServiceSucceeded =
       }
       return false;
     };
+
+/**
+ * Stop when connect_communicator returns a kind (not an error). The chat-side
+ * form drives credential creation + wiring; the agent must wait for that
+ * roundtrip before continuing or it would talk over the form.
+ */
+const ConnectCommunicatorSuccessSchema = z.object({
+  output: z.object({ kind: z.string(), error: z.undefined() }),
+});
+
+export const connectCommunicatorSucceeded =
+  // deno-lint-ignore no-explicit-any
+    (): StopCondition<any> =>
+    ({ steps }) => {
+      for (const step of steps) {
+        for (const toolResult of step.toolResults) {
+          if (toolResult.toolName !== "connect_communicator") continue;
+          const parsed = ConnectCommunicatorSuccessSchema.safeParse(toolResult);
+          if (parsed.success) return true;
+        }
+      }
+      return false;
+    };

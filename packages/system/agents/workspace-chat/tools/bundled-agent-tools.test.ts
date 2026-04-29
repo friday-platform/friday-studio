@@ -297,6 +297,59 @@ describe("createAgentTool — execute (happy path)", () => {
   });
 });
 
+describe("createAgentTool — execute (artifactRefs surfacing)", () => {
+  const refs = [{ id: "art-1", type: "file", summary: "generated.png" }];
+
+  it("merges payload.artifactRefs into the tool result when data is an object", async () => {
+    const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
+      Promise.resolve(ok({ description: "an owl", mode: "generate" }, { artifactRefs: refs })),
+    );
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const tools = createAgentTool(agent, makeDeps());
+
+    const result = await getExecute(tools.agent_test)({ prompt: "draw an owl" }, callOpts);
+
+    expect(result).toEqual({ description: "an owl", mode: "generate", artifacts: refs });
+  });
+
+  it("returns data unchanged when artifactRefs is absent", async () => {
+    const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
+      Promise.resolve(ok({ response: "hello" })),
+    );
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const tools = createAgentTool(agent, makeDeps());
+
+    const result = await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
+    expect(result).toEqual({ response: "hello" });
+    expect(result).not.toHaveProperty("artifacts");
+  });
+
+  it("returns data unchanged when artifactRefs is empty", async () => {
+    const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
+      Promise.resolve(ok({ response: "hello" }, { artifactRefs: [] })),
+    );
+    const agent = makeAgent({ id: "test", execute: executeMock });
+    const tools = createAgentTool(agent, makeDeps());
+
+    const result = await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
+    expect(result).toEqual({ response: "hello" });
+    expect(result).not.toHaveProperty("artifacts");
+  });
+
+  it("does not merge when data is not a plain object (string / array / null)", async () => {
+    for (const data of ["raw string", [1, 2, 3], null] as const) {
+      const executeMock = vi.fn<AtlasAgent["execute"]>(() =>
+        Promise.resolve(ok(data as never, { artifactRefs: refs })),
+      );
+      const agent = makeAgent({ id: "test", execute: executeMock });
+      const tools = createAgentTool(agent, makeDeps());
+
+      const result = await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
+      expect(result).toEqual(data);
+    }
+  });
+});
+
 describe("createAgentTool — execute (error path)", () => {
   it("throws Error with payload.error.reason on err", async () => {
     const executeMock = vi.fn<AtlasAgent["execute"]>(() => Promise.resolve(err("boom")));

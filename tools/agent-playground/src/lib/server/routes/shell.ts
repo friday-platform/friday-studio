@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import process from "node:process";
 
 const execFileAsync = promisify(execFile);
 
