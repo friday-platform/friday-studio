@@ -1,14 +1,65 @@
+import { Buffer } from "node:buffer";
 import { z } from "zod";
 import { defineOAuthProvider, type OAuthProvider } from "./types.ts";
 
-// Google OAuth desktop app client ID (shipped with app, not sensitive).
-// PKCE provides the real security; Google still requires client_secret present
-// for Desktop app clients at the token endpoint.
-const GCLOUD_CLIENT_ID = "121686085713-m7b2u1sari8j9l07ep3fodes3b85a1pm.apps.googleusercontent.com";
-const GCLOUD_CLIENT_SECRET = "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";
+/**
+ * Google OAuth via Gemini CLI Workspace Extension's verified client.
+ *
+ * The OAuth flow uses Google's verified `client_id` (owned by the Gemini
+ * CLI Workspace Extension's GCP project) and routes the code-for-token
+ * exchange through Google's hosted Cloud Function. The `client_secret`
+ * never enters this binary — it lives in the Cloud Function's secret
+ * store.
+ *
+ * Why this exists: Friday's prior client (`121686085713-...`) is not
+ * verified, so it triggers Google's "unverified app" warning for any
+ * external user. The Gemini extension's client IS verified for the same
+ * scope set Friday needs, so by piggybacking on it the warning goes away.
+ *
+ * Posture caveat — the OAuth consent screen will display "Gemini CLI
+ * Workspace Extension" instead of Friday Studio. Treat this as a tactical
+ * shim until Friday has its own verified GCP project. Google can revoke
+ * or rate-limit the public Cloud Function at any time, breaking this
+ * flow without notice.
+ */
+const GEMINI_CLIENT_ID = "338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com";
+const GEMINI_EXCHANGE_URI = "https://google-workspace-extension.geminicli.com";
+const GEMINI_REFRESH_URI = `${GEMINI_EXCHANGE_URI}/refreshToken`;
+
+/**
+ * Encodes the OAuth `state` parameter in the format the Gemini Cloud
+ * Function expects (per `cloud_function/index.js` and `AuthManager.ts:319-325`):
+ *
+ *   base64(JSON({ uri, manual: false, csrf }))
+ *
+ * The Cloud Function:
+ *   1. Validates `payload.uri` resolves to localhost or 127.0.0.1.
+ *   2. Performs the code-for-token exchange.
+ *   3. Redirects to `payload.uri` with tokens appended as query params,
+ *      and `?state=<csrf>` (the bare CSRF string — NOT the base64 payload).
+ *
+ * Friday's callback handler reads the bare `state` query param and
+ * compares it against the expected CSRF (which is the JWT we minted).
+ */
+function encodeGeminiState({
+  csrfToken,
+  finalRedirectUri,
+}: {
+  csrfToken: string;
+  finalRedirectUri: string;
+}): string {
+  return Buffer.from(
+    JSON.stringify({ uri: finalRedirectUri, manual: false, csrf: csrfToken }),
+  ).toString("base64");
+}
 
 /**
  * Google API scopes for each Workspace service.
+ *
+ * IMPORTANT: this set must remain a subset of what Gemini's published
+ * GCP project verified. See `gemini-cli-extensions/workspace`'s
+ * `feature-config.ts` — anything outside that set will re-introduce the
+ * unverified-app warning, defeating the purpose of this swap.
  */
 const GOOGLE_SCOPES = {
   calendar: ["https://www.googleapis.com/auth/calendar"],
@@ -26,13 +77,6 @@ const GOOGLE_SCOPES = {
 
 type GoogleService = keyof typeof GOOGLE_SCOPES;
 
-/**
- * Factory function for creating Google OAuth providers.
- * Uses shipped desktop app client ID with PKCE (no client_secret).
- *
- * Note: openid scope required - identify() uses userinfo endpoint
- * which needs openid to return subject ID for user identification.
- */
 function createGoogleProvider(
   service: GoogleService,
   displayName: string,
@@ -43,15 +87,19 @@ function createGoogleProvider(
     displayName,
     description,
     oauthConfig: {
-      mode: "static",
+      mode: "delegated",
       authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
-      tokenEndpoint: "https://oauth2.googleapis.com/token",
-      userinfoEndpoint: "https://openidconnect.googleapis.com/v1/userinfo",
-      clientId: GCLOUD_CLIENT_ID,
-      clientSecret: GCLOUD_CLIENT_SECRET,
-      clientAuthMethod: "client_secret_post",
+      delegatedExchangeUri: GEMINI_EXCHANGE_URI,
+      delegatedRefreshUri: GEMINI_REFRESH_URI,
+      clientId: GEMINI_CLIENT_ID,
       scopes: ["openid", "email", ...GOOGLE_SCOPES[service]],
-      extraAuthParams: { access_type: "offline", prompt: "consent" },
+      extraAuthParams: {
+        access_type: "offline",
+        // Mandatory: only way to guarantee Google returns a refresh_token
+        // on the auth code exchange (per AuthManager.ts:335).
+        prompt: "consent",
+      },
+      encodeState: encodeGeminiState,
     },
     identify: async (tokens) => {
       const res = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {

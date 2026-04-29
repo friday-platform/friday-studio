@@ -49,23 +49,33 @@ export const providersRouter = factory
           : {}),
         ...(provider.type === "oauth"
           ? {
-              oauthConfig:
-                provider.oauthConfig.mode === "static"
-                  ? {
-                      mode: "static",
-                      authorizationEndpoint: provider.oauthConfig.authorizationEndpoint,
-                      tokenEndpoint: provider.oauthConfig.tokenEndpoint,
-                      userinfoEndpoint: provider.oauthConfig.userinfoEndpoint,
-                      clientAuthMethod: provider.oauthConfig.clientAuthMethod,
-                      scopes: provider.oauthConfig.scopes,
-                      extraAuthParams: provider.oauthConfig.extraAuthParams,
-                      // OMIT clientId and clientSecret - these are secrets
-                    }
-                  : {
-                      mode: "discovery",
-                      serverUrl: provider.oauthConfig.serverUrl,
-                      scopes: provider.oauthConfig.scopes,
-                    },
+              oauthConfig: ((): Record<string, unknown> => {
+                const c = provider.oauthConfig;
+                if (c.mode === "static") {
+                  return {
+                    mode: "static",
+                    authorizationEndpoint: c.authorizationEndpoint,
+                    tokenEndpoint: c.tokenEndpoint,
+                    userinfoEndpoint: c.userinfoEndpoint,
+                    clientAuthMethod: c.clientAuthMethod,
+                    scopes: c.scopes,
+                    extraAuthParams: c.extraAuthParams,
+                    // OMIT clientId and clientSecret - these are secrets
+                  };
+                }
+                if (c.mode === "discovery") {
+                  return { mode: "discovery", serverUrl: c.serverUrl, scopes: c.scopes };
+                }
+                // delegated
+                return {
+                  mode: "delegated",
+                  authorizationEndpoint: c.authorizationEndpoint,
+                  scopes: c.scopes,
+                  extraAuthParams: c.extraAuthParams,
+                  // OMIT clientId, delegatedExchangeUri, delegatedRefreshUri,
+                  // encodeState — internal flow details not for public catalog.
+                };
+              })(),
             }
           : {}),
         ...(provider.type === "app_install"

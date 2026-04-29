@@ -14,6 +14,7 @@ import { factory } from "../factory.ts";
 import { STATE_JWT_SECRET } from "../oauth/jwt-secret.ts";
 import { renderErrorResponse, renderSuccessResponse } from "../oauth/responses.ts";
 import type { OAuthService } from "../oauth/service.ts";
+import { registry } from "../providers/registry.ts";
 import { mapAppInstallErrorToResponse } from "./app-install.ts";
 
 /**
@@ -26,12 +27,16 @@ const FlowTypeSchema = z.object({
   r: z.string().optional(), // redirectUri - where to send user on error
 });
 
-const CallbackQuerySchema = z.object({
-  state: z.string().min(1),
-  code: z.string().optional(),
-  error: z.string().optional(),
-  error_description: z.string().optional(),
-});
+const CallbackQuerySchema = z
+  .object({
+    state: z.string().min(1),
+    code: z.string().optional(),
+    error: z.string().optional(),
+    error_description: z.string().optional(),
+  })
+  // Delegated-mode callbacks include access_token / refresh_token /
+  // expiry_date as siblings; let them pass through for downstream parsing.
+  .passthrough();
 
 /**
  * Create unified callback router.
@@ -101,11 +106,21 @@ export function createCallbackRoutes(
           callbackParams,
         ));
       } else {
-        // OAuth flows require code
-        if (!code) {
-          return renderErrorResponse(c, "missing_code", "No authorization code in callback");
+        // Detect delegated-mode providers (Cloud Function returns tokens
+        // directly in query params, no `code` to exchange).
+        const providerDef = await registry.get(flowType.p);
+        const isDelegated =
+          providerDef?.type === "oauth" && providerDef.oauthConfig.mode === "delegated";
+
+        if (isDelegated) {
+          ({ credential, redirectUri } = await oauthService.completeDelegatedFlow(state, rawQuery));
+        } else {
+          // Standard OAuth flows require code
+          if (!code) {
+            return renderErrorResponse(c, "missing_code", "No authorization code in callback");
+          }
+          ({ credential, redirectUri } = await oauthService.completeFlow(state, code));
         }
-        ({ credential, redirectUri } = await oauthService.completeFlow(state, code));
       }
 
       if (redirectUri) {
