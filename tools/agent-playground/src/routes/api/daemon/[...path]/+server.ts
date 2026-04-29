@@ -1,5 +1,5 @@
 import type { RequestHandler } from "@sveltejs/kit";
-import { DAEMON_BASE_URL } from "$lib/daemon-url";
+import { DAEMON_BASE_URL } from "$lib/server/daemon-base-url";
 
 /**
  * Proxy all HTTP methods to the local daemon.

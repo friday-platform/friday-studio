@@ -1,15 +1,7 @@
 import { z } from "zod";
 
-/** Base URL of the local Atlas daemon, used by server-side proxies inside
- * this package (the static-server's /api/daemon proxy and the Hono
- * router). NOT exposed to the browser — the browser hits the playground
- * itself, which proxies to the daemon. Resolved from FRIDAYD_URL at
- * runtime when present so the same binary works against any local port
- * layout the launcher chooses; falls back to localhost:8080 because
- * `deno task atlas daemon start` binds there by default. */
-const _serverEnv =
-	typeof process !== "undefined" && typeof process.env === "object" ? process.env : undefined;
-export const DAEMON_BASE_URL = _serverEnv?.FRIDAYD_URL ?? "http://localhost:8080";
+// Server-only DAEMON_BASE_URL lives in `$lib/server/daemon-base-url.ts`
+// so this module stays browser-safe (no `process` reference).
 
 interface RuntimeConfig {
 	externalDaemonUrl?: string;
@@ -17,9 +9,8 @@ interface RuntimeConfig {
 }
 
 declare global {
-	interface Window {
-		__FRIDAY_CONFIG__?: RuntimeConfig;
-	}
+	// biome-ignore lint/style/noVar: ambient declarations require var
+	var __FRIDAY_CONFIG__: RuntimeConfig | undefined;
 }
 
 const urlSchema = z.string().url();
@@ -51,7 +42,7 @@ function resolve(
 	viteValue: string | undefined,
 	humanName: string,
 ): string {
-	const fromWindow = typeof window !== "undefined" ? window.__FRIDAY_CONFIG__?.[configKey] : undefined;
+	const fromWindow = globalThis.__FRIDAY_CONFIG__?.[configKey];
 	const candidate = fromWindow ?? viteValue;
 	if (!candidate) {
 		throw new Error(
