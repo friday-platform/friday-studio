@@ -16,7 +16,12 @@
  */
 
 import process from "node:process";
-import { CommunicatorConfigSchema, type WorkspaceConfig } from "@atlas/config";
+import {
+  type CommunicatorKind,
+  CommunicatorConfigSchema,
+  CommunicatorKindSchema,
+  type WorkspaceConfig,
+} from "@atlas/config";
 import type { MutationResult } from "@atlas/config/mutations";
 import { fetchLinkCredential } from "@atlas/core/mcp-registry/credential-resolver";
 import { createLogger } from "@atlas/logger";
@@ -24,14 +29,8 @@ import { z } from "zod";
 
 const logger = createLogger({ component: "communicator-wiring" });
 
-/**
- * Communicator kinds handled by the generic connect-communicator route.
- * Slack joined this set when the apikey provider replaced the OAuth-based
- * `connect-slack` flow — users now paste `{ bot_token, signing_secret, app_id }`
- * directly, and the routing key (`app_id`) is extracted in `deriveConnectionId`.
- */
-export const CommunicatorKindSchema = z.enum(["slack", "telegram", "discord", "teams", "whatsapp"]);
-export type CommunicatorKind = z.infer<typeof CommunicatorKindSchema>;
+export { CommunicatorKindSchema };
+export type { CommunicatorKind };
 
 /** Telegram credential secret as stored in Link after autoFields injection. */
 export const TelegramCredentialSecretSchema = z.object({

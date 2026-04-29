@@ -10,7 +10,7 @@ import {
 import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
-import type { WorkspaceConfig } from "@atlas/config";
+import { CommunicatorKindSchema, type WorkspaceConfig } from "@atlas/config";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
@@ -32,7 +32,6 @@ import {
   streamText,
 } from "ai";
 import { z } from "zod";
-import { CommunicatorKindSchema } from "../../../../apps/atlasd/src/services/communicator-wiring.ts";
 import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
 import {
   composeMemoryBlocks,

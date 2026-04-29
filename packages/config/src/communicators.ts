@@ -8,6 +8,13 @@ import {
 } from "./signals.ts";
 
 /**
+ * Canonical 5-kind enum for chat-transport communicators. Single source of
+ * truth for all surfaces — config, daemon wiring, agent prompts.
+ */
+export const CommunicatorKindSchema = z.enum(["slack", "telegram", "discord", "teams", "whatsapp"]);
+export type CommunicatorKind = z.infer<typeof CommunicatorKindSchema>;
+
+/**
  * Top-level workspace.yml `communicators` map.
  *
  * Declares which chat platforms a workspace uses, decoupled from inbound
