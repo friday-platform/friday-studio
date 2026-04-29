@@ -116,14 +116,10 @@ const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
 // Serve the index with the runtime-config script tag injected. This
 // covers both `/` and the SPA fallback below; a static-file serve of
 // build/index.html would skip the injection.
-async function serveIndex(c: { html: (s: string) => Response }): Promise<Response> {
-  return c.html(await indexHtml());
-}
-
 const app = new Hono()
   .route("/", daemonProxy)
   .route("/", api)
-  .get("/", serveIndex)
+  .get("/", async (c) => c.html(await indexHtml()))
   .use(
     "/*",
     serveStatic({
@@ -134,7 +130,7 @@ const app = new Hono()
   // SPA fallback: any GET that doesn't resolve to a file or `/api/*` route
   // gets the SvelteKit shell (with config injected) so client-side
   // routing can take over.
-  .get("/*", serveIndex);
+  .get("/*", async (c) => c.html(await indexHtml()));
 
 // Log only origins (protocol+host+port) — these are config URLs the user
 // expects in plain text, but never log paths or query strings, since a
