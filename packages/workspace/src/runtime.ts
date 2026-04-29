@@ -73,6 +73,7 @@ import {
   createEngine,
   type Document as FSMDocument,
   type FSMActionExecutionEvent,
+  type FSMBroadcastNotifier,
   type FSMDefinition,
   FSMDefinitionSchema,
   type FSMEngine,
@@ -336,6 +337,12 @@ interface WorkspaceRuntimeOptions {
       options: CodeAgentExecutorOptions,
     ): Promise<AgentResult>;
   };
+  /**
+   * Outbound chat broadcaster. Forwarded into FSMEngineOptions so `notification`
+   * actions can fan messages out across configured chat communicators. Daemon
+   * wraps `ChatSdkNotifier` + `broadcastDestinations` and supplies it here.
+   */
+  broadcastNotifier?: FSMBroadcastNotifier;
 }
 
 type JobConcurrencyPolicy = "single-flight" | "isolated";
@@ -1006,6 +1013,7 @@ export class WorkspaceRuntime {
       ),
       artifactStorage: ArtifactStorage,
       resourceAdapter: this.options.resourceStorage,
+      broadcastNotifier: this.options.broadcastNotifier,
     };
 
     let definition: FSMDefinition;

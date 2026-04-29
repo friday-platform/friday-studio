@@ -19,12 +19,13 @@ import type { WorkspaceConfig } from "./workspace.ts";
 // ==============================================================================
 
 export interface EntryAction {
-  type: "agent" | "llm" | "emit";
+  type: "agent" | "llm" | "emit" | "notification";
   name: string;
   agentId?: string;
   outputTo?: string;
   outputType?: string;
   event?: string;
+  communicators?: string[];
 }
 
 // ==============================================================================
@@ -38,6 +39,7 @@ export interface EntryAction {
  * - `agent` actions: name is the `agentId`, includes `outputTo`
  * - `llm` actions: name is `{provider}/{model}`, includes `outputTo` and `outputType`
  * - `emit` actions: name is the `event` field
+ * - `notification` actions: name is a truncated preview of `message`
  *
  * @param stateDefinition - FSM state definition with optional entry array
  * @returns Array of entry action descriptors in declaration order
@@ -105,5 +107,15 @@ function mapAction(action: FSMAction): EntryAction {
 
     case "emit":
       return { type: "emit", name: action.event, event: action.event };
+
+    case "notification": {
+      const preview =
+        action.message.length > 40 ? `${action.message.slice(0, 40)}…` : action.message;
+      return {
+        type: "notification",
+        name: preview,
+        ...(action.communicators ? { communicators: action.communicators } : {}),
+      };
+    }
   }
 }

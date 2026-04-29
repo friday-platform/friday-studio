@@ -34,6 +34,12 @@ function actionLabel(action: Action): string {
       return `agent: ${action.agentId}`;
     case "emit":
       return `emit ${action.event}`;
+    case "notification": {
+      const targets = action.communicators?.length
+        ? action.communicators.join(",")
+        : "all";
+      return `notify ${targets}`;
+    }
   }
 }
 
@@ -46,6 +52,8 @@ function actionClass(action: Action): string {
       return "agentAction";
     case "emit":
       return "emitSignal";
+    case "notification":
+      return "notificationAction";
   }
 }
 
@@ -133,6 +141,7 @@ export function buildFSMDefinition(
   lines.push("    classDef llmAction fill:#3b82f6,stroke:#2563eb,color:#fff");
   lines.push("    classDef agentAction fill:#22c55e,stroke:#16a34a,color:#fff");
   lines.push("    classDef emitSignal fill:#6b7280,stroke:#4b5563,color:#fff,stroke-dasharray:5 5");
+  lines.push("    classDef notificationAction fill:#a855f7,stroke:#9333ea,color:#fff");
 
   // ClassDef declarations — execution state
   lines.push("    classDef active fill:#3b82f6,stroke:#2563eb,color:#fff,stroke-width:3px");

@@ -66,6 +66,7 @@ import type {
   Document,
   EmittedEvent,
   FSMActionExecutionEvent,
+  FSMBroadcastNotifier,
   FSMDefinition,
   FSMLLMOutput,
   LLMActionTrace,
@@ -412,6 +413,12 @@ export interface FSMEngineOptions {
   artifactStorage?: ArtifactStorageAdapter;
   /** Ledger storage adapter for versioned workspace resources */
   resourceAdapter?: ResourceStorageAdapter;
+  /**
+   * Outbound chat broadcaster used by `notification` actions. Required only
+   * when an FSM declares at least one such action — engines without it throw
+   * a typed error on first encounter.
+   */
+  broadcastNotifier?: FSMBroadcastNotifier;
 }
 
 export class FSMEngine {
@@ -1659,6 +1666,26 @@ export class FSMEngine {
             break;
           }
 
+          case "notification": {
+            if (!this.options.broadcastNotifier) {
+              throw new Error(
+                `FSMEngineOptions.broadcastNotifier is required to execute notification actions. ` +
+                  `Engine host must wire one — atlasd does this automatically; third-party ` +
+                  `consumers must construct their own.`,
+              );
+            }
+            logger.debug("Executing notification action", {
+              state: currentState,
+              communicators: action.communicators,
+              messageLength: action.message.length,
+            });
+            await this.options.broadcastNotifier.broadcast({
+              message: action.message,
+              communicators: action.communicators,
+            });
+            break;
+          }
+
           default: {
             logger.error("Unknown action type", { action });
             throw new Error(`Unknown action type`);
@@ -1724,6 +1751,8 @@ export class FSMEngine {
         return action.event;
       case "llm":
         return action.outputTo;
+      case "notification":
+        return action.message.slice(0, 40);
       default:
         return undefined;
     }
