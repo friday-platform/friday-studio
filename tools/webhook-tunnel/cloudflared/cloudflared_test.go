@@ -29,8 +29,8 @@ func fakeBinaryServer(t *testing.T, body []byte) string {
 // key into the GitHub API's `assets` array.
 func TestAssetNameRoundTrips(t *testing.T) {
 	cases := map[string]string{
-		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-darwin-arm64.tgz": "cloudflared-darwin-arm64.tgz",
-		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-linux-amd64":      "cloudflared-linux-amd64",
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-darwin-arm64.tgz":  "cloudflared-darwin-arm64.tgz",
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-linux-amd64":       "cloudflared-linux-amd64",
 		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-windows-amd64.exe": "cloudflared-windows-amd64.exe",
 	}
 	for url, want := range cases {

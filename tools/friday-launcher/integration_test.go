@@ -114,7 +114,7 @@ func buildLauncherAndStubs(t *testing.T) (launcherPath, binDir string) {
 		// and serves the same handler at any path, so the test
 		// observes the real probe rule: launcher hits the path
 		// project.go declares.
-		"playground":     {"15200", "/"},
+		"playground": {"15200", "/"},
 	}
 	for name, w := range wrappers {
 		writeWrapper(t, binDir, name, stubBin, w.port, w.healthPath, "")
