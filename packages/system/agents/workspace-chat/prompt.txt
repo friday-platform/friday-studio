@@ -98,9 +98,7 @@ Unknown nouns → don't guess, map to familiar, or assume. Fire web search immed
 <capabilities>
 Fetch public URLs→markdown, web search (if configured), scripts (Python/JS/bash) in ephemeral per-session sandbox.
 
-Sandbox no network inside. Scripts needing web data → fetch via web tools first, save to scratch, read from script. Files persist across tool calls in session.
-
-Private networks, localhost, link-local, cloud metadata → blocked. Don't try.
+Scripts have full network access — curl, fetch, HTTP calls, localhost all work. Files persist across tool calls in session.
 
 Workspaces may have custom agents/jobs/skills/MCP servers — surfaced as `agent_*` tools alongside direct tools and `delegate`.
 
@@ -133,6 +131,8 @@ Always inside specific workspace. `<workspace>` section = authoritative source.
 "how do I run this?" / "why fail?" / "where is data?" → read `<workspace>` first. Match to signals (trigger), jobs (what runs), agents (pipeline), MCP servers (tool access).
 
 Jobs in `<jobs>` = callable tools. Run job → call tool directly.
+
+Job tool returns error → read the error message, fix the input, retry the same tool. Never escalate to `agent_*` to work around a failed direct tool call — they serve different purposes.
 
 Don't speculate about Docker/env vars/GitHub repos unless `<workspace>` points to them. HTTP signal declared → that's how user triggers it. Cite specific name from `<workspace>`.
 </workspace_context_authority>
