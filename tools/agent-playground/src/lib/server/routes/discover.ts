@@ -257,68 +257,40 @@ async function fetchWorkspaceMeta(
 
 const ItemQuerySchema = z.object({ slug: z.string().min(1) });
 
-// Stubbed catalog while the real discover repo is still TBD. Each entry maps
-// 1:1 to a card on /discover. Slug is derived from name and used to look up
-// the entry on the detail page.
-const STUB_LIST: { name: string; description: string }[] = [
-  {
-    name: "GitHub Digest",
-    description:
-      "Summarizes your GitHub notifications and open PRs into a scheduled morning and evening digest.",
-  },
-  {
-    name: "Competitor Monitor",
-    description:
-      "Automatically scans for competitors every Monday for pricing, product, and GTM changes, then delivers a clustered, action-ready intelligence brief in Discord.",
-  },
-  {
-    name: "Daily Operating Memo",
-    description: "Reads your Jira, Gmail, and GCal, and sends a daily operating memo.",
-  },
-  {
-    name: "Personal CRM Lite",
-    description:
-      "Lightweight contact memory system — log interactions and pull relationship context via Telegram.",
-  },
-  {
-    name: "GitHub PR Reviewer",
-    description:
-      "Reviews pull requests and posts inline comments on GitHub. Supports initial reviews and follow-up rounds where it responds to author feedback.",
-  },
-  {
-    name: "BitBucket PR Reviewer",
-    description:
-      "Reviews pull requests and posts inline comments on Bitbucket. Supports initial reviews and follow-up rounds where it responds to author feedback.",
-  },
-  {
-    name: "Jira/BitBucket Bug Fix",
-    description:
-      "Fixes bugs from Jira tickets. Reads the issue, implements a fix, and opens a PR on Bitbucket.",
-  },
-  { name: "Home Listings Search", description: "" },
-  {
-    name: "Query Data for Insights",
-    description: "Connect a data source (.csv? Snowflake?) and query the data in chat.",
-  },
-  { name: "Brand Monitor", description: "" },
-  { name: "Track Price Changes", description: "" },
-  { name: "Workout Tracker", description: "" },
-  { name: "Email Management", description: "" },
-];
+function humanizeSlug(slug: string): string {
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
-function toSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+async function fetchFolderListing(
+  repo: string,
+  ref: string,
+  path: string,
+): Promise<string[] | null> {
+  const url = `https://api.github.com/repos/${repo}/contents/${path}?ref=${ref}`;
+  const { status, text } = await cachedFetch(url);
+  if (status < 200 || status >= 300) return null;
+  try {
+    const parsed = ContentsResponseSchema.parse(JSON.parse(text));
+    return parsed.filter((e) => e.type === "dir").map((e) => e.name);
+  } catch {
+    return null;
+  }
 }
 
 export const discoverRoute = new Hono()
-  .get("/list", (c) => {
-    const items: DiscoverItem[] = STUB_LIST.map((entry) => ({
-      slug: toSlug(entry.name),
-      name: entry.name,
-      description: entry.description,
+  .get("/list", async (c) => {
+    const folders = await fetchFolderListing(REPO, REF, PATH);
+    if (!folders) {
+      return c.json({ error: `Failed to list folders at ${REPO}/${REF}/${PATH}` }, 502);
+    }
+    const items: DiscoverItem[] = folders.map((folder) => ({
+      slug: folder,
+      name: humanizeSlug(folder),
+      description: "",
       hasWorkspaceYml: false,
       counts: { signals: 0, agents: 0, jobs: 0 },
     }));
