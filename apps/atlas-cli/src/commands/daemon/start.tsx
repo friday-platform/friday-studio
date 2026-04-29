@@ -1,4 +1,5 @@
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
@@ -350,7 +351,16 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       }
     }
 
-    // Load global Atlas configuration as fallback
+    // Load global Friday configuration (where the studio installer writes
+    // ANTHROPIC_API_KEY etc.) before the legacy Atlas fallback. Mirrors
+    // tools/friday-launcher/project.go:43-44 so the manual `friday daemon
+    // start` path sees the same env the launcher does.
+    const globalFridayEnv = join(homedir(), ".friday", "local", ".env");
+    if (await exists(globalFridayEnv)) {
+      await load({ export: true, envPath: globalFridayEnv });
+    }
+
+    // Load global Atlas configuration as legacy fallback
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
       await load({ export: true, envPath: globalAtlasEnv });
