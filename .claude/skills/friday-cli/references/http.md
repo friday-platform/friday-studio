@@ -149,7 +149,7 @@ Mount: `/api/agents`.
 
 - `GET /` — list. Query `limit` (1-500).
 - `GET /:id` — metadata (id, displayName, description, version, expertise, input/outputSchema).
-- `POST /build` — multipart `files` + optional `entry_point`, `sdk_path`. Runs componentize-py + jco, writes to agents dir, reloads registry. **Build mechanics + authoring: use the `writing-friday-agents` skill (shipped with the agent-sdk repo).**
+- `POST /build` — multipart `files` + optional `entry_point`, `sdk_path`. Builds agent, writes to agents dir, reloads registry. **Build mechanics + authoring: use the `writing-friday-agents` skill (shipped with the agent-sdk repo).**
 
 ## Skills
 

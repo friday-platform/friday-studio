@@ -117,8 +117,8 @@ signals:
       required: []
   author-agent:
     description: >-
-      Architect reads SDK examples + the brief, coder writes agents/<agent_id>/agent.py, reviewer cross-references the file against canonical patterns and componentize-py constraints. Daemon auto-build happens on next platform restart.
-    title: Author a new Python WASM agent
+      Architect reads SDK examples + the brief, coder writes agents/<agent_id>/agent.py, reviewer cross-references the file against canonical SDK patterns. Daemon auto-build happens on next platform restart.
+    title: Author a new user agent
     schema:
       type: object
       properties:
@@ -325,7 +325,7 @@ agents:
     type: user
     agent: autopilot-status-watcher
     description: >-
-      Custom Python WASM agent. Reads dispatch-log memory, fetches each dispatched session's status, and appends completion entries to the autopilot-backlog memory when the target session has finished. Closes the loop without modifying the planner. Runs as step_observe before step_plan in the autopilot-tick FSM.
+      User agent. Reads dispatch-log memory, fetches each dispatched session's status, and appends completion entries to the autopilot-backlog memory when the target session has finished. Closes the loop without modifying the planner. Runs as step_observe before step_plan in the autopilot-tick FSM.
     prompt: |
       You are the autopilot status watcher. Read your config, fetch the
       dispatch-log narrative memory on the kernel workspace, then for each
@@ -338,7 +338,7 @@ agents:
     type: user
     agent: autopilot-planner
     description: >-
-      Custom Python WASM agent. Reads the backlog, picks the next eligible task, returns a structured plan. No LLM. No HTTP mutation. Replaces the "what should I work on next" function that I (the operator) have been performing manually.
+      User agent. Reads the backlog, picks the next eligible task, returns a structured plan. No LLM. No HTTP mutation. Replaces the "what should I work on next" function that I (the operator) have been performing manually.
     prompt: |
       You are the autopilot planner. Read your config, fetch the
       backlog, pick the next eligible task, and emit a structured
@@ -357,7 +357,7 @@ agents:
     type: user
     agent: autopilot-dispatcher
     description: >-
-      Custom Python WASM agent. Takes a planner plan-output and fires the target signal at the target workspace via HTTP POST. Blocks until the downstream FSM returns. Closes the autopilot loop — without this, planner output is inert metadata.
+      User agent. Takes a planner plan-output and fires the target signal at the target workspace via HTTP POST. Blocks until the downstream FSM returns. Closes the autopilot loop — without this, planner output is inert metadata.
     prompt: |
       You are the autopilot dispatcher. Read your config, short-circuit
       on action=='idle', otherwise POST to
@@ -370,7 +370,7 @@ agents:
     type: user
     agent: multi-session-reflector
     description: >-
-      Custom Python WASM agent. Cross-session reflector — reads the last N completed sessions for a workspace, computes structural signals, asks claude-haiku for a single recurring-pattern judgment. Companion to the single-session reflector. Wired here so the agent isn't orphaned.
+      User agent. Cross-session reflector — reads the last N completed sessions for a workspace, computes structural signals, asks claude-haiku for a single recurring-pattern judgment. Companion to the single-session reflector. Wired here so the agent isn't orphaned.
     prompt: |
       You are the cross-session reflector. Read your config
       (workspace_id, n) and emit a reflection-result-multi.
@@ -380,21 +380,21 @@ agents:
     type: user
     agent: skill-author
     description: >-
-      Custom Python WASM agent. Takes a high-confidence reflection proposal + current SKILL.md and produces a complete replacement SKILL.md with a new failure-mode row added. Single LLM call, strict structured output, gated on confidence >= 0.9.
+      User agent. Takes a high-confidence reflection proposal + current SKILL.md and produces a complete replacement SKILL.md with a new failure-mode row added. Single LLM call, strict structured output, gated on confidence >= 0.9.
     env:
       ANTHROPIC_API_KEY: from_environment
   skill-publisher:
     type: user
     agent: skill-publisher
     description: >-
-      Custom Python WASM agent. Pure mechanical multipart upload of a new SKILL.md to /api/skills/@tempest/{name}/upload. Records previous_version for rollback. No LLM call.
+      User agent. Pure mechanical multipart upload of a new SKILL.md to /api/skills/@tempest/{name}/upload. Records previous_version for rollback. No LLM call.
     env:
       ANTHROPIC_API_KEY: from_environment
   reflector:
     type: user
     agent: reflector
     description: >-
-      Custom Python WASM agent (Tier-5 SDK authorship). Reads a completed session via daemon HTTP, computes structural signals deterministically, and uses a single focused ctx.llm.generate_object call (claude-haiku) for the new-pattern judgment. Replaces the previous claude-code reflector — ~10x cheaper and more reliable. Does NOT publish; emits a structured proposal that apply-approved-reflection consumes.
+      User agent. Reads a completed session via daemon HTTP, computes structural signals deterministically, and uses a single focused ctx.llm.generate_object call (claude-haiku) for the new-pattern judgment. Replaces the previous claude-code reflector — ~10x cheaper and more reliable. Does NOT publish; emits a structured proposal that apply-approved-reflection consumes.
     prompt: |
       You are the reflector for the FAST self-modification loop.
       Your job is to learn from completed sessions and propose
@@ -486,7 +486,7 @@ agents:
     type: user
     agent: skill-publisher
     description: >-
-      Custom Python WASM agent (Tier-5 SDK authorship). Pure mechanical: GET reflection session, verify confidence threshold, GET current skill metadata for previous_version, POST new content via multipart upload. Sub-second runtime vs the prior claude-code agent's multi-minute latency. No LLM calls.
+      User agent. Pure mechanical: GET reflection session, verify confidence threshold, GET current skill metadata for previous_version, POST new content via multipart upload. Sub-second runtime vs the prior claude-code agent's multi-minute latency. No LLM calls.
     prompt: |
       You are the skill-updater for the FAST self-modification
       loop. Your input contains a reflection output with a
@@ -734,7 +734,7 @@ agents:
     description: >-
       Reads canonical Python agent examples + the brief, produces a design memo with verbatim citations from the SDK examples.
     prompt: |
-      You are the architect for a Python WASM agent authoring task.
+      You are the architect for a user agent authoring task.
       Your job: produce a design memo for a new agent at
       <FRIDAY_REPO_ROOT>/agents/<agent_id>/agent.py.
 
@@ -744,12 +744,12 @@ agents:
          <AGENT_SDK_ROOT>/packages/python/examples/. Default to
          llm-http-agent if no example_to_match is given. The example
          shows the canonical patterns:
-         - `from friday_agent_sdk._bridge import Agent  # noqa: F401`
-           — required for componentize-py to find the Agent class
+         - `from friday_agent_sdk import AgentContext, agent, err, ok, parse_input`
          - `@agent(...)` decorator with id, version, description
-         - `def execute(prompt, ctx)` handler
+         - `def execute(prompt, ctx)` handler (sync or async)
          - `ctx.llm.generate()`, `ctx.http.fetch()`, `ctx.tools.call()`
          - Return `ok({...})` or `err("message")`
+         - `if __name__ == "__main__": from friday_agent_sdk import run; run()`
       2. Read <FRIDAY_REPO_ROOT>/packages/sdk-python/friday_agent_sdk/_types.py
          for ctx.* method signatures (ctx.llm, ctx.http, ctx.tools,
          ctx.stream).
@@ -763,8 +763,8 @@ agents:
 
       ## Hard rules from real failures
 
-      - MUST import Agent from _bridge or componentize-py errors with
-        "module 'agent' has no attribute 'Agent'"
+      - MUST include `if __name__ == "__main__": from friday_agent_sdk import run; run()`
+        or the subprocess exits immediately without connecting to NATS
       - MUST use `ctx.llm.generate_object` with JSON schemas that
         have `additionalProperties: false` on every object — strict
         mode requirement of the LLM provider
@@ -773,11 +773,8 @@ agents:
         type expressed as `{"type": ["null", "string"]}` is REJECTED
         by the LLM provider — use `anyOf: [{type: string}, {type: null}]`
         when calling generate_object
-      - Async handlers are not supported — handlers are sync functions
-        that may call `ctx.http.fetch()` (which suspends via JSPI under
-        the hood)
-      - No external Python packages — only stdlib + friday_agent_sdk
-        are available inside the WASM sandbox
+      - No external Python packages beyond stdlib + friday_agent_sdk
+        (pydantic not installed; use @dataclass + parse_input)
 
       ## Output
 
@@ -793,24 +790,26 @@ agents:
     description: >-
       Writes the agent.py file per the architect's design memo. Workdir is <FRIDAY_REPO_ROOT>. Agents auto-build on next daemon restart, so the coder does not run a build itself.
     prompt: |
-      You are the coder for a Python WASM agent authoring task.
+      You are the coder for a user agent authoring task.
       Your input contains a design memo with file_to_create
       pointing at <FRIDAY_REPO_ROOT>/agents/<agent_id>/agent.py.
 
       Rules:
       1. Create the directory if missing.
       2. Write the agent.py file exactly per the memo.
-      3. The file MUST contain `from friday_agent_sdk._bridge import Agent  # noqa: F401`
-      4. The file MUST contain `from friday_agent_sdk import agent, ok, err`
+      3. The file MUST contain `from friday_agent_sdk import AgentContext, agent, ok, err`
          (and any other types from friday_agent_sdk needed)
-      5. The file MUST have an `@agent(...)` decorator on the handler
+      4. The file MUST have an `@agent(...)` decorator on the handler
          function, with id matching the directory name.
-      6. The handler signature MUST be `def execute(prompt, ctx)` — sync,
-         not async.
-      7. The handler MUST return `ok({...})` or `err("message")`.
-      8. JSON schemas passed to `ctx.llm.generate_object` MUST have
+      5. The handler signature is `def execute(prompt, ctx)` (sync or async both fine).
+      6. The handler MUST return `ok({...})` or `err("message")`.
+      7. JSON schemas passed to `ctx.llm.generate_object` MUST have
          `additionalProperties: false` on every object level.
-      9. No external Python packages — stdlib + friday_agent_sdk only.
+      8. No external Python packages — stdlib + friday_agent_sdk only.
+      9. The file MUST end with:
+            if __name__ == "__main__":
+                from friday_agent_sdk import run
+                run()
 
       You do NOT need to run a build. The daemon auto-builds on next
       restart. Report the file path + a brief explanation in the
@@ -821,9 +820,9 @@ agents:
     type: atlas
     agent: claude-code
     description: >-
-      Cross-references the coder's agent.py against canonical SDK example patterns and componentize-py constraints. Catches common build-blocking mistakes before next restart.
+      Cross-references the coder's agent.py against canonical SDK example patterns. Catches common mistakes before next restart.
     prompt: |
-      You are the reviewer for a Python WASM agent authoring task.
+      You are the reviewer for a user agent authoring task.
       The agent.py is at <FRIDAY_REPO_ROOT>/agents/<agent_id>/agent.py.
 
       ## Review protocol
@@ -833,18 +832,16 @@ agents:
          <AGENT_SDK_ROOT>/packages/python/examples/.
       3. Read <FRIDAY_REPO_ROOT>/packages/sdk-python/friday_agent_sdk/_types.py
          for ctx.* method signatures.
-      4. Cross-reference for build-blocking patterns:
-
-         CRITICAL — would fail componentize-py build:
-         - Missing `from friday_agent_sdk._bridge import Agent  # noqa: F401`
-         - `async def execute(...)` (must be sync)
-         - Importing external Python packages (numpy, requests, etc.)
-         - JSON schema for ctx.llm.generate_object missing
-           `additionalProperties: false` on any object level
+      4. Cross-reference for blocking patterns:
 
          CRITICAL — would fail at runtime:
+         - Missing `if __name__ == "__main__": from friday_agent_sdk import run; run()`
+           (process exits immediately without connecting to NATS)
          - Handler doesn't return ok() or err()
          - @agent decorator missing required fields (id, version, description)
+         - Importing external Python packages (numpy, requests, pydantic, etc.)
+         - JSON schema for ctx.llm.generate_object missing
+           `additionalProperties: false` on any object level
          - ctx.llm.generate without explicit model parameter when no
            agent llm config is set
          - ctx.http.fetch with a relative URL (must be absolute)
@@ -1110,7 +1107,7 @@ agents:
 
       Use `default_target` from input config unless the task content clearly
       belongs to a different signal:
-      - Agent authoring tasks (new Python WASM agent) → override to `author-agent`
+      - Agent authoring tasks (new user agent) → override to `author-agent`
         signal.
       - Workspace extension tasks (new signal, new cron) → override to
         `extend-workspace` signal.
@@ -1748,8 +1745,8 @@ jobs:
       tools: {}
   author-agent:
     description: >-
-      Kernel/supervisor capability provisioner. Architect → coder → reviewer pipeline that authors new Python WASM agents the rest of the fleet can use. Daemon auto-build picks them up on next restart. This is how the FAST kernel grows the platform's surface area without a human writing agent.py.
-    title: Supervise — author a new Python WASM agent
+      Kernel/supervisor capability provisioner. Architect → coder → reviewer pipeline that authors new user agents the rest of the fleet can use. Daemon auto-build picks them up on next restart. This is how the FAST kernel grows the platform's surface area without a human writing agent.py.
+    title: Supervise — author a new user agent
     triggers:
       - signal: author-agent
     fsm:

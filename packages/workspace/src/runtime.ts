@@ -111,7 +111,7 @@ import {
   takeMountContext,
 } from "../../core/src/mount-context-registry.ts";
 import { createBashTool } from "./bash-tool.ts";
-import type { CodeAgentExecutorOptions } from "./code-agent-executor.ts";
+import type { CodeAgentExecutorOptions } from "./agent-executor-utils.ts";
 import type { MemoryMount } from "./config-schema.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";

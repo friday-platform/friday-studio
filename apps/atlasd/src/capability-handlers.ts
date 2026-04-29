@@ -13,7 +13,7 @@ import {
   type CodeAgentStreamEmitter,
   createHttpFetchHandler,
   createLlmGenerateHandler,
-} from "@atlas/workspace/code-agent-executor";
+} from "@atlas/workspace/agent-executor-utils";
 import type { NatsConnection, Subscription } from "nats";
 import { StringCodec } from "nats";
 

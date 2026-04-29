@@ -4,7 +4,7 @@ import type { LanguageModel, ModelMessage } from "ai";
 import { generateObject, generateText, jsonSchema, streamText } from "ai";
 import { z } from "zod";
 
-/** Minimal stream emitter for code agents — wiring layer adapts to AtlasUIMessageChunk */
+/** Minimal stream emitter for user agents — wiring layer adapts to AtlasUIMessageChunk */
 export interface CodeAgentStreamEmitter {
   emit: (event: { type: string } & Record<string, unknown>) => void;
 }
@@ -57,7 +57,7 @@ const LlmMessageSchema = z.object({
   content: LlmMessageContentSchema,
 });
 
-/** Zod schema for LLM generation requests from WASM agents */
+/** Zod schema for LLM generation requests from user agents */
 export const LlmRequestSchema = z.object({
   model: z.string().optional(),
   messages: z.array(LlmMessageSchema).min(1),
@@ -67,7 +67,7 @@ export const LlmRequestSchema = z.object({
   provider_options: z.record(z.string(), z.unknown()).optional(),
 });
 
-/** Zod schema for HTTP fetch requests from WASM agents */
+/** Zod schema for HTTP fetch requests from user agents */
 export const HttpFetchRequestSchema = z.object({
   url: z.string().url(),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]).default("GET"),
@@ -77,7 +77,7 @@ export const HttpFetchRequestSchema = z.object({
 });
 
 /**
- * Parse JSON from a WASM agent, throwing ComponentError on malformed input.
+ * Parse JSON from a user agent, throwing ComponentError on malformed input.
  * Without this, JSON.parse throws a raw SyntaxError before Zod runs —
  * the agent gets a cryptic stack trace instead of a clean error message.
  */
@@ -281,8 +281,7 @@ async function handleClaudeCodeGenerate(
 /**
  * Generate concise, human-readable progress from a tool invocation.
  *
- * Uses a simple template-based approach since WASM agents don't have access
- * to platformModels (out of scope per design). Falls back to descriptive
+ * Uses a simple template-based approach. Falls back to descriptive
  * strings based on tool name patterns.
  */
 function generateProgress(context: { toolName: string; input: unknown }): string {
@@ -314,7 +313,7 @@ function generateProgress(context: { toolName: string; input: unknown }): string
  * Create the httpFetch handler for binding to globalThis capabilities.
  *
  * Extracted from bindHostFunctions for testability — validates the JSON request,
- * performs fetch() on behalf of the WASM agent with timeout and body size limits.
+ * performs fetch() with timeout and body size limits.
  * Logs outbound requests at info level for audit observability.
  */
 export function createHttpFetchHandler(options: {
@@ -430,7 +429,7 @@ export function resolveModelId(
 }
 
 /**
- * Serialize execution context to JSON for the WASM agent.
+ * Serialize execution context to JSON for the agent subprocess.
  *
  * Converts camelCase TypeScript fields to snake_case for the Python SDK
  * and applies default values for optional fields.

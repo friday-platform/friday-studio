@@ -84,7 +84,7 @@ agents:
   echo:
     type: user
     agent: echo
-    description: Echoes input via WASM code agent
+    description: Echoes input via user agent
   tools:
     type: user
     agent: tools-agent
@@ -92,7 +92,7 @@ agents:
   bash-test:
     type: user
     agent: bash-test
-    description: Exercises bash tool through WASM
+    description: Exercises bash tool through user agent
   bb:
     type: user
     agent: bb

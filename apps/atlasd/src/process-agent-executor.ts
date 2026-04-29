@@ -1,6 +1,6 @@
 /**
- * ProcessAgentExecutor — spawns Python agent subprocesses and routes capability
- * calls via NATS. Replaces CodeAgentExecutor (WASM dynamic-import model).
+ * ProcessAgentExecutor — spawns user agent subprocesses and routes capability
+ * calls via NATS.
  *
  * Execution model:
  *   1. Register session context in CapabilityHandlerRegistry
@@ -16,8 +16,8 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import type { AgentExecutionSuccess, AgentResult, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { logger as rootLogger } from "@atlas/logger";
-import type { CodeAgentExecutorOptions } from "@atlas/workspace/code-agent-executor";
-import { serializeAgentContext } from "@atlas/workspace/code-agent-executor";
+import type { CodeAgentExecutorOptions } from "@atlas/workspace/agent-executor-utils";
+import { serializeAgentContext } from "@atlas/workspace/agent-executor-utils";
 import type { NatsConnection } from "nats";
 import { StringCodec } from "nats";
 

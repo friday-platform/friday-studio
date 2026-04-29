@@ -100,4 +100,4 @@ except ToolCallError as e:
 
 ## Testing
 
-Mock by passing a fake `call_tool` / `list_tools` to a `Tools` instance. See SDK `tests/test_tools.py` — it mocks the WIT functions (not the wrapper) and uses a dataclass mimicking componentize-py's `_Err` for failures.
+Mock by passing a fake `call_tool` / `list_tools` to a `Tools` instance. See SDK `tests/test_tools.py` for examples.

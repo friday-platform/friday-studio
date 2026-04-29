@@ -4,7 +4,7 @@
   "exports": {
     ".": "./mod.ts",
     "./bash-tool": "./src/bash-tool.ts",
-    "./code-agent-executor": "./src/code-agent-executor.ts",
+    "./agent-executor-utils": "./src/agent-executor-utils.ts",
     "./manager": "./src/manager.ts",
     "./signal-to-stream": "./src/signal-to-stream.ts",
     "./storage": "./src/storage.ts",
