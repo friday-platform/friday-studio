@@ -3,6 +3,7 @@ pub mod create_app_bundle;
 pub mod delete_partial;
 pub mod download;
 pub mod download_checkpoint;
+pub mod ensure_agent_browser_chrome;
 pub mod ensure_claude_code;
 pub mod env_file;
 pub mod exit_installer;
