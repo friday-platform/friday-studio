@@ -400,6 +400,16 @@ export class AtlasDaemon {
         }
       }
 
+      // Ensure the runtime (and its NATS subscription) exists before publishing.
+      // Without this, signals to sleeping workspaces are dropped because there
+      // is no subscriber on `signals.${workspaceId}.*` until a runtime is active.
+      try {
+        await this.getOrCreateWorkspaceRuntime(workspaceId);
+      } catch (error) {
+        logger.error("Failed to wake workspace runtime for signal", { workspaceId, signalId, error });
+        return;
+      }
+
       const nc = this.natsManager?.connection;
       if (nc) {
         nc.publish(
