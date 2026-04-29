@@ -238,12 +238,8 @@ monitoring.`,
 
   version: {
     overview: `
-Display Atlas version information and check for updates. Useful for ensuring
-you're running the latest version with all features and fixes.`,
-    commonTasks: [
-      "Show current version: atlas version",
-      "Check for updates: atlas version --remote",
-    ],
+Display Atlas version information.`,
+    commonTasks: ["Show current version: atlas version"],
     seeAlso: ["daemon"],
   },
 };
