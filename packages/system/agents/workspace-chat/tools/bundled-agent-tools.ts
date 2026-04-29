@@ -171,6 +171,20 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
             data: { toolName: atlasAgent.metadata.id, content: payload.reasoning },
           });
         }
+        // Surface `artifactRefs` from the `ok(data, { artifactRefs })` side-channel
+        // so the parent LLM sees IDs for artifacts the agent just created and can
+        // chain `display_artifact`. Without this, agents like image-generation /
+        // transcription / data-analyst return only descriptive data and the parent
+        // has no signal that an artifact was produced.
+        const refs = payload.artifactRefs;
+        if (
+          refs?.length &&
+          typeof payload.data === "object" &&
+          payload.data !== null &&
+          !Array.isArray(payload.data)
+        ) {
+          return { ...payload.data, artifactRefs: refs };
+        }
         return payload.data;
       }
       throw new Error(payload.error.reason);
