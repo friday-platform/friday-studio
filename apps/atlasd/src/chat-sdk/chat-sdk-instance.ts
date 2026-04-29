@@ -39,6 +39,40 @@ import { ChatSdkNotifier } from "./chat-sdk-notifier.ts";
 
 const logger = createLogger({ component: "chat-sdk-instance" });
 
+/**
+ * Full credential-secret shapes as stored in Link, used by the daemon's
+ * Link-first credential resolvers. These mirror the per-provider schemas in
+ * `apps/link/src/providers/*.ts` (`DiscordSecretSchema`, `TeamsSecretSchema`,
+ * `WhatsappSecretSchema` + post-`autoFields` `verify_token`). They're kept
+ * separate from the routing-key-only schemas in `communicator-wiring.ts`
+ * (`DiscordCredentialSecretSchema` etc.) which only assert the field used as
+ * `connection_id` — those exist for `deriveConnectionId` and would silently
+ * accept partial secrets here.
+ */
+const DiscordLinkSecretSchema = z.object({
+  bot_token: z.string().min(1),
+  public_key: z.string().min(1),
+  application_id: z.string().min(1),
+});
+
+const TeamsLinkSecretSchema = z.object({
+  app_id: z.string().min(1),
+  app_password: z.string().min(1),
+  app_tenant_id: z.string().min(1),
+  app_type: z.enum(["MultiTenant", "SingleTenant"]),
+});
+
+// `verify_token` is generated server-side by Link's `autoFields` hook at
+// credential creation time — it's always present in the stored secret, so
+// the daemon-side parser requires it (mismatched name = signature
+// verification failure on inbound Meta webhooks).
+const WhatsappLinkSecretSchema = z.object({
+  access_token: z.string().min(1),
+  app_secret: z.string().min(1),
+  phone_number_id: z.string().min(1),
+  verify_token: z.string().min(1),
+});
+
 export interface ChatSdkInstanceConfig {
   workspaceId: string;
   userId: string;
@@ -120,7 +154,8 @@ function collectBroadcastDestinations(
  * resolved independently from a single config block — drawn from the top-level
  * `communicators` map first, then from a matching signal's `config` — plus env
  * vars. The Link service is consulted for Slack (workspace→app mapping) and
- * for Telegram (communicator_wiring table). Telegram resolution priority is:
+ * for the four apikey communicators (Telegram, Discord, Teams, WhatsApp) via
+ * the `communicator_wiring` table. Resolution priority for those four is:
  * Link → yml inline → env var; the latter two stay as backward-compat
  * fallbacks for env-only and BYO-token setups.
  */
@@ -140,19 +175,19 @@ export async function resolvePlatformCredentials(
 
   const whatsappConfig = pickConfigForKind("whatsapp", signals, communicators);
   if (whatsappConfig) {
-    const creds = resolveWhatsappCredentials(whatsappConfig);
+    const creds = await resolveWhatsappCredentials(workspaceId, userId, whatsappConfig);
     if (creds) resolved.push(creds);
   }
 
   const discordConfig = pickConfigForKind("discord", signals, communicators);
   if (discordConfig) {
-    const creds = resolveDiscordCredentials(discordConfig);
+    const creds = await resolveDiscordCredentials(workspaceId, userId, discordConfig);
     if (creds) resolved.push(creds);
   }
 
   const teamsConfig = pickConfigForKind("teams", signals, communicators);
   if (teamsConfig) {
-    const creds = resolveTeamsCredentials(teamsConfig);
+    const creds = await resolveTeamsCredentials(workspaceId, userId, teamsConfig);
     if (creds) resolved.push(creds);
   }
 
@@ -292,7 +327,23 @@ async function resolveTelegramFromLink(
   };
 }
 
-function resolveWhatsappCredentials(config: Record<string, unknown>): ResolvedCredentials | null {
+/**
+ * Resolve WhatsApp credentials in priority order:
+ * 1. Link wiring (`communicator_wiring` table → credential secret) — preferred,
+ *    workspace.yml carries `{ kind: whatsapp }` only and Link owns the secrets.
+ * 2. yml inline — legacy BYO-token setups where workspace.yml stashes
+ *    `access_token` / `app_secret` / `phone_number_id` / `verify_token`
+ *    directly under the signal/communicator config.
+ * 3. `WHATSAPP_*` env vars — single-bot dev setups.
+ */
+async function resolveWhatsappCredentials(
+  workspaceId: string,
+  userId: string,
+  config: Record<string, unknown>,
+): Promise<ResolvedCredentials | null> {
+  const linkCreds = await resolveWhatsappFromLink(workspaceId, userId);
+  if (linkCreds) return linkCreds;
+
   const parsed = WhatsAppProviderConfigSchema.safeParse(config);
   if (!parsed.success) {
     logger.debug("whatsapp_invalid_config", { error: parsed.error.message });
@@ -321,20 +372,88 @@ function resolveWhatsappCredentials(config: Record<string, unknown>): ResolvedCr
 }
 
 /**
+ * Look up the workspace's WhatsApp wiring in Link. Returns null on no wiring,
+ * invalid stored secret, or transient Link errors — those fall through to the
+ * legacy yml/env paths instead of failing loudly. A 5xx from Link should not
+ * disable a workspace whose secrets could be served from yml.
+ */
+async function resolveWhatsappFromLink(
+  workspaceId: string,
+  userId: string,
+): Promise<ResolvedCredentials | null> {
+  let wiring: { credentialId: string; connectionId: string | null } | null;
+  try {
+    wiring = await findCommunicatorWiring(workspaceId, "whatsapp");
+  } catch (error) {
+    logger.warn("whatsapp_link_wiring_lookup_failed", {
+      workspaceId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  if (!wiring) return null;
+
+  let credential: Awaited<ReturnType<typeof fetchLinkCredential>>;
+  try {
+    credential = await fetchLinkCredential(wiring.credentialId, logger);
+  } catch (error) {
+    logger.warn("whatsapp_link_credential_fetch_failed", {
+      workspaceId,
+      userId,
+      credentialId: wiring.credentialId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  const secretParse = WhatsappLinkSecretSchema.safeParse(credential.secret);
+  if (!secretParse.success) {
+    logger.warn("whatsapp_link_credential_invalid_secret", {
+      workspaceId,
+      credentialId: wiring.credentialId,
+      issues: secretParse.error.issues,
+    });
+    return null;
+  }
+
+  const { access_token, app_secret, phone_number_id, verify_token } = secretParse.data;
+  return {
+    credentials: {
+      kind: "whatsapp",
+      accessToken: access_token,
+      appSecret: app_secret,
+      phoneNumberId: phone_number_id,
+      verifyToken: verify_token,
+    },
+    credentialId: wiring.credentialId,
+  };
+}
+
+/**
  * Resolves the per-workspace Discord credentials. The resulting `DiscordAdapter`
  * (built by `buildChatSdkAdapters`) is used for **inbound forwarded Gateway
  * events** (via `chat.webhooks.discord` on `/signals/discord` POSTs) and
  * **outbound `postMessage`** replies. It does NOT own a Gateway connection —
  * that's the daemon-scoped `DiscordGatewayService`'s job.
  *
- * Credentials are resolved config-first, env-fallback — matching the Telegram
- * / Slack / WhatsApp pattern. A config with all three fields set inline in
- * `workspace.yml` needs no `DISCORD_*` env vars; an empty config pulls from
- * env; partial config falls back field-by-field.
+ * Resolution priority:
+ * 1. Link wiring (`communicator_wiring` table → credential secret) — preferred,
+ *    workspace.yml carries `{ kind: discord }` only and Link owns the secrets.
+ * 2. yml inline — legacy BYO-token setups where workspace.yml stashes
+ *    `bot_token` / `public_key` / `application_id` directly under the
+ *    signal/communicator config.
+ * 3. `DISCORD_*` env vars — single-bot dev setups.
  */
-export function resolveDiscordCredentials(
+export async function resolveDiscordCredentials(
+  workspaceId: string,
+  userId: string,
   config: Record<string, unknown>,
-): ResolvedCredentials | null {
+): Promise<ResolvedCredentials | null> {
+  const linkCreds = await resolveDiscordFromLink(workspaceId, userId);
+  if (linkCreds) return linkCreds;
+
   const botToken =
     (typeof config.bot_token === "string" ? config.bot_token : null) ??
     process.env.DISCORD_BOT_TOKEN;
@@ -360,7 +479,82 @@ export function resolveDiscordCredentials(
   };
 }
 
-function resolveTeamsCredentials(config: Record<string, unknown>): ResolvedCredentials | null {
+/**
+ * Look up the workspace's Discord wiring in Link. Returns null on no wiring,
+ * invalid stored secret, or transient Link errors — those fall through to the
+ * legacy yml/env paths instead of failing loudly. A 5xx from Link should not
+ * disable a workspace whose secrets could be served from yml.
+ */
+async function resolveDiscordFromLink(
+  workspaceId: string,
+  userId: string,
+): Promise<ResolvedCredentials | null> {
+  let wiring: { credentialId: string; connectionId: string | null } | null;
+  try {
+    wiring = await findCommunicatorWiring(workspaceId, "discord");
+  } catch (error) {
+    logger.warn("discord_link_wiring_lookup_failed", {
+      workspaceId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  if (!wiring) return null;
+
+  let credential: Awaited<ReturnType<typeof fetchLinkCredential>>;
+  try {
+    credential = await fetchLinkCredential(wiring.credentialId, logger);
+  } catch (error) {
+    logger.warn("discord_link_credential_fetch_failed", {
+      workspaceId,
+      userId,
+      credentialId: wiring.credentialId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  const secretParse = DiscordLinkSecretSchema.safeParse(credential.secret);
+  if (!secretParse.success) {
+    logger.warn("discord_link_credential_invalid_secret", {
+      workspaceId,
+      credentialId: wiring.credentialId,
+      issues: secretParse.error.issues,
+    });
+    return null;
+  }
+
+  const { bot_token, public_key, application_id } = secretParse.data;
+  return {
+    credentials: {
+      kind: "discord",
+      botToken: bot_token,
+      publicKey: public_key,
+      applicationId: application_id,
+    },
+    credentialId: wiring.credentialId,
+  };
+}
+
+/**
+ * Resolve Teams credentials in priority order:
+ * 1. Link wiring (`communicator_wiring` table → credential secret) — preferred,
+ *    workspace.yml carries `{ kind: teams }` only and Link owns the secrets.
+ * 2. yml inline — legacy BYO-token setups where workspace.yml stashes
+ *    `app_id` / `app_password` / `app_tenant_id` / `app_type` directly under
+ *    the signal/communicator config.
+ * 3. `TEAMS_*` env vars — single-bot dev setups.
+ */
+async function resolveTeamsCredentials(
+  workspaceId: string,
+  userId: string,
+  config: Record<string, unknown>,
+): Promise<ResolvedCredentials | null> {
+  const linkCreds = await resolveTeamsFromLink(workspaceId, userId);
+  if (linkCreds) return linkCreds;
+
   const parsed = TeamsProviderConfigSchema.safeParse(config);
   if (!parsed.success) {
     logger.debug("teams_invalid_config", { error: parsed.error.message });
@@ -406,6 +600,66 @@ function resolveTeamsCredentials(config: Record<string, unknown>): ResolvedCrede
       ...(appType ? { appType } : {}),
     },
     credentialId: `teams:${appId}`,
+  };
+}
+
+/**
+ * Look up the workspace's Teams wiring in Link. Returns null on no wiring,
+ * invalid stored secret, or transient Link errors — those fall through to the
+ * legacy yml/env paths instead of failing loudly. A 5xx from Link should not
+ * disable a workspace whose secrets could be served from yml.
+ */
+async function resolveTeamsFromLink(
+  workspaceId: string,
+  userId: string,
+): Promise<ResolvedCredentials | null> {
+  let wiring: { credentialId: string; connectionId: string | null } | null;
+  try {
+    wiring = await findCommunicatorWiring(workspaceId, "teams");
+  } catch (error) {
+    logger.warn("teams_link_wiring_lookup_failed", {
+      workspaceId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  if (!wiring) return null;
+
+  let credential: Awaited<ReturnType<typeof fetchLinkCredential>>;
+  try {
+    credential = await fetchLinkCredential(wiring.credentialId, logger);
+  } catch (error) {
+    logger.warn("teams_link_credential_fetch_failed", {
+      workspaceId,
+      userId,
+      credentialId: wiring.credentialId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  const secretParse = TeamsLinkSecretSchema.safeParse(credential.secret);
+  if (!secretParse.success) {
+    logger.warn("teams_link_credential_invalid_secret", {
+      workspaceId,
+      credentialId: wiring.credentialId,
+      issues: secretParse.error.issues,
+    });
+    return null;
+  }
+
+  const { app_id, app_password, app_tenant_id, app_type } = secretParse.data;
+  return {
+    credentials: {
+      kind: "teams",
+      appId: app_id,
+      appPassword: app_password,
+      appTenantId: app_tenant_id,
+      appType: app_type,
+    },
+    credentialId: wiring.credentialId,
   };
 }
 

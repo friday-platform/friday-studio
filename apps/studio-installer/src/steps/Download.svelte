@@ -164,13 +164,13 @@ function friendlyError(msg: string | null): string {
   h2 {
     font-size: 20px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: var(--color-text);
     margin-bottom: 6px;
   }
 
   .subtitle {
     font-size: 13px;
-    color: #777;
+    color: var(--color-text-muted);
   }
 
   .body {
@@ -182,7 +182,7 @@ function friendlyError(msg: string | null): string {
   }
 
   .progress-container {
-    background: #1e1e1e;
+    background: var(--color-surface-3);
     border-radius: 8px;
     height: 10px;
     overflow: hidden;
@@ -199,17 +199,17 @@ function friendlyError(msg: string | null): string {
     display: flex;
     gap: 10px;
     font-size: 13px;
-    color: #666;
+    color: var(--color-text-muted);
     align-items: center;
   }
 
   .percent {
-    color: #aaa;
+    color: var(--color-text);
     font-weight: 500;
   }
 
   .separator {
-    color: #333;
+    color: var(--color-border-1);
   }
 
   .retry-banner {
@@ -220,7 +220,7 @@ function friendlyError(msg: string | null): string {
 
   .retry-label {
     font-size: 13px;
-    color: #f0a857;
+    color: var(--color-warning);
   }
 
   .error-box {
@@ -236,12 +236,12 @@ function friendlyError(msg: string | null): string {
   .error-title {
     font-size: 14px;
     font-weight: 600;
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .error-detail {
     font-size: 12px;
-    color: #888;
+    color: var(--color-text-muted);
     word-break: break-word;
   }
 
@@ -262,11 +262,11 @@ function friendlyError(msg: string | null): string {
   }
 
   .primary {
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
   }
 
   .primary:hover {
-    background: #5a62e0;
+    background: var(--color-primary); opacity: 0.9;
   }
 </style>

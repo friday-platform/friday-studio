@@ -37,7 +37,7 @@
     { label: "Agent Tester", href: "/agents", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
     { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
-    { label: "MCP Servers", href: "/mcp", icon: IconLarge.Wrench },
+    { label: "MCP Catalog", href: "/mcp", icon: IconLarge.Wrench },
     { label: "Skills", href: "/skills", icon: IconLarge.Compass },
     // { label: "Discover Spaces", href: "/discover", icon: IconLarge.OpenSquare },
     { label: "Settings", href: "/settings", icon: IconLarge.Gear },
@@ -315,7 +315,7 @@
 
   .section-header {
     align-items: center;
-    block-size: var(--size-4);
+    block-size: var(--size-6);
     display: flex;
     justify-content: space-between;
     padding-inline-end: var(--size-2);

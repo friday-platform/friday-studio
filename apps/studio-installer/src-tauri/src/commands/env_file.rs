@@ -39,13 +39,49 @@ fn render_env_lines(lines: &[(Option<String>, String)]) -> String {
         + "\n"
 }
 
+/// Returns true iff the .env file at ~/.friday/local/.env exists and
+/// contains a non-empty value for any of the four supported provider
+/// API key vars. The wizard uses this to decide whether to route
+/// through the API Keys step on update/reinstall paths (so the user
+/// always has a working key by the time the launcher spawns), and
+/// to verify after `write_env_file` that the write actually
+/// persisted.
+#[tauri::command]
+pub fn env_file_has_provider_key() -> Result<bool, String> {
+    let path = env_file_path()?;
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(format!("read .env: {e}")),
+    };
+    for (key, value) in parse_env_lines(&content) {
+        let Some(k) = key else { continue };
+        if matches!(
+            k.as_str(),
+            "ANTHROPIC_API_KEY" | "OPENAI_API_KEY" | "GEMINI_API_KEY" | "GROQ_API_KEY"
+        ) && !value.trim().is_empty()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Returns the absolute path of the .env file (whether it exists or
+/// not). Used by the JS side after write_env_file to verify the
+/// write landed on disk where we expected.
+#[tauri::command]
+pub fn env_file_location() -> Result<String, String> {
+    Ok(env_file_path()?.display().to_string())
+}
+
 #[tauri::command]
 pub fn write_env_file(
     anthropic_key: Option<String>,
     openai_key: Option<String>,
     gemini_key: Option<String>,
     groq_key: Option<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let path = env_file_path()?;
 
     if let Some(parent) = path.parent() {
@@ -63,7 +99,11 @@ pub fn write_env_file(
         .filter_map(|(i, (k, _))| k.as_ref().map(|key| (key.clone(), i)))
         .collect();
 
-    // User-provided API keys (only if not already present)
+    // User-provided API keys: OVERWRITE the existing entry when a
+    // new value comes in. Previous behaviour ("only add if missing")
+    // meant a user who came back to update their key found it
+    // silently ignored. Append-or-replace lets reinstall flows fix
+    // a stale or empty key without manually editing .env.
     let provider_keys: [(&str, &Option<String>); 4] = [
         ("ANTHROPIC_API_KEY", &anthropic_key),
         ("OPENAI_API_KEY", &openai_key),
@@ -72,13 +112,16 @@ pub fn write_env_file(
     ];
     for (env_var, value) in provider_keys {
         if let Some(key) = value {
-            if !existing_keys.contains_key(env_var) {
-                lines.push((Some(env_var.to_string()), key.clone()));
+            match existing_keys.get(env_var) {
+                Some(&i) => lines[i] = (Some(env_var.to_string()), key.clone()),
+                None => lines.push((Some(env_var.to_string()), key.clone())),
             }
         }
     }
 
-    // Platform-internal vars — inline to avoid borrow-checker issues with closure
+    // Platform-internal vars — only added when missing so any user
+    // overrides survive (someone editing .env to point FRIDAYD_URL
+    // at a non-default daemon, etc.).
     let platform_vars = [
         ("FRIDAY_LOCAL_ONLY", "true"),
         ("LINK_DEV_MODE", "true"),
@@ -97,5 +140,18 @@ pub fn write_env_file(
     }
 
     let output = render_env_lines(&lines);
-    fs::write(&path, output.as_bytes()).map_err(|e| format!("Failed to write .env file: {e}"))
+    fs::write(&path, output.as_bytes()).map_err(|e| format!("Failed to write .env file: {e}"))?;
+
+    // Read-back verification — catches the silent-fail case where
+    // fs::write returned Ok but the file didn't actually land
+    // (filesystem quirk, snapshotting, race with another writer).
+    let written = fs::read_to_string(&path)
+        .map_err(|e| format!("verify .env after write: {e}"))?;
+    if !written.contains("FRIDAY_LOCAL_ONLY") {
+        return Err(format!(
+            ".env at {} did not contain expected platform vars after write",
+            path.display()
+        ));
+    }
+    Ok(path.display().to_string())
 }

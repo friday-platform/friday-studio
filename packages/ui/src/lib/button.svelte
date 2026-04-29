@@ -66,7 +66,7 @@
     {@render contents()}
   </a>
 {:else if noninteractive}
-  <div data-tempest class="button size-{size} variant-{variant}">
+  <div data-tempest class="button size-{size} variant-{variant} cursor-{cursor}">
     {@render contents()}
   </div>
 {:else}

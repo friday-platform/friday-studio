@@ -2035,7 +2035,8 @@ export class AtlasDaemon {
         }
         if (!discordConfig) continue;
 
-        const creds = resolveDiscordCredentials(discordConfig);
+        const userId = workspace.metadata?.createdBy ?? "default-user";
+        const creds = await resolveDiscordCredentials(workspace.id, userId, discordConfig);
         if (!creds || creds.credentials.kind !== "discord") continue;
         const { botToken, publicKey, applicationId } = creds.credentials;
         workspaceResolved.push({

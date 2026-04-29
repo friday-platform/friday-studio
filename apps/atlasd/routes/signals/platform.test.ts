@@ -260,6 +260,37 @@ function makeDiscordConfig(): MergedConfig {
   };
 }
 
+/** Workspace declared via the new `communicators` map, no `signals.discord-*`. */
+function makeDiscordCommunicatorConfig(): MergedConfig {
+  return {
+    atlas: null,
+    workspace: {
+      version: "1.0",
+      workspace: { name: "test" },
+      communicators: { discord: { kind: "discord" as const } },
+    },
+  };
+}
+
+/** Workspace with BOTH a discord signal AND a discord communicator entry. */
+function makeDiscordBothConfig(): MergedConfig {
+  return {
+    atlas: null,
+    workspace: {
+      version: "1.0",
+      workspace: { name: "test" },
+      signals: {
+        "discord-chat": {
+          provider: "discord" as const,
+          description: "Discord inbound",
+          config: {},
+        },
+      },
+      communicators: { discord: { kind: "discord" as const } },
+    },
+  };
+}
+
 const forwardedGatewayBody = {
   type: "GATEWAY_MESSAGE_CREATE",
   timestamp: 1730_000_000_000,
@@ -364,6 +395,44 @@ describe("POST /discord", () => {
     expect(res.status).toBe(200);
     // First match wins (single-workspace short-circuit; documented limitation).
     expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-a");
+  });
+
+  it("routes to a workspace that declares discord via `communicators` map only", async () => {
+    // Repro for #16: Discord-Gateway forwards inbound events to /signals/discord,
+    // and listWorkspacesByProvider must surface workspaces declared with the new
+    // `communicators` vocabulary (no `signals.discord-*` entry).
+    const handler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [{ id: "ws-comm", config: makeDiscordCommunicatorConfig() }],
+      () => Promise.resolve(makeChatSdkInstance("discord", handler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postDiscord(app);
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-comm");
+  });
+
+  it("does not double-count a workspace that declares discord via BOTH signals and communicators", async () => {
+    // If both shapes are present, the workspace should appear once — otherwise
+    // we'd hit the multi-workspace ambiguity branch on a single-workspace setup.
+    const handler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [{ id: "ws-both", config: makeDiscordBothConfig() }],
+      () => Promise.resolve(makeChatSdkInstance("discord", handler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postDiscord(app);
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledOnce();
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-both");
   });
 });
 
@@ -492,6 +561,20 @@ function makeTeamsEnvOnlyConfig(): MergedConfig {
   };
 }
 
+/** A teams workspace declared via `communicators` only — no `signals.teams-*`.
+ * Communicator entries carry no inline config, so they qualify as env-only
+ * fallback candidates the same way an unpinned signal does. */
+function makeTeamsCommunicatorConfig(): MergedConfig {
+  return {
+    atlas: null,
+    workspace: {
+      version: "1.0",
+      workspace: { name: "test" },
+      communicators: { teams: { kind: "teams" as const } },
+    },
+  };
+}
+
 const teamsHeaders = { "Content-Type": "application/json", Authorization: "Bearer eyJ.jwt.stub" };
 
 function teamsActivity(appId: string) {
@@ -546,6 +629,26 @@ describe("POST /teams", () => {
     // Authorization header must reach the adapter so it can validate the Bot
     // Framework JWT — otherwise every activity is rejected.
     expect(capturedRequest?.headers.get("authorization")).toBe("Bearer eyJ.jwt.stub");
+  });
+
+  it("falls back to a communicator-declared workspace when no app_id match exists", async () => {
+    // Mirrors the env-only-signal fallback for the new `communicators` shape:
+    // a workspace declared via `communicators.teams.kind` carries no inline
+    // app_id, so listWorkspacesByProviderWithoutConfigKey must surface it as
+    // a wildcard candidate — otherwise the new shape gets a 404.
+    const handler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [{ id: "ws-comm", config: makeTeamsCommunicatorConfig() }],
+      () => Promise.resolve(makeChatSdkInstance("teams", handler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postTeams(app, teamsActivity("some-other-app-id"));
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-comm");
   });
 
   it("falls back to the env-only workspace when no app_id match exists", async () => {

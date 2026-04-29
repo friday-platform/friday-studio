@@ -148,6 +148,7 @@ fn override_home(test_home: &PathBuf) {
     env::set_var("FRIDAY_LAUNCHER_HOME", &local);
     // Override the supervised-process ports so we don't clash with
     // a real Friday on standard ports.
+    env::set_var("FRIDAY_PORT_nats_server", "28222");
     env::set_var("FRIDAY_PORT_friday", "28080");
     env::set_var("FRIDAY_PORT_link", "23100");
     env::set_var("FRIDAY_PORT_pty_server", "27681");
@@ -206,11 +207,16 @@ fn installer_launcher_handoff_and_clean_shutdown() {
     fs::create_dir_all(&install_dir).unwrap();
     let _launcher = build_launcher(&install_dir);
     let stub = build_stub(&scratch);
+    // All six supervised processes now require a stub — Stack 3's
+    // pre-flight verifies every binary exists before the launcher
+    // boots, so a missing stub fires the missing-binaries dialog
+    // and the test never gets to launch_studio.
+    write_wrapper(&install_dir, &stub, "nats-server", "28222", "/healthz");
     write_wrapper(&install_dir, &stub, "friday", "28080", "/health");
     write_wrapper(&install_dir, &stub, "link", "23100", "/health");
     write_wrapper(&install_dir, &stub, "pty-server", "27681", "/health");
     write_wrapper(&install_dir, &stub, "webhook-tunnel", "29090", "/health");
-    write_wrapper(&install_dir, &stub, "playground", "25200", "/api/health");
+    write_wrapper(&install_dir, &stub, "playground", "25200", "/");
 
     // 2. Override HOME + FRIDAY_LAUNCHER_HOME + FRIDAY_PORT_* so our
     //    test doesn't touch real ~/.friday.
@@ -234,16 +240,17 @@ fn installer_launcher_handoff_and_clean_shutdown() {
     // 5. Within 15s the supervised stubs must come up + report 200 OK.
     let healthy = wait_until(Duration::from_secs(15), || {
         let urls = [
+            "http://127.0.0.1:28222/healthz",
             "http://127.0.0.1:28080/health",
             "http://127.0.0.1:23100/health",
             "http://127.0.0.1:27681/health",
             "http://127.0.0.1:29090/health",
-            "http://127.0.0.1:25200/api/health",
+            "http://127.0.0.1:25200/",
         ];
         urls.iter().all(|u| http_get_ok(u))
     });
     assert!(healthy, "supervised stubs did not become healthy in 15s");
-    eprintln!("all 5 supervised stubs healthy");
+    eprintln!("all 6 supervised stubs healthy");
 
     // 6. Now exercise the installer↔launcher contract from extract.rs:
     //    SIGTERM the launcher and verify the launcher.pid file

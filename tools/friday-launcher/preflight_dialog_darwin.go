@@ -103,22 +103,24 @@ func showMissingBinariesDialog(binDir string, missing []string, errMsg, logPath 
 }
 
 // showPortInUseDialog renders the port-5199-already-in-use dialog
-// (Decision #28). Single button: Quit. Body explains the diagnosis
-// command and (when writeStartupErrorLog succeeds) the log path
-// so the user can copy + attach it to a support ticket.
+// (Decision #28). Single button: Quit. Body keeps the message
+// human-readable; the technical diagnosis (`lsof -iTCP:<port>`,
+// exe path, OS/arch) lives in the diagnostic log so support can
+// dig in without forcing every user to read shell commands.
 func showPortInUseDialog() {
 	exe, _ := os.Executable()
 	logPath := writeStartupErrorLog("port-in-use", map[string]string{
-		"port": healthServerPort,
-		"exe":  exe,
-		"os":   runtime.GOOS + "/" + runtime.GOARCH,
+		"port":              healthServerPort,
+		"exe":               exe,
+		"os":                runtime.GOOS + "/" + runtime.GOARCH,
+		"diagnosis_command": fmt.Sprintf("lsof -iTCP:%s", healthServerPort),
 	})
 
-	body := fmt.Sprintf(
-		"Friday Studio cannot start.\n\n"+
-			"Port %s is already in use by another application.\n\n"+
-			"Run `lsof -iTCP:%s` in Terminal to see what is using it.",
-		healthServerPort, healthServerPort)
+	body := "Friday Studio cannot start.\n\n" +
+		"Another copy of Friday Studio is already running, " +
+		"or a different application is using the port we need.\n\n" +
+		"Quit Friday Studio from the menu bar (or restart your computer) " +
+		"and try again."
 	if logPath != "" {
 		body += "\n\nDiagnostic log: " + logPath
 	}
