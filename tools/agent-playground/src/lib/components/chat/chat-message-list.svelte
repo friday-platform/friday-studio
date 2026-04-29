@@ -4,7 +4,7 @@
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
-  import { isError, isInProgress, outputSummary } from "./tool-call-utils";
+  import { isError, isInProgress, needsUserAction, outputSummary } from "./tool-call-utils";
   import ValidationPillRow from "./validation-pill-row.svelte";
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
 
@@ -279,8 +279,10 @@
             : []}
           {#if message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0}
             {@const calls = message.toolCalls}
-            {@const anyRunning = calls.some((c) => isInProgress(c.state))}
-            {#if calls.length >= COLLAPSE_THRESHOLD}
+            {@const regularCalls = calls.filter((c) => !needsUserAction(c))}
+            {@const actionCalls = calls.filter((c) => needsUserAction(c))}
+            {@const anyRunning = regularCalls.some((c) => isInProgress(c.state))}
+            {#if regularCalls.length >= COLLAPSE_THRESHOLD}
               <!--
                 Long tool runs (workspace creation, etc.) clutter the thread
                 when every step renders inline. Collapse into a single-line
@@ -288,6 +290,8 @@
                 progress is always visible) and closes once the run settles
                 — unless the user has manually toggled the drawer, in which
                 case their choice is latched via `userToggledGroups`.
+                Action-needed calls (e.g. connect_service) are split out below
+                and always rendered outside the collapsible group.
               -->
               {@const userChoice = userToggledGroups.get(message.id)}
               {@const isOpen = userChoice ?? anyRunning}
@@ -299,13 +303,13 @@
                   <span class="group-icon" aria-hidden="true">
                     {#if anyRunning}
                       <span class="group-pulse"></span>
-                    {:else if calls.some((c) => isError(c.state))}
+                    {:else if regularCalls.some((c) => isError(c.state))}
                       <span class="group-error-mark">✗</span>
                     {:else}
                       <span class="group-success-mark">✓</span>
                     {/if}
                   </span>
-                  <span class="tool-group-label">{toolGroupSummary(calls)}</span>
+                  <span class="tool-group-label">{toolGroupSummary(regularCalls)}</span>
                   <span class="group-chevron" aria-hidden="true">
                     {#if isOpen}
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
@@ -315,14 +319,21 @@
                   </span>
                 </summary>
                 <div class="tool-call-list">
-                  {#each calls as call (call.toolCallId || call.toolName)}
+                  {#each regularCalls as call (call.toolCallId || call.toolName)}
                     <ToolCallCard {call} {onCredentialConnected} />
                   {/each}
                 </div>
               </details>
-            {:else}
+            {:else if regularCalls.length > 0}
               <div class="tool-call-list">
-                {#each calls as call (call.toolCallId || call.toolName)}
+                {#each regularCalls as call (call.toolCallId || call.toolName)}
+                  <ToolCallCard {call} {onCredentialConnected} />
+                {/each}
+              </div>
+            {/if}
+            {#if actionCalls.length > 0}
+              <div class="tool-call-list">
+                {#each actionCalls as call (call.toolCallId || call.toolName)}
                   <ToolCallCard {call} {onCredentialConnected} />
                 {/each}
               </div>

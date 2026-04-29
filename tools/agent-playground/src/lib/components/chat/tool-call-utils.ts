@@ -4,6 +4,12 @@ export function isInProgress(state: ToolCallDisplay["state"]): boolean {
   return state === "input-streaming" || state === "input-available";
 }
 
+/** connect_service calls waiting for the user to authenticate stay "output-available"
+ * but the group must stay open so the button is reachable. */
+export function needsUserAction(call: ToolCallDisplay): boolean {
+  return call.toolName === "connect_service" && call.state === "output-available";
+}
+
 export function isError(state: ToolCallDisplay["state"]): boolean {
   return state === "output-error" || state === "output-denied";
 }
