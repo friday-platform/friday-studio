@@ -30,7 +30,7 @@ LINK_DEV_MODE=true
 	t.Setenv("HOME", tmpHome)
 
 	specs := supervisedProcesses("/tmp/bin")
-	required := []string{"friday", "link", "pty-server", "webhook-tunnel", "playground"}
+	required := []string{"friday", "link", "webhook-tunnel", "playground"}
 	for _, name := range required {
 		var found *processSpec
 		for i := range specs {

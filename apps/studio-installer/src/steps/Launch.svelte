@@ -137,10 +137,6 @@ function statusClass(status: string): string {
   return "pip pip-spinner";
 }
 
-// Pretty service name. The launcher reports "nats-server", "friday",
-// "link", "pty-server", "webhook-tunnel", "playground" — we display
-// each with a friendlier label so the user doesn't have to map raw
-// process names to product surfaces.
 function prettyName(name: string): string {
   switch (name) {
     case "nats-server":
@@ -149,8 +145,6 @@ function prettyName(name: string): string {
       return "Friday daemon";
     case "link":
       return "Authentication";
-    case "pty-server":
-      return "Terminal";
     case "webhook-tunnel":
       return "Webhook tunnel";
     case "playground":

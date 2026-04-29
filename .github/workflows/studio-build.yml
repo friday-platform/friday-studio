@@ -84,7 +84,7 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Setup Go (pty-server + friday-launcher builds)
+      - name: Setup Go (friday-launcher build)
         # 1.26 required by tools/friday-launcher/go.mod (process-compose
         # v1.103.0 declares go 1.26). Atlas root go.mod is on 1.25.4 but
         # 1.26 toolchain compiles 1.25 syntax fine. Cannot use
@@ -172,12 +172,9 @@ jobs:
           # binary's time.
           PIDS=()
           # Binary names match the staging output of build-studio.ts —
-          # `friday` is the renamed atlas daemon, `link` / `playground` /
-          # `webhook-tunnel` are Deno binaries, `pty-server` is the Go
-          # rewrite (PR #3012), `gh` / `cloudflared` are bundled external
-          # CLIs. Keep this list in sync with DENO_BINARIES + GO_BINARIES
-          # + EXTERNAL_CLIS in scripts/build-studio.ts.
-          for f in friday link playground webhook-tunnel pty-server friday-launcher gh cloudflared; do
+          # keep this list in sync with DENO_BINARIES + GO_BINARIES +
+          # EXTERNAL_CLIS in scripts/build-studio.ts.
+          for f in friday link playground webhook-tunnel friday-launcher gh cloudflared; do
             (
               # `gtimeout` (coreutils) caps each codesign call at 5 min.
               # Apple's TSA can hang for hours under load; without a

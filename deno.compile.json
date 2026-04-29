@@ -18,7 +18,6 @@
     "apps/web-client/.svelte-kit",
     "apps/web-client/vite.config.ts",
     "tools/agent-playground/.svelte-kit",
-    "tools/pty-server/**",
     "tools/agent-playground/src/routes/**",
     "tools/agent-playground/src/**/*.svelte.ts",
     "tools/agent-playground/src/lib/inspector-state.test.ts",
@@ -54,7 +53,7 @@
     "compile": "./scripts/compile.sh",
     "evals": "deno run --allow-all tools/evals/run.ts",
     "sync:svelte": "deno task -f @atlas/ui sync && deno task -f @atlas/agent-playground sync && deno task -f @atlas/web-client sync",
-    "playground": "deno task sync:svelte && (cd tools/pty-server && go build -o pty-server .) && deno run -A npm:concurrently -n playground,pty -c magenta,cyan 'cd tools/agent-playground && EXTERNAL_DAEMON_URL=http://localhost:8080 EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev' './tools/pty-server/pty-server'"
+    "playground": "deno task sync:svelte && cd tools/agent-playground && EXTERNAL_DAEMON_URL=http://localhost:8080 EXTERNAL_TUNNEL_URL=http://localhost:9090 npx vite dev"
   },
   "lint": { "rules": { "tags": ["recommended"] }, "exclude": ["opensrc/**"] },
   "imports": {

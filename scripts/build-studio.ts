@@ -138,7 +138,6 @@ interface GoBinary {
 }
 
 const GO_BINARIES: readonly GoBinary[] = [
-  { name: "pty-server", pkg: "./tools/pty-server" },
   // friday-launcher is the post-install supervisor + tray app. Lives in
   // the root Go module like every other tools/* binary. cgo:true because
   // fyne.io/systray needs Cocoa on macOS (Windows backend is pure Win32 —

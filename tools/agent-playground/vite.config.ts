@@ -42,12 +42,5 @@ export default defineConfig({
       "Cross-Origin-Embedder-Policy": "credentialless",
       "Permissions-Policy": "local-fonts=()",
     },
-    proxy: {
-      "/pty-proxy": {
-        target: "http://localhost:7681",
-        ws: true,
-        rewrite: (path) => path.replace(/^\/pty-proxy/, ""),
-      },
-    },
   },
 });

@@ -36,9 +36,6 @@ done
 nohup "{install_dir}/agent-playground" >> "$FRIDAY_HOME/agent-playground.log" 2>&1 &
 echo $! > "$FRIDAY_HOME/pids/agent-playground.pid"
 
-nohup "{install_dir}/pty-server" >> "$FRIDAY_HOME/pty-server.log" 2>&1 &
-echo $! > "$FRIDAY_HOME/pids/pty-server.pid"
-
 nohup "{install_dir}/webhook-tunnel" >> "$FRIDAY_HOME/webhook-tunnel.log" 2>&1 &
 echo $! > "$FRIDAY_HOME/pids/webhook-tunnel.pid"
 
@@ -85,7 +82,6 @@ if errorlevel 1 (
 
 REM Phase 2 — frontends
 start /B "" "{install_dir}\agent-playground.exe" >> "%FRIDAY_HOME%\agent-playground.log" 2>&1
-start /B "" "{install_dir}\pty-server.exe" >> "%FRIDAY_HOME%\pty-server.log" 2>&1
 start /B "" "{install_dir}\webhook-tunnel.exe" >> "%FRIDAY_HOME%\webhook-tunnel.log" 2>&1
 
 REM Wait for Studio port and open browser

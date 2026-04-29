@@ -146,7 +146,6 @@ const signalSIGTERM = 15
 // services they depend on.
 var stopOrder = []string{
 	"playground",
-	"pty-server",
 	"webhook-tunnel",
 	"friday",
 	"link",
@@ -161,7 +160,6 @@ var startOrder = []string{
 	"nats-server",
 	"friday",
 	"link",
-	"pty-server",
 	"webhook-tunnel",
 	"playground",
 }
@@ -188,7 +186,6 @@ func supervisedProcessNames() []string {
 		"nats-server",
 		"friday",
 		"link",
-		"pty-server",
 		"webhook-tunnel",
 		"playground",
 	}
@@ -256,11 +253,6 @@ func supervisedProcesses(binDir string) []processSpec {
 			healthPort: "3100", healthPath: "/health",
 		},
 		{
-			name: "pty-server", binary: filepath.Join(binDir, "pty-server"),
-			env:        commonServiceEnv(),
-			healthPort: "7681", healthPath: "/health",
-		},
-		{
 			name: "webhook-tunnel", binary: filepath.Join(binDir, "webhook-tunnel"),
 			env:        commonServiceEnv(),
 			healthPort: "9090", healthPath: "/health",
@@ -293,7 +285,7 @@ func supervisedProcesses(binDir string) []processSpec {
 
 func portOverride(name string) string {
 	// Hyphens aren't valid in POSIX env var names, so swap them for
-	// underscores: FRIDAY_PORT_pty_server, not FRIDAY_PORT_pty-server.
+	// underscores: FRIDAY_PORT_webhook_tunnel, not FRIDAY_PORT_webhook-tunnel.
 	envName := "FRIDAY_PORT_" + strings.ReplaceAll(name, "-", "_")
 	return osGetenv(envName)
 }
