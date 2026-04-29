@@ -53,6 +53,13 @@ func commonServiceEnv() []string {
 			env = append(env, k+"="+v)
 		}
 	}
+	// Pin every supervised service to the launcher-owned home. The friday
+	// daemon's getFridayHome() reads FRIDAY_HOME first; sibling services
+	// (link, webhook-tunnel, playground) that resolve their own paths via
+	// the same helper need the same value, otherwise their data drifts to
+	// the legacy ~/.atlas fallback while the daemon writes to
+	// ~/.friday/local — homes diverge silently.
+	env = append(env, "FRIDAY_HOME="+friendlyHome())
 	return env
 }
 
@@ -132,17 +139,13 @@ func fridayEnv(binDir string) []string {
 	if _, err := os.Stat(abPath); err == nil {
 		env = append(env, "FRIDAY_AGENT_BROWSER_PATH="+abPath)
 	}
-	// Pin the daemon's atlas-home to the launcher-owned ~/.friday/local
-	// directory. getFridayHome() in @atlas/utils reads FRIDAY_HOME first, so
-	// this single var redirects every consumer (workspaces, chats,
-	// sessions, skills.db, storage.db, memory, logs, AND .env) to the
-	// installer-managed location. Without it the launcher reads/writes
-	// ~/.friday/local/.env while atlasd reads/writes ~/.atlas/.env — keys
-	// the installer wizard saves never reach the daemon's settings UI,
-	// and the two homes drift out of sync. ~/.atlas is the deprecated
-	// pre-Friday-Studio location; new installs should land entirely under
-	// ~/.friday/local.
-	env = append(env, "FRIDAY_HOME="+friendlyHome())
+	// commonServiceEnv() carries FRIDAY_HOME (which redirects getFridayHome
+	// for every consumer — workspaces, chats, sessions, skills.db,
+	// storage.db, memory, logs, .env), the .env baseline, and shared
+	// LINK_DEV_MODE etc. Sibling services (link, webhook-tunnel, playground)
+	// receive the same baseline; pinning FRIDAY_HOME there ensures their
+	// own getFridayHome() resolves to the same launcher-owned home rather
+	// than drifting to the legacy ~/.atlas fallback.
 	env = append(env, commonServiceEnv()...)
 	return env
 }

@@ -92,3 +92,28 @@ func TestFridayEnv_OmitsAgentBrowserPathWhenAbsent(t *testing.T) {
 		}
 	}
 }
+
+// TestCommonServiceEnv_EmitsFridayHome guards the contract that
+// drives the entire ~/.friday/local redirect: every supervised
+// service (friday daemon, link, webhook-tunnel, playground) must
+// receive FRIDAY_HOME so getFridayHome() in @atlas/utils resolves
+// to the launcher-owned home. Without this, services fall back to
+// the legacy ~/.atlas location and homes silently drift apart —
+// the original bug that motivated commit 41ead9310.
+func TestCommonServiceEnv_EmitsFridayHome(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	env := commonServiceEnv()
+	want := "FRIDAY_HOME=" + filepath.Join(tmpHome, ".friday", "local")
+	if !slices.Contains(env, want) {
+		t.Errorf("commonServiceEnv missing %q. got=%v", want, env)
+	}
+
+	// fridayEnv composes commonServiceEnv, so the daemon must inherit
+	// FRIDAY_HOME too.
+	dEnv := fridayEnv(t.TempDir())
+	if !slices.Contains(dEnv, want) {
+		t.Errorf("fridayEnv missing %q (via commonServiceEnv). got=%v", want, dEnv)
+	}
+}
