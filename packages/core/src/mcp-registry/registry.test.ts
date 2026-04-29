@@ -114,11 +114,22 @@ describe("mcpServersRegistry", () => {
         expect.arrayContaining(["workspace-mcp", "--tools", "--transport", "streamable-http"]),
       );
       expect(startup!.env).toBeDefined();
-      expect(startup!.env).toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
-      expect(startup!.env).toHaveProperty("GOOGLE_OAUTH_CLIENT_SECRET");
-      expect(startup!.env).toHaveProperty("MCP_ENABLE_OAUTH21");
-      expect(startup!.env).toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
+      // Per-server config only — OAuth vars live in platformEnv
       expect(startup!.env).toHaveProperty("WORKSPACE_MCP_PORT");
+      expect(startup!.env).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
+      expect(startup!.env).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_SECRET");
+      expect(startup!.env).not.toHaveProperty("MCP_ENABLE_OAUTH21");
+      expect(startup!.env).not.toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
+    });
+
+    it.each(googleIds)("'%s' has platformEnv with OAuth credentials", (id) => {
+      const server = mcpServersRegistry.servers[id];
+      if (!server) throw new Error(`missing server '${id}' in registry`);
+      expect(server.platformEnv).toBeDefined();
+      expect(server.platformEnv).toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
+      expect(server.platformEnv).toHaveProperty("GOOGLE_OAUTH_CLIENT_SECRET");
+      expect(server.platformEnv).toHaveProperty("MCP_ENABLE_OAUTH21");
+      expect(server.platformEnv).toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
     });
 
     it.each(googleIds)("'%s' ready_url matches transport URL", (id) => {
