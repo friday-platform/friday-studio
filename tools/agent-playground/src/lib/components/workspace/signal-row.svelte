@@ -130,8 +130,6 @@
     return null;
   });
 
-  const TUNNEL_URL = externalTunnelUrl();
-
   /** Cached tunnel status — fetched once on first use. */
   let cachedTunnelUrl = $state<string | null>(null);
   let cachedTunnelSecret = $state<string | null>(null);
@@ -149,7 +147,7 @@
     if (tunnelFetched) return;
     tunnelFetched = true;
     try {
-      const res = await fetch(`${TUNNEL_URL}/status`);
+      const res = await fetch(`${externalTunnelUrl()}/status`);
       if (res.ok) {
         const data = await res.json();
         cachedTunnelUrl = data.url ?? null;

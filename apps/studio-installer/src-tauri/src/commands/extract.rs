@@ -359,10 +359,16 @@ pub fn extract_archive(
             let _ = emitter.channel.send(ExtractEvent::Error {
                 message: e.clone(),
             });
-            // Roll back: drop the partial new install and restore the backup.
+            // Roll back: drop the partial new install. When a backup
+            // exists, restore it (covers the update path). When it
+            // doesn't, the dest dir was created fresh by us inside
+            // this call — drop it too so a retry starts clean instead
+            // of unpacking on top of a half-extracted tree.
             if bak_path.exists() {
                 let _ = fs::remove_dir_all(&dest_path);
                 let _ = fs::rename(&bak_path, &dest_path);
+            } else {
+                let _ = fs::remove_dir_all(&dest_path);
             }
             Err(e)
         }

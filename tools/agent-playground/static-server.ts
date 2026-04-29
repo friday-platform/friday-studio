@@ -47,7 +47,12 @@ const RUNTIME_CONFIG: Record<string, string> = {
   externalDaemonUrl: EXTERNAL_DAEMON_URL,
 };
 if (EXTERNAL_TUNNEL_URL) RUNTIME_CONFIG.externalTunnelUrl = EXTERNAL_TUNNEL_URL;
-const CONFIG_SCRIPT = `<script>window.__FRIDAY_CONFIG__=${JSON.stringify(RUNTIME_CONFIG)};</script>`;
+// Escape `</` in the JSON payload — JSON.stringify does not, and a
+// literal `</script>` in any value would break out of the inline script.
+// Standard inline-JSON practice; cheap insurance against future env values
+// containing `</`-sequences (URLs technically can include encoded paths).
+const CONFIG_JSON = JSON.stringify(RUNTIME_CONFIG).replace(/<\/(script)/gi, "<\\/$1");
+const CONFIG_SCRIPT = `<script>window.__FRIDAY_CONFIG__=${CONFIG_JSON};</script>`;
 
 function injectConfig(html: string): string {
   // Place the script just before </head> so it runs before the SvelteKit

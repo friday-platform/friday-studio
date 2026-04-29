@@ -1,4 +1,5 @@
 <script lang="ts">
+import { invoke } from "@tauri-apps/api/core";
 import { onMount } from "svelte";
 import {
   extendWaitDeadline,
@@ -22,7 +23,6 @@ onMount(async () => {
   // if no provider key is on disk. Catching it here lets us drive
   // the user back to API Keys with a specific message instead of
   // letting them wait through the timeout watching it bounce.
-  const { invoke } = await import("@tauri-apps/api/core");
   const hasKey = await invoke<boolean>("env_file_has_provider_key").catch(() => false);
   if (!hasKey) {
     needsApiKey = true;
