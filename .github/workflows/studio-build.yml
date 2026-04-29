@@ -62,13 +62,6 @@ jobs:
           #   target: x86_64-apple-darwin
           #   archive_ext: tar.zst
           - platform: windows
-            # 8-core Windows self-hosted runner provisioned at the org
-            # level (see github.com/friday-platform/friday-studio/settings
-            # /actions/runners). Default windows-latest (4-core) spent
-            # ~12.5 min in the build-studio.ts step; this halves wall time
-            # for the Go + Deno compile passes on the Windows path. The
-            # custom label is declared in .github/actionlint.yaml so the
-            # actionlint CI check accepts it.
             os: windows-2025-8-cores
             target: x86_64-pc-windows-msvc
             archive_ext: zip
