@@ -122,29 +122,6 @@ for (const provider of googleProviders) {
   if (provider) registry.register(provider);
 }
 
-// The dynamic slack-app provider is registered in index.ts (needs StorageAdapter)
-const slackUserProvider = (() => {
-  const clientIdFile = env.SLACK_APP_CLIENT_ID_FILE;
-  const clientSecretFile = env.SLACK_APP_CLIENT_SECRET_FILE;
-  if (!clientIdFile || !clientSecretFile) return undefined;
-  try {
-    return createSlackUserProvider({
-      clientId: readFileSync(clientIdFile, "utf-8").trim(),
-      clientSecret: readFileSync(clientSecretFile, "utf-8").trim(),
-    });
-  } catch (err) {
-    logger.warn("slack_user_credential_read_failed", { error: stringifyError(err) });
-    return undefined;
-  }
-})();
-if (slackUserProvider) {
-  registry.register(slackUserProvider);
-} else {
-  logger.info(
-    "Skipping slack-user provider: SLACK_APP_CLIENT_ID_FILE or SLACK_APP_CLIENT_SECRET_FILE not set",
-  );
-}
-
 registry.register(githubProvider);
 registry.register(anthropicProvider);
 registry.register(notionProvider);
