@@ -9,10 +9,11 @@
 //!   - **20s SSE-connect deadline** (capped exponential backoff
 //!     200ms → 2s). Sized for cold-cache LaunchServices on slow Macs
 //!     after the v0.0.8 → v0.0.9 migration.
-//!   - **60s soft deadline** — UI swaps to "taking longer than usual"
+//!   - **90s soft deadline** — UI swaps to "taking longer than usual"
 //!     copy + adds "Wait 60s more" button.
-//!   - **90s hard deadline** (default end). Extendable to 150s via
-//!     `extend_wait_deadline`, then to 210s on a second extension.
+//!   - **180s hard deadline** (default end). Extendable by 60s
+//!     each via `extend_wait_deadline`, capped at 3 extensions
+//!     (total ceiling = 180 + 60×3 = 360s).
 //!
 //! Past the hard deadline the wait does NOT return — it parks on a
 //! `Notify` so a subsequent `extend_wait_deadline` can wake the loop
@@ -53,16 +54,29 @@ const SSE_BACKOFF_MAX_MS: u64 = 2000;
 /// Soft deadline — UI swaps to long-wait copy + "Wait 60s more"
 /// button appears. The wait-healthy work continues in the
 /// background; the deadline is purely a UI affordance.
-const SOFT_DEADLINE_SECS: u64 = 60;
+///
+/// Sized for the 95th percentile of cold first boots: friday
+/// daemon needs ~30-60s on a fresh machine (workspace scan + skill
+/// bundle hashing + cron registration), then playground tacks on
+/// 10-30s for the first SvelteKit render. 90s soft → user sees
+/// "Still starting up…" past most slow boots without crying wolf
+/// on the median ~25s case.
+const SOFT_DEADLINE_SECS: u64 = 90;
 
 /// Hard deadline — default end of the wait-healthy step. Each
 /// `extend_wait_deadline` call adds `EXTENSION_SECS`, capped at
 /// `MAX_EXTENSIONS` total. Past the hard deadline the wizard
 /// surfaces View logs / Open anyway / Wait again; the wait loop
 /// itself parks on a Notify until extension wakes it.
-const HARD_DEADLINE_SECS: u64 = 90;
+///
+/// Bumped from 90s → 180s after observing cold first boots on
+/// fresh macOS systems push past the 90s mark with friday and
+/// playground still in pending. Total budget with 3 extensions
+/// of 60s = 180 + 180 = 360s (6 min) which is enough for the
+/// slowest boots we've seen.
+const HARD_DEADLINE_SECS: u64 = 180;
 const EXTENSION_SECS: u64 = 60;
-const MAX_EXTENSIONS: u32 = 2;
+const MAX_EXTENSIONS: u32 = 3;
 
 /// Cap stream-read poll cadence. Drives how often the loop wakes
 /// to re-check the soft/hard deadlines and the cancellation flag.
@@ -764,24 +778,26 @@ mod tests {
         let state = WaitDeadlineState::default();
         let _ = state.install(HARD_DEADLINE_SECS).await;
 
-        // First extension: 90 + 60 = 150.
-        let r1 = do_extend_wait_deadline(&state).await.unwrap();
-        assert_eq!(r1, Some(150));
+        // Extensions accumulate via HARD_DEADLINE_SECS +
+        // EXTENSION_SECS×N until the MAX_EXTENSIONS cap; expressing
+        // the expected values in those constants keeps the test
+        // honest if the budget shifts (currently 180 + 60×3 = 360s).
+        for n in 1..=MAX_EXTENSIONS {
+            let expected = Some(HARD_DEADLINE_SECS + EXTENSION_SECS * (n as u64));
+            let actual = do_extend_wait_deadline(&state).await.unwrap();
+            assert_eq!(actual, expected, "extension {n} should advance to {expected:?}");
+        }
 
-        // Second extension: 150 + 60 = 210.
-        let r2 = do_extend_wait_deadline(&state).await.unwrap();
-        assert_eq!(r2, Some(210));
-
-        // Third extension: capped.
-        let r3 = do_extend_wait_deadline(&state).await.unwrap();
-        assert_eq!(r3, None);
+        // Cap: one more attempt rejects.
+        let beyond = do_extend_wait_deadline(&state).await.unwrap();
+        assert_eq!(beyond, None);
 
         // Atomic-level sanity: counter must equal MAX_EXTENSIONS.
         let d = state.current().await.expect("wait should still be active");
-        let prior_3 = d.extensions_used.load(Ordering::Acquire);
+        let prior_n = d.extensions_used.load(Ordering::Acquire);
         assert!(
-            prior_3 >= MAX_EXTENSIONS,
-            "third extension must be rejected by the cap; got prior_3={prior_3}"
+            prior_n >= MAX_EXTENSIONS,
+            "post-cap extension must be rejected; got prior_n={prior_n}"
         );
     }
 
@@ -806,8 +822,8 @@ mod tests {
     async fn extension_cap_holds_at_boundary() {
         // Pins the cap arithmetic at the boundary: with the counter
         // at MAX-1, two consecutive extensions yield exactly one
-        // success (Some(210)) and one None, with deadline_nanos
-        // landing at 210s (90+60+60), not 270s.
+        // success and one None, with deadline_nanos landing at
+        // exactly the cap (HARD_DEADLINE + EXTENSION × MAX_EXTENSIONS).
         //
         // NOTE: this test does NOT genuinely race load-then-store
         // versus CAS — `do_extend_wait_deadline` has zero `.await`
@@ -821,8 +837,14 @@ mod tests {
         // in the closure) would still fail this test cleanly.
         let state = WaitDeadlineState::default();
         let _ = state.install(HARD_DEADLINE_SECS).await;
-        let r1 = do_extend_wait_deadline(&state).await.unwrap();
-        assert_eq!(r1, Some(150));
+
+        // Run MAX-1 extensions normally so the next one is the
+        // boundary that gets raced.
+        for n in 1..MAX_EXTENSIONS {
+            let expected = Some(HARD_DEADLINE_SECS + EXTENSION_SECS * (n as u64));
+            let actual = do_extend_wait_deadline(&state).await.unwrap();
+            assert_eq!(actual, expected, "warm-up extension {n}");
+        }
 
         let s = std::sync::Arc::new(state);
         let s1 = s.clone();
@@ -833,22 +855,19 @@ mod tests {
         let r2 = h2.await.unwrap().unwrap();
         let mut results = vec![r1, r2];
         results.sort();
+        let cap_total = HARD_DEADLINE_SECS + EXTENSION_SECS * (MAX_EXTENSIONS as u64);
         assert_eq!(
             results,
-            vec![None, Some(210)],
+            vec![None, Some(cap_total)],
             "exactly one extension at the boundary must succeed; got {results:?}"
         );
 
-        // And the deadline_nanos must reflect exactly two extensions
-        // beyond the original HARD_DEADLINE_SECS (90 + 60 + 60 =
-        // 210s). A regression that pushed twice would land at 270s.
+        // deadline_nanos must reflect the cap — extra extensions
+        // beyond MAX_EXTENSIONS would push past it.
         let d = s.current().await.expect("wait should still be active");
         let nanos = d.deadline_nanos.load(Ordering::Acquire);
-        let secs = nanos / 1_000_000_000;
-        assert_eq!(
-            secs, 210,
-            "deadline must equal 90+60+60=210s; got {secs}s (cap bypassed?)"
-        );
+        let secs = (nanos / 1_000_000_000) as u64;
+        assert_eq!(secs, cap_total, "deadline must equal cap_total; got {secs}s");
     }
 
     // ── Timeout-fired latch reset (cycle-2 fix) ────────────────
