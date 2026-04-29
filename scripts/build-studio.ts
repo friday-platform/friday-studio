@@ -49,7 +49,7 @@ interface ExternalCliPin {
   outName: (target: string) => string;
 }
 
-const GH_VERSION = "2.78.0";
+const GH_VERSION = "2.92.0";
 const CLOUDFLARED_VERSION = "2026.3.0";
 const NATS_SERVER_VERSION = "2.12.8";
 
