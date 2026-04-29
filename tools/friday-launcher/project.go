@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/f1bonacc1/process-compose/src/command"
@@ -27,9 +28,10 @@ func commonServiceEnv() []string {
 }
 
 // fridayEnv builds the env-var list specific to the friday daemon
-// process. Carries FRIDAY_CLAUDE_PATH plus the .env baseline. Without
-// merging .env in here friday's platform-model validation fails on
-// every fresh install — the daemon needs ANTHROPIC_API_KEY in its
+// process. Carries FRIDAY_CLAUDE_PATH, FRIDAY_UV_PATH, FRIDAY_UVX_PATH
+// (when bundled binaries are present in binDir), plus the .env baseline.
+// Without merging .env in here friday's platform-model validation fails
+// on every fresh install — the daemon needs ANTHROPIC_API_KEY in its
 // process environment.
 //
 // FRIDAY_CLAUDE_PATH discovery order:
@@ -49,10 +51,19 @@ func commonServiceEnv() []string {
 // If none of the above resolves to a real file, we leave the env
 // var unset — the SDK then surfaces its native "binary not found"
 // error to the user, which is at least specific enough to act on.
-func fridayEnv() []string {
+func fridayEnv(binDir string) []string {
 	var env []string
 	if path := discoverClaudeBinary(); path != "" {
 		env = append(env, "FRIDAY_CLAUDE_PATH="+path)
+	}
+	for _, name := range []string{"uv", "uvx"} {
+		bin := filepath.Join(binDir, name)
+		if runtime.GOOS == "windows" {
+			bin += ".exe"
+		}
+		if _, err := os.Stat(bin); err == nil {
+			env = append(env, "FRIDAY_"+strings.ToUpper(name)+"_PATH="+bin)
+		}
 	}
 	env = append(env, commonServiceEnv()...)
 	return env
@@ -239,7 +250,7 @@ func supervisedProcesses(binDir string) []processSpec {
 		{
 			name: "friday", binary: filepath.Join(binDir, "friday"),
 			args:       []string{"daemon", "start"},
-			env:        fridayEnv(),
+			env:        fridayEnv(binDir),
 			healthPort: "8080", healthPath: "/health",
 		},
 		// `link` historically required LINK_DEV_MODE=true to skip the
