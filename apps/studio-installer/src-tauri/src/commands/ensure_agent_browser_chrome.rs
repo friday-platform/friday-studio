@@ -36,7 +36,15 @@ pub async fn ensure_agent_browser_chrome() -> Result<(), String> {
     } else {
         "agent-browser"
     };
-    let ab_bin = install_dir_path.join("bin").join(bin_name);
+    // Runtime tar.zst extracts binaries directly into <install>/, NOT
+    // <install>/bin/. Confirmed against the launcher's own resolution
+    // path at tools/friday-launcher/project.go:fridayEnv() which joins
+    // the bare binary name onto binDir (which equals install_dir here).
+    // Earlier shape (`install_dir.join("bin").join(...)`) silently
+    // returned Err, the JS catch in Extract.svelte marked the agent-
+    // browser pip ✗, and the user reached the playground without
+    // Chrome — surfacing as ENOENT at first browse call.
+    let ab_bin = install_dir_path.join(bin_name);
 
     if !ab_bin.exists() {
         // Bundling failed — runtime tar.zst didn't include it. Surface

@@ -295,6 +295,12 @@ const DENO_BINARIES = [
       "packages/workspace", // user-workspace-template.yml
       "packages/fsm-engine", // function-executor.worker.ts via Worker(new URL(...))
       "packages/workspace-builder", // validation.worker.ts via Worker(new URL(...))
+      // The web agent's prompt builder reads .md files at runtime via
+      // readFileSync(new URL("./skill/<f>.md", import.meta.url)) — see
+      // packages/bundled-agents/src/web/prompts.ts. deno-compile doesn't
+      // auto-detect this (runtime URL resolution, not a static import),
+      // so the skill dir has to be on the include allowlist explicitly.
+      "packages/bundled-agents/src/web/skill",
     ] as string[],
   },
   {
