@@ -111,12 +111,12 @@ onMount(async () => {
   h2 {
     font-size: 22px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: light-dark(#1a1a1a, #f0f0f0);
   }
 
   .subtitle {
     font-size: 14px;
-    color: #777;
+    color: light-dark(#555, #777);
     max-width: 340px;
     line-height: 1.5;
   }
@@ -124,7 +124,7 @@ onMount(async () => {
   .spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid #1e1e1e;
+    border: 4px solid light-dark(#e0e0e0, #1e1e1e);
     border-top-color: #6b72f0;
     border-radius: 50%;
     animation: spin 0.9s linear infinite;
@@ -173,7 +173,7 @@ onMount(async () => {
 
   .error-detail {
     font-size: 13px;
-    color: #888;
+    color: light-dark(#555, #888);
     max-width: 380px;
     word-break: break-word;
     background: rgba(248, 113, 113, 0.08);

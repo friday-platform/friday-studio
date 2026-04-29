@@ -182,13 +182,13 @@ async function handleSkip() {
   h2 {
     font-size: 20px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: light-dark(#1a1a1a, #f0f0f0);
     margin-bottom: 6px;
   }
 
   .subtitle {
     font-size: 13px;
-    color: #777;
+    color: light-dark(#555, #777);
     line-height: 1.5;
   }
 
@@ -211,7 +211,7 @@ async function handleSkip() {
     gap: 8px;
     font-size: 13px;
     font-weight: 500;
-    color: #ccc;
+    color: light-dark(#333, #ccc);
   }
 
   .badge {
@@ -230,7 +230,7 @@ async function handleSkip() {
     background: #1a1a1a;
     border: 1px solid #2e2e2e;
     border-radius: 7px;
-    color: #f0f0f0;
+    color: light-dark(#1a1a1a, #f0f0f0);
     font-size: 13px;
     padding: 9px 12px;
     outline: none;
@@ -352,7 +352,7 @@ async function handleSkip() {
   }
 
   .skip:hover:not(:disabled) {
-    color: #888;
+    color: light-dark(#555, #888);
   }
 
   .skip:disabled {

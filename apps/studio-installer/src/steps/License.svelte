@@ -56,7 +56,7 @@ function accept() {
   h2 {
     font-size: 20px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: light-dark(#1a1a1a, #f0f0f0);
     margin-bottom: 4px;
   }
 

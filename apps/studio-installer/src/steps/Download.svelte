@@ -164,13 +164,13 @@ function friendlyError(msg: string | null): string {
   h2 {
     font-size: 20px;
     font-weight: 700;
-    color: #f0f0f0;
+    color: light-dark(#1a1a1a, #f0f0f0);
     margin-bottom: 6px;
   }
 
   .subtitle {
     font-size: 13px;
-    color: #777;
+    color: light-dark(#555, #777);
   }
 
   .body {
@@ -241,7 +241,7 @@ function friendlyError(msg: string | null): string {
 
   .error-detail {
     font-size: 12px;
-    color: #888;
+    color: light-dark(#555, #888);
     word-break: break-word;
   }
 
