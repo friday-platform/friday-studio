@@ -1,6 +1,7 @@
 import { building } from "$app/environment";
 import type { Handle } from "@sveltejs/kit";
 import process from "node:process";
+import { parse } from "node-html-parser";
 
 /**
  * Inject `window.__FRIDAY_CONFIG__` into served HTML in dev so the same
@@ -11,9 +12,10 @@ import process from "node:process";
  * `vite dev` and during SvelteKit's prerender pass; in adapter-static
  * production it's not in the bundle.
  *
- * `transformPageChunk` is SvelteKit's documented hook for response-HTML
- * mutation — `transformIndexHtml` (Vite's plugin API) is bypassed by
- * SvelteKit's dev request handler.
+ * Uses node-html-parser (same lib applications/frame uses for CSP nonce
+ * injection) to do a real DOM insertion instead of regex-replacing
+ * `</head>`. The `<` → `<` escape on the JSON payload is the
+ * OWASP-recommended encoding for inline JSON.
  */
 const config: Record<string, string> = {};
 if (process.env.EXTERNAL_DAEMON_URL) config.externalDaemonUrl = process.env.EXTERNAL_DAEMON_URL;
@@ -26,14 +28,23 @@ if (process.env.EXTERNAL_TUNNEL_URL) config.externalTunnelUrl = process.env.EXTE
 // time. Leaving the static HTML untouched keeps static-server.ts the
 // sole injection point in the compiled binary.
 const shouldInject = !building && Object.keys(config).length > 0;
-// Escape `</` so a URL containing `</script>` can't break the inline tag.
-const configJson = JSON.stringify(config).replace(/<\/(script)/gi, "<\\/$1");
-const configTag = `<script>window.__FRIDAY_CONFIG__=${configJson};</script>`;
+const configJson = JSON.stringify(config).replace(/</g, "\\u003c");
+const configScript = `<script>window.__FRIDAY_CONFIG__=${configJson};</script>`;
+
+function injectConfig(html: string): string {
+	const root = parse(html);
+	const head = root.querySelector("head");
+	if (!head) return html;
+	head.appendChild(parse(configScript));
+	return root.toString();
+}
 
 export const handle: Handle = ({ event, resolve }) =>
 	resolve(event, {
 		transformPageChunk: ({ html, done }) => {
+			// `done` flips true on the final chunk — only the final chunk
+			// contains the closing `</head>` we need to insert before.
 			if (!shouldInject || !done) return html;
-			return html.includes("</head>") ? html.replace("</head>", `${configTag}</head>`) : html;
+			return injectConfig(html);
 		},
 	});

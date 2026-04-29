@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { serveStatic } from "hono/deno";
+import { parse as parseHtml } from "node-html-parser";
 import { api } from "./src/lib/server/router.ts";
 
 const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
@@ -36,29 +37,31 @@ const INDEX_HTML = join(BUILD_ROOT, "index.html");
 // the browser-facing daemon/tunnel URLs without a hardcoded fallback in
 // the JS bundle. Anything that depends on these values reads
 // window.__FRIDAY_CONFIG__ at module load time (see src/lib/daemon-url.ts).
+//
+// Implementation uses node-html-parser to do a real DOM insertion
+// rather than a regex `replace("</head>", …)` — same lib applications/
+// frame uses for CSP nonce injection. The `<` → `<` escape on the
+// JSON payload is the OWASP-recommended encoding for inline JSON: it
+// neutralises `</script>`, `<!--`, and any other tag-opener that could
+// otherwise break out of the inline script context.
 const RUNTIME_CONFIG: Record<string, string> = {
   externalDaemonUrl: EXTERNAL_DAEMON_URL,
 };
 if (EXTERNAL_TUNNEL_URL) RUNTIME_CONFIG.externalTunnelUrl = EXTERNAL_TUNNEL_URL;
-// Escape `</` in the JSON payload — JSON.stringify does not, and a
-// literal `</script>` in any value would break out of the inline script.
-// Standard inline-JSON practice; cheap insurance against future env values
-// containing `</`-sequences (URLs technically can include encoded paths).
-const CONFIG_JSON = JSON.stringify(RUNTIME_CONFIG).replace(/<\/(script)/gi, "<\\/$1");
-const CONFIG_SCRIPT = `<script>window.__FRIDAY_CONFIG__=${CONFIG_JSON};</script>`;
-
-function injectConfig(html: string): string {
-  // Place the script just before </head> so it runs before the SvelteKit
-  // bundle. If </head> is missing for some reason (shouldn't happen with
-  // the SvelteKit build), prepend so the browser still picks it up.
-  if (html.includes("</head>")) return html.replace("</head>", `${CONFIG_SCRIPT}</head>`);
-  return CONFIG_SCRIPT + html;
-}
+const CONFIG_JSON = JSON.stringify(RUNTIME_CONFIG).replace(/</g, "\\u003c");
+const CONFIG_SCRIPT_HTML = `<script>window.__FRIDAY_CONFIG__=${CONFIG_JSON};</script>`;
 
 let CACHED_HTML: string | null = null;
 async function indexHtml(): Promise<string> {
   if (CACHED_HTML !== null) return CACHED_HTML;
-  CACHED_HTML = injectConfig(await Deno.readTextFile(INDEX_HTML));
+  const raw = await Deno.readTextFile(INDEX_HTML);
+  const root = parseHtml(raw);
+  const head = root.querySelector("head");
+  if (!head) {
+    throw new Error(`build/index.html is missing a <head> element — refusing to serve`);
+  }
+  head.appendChild(parseHtml(CONFIG_SCRIPT_HTML));
+  CACHED_HTML = root.toString();
   return CACHED_HTML;
 }
 
