@@ -92,6 +92,17 @@ pub fn write_env_file(
     let existing_content = fs::read_to_string(&path).unwrap_or_default();
     let mut lines = parse_env_lines(&existing_content);
 
+    // One-shot migration: drop a previously-seeded hardcoded FRIDAY_KEY
+    // so the daemon's ensureLocalFridayKey() bootstrap regenerates a
+    // fresh ephemeral JWT on next start. Old installs received this
+    // exact value from earlier installer builds; only that exact match
+    // is removed so any user-supplied real token survives untouched.
+    const LEGACY_HARDCODED_FRIDAY_KEY: &str =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsb2NhbC11c2VyIn0.local";
+    lines.retain(|(k, v)| {
+        !matches!(k.as_deref(), Some("FRIDAY_KEY")) || v.trim() != LEGACY_HARDCODED_FRIDAY_KEY
+    });
+
     // Build a map of existing keys for fast lookup
     let existing_keys: HashMap<String, usize> = lines
         .iter()
@@ -126,13 +137,17 @@ pub fn write_env_file(
     // served HTML; the launcher passes the .env through to its
     // supervised processes so updating these is enough to retarget
     // browser-facing URLs without rebuilding.
+    //
+    // FRIDAY_KEY is intentionally NOT seeded here. The daemon's
+    // ensureLocalFridayKey() (apps/atlas-cli/.../local-friday-key.ts)
+    // generates a fresh ephemeral JWT in-process on every start when
+    // the env var isn't set. Hardcoding a static JWT in the installer
+    // would (1) ship a known token in clear in source and (2) skip the
+    // daemon's richer payload (iss / email / user_metadata) for no
+    // benefit — the signature isn't verified in local mode anyway.
     let platform_vars = [
         ("FRIDAY_LOCAL_ONLY", "true"),
         ("LINK_DEV_MODE", "true"),
-        (
-            "FRIDAY_KEY",
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsb2NhbC11c2VyIn0.local",
-        ),
         ("FRIDAYD_URL", "http://localhost:8080"),
         ("EXTERNAL_DAEMON_URL", "http://localhost:8080"),
         ("EXTERNAL_TUNNEL_URL", "http://localhost:9090"),
