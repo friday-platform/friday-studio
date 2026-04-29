@@ -10,6 +10,11 @@ import type { ProviderRegistry } from "../providers/registry.ts";
 import type { OAuthProvider } from "../providers/types.ts";
 import type { ClientRegistration, OAuthCredential, StorageAdapter } from "../types.ts";
 import * as oauth from "./client.ts";
+import {
+  buildDelegatedAuthUrl,
+  parseDelegatedCallback,
+  refreshDelegatedToken,
+} from "./delegated.ts";
 import { discoverAuthorizationServer } from "./discovery.ts";
 import { decodeState, encodeState, type StatePayload } from "./jwt-state.ts";
 import { registerClient } from "./registration.ts";
@@ -88,8 +93,27 @@ export class OAuthService {
       );
     }
 
-    // 2. Branch on config mode for discovery vs static
     const config = provider.oauthConfig;
+
+    // Delegated mode: external endpoint owns the secret and exchanges
+    // the code. No PKCE (we don't see the code), no discovery, no
+    // registration. The JWT state doubles as the CSRF token that the
+    // exchange endpoint echoes back on the final redirect.
+    if (config.mode === "delegated") {
+      const state = await encodeState({
+        // No codeVerifier — PKCE is moot when we don't perform code exchange.
+        v: "",
+        p: providerId,
+        c: callbackUrl,
+        r: redirectUri,
+        u: userId,
+      });
+
+      const authorizationUrl = buildDelegatedAuthUrl(config, state, callbackUrl, scopes);
+      return { authorizationUrl, state };
+    }
+
+    // 2. Branch on config mode for discovery vs static
     let authServer: oauth.AuthorizationServer;
     let clientReg: ClientRegistration;
 
@@ -174,6 +198,90 @@ export class OAuthService {
    * }
    * ```
    */
+  /**
+   * Complete a delegated OAuth flow.
+   *
+   * Tokens were already exchanged by the external delegated endpoint
+   * and arrive in the callback's query params. No code exchange runs
+   * here; we parse, validate the CSRF (which is the JWT state itself,
+   * echoed back), and persist.
+   */
+  async completeDelegatedFlow(
+    state: string,
+    rawQuery: Record<string, string>,
+  ): Promise<{ credential: OAuthCredential; redirectUri?: string }> {
+    let decoded: StatePayload;
+    try {
+      decoded = await decodeState(state);
+    } catch {
+      throw new OAuthServiceError("FLOW_NOT_FOUND", "OAuth flow not found or expired");
+    }
+
+    const { p: providerId, r: redirectUri, u: userId } = decoded;
+
+    const provider = await this.registry.get(providerId);
+    if (!provider) {
+      throw new OAuthServiceError("PROVIDER_NOT_FOUND", `Provider '${providerId}' not found`);
+    }
+    if (provider.type !== "oauth") {
+      throw new OAuthServiceError(
+        "INVALID_PROVIDER_TYPE",
+        `Provider '${providerId}' is not an OAuth provider`,
+      );
+    }
+    if (provider.oauthConfig.mode !== "delegated") {
+      throw new OAuthServiceError(
+        "INVALID_MODE",
+        `Provider '${providerId}' is not configured for delegated mode`,
+      );
+    }
+
+    const tokens = parseDelegatedCallback(rawQuery, state);
+
+    const userIdentifier = await this.resolveUserIdentity(
+      {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: tokens.expires_at,
+        scope: tokens.scope,
+      },
+      // authServer is unused by resolveUserIdentity; pass an empty stub
+      { issuer: "" } as oauth.AuthorizationServer,
+      provider,
+      provider.oauthConfig.clientId,
+    );
+
+    const credentialInput = {
+      type: "oauth" as const,
+      provider: providerId,
+      userIdentifier,
+      label: userIdentifier,
+      secret: {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        token_type: tokens.token_type,
+        expires_at: tokens.expires_at,
+        granted_scopes: tokens.scope ? tokens.scope.split(" ") : undefined,
+        client_id: provider.oauthConfig.clientId,
+      },
+    };
+
+    const { id, isDefault, metadata } = await this.storage.upsert(credentialInput, userId || "dev");
+
+    const credential: OAuthCredential = {
+      id,
+      type: "oauth",
+      provider: providerId,
+      userIdentifier,
+      label: userIdentifier,
+      isDefault,
+      secret: credentialInput.secret,
+      metadata,
+    };
+
+    return { credential, redirectUri };
+  }
+
   async completeFlow(
     state: string,
     code: string,
@@ -218,7 +326,7 @@ export class OAuthService {
       authServer = buildStaticAuthServer(config);
       clientReg = { client_id: config.clientId, redirect_uris: [callbackUrl] };
       clientAuth = getStaticClientAuth(config);
-    } else {
+    } else if (config.mode === "discovery") {
       // Discovery mode: fresh discovery (discovery failure mid-flow orphans the flow - acceptable)
       authServer = await discoverAuthorizationServer(config.serverUrl);
       // Use client_id from state (was stored during initiateFlow)
@@ -230,6 +338,14 @@ export class OAuthService {
       }
       clientReg = { client_id: clientId, redirect_uris: [callbackUrl] };
       clientAuth = oauth.None();
+    } else {
+      // Delegated mode is handled by completeDelegatedFlow — callback.ts
+      // routes to that method instead. Reaching here means a delegated
+      // provider somehow landed in the standard flow.
+      throw new OAuthServiceError(
+        "INVALID_MODE",
+        `Provider '${providerId}' is delegated mode; use completeDelegatedFlow`,
+      );
     }
 
     // 4. Build callback params and validate
@@ -381,8 +497,34 @@ export class OAuthService {
       );
     }
 
-    // 2. Build authServer, clientAuth, and clientReg based on config mode
     const config = provider.oauthConfig;
+
+    // Delegated mode: refresh via the external endpoint, then short-circuit.
+    if (config.mode === "delegated") {
+      const refreshed = await refreshDelegatedToken(config, credential.secret.refresh_token);
+      const updatedSecret = {
+        access_token: refreshed.access_token,
+        // Upstream never returns a fresh refresh_token; preserve the original.
+        refresh_token: refreshed.refresh_token,
+        token_type: refreshed.token_type,
+        expires_at: refreshed.expires_at,
+        granted_scopes: refreshed.scope
+          ? refreshed.scope.split(" ")
+          : credential.secret.granted_scopes,
+        client_id: credential.secret.client_id,
+      };
+      const credentialInput = {
+        type: "oauth" as const,
+        provider: credential.provider,
+        userIdentifier: credential.userIdentifier,
+        label: credential.label,
+        secret: updatedSecret,
+      };
+      const metadata = await this.storage.update(credential.id, credentialInput, userId);
+      return { ...credential, secret: updatedSecret, metadata };
+    }
+
+    // 2. Build authServer, clientAuth, and clientReg based on config mode
     let authServer: oauth.AuthorizationServer;
     let clientAuth: oauth.ClientAuth;
     let clientReg: ClientRegistration;

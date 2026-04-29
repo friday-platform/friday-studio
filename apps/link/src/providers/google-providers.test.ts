@@ -1,5 +1,5 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
-
 // Import all provider factories from consolidated module
 import {
   createGoogleCalendarProvider,
@@ -25,17 +25,20 @@ describe("Google providers", () => {
       expect(provider, `${id} should be defined`).toBeDefined();
       expect(provider.type, `${id} should be oauth type`).toBe("oauth");
       expect(provider.id, `${id} id mismatch`).toBe(id);
-      if (provider.oauthConfig.mode !== "static") {
-        throw new Error(`${id} should be static mode, got ${provider.oauthConfig.mode}`);
+      if (provider.oauthConfig.mode !== "delegated") {
+        throw new Error(`${id} should be delegated mode, got ${provider.oauthConfig.mode}`);
       }
       const oauthConfig = provider.oauthConfig;
 
-      // Desktop app client — PKCE provides real security but Google still requires
-      // client_secret present for Desktop app clients at the token endpoint.
-      expect(oauthConfig.clientAuthMethod, `${id} should use client_secret_post`).toBe(
-        "client_secret_post",
+      // Delegated mode: client_secret lives in the Cloud Function, not here.
+      expect(oauthConfig.clientId, `${id} should have clientId`).toBeDefined();
+      expect(oauthConfig.delegatedExchangeUri, `${id} should have delegatedExchangeUri`).toMatch(
+        /geminicli\.com/,
       );
-      expect(oauthConfig.clientSecret, `${id} should have client_secret`).toBeDefined();
+      expect(oauthConfig.delegatedRefreshUri, `${id} should have delegatedRefreshUri`).toMatch(
+        /\/refreshToken$/,
+      );
+      expect(typeof oauthConfig.encodeState, `${id} should expose encodeState`).toBe("function");
 
       // Scopes should include openid, email, and the service scope
       const scopes = oauthConfig.scopes ?? [];
@@ -46,5 +49,22 @@ describe("Google providers", () => {
         `${id} should include ${scope} scope`,
       ).toBe(true);
     }
+  });
+
+  it("encodeState produces base64-encoded {uri, manual, csrf} payload", () => {
+    const provider = createGoogleGmailProvider();
+    if (provider.oauthConfig.mode !== "delegated") throw new Error("expected delegated mode");
+
+    const encoded = provider.oauthConfig.encodeState({
+      csrfToken: "csrf-abc",
+      finalRedirectUri: "http://localhost:3100/v1/callback/google-gmail",
+    });
+
+    const decoded = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+    expect(decoded).toEqual({
+      uri: "http://localhost:3100/v1/callback/google-gmail",
+      manual: false,
+      csrf: "csrf-abc",
+    });
   });
 });

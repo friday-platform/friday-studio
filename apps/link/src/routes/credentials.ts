@@ -317,19 +317,27 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
                   authServer = buildStaticAuthServer(provider.oauthConfig);
                   clientAuth = getStaticClientAuth(provider.oauthConfig);
                   clientId = provider.oauthConfig.clientId;
-                } else {
+                  await revokeToken(
+                    authServer,
+                    { client_id: clientId },
+                    clientAuth,
+                    secret.access_token,
+                  );
+                } else if (provider.oauthConfig.mode === "discovery") {
                   // Discovery mode - fresh discovery for revocation
                   authServer = await discoverAuthorizationServer(provider.oauthConfig.serverUrl);
                   clientAuth = oauth.None();
                   clientId = secret.client_id as string;
+                  await revokeToken(
+                    authServer,
+                    { client_id: clientId },
+                    clientAuth,
+                    secret.access_token,
+                  );
                 }
-
-                await revokeToken(
-                  authServer,
-                  { client_id: clientId },
-                  clientAuth,
-                  secret.access_token,
-                );
+                // Delegated mode: revocation endpoint isn't currently
+                // exposed by the delegated exchange function. Skip — token
+                // expires naturally on the next non-refreshed call.
               }
             }
           }

@@ -30,6 +30,56 @@ export type OAuthConfig =
       scopes?: string[];
       /** Additional query parameters for authorization endpoint */
       extraAuthParams?: Record<string, string>;
+    }
+  | {
+      /**
+       * Delegated mode: code-for-token exchange happens in an external
+       * endpoint (e.g. a Cloud Function holding the client_secret) which
+       * then redirects back to the local callback with pre-exchanged
+       * tokens in query params.
+       *
+       * Used to piggyback on a third-party verified OAuth client without
+       * shipping its client_secret in this binary. The Friday daemon
+       * receives access_token / refresh_token / expiry_date / scope from
+       * the callback URL directly — no token endpoint call.
+       */
+      mode: "delegated";
+      /** OAuth authorization endpoint URL (e.g., Google's). */
+      authorizationEndpoint: string;
+      /**
+       * External endpoint that owns the client_secret and performs the
+       * code-for-token exchange. This URL is sent to the authorization
+       * endpoint as `redirect_uri`. After exchange, this endpoint
+       * redirects to the local callback with tokens in query params.
+       */
+      delegatedExchangeUri: string;
+      /**
+       * Endpoint to POST to for token refresh. Receives JSON
+       * `{refresh_token}`, returns `{access_token, expiry_date,
+       * token_type, scope}`. Note: refresh response does NOT include a
+       * fresh `refresh_token` — caller must preserve the original.
+       */
+      delegatedRefreshUri: string;
+      /** OAuth client ID. Secret lives in the delegated exchange endpoint. */
+      clientId: string;
+      /** Default scopes to request during authorization. */
+      scopes?: string[];
+      /** Additional query parameters for authorization endpoint. */
+      extraAuthParams?: Record<string, string>;
+      /**
+       * Builds the base64-encoded payload that the delegated exchange
+       * endpoint expects in the OAuth `state` parameter.
+       *
+       * The endpoint decodes this payload to learn where to redirect
+       * the user after exchange (must be localhost / 127.0.0.1) and
+       * what CSRF value to echo back.
+       */
+      encodeState: (input: {
+        /** Opaque token that the exchange endpoint will echo back as `?state=<csrfToken>` on the final redirect. */
+        csrfToken: string;
+        /** Local URL the exchange endpoint will redirect to with tokens. Must resolve to localhost or 127.0.0.1. */
+        finalRedirectUri: string;
+      }) => string;
     };
 
 export type OAuthTokens = {
