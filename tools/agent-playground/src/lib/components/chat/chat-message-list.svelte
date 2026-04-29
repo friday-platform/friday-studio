@@ -4,7 +4,8 @@
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
-  import { isError, isInProgress, needsUserAction, outputSummary } from "./tool-call-utils";
+  import { isError, isInProgress, needsUserAction } from "./tool-call-utils";
+  import { IconSmall } from "@atlas/ui";
   import ValidationPillRow from "./validation-pill-row.svelte";
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
 
@@ -107,7 +108,15 @@
   // stream tool activity (no new messages, just updated tool cards on the
   // in-flight assistant message) still triggers scroll.
   const totalToolCallCount = $derived(
-    messages.reduce((sum, m) => sum + (m.toolCalls?.length ?? 0), 0),
+    messages.reduce(
+      (sum, m) =>
+        sum +
+        m.segments.reduce(
+          (s, seg) => s + (seg.type === "tool-burst" ? seg.calls.length : 0),
+          0,
+        ),
+      0,
+    ),
   );
 
   // "Sticky-follow" state: true while the viewport is anchored at/near the
@@ -150,63 +159,47 @@
     }
   });
 
-  /** Threshold above which multi-tool runs collapse into a summary block. */
-  const COLLAPSE_THRESHOLD = 3;
-
   /**
-   * Per-message latch: once the user clicks the drawer summary, record their
-   * choice and stop syncing `open` from `anyRunning`. Without this, Svelte
-   * re-writes `open={false}` when the last tool finishes — slamming the
-   * drawer shut while the user is reading individual cards.
+   * Per-burst open/closed state.  `true` → explicitly open (user clicked or
+   * auto-expanded for action-needed tools).  `false` → explicitly closed.
+   * `undefined` → default: collapsed unless a call needs user action.
    */
-  let userToggledGroups: Map<string, boolean> = $state(new Map());
+  let burstOpenState: Map<string, boolean | undefined> = $state(new Map());
 
-  /**
-   * IDs of messages whose tool-call group has ever had running calls.
-   * Once latched, the group stays open after completion so the user
-   * doesn't lose visibility into what the agent just did.
-   */
-  let openedByRunning: Set<string> = $state(new Set());
+  function isBurstOpen(burstId: string): boolean {
+    return burstOpenState.get(burstId) ?? false;
+  }
 
-  $effect(() => {
-    const runningIds: string[] = [];
-    for (const msg of messages) {
-      const calls = msg.toolCalls ?? [];
-      if (calls.filter((c) => !needsUserAction(c)).some((c) => isInProgress(c.state))) {
-        runningIds.push(msg.id);
-      }
-    }
-    if (runningIds.length > 0) {
-      untrack(() => {
-        const next = new Set(openedByRunning);
-        for (const id of runningIds) next.add(id);
-        openedByRunning = next;
-      });
-    }
-  });
-
-  function handleGroupToggleClick(e: Event, messageId: string, anyRunning: boolean) {
-    const prev = userToggledGroups.get(messageId);
-    const currentOpen = prev ?? (anyRunning || openedByRunning.has(messageId));
-    const next = new Map(userToggledGroups);
-    next.set(messageId, !currentOpen);
-    userToggledGroups = next;
+  function toggleBurst(burstId: string) {
+    const current = isBurstOpen(burstId);
+    burstOpenState = new Map(burstOpenState).set(burstId, !current);
   }
 
   /**
-   * Build a short summary for a collapsed tool-call group. Surfaces the
-   * total, any errors or running calls, and the most recent tool name so
-   * the user knows at a glance what happened without expanding.
+   * Auto-expand bursts that contain tools requiring user interaction
+   * (connect_service, display_artifact).  Runs once per burst when it
+   * first appears in the rendered list.
    */
-  function toolGroupSummary(calls: ToolCallDisplay[]): string {
-    const running = calls.filter((c) => isInProgress(c.state)).length;
-    const errored = calls.filter((c) => isError(c.state)).length;
+  $effect(() => {
+    for (const msg of messages) {
+      for (const seg of msg.segments) {
+        if (seg.type !== "tool-burst") continue;
+        if (burstOpenState.has(seg.id)) continue;
+        const needsAction = seg.calls.some((c) => needsUserAction(c));
+        untrack(() => {
+          burstOpenState = new Map(burstOpenState).set(seg.id, needsAction ? true : undefined);
+        });
+      }
+    }
+  });
+
+  /**
+   * Build a short summary for a collapsed tool burst.  Only the count and
+   * the most recent tool name — status is conveyed by the left icon.
+   */
+  function toolBurstSummary(calls: ToolCallDisplay[]): string {
     const lastName = calls.at(-1)?.toolName ?? "";
-    const parts: string[] = [`${calls.length} tool calls`];
-    if (running > 0) parts.push(`${running} running`);
-    if (errored > 0) parts.push(`${errored} failed`);
-    if (lastName) parts.push(`last: ${lastName}`);
-    return parts.join(" · ");
+    return `${calls.length} tool call${calls.length === 1 ? "" : "s"}${lastName ? ` · last: ${lastName}` : ""}`;
   }
 
   /**
@@ -289,87 +282,80 @@
         class:system={message.role === "system"}
       >
         {#if message.role === "system"}
-          <div class="message-content system-content">{message.content}</div>
+          {@const text = message.segments
+            .filter((s): s is { type: "text"; content: string } => s.type === "text")
+            .map((s) => s.content)
+            .join("")}
+          {#if text}
+            <div class="message-content system-content">{text}</div>
+          {/if}
         {:else}
           <span class="role-badge">{message.role === "user" ? "You" : "Friday"}</span>
+
+          {#each message.segments as segment}
+            {#if segment.type === "text" && segment.content.length > 0}
+              {#if message.role === "assistant"}
+                <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTML(segment.content)}</div>
+              {:else}
+                <div class="message-content">{segment.content}</div>
+              {/if}
+            {:else if segment.type === "tool-burst"}
+              {@const calls = segment.calls}
+              {@const anyRunning = calls.some((c) => isInProgress(c.state))}
+              {@const anyError = calls.some((c) => isError(c.state))}
+              {@const isOpen = isBurstOpen(segment.id)}
+              <div class="tool-burst" class:open={isOpen}>
+                <div
+                  class="tool-burst-bar"
+                  role="button"
+                  tabindex="0"
+                  onclick={() => toggleBurst(segment.id)}
+                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") toggleBurst(segment.id); }}
+                >
+                  <span class="burst-icon" aria-hidden="true">
+                    {#if anyRunning}
+                      <span class="burst-pulse"></span>
+                    {:else if anyError}
+                      <span class="burst-error-mark">!</span>
+                    {:else}
+                      <span class="burst-success-mark">✓</span>
+                    {/if}
+                  </span>
+                  <span class="burst-label">{toolBurstSummary(calls)}</span>
+                  <span class="burst-chevron" aria-hidden="true">
+                    <IconSmall.ChevronRight />
+                  </span>
+                </div>
+                {#if isOpen}
+                  <div class="tool-burst-body">
+                    {#if segment.reasoning}
+                      <div class="burst-reasoning">
+                        {#each segment.reasoning.split("\n").filter((l) => l.trim()) as line}
+                          <div class="reasoning-line">
+                            <span class="reasoning-dot" aria-hidden="true"></span>
+                            <span class="reasoning-text">{line}</span>
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                    <div class="tool-call-list">
+                      {#each calls as call (call.toolCallId || call.toolName)}
+                        <ToolCallCard {call} {onCredentialConnected} />
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          {/each}
 
           {@const sessionPills = message.role === "assistant"
             ? pillsForSession(message.metadata?.sessionId)
             : []}
-          {#if message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0}
-            {@const calls = message.toolCalls}
-            {@const regularCalls = calls.filter((c) => !needsUserAction(c))}
-            {@const actionCalls = calls.filter((c) => needsUserAction(c))}
-            {@const anyRunning = regularCalls.some((c) => isInProgress(c.state))}
-            {#if regularCalls.length >= COLLAPSE_THRESHOLD}
-              <!--
-                Long tool runs (workspace creation, etc.) clutter the thread
-                when every step renders inline. Collapse into a single-line
-                summary that auto-opens while any call is running (so live
-                progress is always visible). Once any call has run, the group
-                stays open after completion via `openedByRunning` so the user
-                can see what happened — unless they manually close it, in which
-                case their choice is latched via `userToggledGroups`.
-                Action-needed calls (e.g. connect_service) are split out below
-                and always rendered outside the collapsible group.
-              -->
-              {@const userChoice = userToggledGroups.get(message.id)}
-              {@const isOpen = userChoice ?? (anyRunning || openedByRunning.has(message.id))}
-              <div class="tool-call-group" class:open={isOpen}>
-                <div
-                  class="tool-call-group-summary"
-                  role="button"
-                  tabindex="0"
-                  onclick={(e) => handleGroupToggleClick(e, message.id, anyRunning)}
-                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") handleGroupToggleClick(e, message.id, anyRunning); }}
-                >
-                  <span class="group-icon" aria-hidden="true">
-                    {#if anyRunning}
-                      <span class="group-pulse"></span>
-                    {:else if regularCalls.some((c) => isError(c.state))}
-                      <span class="group-error-mark">✗</span>
-                    {:else}
-                      <span class="group-success-mark">✓</span>
-                    {/if}
-                  </span>
-                  <span class="tool-group-label">{toolGroupSummary(regularCalls)}</span>
-                  <span class="group-chevron" aria-hidden="true">
-                    {#if isOpen}
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
-                    {:else}
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>
-                    {/if}
-                  </span>
-                </div>
-                {#if isOpen}
-                  <div class="tool-call-list">
-                    {#each regularCalls as call (call.toolCallId || call.toolName)}
-                      <ToolCallCard {call} {onCredentialConnected} />
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            {:else if regularCalls.length > 0}
-              <div class="tool-call-list">
-                {#each regularCalls as call (call.toolCallId || call.toolName)}
-                  <ToolCallCard {call} {onCredentialConnected} />
-                {/each}
-              </div>
-            {/if}
-            {#if actionCalls.length > 0}
-              <div class="tool-call-list">
-                {#each actionCalls as call (call.toolCallId || call.toolName)}
-                  <ToolCallCard {call} {onCredentialConnected} />
-                {/each}
-              </div>
-            {/if}
-          {/if}
-
           {#if sessionPills.length > 0}
-            <!-- Validation pills sit at the same indent as tool-call cards
-                 (user story 23) and AFTER them (user story 24) — the
-                 validator runs after the LLM returns, so chronological
-                 order matches what actually happened. -->
+            <!-- Validation pills sit after all segments — the validator runs
+                 after the LLM returns, so chronological order matches what
+                 actually happened. -->
             <div class="validation-pill-list">
               {#each sessionPills as { actionId, attempt } (`${actionId}-${attempt.attempt}`)}
                 <ValidationPillRow
@@ -405,14 +391,6 @@
                 <img src={img.url} alt={img.filename ?? "attached image"} class="chat-image" />
               {/each}
             </div>
-          {/if}
-
-          {#if message.content.length > 0}
-            {#if message.role === "assistant"}
-              <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTML(message.content)}</div>
-            {:else}
-              <div class="message-content">{message.content}</div>
-            {/if}
           {/if}
 
           {#if message.errorText}
@@ -503,7 +481,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
-    max-inline-size: 80%;
+    max-inline-size: 95%;
   }
 
   .message.user {
@@ -511,7 +489,8 @@
   }
 
   .message.assistant {
-    align-self: flex-start;
+    margin-inline-end: auto;
+    width: 100%;
   }
 
   /* Per-message overflow menu. Sits just below the bubble, dims until
@@ -792,7 +771,7 @@
   .tool-call-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
+    gap: var(--size-1-5);
   }
 
   /* Validation pills sit alongside (and after) tool-call cards — same
@@ -803,17 +782,18 @@
     gap: var(--size-1);
   }
 
-  /* Collapsible group wrapper (shown when a message has ≥ 3 tool calls). */
-  .tool-call-group {
-    background-color: var(--surface-dark);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    overflow: hidden;
+  /* ─── Tool burst (collapsed bar + expanded body) ───────────────────── */
+
+  .tool-burst {
+    display: flex;
+    flex-direction: column;
+    margin-block: var(--size-2);
   }
 
-  .tool-call-group-summary {
+  .tool-burst-bar {
     align-items: center;
-    background-color: var(--surface);
+    background-color: var(--surface-dark);
+    border-radius: var(--radius-3);
     color: var(--text);
     cursor: pointer;
     display: flex;
@@ -823,7 +803,7 @@
     user-select: none;
   }
 
-  .group-icon {
+  .burst-icon {
     display: inline-flex;
     flex-shrink: 0;
     inline-size: 14px;
@@ -832,44 +812,45 @@
     align-items: center;
   }
 
-  .group-pulse {
-    animation: group-pulse 1.2s ease-in-out infinite;
+  .burst-pulse {
+    animation: burst-pulse 1.5s ease-in-out infinite;
     background-color: var(--blue-primary);
     border-radius: 50%;
     display: inline-block;
-    inline-size: 8px;
-    block-size: 8px;
+    inline-size: 6px;
+    block-size: 6px;
   }
 
-  @keyframes group-pulse {
-    0%, 100% { opacity: 0.4; transform: scale(0.9); }
-    50% { opacity: 1; transform: scale(1.1); }
+  @keyframes burst-pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
   }
 
-  .group-error-mark {
+  .burst-error-mark {
     color: var(--red-primary);
     font-size: 12px;
     font-weight: var(--font-weight-6);
   }
 
-  .group-success-mark {
+  .burst-success-mark {
     color: var(--green-primary);
     font-size: 12px;
     font-weight: var(--font-weight-6);
   }
 
-  .tool-group-label {
-    color: var(--text-faded);
+  .burst-label {
+    color: var(--text);
     flex: 1;
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-1);
+    min-inline-size: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .group-chevron {
-    color: var(--text-faded);
+  .burst-chevron {
+    color: color-mix(in srgb, var(--text-faded), transparent 50%);
     display: inline-flex;
     flex-shrink: 0;
     inline-size: 12px;
@@ -877,17 +858,62 @@
     transition: transform 150ms ease;
   }
 
-  .tool-call-group.open > .tool-call-group-summary .group-chevron {
+  .burst-chevron :global(svg) {
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .tool-burst.open > .tool-burst-bar {
+    border-radius: var(--radius-3) var(--radius-3) 0 0;
+  }
+
+  .tool-burst.open > .tool-burst-bar .burst-chevron {
     transform: rotate(90deg);
   }
 
-  .tool-call-group.open > .tool-call-list {
-    border-block-start: 1px solid var(--color-border-1);
+  .tool-burst-body {
+    background-color: var(--surface-dark);
+    border-radius: 0 0 var(--radius-3) var(--radius-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
     padding: var(--size-1-5);
   }
 
-  /* ─── Inline images ─────────────────────────────────────────────────── */
+  .burst-reasoning {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    max-block-size: 200px;
+    overflow-y: auto;
+    padding-inline-end: var(--size-1);
+    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+  }
 
+  .reasoning-line {
+    align-items: baseline;
+    display: flex;
+    gap: var(--size-1-5);
+  }
+
+  .reasoning-dot {
+    background-color: var(--text-faded);
+    border-radius: 50%;
+    flex-shrink: 0;
+    inline-size: 3px;
+    block-size: 3px;
+    opacity: 0.35;
+  }
+
+  .reasoning-text {
+    color: var(--text-faded);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    line-height: 1.45;
+  }
+
+  /* ─── Inline images ─────────────────────────────────────────────────── */
 
   .message-images {
     display: flex;

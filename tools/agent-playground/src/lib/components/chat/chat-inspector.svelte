@@ -4,6 +4,19 @@
   import { skillQueries } from "$lib/queries";
   import type { ChatMessage, ToolCallDisplay } from "./types";
 
+  /** Flatten all tool calls from a message's chronological segments. */
+  function allMessageToolCalls(msg: ChatMessage): ToolCallDisplay[] {
+    return msg.segments.flatMap((s) => (s.type === "tool-burst" ? s.calls : []));
+  }
+
+  /** Extract the full text content from a message's text segments. */
+  function messageTextContent(msg: ChatMessage): string {
+    return msg.segments
+      .filter((s): s is { type: "text"; content: string } => s.type === "text")
+      .map((s) => s.content)
+      .join("");
+  }
+
   interface Props {
     open: boolean;
     chatId: string;
@@ -74,11 +87,12 @@
     let hasContent = false;
     if (count > 0) {
       const last = messages[count - 1];
-      if (last && last.toolCalls) {
-        toolKey = last.toolCalls.map((tc) => tc.state).join(",");
+      const lastTools = last ? allMessageToolCalls(last) : [];
+      if (lastTools.length > 0) {
+        toolKey = lastTools.map((tc) => tc.state).join(",");
       }
       // Detect when content first appears (empty → non-empty)
-      if (last && last.content.length > 0) hasContent = true;
+      if (last && messageTextContent(last).length > 0) hasContent = true;
     }
     const key = `${count}:${s}:${toolKey}:${hasContent}`;
     if (key !== lastSnapshotKey) {
@@ -136,7 +150,7 @@
       if (msg.role === "user" && !rehydratedStore.has(msg.id) && !timingsStore.find((t) => t.userMessageId === msg.id)) {
         timingsStore.push({
           userMessageId: msg.id,
-          userText: msg.content,
+          userText: messageTextContent(msg),
           startMs: now,
           toolCalls: [],
         });
@@ -158,8 +172,9 @@
         changed = true;
       }
 
-      if (assistantMsg?.toolCalls) {
-        for (const tc of assistantMsg.toolCalls) {
+      const assistantTools = assistantMsg ? allMessageToolCalls(assistantMsg) : [];
+      if (assistantTools.length > 0) {
+        for (const tc of assistantTools) {
           const tcKey = tc.toolCallId || tc.toolName;
           const existing = timing.toolCalls.find((t) => t.key === tcKey);
           if (!existing) {
@@ -187,7 +202,7 @@
       // - A subsequent user message exists (next turn started)
       // - Status is idle (streaming finished)
       // - Status is not streaming/submitted (catch-all for completed state)
-      if (assistantMsg && assistantMsg.content.length > 0) {
+      if (assistantMsg && messageTextContent(assistantMsg).length > 0) {
         const isLastUser = msgs.filter((m) => m.role === "user").at(-1)?.id === timing.userMessageId;
         const isDone = !isLastUser || currentStatus === "idle" || (currentStatus !== "streaming" && currentStatus !== "submitted");
         if (isDone) {
@@ -402,8 +417,10 @@
     let turnIdx = 0;
     for (const msg of snapshotMessages) {
       if (msg.role === "user") turnIdx++;
-      if (msg.role !== "assistant" || !msg.toolCalls) continue;
-      for (const tc of msg.toolCalls) {
+      if (msg.role !== "assistant") continue;
+      const msgTools = allMessageToolCalls(msg);
+      if (msgTools.length === 0) continue;
+      for (const tc of msgTools) {
         if (tc.toolName !== "load_skill") continue;
         const inp = typeof tc.input === "object" && tc.input !== null
           ? (tc.input as Record<string, unknown>)
@@ -450,10 +467,8 @@
     if (!open) return new Set<string>();
     const names = new Set<string>();
     for (const msg of snapshotMessages) {
-      if (msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
-          names.add(tc.toolName);
-        }
+      for (const tc of allMessageToolCalls(msg)) {
+        names.add(tc.toolName);
       }
     }
     return names;
@@ -464,10 +479,8 @@
     if (!open) return [];
     const calls: Array<ToolCallDisplay & { messageId: string }> = [];
     for (const msg of snapshotMessages) {
-      if (msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
-          calls.push({ ...tc, messageId: msg.id });
-        }
+      for (const tc of allMessageToolCalls(msg)) {
+        calls.push({ ...tc, messageId: msg.id });
       }
     }
     return calls;
@@ -489,27 +502,29 @@
         entries.push({
           type: "user",
           timestamp: msg.timestamp,
-          content: msg.content,
+          content: messageTextContent(msg),
         });
       }
       if (msg.role === "assistant") {
-        if (msg.toolCalls) {
-          for (const tc of msg.toolCalls) {
+        for (const seg of msg.segments) {
+          if (seg.type === "tool-burst") {
+            for (const tc of seg.calls) {
+              entries.push({
+                type: "tool",
+                timestamp: msg.timestamp,
+                content: argPreview(tc),
+                toolName: tc.toolName,
+                toolState: tc.state,
+              });
+            }
+          }
+          if (seg.type === "text" && seg.content.length > 0) {
             entries.push({
-              type: "tool",
+              type: "assistant",
               timestamp: msg.timestamp,
-              content: argPreview(tc),
-              toolName: tc.toolName,
-              toolState: tc.state,
+              content: seg.content,
             });
           }
-        }
-        if (msg.content.length > 0) {
-          entries.push({
-            type: "assistant",
-            timestamp: msg.timestamp,
-            content: msg.content,
-          });
         }
       }
     }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Component } from "svelte";
-  import { Icons, IconSmall } from "@atlas/ui";
+  import { Icons, IconSmall, markdownToHTML } from "@atlas/ui";
   import ArtifactCard from "./artifact-card.svelte";
   import ConnectService from "./connect-service.svelte";
   import Self from "./tool-call-card.svelte";
@@ -333,7 +333,16 @@
         </span>
         <span class="tool-card-action" title={actionText}>{actionText}</span>
         <span class="tool-card-spacer"></span>
-        <span class="status-indicator" class:status-blue={status.tone === "blue"} class:status-green={status.tone === "green"} class:status-red={status.tone === "red"} class:status-yellow={status.tone === "yellow"} class:status-neutral={status.tone === "neutral"}>
+        <span
+          class="status-indicator"
+          class:status-blue={status.tone === "blue"}
+          class:status-green={status.tone === "green"}
+          class:status-red={status.tone === "red"}
+          class:status-yellow={status.tone === "yellow"}
+          class:status-neutral={status.tone === "neutral"}
+          aria-label={status.text}
+          title={status.text}
+        >
           {#if status.tone === "blue"}
             <span class="status-dot" aria-hidden="true"></span>
           {:else if status.tone === "green"}
@@ -345,11 +354,11 @@
           {:else}
             <span class="status-dot" aria-hidden="true"></span>
           {/if}
-          <span class="status-text">{status.text}</span>
         </span>
       </div>
-      <!-- Row 2: meta -->
+      <!-- Row 2: tool name + meta -->
       <div class="tool-card-row-secondary">
+        <span class="tool-card-name">{c.toolName}</span>
         {#if metaText}
           <span class="tool-card-meta">{metaText}</span>
         {/if}
@@ -371,7 +380,6 @@
     class:open={delegateOpen}
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
-    style="border-left: 3px solid {meta.color}"
   >
     <div
       class="tool-card-header"
@@ -388,7 +396,16 @@
             </span>
             <span class="tool-card-action">{actionText}</span>
             <span class="tool-card-spacer"></span>
-            <span class="status-indicator" class:status-blue={status.tone === "blue"} class:status-green={status.tone === "green"} class:status-red={status.tone === "red"} class:status-yellow={status.tone === "yellow"} class:status-neutral={status.tone === "neutral"}>
+            <span
+              class="status-indicator"
+              class:status-blue={status.tone === "blue"}
+              class:status-green={status.tone === "green"}
+              class:status-red={status.tone === "red"}
+              class:status-yellow={status.tone === "yellow"}
+              class:status-neutral={status.tone === "neutral"}
+              aria-label={status.text}
+              title={status.text}
+            >
               {#if status.tone === "blue"}
                 <span class="status-dot" aria-hidden="true"></span>
               {:else if status.tone === "green"}
@@ -400,10 +417,10 @@
               {:else}
                 <span class="status-dot" aria-hidden="true"></span>
               {/if}
-              <span class="status-text">{status.text}</span>
             </span>
           </div>
           <div class="tool-card-row-secondary">
+            <span class="tool-card-name">{call.toolName}</span>
             {#if metaText}
               <span class="tool-card-meta">{metaText}</span>
             {/if}
@@ -448,6 +465,17 @@
           <Self call={child} {onCredentialConnected} depth={depth + 1} />
         {/each}
       </div>
+      {#if call.delegateText}
+        <details class="tool-card-details">
+          <summary>
+            <span class="chevron-icon"><IconSmall.ChevronRight /></span>
+            response
+          </summary>
+          <div class="delegate-text markdown-body">
+            {@html markdownToHTML(call.delegateText)}
+          </div>
+        </details>
+      {/if}
       {@render outputDrawer(call)}
     {/if}
   </div>
@@ -456,7 +484,6 @@
     class="tool-card"
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
-    style="border-left: 3px solid {meta.color}"
   >
     {@render cardBody(call, meta)}
     {@render outputDrawer(call)}
@@ -465,27 +492,21 @@
 
 <style>
   .tool-card {
-    background-color: var(--surface-dark);
-    border: 1px solid var(--color-border-1);
+    background-color: var(--surface);
     border-radius: var(--radius-2);
     font-size: var(--font-size-2);
     overflow: hidden;
   }
 
-  .tool-card:not(.connect-service):hover {
-    border-color: color-mix(in srgb, var(--color-border-1), var(--text-faded) 15%);
-  }
-
-  .tool-card:not(.with-children):not(.connect-service):hover {
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-1);
+  .tool-card.with-children {
+    background-color: transparent;
+    border-radius: 0;
   }
 
   .tool-card-inner {
-    background-color: var(--surface);
-    border-radius: var(--radius-2);
     display: flex;
     overflow: hidden;
+    padding: var(--size-1) 0;
   }
 
   .tool-card-content {
@@ -532,7 +553,7 @@
   }
 
   .tool-card-spacer {
-    flex: 1;
+    flex: 0;
   }
 
   /* ─── Status badge (pill with icon + text) ────────────────────────── */
@@ -544,9 +565,6 @@
     font-size: var(--font-size-0, 11px);
     gap: 5px;
     white-space: nowrap;
-    padding: 2px 7px;
-    border-radius: var(--radius-1);
-    background-color: color-mix(in srgb, var(--indicator-color), transparent 92%);
     --indicator-color: var(--text-faded);
   }
 
@@ -583,11 +601,6 @@
     50% { opacity: 1; }
   }
 
-  .status-text {
-    color: inherit;
-    font-variant-numeric: tabular-nums;
-  }
-
   /* ─── Row 2: name + meta ───────────────────────────────────────────── */
 
   .tool-card-row-secondary {
@@ -620,7 +633,6 @@
 
   .tool-card.with-children {
     background-color: transparent;
-    border: none;
   }
 
   .tool-card.with-children > .tool-card-header {
@@ -658,8 +670,6 @@
 
   .delegate-ephemeral {
     background-color: var(--surface-dark);
-    border-block-end: 1px solid var(--color-border-1);
-    border-inline-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
@@ -705,6 +715,61 @@
     font-style: italic;
   }
 
+  /* ─── Delegate text response ─────────────────────────────────────── */
+
+  .delegate-text {
+    background-color: var(--surface);
+    font-size: var(--font-size-2);
+    line-height: 1.55;
+    margin-inline-start: var(--size-3);
+    padding: var(--size-2) var(--size-2-5);
+  }
+
+  .delegate-text :global(p) {
+    margin-block: 0.4em;
+  }
+
+  .delegate-text :global(p:first-child) {
+    margin-block-start: 0;
+  }
+
+  .delegate-text :global(p:last-child) {
+    margin-block-end: 0;
+  }
+
+  .delegate-text :global(ul),
+  .delegate-text :global(ol) {
+    margin-block: 0.4em;
+    padding-inline-start: 1.4em;
+  }
+
+  .delegate-text :global(li) {
+    margin-block: 0.15em;
+  }
+
+  .delegate-text :global(table) {
+    border-collapse: collapse;
+    font-size: var(--font-size-1);
+    margin-block: 0.5em;
+    max-inline-size: 100%;
+  }
+
+  .delegate-text :global(th),
+  .delegate-text :global(td) {
+    border: 1px solid var(--color-border-1);
+    padding: var(--size-1) var(--size-2);
+    text-align: start;
+  }
+
+  .delegate-text :global(th) {
+    background-color: light-dark(hsl(220 12% 94%), color-mix(in srgb, var(--color-surface-3), transparent 30%));
+    font-weight: var(--font-weight-6);
+  }
+
+  .delegate-text :global(tr:nth-child(even) td) {
+    background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 50%));
+  }
+
   /* ─── Nested children ────────────────────────────────────────────── */
 
   .tool-call-children {
@@ -714,7 +779,10 @@
     margin-inline-start: calc(var(--size-3) + var(--depth, 0) * var(--size-1));
     padding-block-start: var(--size-1);
     padding-inline-start: var(--size-2);
-    border-inline-start: 1px solid var(--color-border-1);
+  }
+
+  .tool-card.with-children.open > .tool-call-children {
+    display: flex;
   }
 
   /* ─── Output drawer ────────────────────────────────────────────────── */
@@ -723,24 +791,32 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
-    padding: 0 var(--size-2-5) var(--size-1-5);
+    padding: 0 var(--size-2-5) var(--size-1);
   }
 
   .tool-card-details {
-    margin-block-start: var(--size-1-5);
+    margin-block-start: 0;
   }
 
   .tool-card-details > summary {
     align-items: center;
+    border-radius: var(--radius-1);
     color: var(--text-faded);
     cursor: pointer;
     display: flex;
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0, 11px);
     gap: var(--size-1);
+    inline-size: max-content;
     list-style: none;
-    opacity: 0.6;
+    padding: var(--size-1) var(--size-1-5);
     user-select: none;
+    transition: background-color 100ms ease, color 100ms ease;
+  }
+
+  .tool-card-details > summary:hover {
+    background-color: color-mix(in srgb, var(--color-border-1), transparent 50%);
+    color: var(--text-bright);
   }
 
   .tool-card-details > summary::-webkit-details-marker {
@@ -748,6 +824,7 @@
   }
 
   .tool-card-details > summary .chevron-icon {
+    color: var(--text-faded);
     display: inline-flex;
     inline-size: 12px;
     block-size: 12px;
@@ -764,8 +841,7 @@
   }
 
   .tool-card-details[open] > summary {
-    color: var(--text);
-    opacity: 0.8;
+    color: var(--text-bright);
   }
 
   /* ─── JSON copy block ──────────────────────────────────────────────── */

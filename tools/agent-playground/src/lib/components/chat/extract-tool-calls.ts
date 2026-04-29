@@ -165,6 +165,7 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   // Per-delegate metadata collected during the sweep.
   const delegateReasoning = new Map<string, string>();
   const delegateProgress = new Map<string, string[]>();
+  const delegateText = new Map<string, string>();
   const delegateTerminated = new Set<string>();
 
   for (const part of msg.parts) {
@@ -226,6 +227,21 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
     ) {
       const prev = delegateReasoning.get(delegateToolCallId) ?? "";
       delegateReasoning.set(delegateToolCallId, prev + chunk.delta);
+      continue;
+    }
+
+    // Accumulate text response from the delegate agent's stream.
+    if (
+      typeof chunk === "object" &&
+      chunk !== null &&
+      "type" in chunk &&
+      typeof chunk.type === "string" &&
+      chunk.type === "text-delta" &&
+      "delta" in chunk &&
+      typeof chunk.delta === "string"
+    ) {
+      const prev = delegateText.get(delegateToolCallId) ?? "";
+      delegateText.set(delegateToolCallId, prev + chunk.delta);
       continue;
     }
 
@@ -337,6 +353,10 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
     if (progress && progress.length > 0) {
       delegateTree.progress = progress;
     }
+    const text = delegateText.get(delegateToolCallId);
+    if (text && text.length > 0) {
+      delegateTree.delegateText = text;
+    }
   }
 
   // Pass 3d: Collect `data-delegate-ledger` durations scoped per delegate.
@@ -392,4 +412,26 @@ export function extractToolCalls(msg: AtlasUIMessage): ToolCallDisplay[] {
   }
 
   return trees;
+}
+
+/**
+ * Flatten a tree of {@link ToolCallDisplay} entries into a lookup map keyed
+ * by `toolCallId`.  Useful for chronological renderers that need to find
+ * the enriched display (children, duration, reasoning, etc.) for a given
+ * tool-call part while walking `msg.parts[]` in stream order.
+ */
+export function flattenToolCalls(calls: ToolCallDisplay[]): Map<string, ToolCallDisplay> {
+  const map = new Map<string, ToolCallDisplay>();
+  function walk(entries: ToolCallDisplay[]) {
+    for (const entry of entries) {
+      if (entry.toolCallId) {
+        map.set(entry.toolCallId, entry);
+      }
+      if (entry.children && entry.children.length > 0) {
+        walk(entry.children);
+      }
+    }
+  }
+  walk(calls);
+  return map;
 }

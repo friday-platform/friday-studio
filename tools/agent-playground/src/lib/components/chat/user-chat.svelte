@@ -19,9 +19,9 @@
   import ChatMessageList from "./chat-message-list.svelte";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
-  import { extractToolCalls } from "./extract-tool-calls.ts";
+  import { extractToolCalls, flattenToolCalls } from "./extract-tool-calls.ts";
   import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
-  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
+  import type { ChatMessage, ImageDisplay, ScheduleProposal, Segment, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
   import {
     accumulateValidationAttempts,
@@ -780,6 +780,106 @@
   }
 
   /**
+   * Build chronological {@link Segment}s from an {@link AtlasUIMessage}'s
+   * `parts[]` array.  Consecutive text parts coalesce into a single `text`
+   * segment; consecutive tool-call parts (and any reasoning that arrived
+   * between them) group into a `tool-burst` segment.  This preserves the
+   * true stream order so the UI can render prose and tool activity exactly
+   * where they happened.
+   */
+  function buildSegments(msg: AtlasUIMessage): Segment[] {
+    if (!Array.isArray(msg.parts)) return [];
+    const allToolCalls = extractToolCalls(msg);
+    const toolMap = flattenToolCalls(allToolCalls);
+
+    const segments: Segment[] = [];
+    let textBuffer = "";
+    let toolBuffer: ToolCallDisplay[] = [];
+    let reasoningBuffer = "";
+    let burstIndex = 0;
+
+    function flushText() {
+      if (textBuffer.length > 0) {
+        segments.push({ type: "text", content: textBuffer });
+        textBuffer = "";
+      }
+    }
+
+    function flushBurst() {
+      if (toolBuffer.length > 0) {
+        segments.push({
+          type: "tool-burst",
+          id: `${msg.id}-burst-${burstIndex++}`,
+          calls: [...toolBuffer],
+          reasoning: reasoningBuffer || undefined,
+        });
+        toolBuffer = [];
+        reasoningBuffer = "";
+      }
+    }
+
+    for (const part of msg.parts) {
+      if (typeof part !== "object" || part === null || !("type" in part)) continue;
+      const type = (part as { type: string }).type;
+
+      if (type === "text" && "text" in part && typeof (part as { text: string }).text === "string") {
+        flushBurst();
+        textBuffer += (part as { text: string }).text;
+        continue;
+      }
+
+      if (type === "reasoning" || type === "reasoning-delta") {
+        const delta =
+          type === "reasoning"
+            ? "text" in part && typeof (part as { text: string }).text === "string"
+              ? (part as { text: string }).text
+              : ""
+            : "delta" in part && typeof (part as { delta: string }).delta === "string"
+              ? (part as { delta: string }).delta
+              : "";
+        if (toolBuffer.length > 0) {
+          reasoningBuffer += delta;
+        } else {
+          textBuffer += delta;
+        }
+        continue;
+      }
+
+      if (type === "data-credential-linked") {
+        const data = (part as { data?: unknown }).data;
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "displayName" in data &&
+          typeof (data as Record<string, unknown>).displayName === "string"
+        ) {
+          flushBurst();
+          textBuffer += `Connected ${(data as Record<string, unknown>).displayName as string}.`;
+        }
+        continue;
+      }
+
+      const isTool = type.startsWith("tool-") || type === "dynamic-tool";
+      if (isTool) {
+        const toolCallId =
+          "toolCallId" in part && typeof (part as { toolCallId: string }).toolCallId === "string"
+            ? (part as { toolCallId: string }).toolCallId
+            : "";
+        const display = toolMap.get(toolCallId);
+        if (display) {
+          flushText();
+          toolBuffer.push(display);
+        }
+        continue;
+      }
+    }
+
+    flushText();
+    flushBurst();
+    return segments;
+  }
+
+  /**
    * True if a message has anything worth rendering — a text part, a tool
    * call (in any state), or a reasoning part. Used as the phantom filter
    * replacement: the old version required a text part, which hid
@@ -901,9 +1001,8 @@
           : msg.role === "system"
             ? "system"
             : "assistant") as "user" | "assistant" | "system",
-        content: extractText(msg),
+        segments: buildSegments(msg),
         timestamp: timestamps.get(msg.id) ?? Date.now(),
-        toolCalls: extractToolCalls(msg),
         images: extractImages(msg),
         errorText: extractErrorText(msg),
         metadata: {
@@ -929,7 +1028,7 @@
       {
         id: crypto.randomUUID(),
         role: "user",
-        content: `/schedule ${input}`,
+        segments: [{ type: "text", content: `/schedule ${input}` }],
         timestamp: Date.now(),
       },
     ];
@@ -937,7 +1036,7 @@
     const thinkingId = crypto.randomUUID();
     localEvents = [
       ...localEvents,
-      { id: thinkingId, role: "system", content: "Expanding task brief...", timestamp: Date.now() },
+      { id: thinkingId, role: "system", segments: [{ type: "text", content: "Expanding task brief..." }], timestamp: Date.now() },
     ];
 
     try {
@@ -947,7 +1046,7 @@
         .concat({
           id: crypto.randomUUID(),
           role: "system",
-          content: "",
+          segments: [],
           timestamp: Date.now(),
           scheduleProposal: proposal,
         });
@@ -975,7 +1074,7 @@
         .concat({
           id: crypto.randomUUID(),
           role: "system",
-          content: "Scheduling cancelled",
+          segments: [{ type: "text", content: "Scheduling cancelled" }],
           timestamp: Date.now(),
         });
       return;
@@ -994,7 +1093,7 @@
             {
               id: crypto.randomUUID(),
               role: "system",
-              content: `Queued FAST task ${result.taskId} at priority ${result.priority}`,
+              segments: [{ type: "text", content: `Queued FAST task ${result.taskId} at priority ${result.priority}` }],
               timestamp: Date.now(),
             },
           ];
@@ -1127,8 +1226,10 @@
 
   $effect(() => {
     for (const msg of displayedMessages) {
-      if (msg.toolCalls) {
-        scanForInvalidation(msg.toolCalls);
+      for (const seg of msg.segments) {
+        if (seg.type === "tool-burst") {
+          scanForInvalidation(seg.calls);
+        }
       }
     }
   });
@@ -1199,7 +1300,11 @@
             onclick={() => {
               wasInterrupted = false;
               const lastUser = displayedMessages.findLast((m) => m.role === "user");
-              if (lastUser?.content) void handleSubmit(lastUser.content);
+              const lastText = lastUser?.segments
+                ?.filter((s): s is { type: "text"; content: string } => s.type === "text")
+                .map((s) => s.content)
+                .join("");
+              if (lastText) void handleSubmit(lastText);
             }}
           >Resend</button>
         </div>

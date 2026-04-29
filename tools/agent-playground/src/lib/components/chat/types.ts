@@ -76,6 +76,13 @@ export interface ToolCallDisplay {
    */
   progress?: string[];
   /**
+   * Accumulated text response from `text-delta` chunks observed inside
+   * `data-delegate-chunk` envelopes. This is the delegate agent's prose
+   * output (e.g. a markdown summary table) rendered inline when the
+   * delegate card is expanded.
+   */
+  delegateText?: string;
+  /**
    * Server-reported duration in milliseconds for this tool call. Populated
    * from `data-delegate-ledger` entries when available. For nested agent
    * calls (e.g., fetch under agent_web), duration may be absent — the UI
@@ -90,20 +97,39 @@ export interface ImageDisplay {
   mediaType: string;
 }
 
+/**
+ * A segment within a {@link ChatMessage} that preserves the chronological
+ * order of the assistant's stream.  Consecutive text parts are coalesced
+ * into a single `text` segment; consecutive tool calls (and any reasoning
+ * that arrived between them) are grouped into a `tool-burst` segment.
+ *
+ * This replaces the old split of `content: string` + `toolCalls[]` and
+ * lets the UI render prose and tool activity in the order they actually
+ * happened.
+ */
+export type Segment =
+  | { type: "text"; content: string }
+  | {
+      type: "tool-burst";
+      /** Deterministic id so open/closed state is stable across renders. */
+      id: string;
+      calls: ToolCallDisplay[];
+      /** Coalesced reasoning text from `reasoning-delta` chunks observed inside this burst. */
+      reasoning?: string;
+    };
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
-  content: string;
+  /**
+   * Chronological stream segments for this message.  For assistant
+   * messages this preserves the true interleaving of text and tool
+   * activity from `msg.parts[]`.  For user and system messages this
+   * is typically a single `text` segment.
+   */
+  segments: Segment[];
   timestamp: number;
   scheduleProposal?: ScheduleProposal;
-  /**
-   * Tool calls emitted by the assistant for this message, in stream order.
-   * Non-empty means the chat message list should render a status card for
-   * each call before the text content — this is what gives the user
-   * visibility into "Friday is fetching the WoW news page" instead of
-   * a silent 4-second pause. Ignored for user and system messages.
-   */
-  toolCalls?: ToolCallDisplay[];
   /** Image attachments from the user (data URLs from drag-drop / paste). */
   images?: ImageDisplay[];
   /**
