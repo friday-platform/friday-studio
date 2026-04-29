@@ -86,10 +86,10 @@ func TestSupervisedProcessesPinSet(t *testing.T) {
 }
 
 // TestCommonServiceEnv_AppliesDesktopDefaults asserts the launcher
-// always sets LINK_DEV_MODE / DEV_MODE for child services when the
-// .env doesn't override them. Pre-2026-04: link crashed every desktop
-// install with "POSTGRES_CONNECTION required in production" because
-// nothing was telling it this was a dev/desktop run.
+// always sets LINK_DEV_MODE for child services when the .env doesn't
+// override it. Pre-2026-04: link crashed every desktop install with
+// "POSTGRES_CONNECTION required in production" because nothing was
+// telling it this was a dev/desktop run.
 func TestCommonServiceEnv_AppliesDesktopDefaults(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -106,7 +106,6 @@ func TestCommonServiceEnv_AppliesDesktopDefaults(t *testing.T) {
 	for _, want := range []string{
 		"ANTHROPIC_API_KEY=sk-test",
 		"LINK_DEV_MODE=true",
-		"DEV_MODE=true",
 	} {
 		if !slices.Contains(got, want) {
 			t.Errorf("commonServiceEnv missing %q. got=%v", want, got)

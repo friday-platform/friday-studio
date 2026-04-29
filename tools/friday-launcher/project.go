@@ -19,18 +19,16 @@ var osGetenv = os.Getenv
 // asserts for child services because Studio is, by definition, a
 // desktop install — never a hosted production deploy.
 //
-//   - LINK_DEV_MODE=true / DEV_MODE=true: link's createPlatformRouteRepo
-//     and createCommunicatorWiringRepo throw "POSTGRES_CONNECTION required
-//     in production" without these. Studio has no Postgres; link has to
+//   - LINK_DEV_MODE=true: link's createPlatformRouteRepo and
+//     createCommunicatorWiringRepo throw "POSTGRES_CONNECTION required
+//     in production" without it. Studio has no Postgres; link has to
 //     fall back to NoOpPlatformRouteRepository + SqliteCommunicatorWiring.
-//     Mirrors what deno.compile.json's `dev`/`test` tasks already set.
 //
 // Defaults are ONLY applied when the user's .env doesn't already provide
 // the key, so an explicit override (e.g. setting LINK_DEV_MODE=false for
 // a Postgres-backed local test) wins.
 var desktopServiceDefaults = map[string]string{
 	"LINK_DEV_MODE": "true",
-	"DEV_MODE":      "true",
 }
 
 // commonServiceEnv returns the KEY=VALUE pairs from ~/.friday/local/.env
