@@ -4,8 +4,8 @@ import { Hono } from "hono";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
-const REPO = process.env.DISCOVER_REPO ?? "vercel/examples";
-const PATH = process.env.DISCOVER_PATH ?? "starter";
+const REPO = process.env.DISCOVER_REPO ?? "friday-platform/friday-studio-examples";
+const PATH = process.env.DISCOVER_PATH ?? "";
 const REF = process.env.DISCOVER_REF ?? "main";
 
 const GH_TOKEN = process.env.GITHUB_TOKEN ?? "";
@@ -137,83 +137,12 @@ async function fetchText(url: string): Promise<string | null> {
   return status >= 200 && status < 300 ? text : null;
 }
 
-// TODO: stub values for styling iteration. Returned for any folder that lacks
-// a workspace.yml (e.g. when DISCOVER_REPO points at vercel/examples). Drop
-// this once we point at a real catalog repo.
-const STUB_SIGNALS: SignalSummary[] = [
-  {
-    id: "autopilot-tick",
-    title: "Autopilot tick",
-    provider: "http",
-    description: "Manually fire one autopilot iteration.",
-  },
-  {
-    id: "autopilot-tick-cron",
-    title: "Autopilot tick (scheduled)",
-    provider: "schedule",
-    description: "Cron-driven autopilot iteration.",
-  },
-  {
-    id: "review-target-workspace-run",
-    title: "Review target workspace",
-    provider: "http",
-    description: "Trigger a reviewer agent against a target workspace.",
-  },
-  {
-    id: "review-requested-cron",
-    title: "Review target workspace (scheduled)",
-    provider: "schedule",
-    description: "Cron-driven workspace review every 15 minutes.",
-  },
-];
-
-const STUB_AGENTS: AgentSummary[] = [
-  {
-    id: "planner",
-    type: "user",
-    description: "Picks the next eligible task from the backlog.",
-  },
-  {
-    id: "workspace-reviewer",
-    type: "atlas",
-    description: "Reviews a target workspace for drift, prompt issues, and FSM smells.",
-  },
-  {
-    id: "skill-planner",
-    type: "llm",
-    description: "Architect-role LLM that produces a skill plan from a request.",
-  },
-  {
-    id: "reflector",
-    type: "user",
-    description: "Reads a completed session and proposes skill updates.",
-  },
-];
-
-const STUB_JOBS: JobSummary[] = [
-  {
-    id: "autopilot-tick",
-    title: "Supervise — pick next backlog task and dispatch",
-    description: "Reads autopilot-backlog, picks next task, dispatches at target signal.",
-  },
-  {
-    id: "review-target-workspace",
-    title: "Supervise — review a target workspace",
-    description: "Inspects workspace.yml drift, agent prompt issues, and FSM smells.",
-  },
-  {
-    id: "author-skill",
-    title: "Supervise — author a new skill",
-    description: "Planner → scaffolder → reviewer → publisher pipeline.",
-  },
-];
-
 function emptyMeta(hasWorkspaceYml: boolean): WorkspaceMeta {
   return {
     hasWorkspaceYml,
-    signals: STUB_SIGNALS,
-    agents: STUB_AGENTS,
-    jobs: STUB_JOBS,
+    signals: [],
+    agents: [],
+    jobs: [],
   };
 }
 
@@ -287,18 +216,27 @@ export const discoverRoute = new Hono()
     if (!folders) {
       return c.json({ error: `Failed to list folders at ${REPO}/${REF}/${PATH}` }, 502);
     }
-    const items: DiscoverItem[] = folders.map((folder) => ({
-      slug: folder,
-      name: humanizeSlug(folder),
-      description: "",
-      hasWorkspaceYml: false,
-      counts: { signals: 0, agents: 0, jobs: 0 },
-    }));
+    const checks = await Promise.all(
+      folders.map(async (folder) => {
+        const folderPath = PATH ? `${PATH}/${folder}` : folder;
+        const text = await fetchText(rawUrl(REPO, REF, `${folderPath}/workspace.yml`));
+        return text !== null ? folder : null;
+      }),
+    );
+    const items: DiscoverItem[] = checks
+      .filter((folder): folder is string => folder !== null)
+      .map((folder) => ({
+        slug: folder,
+        name: humanizeSlug(folder),
+        description: "",
+        hasWorkspaceYml: true,
+        counts: { signals: 0, agents: 0, jobs: 0 },
+      }));
     return c.json({ source: { repo: REPO, path: PATH, ref: REF }, items });
   })
   .get("/item", zValidator("query", ItemQuerySchema), async (c) => {
     const { slug } = c.req.valid("query");
-    const folderPath = `${PATH}/${slug}`;
+    const folderPath = PATH ? `${PATH}/${slug}` : slug;
 
     const [readme, meta] = await Promise.all([
       fetchText(rawUrl(REPO, REF, `${folderPath}/README.md`)),
