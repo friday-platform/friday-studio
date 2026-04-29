@@ -55,14 +55,22 @@ function compareSemver(a: string, b: string): number {
 const MANIFEST_URL = "https://download.fridayplatform.io/studio/manifest.json";
 
 export async function detectInstallState(): Promise<void> {
-  const [manifest, installed, running] = await Promise.all([
+  const [manifest, installed, running, hasProviderKey] = await Promise.all([
     invoke<Manifest>("fetch_manifest", { url: MANIFEST_URL }),
     invoke<InstalledMarker | null>("read_installed"),
     invoke<boolean>("check_running_processes"),
+    // Probe ~/.friday/local/.env so the wizard can reroute users
+    // through the API Keys step on update / reinstall flows when the
+    // file is missing or doesn't carry an API key. Without this the
+    // mode==="update" path skipped api-keys and the friday daemon
+    // crashed at boot with "missing credentials" — the exact
+    // fresh-install regression that bit us today.
+    invoke<boolean>("env_file_has_provider_key").catch(() => false),
   ]);
 
   store.availableVersion = manifest.version;
   store.studioRunning = running;
+  store.envHasProviderKey = hasProviderKey;
 
   if (installed === null) {
     store.installedVersion = null;
@@ -87,8 +95,14 @@ export function advanceStep(): void {
       } else if (mode === "current" && !store.studioRunning) {
         store.step = "launch";
       } else if (mode === "update") {
-        // Update: skip License + API Keys — existing install already has both
-        store.step = "download";
+        // Update path normally skips License + API Keys (the
+        // existing install carries them on disk). But when the
+        // .env doesn't have a provider key — observed on fresh-
+        // system test 2026-04-28 where the marker existed but the
+        // .env didn't — go through API Keys so the user has a
+        // working key before launch. License is still skipped
+        // (previously accepted, no need to re-confirm).
+        store.step = store.envHasProviderKey ? "download" : "api-keys";
       } else {
         // Fresh install: full flow
         store.step = "license";
@@ -258,12 +272,24 @@ export async function writeKeys(): Promise<void> {
   const trimmed = store.apiKey.trim() || null;
   // Only the selected provider's key is sent; the other three stay null so
   // write_env_file leaves any existing values for them in .env untouched.
-  await invoke("write_env_file", {
+  // write_env_file returns the absolute path it wrote to and verifies the
+  // file landed on disk before returning Ok — see env_file.rs. If it
+  // returned Err that propagates as a JS exception which the API Keys
+  // step's handleContinue surfaces as saveError.
+  const writtenPath = await invoke<string>("write_env_file", {
     anthropicKey: store.selectedProvider === "anthropic" ? trimmed : null,
     openaiKey: store.selectedProvider === "openai" ? trimmed : null,
     geminiKey: store.selectedProvider === "gemini" ? trimmed : null,
     groqKey: store.selectedProvider === "groq" ? trimmed : null,
   });
+  // Belt-and-suspenders: if the user provided a key, double-check the
+  // file actually contains a provider key. write_env_file already
+  // read-back-verifies, but this catches the "user typed empty
+  // string then clicked Continue" case (we treat empty as no-key
+  // and don't write it; envHasProviderKey then returns false and
+  // the wizard's update-path reroute kicks in next launch).
+  store.envFilePath = writtenPath;
+  store.envHasProviderKey = await invoke<boolean>("env_file_has_provider_key");
 }
 
 // ── Launch ────────────────────────────────────────────────────────────────────

@@ -17,6 +17,17 @@ import { store } from "../lib/store.svelte.ts";
 // so a launcher-spawn failure shows a different UX than a wait-healthy
 // timeout.
 onMount(async () => {
+  // Hard-check the .env before spawning: friday's platform-model
+  // validation crashes in a restart loop with "missing credentials"
+  // if no provider key is on disk. Catching it here lets us drive
+  // the user back to API Keys with a specific message instead of
+  // letting them wait through the timeout watching it bounce.
+  const { invoke } = await import("@tauri-apps/api/core");
+  const hasKey = await invoke<boolean>("env_file_has_provider_key").catch(() => false);
+  if (!hasKey) {
+    needsApiKey = true;
+    return;
+  }
   try {
     const dir = await installDir();
     await runLaunch(dir);
@@ -31,6 +42,15 @@ onMount(async () => {
   // HealthEvent::Unreachable so the user can still hit View logs.
   await waitForServices();
 });
+
+let needsApiKey = $state(false);
+
+function goSetApiKey(): void {
+  // Bypasses advanceStep — the user explicitly chose to fix the
+  // missing key, take them straight to the API Keys form.
+  store.error = null;
+  store.step = "api-keys";
+}
 
 async function onWait60More(): Promise<void> {
   // Push the deadline out by 60s. The Rust side caps at 2 extensions
@@ -144,7 +164,22 @@ function prettyName(name: string): string {
 
 <div class="screen">
   <div class="content">
-    {#if store.error !== null}
+    {#if needsApiKey}
+      <!-- Pre-launch env check failed: no provider key on disk.
+           Send the user back to the API Keys form rather than
+           letting friday crash-loop on missing credentials. -->
+      <div class="error-state">
+        <div class="error-icon" aria-hidden="true">!</div>
+        <h2>API key missing</h2>
+        <p class="error-detail">
+          Friday Studio needs an AI provider API key before it can
+          start. We didn't find one in <code>~/.friday/local/.env</code>.
+        </p>
+        <div class="actions">
+          <button class="primary" onclick={goSetApiKey}>Set API key</button>
+        </div>
+      </div>
+    {:else if store.error !== null}
       <!-- Launcher spawn failed (runLaunch threw). Distinct from
            wait-healthy errors which surface via launchStage. -->
       <div class="error-state">
