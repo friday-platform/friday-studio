@@ -583,7 +583,8 @@ export class WorkspaceRuntime {
 
     logger.info("Initializing multi-FSM workspace runtime", { workspaceId: this.workspace.id });
 
-    const workspacePath = this.options.workspacePath || `.atlas/workspaces/${this.workspace.id}`;
+    const workspacePath =
+      this.options.workspacePath || path.join(getFridayHome(), "workspaces", this.workspace.id);
 
     // Resolve workspace variables and interpolate config placeholders ({{repo_root}}, etc.)
     const wsVars = await resolveWorkspaceVariables(
@@ -1096,7 +1097,8 @@ export class WorkspaceRuntime {
       // Seed __meta into engine results so code actions can reference
       // workspace_path, repo_root, workspace_id, and platform_url via
       // context.results['__meta'] without hardcoding operator paths.
-      const workspacePath = this.options.workspacePath ?? `.atlas/workspaces/${this.workspace.id}`;
+      const workspacePath =
+        this.options.workspacePath ?? path.join(getFridayHome(), "workspaces", this.workspace.id);
       engine.seedResults({
         __meta: buildWorkspaceMeta({
           workspacePath,

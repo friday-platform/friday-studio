@@ -94,7 +94,7 @@ export function validateMCPEnvironmentForWorkspace(
       `Missing required environment variables for workspace:\n${formatted}\n\n` +
         `Set these in:\n` +
         `  - ${workspaceEnvHint}\n` +
-        `  - ~/.atlas/.env\n` +
+        `  - ${join(getFridayHome(), ".env")}\n` +
         `  - System environment`,
     );
   }
