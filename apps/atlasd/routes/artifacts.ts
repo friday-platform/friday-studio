@@ -148,7 +148,7 @@ async function convertUploadedFile(opts: {
         title: fileName,
         summary: `${schema.rowCount.toLocaleString()} rows, ${schema.columns.length} columns`,
         data: {
-          type: "database",
+          type: "file",
           version: 1,
           data: { path: dbPath, sourceFileName: fileName, schema },
         },
@@ -753,8 +753,8 @@ const artifactsApp = daemonFactory
         // If read fails (binary file, etc.), still return artifact metadata
       }
 
-      // For database artifacts, include preview data
-      if (artifact.data.type === "database") {
+      // For SQLite database artifacts, include preview data
+      if (artifact.data.data.mimeType === "application/x-sqlite3") {
         const previewResult = await ArtifactStorage.readDatabasePreview({
           id,
           revision: query?.revision,
@@ -845,8 +845,8 @@ const artifactsApp = daemonFactory
 
     const artifact = result.data;
 
-    if (artifact.data.type !== "database") {
-      return c.json({ error: "Export only available for database artifacts" }, 400);
+    if (artifact.data.data.mimeType !== "application/x-sqlite3" || !artifact.data.data.schema) {
+      return c.json({ error: "Export only available for SQLite database artifacts" }, 400);
     }
 
     const { path, schema, sourceFileName } = artifact.data.data;
@@ -923,7 +923,7 @@ const artifactsApp = daemonFactory
       // Escape backslashes first, then double-quotes — without the backslash
       // pass, a name containing `\"` would become `\\"` (a literal backslash
       // followed by an unescaped quote that closes the header value early).
-      const safeFileName = sourceFileName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const safeFileName = (sourceFileName ?? "export.csv").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
       return new Response(stream, {
         headers: {

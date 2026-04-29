@@ -6,7 +6,7 @@ import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry, temporalGroundingMessage, traceModel } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { stringifyError, truncateUnicode } from "@atlas/utils";
+import { stringifyError } from "@atlas/utils";
 import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { stepCountIs } from "ai";
@@ -24,7 +24,7 @@ import {
   type SavedResults,
 } from "./sql-tools.ts";
 
-/** Fetches artifacts by ID. Keeps "database" type, skips non-database with a warning. */
+/** Fetches artifacts by ID. Keeps SQLite database files, skips others with a warning. */
 export async function fetchAndValidateArtifacts(
   artifactIds: string[],
   logger: Logger,
@@ -51,17 +51,17 @@ export async function fetchAndValidateArtifacts(
       continue;
     }
 
-    if (artifact.data.type === "database") {
+    if (artifact.data.data.mimeType === "application/x-sqlite3") {
       results.push(artifact);
       continue;
     }
 
-    logger.warn("Skipping non-database artifact", { id, type: artifact.data.type });
+    logger.warn("Skipping non-database artifact", { id, mimeType: artifact.data.data.mimeType });
   }
 
   if (results.length === 0) {
     throw new Error(
-      "No database artifacts found. The data analyst can only query database-type artifacts.",
+      "No SQLite database artifacts found. The data analyst can only query database artifacts converted from CSV.",
     );
   }
 
@@ -95,8 +95,10 @@ async function loadArtifactsIntoDatabase(
   const tempFiles: string[] = [];
 
   for (const [i, artifact] of artifacts.entries()) {
-    if (artifact.data.type !== "database") {
-      throw new Error(`Artifact ${artifact.id} is type ${artifact.data.type}, expected database`);
+    if (artifact.data.data.mimeType !== "application/x-sqlite3" || !artifact.data.data.schema) {
+      throw new Error(
+        `Artifact ${artifact.id} is not a SQLite database (mimeType: ${artifact.data.data.mimeType})`,
+      );
     }
 
     const { path, schema } = artifact.data.data;
@@ -205,29 +207,6 @@ async function runAnalysisLoop(
   return { summary, savedResults: getSavedResults() };
 }
 
-/** Creates a summary artifact from the analysis text. Throws on failure. */
-async function createSummaryArtifact(
-  summary: string,
-  question: string,
-  session: { workspaceId: string; streamId?: string },
-): Promise<ArtifactRef> {
-  const questionSummary = truncateUnicode(question, 50, "...");
-
-  const result = await ArtifactStorage.create({
-    workspaceId: session.workspaceId,
-    chatId: session.streamId,
-    data: { type: "summary", version: 1, data: summary },
-    title: `Analysis: ${questionSummary}`,
-    summary: truncateUnicode(summary, 200),
-  });
-
-  if (!result.ok) {
-    throw new Error(`Failed to create summary artifact: ${result.error}`);
-  }
-
-  return { id: result.data.id, type: result.data.type, summary: result.data.summary };
-}
-
 /** Creates a data artifact with saved query results. Returns null if no results. */
 async function createDataArtifact(
   savedResults: SavedResults | null,
@@ -329,23 +308,8 @@ export const dataAnalystAgent = createAgent<string, DataAnalystResult>({
         stream,
       );
 
-      const summaryRef = await createSummaryArtifact(summary, question, session);
       const dataRef = await createDataArtifact(savedResults, session);
-
-      const artifactRefs: ArtifactRef[] = [summaryRef];
-      if (dataRef) artifactRefs.push(dataRef);
-
-      stream?.emit({
-        type: "data-outline-update",
-        data: {
-          id: "data-analyst-complete",
-          title: "Analysis Complete",
-          content: truncateUnicode(summary, 200),
-          timestamp: Date.now(),
-          artifactId: summaryRef.id,
-          artifactLabel: "View Analysis",
-        },
-      });
+      const artifactRefs: ArtifactRef[] = dataRef ? [dataRef] : [];
 
       const totalDurationMs = performance.now() - startTime;
       const queryDurationMs = queryLog.reduce((sum, q) => sum + q.durationMs, 0);

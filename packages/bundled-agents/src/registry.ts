@@ -4,19 +4,15 @@ import { z } from "zod";
 import { bbAgent } from "./bb/agent.ts";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
 import { csvFilterSamplerAgent } from "./csv/filter.ts";
-import { dataAnalystAgent } from "./data-analyst/agent.ts";
 import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { ghAgent } from "./gh/agent.ts";
-import { googleCalendarAgent } from "./google/calendar.ts";
 import { hubspotAgent } from "./hubspot/index.ts";
 import { imageGenerationAgent } from "./image-generation/agent.ts";
 import { jiraAgent } from "./jira/agent.ts";
 import { knowledgeHybridAgent } from "./knowledge/agent.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
-import { snowflakeAnalystAgent } from "./snowflake-analyst/agent.ts";
 import { summaryAgent } from "./summary.ts";
-import { tableAgent } from "./table.ts";
 import { transcriptionAgent } from "./transcription/agent.ts";
 import { webAgent } from "./web/index.ts";
 
@@ -27,7 +23,6 @@ import { webAgent } from "./web/index.ts";
  */
 export const bundledAgents: AtlasAgent[] = [
   slackCommunicatorAgent,
-  googleCalendarAgent,
   webAgent,
   summaryAgent,
   emailAgent,
@@ -37,9 +32,6 @@ export const bundledAgents: AtlasAgent[] = [
   bbAgent,
   jiraAgent,
   csvFilterSamplerAgent,
-  dataAnalystAgent,
-  snowflakeAnalystAgent,
-  tableAgent,
   transcriptionAgent,
   hubspotAgent,
   imageGenerationAgent,

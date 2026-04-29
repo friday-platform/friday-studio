@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu, markdownToHTML } from "@atlas/ui";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
   import ScheduleProposalCard from "./schedule-proposal-card.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
@@ -161,9 +161,33 @@
    */
   let userToggledGroups: Map<string, boolean> = $state(new Map());
 
+  /**
+   * IDs of messages whose tool-call group has ever had running calls.
+   * Once latched, the group stays open after completion so the user
+   * doesn't lose visibility into what the agent just did.
+   */
+  let openedByRunning: Set<string> = $state(new Set());
+
+  $effect(() => {
+    const runningIds: string[] = [];
+    for (const msg of messages) {
+      const calls = msg.toolCalls ?? [];
+      if (calls.filter((c) => !needsUserAction(c)).some((c) => isInProgress(c.state))) {
+        runningIds.push(msg.id);
+      }
+    }
+    if (runningIds.length > 0) {
+      untrack(() => {
+        const next = new Set(openedByRunning);
+        for (const id of runningIds) next.add(id);
+        openedByRunning = next;
+      });
+    }
+  });
+
   function handleGroupToggleClick(e: Event, messageId: string, anyRunning: boolean) {
     const prev = userToggledGroups.get(messageId);
-    const currentOpen = prev ?? anyRunning;
+    const currentOpen = prev ?? (anyRunning || openedByRunning.has(messageId));
     const next = new Map(userToggledGroups);
     next.set(messageId, !currentOpen);
     userToggledGroups = next;
@@ -282,14 +306,15 @@
                 Long tool runs (workspace creation, etc.) clutter the thread
                 when every step renders inline. Collapse into a single-line
                 summary that auto-opens while any call is running (so live
-                progress is always visible) and closes once the run settles
-                — unless the user has manually toggled the drawer, in which
+                progress is always visible). Once any call has run, the group
+                stays open after completion via `openedByRunning` so the user
+                can see what happened — unless they manually close it, in which
                 case their choice is latched via `userToggledGroups`.
                 Action-needed calls (e.g. connect_service) are split out below
                 and always rendered outside the collapsible group.
               -->
               {@const userChoice = userToggledGroups.get(message.id)}
-              {@const isOpen = userChoice ?? anyRunning}
+              {@const isOpen = userChoice ?? (anyRunning || openedByRunning.has(message.id))}
               <div class="tool-call-group" class:open={isOpen}>
                 <div
                   class="tool-call-group-summary"

@@ -9,6 +9,7 @@
  * @module
  */
 
+import { Buffer } from "node:buffer";
 import { spawn as defaultSpawn } from "node:child_process";
 import process from "node:process";
 import { Writable } from "node:stream";

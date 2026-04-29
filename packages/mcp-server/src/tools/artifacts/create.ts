@@ -14,12 +14,12 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
     "artifacts_create",
     {
       description:
-        "Create a new artifact (summary, workspace-plan, calendar-schedule, slack-summary, table, file)",
+        "Create a new artifact (summary, workspace-plan, calendar-schedule, slack-summary, table, file, web-search, skill-draft, database)",
       inputSchema: {
         data: z
           .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)
           .describe(
-            "Type-specific artifact data. Note: You must include the type key value pair in here",
+            "Artifact envelope: { type, version, data }. type must be one of: summary, workspace-plan, calendar-schedule, slack-summary, table, file, web-search, skill-draft, database. version is always 1 (except workspace-plan v2). data is the type-specific payload. Example for summary: { type: 'summary', version: 1, data: 'text content here' }",
           ),
         title: z
           .string()

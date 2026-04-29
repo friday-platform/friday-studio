@@ -12,7 +12,7 @@ write it in user workspaces.
 ## `atlas` — bundled platform agent
 
 **Use when:** a bundled agent already covers the domain (web, email,
-slack, gh, image generation, data-analyst, etc.). Always check first via
+slack, gh, image generation, etc.). Always check first via
 `list_capabilities` — the response lists every bundled agent under
 `kind: "bundled"` along with the `id` you put in `agent:`.
 

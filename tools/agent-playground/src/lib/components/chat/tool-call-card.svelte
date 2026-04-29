@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Component } from "svelte";
   import { Icons, IconSmall } from "@atlas/ui";
+  import ArtifactCard from "./artifact-card.svelte";
   import ConnectService from "./connect-service.svelte";
   import Self from "./tool-call-card.svelte";
   import { jsonHighlighter } from "./json-highlighter";
@@ -53,6 +54,8 @@
         return { icon: Icons.Bookmark, label: "Saving memory", color: "var(--color-accent)", category: "memory" };
       case "connect_service":
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
+      case "display_artifact":
+        return { icon: Icons.DocumentText, label: "Displaying", color: "var(--color-accent)", category: "file" };
       default:
         return { icon: Icons.RectangleStack, label: name, color: "var(--color-border-1)", category: "generic" };
     }
@@ -151,15 +154,29 @@
 
   /* ─── Delegate toggle latch ──────────────────────────────────────── */
 
-  let userToggled = $state(false);
+  /** Undefined = no user choice yet; true/false = explicit open/close. */
+  let userChoice: boolean | undefined = $state(undefined);
+
+  /**
+   * Once children have been observed running, latch this so the card stays
+   * open after they finish — mirrors the outer group's openedByRunning logic.
+   */
+  let childrenWereRunning = $state(false);
+
+  $effect(() => {
+    if (call.children && childrenAnyRunning(call.children)) {
+      childrenWereRunning = true;
+    }
+  });
 
   function handleToggleClick(e: Event, childrenRunning: boolean) {
-    userToggled = !userToggled;
+    const current = userChoice ?? (childrenAnyRunning(call.children ?? []) || childrenWereRunning);
+    userChoice = !current;
   }
 
   const delegateOpen = $derived.by(() => {
-    if (userToggled) return true;
-    if (call.children) return childrenAnyRunning(call.children);
+    if (userChoice !== undefined) return userChoice;
+    if (call.children) return childrenAnyRunning(call.children) || childrenWereRunning;
     return false;
   });
 
@@ -217,6 +234,17 @@
       return (call.input as Record<string, unknown>).provider as string;
     }
     return null;
+  });
+
+  /* ─── Artifact display extraction ───────────────────────────────── */
+
+  const artifactDisplay = $derived.by<{ artifactId: string } | null>(() => {
+    if (call.toolName !== "display_artifact") return null;
+    const inp = call.input;
+    if (typeof inp !== "object" || inp === null) return null;
+    const i = inp as Record<string, unknown>;
+    if (typeof i.artifactId !== "string") return null;
+    return { artifactId: i.artifactId };
   });
 </script>
 
@@ -323,6 +351,8 @@
   <div class="tool-card connect-service">
     <ConnectService {provider} onConnected={() => onCredentialConnected?.(provider)} />
   </div>
+{:else if artifactDisplay != null}
+  <ArtifactCard artifactId={artifactDisplay.artifactId} />
 {:else if call.children && call.children.length > 0}
   {@const childrenRunning = childrenAnyRunning(call.children)}
   <div

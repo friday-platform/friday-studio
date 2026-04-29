@@ -40,7 +40,7 @@ describe("LocalAdapter: CRUD", () => {
 
     assertResultOk(result);
     assertArtifactEqual(result.data, {
-      type: "summary",
+      type: "file",
       revision: 1,
       title: input.title,
       summary: input.summary,

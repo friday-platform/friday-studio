@@ -1,6 +1,10 @@
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAgent, err, ok, repairJson } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { SkillDraft } from "@atlas/core/artifacts";
+import { SkillDraftSchema } from "@atlas/core/artifacts";
 import { SkillNameSchema } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { generateObject } from "ai";
@@ -82,9 +86,14 @@ export const skillDistillerAgent = createAgent<SkillDistillerInput, SkillDistill
             ),
           );
 
-          if (draftResponse.ok && draftResponse.data.artifact.data.type === "skill-draft") {
-            existingDraft = draftResponse.data.artifact.data.data;
-            logger.info("Loaded existing draft for revision");
+          if (draftResponse.ok && draftResponse.data.contents) {
+            const parsed = SkillDraftSchema.safeParse(
+              JSON.parse(draftResponse.data.contents),
+            );
+            if (parsed.success) {
+              existingDraft = parsed.data;
+              logger.info("Loaded existing draft for revision");
+            }
           }
         } catch (error) {
           logger.warn("Failed to load existing draft, proceeding with new draft", { error });
@@ -159,14 +168,17 @@ Update this draft based on the store material. Preserve what works, improve what
         instructions: skill.instructions,
       };
 
+      const draftPath = join(tmpdir(), `skill-draft-${crypto.randomUUID()}.json`);
+      await writeFile(draftPath, JSON.stringify(draftData, null, 2), "utf-8");
+
       if (existingDraft && input.draftArtifactId) {
         // Update existing draft
         const updateResponse = await parseResult(
           client.artifactsStorage[":id"].$put({
             param: { id: input.draftArtifactId },
             json: {
-              type: "skill-draft",
-              data: { type: "skill-draft", version: 1, data: draftData },
+              type: "file",
+              data: { type: "file", version: 1, data: { path: draftPath } },
               summary: skill.description,
               revisionMessage: input.focus
                 ? `Revised with focus: ${input.focus}`
@@ -201,7 +213,7 @@ Update this draft based on the store material. Preserve what works, improve what
         const createResponse = await parseResult(
           client.artifactsStorage.index.$post({
             json: {
-              data: { type: "skill-draft", version: 1, data: draftData },
+              data: { type: "file", version: 1, data: { path: draftPath } },
               title: `Skill: ${skill.name}`,
               summary: skill.description,
               workspaceId: session.workspaceId,

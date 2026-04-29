@@ -46,7 +46,7 @@ const MAX_LIST_ENTRIES = 1000;
 
 // ─── Scratch path resolver ───────────────────────────────────────────────────
 
-function scratchRoot(sessionId: string): string {
+export function scratchRoot(sessionId: string): string {
   const atlasHome = process.env.FRIDAY_HOME ?? join(process.env.HOME ?? "/tmp", ".atlas");
   const safe = sessionId.replace(/[^a-zA-Z0-9-_]/g, "");
   return join(atlasHome, "scratch", safe || "default");
@@ -57,7 +57,7 @@ function scratchRoot(sessionId: string): string {
  * resolved absolute path escapes the scratch root (via `..`, an absolute
  * path, or a symlink target outside the root) we reject with an error.
  */
-function resolveInScratch(
+export function resolveInScratch(
   sessionId: string,
   requestedPath: string,
 ): { ok: true; absolute: string } | { ok: false; error: string } {

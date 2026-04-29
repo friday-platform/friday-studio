@@ -21,12 +21,13 @@ function makeArtifact(
 function makeDatabaseArtifact(id: string, rowCount: number): Artifact {
   return makeArtifact({
     id,
-    type: "database",
+    type: "file",
     data: {
-      type: "database",
+      type: "file",
       version: 1,
       data: {
         path: `/tmp/${id}.db`,
+        mimeType: "application/x-sqlite3",
         sourceFileName: "data.csv",
         schema: { tableName: "data", rowCount, columns: [{ name: "id", type: "INTEGER" }] },
       },
@@ -414,7 +415,8 @@ describe("enrichCatalogEntries", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       type: "artifact_ref",
-      artifactType: "database",
+      artifactType: "file",
+      mimeType: "application/x-sqlite3",
       rowCount: 150,
     });
   });
@@ -534,7 +536,8 @@ describe("enrichCatalogEntries", () => {
     expect(result[3]).toMatchObject({
       type: "artifact_ref",
       slug: "db1",
-      artifactType: "database",
+      artifactType: "file",
+      mimeType: "application/x-sqlite3",
       rowCount: 99,
     });
     expect(result[4]).toMatchObject({

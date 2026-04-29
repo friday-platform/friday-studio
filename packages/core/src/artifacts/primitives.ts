@@ -207,6 +207,25 @@ export type SummaryData = z.infer<typeof SummaryDataSchema>;
 export const SlackSummaryDataSchema = z.string().describe("The content of the slack summary");
 export type SlackSummaryData = z.infer<typeof SlackSummaryDataSchema>;
 
+/** Database schema column - describes a single column in the database table */
+export const DatabaseSchemaColumnSchema = z.object({
+  name: z.string().describe("Column name"),
+  type: z.enum(["TEXT", "INTEGER", "REAL"]).describe("SQLite column type"),
+  inferred: z
+    .enum(["text", "numeric", "date", "boolean"])
+    .optional()
+    .describe("Semantic type inferred from column values"),
+});
+export type DatabaseSchemaColumn = z.infer<typeof DatabaseSchemaColumnSchema>;
+
+/** Database schema - describes table structure and row count */
+export const DatabaseSchemaSchema = z.object({
+  tableName: z.string().describe("Name of the table in the SQLite database"),
+  rowCount: z.number().describe("Total number of rows in the table"),
+  columns: z.array(DatabaseSchemaColumnSchema).describe("Column definitions"),
+});
+export type DatabaseSchema = z.infer<typeof DatabaseSchemaSchema>;
+
 /** File artifact data (output) */
 export const FileDataSchema = z.object({
   path: z.string().describe("Absolute path to the stored file"),
@@ -217,6 +236,13 @@ export const FileDataSchema = z.object({
     .string()
     .optional()
     .describe("Original filename from upload. Optional for backward compatibility."),
+  schema: DatabaseSchemaSchema.optional().describe(
+    "Table schema for SQLite database files (application/x-sqlite3).",
+  ),
+  sourceFileName: z
+    .string()
+    .optional()
+    .describe("Original source filename for database files converted from CSV."),
 });
 export type FileData = z.infer<typeof FileDataSchema>;
 
@@ -257,25 +283,6 @@ export const SkillDraftSchema = z.object({
   instructions: z.string().min(1),
 });
 export type SkillDraft = z.infer<typeof SkillDraftSchema>;
-
-/** Database schema column - describes a single column in the database table */
-export const DatabaseSchemaColumnSchema = z.object({
-  name: z.string().describe("Column name"),
-  type: z.enum(["TEXT", "INTEGER", "REAL"]).describe("SQLite column type"),
-  inferred: z
-    .enum(["text", "numeric", "date", "boolean"])
-    .optional()
-    .describe("Semantic type inferred from column values"),
-});
-export type DatabaseSchemaColumn = z.infer<typeof DatabaseSchemaColumnSchema>;
-
-/** Database schema - describes table structure and row count */
-export const DatabaseSchemaSchema = z.object({
-  tableName: z.string().describe("Name of the table in the SQLite database"),
-  rowCount: z.number().describe("Total number of rows in the table"),
-  columns: z.array(DatabaseSchemaColumnSchema).describe("Column definitions"),
-});
-export type DatabaseSchema = z.infer<typeof DatabaseSchemaSchema>;
 
 /** Database artifact data - SQLite database converted from CSV */
 export const DatabaseDataSchema = z.object({

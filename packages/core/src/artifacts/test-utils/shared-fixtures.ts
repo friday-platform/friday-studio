@@ -5,6 +5,9 @@ import { join } from "node:path";
 import type { CreateArtifactInput } from "../model.ts";
 import type { DatabaseSchema } from "../primitives.ts";
 
+/** Absolute path to the shared fixture file for file-type artifact tests. */
+const FIXTURE_FILE = new URL("./test-fixture.txt", import.meta.url).pathname;
+
 /**
  * Create a summary artifact input for testing.
  */
@@ -12,7 +15,7 @@ export function createSummaryArtifactInput(
   overrides?: Partial<CreateArtifactInput>,
 ): CreateArtifactInput {
   return {
-    data: { type: "summary", version: 1, data: "Test summary content" },
+    data: { type: "file", version: 1, data: { path: FIXTURE_FILE } },
     title: "Test Summary",
     summary: "A test summary artifact",
     ...overrides,
@@ -26,40 +29,7 @@ export function createWorkspacePlanInput(
   overrides?: Partial<CreateArtifactInput>,
 ): CreateArtifactInput {
   return {
-    data: {
-      type: "workspace-plan",
-      version: 1,
-      data: {
-        workspace: { name: "test-workspace", purpose: "A test workspace for testing purposes" },
-        signals: [
-          {
-            id: "test-signal",
-            name: "Test Signal",
-            title: "Triggers on demand",
-            signalType: "http",
-            description: "A test signal that triggers on demand",
-          },
-        ],
-        agents: [
-          {
-            id: "test-agent",
-            name: "Test Agent",
-            description: "A test agent for testing",
-            capabilities: ["web-access"],
-          },
-        ],
-        jobs: [
-          {
-            id: "test-job",
-            name: "Test Job",
-            title: "Test Job",
-            triggerSignalId: "test-signal",
-            steps: [{ agentId: "test-agent", description: "Test step" }],
-            behavior: "sequential",
-          },
-        ],
-      },
-    },
+    data: { type: "file", version: 1, data: { path: FIXTURE_FILE } },
     title: "Test Workspace Plan",
     summary: "A test workspace plan",
     ...overrides,
@@ -73,18 +43,7 @@ export function createTableArtifactInput(
   overrides?: Partial<CreateArtifactInput>,
 ): CreateArtifactInput {
   return {
-    data: {
-      type: "table",
-      version: 1,
-      data: {
-        title: "Test Table",
-        headers: ["id", "name"],
-        rows: [
-          ["1", "Alice"],
-          ["2", "Bob"],
-        ],
-      },
-    },
+    data: { type: "file", version: 1, data: { path: FIXTURE_FILE } },
     title: "Test Table",
     summary: "A test table artifact",
     ...overrides,
@@ -98,21 +57,7 @@ export function createCalendarScheduleInput(
   overrides?: Partial<CreateArtifactInput>,
 ): CreateArtifactInput {
   return {
-    data: {
-      type: "calendar-schedule",
-      version: 1,
-      data: {
-        events: [
-          {
-            id: "event-1",
-            eventName: "Test Event",
-            startDate: "2025-01-01T10:00:00Z",
-            endDate: "2025-01-01T11:00:00Z",
-          },
-        ],
-        source: "test",
-      },
-    },
+    data: { type: "file", version: 1, data: { path: FIXTURE_FILE } },
     title: "Test Calendar",
     summary: "A test calendar schedule",
     ...overrides,
@@ -126,11 +71,7 @@ export function createSlackSummaryInput(
   overrides?: Partial<CreateArtifactInput>,
 ): CreateArtifactInput {
   return {
-    data: {
-      type: "slack-summary",
-      version: 1,
-      data: "Test slack summary content from #test-channel",
-    },
+    data: { type: "file", version: 1, data: { path: FIXTURE_FILE } },
     title: "Test Slack Summary",
     summary: "A test slack summary",
     ...overrides,
@@ -144,16 +85,7 @@ export function createWebSearchInput(
   overrides?: Partial<CreateArtifactInput>,
 ): CreateArtifactInput {
   return {
-    data: {
-      type: "web-search",
-      version: 1,
-      data: {
-        response: "# Test Web Search Results\n\nTest content here.",
-        sources: [
-          { siteName: "Example Site", pageTitle: "Test Result", url: "https://example.com" },
-        ],
-      },
-    },
+    data: { type: "file", version: 1, data: { path: FIXTURE_FILE } },
     title: "Test Web Search",
     summary: "A test web search result",
     ...overrides,
@@ -242,7 +174,7 @@ export function createDatabaseArtifactInput(
 ): CreateArtifactInput {
   return {
     data: {
-      type: "database",
+      type: "file",
       version: 1,
       data: { path: dbPath, sourceFileName: "test-data.csv", schema },
     },

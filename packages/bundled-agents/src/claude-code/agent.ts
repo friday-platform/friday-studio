@@ -5,9 +5,8 @@ import process from "node:process";
 import { promisify } from "node:util";
 import { type HookCallback, query } from "@anthropic-ai/claude-agent-sdk";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
-import { client, parseResult } from "@atlas/client/v2";
 import { type PlatformModels, registry, smallLLM, traceModel } from "@atlas/llm";
-import { fail, type Result, stringifyError, success, truncateUnicode } from "@atlas/utils";
+import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { createSandbox, sandboxOptions } from "./sandbox.ts";
@@ -557,45 +556,23 @@ export const claudeCodeAgent = createAgent<string, ClaudeCodeAgentResult | Recor
           }
         }
 
-        // Create artifact
-        const artifactResponse = await parseResult(
-          client.artifactsStorage.index.$post({
-            json: {
-              data: {
-                type: "summary" as const,
-                version: 1 as const,
-                data: structuredOutput != null ? JSON.stringify(structuredOutput) : responseText,
-              },
-              title: "Claude Code Output",
-              summary: `Claude Code: ${truncateUnicode(prompt, 100, "...")}`,
-            },
-          }),
-        );
-
-        if (!artifactResponse.ok) {
-          return err(stringifyError(artifactResponse.error));
-        }
-
-        const { id, type, summary } = artifactResponse.data.artifact;
-        const extras = { artifactRefs: [{ id, type, summary }] };
-
         // When outputSchema is present, SDK puts validated JSON in structured_output.
         // Fall back to parsing responseText for older SDK versions or edge cases.
         if (outputSchema) {
           if (structuredOutput != null && typeof structuredOutput === "object") {
             const validated = z.record(z.string(), z.unknown()).safeParse(structuredOutput);
             if (validated.success) {
-              return ok(validated.data, extras);
+              return ok(validated.data);
             }
           }
           const parsed = parseStructuredOutput(responseText);
           if (parsed) {
-            return ok(parsed, extras);
+            return ok(parsed);
           }
           logger.warn("Structured output not available, returning as text");
         }
 
-        return ok({ response: responseText }, extras);
+        return ok({ response: responseText });
       } catch (error) {
         logger.error("Claude Code agent failed", { error });
         return err(stringifyError(error));

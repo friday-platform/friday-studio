@@ -464,9 +464,14 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
     // 2. Create artifact data with cortex:// reference and schema metadata
     const artifactData: ArtifactData = {
-      type: "database",
+      type: "file",
       version: 1,
-      data: { path: `cortex://${fileContentCortexId}`, sourceFileName, schema },
+      data: {
+        path: `cortex://${fileContentCortexId}`,
+        mimeType: "application/x-sqlite3",
+        sourceFileName,
+        schema,
+      },
     };
 
     // 3. Upload artifact data as second blob (so get() can retrieve it like non-file artifacts)
@@ -492,48 +497,29 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       const revision = 1;
 
       let artifactData: ArtifactData;
-      let blobContent: string;
       let cortexId: string;
 
-      if (input.data.type === "file") {
-        const localPath = input.data.data.path;
-
-        const uploadResult = await this.uploadFileArtifact(localPath);
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-
-        cortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
-      } else if (input.data.type === "database") {
-        // Database artifacts: upload .db file binary, store cortex:// reference with schema metadata
+      if (input.data.data.schema) {
+        // SQLite database: upload binary and preserve schema metadata
         const { path: localPath, sourceFileName, schema } = input.data.data;
-
-        const uploadResult = await this.uploadDatabaseArtifact(localPath, sourceFileName, schema);
+        const uploadResult = await this.uploadDatabaseArtifact(
+          localPath,
+          sourceFileName ?? basename(localPath),
+          schema,
+        );
         if (!uploadResult.ok) {
           return fail(uploadResult.error);
         }
-
         cortexId = uploadResult.data.cortexId;
         artifactData = uploadResult.data.artifactData;
       } else {
-        // Non-binary artifacts: serialize as JSON
-        artifactData = input.data;
-        blobContent = JSON.stringify(artifactData);
-
-        // Upload JSON blob to Cortex
-        const uploadResponse = await this.request<CreateObjectResponse>(
-          "POST",
-          "/objects",
-          blobContent,
-          { parseJson: true },
-        );
-
-        if (!uploadResponse?.id) {
-          return fail("Failed to upload blob to Cortex: no ID returned");
+        // Regular file: detect MIME type and upload binary
+        const uploadResult = await this.uploadFileArtifact(input.data.data.path);
+        if (!uploadResult.ok) {
+          return fail(uploadResult.error);
         }
-
-        cortexId = uploadResponse.id;
+        cortexId = uploadResult.data.cortexId;
+        artifactData = uploadResult.data.artifactData;
       }
 
       // 2. Set metadata
@@ -569,9 +555,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       };
 
       // 4. Clean up local file — binary is now in Cortex, local copy is dead weight
-      if (input.data.type === "file" || input.data.type === "database") {
-        unlink(input.data.data.path).catch(() => {});
-      }
+      unlink(input.data.data.path).catch(() => {});
 
       return success(artifact);
     } catch (error) {
@@ -608,48 +592,29 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
 
       // 2. Upload new blob (with proper file handling)
       let artifactData: ArtifactData;
-      let blobContent: string;
       let newCortexId: string;
 
-      if (input.data.type === "file") {
-        const localPath = input.data.data.path;
-
-        const uploadResult = await this.uploadFileArtifact(localPath);
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-
-        newCortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
-      } else if (input.data.type === "database") {
-        // Database artifacts: upload .db file binary, store cortex:// reference with schema metadata
+      if (input.data.data.schema) {
+        // SQLite database: upload binary and preserve schema metadata
         const { path: localPath, sourceFileName, schema } = input.data.data;
-
-        const uploadResult = await this.uploadDatabaseArtifact(localPath, sourceFileName, schema);
+        const uploadResult = await this.uploadDatabaseArtifact(
+          localPath,
+          sourceFileName ?? basename(localPath),
+          schema,
+        );
         if (!uploadResult.ok) {
           return fail(uploadResult.error);
         }
-
         newCortexId = uploadResult.data.cortexId;
         artifactData = uploadResult.data.artifactData;
       } else {
-        // Non-binary artifacts: serialize as JSON
-        artifactData = input.data;
-        blobContent = JSON.stringify(artifactData);
-
-        // Upload JSON blob to Cortex
-        const uploadResponse = await this.request<CreateObjectResponse>(
-          "POST",
-          "/objects",
-          blobContent,
-          { parseJson: true },
-        );
-
-        if (!uploadResponse?.id) {
-          return fail("Failed to upload new revision blob");
+        // Regular file: detect MIME type and upload binary
+        const uploadResult = await this.uploadFileArtifact(input.data.data.path);
+        if (!uploadResult.ok) {
+          return fail(uploadResult.error);
         }
-
-        newCortexId = uploadResponse.id;
+        newCortexId = uploadResult.data.cortexId;
+        artifactData = uploadResult.data.artifactData;
       }
 
       // 3. Set new object metadata with is_latest=FALSE first
@@ -757,9 +722,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       };
 
       // Clean up local file — binary is now in Cortex, local copy is dead weight
-      if (input.data.type === "file" || input.data.type === "database") {
-        unlink(input.data.data.path).catch(() => {});
-      }
+      unlink(input.data.data.path).catch(() => {});
 
       return success(artifact);
     } catch (error) {
@@ -1339,7 +1302,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         return fail(`Artifact ${id} not found`);
       }
 
-      if (artifact.data.type !== "database") {
+      if (artifact.data.data.mimeType !== "application/x-sqlite3" || !artifact.data.data.schema) {
         return fail(`Artifact ${id} is not a database type`);
       }
 
@@ -1454,7 +1417,7 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
         return fail(`Artifact ${input.id} not found`);
       }
 
-      if (artifact.data.type !== "database") {
+      if (artifact.data.data.mimeType !== "application/x-sqlite3") {
         return fail(`Artifact ${input.id} is not a database type`);
       }
 

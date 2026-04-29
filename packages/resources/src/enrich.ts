@@ -109,14 +109,17 @@ export async function enrichCatalogEntries(
       return { ...entry, artifactType: "unavailable" };
     }
 
-    if (artifact.data.type === "database") {
+    const mimeType = artifact.data.data.mimeType;
+
+    if (mimeType === "application/x-sqlite3" && artifact.data.data.schema) {
       return {
         ...entry,
         artifactType: artifact.type,
+        mimeType,
         rowCount: artifact.data.data.schema.rowCount,
       };
     }
 
-    return { ...entry, artifactType: artifact.type };
+    return { ...entry, artifactType: artifact.type, mimeType };
   });
 }

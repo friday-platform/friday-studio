@@ -86,30 +86,26 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     using db = await openKv(this.kvPath);
 
     // Transform input to output by enriching file artifacts
-    let artifactData: ArtifactData;
+    const fileInput = input.data.data;
 
-    if (input.data.type === "file") {
-      const fileInput = input.data.data;
-
-      try {
-        await stat(fileInput.path);
-      } catch (error) {
-        return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
-      }
-
-      const mimeType = detectMimeType(fileInput.path);
-      artifactData = {
-        type: "file",
-        version: 1,
-        data: {
-          path: fileInput.path,
-          mimeType,
-          originalName: fileInput.originalName || basename(fileInput.path),
-        },
-      };
-    } else {
-      artifactData = input.data;
+    try {
+      await stat(fileInput.path);
+    } catch (error) {
+      return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
     }
+
+    const mimeType = detectMimeType(fileInput.path);
+    const artifactData: ArtifactData = {
+      type: "file",
+      version: 1,
+      data: {
+        path: fileInput.path,
+        mimeType,
+        originalName: fileInput.originalName || basename(fileInput.path),
+        ...(fileInput.schema && { schema: fileInput.schema }),
+        ...(fileInput.sourceFileName && { sourceFileName: fileInput.sourceFileName }),
+      },
+    };
 
     const id = crypto.randomUUID();
     const revision = 1;
@@ -186,30 +182,26 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     const currentArtifact = currentArtifactResult.value;
 
     // Transform input to output by enriching file artifacts
-    let artifactData: ArtifactData;
+    const fileInput = input.data.data;
 
-    if (input.data.type === "file") {
-      const fileInput = input.data.data;
-
-      try {
-        await stat(fileInput.path);
-      } catch (error) {
-        return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
-      }
-
-      const mimeType = detectMimeType(fileInput.path);
-      artifactData = {
-        type: "file",
-        version: 1,
-        data: {
-          path: fileInput.path,
-          mimeType,
-          originalName: fileInput.originalName || basename(fileInput.path),
-        },
-      };
-    } else {
-      artifactData = input.data;
+    try {
+      await stat(fileInput.path);
+    } catch (error) {
+      return fail(`File not found: ${fileInput.path} (${stringifyError(error)})`);
     }
+
+    const mimeType = detectMimeType(fileInput.path);
+    const artifactData: ArtifactData = {
+      type: "file",
+      version: 1,
+      data: {
+        path: fileInput.path,
+        mimeType,
+        originalName: fileInput.originalName || basename(fileInput.path),
+        ...(fileInput.schema && { schema: fileInput.schema }),
+        ...(fileInput.sourceFileName && { sourceFileName: fileInput.sourceFileName }),
+      },
+    };
 
     const newArtifact: Artifact = {
       id: input.id,
@@ -546,7 +538,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       return fail(`Artifact ${id} not found`);
     }
 
-    if (artifact.data.type !== "database") {
+    if (artifact.data.data.mimeType !== "application/x-sqlite3" || !artifact.data.data.schema) {
       return fail(`Artifact ${id} is not a database type`);
     }
 
@@ -594,7 +586,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
       return fail(`Artifact ${input.id} not found`);
     }
 
-    if (artifact.data.type !== "database") {
+    if (artifact.data.data.mimeType !== "application/x-sqlite3") {
       return fail(`Artifact ${input.id} is not a database type`);
     }
 

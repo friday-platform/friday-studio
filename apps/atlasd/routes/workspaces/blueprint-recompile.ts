@@ -6,6 +6,7 @@
  */
 
 import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MutationResult } from "@atlas/config/mutations";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
@@ -62,22 +63,27 @@ export async function loadWorkspaceBlueprint(
   if (!artifact) {
     return { ok: false, error: `Artifact not found: ${artifactId}`, status: 404 };
   }
-  if (artifact.type !== "workspace-plan") {
+
+  const contentsResult = await ArtifactStorage.readFileContents({
+    id: artifactId,
+    revision: opts?.revision,
+  });
+  if (!contentsResult.ok) {
     return {
       ok: false,
-      error: `Artifact is not a workspace plan (got: ${artifact.type})`,
-      status: 400,
-    };
-  }
-  if (artifact.data.version !== 2) {
-    return {
-      ok: false,
-      error: `Unsupported blueprint version: ${artifact.data.version}. Only v2 is supported.`,
-      status: 400,
+      error: `Failed to read blueprint file: ${contentsResult.error}`,
+      status: 500,
     };
   }
 
-  const blueprintParse = WorkspaceBlueprintSchema.safeParse(artifact.data.data);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contentsResult.data);
+  } catch {
+    return { ok: false, error: "Blueprint file is not valid JSON", status: 400 };
+  }
+
+  const blueprintParse = WorkspaceBlueprintSchema.safeParse(parsed);
   if (!blueprintParse.success) {
     return {
       ok: false,
@@ -196,10 +202,12 @@ export async function saveAndRecompileBlueprint(
     return { ok: false, error: `Compilation failed: ${compiled.error}`, status: 422 };
   }
 
-  // Save to artifact storage
+  // Save to artifact storage as a JSON file
+  const tmpPath = join(tmpdir(), `blueprint-${crypto.randomUUID()}.json`);
+  await writeFile(tmpPath, JSON.stringify(blueprint, null, 2), "utf-8");
   const updateResult = await ArtifactStorage.update({
     id: artifactId,
-    data: { type: "workspace-plan", version: 2, data: blueprint },
+    data: { type: "file", version: 1, data: { path: tmpPath } },
     summary: `Blueprint updated via UI: ${revisionMessage}`,
     revisionMessage,
   });

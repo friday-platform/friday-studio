@@ -109,7 +109,7 @@
 
   {#if entriesError && entries.length === 0}
     <div class="error-banner">
-      <span>{entriesQuery.error.message}</span>
+      <span>{entriesQuery.error?.message}</span>
       <button class="dismiss" onclick={() => entriesQuery.refetch()}>Retry</button>
     </div>
   {/if}

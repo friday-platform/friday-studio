@@ -67,9 +67,9 @@ async function runClassificationPipeline(
     client.artifactsStorage[":id"].$get({ param: { id: result.data.artifactId } }),
   );
   assert(artifactResponse.ok, "Failed to fetch artifact");
-  assert(artifactResponse.data.artifact.data.type === "workspace-plan", "Wrong artifact type");
+  assert(artifactResponse.data.contents, "Artifact contents not available");
 
-  const plan = WorkspacePlanSchema.parse(artifactResponse.data.artifact.data.data);
+  const plan = WorkspacePlanSchema.parse(JSON.parse(artifactResponse.data.contents));
 
   const classified: ClassifiedAgent[] = classifyAgents(plan);
   const mcpServers: MCPServerResult[] = generateMCPServers(plan.agents, plan.credentials);

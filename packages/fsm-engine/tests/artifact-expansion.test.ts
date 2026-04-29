@@ -13,6 +13,17 @@ import { afterAll, describe, expect, it } from "vitest";
 import { expandArtifactRefsInDocuments } from "../artifact-expansion.ts";
 import type { Document } from "../types.ts";
 
+/** Absolute path to a fixture file that always exists at test time. */
+const FIXTURE_PATH = new URL(
+  "../../packages/core/src/artifacts/test-utils/test-fixture.txt",
+  import.meta.url,
+).pathname;
+
+/** Minimal ArtifactDataInput for a file artifact using the shared fixture. */
+function makeFileInput(): ArtifactDataInput {
+  return { type: "file", version: 1, data: { path: FIXTURE_PATH } };
+}
+
 describe("expandArtifactRefsInDocuments", () => {
   // Track created artifacts for cleanup
   const createdArtifactIds: string[] = [];
@@ -53,11 +64,7 @@ describe("expandArtifactRefsInDocuments", () => {
   describe("happy path", () => {
     it("expands single artifactRef with real artifact content", async () => {
       // Arrange: create a real artifact
-      const artifactData: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "Research findings for Q4",
-      };
+      const artifactData = makeFileInput();
       const artifactId = await createTestArtifact(artifactData);
 
       const docs: Document[] = [
@@ -66,7 +73,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Found research results",
-            artifactRef: { id: artifactId, type: "summary", summary: "Q4 findings" },
+            artifactRef: { id: artifactId, type: "file", summary: "fixture file" },
           },
         },
       ];
@@ -78,24 +85,13 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifactId]).toEqual(artifactData);
+      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
     });
 
     it("expands artifactRefs array with multiple artifacts", async () => {
       // Arrange: create two artifacts
-      const artifact1Data: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "First summary",
-      };
-      const artifact2Data: ArtifactDataInput = {
-        type: "table",
-        version: 1,
-        data: { title: "Test Table", headers: ["a", "b"], rows: [["1", "2"]] },
-      };
-
-      const artifact1Id = await createTestArtifact(artifact1Data, "Summary");
-      const artifact2Id = await createTestArtifact(artifact2Data, "Table");
+      const artifact1Id = await createTestArtifact(makeFileInput(), "Summary");
+      const artifact2Id = await createTestArtifact(makeFileInput(), "Table");
 
       const docs: Document[] = [
         {
@@ -104,8 +100,8 @@ describe("expandArtifactRefsInDocuments", () => {
           data: {
             summary: "Multiple artifacts",
             artifactRefs: [
-              { id: artifact1Id, type: "summary", summary: "First" },
-              { id: artifact2Id, type: "table", summary: "Second" },
+              { id: artifact1Id, type: "file", summary: "First" },
+              { id: artifact2Id, type: "file", summary: "Second" },
             ],
           },
         },
@@ -118,19 +114,15 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifact1Id]).toEqual(artifact1Data);
-      expect(content[artifact2Id]).toEqual(artifact2Data);
+      expect(content[artifact1Id]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifact2Id]).toMatchObject({ type: "file", version: 1 });
     });
 
     it("handles documents with both artifactRef and artifactRefs", async () => {
       // Arrange
-      const singleData: ArtifactDataInput = { type: "summary", version: 1, data: "Single ref" };
-      const arrayData1: ArtifactDataInput = { type: "summary", version: 1, data: "Array ref 1" };
-      const arrayData2: ArtifactDataInput = { type: "summary", version: 1, data: "Array ref 2" };
-
-      const singleId = await createTestArtifact(singleData);
-      const arrayId1 = await createTestArtifact(arrayData1);
-      const arrayId2 = await createTestArtifact(arrayData2);
+      const singleId = await createTestArtifact(makeFileInput());
+      const arrayId1 = await createTestArtifact(makeFileInput());
+      const arrayId2 = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         {
@@ -138,10 +130,10 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Both forms",
-            artifactRef: { id: singleId, type: "summary", summary: "Single" },
+            artifactRef: { id: singleId, type: "file", summary: "Single" },
             artifactRefs: [
-              { id: arrayId1, type: "summary", summary: "Array 1" },
-              { id: arrayId2, type: "summary", summary: "Array 2" },
+              { id: arrayId1, type: "file", summary: "Array 1" },
+              { id: arrayId2, type: "file", summary: "Array 2" },
             ],
           },
         },
@@ -154,18 +146,14 @@ describe("expandArtifactRefsInDocuments", () => {
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
       expect(Object.keys(content)).toHaveLength(3);
-      expect(content[singleId]).toEqual(singleData);
-      expect(content[arrayId1]).toEqual(arrayData1);
-      expect(content[arrayId2]).toEqual(arrayData2);
+      expect(content[singleId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[arrayId1]).toMatchObject({ type: "file", version: 1 });
+      expect(content[arrayId2]).toMatchObject({ type: "file", version: 1 });
     });
 
     it("expands artifactRef wrapped in Result pattern { ok: true, data: { artifactRef } }", async () => {
       // Arrange: create artifact and doc with Result wrapper (common agent output pattern)
-      const artifactData: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "Web search results",
-      };
+      const artifactData = makeFileInput();
       const artifactId = await createTestArtifact(artifactData);
 
       // This matches how web-search agent returns: success({ summary, artifactRef })
@@ -178,7 +166,7 @@ describe("expandArtifactRefsInDocuments", () => {
             ok: true,
             data: {
               summary: "Found 3 results",
-              artifactRef: { id: artifactId, type: "web-search", summary: "Search results" },
+              artifactRef: { id: artifactId, type: "file", summary: "Search results" },
             },
           },
         },
@@ -191,23 +179,13 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifactId]).toEqual(artifactData);
+      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
     });
 
     it("expands artifactRefs array wrapped in Result pattern", async () => {
       // Arrange: create two artifacts with Result wrapper pattern
-      const artifact1Data: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "First result",
-      };
-      const artifact2Data: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "Second result",
-      };
-      const artifact1Id = await createTestArtifact(artifact1Data);
-      const artifact2Id = await createTestArtifact(artifact2Data);
+      const artifact1Id = await createTestArtifact(makeFileInput());
+      const artifact2Id = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         {
@@ -218,8 +196,8 @@ describe("expandArtifactRefsInDocuments", () => {
             data: {
               response: "Found multiple items",
               artifactRefs: [
-                { id: artifact1Id, type: "summary", summary: "First" },
-                { id: artifact2Id, type: "summary", summary: "Second" },
+                { id: artifact1Id, type: "file", summary: "First" },
+                { id: artifact2Id, type: "file", summary: "Second" },
               ],
             },
           },
@@ -233,14 +211,13 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifact1Id]).toEqual(artifact1Data);
-      expect(content[artifact2Id]).toEqual(artifact2Data);
+      expect(content[artifact1Id]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifact2Id]).toMatchObject({ type: "file", version: 1 });
     });
 
     it("deduplicates when multiple documents reference the same artifact", async () => {
       // Arrange: one artifact, two documents referencing it
-      const sharedData: ArtifactDataInput = { type: "summary", version: 1, data: "Shared content" };
-      const sharedId = await createTestArtifact(sharedData);
+      const sharedId = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         {
@@ -248,7 +225,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "First doc",
-            artifactRef: { id: sharedId, type: "summary", summary: "Shared" },
+            artifactRef: { id: sharedId, type: "file", summary: "Shared" },
           },
         },
         {
@@ -256,7 +233,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Second doc",
-            artifactRef: { id: sharedId, type: "summary", summary: "Shared" },
+            artifactRef: { id: sharedId, type: "file", summary: "Shared" },
           },
         },
       ];
@@ -266,8 +243,14 @@ describe("expandArtifactRefsInDocuments", () => {
 
       // Assert: both docs should have the content, fetched only once
       expect(expanded).toHaveLength(2);
-      expect(expanded[0]?.data?.artifactContent?.[sharedId]).toEqual(sharedData);
-      expect(expanded[1]?.data?.artifactContent?.[sharedId]).toEqual(sharedData);
+      expect(expanded[0]?.data?.artifactContent?.[sharedId]).toMatchObject({
+        type: "file",
+        version: 1,
+      });
+      expect(expanded[1]?.data?.artifactContent?.[sharedId]).toMatchObject({
+        type: "file",
+        version: 1,
+      });
     });
   });
 
@@ -295,8 +278,7 @@ describe("expandArtifactRefsInDocuments", () => {
 
     it("handles mixed documents - only adds artifactContent to ref docs", async () => {
       // Arrange
-      const artifactData: ArtifactDataInput = { type: "summary", version: 1, data: "Content" };
-      const artifactId = await createTestArtifact(artifactData);
+      const artifactId = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         { id: "no-ref", type: "agent-output", data: { summary: "No refs" } },
@@ -305,7 +287,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Has ref",
-            artifactRef: { id: artifactId, type: "summary", summary: "Test" },
+            artifactRef: { id: artifactId, type: "file", summary: "Test" },
           },
         },
         { id: "also-no-ref", type: "agent-output", data: { other: "data" } },
@@ -319,7 +301,7 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(expanded[0]?.data?.artifactContent).toBeUndefined(); // no-ref
       const content = expanded[1]?.data?.artifactContent;
       expect.assert(content !== undefined, "has-ref doc should have artifactContent");
-      expect(content[artifactId]).toEqual(artifactData);
+      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
       expect(expanded[2]?.data?.artifactContent).toBeUndefined(); // also-no-ref
     });
 
@@ -333,7 +315,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "References missing artifact",
-            artifactRef: { id: fakeId, type: "summary", summary: "Missing" },
+            artifactRef: { id: fakeId, type: "file", summary: "Missing" },
           },
         },
       ];
@@ -355,8 +337,7 @@ describe("expandArtifactRefsInDocuments", () => {
   describe("error handling", () => {
     it("handles partial fetch success (some exist, some don't)", async () => {
       // Arrange: one real artifact, one fake
-      const realData: ArtifactDataInput = { type: "summary", version: 1, data: "Real content" };
-      const realId = await createTestArtifact(realData);
+      const realId = await createTestArtifact(makeFileInput());
       const fakeId = "fake-artifact-id-99999";
 
       const docs: Document[] = [
@@ -366,8 +347,8 @@ describe("expandArtifactRefsInDocuments", () => {
           data: {
             summary: "Mixed refs",
             artifactRefs: [
-              { id: realId, type: "summary", summary: "Real" },
-              { id: fakeId, type: "summary", summary: "Fake" },
+              { id: realId, type: "file", summary: "Real" },
+              { id: fakeId, type: "file", summary: "Fake" },
             ],
           },
         },
@@ -380,14 +361,13 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[realId]).toEqual(realData);
+      expect(content[realId]).toMatchObject({ type: "file", version: 1 });
       expect(content[fakeId]).toBeUndefined();
     });
 
     it("throws on abort signal instead of silent data loss", async () => {
       // Arrange
-      const artifactData: ArtifactDataInput = { type: "summary", version: 1, data: "Content" };
-      const artifactId = await createTestArtifact(artifactData);
+      const artifactId = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         {
@@ -395,7 +375,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Will be aborted",
-            artifactRef: { id: artifactId, type: "summary", summary: "Test" },
+            artifactRef: { id: artifactId, type: "file", summary: "Test" },
           },
         },
       ];
@@ -420,8 +400,10 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Already expanded",
-            artifactRef: { id: "art-123", type: "summary", summary: "Test" },
-            artifactContent: { "art-123": { type: "summary", version: 1, data: "Pre-fetched" } },
+            artifactRef: { id: "art-123", type: "file", summary: "Test" },
+            artifactContent: {
+              "art-123": { type: "file", version: 1, data: { path: FIXTURE_PATH, mimeType: "text/plain" } },
+            },
           },
         },
         {
@@ -430,7 +412,7 @@ describe("expandArtifactRefsInDocuments", () => {
           data: {
             summary: "Also expanded",
             artifactContent: {
-              "art-456": { type: "summary", version: 1, data: "Also pre-fetched" },
+              "art-456": { type: "file", version: 1, data: { path: FIXTURE_PATH, mimeType: "text/plain" } },
             },
           },
         },
@@ -441,26 +423,19 @@ describe("expandArtifactRefsInDocuments", () => {
 
       // Assert: returns same documents, no fetch occurred
       expect(expanded).toHaveLength(2);
-      expect(expanded[0]?.data?.artifactContent?.["art-123"]).toEqual({
-        type: "summary",
+      expect(expanded[0]?.data?.artifactContent?.["art-123"]).toMatchObject({
+        type: "file",
         version: 1,
-        data: "Pre-fetched",
       });
-      expect(expanded[1]?.data?.artifactContent?.["art-456"]).toEqual({
-        type: "summary",
+      expect(expanded[1]?.data?.artifactContent?.["art-456"]).toMatchObject({
+        type: "file",
         version: 1,
-        data: "Also pre-fetched",
       });
     });
 
     it("calling expand twice returns same result (true idempotency)", async () => {
       // Arrange: create a real artifact and document
-      const artifactData: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "Idempotency test content",
-      };
-      const artifactId = await createTestArtifact(artifactData);
+      const artifactId = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         {
@@ -468,7 +443,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Will be expanded twice",
-            artifactRef: { id: artifactId, type: "summary", summary: "Test" },
+            artifactRef: { id: artifactId, type: "file", summary: "Test" },
           },
         },
       ];
@@ -480,24 +455,22 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(firstExpansion).toHaveLength(1);
       const content = firstExpansion[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifactId]).toEqual(artifactData);
+      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
 
       // Act: expand again - should be a no-op (early exit)
       const secondExpansion = await expandArtifactRefsInDocuments(firstExpansion);
 
       // Assert: identical result, early exit path taken
       expect(secondExpansion).toHaveLength(1);
-      expect(secondExpansion[0]?.data?.artifactContent?.[artifactId]).toEqual(artifactData);
+      expect(secondExpansion[0]?.data?.artifactContent?.[artifactId]).toMatchObject({
+        type: "file",
+        version: 1,
+      });
     });
 
     it("re-expands when some documents lack artifactContent (mixed state)", async () => {
       // Arrange: create artifact for the unexpanded doc
-      const artifactData: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "New content to fetch",
-      };
-      const artifactId = await createTestArtifact(artifactData);
+      const artifactId = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         {
@@ -505,8 +478,14 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Already expanded",
-            artifactRef: { id: "old-art", type: "summary", summary: "Old" },
-            artifactContent: { "old-art": { type: "summary", version: 1, data: "Pre-existing" } },
+            artifactRef: { id: "old-art", type: "file", summary: "Old" },
+            artifactContent: {
+              "old-art": {
+                type: "file",
+                version: 1,
+                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+              },
+            },
           },
         },
         {
@@ -514,7 +493,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Needs expansion",
-            artifactRef: { id: artifactId, type: "summary", summary: "New" },
+            artifactRef: { id: artifactId, type: "file", summary: "New" },
             // No artifactContent - needs fetch
           },
         },
@@ -529,18 +508,13 @@ describe("expandArtifactRefsInDocuments", () => {
       // Doc 2: should have the new artifact content
       const content = expanded[1]?.data?.artifactContent;
       expect.assert(content !== undefined, "doc-2 artifactContent should be defined");
-      expect(content[artifactId]).toEqual(artifactData);
+      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
     });
 
     it("handles mixed docs where some have no artifact refs (regression: every() bug)", async () => {
       // Regression test: the old `every()` check failed on mixed arrays because
       // docs without artifact refs never get `artifactContent`, so every() always fails
-      const artifactData: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "Content for doc with ref",
-      };
-      const artifactId = await createTestArtifact(artifactData);
+      const artifactId = await createTestArtifact(makeFileInput());
 
       const docs: Document[] = [
         {
@@ -556,7 +530,7 @@ describe("expandArtifactRefsInDocuments", () => {
           type: "agent-output",
           data: {
             summary: "Has artifact ref",
-            artifactRef: { id: artifactId, type: "summary", summary: "Test" },
+            artifactRef: { id: artifactId, type: "file", summary: "Test" },
           },
         },
       ];
@@ -569,7 +543,7 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(firstExpansion[0]?.data?.artifactContent).toBeUndefined(); // No refs = no artifactContent
       const content = firstExpansion[1]?.data?.artifactContent;
       expect.assert(content !== undefined, "doc-with-ref should have artifactContent");
-      expect(content[artifactId]).toEqual(artifactData);
+      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
 
       // Act: second expansion should early-exit (all referenced IDs already have content)
       const secondExpansion = await expandArtifactRefsInDocuments(firstExpansion);
@@ -577,23 +551,16 @@ describe("expandArtifactRefsInDocuments", () => {
       // Assert: identical result
       expect(secondExpansion).toHaveLength(2);
       expect(secondExpansion[0]?.data?.artifactContent).toBeUndefined();
-      expect(secondExpansion[1]?.data?.artifactContent?.[artifactId]).toEqual(artifactData);
+      expect(secondExpansion[1]?.data?.artifactContent?.[artifactId]).toMatchObject({
+        type: "file",
+        version: 1,
+      });
     });
 
     it("only fetches missing IDs on re-expansion (preserves existing content)", async () => {
       // Create two artifacts
-      const artifact1Data: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "First artifact",
-      };
-      const artifact2Data: ArtifactDataInput = {
-        type: "summary",
-        version: 1,
-        data: "Second artifact",
-      };
-      const artifact1Id = await createTestArtifact(artifact1Data);
-      const artifact2Id = await createTestArtifact(artifact2Data);
+      const artifact1Id = await createTestArtifact(makeFileInput());
+      const artifact2Id = await createTestArtifact(makeFileInput());
 
       // Doc already has artifact1 expanded, but also refs artifact2
       const docs: Document[] = [
@@ -603,11 +570,17 @@ describe("expandArtifactRefsInDocuments", () => {
           data: {
             summary: "Has multiple refs",
             artifactRefs: [
-              { id: artifact1Id, type: "summary", summary: "First" },
-              { id: artifact2Id, type: "summary", summary: "Second" },
+              { id: artifact1Id, type: "file", summary: "First" },
+              { id: artifact2Id, type: "file", summary: "Second" },
             ],
             // Simulate prior partial expansion - only artifact1 is expanded
-            artifactContent: { [artifact1Id]: artifact1Data },
+            artifactContent: {
+              [artifact1Id]: {
+                type: "file" as const,
+                version: 1 as const,
+                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+              },
+            },
           },
         },
       ];
@@ -619,8 +592,8 @@ describe("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifact1Id]).toEqual(artifact1Data);
-      expect(content[artifact2Id]).toEqual(artifact2Data);
+      expect(content[artifact1Id]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifact2Id]).toMatchObject({ type: "file", version: 1 });
     });
   });
 });

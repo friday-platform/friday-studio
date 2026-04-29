@@ -384,7 +384,7 @@ function makeMockFetchResponse(
 /** Build job tools in SSE mode (writer present). */
 function buildStreamingTool(jobName = "deploy-app", signalId = "deploy-signal") {
   const logger = makeLogger();
-  const writer: UIMessageStreamWriter<AtlasUIMessage> = { write: vi.fn(), merge: vi.fn() };
+  const writer: UIMessageStreamWriter<AtlasUIMessage> = { write: vi.fn(), merge: vi.fn(), onError: vi.fn() };
   const tools = createJobTools(
     "ws-test",
     { [jobName]: makeJob({ description: "Deploy", triggers: [{ signal: signalId }] }) },
@@ -610,7 +610,7 @@ describe("createJobTools execute (SSE streaming)", () => {
 
   it("passes streamId in SSE body when parentStreamId is provided", async () => {
     const logger = makeLogger();
-    const writer: UIMessageStreamWriter<AtlasUIMessage> = { write: vi.fn(), merge: vi.fn() };
+    const writer: UIMessageStreamWriter<AtlasUIMessage> = { write: vi.fn(), merge: vi.fn(), onError: vi.fn() };
     createJobTools(
       "ws-test",
       { "deploy-app": makeJob({ triggers: [{ signal: "deploy-signal" }] }) },
@@ -655,7 +655,7 @@ describe("createJobTools execute (SSE streaming)", () => {
   it("passes abortSignal to fetch when provided", async () => {
     const abortController = new AbortController();
     const logger = makeLogger();
-    const writer: UIMessageStreamWriter<AtlasUIMessage> = { write: vi.fn(), merge: vi.fn() };
+    const writer: UIMessageStreamWriter<AtlasUIMessage> = { write: vi.fn(), merge: vi.fn(), onError: vi.fn() };
 
     globalThis.fetch = vi.fn(() =>
       makeMockFetchResponse([
@@ -683,6 +683,6 @@ describe("createJobTools execute (SSE streaming)", () => {
     await execute({ prompt: "go" }, TOOL_CALL_OPTS);
 
     const callArgs = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[1]).toHaveProperty("signal", abortController.signal);
+    expect(callArgs?.[1]).toHaveProperty("signal", abortController.signal);
   });
 });

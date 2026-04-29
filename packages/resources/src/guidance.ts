@@ -35,12 +35,12 @@ export function buildResourceGuidance(
   );
   const datasets = resources.filter(
     (r): r is ResourceEntryOf<"artifact_ref"> =>
-      r.type === "artifact_ref" && r.artifactType === "database",
+      r.type === "artifact_ref" && r.mimeType === "application/x-sqlite3",
   );
   const files = resources.filter(
     (r): r is ResourceEntryOf<"artifact_ref"> =>
       r.type === "artifact_ref" &&
-      r.artifactType !== "database" &&
+      r.mimeType !== "application/x-sqlite3" &&
       r.artifactType !== "unavailable",
   );
   const externals = resources.filter(

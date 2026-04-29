@@ -1,10 +1,18 @@
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAgent, err, ok } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { LanguageModelV3 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
-import { buildBlueprint, formatClarifications, PipelineError } from "@atlas/workspace-builder";
+import {
+  buildBlueprint,
+  formatClarifications,
+  PipelineError,
+  WorkspaceBlueprintSchema,
+} from "@atlas/workspace-builder";
 import { generateText } from "ai";
 import { z } from "zod";
 
@@ -83,16 +91,14 @@ export const workspacePlannerAgent = createAgent<
         const response = await parseResult(
           client.artifactsStorage[":id"].$get({ param: { id: input.artifactId } }),
         );
-        if (response.ok && response.data.artifact.data.type === "workspace-plan") {
-          if (response.data.artifact.data.version === 2) {
-            existingBlueprint = response.data.artifact.data.data;
-          } else if (response.data.artifact.data.version === 1) {
-            // v1 artifact — can't modify, needs re-planning from scratch
-            return err(
-              "This workspace plan uses an older format. Please create a new plan instead of modifying this one.",
-            );
+        if (response.ok && response.data.contents) {
+          const blueprintParse = WorkspaceBlueprintSchema.safeParse(
+            JSON.parse(response.data.contents),
+          );
+          if (blueprintParse.success) {
+            existingBlueprint = blueprintParse.data;
+            prompt = `Here is an existing workspace plan:\n\n${JSON.stringify(existingBlueprint)}\n\nThe user wants to make the following changes:\n\n${input.intent}`;
           }
-          prompt = `Here is an existing workspace plan:\n\n${JSON.stringify(existingBlueprint)}\n\nThe user wants to make the following changes:\n\n${input.intent}`;
         }
       }
 
@@ -139,6 +145,18 @@ export const workspacePlannerAgent = createAgent<
         }),
       };
 
+      const artifactSummary = await summarize({
+        content: JSON.stringify(blueprint),
+        instruction:
+          "Summarize this workspace plan in 1-2 sentences. Describe what the workspace does and what agents/signals are involved.",
+        model: summarizeModel,
+        logger,
+        abortSignal,
+      });
+
+      const tmpPath = join(tmpdir(), `blueprint-${crypto.randomUUID()}.json`);
+      await writeFile(tmpPath, JSON.stringify(blueprint, null, 2), "utf-8");
+
       // Save artifact — PUT for revision, POST for new
       if (existingBlueprint && input.artifactId) {
         const revisionMessage = await summarize({
@@ -149,20 +167,12 @@ export const workspacePlannerAgent = createAgent<
           logger,
           abortSignal,
         });
-        const artifactSummary = await summarize({
-          content: JSON.stringify(blueprint),
-          instruction:
-            "Summarize this workspace plan in 1-2 sentences. Describe what the workspace does and what agents/signals are involved.",
-          model: summarizeModel,
-          logger,
-          abortSignal,
-        });
         const response = await parseResult(
           client.artifactsStorage[":id"].$put({
             param: { id: input.artifactId },
             json: {
-              type: "workspace-plan",
-              data: { type: "workspace-plan", version: 2, data: blueprint },
+              type: "file",
+              data: { type: "file", version: 1, data: { path: tmpPath } },
               summary: artifactSummary,
               revisionMessage,
             },
@@ -180,18 +190,10 @@ export const workspacePlannerAgent = createAgent<
         });
       }
 
-      const artifactSummary = await summarize({
-        content: JSON.stringify(blueprint),
-        instruction:
-          "Summarize this workspace plan in 1-2 sentences. Describe what the workspace does and what agents/signals are involved.",
-        model: summarizeModel,
-        logger,
-        abortSignal,
-      });
       const response = await parseResult(
         client.artifactsStorage.index.$post({
           json: {
-            data: { type: "workspace-plan", version: 2, data: blueprint },
+            data: { type: "file", version: 1, data: { path: tmpPath } },
             title: blueprint.workspace.name,
             summary: artifactSummary,
             workspaceId: session.workspaceId,

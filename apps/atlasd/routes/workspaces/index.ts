@@ -1276,7 +1276,7 @@ const workspacesRoutes = daemonFactory
       const validation = await validateImportedWorkspace(targetDir, buildValidationContext(ctx));
       if (!validation.ok) {
         await rm(targetDir, { recursive: true, force: true });
-        return c.json(validation.body, validation.status);
+        return c.json(validation.body, validation.status as 400 | 422 | 500);
       }
 
       const manager = ctx.getWorkspaceManager();

@@ -206,8 +206,7 @@ export const fsmWorkspaceCreatorAgent = createAgent<FSMCreatorInput, FSMCreatorS
 });
 
 /**
- * Load v2 workspace blueprint artifact from storage.
- * Returns error on v1 artifacts, telling user to re-plan.
+ * Load workspace blueprint from artifact storage (stored as a JSON file artifact).
  */
 async function loadBlueprint(
   artifactId: string,
@@ -216,29 +215,18 @@ async function loadBlueprint(
     client.artifactsStorage[":id"].$get({ param: { id: artifactId } }),
   );
 
-  if (!response.ok || response.data.artifact.type !== "workspace-plan") {
-    throw new Error("Failed to load workspace plan artifact");
+  if (!response.ok) {
+    throw new Error("Failed to load workspace blueprint artifact");
   }
 
   const { revision } = response.data.artifact;
-  const artifactData = response.data.artifact.data;
+  const contents = response.data.contents;
 
-  // Reject v1 artifacts — user must re-plan with the new planner
-  if (artifactData.version === 1) {
-    throw new Error(
-      "This artifact uses the v1 plan format which is no longer supported by the workspace creator. " +
-        "Please create a new workspace plan using the workspace planner.",
-    );
+  if (!contents) {
+    throw new Error("Blueprint artifact has no file contents");
   }
 
-  if (artifactData.version !== 2) {
-    throw new Error(
-      `Unsupported workspace plan version: ${(artifactData as { version: unknown }).version}`,
-    );
-  }
-
-  // Parse with Zod to validate structure
-  const validationResult = WorkspaceBlueprintSchema.safeParse(artifactData.data);
+  const validationResult = WorkspaceBlueprintSchema.safeParse(JSON.parse(contents));
   if (!validationResult.success) {
     throw new Error(`Invalid workspace blueprint data: ${validationResult.error.message}`);
   }

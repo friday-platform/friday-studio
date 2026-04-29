@@ -1,21 +1,9 @@
-import { WorkspaceBlueprintSchema } from "@atlas/schemas/workspace";
 import { z } from "zod";
 
 /** Slug: lowercase alphanumeric + hyphens, with optional path segments separated by `/`. */
 const SlugSchema = z.string().regex(/^[a-z0-9-]+(\/[a-z0-9-]+)*$/);
 
-import {
-  CalendarScheduleSchema,
-  DatabaseDataSchema,
-  FileDataInputSchema,
-  FileDataSchema,
-  SkillDraftSchema,
-  SlackSummaryDataSchema,
-  SummaryDataSchema,
-  TableDataSchema,
-  WebSearchDataSchema,
-  WorkspacePlanSchema,
-} from "./primitives.ts";
+import { FileDataInputSchema, FileDataSchema } from "./primitives.ts";
 
 /** Revision summary for history */
 export interface ArtifactRevisionSummary {
@@ -24,131 +12,31 @@ export interface ArtifactRevisionSummary {
   revisionMessage?: string;
 }
 
-const WorkspacePlanV1ArtifactSchema = z.object({
-  type: z.literal("workspace-plan"),
-  version: z.literal(1),
-  data: WorkspacePlanSchema,
-});
-
-// `z.lazy` defers the reference to `WorkspaceBlueprintSchema` until the first
-// parse call. Without this, any client-side import graph that loads this
-// module through @atlas/config (which @atlas/schemas/workspace.ts imports
-// from) triggers a TDZ ReferenceError — the schemas module is still
-// initializing when model.ts tries to use its export at top level.
-const WorkspacePlanV2ArtifactSchema = z.object({
-  type: z.literal("workspace-plan"),
-  version: z.literal(2),
-  data: z.lazy(() => WorkspaceBlueprintSchema),
-});
-
-const CalendarScheduleArtifactSchema = z.object({
-  type: z.literal("calendar-schedule"),
-  version: z.literal(1),
-  data: CalendarScheduleSchema,
-});
-
-const SummaryArtifactSchema = z.object({
-  type: z.literal("summary"),
-  version: z.literal(1),
-  data: SummaryDataSchema,
-});
-
-const SlackSummaryArtifactSchema = z.object({
-  type: z.literal("slack-summary"),
-  version: z.literal(1),
-  data: SlackSummaryDataSchema,
-});
-
 const FileArtifactSchema = z.object({
   type: z.literal("file"),
   version: z.literal(1),
   data: FileDataSchema,
 });
 
-const TableArtifactSchema = z.object({
-  type: z.literal("table"),
-  version: z.literal(1),
-  data: TableDataSchema,
-});
-
-const WebSearchArtifactSchema = z.object({
-  type: z.literal("web-search"),
-  version: z.literal(1),
-  data: WebSearchDataSchema,
-});
-
-const SkillDraftArtifactSchema = z.object({
-  type: z.literal("skill-draft"),
-  version: z.literal(1),
-  data: SkillDraftSchema,
-});
-
-const DatabaseArtifactSchema = z.object({
-  type: z.literal("database"),
-  version: z.literal(1),
-  data: DatabaseDataSchema,
-});
-
-/** Artifact data schemas for storage (output) */
-export const ArtifactDataSchema = z.union([
-  WorkspacePlanV1ArtifactSchema,
-  WorkspacePlanV2ArtifactSchema,
-  CalendarScheduleArtifactSchema,
-  SummaryArtifactSchema,
-  SlackSummaryArtifactSchema,
-  FileArtifactSchema,
-  TableArtifactSchema,
-  WebSearchArtifactSchema,
-  SkillDraftArtifactSchema,
-  DatabaseArtifactSchema,
-]);
-
-export type ArtifactType = z.infer<typeof ArtifactDataSchema>["type"];
-export type ArtifactData = z.infer<typeof ArtifactDataSchema>;
-
-/** Artifact data schemas for creation (input) */
-const WorkspacePlanV1InputSchema = WorkspacePlanV1ArtifactSchema;
-const WorkspacePlanV2InputSchema = WorkspacePlanV2ArtifactSchema;
-const CalendarScheduleInputSchema = CalendarScheduleArtifactSchema;
-const SummaryInputSchema = SummaryArtifactSchema;
-const SlackSummaryInputSchema = SlackSummaryArtifactSchema;
 const FileArtifactInputSchema = z.object({
   type: z.literal("file"),
   version: z.literal(1),
   data: FileDataInputSchema,
 });
-const TableInputSchema = TableArtifactSchema;
-const WebSearchInputSchema = WebSearchArtifactSchema;
-const SkillDraftInputSchema = SkillDraftArtifactSchema;
-const DatabaseInputSchema = DatabaseArtifactSchema;
 
-export const ArtifactDataInputSchema = z.union([
-  WorkspacePlanV1InputSchema,
-  WorkspacePlanV2InputSchema,
-  CalendarScheduleInputSchema,
-  SummaryInputSchema,
-  SlackSummaryInputSchema,
-  FileArtifactInputSchema,
-  TableInputSchema,
-  WebSearchInputSchema,
-  SkillDraftInputSchema,
-  DatabaseInputSchema,
-]);
+/** Artifact data schema for storage (output) */
+export const ArtifactDataSchema = FileArtifactSchema;
+
+export type ArtifactType = "file";
+export type ArtifactData = z.infer<typeof ArtifactDataSchema>;
+
+/** Artifact data schema for creation (input) */
+export const ArtifactDataInputSchema = FileArtifactInputSchema;
 
 export type ArtifactDataInput = z.infer<typeof ArtifactDataInputSchema>;
 
-/** Schema for valid artifact types - using enum for single type support */
-export const ArtifactTypeSchema = z.enum([
-  "workspace-plan",
-  "calendar-schedule",
-  "summary",
-  "slack-summary",
-  "file",
-  "table",
-  "web-search",
-  "skill-draft",
-  "database",
-]);
+/** Schema for valid artifact type */
+export const ArtifactTypeSchema = z.literal("file");
 
 /** Shared request schemas for REST and MCP */
 

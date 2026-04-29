@@ -11,7 +11,6 @@ import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
-import { ArtifactTypeSchema } from "@atlas/core/artifacts";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
@@ -45,7 +44,7 @@ import {
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectServiceSucceeded } from "./stop-conditions.ts";
-import { artifactTools } from "./tools/artifact-tools.ts";
+import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
 import { createAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
@@ -111,7 +110,7 @@ const ResourceEntrySchema = z.discriminatedUnion("type", [
     name: z.string(),
     description: z.string(),
     artifactId: z.string(),
-    artifactType: z.union([ArtifactTypeSchema, z.literal("unavailable")]),
+    artifactType: z.enum(["file", "unavailable"]),
     rowCount: z.number().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -734,6 +733,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...connectServiceTool,
           ...jobTools,
           ...artifactTools,
+          ...createArtifactsCreateTool({ sessionId: adHocSessionId, workspaceId, streamId: session.streamId }),
           ...resourceTools,
           ...createMemorySaveTool(workspaceId, logger),
           ...webFetchTool,

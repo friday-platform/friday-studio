@@ -180,6 +180,8 @@ To abandon a draft: `discard_draft`.
 
 **For MCP server questions (install vs enable, credentials, catalog search):** load the `using-mcp-servers` skill. `workspace-api` does not cover MCP scope.
 
+**For broken Python/TS agent code (workspace YAML validates clean but the job fails at runtime):** load `@friday/writing-friday-agents`. Fix the agent source via `write_file` + re-register via the daemon API. Once you can name the specific fix, stop diagnosing and apply it — don't keep investigating because something else might also be broken.
+
 **For codebase exploration or multi-file edits:** `agent_claude-code` is the right tool.
 
 The failure mode this prevents: reaching for `agent_claude-code` as a panic button when uncertain, turning a 5-second curl into an 8-minute agent call.

@@ -73,7 +73,7 @@ const ARTIFACT_ENTRY: ResourceEntry = {
   name: "Sales Data",
   description: "Q1 sales report",
   artifactId: "art-123",
-  artifactType: "table",
+  artifactType: "file",
   createdAt: "2026-01-01",
   updatedAt: "2026-01-01",
 };

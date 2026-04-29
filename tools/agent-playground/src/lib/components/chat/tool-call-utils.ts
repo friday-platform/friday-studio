@@ -4,10 +4,15 @@ export function isInProgress(state: ToolCallDisplay["state"]): boolean {
   return state === "input-streaming" || state === "input-available";
 }
 
-/** connect_service calls waiting for the user to authenticate stay "output-available"
- * but the group must stay open so the button is reachable. */
+/**
+ * Calls that must render outside the collapsible group.
+ * connect_service: auth button needs to be reachable once the tool completes.
+ * display_artifact: artifact card should be visible as soon as input arrives.
+ */
 export function needsUserAction(call: ToolCallDisplay): boolean {
-  return call.toolName === "connect_service" && call.state === "output-available";
+  if (call.toolName === "connect_service" && call.state === "output-available") return true;
+  if (call.toolName === "display_artifact" && call.state !== "input-streaming") return true;
+  return false;
 }
 
 export function isError(state: ToolCallDisplay["state"]): boolean {
@@ -50,6 +55,9 @@ export function argPreview(toolName: string, input: unknown): string {
   if (toolName === "memory_save" && typeof obj.text === "string") {
     return obj.text.length > 60 ? `${obj.text.slice(0, 60)}…` : obj.text;
   }
+  if (toolName === "display_artifact") {
+    return "";
+  }
   for (const v of Object.values(obj)) {
     if (typeof v === "string" && v.length > 0) {
       return v.length > 60 ? `${v.slice(0, 60)}…` : v;
@@ -90,6 +98,11 @@ export function outputSummary(toolName: string, output: unknown): string {
   }
   if (toolName === "list_files" && Array.isArray(obj.entries)) {
     return `${obj.entries.length} entr${obj.entries.length === 1 ? "y" : "ies"}`;
+  }
+  if (toolName === "display_artifact") {
+    const disp = obj.displayed as Record<string, unknown> | undefined;
+    if (typeof disp?.title === "string" && disp.title) return disp.title;
+    return "done";
   }
   return "done";
 }
