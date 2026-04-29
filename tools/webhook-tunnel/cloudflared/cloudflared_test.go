@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,45 +12,43 @@ import (
 	"testing"
 )
 
-// fakeRelease serves a body + matching .sha256 sidecar from an
-// in-process test server. mismatchHash forces the sidecar to advertise
-// a wrong hash so we can test rejection.
-func fakeRelease(t *testing.T, body []byte, mismatchHash bool) (binURL, sidecarURL string) {
+// fakeBinaryServer serves arbitrary bytes at /binary. Used by the
+// download tests to exercise the streaming hash path without hitting
+// the network.
+func fakeBinaryServer(t *testing.T, body []byte) string {
 	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/binary", func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(body)
-	})
-	mux.HandleFunc("/binary.sha256", func(w http.ResponseWriter, _ *http.Request) {
-		hash := sha256.Sum256(body)
-		hex := hex.EncodeToString(hash[:])
-		if mismatchHash {
-			hex = strings.Repeat("0", 64)
-		}
-		_, _ = fmt.Fprintf(w, "%s  binary\n", hex)
-	})
-	srv := httptest.NewServer(mux)
+	}))
 	t.Cleanup(srv.Close)
-	return srv.URL + "/binary", srv.URL + "/binary.sha256"
+	return srv.URL + "/binary"
 }
 
-func TestFetchSha256Sidecar(t *testing.T) {
-	body := []byte("hello cloudflared")
-	_, sidecarURL := fakeRelease(t, body, false)
-	got, err := fetchSha256Sidecar(context.Background(), sidecarURL)
-	if err != nil {
-		t.Fatalf("fetch: %v", err)
+// TestReleaseHashesCoverAllPlatforms pins the invariant that every
+// platform releaseURL knows how to build also has a sha256 entry in
+// releaseHashes. Bumping Version without regenerating hashes for
+// every supported arch fails this immediately.
+func TestReleaseHashesCoverAllPlatforms(t *testing.T) {
+	platforms := []struct{ goos, goarch string }{
+		{"darwin", "arm64"},
+		{"darwin", "amd64"},
+		{"linux", "amd64"},
+		{"linux", "arm64"},
+		{"windows", "amd64"},
 	}
-	hash := sha256.Sum256(body)
-	want := hex.EncodeToString(hash[:])
-	if got != want {
-		t.Errorf("hash: want %s, got %s", want, got)
+	for _, p := range platforms {
+		key := p.goos + "/" + p.goarch
+		if hash, ok := releaseHashes[key]; !ok {
+			t.Errorf("releaseHashes missing entry for %s", key)
+		} else if len(hash) != 64 {
+			t.Errorf("releaseHashes[%s]: hex length %d, want 64", key, len(hash))
+		}
 	}
 }
 
-func TestDownloadAtomicHappyPath(t *testing.T) {
+func TestDownloadToTmpHappyPath(t *testing.T) {
 	body := []byte("fake cloudflared binary contents")
-	binURL, _ := fakeRelease(t, body, false)
+	binURL := fakeBinaryServer(t, body)
 	tmp := filepath.Join(t.TempDir(), "out.bin")
 	gotHash, err := downloadToTmp(context.Background(), binURL, tmp)
 	if err != nil {
@@ -67,26 +64,6 @@ func TestDownloadAtomicHappyPath(t *testing.T) {
 	}
 	if string(got) != string(body) {
 		t.Errorf("body mismatch")
-	}
-}
-
-func TestSidecarMismatchRejected(t *testing.T) {
-	body := []byte("xyz")
-	binURL, sidecarURL := fakeRelease(t, body, true) // sidecar lies
-	wantHex, err := fetchSha256Sidecar(context.Background(), sidecarURL)
-	if err != nil {
-		t.Fatalf("sidecar fetch: %v", err)
-	}
-	if !strings.HasPrefix(wantHex, "0000") {
-		t.Fatalf("expected mismatched hash, got %s", wantHex)
-	}
-	tmp := filepath.Join(t.TempDir(), "out.bin")
-	gotHex, err := downloadToTmp(context.Background(), binURL, tmp)
-	if err != nil {
-		t.Fatalf("download: %v", err)
-	}
-	if gotHex == wantHex {
-		t.Errorf("expected hash mismatch — sidecar should have lied")
 	}
 }
 

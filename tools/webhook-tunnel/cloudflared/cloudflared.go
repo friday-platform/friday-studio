@@ -3,9 +3,15 @@
 // $PATH → ~/.atlas/bin (cached prior download) → in-Go HTTPS download
 // from github.com/cloudflare/cloudflared releases.
 //
-// Downloads are atomic: tmp.<pid> → fsync → verify against the
-// official .sha256 sidecar → atomic rename. A partial/interrupted
-// download leaves no cached binary so the next call re-downloads.
+// Downloads are atomic: tmp.<pid> → fsync → verify against a hash
+// pinned in this file → atomic rename. A partial/interrupted download
+// leaves no cached binary so the next call re-downloads.
+//
+// Cloudflare doesn't publish .sha256 sidecars on its releases, so the
+// hashes are pinned per-arch alongside Version. Bumping the version
+// is a two-step change: update Version, regenerate the hashes. The
+// release page on github.com/cloudflare/cloudflared is the source of
+// truth for both.
 //
 // All public callers go through Resolve. Concurrent Resolve calls
 // inside one process are coalesced to a single download.
@@ -28,10 +34,26 @@ import (
 )
 
 // Version is the pinned cloudflared release we download. Bumping this
-// is a one-line change; per-platform sha256 hashes come from the
-// official .sha256 sidecar at download time so there's nothing else
-// to update.
-const Version = "2025.1.1"
+// requires also regenerating the entries in releaseHashes — see the
+// package doc for how.
+const Version = "2025.11.1"
+
+// releaseHashes is the sha256 of each per-arch asset for the pinned
+// Version. Regenerate by downloading each artifact:
+//
+//	for a in cloudflared-darwin-arm64.tgz cloudflared-darwin-amd64.tgz \
+//	         cloudflared-linux-amd64 cloudflared-linux-arm64 \
+//	         cloudflared-windows-amd64.exe; do
+//	  curl -sL "https://github.com/cloudflare/cloudflared/releases/download/${Version}/$a" \
+//	    | shasum -a 256
+//	done
+var releaseHashes = map[string]string{
+	"darwin/arm64":  "45cfbb59a720f60b873906aa6469f8c4058f26be6d351c3e2920bc9cb4714273",
+	"darwin/amd64":  "155a288fef19dba08f0c7145c16a207baf137462d8a1289a78bf8564f9e51244",
+	"linux/amd64":   "991dffd8889ee9f0147b6b48933da9e4407e68ea8c6d984f55fa2d3db4bb431d",
+	"linux/arm64":   "9979dc152097a29b6de4d1ef13e2f1821c67a6f096f88cc18f0fd25106305d3a",
+	"windows/amd64": "413f9b24dc6e61a455564651524f167b8ce29ac4ccd40703dea7af93cd37ed39",
+}
 
 // downloadHTTPClient is a package-level HTTP client with a sane timeout.
 // The download itself can take a while on slow links; a per-request
@@ -141,6 +163,11 @@ func downloadAtomic(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	wantHex, ok := releaseHashes[runtime.GOOS+"/"+runtime.GOARCH]
+	if !ok {
+		return "", fmt.Errorf("cloudflared: no pinned hash for %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+
 	dst := cachedPath()
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return "", fmt.Errorf("create cache dir: %w", err)
@@ -148,36 +175,24 @@ func downloadAtomic(ctx context.Context) (string, error) {
 	tmp := fmt.Sprintf("%s.tmp.%d", dst, os.Getpid())
 	defer func() { _ = os.Remove(tmp) }() // best-effort cleanup if we don't reach the rename
 
-	// 1. Fetch sidecar first — fail fast if the version doesn't have
-	//    one (rather than after a multi-MB download). The sidecar
-	//    text format is "<hex>  <filename>\n".
-	sidecarURL := url + ".sha256"
-	wantHex, err := fetchSha256Sidecar(ctx, sidecarURL)
-	if err != nil {
-		return "", fmt.Errorf("fetch sidecar: %w", err)
-	}
-
-	// 2. Download body to tmp + compute sha256 in one pass.
+	// Download body to tmp + compute sha256 in one pass.
 	hashHex, err := downloadToTmp(ctx, url, tmp)
 	if err != nil {
 		return "", err
 	}
 
-	// 3. Compare. Mismatch → bail with the .tmp deferred-removed.
 	if hashHex != wantHex {
-		return "", fmt.Errorf("sha256 mismatch: download=%s upstream=%s", hashHex, wantHex)
+		return "", fmt.Errorf("sha256 mismatch: download=%s pinned=%s", hashHex, wantHex)
 	}
 
-	// 4. macOS releases ship the binary inside a tarball; unpack and
-	//    overwrite tmp with the inner file before the final rename.
+	// macOS releases ship the binary inside a tarball; unpack and
+	// overwrite tmp with the inner file before the final rename.
 	if strings.HasSuffix(url, ".tgz") {
 		if err := unpackDarwinTarball(tmp); err != nil {
 			return "", err
 		}
 	}
 
-	// 5. chmod + atomic rename. cloudflared is an executable; the +x bit
-	// is essential.
 	if err := os.Chmod(tmp, 0o700); err != nil { //nolint:gosec // G302: executable needs +x
 		return "", fmt.Errorf("chmod: %w", err)
 	}
@@ -185,33 +200,6 @@ func downloadAtomic(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("rename to final path: %w", err)
 	}
 	return dst, nil
-}
-
-// fetchSha256Sidecar GETs the .sha256 file from the cloudflared release
-// and returns the hex digest. The format is the standard
-// "<hex>  <filename>" sha256sum output.
-func fetchSha256Sidecar(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := downloadHTTPClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("sidecar HTTP %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return "", err
-	}
-	parts := strings.Fields(string(body))
-	if len(parts) == 0 || len(parts[0]) != 64 {
-		return "", fmt.Errorf("sidecar: unexpected format %q", string(body))
-	}
-	return strings.ToLower(parts[0]), nil
 }
 
 // downloadToTmp streams the URL into tmp, hashing as it goes. Returns
