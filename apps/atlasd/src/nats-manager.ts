@@ -5,7 +5,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 import { logger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { connect, type NatsConnection } from "nats";
 
 const NATS_PORT = 4222;
@@ -65,7 +65,7 @@ export class NatsManager {
 
   private async findBinary(): Promise<string> {
     // Prefer a binary pinned to ~/.atlas/bin/ so the daemon is self-contained
-    const localBin = join(getAtlasHome(), "bin", "nats-server");
+    const localBin = join(getFridayHome(), "bin", "nats-server");
     try {
       await access(localBin);
       return localBin;

@@ -12,14 +12,14 @@
  */
 
 import { join } from "node:path";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { z } from "zod";
 
 export const NoteSchema = z.object({ note: z.string().describe("A note to track") });
 
 export type Note = z.infer<typeof NoteSchema>;
 
-const kvPath = join(getAtlasHome(), "storage.db");
+const kvPath = join(getFridayHome(), "storage.db");
 
 export async function appendNote(streamId: string, note: string): Promise<void> {
   using db = await Deno.openKv(kvPath);

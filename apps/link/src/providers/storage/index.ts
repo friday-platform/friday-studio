@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import process from "node:process";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { getAuthToken } from "../../auth-context.ts";
 import type { ProviderStorageAdapter } from "./adapter.ts";
 import { CortexProviderStorageAdapter } from "./cortex-adapter.ts";
@@ -35,7 +35,7 @@ export async function getProviderStorageAdapter(): Promise<ProviderStorageAdapte
     cachedAdapter = new CortexProviderStorageAdapter(cortexUrl, getAuthToken);
   } else if (process.env.LINK_DEV_MODE === "true") {
     if (!cachedKv) {
-      cachedKv = await Deno.openKv(join(getAtlasHome(), "link-providers.db"));
+      cachedKv = await Deno.openKv(join(getFridayHome(), "link-providers.db"));
     }
     cachedAdapter = new LocalProviderStorageAdapter(cachedKv);
   } else {

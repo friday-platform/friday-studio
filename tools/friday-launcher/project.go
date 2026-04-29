@@ -133,7 +133,7 @@ func fridayEnv(binDir string) []string {
 		env = append(env, "FRIDAY_AGENT_BROWSER_PATH="+abPath)
 	}
 	// Pin the daemon's atlas-home to the launcher-owned ~/.friday/local
-	// directory. getAtlasHome() in @atlas/utils reads FRIDAY_HOME first, so
+	// directory. getFridayHome() in @atlas/utils reads FRIDAY_HOME first, so
 	// this single var redirects every consumer (workspaces, chats,
 	// sessions, skills.db, storage.db, memory, logs, AND .env) to the
 	// installer-managed location. Without it the launcher reads/writes

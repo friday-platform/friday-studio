@@ -7,7 +7,7 @@ import { logger } from "@atlas/logger";
 import { captureException, initSentry } from "@atlas/sentry";
 import { getVersionInfo } from "@atlas/utils";
 import { exists } from "@atlas/utils/fs.server";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { load, parse } from "@std/dotenv";
 import { fetchCypherToken } from "../../services/cypher-token.ts";
@@ -143,7 +143,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
   if (fromEnv) return fromEnv;
 
   // Priority 3: Check ~/.atlas/.env
-  const globalEnvPath = join(getAtlasHome(), ".env");
+  const globalEnvPath = join(getFridayHome(), ".env");
   try {
     if (await exists(globalEnvPath)) {
       const content = await readFile(globalEnvPath, "utf-8");
@@ -351,7 +351,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     }
 
     // Load global Atlas configuration as fallback
-    const globalAtlasEnv = join(getAtlasHome(), ".env");
+    const globalAtlasEnv = join(getFridayHome(), ".env");
     if (await exists(globalAtlasEnv)) {
       await load({ export: true, envPath: globalAtlasEnv });
     }
@@ -509,7 +509,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
         errorOutput("\nFailed to fetch credentials with FRIDAY_KEY.");
         errorOutput(
-          `Please check your FRIDAY_KEY in ${join(getAtlasHome(), ".env")} and restart the daemon.`,
+          `Please check your FRIDAY_KEY in ${join(getFridayHome(), ".env")} and restart the daemon.`,
         );
         process.exit(1);
       }

@@ -35,7 +35,7 @@ async function makeIdempotentMemoryKV(): Promise<KVStorage> {
 
 const hoisted = vi.hoisted(() => ({ atlasHome: "/tmp/atlas-orphan-cleanup" }));
 
-vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => hoisted.atlasHome }));
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => hoisted.atlasHome }));
 
 // Empty SYSTEM_WORKSPACES so any entry already in the registry with
 // `metadata.system=true` will count as an orphan on initialize().

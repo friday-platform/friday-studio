@@ -54,8 +54,8 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
   resolveCredentialsByProvider: mockResolveCredentialsByProvider,
 }));
 
-// Mock getAtlasHome
-vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => "/tmp/atlas-home" }));
+// Mock getFridayHome
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => "/tmp/atlas-home" }));
 
 type JsonBody = Record<string, unknown>;
 

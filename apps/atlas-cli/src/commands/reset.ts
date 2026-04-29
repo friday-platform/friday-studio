@@ -3,7 +3,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { isErrnoException, sleep, stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { confirmAction } from "../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";
 
@@ -42,7 +42,7 @@ async function stopAtlasIfRunning(): Promise<boolean> {
 }
 
 export const handler = async (argv: ResetArgs): Promise<void> => {
-  const atlasHome = getAtlasHome();
+  const atlasHome = getFridayHome();
 
   const confirmed = await confirmAction(
     `This will delete all Atlas data in ${atlasHome} (preserving .env and bin/). Continue?`,

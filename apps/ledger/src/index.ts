@@ -5,7 +5,7 @@ import type { ActivityStorageAdapter } from "@atlas/activity";
 import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import { logger } from "@atlas/logger";
 import { flush as flushSentry, initSentry } from "@atlas/sentry";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { getConnInfo } from "hono/deno";
 import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
@@ -189,14 +189,14 @@ async function shutdown(signal: string, adapter: ResourceStorageAdapter): Promis
 if (import.meta.main) {
   initSentry();
 
-  const dbPath = config.sqlitePath ?? join(getAtlasHome(), "ledger.db");
+  const dbPath = config.sqlitePath ?? join(getFridayHome(), "ledger.db");
   const sqliteAdapter = await createSQLiteAdapter(dbPath);
   await sqliteAdapter.init();
   const lifecycleAdapter: ResourceStorageAdapter = sqliteAdapter;
   const adapterFactory: AdapterFactory = () => sqliteAdapter;
   const activityDbPath = config.sqlitePath
     ? join(config.sqlitePath, "..", "activity.db")
-    : join(getAtlasHome(), "activity.db");
+    : join(getFridayHome(), "activity.db");
   const sharedActivityAdapter = new LocalActivityAdapter(activityDbPath);
   const activityAdapterFactory: ActivityAdapterFactory = () => sharedActivityAdapter;
   logger.info("Ledger started with SQLite adapter", { path: dbPath });

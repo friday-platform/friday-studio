@@ -9,7 +9,7 @@ import process from "node:process";
 import { createPlatformModels, getCatalog, PlatformModelsConfigError } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { parse, stringify } from "@std/dotenv";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { describeRoute, resolver, validator } from "hono-openapi";
@@ -59,7 +59,7 @@ configRoutes.get(
     summary: "Get environment variables",
     description:
       "Read environment variables from <friday-home>/.env. The home is " +
-      "resolved via getAtlasHome() — `~/.friday/local` when FRIDAY_HOME " +
+      "resolved via getFridayHome() — `~/.friday/local` when FRIDAY_HOME " +
       "is set by the Studio launcher, `~/.atlas` otherwise.",
     responses: {
       200: {
@@ -74,7 +74,7 @@ configRoutes.get(
   }),
   async (c) => {
     try {
-      const envPath = join(getAtlasHome(), ".env");
+      const envPath = join(getFridayHome(), ".env");
 
       if (!(await exists(envPath))) {
         logger.debug("No .env file found, returning empty env vars", { envPath });
@@ -101,7 +101,7 @@ configRoutes.put(
     summary: "Update environment variables",
     description:
       "Write environment variables to <friday-home>/.env. The home is " +
-      "resolved via getAtlasHome() — `~/.friday/local` when FRIDAY_HOME " +
+      "resolved via getFridayHome() — `~/.friday/local` when FRIDAY_HOME " +
       "is set by the Studio launcher, `~/.atlas` otherwise.",
     responses: {
       200: {
@@ -122,7 +122,7 @@ configRoutes.put(
   async (c) => {
     try {
       const { envVars } = c.req.valid("json");
-      const atlasDir = getAtlasHome();
+      const atlasDir = getFridayHome();
       const envPath = join(atlasDir, ".env");
 
       logger.debug("Writing environment variables to .env file", {

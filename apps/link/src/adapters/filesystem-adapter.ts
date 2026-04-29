@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { nanoid } from "nanoid";
 import type {
   Credential,
@@ -23,7 +23,7 @@ export class FileSystemStorageAdapter implements StorageAdapter {
   private basePath: string;
 
   constructor(basePath?: string) {
-    this.basePath = basePath ?? join(getAtlasHome(), "credentials");
+    this.basePath = basePath ?? join(getFridayHome(), "credentials");
   }
 
   async save(input: CredentialInput, userId: string): Promise<SaveResult> {

@@ -8,7 +8,7 @@
 
 import { LibraryStorageAdapter, type LibraryStorageConfig } from "@atlas/storage";
 import { createKVStorage, type KVStorageConfig } from "@atlas/storage/kv";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 
 export { createKVStorage } from "@atlas/storage/kv";
@@ -44,7 +44,7 @@ export async function createLibraryStorage(
 export const StorageConfigs = {
   /** Default Deno KV storage in $FRIDAY_HOME/ (respects FRIDAY_HOME env var) */
   defaultKV(): KVStorageConfig {
-    return { type: "deno-kv", connection: `${getAtlasHome()}/storage.db` };
+    return { type: "deno-kv", connection: `${getFridayHome()}/storage.db` };
   },
 
   /** In-memory storage for testing */

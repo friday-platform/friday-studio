@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { buildSessionView, type SessionSummary, type SessionView } from "@atlas/core";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { consumerOpts } from "nats";
 import { z } from "zod";
@@ -184,7 +184,7 @@ const sessionsRoutes = daemonFactory
     }
 
     // 2. Check for old-format session (v1 JSON file)
-    const oldSessionPath = join(getAtlasHome(), "sessions", `${sessionId}.json`);
+    const oldSessionPath = join(getFridayHome(), "sessions", `${sessionId}.json`);
     try {
       await stat(oldSessionPath);
       return c.json({ error: "Session uses outdated storage format" }, 410);
@@ -216,7 +216,7 @@ const sessionsRoutes = daemonFactory
     }
 
     // 3. Check for old-format session (v1 JSON file)
-    const oldSessionPath = join(getAtlasHome(), "sessions", `${sessionId}.json`);
+    const oldSessionPath = join(getFridayHome(), "sessions", `${sessionId}.json`);
     try {
       await stat(oldSessionPath);
       return c.json({ error: "Session uses outdated storage format" }, 410);

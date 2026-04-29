@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import type { Database } from "@db/sqlite";
 import { customAlphabet } from "nanoid";
 
@@ -66,7 +66,7 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath ?? join(getAtlasHome(), "skills.db");
+    this.dbPath = dbPath ?? join(getFridayHome(), "skills.db");
   }
 
   private async getDb(): Promise<Database> {

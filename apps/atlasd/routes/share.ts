@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { env } from "node:process";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { parse } from "@std/dotenv";
 import { describeRoute, resolver } from "hono-openapi";
 import z from "zod";
@@ -21,7 +21,7 @@ async function getAtlasKey(): Promise<string | undefined> {
   const envKey = env.FRIDAY_KEY;
   if (envKey) return envKey;
   try {
-    const content = await readFile(join(getAtlasHome(), ".env"), "utf-8");
+    const content = await readFile(join(getFridayHome(), ".env"), "utf-8");
     return parse(content).FRIDAY_KEY;
   } catch {
     return undefined;

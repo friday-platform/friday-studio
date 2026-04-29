@@ -32,7 +32,7 @@ vi.mock("../me/adapter.ts", () => ({
 const mockGetAtlasHome = vi.hoisted(() => vi.fn(() => "/tmp"));
 vi.mock("@atlas/utils/paths.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@atlas/utils/paths.server")>()),
-  getAtlasHome: mockGetAtlasHome,
+  getFridayHome: mockGetAtlasHome,
 }));
 
 async function seedWorkspaceDir(dir: string): Promise<void> {

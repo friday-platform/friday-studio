@@ -18,7 +18,7 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 
 const USER_WORKSPACE_ID = "user";
@@ -270,7 +270,7 @@ async function migrateWorkspace(
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const atlasHome = getAtlasHome();
+  const atlasHome = getFridayHome();
   const workspacesDir = join(atlasHome, "workspaces");
 
   console.log(

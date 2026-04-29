@@ -90,7 +90,7 @@ import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import { publishDirtyDrafts } from "@atlas/resources";
 import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { withOtelSpan } from "@atlas/utils/telemetry.server";
 import { parse as parseYAML } from "@std/yaml";
 import { z } from "zod";
@@ -415,7 +415,7 @@ export class WorkspaceRuntime {
 
   // Shared resources
   private orchestrator: AgentOrchestrator;
-  private userAdapter = new UserAdapter(path.join(getAtlasHome(), "agents"));
+  private userAdapter = new UserAdapter(path.join(getFridayHome(), "agents"));
 
   // Job tracking (each job has its own FSMEngine and DocumentStore)
   private jobs = new Map<string, FSMJob>();
@@ -880,7 +880,7 @@ export class WorkspaceRuntime {
     job: FSMJob,
     sessionId?: string,
   ): Promise<{ engine: FSMEngine; documentStore: FileSystemDocumentStore }> {
-    const stateStoragePath = path.join(getAtlasHome(), "workspaces");
+    const stateStoragePath = path.join(getFridayHome(), "workspaces");
     const documentStore = new FileSystemDocumentStore({ basePath: stateStoragePath });
 
     const agentExecutor: AgentExecutor = (action, context, signal, options) =>
@@ -934,7 +934,7 @@ export class WorkspaceRuntime {
       definition = expandAgentActions(parsed, this.config.workspace.agents ?? {});
     } else {
       const configPath =
-        this.options.workspacePath || path.join(getAtlasHome(), "workspaces", this.workspace.id);
+        this.options.workspacePath || path.join(getFridayHome(), "workspaces", this.workspace.id);
       const fsmPath = job.fsmPath || path.join(configPath, "workspace.fsm.yaml");
 
       logger.debug("Loading FSM from file", { workspaceId: this.workspace.id, fsmPath });

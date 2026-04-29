@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { Box, Text } from "ink";
 
 interface Agent {
@@ -24,7 +24,7 @@ export function AgentListComponent({
     <Box flexDirection="column">
       <Text bold color="cyan">
         {source === "user"
-          ? `User agents (${join(getAtlasHome(), "agents")})`
+          ? `User agents (${join(getFridayHome(), "agents")})`
           : `Agents in workspace: ${workspaceName}`}
       </Text>
       <Text color="gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>

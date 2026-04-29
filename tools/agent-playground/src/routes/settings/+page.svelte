@@ -9,7 +9,7 @@
   Clicking a slot opens <ModelPicker> — a modal flyout with provider
   pills, search, and an inline "Save & unlock" flow for locked providers
   that writes directly to the daemon's .env file (resolved server-side
-  via getAtlasHome — `~/.friday/local/.env` under the Studio launcher,
+  via getFridayHome — `~/.friday/local/.env` under the Studio launcher,
   `~/.atlas/.env` for manual / dev runs) without leaving the modal.
 
   Save button at the bottom PUTs `/api/config/models` with chains; the
@@ -127,7 +127,7 @@
   // ─── State ─────────────────────────────────────────────────────────
 
   let envRows = $state<EnvRow[]>([]);
-  // Resolved server-side via getAtlasHome() — `~/.friday/local/.env` under the
+  // Resolved server-side via getFridayHome() — `~/.friday/local/.env` under the
   // Studio launcher (FRIDAY_HOME set), `~/.atlas/.env` for manual / dev runs.
   // Surfaced in the UI so the labels match the file actually being read/written.
   let envPath = $state<string | null>(null);

@@ -37,7 +37,7 @@ import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { type PlatformModels, smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { zValidator } from "@hono/zod-validator";
 import { fileTypeFromFile } from "file-type";
@@ -131,7 +131,7 @@ async function convertUploadedFile(opts: {
   const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
   const artifactsDir = usingCortex
     ? join(tmpdir(), "atlas-artifacts")
-    : join(getAtlasHome(), "uploads", "artifacts");
+    : join(getFridayHome(), "uploads", "artifacts");
   await mkdir(artifactsDir, { recursive: true });
 
   const ext = extname(fileName).toLowerCase();

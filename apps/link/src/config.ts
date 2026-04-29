@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import process from "node:process";
 import { logger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { load } from "@std/dotenv";
 
 /** Load environment from DOT_ENV file if specified (matches Go bounce pattern). */
@@ -43,7 +43,7 @@ export function readConfig() {
     jwtPublicKeyFile: process.env.LINK_JWT_PUBLIC_KEY_FILE,
 
     /** Path to credentials database file */
-    dbPath: process.env.LINK_DB_PATH ?? join(getAtlasHome(), "credentials.db"),
+    dbPath: process.env.LINK_DB_PATH ?? join(getFridayHome(), "credentials.db"),
 
     /** Cypher encryption service URL (optional, for CypherStorageAdapter) */
     cypherServiceUrl: process.env.CYPHER_SERVICE_URL,

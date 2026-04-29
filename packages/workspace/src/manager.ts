@@ -12,7 +12,7 @@ import { seedMemories } from "@atlas/memory";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { parse as parseDotenv } from "@std/dotenv";
 import { getCanonicalKind } from "./canonical.ts";
 import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
@@ -286,7 +286,7 @@ export class WorkspaceManager {
     const ownEntries = config.workspace.memory?.own ?? [];
     if (ownEntries.length > 0) {
       try {
-        const memoryAdapter = new MdMemoryAdapter({ root: getAtlasHome() });
+        const memoryAdapter = new MdMemoryAdapter({ root: getFridayHome() });
         await seedMemories(memoryAdapter, entry.id, ownEntries);
       } catch (error) {
         logger.warn("Failed to seed workspace memories", { workspaceId: entry.id, error });
@@ -616,7 +616,7 @@ export class WorkspaceManager {
    */
   private async importExistingWorkspaces(): Promise<number> {
     const workspaces: string[] = [];
-    const atlasWorkspacesDir = join(getAtlasHome(), "workspaces");
+    const atlasWorkspacesDir = join(getFridayHome(), "workspaces");
     const commonPaths = [atlasWorkspacesDir];
 
     for (const basePath of commonPaths) {

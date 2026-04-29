@@ -14,7 +14,7 @@ import {
   stringifyError,
   success,
 } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { z } from "zod";
 import { withExclusiveLock } from "../utils/file-lock.ts";
 
@@ -58,7 +58,7 @@ function isWorkspaceScoped(workspaceId: string): boolean {
 
 /** Chats directory path */
 function getChatDir(): string {
-  return join(getAtlasHome(), "chats");
+  return join(getFridayHome(), "chats");
 }
 
 // POSIX NAME_MAX caps individual filename components at 255 bytes (APFS, ext4,

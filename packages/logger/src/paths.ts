@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import process from "node:process";
-import { getAtlasHome, isSystemService } from "@atlas/utils/paths.server";
+import { getFridayHome, isSystemService } from "@atlas/utils/paths.server";
 
 /**
  * Returns Atlas logs directory: /var/log/atlas (system) or ~/.atlas/logs (user)
@@ -15,5 +15,5 @@ export function getAtlasLogsDir(): string {
     return "/var/log/atlas";
   }
 
-  return join(getAtlasHome(), "logs");
+  return join(getFridayHome(), "logs");
 }

@@ -6,7 +6,7 @@ import { NarrativeEntrySchema } from "@atlas/agent-sdk";
 import { parseMemoryMountSource } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { validator } from "hono-openapi";
 import { z } from "zod";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
@@ -29,7 +29,7 @@ const ForgetParamsSchema = z.object({
 });
 
 function resolveMemory(workspaceId: string, memoryName: string): MdNarrativeStore {
-  const memoryPath = path.join(getAtlasHome(), "memory", workspaceId, "narrative", memoryName);
+  const memoryPath = path.join(getFridayHome(), "memory", workspaceId, "narrative", memoryName);
   return new MdNarrativeStore({ workspaceRoot: memoryPath });
 }
 
@@ -58,7 +58,7 @@ async function isDir(p: string): Promise<boolean> {
 // workspaceId. Empty array if the memory root doesn't exist yet.
 // Respects FRIDAY_EXPOSE_KERNEL — hides the kernel workspace memory unless set.
 memoryNarrativeRoutes.get("/", async (c) => {
-  const root = path.join(getAtlasHome(), "memory");
+  const root = path.join(getFridayHome(), "memory");
   const entries = await safeReaddir(root);
   const exposeKernel = c.get("app").exposeKernel;
   const workspaces: string[] = [];
@@ -114,7 +114,7 @@ memoryNarrativeRoutes.get(
     }
 
     // Fallback: filesystem scan for workspaces without explicit memory config.
-    const wsRoot = path.join(getAtlasHome(), "memory", workspaceId);
+    const wsRoot = path.join(getFridayHome(), "memory", workspaceId);
     const memories: { workspaceId: string; name: string; kind: string }[] = [];
     for (const kind of KNOWN_KINDS) {
       const kindDir = path.join(wsRoot, kind);

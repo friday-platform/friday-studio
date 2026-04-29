@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { createLogger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 
 const logger = createLogger({ name: "photo-storage" });
 
@@ -18,7 +18,7 @@ const ALLOWED_MIME_TYPES: Record<string, string> = {
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
 
 function getPhotoDir(): string {
-  return join(getAtlasHome(), PHOTO_DIR);
+  return join(getFridayHome(), PHOTO_DIR);
 }
 
 export function validatePhoto(
