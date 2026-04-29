@@ -508,7 +508,9 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         logger.error("Continuing with existing environment variables...");
 
         errorOutput("\nFailed to fetch credentials with FRIDAY_KEY.");
-        errorOutput("Please check your FRIDAY_KEY in ~/.atlas/.env and restart the daemon.");
+        errorOutput(
+          `Please check your FRIDAY_KEY in ${join(getAtlasHome(), ".env")} and restart the daemon.`,
+        );
         process.exit(1);
       }
     } else if (atlasKey && localOnlyMode) {

@@ -132,6 +132,17 @@ func fridayEnv(binDir string) []string {
 	if _, err := os.Stat(abPath); err == nil {
 		env = append(env, "FRIDAY_AGENT_BROWSER_PATH="+abPath)
 	}
+	// Pin the daemon's atlas-home to the launcher-owned ~/.friday/local
+	// directory. getAtlasHome() in @atlas/utils reads FRIDAY_HOME first, so
+	// this single var redirects every consumer (workspaces, chats,
+	// sessions, skills.db, storage.db, memory, logs, AND .env) to the
+	// installer-managed location. Without it the launcher reads/writes
+	// ~/.friday/local/.env while atlasd reads/writes ~/.atlas/.env — keys
+	// the installer wizard saves never reach the daemon's settings UI,
+	// and the two homes drift out of sync. ~/.atlas is the deprecated
+	// pre-Friday-Studio location; new installs should land entirely under
+	// ~/.friday/local.
+	env = append(env, "FRIDAY_HOME="+friendlyHome())
 	env = append(env, commonServiceEnv()...)
 	return env
 }

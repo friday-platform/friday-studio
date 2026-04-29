@@ -18,7 +18,7 @@ export const listCommand = define({
     workspace: { type: "string", short: "w", description: "Workspace ID or name" },
     user: {
       type: "boolean",
-      description: "List user-built agents from ~/.atlas/agents/",
+      description: "List user-built agents from <friday-home>/agents/",
       default: false,
     },
   },
@@ -166,7 +166,7 @@ async function listUserAgents(json: boolean): Promise<void> {
     );
   } else {
     if (agents.length === 0) {
-      console.log("No user-built agents found in ~/.atlas/agents/");
+      console.log(`No user-built agents found in ${join(getAtlasHome(), "agents")}`);
       return;
     }
 

@@ -33,6 +33,13 @@ import { daemonFactory } from "../src/factory.ts";
 const envVarsGetResponseSchema = z.object({
   success: z.boolean(),
   envVars: z.record(z.string(), z.string()).optional(),
+  /**
+   * Absolute path of the .env file the daemon read. Surfaced so UI labels
+   * can show the same path the daemon actually operates on — under the
+   * Friday Studio launcher this is `~/.friday/local/.env`; under manual
+   * `atlas daemon start` it falls back to `~/.atlas/.env`.
+   */
+  envPath: z.string().optional(),
   error: z.string().optional(),
 });
 
@@ -50,7 +57,10 @@ configRoutes.get(
   describeRoute({
     tags: ["Config"],
     summary: "Get environment variables",
-    description: "Read environment variables from ~/.atlas/.env file",
+    description:
+      "Read environment variables from <friday-home>/.env. The home is " +
+      "resolved via getAtlasHome() — `~/.friday/local` when FRIDAY_HOME " +
+      "is set by the Studio launcher, `~/.atlas` otherwise.",
     responses: {
       200: {
         description: "Environment variables retrieved successfully",
@@ -68,7 +78,7 @@ configRoutes.get(
 
       if (!(await exists(envPath))) {
         logger.debug("No .env file found, returning empty env vars", { envPath });
-        return c.json({ success: true, envVars: {} });
+        return c.json({ success: true, envVars: {}, envPath });
       }
 
       const content = await readFile(envPath, "utf-8");
@@ -76,7 +86,7 @@ configRoutes.get(
       const envVars = parse(content);
 
       logger.info("Environment variables retrieved", { count: Object.keys(envVars).length });
-      return c.json({ success: true, envVars });
+      return c.json({ success: true, envVars, envPath });
     } catch (error) {
       logger.error("Failed to read environment variables", { error: stringifyError(error) });
       return c.json({ success: false, error: stringifyError(error) }, 500);
@@ -89,7 +99,10 @@ configRoutes.put(
   describeRoute({
     tags: ["Config"],
     summary: "Update environment variables",
-    description: "Write environment variables to ~/.atlas/.env file",
+    description:
+      "Write environment variables to <friday-home>/.env. The home is " +
+      "resolved via getAtlasHome() — `~/.friday/local` when FRIDAY_HOME " +
+      "is set by the Studio launcher, `~/.atlas` otherwise.",
     responses: {
       200: {
         description: "Environment variables updated successfully",

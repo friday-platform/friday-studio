@@ -239,7 +239,7 @@
         </div>
         <div class="locked-banner-desc">
           {activeProviderEntry.meta.name}'s models are locked until we have an API key.
-          Paste your key below — we'll save it to <code>~/.atlas/.env</code> as
+          Paste your key below — we'll save it to the daemon's .env file as
           <code>{activeProviderEntry.credentialEnvVar}</code> and unlock
           {activeProviderEntry.meta.name} immediately.
           {#if activeProviderEntry.meta.helpUrl}

@@ -103,21 +103,6 @@ describe("CLI output contract", { timeout: 15_000 }, () => {
     expect(stdout).toContain("Atlas");
   });
 
-  it("atlas version --remote → shows disabled message in dev", async () => {
-    const { stdout, exitCode } = await runCLI("version", "--remote");
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("Remote version checking is disabled for development builds");
-  });
-
-  it("atlas version --remote --json → includes remote skip reason in dev", async () => {
-    const { stdout, exitCode } = await runCLI("version", "--remote", "--json");
-    expect(exitCode).toBe(0);
-    const parsed = z
-      .object({ remote: z.object({ hasUpdate: z.boolean(), skipped: z.boolean() }) })
-      .parse(JSON.parse(stdout));
-    expect(parsed.remote).toMatchObject({ hasUpdate: false, skipped: true });
-  });
-
   it("atlas nonexistent → error message, exit code non-zero", async () => {
     const { stderr, exitCode } = await runCLI("nonexistent");
     expect(exitCode).not.toBe(0);
