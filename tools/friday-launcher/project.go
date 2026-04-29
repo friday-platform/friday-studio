@@ -15,10 +15,13 @@ import (
 var osGetenv = os.Getenv
 
 // fridayEnv builds the env-var list passed to the friday daemon
-// process. Currently only carries FRIDAY_CLAUDE_PATH (when we can
-// find a Claude Code binary on the user's machine); kept as a
-// helper so future per-process env additions land here cleanly
-// instead of inlining a slice into the spec literal.
+// process. Carries FRIDAY_CLAUDE_PATH plus every KEY=VALUE pair the
+// installer wrote to ~/.friday/local/.env (where the wizard's API
+// Keys step persists ANTHROPIC_API_KEY / OPENAI_API_KEY / etc.).
+// Without merging .env in here friday's platform-model validation
+// fails on every fresh install — the daemon needs ANTHROPIC_API_KEY
+// in its process environment but inherits only what the launcher
+// inherited from its parent (Finder/Spotlight: empty).
 //
 // FRIDAY_CLAUDE_PATH discovery order:
 //  1. Explicit user override via FRIDAY_CLAUDE_PATH set in the
@@ -38,10 +41,50 @@ var osGetenv = os.Getenv
 // var unset — the SDK then surfaces its native "binary not found"
 // error to the user, which is at least specific enough to act on.
 func fridayEnv() []string {
+	var env []string
 	if path := discoverClaudeBinary(); path != "" {
-		return []string{"FRIDAY_CLAUDE_PATH=" + path}
+		env = append(env, "FRIDAY_CLAUDE_PATH="+path)
 	}
-	return nil
+	env = append(env, loadDotEnv(filepath.Join(friendlyHome(), ".env"))...)
+	return env
+}
+
+// loadDotEnv reads a .env-style file and returns the entries as
+// "KEY=VALUE" strings. Returns nil on any error (file missing,
+// unreadable, malformed) — the env is best-effort; an absent .env
+// just means "no installer-provided keys", which is a normal state
+// for users who set their keys via shell profile instead of the
+// wizard.
+//
+// Tolerant parser: ignores blank lines + lines starting with '#',
+// trims whitespace around the key, leaves the value as-is so any
+// embedded quoting / escaping the wizard wrote round-trips
+// untouched. Mirrors apps/studio-installer/src-tauri/src/commands/
+// env_file.rs's render side closely enough that anything
+// write_env_file produces, this can read back.
+func loadDotEnv(path string) []string {
+	data, err := os.ReadFile(path) //nolint:gosec // launcher-controlled path under $HOME
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		eq := strings.IndexByte(line, '=')
+		if eq <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:eq])
+		if key == "" {
+			continue
+		}
+		value := line[eq+1:]
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 func discoverClaudeBinary() string {

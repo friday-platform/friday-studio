@@ -45,22 +45,34 @@ async function onOpenLogs(): Promise<void> {
   // hands off to the OS file viewer (Finder / Explorer). We open
   // the log directory rather than the file so the user can see all
   // service logs at once.
+  //
+  // Permission: opener:allow-open-path with the logs subtree in
+  // capabilities/default.json. Without it the call rejects with a
+  // permission error instead of opening anything; we surface that
+  // error rather than silently swallowing it (the previous catch
+  // {} hid this exact bug — user clicked View logs, nothing
+  // happened, no clue why).
   try {
     const { openPath } = await import("@tauri-apps/plugin-opener");
     const dir = await installDir();
     await openPath(`${dir}/logs`);
-  } catch {
-    // plugin failure is non-fatal — the log directory exists
-    // regardless; the user can navigate there manually.
+  } catch (err) {
+    console.error("openPath failed:", err);
+    store.error = `Could not open logs folder: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
 // "Open anyway" gate: only show when playground is healthy at the
-// timeout. If the user's playground is stuck the browser would hit
-// connection-refused, which is exactly the v3-and-prior bug Stack 2
-// is fixing.
+// timeout AND nothing's outright failed. If the user's playground
+// is stuck or another service is in failed state the browser would
+// hit a daemon that isn't going to recover, so we'd be sending the
+// user into a broken UI. Bail-out belongs to Exit instead.
+let hasFailedService = $derived.by(() =>
+  store.services.some((s) => s.status === "failed"),
+);
 let canOpenAnyway = $derived.by(() => {
   if (store.launchStage !== "timeout") return false;
+  if (hasFailedService) return false;
   const playground = getPlaygroundService();
   return playground?.status === "healthy";
 });
@@ -69,6 +81,26 @@ let canOpenAnyway = $derived.by(() => {
 // Pre-cap the button is shown alongside View logs / Open anyway in
 // the timeout state.
 let canExtendDeadline = $derived(store.waitDeadlineExtensions < 2);
+
+// Sort services alphabetically by their display name. The launcher
+// emits whatever order process-compose's status map iterates, which
+// is map-iteration-order, which is non-deterministic across runs.
+// Without this, users see "Friday daemon" first one boot, "Message
+// bus" first the next, etc. Alphabetical by display name keeps the
+// list stable: Authentication → Friday daemon → Message bus →
+// Studio UI → Terminal → Webhook tunnel.
+let sortedServices = $derived(
+  [...store.services].sort((a, b) => prettyName(a.name).localeCompare(prettyName(b.name))),
+);
+
+async function onExitInstaller(): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("exit_installer");
+  } catch {
+    // ignore — wizard already closing or backend unreachable
+  }
+}
 
 // Status pip glyph for each service row. Failed renders as ✗ in the
 // timeout treatment; pending/starting both render as a spinner so
@@ -130,7 +162,7 @@ function prettyName(name: string): string {
         <p class="subtitle">
           All services are healthy. Click below to open Friday Studio.
         </p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
@@ -175,7 +207,7 @@ function prettyName(name: string): string {
             become ready.
           {/if}
         </p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
@@ -185,7 +217,18 @@ function prettyName(name: string): string {
         {/each}
         <div class="actions">
           <button class="secondary" onclick={onOpenLogs}>View logs</button>
-          {#if canOpenAnyway}
+          {#if hasFailedService}
+            <!--
+              At least one supervised process is in a failed state
+              (a real "✗", not just "starting…"). Opening the
+              playground would hit a daemon that isn't going to
+              recover; offering "Open anyway" would just send the
+              user into a broken UI. Show Exit instead so they can
+              close the wizard, fix the underlying error (usually
+              a missing API key), and try again.
+            -->
+            <button class="primary" onclick={onExitInstaller}>Exit</button>
+          {:else if canOpenAnyway}
             <button class="primary" onclick={openPlaygroundAndExit}
               >Open anyway</button
             >
@@ -204,7 +247,7 @@ function prettyName(name: string): string {
         <p class="subtitle">
           This is taking longer than usual — services are still booting.
         </p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
@@ -236,7 +279,7 @@ function prettyName(name: string): string {
         <div class="spinner" aria-label="Starting Studio"></div>
         <h2>Starting Friday Studio…</h2>
         <p class="subtitle">Waiting for services to report healthy.</p>
-        {#each store.services as svc (svc.name)}
+        {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
               >{statusGlyph(svc.status)}</span
