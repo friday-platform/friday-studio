@@ -33,17 +33,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILD_ROOT = join(HERE, "build");
 const INDEX_HTML = join(BUILD_ROOT, "index.html");
 
-// Inject runtime config into the served HTML so the browser can read
-// the browser-facing daemon/tunnel URLs without a hardcoded fallback in
-// the JS bundle. Anything that depends on these values reads
-// window.__FRIDAY_CONFIG__ at module load time (see src/lib/daemon-url.ts).
-//
-// Implementation uses node-html-parser to do a real DOM insertion
-// rather than a regex `replace("</head>", …)` — same lib applications/
-// frame uses for CSP nonce injection. The `<` → `<` escape on the
-// JSON payload is the OWASP-recommended encoding for inline JSON: it
-// neutralises `</script>`, `<!--`, and any other tag-opener that could
-// otherwise break out of the inline script context.
 const RUNTIME_CONFIG: Record<string, string> = {
   externalDaemonUrl: EXTERNAL_DAEMON_URL,
 };
