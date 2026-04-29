@@ -50,7 +50,7 @@ interface ExternalCliPin {
 }
 
 const GH_VERSION = "2.78.0";
-const CLOUDFLARED_VERSION = "2025.10.1";
+const CLOUDFLARED_VERSION = "2026.3.0";
 const NATS_SERVER_VERSION = "2.12.7";
 
 const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
