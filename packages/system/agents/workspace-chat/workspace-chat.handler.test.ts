@@ -653,17 +653,19 @@ describe("workspace-chat handler", () => {
       list_capabilities: {
         description: "List capabilities",
         parameters: {},
-        execute: vi.fn().mockResolvedValue({
-          capabilities: [
-            {
-              kind: "mcp_available",
-              id: "stripe-mcp",
-              description: "Stripe payments",
-              provider: "stripe-mcp",
-              requiresConfig: ["STRIPE_API_KEY"],
-            },
-          ],
-        }),
+        execute: vi
+          .fn()
+          .mockResolvedValue({
+            capabilities: [
+              {
+                kind: "mcp_available",
+                id: "stripe-mcp",
+                description: "Stripe payments",
+                provider: "stripe-mcp",
+                requiresConfig: ["STRIPE_API_KEY"],
+              },
+            ],
+          }),
       },
     });
 
@@ -895,16 +897,18 @@ describe("workspace-chat handler", () => {
       list_capabilities: {
         description: "List capabilities",
         parameters: {},
-        execute: vi.fn().mockResolvedValue({
-          capabilities: [
-            {
-              kind: "mcp_enabled",
-              id: "stripe-mcp",
-              description: "Stripe payments",
-              requiresConfig: [],
-            },
-          ],
-        }),
+        execute: vi
+          .fn()
+          .mockResolvedValue({
+            capabilities: [
+              {
+                kind: "mcp_enabled",
+                id: "stripe-mcp",
+                description: "Stripe payments",
+                requiresConfig: [],
+              },
+            ],
+          }),
       },
     });
 
