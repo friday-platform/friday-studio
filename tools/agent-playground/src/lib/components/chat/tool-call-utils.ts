@@ -102,9 +102,9 @@ export function outputSummary(toolName: string, output: unknown): string {
   if (toolName === "display_artifact") {
     const disp = obj.displayed as Record<string, unknown> | undefined;
     if (typeof disp?.title === "string" && disp.title) return disp.title;
-    return "done";
+    return "";
   }
-  return "done";
+  return "";
 }
 
 export function childrenAnyRunning(children: ToolCallDisplay[]): boolean {

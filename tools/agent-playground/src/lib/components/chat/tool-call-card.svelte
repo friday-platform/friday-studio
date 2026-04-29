@@ -56,6 +56,8 @@
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
       case "display_artifact":
         return { icon: Icons.DocumentText, label: "Displaying", color: "var(--color-accent)", category: "file" };
+      case "list_capabilities":
+        return { icon: Icons.RectangleStack, label: "Checking tools", color: "var(--text-faded)", category: "generic" };
       default:
         return { icon: Icons.RectangleStack, label: name, color: "var(--color-border-1)", category: "generic" };
     }
@@ -74,7 +76,17 @@
     if (isError(state)) {
       return preview ? `Failed ${preview}` : "Failed";
     }
-    return preview || outputSummary(toolName, call.output) || "Done";
+    if (toolName === "list_capabilities") {
+      const out = call.output;
+      let count = 0;
+      if (typeof out === "object" && out !== null) {
+        const caps = (out as Record<string, unknown>).capabilities;
+        if (Array.isArray(caps)) count = caps.length;
+        else if (Array.isArray(out)) count = out.length;
+      }
+      return count > 0 ? `Found ${count} tool${count === 1 ? "" : "s"}` : "Checked tools";
+    }
+    return preview || outputSummary(toolName, call.output) || "";
   }
 
   const actionText = $derived(getActionText(call.toolName, call.input, call.state));
@@ -82,10 +94,10 @@
   /* ─── Row-2 meta (tool name + extra) ───────────────────────────────── */
 
   function getMetaText(toolName: string, input: unknown, output: unknown): string {
-    const parts: string[] = [toolName];
+    const parts: string[] = [];
     if (toolName === "run_code" && typeof input === "object" && input !== null) {
       const lang = (input as Record<string, unknown>).language;
-      if (typeof lang === "string") parts.unshift(lang);
+      if (typeof lang === "string") parts.push(lang);
     }
     const summary = outputSummary(toolName, output);
     if (summary && !isInProgress(call.state)) parts.push(summary);
@@ -336,9 +348,8 @@
           <span class="status-text">{status.text}</span>
         </span>
       </div>
-      <!-- Row 2: tool name + meta -->
+      <!-- Row 2: meta -->
       <div class="tool-card-row-secondary">
-        <span class="tool-card-name">{c.toolName}</span>
         {#if metaText}
           <span class="tool-card-meta">{metaText}</span>
         {/if}
@@ -393,7 +404,6 @@
             </span>
           </div>
           <div class="tool-card-row-secondary">
-            <span class="tool-card-name">{call.toolName}</span>
             {#if metaText}
               <span class="tool-card-meta">{metaText}</span>
             {/if}
