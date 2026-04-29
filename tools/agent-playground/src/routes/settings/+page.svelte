@@ -22,6 +22,8 @@
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
   import { externalTunnelUrl } from "$lib/daemon-url";
+  import { useQueryClient } from "@tanstack/svelte-query";
+  import { workspaceQueries } from "$lib/queries";
   import { z } from "zod";
 
   const TunnelStatusSchema = z.object({ url: z.string().nullable() });
@@ -144,6 +146,8 @@
   let modelsError = $state<string | null>(null);
   let catalogError = $state<string | null>(null);
   let successFlash = $state<string | null>(null);
+
+  const queryClient = useQueryClient();
 
   // ─── Tunnel state ──────────────────────────────────────────────────
 
@@ -701,9 +705,12 @@
     singleResult = null;
     try {
       singleResult = await postBundle("/api/daemon/api/workspaces/import-bundle", file);
-      if (singleResult.ok)
+      if (singleResult.ok) {
+        await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
         toast({ title: `Imported: ${singleResult.imported[0]?.name ?? "workspace"}` });
-      else toast({ title: singleResult.message ?? "Import failed", error: true });
+      } else {
+        toast({ title: singleResult.message ?? "Import failed", error: true });
+      }
     } finally {
       singleBusy = false;
     }
@@ -717,6 +724,7 @@
     try {
       fullResult = await postBundle("/api/daemon/api/workspaces/import-bundle-all", file);
       if (fullResult.ok) {
+        await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
         const n = fullResult.imported.length;
         const errs = fullResult.errors.length;
         toast({ title: `Imported ${n} workspace(s)${errs ? ` — ${errs} error(s)` : ""}` });

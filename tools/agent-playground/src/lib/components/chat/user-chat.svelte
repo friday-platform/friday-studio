@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { workspaceQueries } from "$lib/queries";
@@ -31,6 +31,7 @@
   import { sessionEventStream } from "$lib/utils/session-event-stream";
 
   const wsId = $derived(page.params.workspaceId ?? "user");
+  const queryClient = useQueryClient();
   const configQuery = createQuery(() => workspaceQueries.config(wsId));
   const workspaceName = $derived(
     ((configQuery.data?.config?.workspace as Record<string, unknown> | undefined)?.name as
@@ -1088,6 +1089,50 @@
       metadata: { timestamp: new Date().toISOString() },
     });
   }
+
+  /* ─── Workspace-list cache invalidation on chat-tool mutations ───── */
+
+  /** Tool calls whose completion should trigger a workspace-list refetch. */
+  const WORKSPACE_INVALIDATING_TOOLS = new Set([
+    "create_workspace",
+    "workspace_create",
+    "publish_draft",
+    "upsert_agent",
+    "upsert_signal",
+    "upsert_job",
+    "remove_item",
+    "begin_draft",
+    "discard_draft",
+    "enable_mcp_server",
+    "disable_mcp_server",
+  ]);
+
+  /** Track tool-call IDs we've already reacted to so we don't double-fire. */
+  const seenToolCallIds = new Set<string>();
+
+  function scanForInvalidation(calls: ToolCallDisplay[]): void {
+    for (const call of calls) {
+      if (call.toolCallId && WORKSPACE_INVALIDATING_TOOLS.has(call.toolName)) {
+        if (call.state === "output-available" || call.state === "output-error") {
+          if (!seenToolCallIds.has(call.toolCallId)) {
+            seenToolCallIds.add(call.toolCallId);
+            void queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+          }
+        }
+      }
+      if (call.children) {
+        scanForInvalidation(call.children);
+      }
+    }
+  }
+
+  $effect(() => {
+    for (const msg of displayedMessages) {
+      if (msg.toolCalls) {
+        scanForInvalidation(msg.toolCalls);
+      }
+    }
+  });
 </script>
 
 <svelte:window onkeydown={handleGlobalKeydown} />
