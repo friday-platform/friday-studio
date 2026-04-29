@@ -15,7 +15,7 @@
   import { Dialog, DropdownMenu, Icons } from "@atlas/ui";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
   import { goto } from "$app/navigation";
-  import { EXTERNAL_DAEMON_URL, EXTERNAL_TUNNEL_URL } from "$lib/daemon-url";
+  import { externalDaemonUrl, externalTunnelUrl } from "$lib/daemon-url";
 
   type Signal = {
     id: string;
@@ -130,7 +130,7 @@
     return null;
   });
 
-  const TUNNEL_URL = EXTERNAL_TUNNEL_URL;
+  const TUNNEL_URL = externalTunnelUrl();
 
   /** Cached tunnel status — fetched once on first use. */
   let cachedTunnelUrl = $state<string | null>(null);
@@ -166,7 +166,7 @@
   });
 
   function copySignalUrl() {
-    const url = `${EXTERNAL_DAEMON_URL}/api/workspaces/${workspaceId}/signals/${signal.id}`;
+    const url = `${externalDaemonUrl()}/api/workspaces/${workspaceId}/signals/${signal.id}`;
     copyToClipboard(url);
   }
 

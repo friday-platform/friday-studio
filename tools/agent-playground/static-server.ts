@@ -18,12 +18,51 @@ const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
 const HOST = process.env.PLAYGROUND_HOST ?? "127.0.0.1";
 const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 
+// Browser-facing URLs. The launcher (or whatever spawns the playground)
+// owns the port layout, so we can't bake these into the bundle — read
+// them at runtime and inject into the served HTML. We accept the
+// VITE_-prefixed names too because the dev `deno task playground` task
+// already sets them and we don't want two sources of truth.
+const EXTERNAL_DAEMON_URL =
+  process.env.EXTERNAL_DAEMON_URL ??
+  process.env.VITE_EXTERNAL_DAEMON_URL ??
+  DAEMON_URL;
+const EXTERNAL_TUNNEL_URL =
+  process.env.EXTERNAL_TUNNEL_URL ??
+  process.env.VITE_EXTERNAL_TUNNEL_URL ??
+  null;
+
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a
 // `deno compile`'d binary (which embeds the build dir at this same path).
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILD_ROOT = join(HERE, "build");
 const INDEX_HTML = join(BUILD_ROOT, "index.html");
+
+// Inject runtime config into the served HTML so the browser can read
+// the browser-facing daemon/tunnel URLs without a hardcoded fallback in
+// the JS bundle. Anything that depends on these values reads
+// window.__FRIDAY_CONFIG__ at module load time (see src/lib/daemon-url.ts).
+const RUNTIME_CONFIG: Record<string, string> = {
+  externalDaemonUrl: EXTERNAL_DAEMON_URL,
+};
+if (EXTERNAL_TUNNEL_URL) RUNTIME_CONFIG.externalTunnelUrl = EXTERNAL_TUNNEL_URL;
+const CONFIG_SCRIPT = `<script>window.__FRIDAY_CONFIG__=${JSON.stringify(RUNTIME_CONFIG)};</script>`;
+
+function injectConfig(html: string): string {
+  // Place the script just before </head> so it runs before the SvelteKit
+  // bundle. If </head> is missing for some reason (shouldn't happen with
+  // the SvelteKit build), prepend so the browser still picks it up.
+  if (html.includes("</head>")) return html.replace("</head>", `${CONFIG_SCRIPT}</head>`);
+  return CONFIG_SCRIPT + html;
+}
+
+let CACHED_HTML: string | null = null;
+async function indexHtml(): Promise<string> {
+  if (CACHED_HTML !== null) return CACHED_HTML;
+  CACHED_HTML = injectConfig(await Deno.readTextFile(INDEX_HTML));
+  return CACHED_HTML;
+}
 
 // Daemon proxy for /api/daemon/*. The SvelteKit dev server has this as
 // src/routes/api/daemon/[...path]/+server.ts, but adapter-static strips
@@ -76,9 +115,17 @@ const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
   return new Response(res.body, { status: res.status, headers: responseHeaders });
 });
 
+// Serve the index with the runtime-config script tag injected. This
+// covers both `/` and the SPA fallback below; a static-file serve of
+// build/index.html would skip the injection.
+async function serveIndex(c: { html: (s: string) => Response }): Promise<Response> {
+  return c.html(await indexHtml());
+}
+
 const app = new Hono()
   .route("/", daemonProxy)
   .route("/", api)
+  .get("/", serveIndex)
   .use(
     "/*",
     serveStatic({
@@ -87,12 +134,12 @@ const app = new Hono()
     }),
   )
   // SPA fallback: any GET that doesn't resolve to a file or `/api/*` route
-  // gets the SvelteKit shell so client-side routing can take over.
-  .get("/*", async (c) => {
-    const html = await Deno.readTextFile(INDEX_HTML);
-    return c.html(html);
-  });
+  // gets the SvelteKit shell (with config injected) so client-side
+  // routing can take over.
+  .get("/*", serveIndex);
 
 console.log(`[playground] listening on http://${HOST}:${PORT}`);
 console.log(`[playground] daemon proxy → ${DAEMON_URL}`);
+console.log(`[playground] external daemon → ${EXTERNAL_DAEMON_URL}`);
+if (EXTERNAL_TUNNEL_URL) console.log(`[playground] external tunnel → ${EXTERNAL_TUNNEL_URL}`);
 Deno.serve({ port: PORT, hostname: HOST }, app.fetch);

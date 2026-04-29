@@ -121,7 +121,11 @@ pub fn write_env_file(
 
     // Platform-internal vars — only added when missing so any user
     // overrides survive (someone editing .env to point FRIDAYD_URL
-    // at a non-default daemon, etc.).
+    // at a non-default daemon, etc.). The EXTERNAL_*_URL values are
+    // read at runtime by the playground binary and injected into the
+    // served HTML; the launcher passes the .env through to its
+    // supervised processes so updating these is enough to retarget
+    // browser-facing URLs without rebuilding.
     let platform_vars = [
         ("FRIDAY_LOCAL_ONLY", "true"),
         ("LINK_DEV_MODE", "true"),
@@ -130,8 +134,8 @@ pub fn write_env_file(
             "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsb2NhbC11c2VyIn0.local",
         ),
         ("FRIDAYD_URL", "http://localhost:8080"),
-        ("VITE_EXTERNAL_DAEMON_URL", "http://localhost:8080"),
-        ("VITE_EXTERNAL_TUNNEL_URL", "http://localhost:9090"),
+        ("EXTERNAL_DAEMON_URL", "http://localhost:8080"),
+        ("EXTERNAL_TUNNEL_URL", "http://localhost:9090"),
     ];
     for (k, v) in platform_vars {
         if !existing_keys.contains_key(k) {

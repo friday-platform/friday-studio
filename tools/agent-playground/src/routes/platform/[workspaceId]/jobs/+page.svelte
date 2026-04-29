@@ -27,7 +27,7 @@
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
-  import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
+  import { externalDaemonUrl } from "$lib/daemon-url";
   import {
     integrationQueries,
     skillQueries,
@@ -318,7 +318,7 @@
           "curl -X POST",
           `-H 'Content-Type: application/json'`,
           `-d '${escaped}'`,
-          `${EXTERNAL_DAEMON_URL}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
+          `${externalDaemonUrl()}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
         ].join(" \\\n  ");
         navigator.clipboard.writeText(curl);
       }
