@@ -184,15 +184,23 @@ tools:
         progressTimeout: 2m
         maxTotalTimeout: 30m
     servers:
-      # Example: a filesystem MCP server exposed over stdio.
-      filesystem:
-        transport:
-          type: stdio
-          command: npx
-          args:
-            - -y
-            - "@modelcontextprotocol/server-filesystem"
-            - /tmp/friday-scratch
+      # `filesystem`, `time`, `github`, and the `google-*` services are
+      # registered as built-ins and available to every workspace without
+      # being declared here. Override an entry by id to change its config —
+      # e.g. point filesystem at a non-default root:
+      #
+      # filesystem:
+      #   transport:
+      #     type: stdio
+      #     command: npx
+      #     args:
+      #       - -y
+      #       - "@modelcontextprotocol/server-filesystem"
+      #       - /Users/me/Projects
+      #
+      # The default scopes filesystem access to the user's $HOME.
+      # Note: filenames using NFD-normalized Unicode may round-trip
+      # incorrectly on macOS (modelcontextprotocol/servers#1970).
     # Atlas-only: restrict which MCP tools agents may invoke, regardless of
     # what the servers advertise. Use `allowlist` (default) to permit only
     # named tools, or `denylist` to block specific ones.

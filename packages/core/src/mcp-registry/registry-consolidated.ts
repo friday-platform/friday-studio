@@ -159,6 +159,23 @@ export const mcpServersRegistry: MCPServersRegistry = {
         tools: { allow: ["convert_time", "get_current_time"] },
       },
     },
+    filesystem: {
+      id: "filesystem",
+      name: "Filesystem",
+      description:
+        "Local filesystem access via the official MCP filesystem server — read/write text and media files, list directories, build directory trees, search files by name, move/rename, edit files with line-based diffs. Scoped to the user's home directory.",
+      constraints:
+        "Scoped to ${HOME}. Cannot escape the user's home directory. Filename search only — does not search file contents (use a code-search agent for that). Note: filenames using NFD-normalized Unicode (some accented Latin / Cyrillic) may round-trip incorrectly on macOS — see modelcontextprotocol/servers#1970.",
+      source: "static",
+      securityRating: "high",
+      configTemplate: {
+        transport: {
+          type: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}"],
+        },
+      },
+    },
     // Google Workspace services (generated from GOOGLE_WORKSPACE_SERVICES)
     ...googleWorkspaceEntries,
   },

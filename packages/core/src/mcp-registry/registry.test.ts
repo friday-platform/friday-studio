@@ -87,6 +87,34 @@ describe("mcpServersRegistry", () => {
     expect(mcpServersRegistry.servers.time?.id).toEqual("time");
   });
 
+  describe("filesystem entry", () => {
+    it("parses through MCPServerMetadataSchema", () => {
+      const server = mcpServersRegistry.servers.filesystem;
+      expect(server).toBeDefined();
+      const parsed = MCPServerMetadataSchema.safeParse(server);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("uses npx stdio transport scoped to ${HOME}", () => {
+      const server = mcpServersRegistry.servers.filesystem;
+      if (!server) throw new Error("missing filesystem server in registry");
+      expect(server.configTemplate.transport.type).toBe("stdio");
+      if (server.configTemplate.transport.type !== "stdio") return;
+      expect(server.configTemplate.transport.command).toBe("npx");
+      expect(server.configTemplate.transport.args).toEqual([
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${HOME}",
+      ]);
+    });
+
+    it("exposes the full tool surface (no allow/deny filter)", () => {
+      const server = mcpServersRegistry.servers.filesystem;
+      if (!server) throw new Error("missing filesystem server in registry");
+      expect(server.configTemplate.tools).toBeUndefined();
+    });
+  });
+
   describe("Google Workspace entries", () => {
     const googleIds = [
       "google-calendar",
