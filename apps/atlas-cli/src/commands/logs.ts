@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
@@ -60,23 +60,10 @@ async function readAllLogs(): Promise<LogEntry[]> {
     return [];
   }
 
-  const entries: LogEntry[] = [];
-
-  // Global log
-  entries.push(...(await readLogFile(join(logsDir, "global.log"))));
-
-  // Workspace logs
-  const wsDir = join(logsDir, "workspaces");
-  if (await exists(wsDir)) {
-    const files = await readdir(wsDir, { withFileTypes: true });
-    for (const f of files) {
-      if (f.isFile() && f.name.endsWith(".log")) {
-        entries.push(...(await readLogFile(join(wsDir, f.name))));
-      }
-    }
-  }
-
-  return entries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  // global.log already contains all events including workspace-scoped ones.
+  // workspace-specific files are supplementary for per-workspace tailing.
+  // Reading both would duplicate every workspace-scoped entry.
+  return readLogFile(join(logsDir, "global.log"));
 }
 
 function parseDuration(duration: string): number {

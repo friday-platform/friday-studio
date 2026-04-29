@@ -205,7 +205,6 @@ Use the `testing` skill for guidance.
 
 ## Git Workflow
 
-Never push directly to `main` - it's protected.
 
 ```bash
 git checkout -b feature/your-feature-name
