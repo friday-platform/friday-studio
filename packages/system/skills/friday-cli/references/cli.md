@@ -157,7 +157,7 @@ for understanding why an agent did what it did.
 ### `logs`
 `logs [--since <dur>] [--level <lvl>] [--chat <id>] [--session <id>] [--workspace <id>] [--human]`
 
-Reads `~/.atlas/logs/global.log` + `~/.atlas/logs/workspaces/*.log`. Duration
+Reads `~/.friday/local/logs/global.log` + `~/.friday/local/logs/workspaces/*.log`. Duration
 formats: `30s`, `5m`, `1h`. Level can be comma-separated (`error,warn`). When
 filtering by chat/session, the CLI resolves the workspace for you.
 
@@ -170,7 +170,7 @@ Use the `debugging-friday` skill for deeper log forensics (GCS, correlation).
 ### `agent list`
 `agent list [-w <workspace>] [--user] [--json]`
 
-Agents in a workspace. `--user` lists user-built agents in `~/.atlas/agents/`.
+Agents in a workspace. `--user` lists user-built agents in `~/.friday/local/agents/`.
 Falls back to `--user` mode if you're outside a workspace directory.
 
 ### `agent describe`
@@ -183,7 +183,7 @@ Full agent config as JSON (type, prompt, model, tools, integrations).
 ### `agent register`
 `agent register <dir> [--entry-point agent]`
 
-Registers an SDK agent (a NATS client). Copies source files to `~/.atlas/agents/`
+Registers an SDK agent (a NATS client). Copies source files to `~/.friday/local/agents/`
 and reloads the registry. No compilation step — the agent process is spawned per
 invocation and communicates via NATS request/reply.
 
@@ -257,7 +257,7 @@ Latest revision unless `-r` specified.
 Version info.
 
 ### `reset [--force]`
-Wipes `~/.atlas/` (preserves `.env` and `bin/`). Hidden from `--help`.
+Wipes `~/.friday/local/` (preserves `.env` and `bin/`). Hidden from `--help`.
 Stops daemon first.
 
 ---

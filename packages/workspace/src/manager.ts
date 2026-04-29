@@ -609,7 +609,7 @@ export class WorkspaceManager {
   }
 
   /**
-   * Auto-import user workspaces from ~/.atlas/workspaces.
+   * Auto-import user workspaces from ~/.friday/local/workspaces.
    *
    * Searches a small depth for directories containing workspace.yml, de-dupes, validates
    * configs, logs and skips invalid ones. Never throws; returns import count.
@@ -723,6 +723,7 @@ export class WorkspaceManager {
         ".git",
         "node_modules",
         ".atlas",
+        ".friday",
         "dist",
         "build",
         ".next",

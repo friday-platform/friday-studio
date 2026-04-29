@@ -1,4 +1,4 @@
-// Global skills bundle — carries `~/.atlas/skills.db` (local skill library
+// Global skills bundle — carries `~/.friday/local/skills.db` (local skill library
 // published via `skills.sh` or authored in-platform) between instances.
 //
 // Design trade-off: we byte-copy the SQLite file verbatim. Import is

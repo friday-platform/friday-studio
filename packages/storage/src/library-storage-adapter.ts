@@ -12,7 +12,6 @@
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import process from "node:process";
 import { throwWithCause } from "@atlas/core";
 import type {
   LibraryItem,
@@ -24,6 +23,7 @@ import type {
 } from "@atlas/core/library";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { typeByExtension } from "@std/media-types";
 import type { KVStorage } from "./kv-storage.ts";
 
@@ -41,7 +41,7 @@ const EXTENSION_OVERRIDES: Record<string, string> = {
  * Library storage configuration
  */
 export interface LibraryStorageConfig {
-  /** Base directory for content storage. Defaults to ~/.atlas/library */
+  /** Base directory for content storage. Defaults to ~/.friday/local/library */
   contentDir?: string;
   /** Whether to organize content by source subdirectories */
   organizeBySource?: boolean;
@@ -52,40 +52,14 @@ export interface LibraryStorageConfig {
 }
 
 /**
- * Get default library storage directory following XDG Base Directory specification
+ * Default library storage directory: <friday-home>/library, alongside the
+ * other daemon-owned data dirs (workspaces, skills.db, storage.db). Resolves
+ * via getFridayHome() — `~/.friday/local/library` under the Studio launcher,
+ * `~/.atlas/library` for manual / dev runs. Override via the env var
+ * `FRIDAY_LIBRARY_DIR` (consumed by atlasd in createLibraryStorage).
  */
 function getDefaultLibraryDir(): string {
-  // Implement XDG Base Directory specification manually
-  if (process.platform === "win32") {
-    // Windows: Use LOCALAPPDATA or APPDATA
-    const localAppData = process.env.LOCALAPPDATA;
-    if (localAppData) {
-      return join(localAppData, "Atlas", "library");
-    }
-    const appData = process.env.APPDATA;
-    if (appData) {
-      return join(appData, "Atlas", "library");
-    }
-  } else if (process.platform === "darwin") {
-    // macOS: Use ~/Library/Application Support
-    const homeDir = process.env.HOME;
-    if (homeDir) {
-      return join(homeDir, "Library", "Application Support", "Atlas", "library");
-    }
-  } else {
-    // Linux/Unix: Use XDG_DATA_HOME or ~/.local/share
-    const xdgDataHome = process.env.XDG_DATA_HOME;
-    if (xdgDataHome) {
-      return join(xdgDataHome, "atlas", "library");
-    }
-    const homeDir = process.env.HOME;
-    if (homeDir) {
-      return join(homeDir, ".local", "share", "atlas", "library");
-    }
-  }
-
-  // Fallback to current directory
-  return join(process.cwd(), ".atlas", "library");
+  return join(getFridayHome(), "library");
 }
 
 /**

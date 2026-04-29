@@ -2163,13 +2163,13 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: `Cannot delete canonical workspace '${workspaceId}'` }, 403);
         }
 
-        // Check if workspace is in .atlas directory
-        const atlasDir = getFridayHome();
+        // Check if workspace is inside the daemon's friday-home dir
+        const fridayDir = getFridayHome();
         const workspacePath = workspace.path;
 
-        if (workspacePath.startsWith(atlasDir)) {
+        if (workspacePath.startsWith(fridayDir)) {
           // Create unregistered directory if it doesn't exist
-          const unregisteredDir = join(atlasDir, "unregistered");
+          const unregisteredDir = join(fridayDir, "unregistered");
           await mkdir(unregisteredDir, { recursive: true });
 
           // Move workspace to unregistered folder with collision handling

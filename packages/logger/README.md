@@ -146,8 +146,8 @@ Error objects include full context:
 
 **User Mode:**
 
-- `~/.atlas/logs/global.log` - Daemon and non-workspace logs
-- `~/.atlas/logs/workspaces/{workspaceId}.log` - Workspace-specific logs
+- `~/.friday/local/logs/global.log` - Daemon and non-workspace logs
+- `~/.friday/local/logs/workspaces/{workspaceId}.log` - Workspace-specific logs
 
 **System Service Mode:**
 
@@ -157,7 +157,7 @@ Error objects include full context:
 **Path Detection:**
 
 - `FRIDAY_LOGS_DIR` environment variable override
-- `.atlas` directory detection for compiled binaries
+- Friday-home directory detection for compiled binaries (cwd-based)
 - Windows/Unix home directory detection
 - System service detection (root user, `FRIDAY_SYSTEM_MODE=true`, `atlas` user)
 

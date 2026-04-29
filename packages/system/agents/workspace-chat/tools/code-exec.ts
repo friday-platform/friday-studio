@@ -49,6 +49,7 @@ import process from "node:process";
 import { promisify } from "node:util";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -87,10 +88,9 @@ const LANGUAGE_COMMANDS: Record<Language, { extension: string; build: (file: str
  * chat-sdk session ends.
  */
 function scratchDir(sessionId: string): string {
-  const atlasHome = process.env.FRIDAY_HOME ?? join(process.env.HOME ?? "/tmp", ".atlas");
   // Strip any path traversal; session IDs are UUIDs so this is paranoia.
   const safe = sessionId.replace(/[^a-zA-Z0-9-_]/g, "");
-  return join(atlasHome, "scratch", safe || "default");
+  return join(getFridayHome(), "scratch", safe || "default");
 }
 
 // ─── Input schema ────────────────────────────────────────────────────────────

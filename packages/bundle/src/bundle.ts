@@ -15,7 +15,7 @@ export interface ExportOptions {
   platformDeps?: Lockfile["platformDeps"];
   /**
    * Optional path to the workspace's narrative memory dir
-   * (`~/.atlas/memory/<wid>/`). Included only in `mode: migration`.
+   * (`~/.friday/local/memory/<wid>/`). Included only in `mode: migration`.
    * Expected layout: `<memoryDir>/narrative/<name>/{MEMORY.md,entries.jsonl}`.
    * The bundle embeds it under `memory/<name>/...` and records a digest per
    * narrative in `snapshots.memory`.

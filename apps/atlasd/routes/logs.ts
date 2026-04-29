@@ -1,5 +1,5 @@
 /**
- * GET /api/logs/tail — reads ~/.atlas/logs/global.log from a byte offset,
+ * GET /api/logs/tail — reads ~/.friday/local/logs/global.log from a byte offset,
  * parses JSONL, filters by level, returns structured entries with next_offset
  * for cursor-based pagination.
  *

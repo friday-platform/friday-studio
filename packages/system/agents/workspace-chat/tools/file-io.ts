@@ -32,9 +32,9 @@
 
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import process from "node:process";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { tool } from "ai";
 import { z } from "zod";
 
@@ -47,9 +47,8 @@ const MAX_LIST_ENTRIES = 1000;
 // ─── Scratch path resolver ───────────────────────────────────────────────────
 
 export function scratchRoot(sessionId: string): string {
-  const atlasHome = process.env.FRIDAY_HOME ?? join(process.env.HOME ?? "/tmp", ".atlas");
   const safe = sessionId.replace(/[^a-zA-Z0-9-_]/g, "");
-  return join(atlasHome, "scratch", safe || "default");
+  return join(getFridayHome(), "scratch", safe || "default");
 }
 
 /**

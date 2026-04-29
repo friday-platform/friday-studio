@@ -64,7 +64,7 @@ export class NatsManager {
   }
 
   private async findBinary(): Promise<string> {
-    // Prefer a binary pinned to ~/.atlas/bin/ so the daemon is self-contained
+    // Prefer a binary pinned to ~/.friday/local/bin/ so the daemon is self-contained
     const localBin = join(getFridayHome(), "bin", "nats-server");
     try {
       await access(localBin);

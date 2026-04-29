@@ -16,7 +16,7 @@ import { daemonFactory } from "../src/factory.ts";
 const GIST_SERVICE_URL = env.GIST_SERVICE_URL || "https://share.hellofriday.ai";
 const GIST_SERVICE_TIMEOUT_MS = 10_000;
 
-/** Get FRIDAY_KEY from process env or ~/.atlas/.env file */
+/** Get FRIDAY_KEY from process env or ~/.friday/local/.env file */
 async function getAtlasKey(): Promise<string | undefined> {
   const envKey = env.FRIDAY_KEY;
   if (envKey) return envKey;

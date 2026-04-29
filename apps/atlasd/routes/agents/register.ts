@@ -4,7 +4,7 @@
  * Accepts JSON { entrypoint: string } where entrypoint is the absolute path to the
  * agent's entry file (e.g. /home/user/my-agent/agent.py). Spawns the agent with
  * FRIDAY_VALIDATE_ID so it publishes its metadata over NATS, then installs the agent
- * to ~/.atlas/agents/{id}@{version}/.
+ * to ~/.friday/local/agents/{id}@{version}/.
  */
 
 import { spawn } from "node:child_process";

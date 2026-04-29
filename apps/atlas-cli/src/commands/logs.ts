@@ -29,7 +29,7 @@ export function builder(y: YargsInstance) {
     .option("workspace", { type: "string", describe: "Filter by workspace ID" });
 }
 
-/** Log entry from ~/.atlas/logs/*.log files (JSON lines) */
+/** Log entry from ~/.friday/local/logs/*.log files (JSON lines) */
 interface LogEntry {
   timestamp: string; // ISO 8601: "2025-12-19T20:44:24.029Z"
   level: string; // lowercase: "debug", "info", "warn", "error"

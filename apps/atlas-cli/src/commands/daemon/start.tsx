@@ -142,7 +142,7 @@ async function peekAtlasKey(): Promise<string | undefined> {
   const fromEnv = process.env.FRIDAY_KEY;
   if (fromEnv) return fromEnv;
 
-  // Priority 3: Check ~/.atlas/.env
+  // Priority 3: Check ~/.friday/local/.env
   const globalEnvPath = join(getFridayHome(), ".env");
   try {
     if (await exists(globalEnvPath)) {

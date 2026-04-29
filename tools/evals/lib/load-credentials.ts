@@ -16,7 +16,7 @@ const prodDeps: CredentialDeps = { fetch: fetchCredentials, setEnv: setToEnv };
 /**
  * Loads `.env` files and fetches bundled API credentials into `process.env`.
  *
- * Reads `.env` from cwd first, then falls back to `~/.atlas/.env`.
+ * Reads `.env` from cwd first, then falls back to `~/.friday/local/.env`.
  * Requires `FRIDAY_KEY` to be present after dotenv loading.
  */
 export async function loadCredentials(deps: CredentialDeps = prodDeps) {

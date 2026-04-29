@@ -3,7 +3,7 @@ import process from "node:process";
 import { getFridayHome, isSystemService } from "@atlas/utils/paths.server";
 
 /**
- * Returns Atlas logs directory: /var/log/atlas (system) or ~/.atlas/logs (user)
+ * Returns Atlas logs directory: /var/log/atlas (system) or ~/.friday/local/logs (user)
  */
 export function getAtlasLogsDir(): string {
   const logsDir = process.env.FRIDAY_LOGS_DIR;

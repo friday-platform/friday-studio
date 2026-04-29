@@ -15,7 +15,7 @@ interface RegistryOptions extends LoaderOptions {
   agentPaths?: string[];
   /** Whether to watch for YAML file changes */
   watchForChanges?: boolean;
-  /** Directory containing user-built agent artifacts (e.g. ~/.atlas/agents) */
+  /** Directory containing user-built agent artifacts (e.g. ~/.friday/local/agents) */
   userAgentsDir?: string;
 }
 

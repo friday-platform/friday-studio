@@ -205,7 +205,7 @@ Reversible vs sticky ops:
 - `DELETE /api/workspaces/:id` — removes the directory entirely (system
   workspaces rejected with 403; userland workspaces just vanish)
 - `POST /api/skills/.../upload` — publishes a new version to the registry
-- `atlas reset` — wipes `~/.atlas/` (preserves `.env` and `bin/` only)
+- `atlas reset` — wipes `~/.friday/local/` (preserves `.env` and `bin/` only)
 
 **Before a sticky op:**
 1. List first — confirm target ID matches expectation
