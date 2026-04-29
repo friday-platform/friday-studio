@@ -3,17 +3,17 @@ import { describe, expect, test } from "vitest";
 import { getWebAgentPrompt } from "./prompts.ts";
 
 /**
- * Pins the composed prompt hashes. The prompt embeds three skill reference files
- * from `./skill/` (compile-time text imports — see prompts.ts) verbatim, so
- * any edit to those files (or to the prompt scaffolding in `prompts.ts`)
- * changes these hashes. Failure is expected on intentional skill-file edits —
- * review the diff, confirm the change is intended, then update the hash
- * constants below.
+ * Pins the composed prompt hashes. The prompt embeds SKILL.md plus all eight
+ * reference files from `./skill/` (runtime readFileSync — see prompts.ts)
+ * verbatim, so any edit to those files (or to the prompt scaffolding in
+ * `prompts.ts`) changes these hashes. Failure is expected on intentional
+ * skill-file edits — review the diff, confirm the change is intended, then
+ * update the hash constants below.
  */
 const EXPECTED_HASH_WITH_SEARCH =
-  "256dc32c10bc8ba413774372e1e9d19ed19712c709eddb91fcc3edf99ecf5b73";
+  "401be5eaf3a390a6633639f1b9cfcfd7fe2a88899d3d23cd47a015c7dae5199e";
 const EXPECTED_HASH_WITHOUT_SEARCH =
-  "baa456754e9f94bc886f54d0aa4b7355f9b3cb1ae46fd7adbc2081a04aa817d9";
+  "7309cc78bd7f3c5e7d81da645a017e0ec04611b710cf8077184d2113d7996b5c";
 
 function hashPrompt(prompt: string): string {
   return createHash("sha256").update(prompt).digest("hex");
@@ -91,5 +91,31 @@ describe("getWebAgentPrompt", () => {
     expect(prompt).toContain("The core loop");
     // Signature line from SKILL.md's ref-staleness explanation:
     expect(prompt).toContain("stale the moment the page changes");
+  });
+
+  // SKILL.md cross-refs every reference file (lines 185, 297, 401-402, 438-444).
+  // Each reference must be embedded so those cross-refs resolve to real content
+  // in the LLM's context — otherwise the LLM follows a dangling pointer.
+
+  test("prompt embeds authentication.md (auth vault, credential injection)", () => {
+    const prompt = getWebAgentPrompt({ hasSearch: true });
+    // Signature heading from references/authentication.md:
+    expect(prompt).toContain("# Authentication");
+    expect(prompt).toContain("auth vault");
+  });
+
+  test("prompt embeds profiling.md (Chrome DevTools tracing)", () => {
+    const prompt = getWebAgentPrompt({ hasSearch: true });
+    expect(prompt).toContain("# Profiling");
+  });
+
+  test("prompt embeds proxy-support.md (proxy configuration)", () => {
+    const prompt = getWebAgentPrompt({ hasSearch: true });
+    expect(prompt).toContain("# Proxy");
+  });
+
+  test("prompt embeds video-recording.md (video capture options)", () => {
+    const prompt = getWebAgentPrompt({ hasSearch: true });
+    expect(prompt).toContain("# Video");
   });
 });

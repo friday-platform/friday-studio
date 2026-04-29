@@ -47,11 +47,13 @@ interface WebAgentPromptOptions {
  * Builds the system prompt for the unified web agent.
  *
  * Composes role framing + tool selection heuristics + browse preamble, then
- * embeds upstream's `SKILL.md` (canonical entry doc) + four references —
- * `commands.md`, `snapshot-refs.md`, `session-management.md`, `trust-boundaries.md`
- * — from `./skill/` (runtime readFileSync). All embedded verbatim, including
- * cross-refs like `[SKILL.md](../SKILL.md)` which resolve correctly within the
- * mirrored layout.
+ * embeds upstream's `SKILL.md` (canonical entry doc) + all eight references —
+ * `commands.md`, `snapshot-refs.md`, `session-management.md`,
+ * `trust-boundaries.md`, `authentication.md`, `profiling.md`,
+ * `proxy-support.md`, `video-recording.md` — from `./skill/` (runtime
+ * readFileSync). All embedded verbatim, including cross-refs like
+ * `[SKILL.md](../SKILL.md)` which resolve correctly within the mirrored
+ * layout.
  *
  * When `hasSearch` is false, search-specific heuristics and instructions are
  * omitted so the agent doesn't hallucinate a tool it doesn't have.
@@ -106,11 +108,12 @@ Each \`browse\` call runs one \`agent-browser\` command. The orchestrator handle
 
 When \`AGENT_BROWSER_AUTO_CONNECT=1\` is set, \`browse\` attaches to the user's already-running Chrome instead of spawning a fresh isolated browser. In that mode you may see real cookies, logged-in sessions, and open tabs — act accordingly.
 
-The skill content below — upstream's canonical \`SKILL.md\` plus four
+The skill content below — upstream's canonical \`SKILL.md\` plus all
 deep-dive references — documents the full command surface, the ref-based
-snapshot model, session isolation semantics, and the safety boundaries
-that apply to every browse call. Cross-links between these files
-(e.g. \`[SKILL.md](../SKILL.md)\`) resolve within the embedded layout.
+snapshot model, session isolation semantics, auth/proxy/profiling/video
+options, and the safety boundaries that apply to every browse call.
+Cross-links between these files (e.g. \`[SKILL.md](../SKILL.md)\`)
+resolve within the embedded layout.
 
 ${loadSkillFile("SKILL.md")}
 
@@ -121,6 +124,14 @@ ${loadSkillFile("references/snapshot-refs.md")}
 ${loadSkillFile("references/session-management.md")}
 
 ${loadSkillFile("references/trust-boundaries.md")}
+
+${loadSkillFile("references/authentication.md")}
+
+${loadSkillFile("references/profiling.md")}
+
+${loadSkillFile("references/proxy-support.md")}
+
+${loadSkillFile("references/video-recording.md")}
 
 # Stuck Detection (Critical)
 
