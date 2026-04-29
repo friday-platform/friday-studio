@@ -18,19 +18,12 @@ const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
 const HOST = process.env.PLAYGROUND_HOST ?? "127.0.0.1";
 const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 
-// Browser-facing URLs. The launcher (or whatever spawns the playground)
-// owns the port layout, so we can't bake these into the bundle — read
-// them at runtime and inject into the served HTML. We accept the
-// VITE_-prefixed names too because the dev `deno task playground` task
-// already sets them and we don't want two sources of truth.
-const EXTERNAL_DAEMON_URL =
-  process.env.EXTERNAL_DAEMON_URL ??
-  process.env.VITE_EXTERNAL_DAEMON_URL ??
-  DAEMON_URL;
-const EXTERNAL_TUNNEL_URL =
-  process.env.EXTERNAL_TUNNEL_URL ??
-  process.env.VITE_EXTERNAL_TUNNEL_URL ??
-  null;
+// Browser-facing URLs. The launcher owns the port layout, so we can't
+// bake these into the bundle — read them at runtime and inject into the
+// served HTML. Daemon URL falls back to FRIDAYD_URL since the daemon
+// proxy and the browser-facing daemon are the same endpoint in Studio.
+const EXTERNAL_DAEMON_URL = process.env.EXTERNAL_DAEMON_URL ?? DAEMON_URL;
+const EXTERNAL_TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? null;
 
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a
