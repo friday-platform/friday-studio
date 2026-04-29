@@ -43,10 +43,11 @@ import {
 } from "./compose-context.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
-import { connectServiceSucceeded } from "./stop-conditions.ts";
+import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
 import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
 import { createAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
+import { createConnectCommunicatorTool } from "./tools/connect-communicator.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDelegateTool } from "./tools/delegate/index.ts";
@@ -596,6 +597,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           connectServiceTool.connect_service = createConnectServiceTool(providerIds);
         }
 
+        // Connect communicator tool — surfaces the chat-driven flow that
+        // wires Slack/Telegram/Discord/Teams/WhatsApp as conversation
+        // surfaces. Always registered: the kind enum is the same set
+        // regardless of which Link providers happen to be installed.
+        const connectCommunicatorTool: AtlasTools = {
+          connect_communicator: createConnectCommunicatorTool(),
+        };
+
         // Resource adapter — shared by resource tools
         const resourceAdapter = createLedgerClient();
 
@@ -739,6 +748,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const primaryTools: AtlasTools = {
           ...bundledAgentTools,
           ...connectServiceTool,
+          ...connectCommunicatorTool,
           ...jobTools,
           ...artifactTools,
           ...createArtifactsCreateTool({
@@ -905,7 +915,7 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
             ],
             tools: allTools,
             toolChoice: "auto",
-            stopWhen: [stepCountIs(40), connectServiceSucceeded()],
+            stopWhen: [stepCountIs(40), connectServiceSucceeded(), connectCommunicatorSucceeded()],
             maxOutputTokens: 20000,
             experimental_transform: smoothStream({ chunking: "word" }),
             maxRetries: 3,

@@ -2,6 +2,7 @@
   import type { Component } from "svelte";
   import { Icons, IconSmall } from "@atlas/ui";
   import ArtifactCard from "./artifact-card.svelte";
+  import ConnectCommunicator from "./connect-communicator.svelte";
   import ConnectService from "./connect-service.svelte";
   import Self from "./tool-call-card.svelte";
   import { jsonHighlighter } from "./json-highlighter";
@@ -53,6 +54,8 @@
       case "memory_save":
         return { icon: Icons.Bookmark, label: "Saving memory", color: "var(--color-accent)", category: "memory" };
       case "connect_service":
+        return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
+      case "connect_communicator":
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
       case "display_artifact":
         return { icon: Icons.DocumentText, label: "Displaying", color: "var(--color-accent)", category: "file" };
@@ -236,6 +239,25 @@
     return null;
   });
 
+  /* ─── Connect communicator extraction ─────────────────────────────── */
+
+  type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
+  const KNOWN_KINDS: readonly CommunicatorKind[] = [
+    "slack",
+    "telegram",
+    "discord",
+    "teams",
+    "whatsapp",
+  ] as const;
+
+  const communicatorKind = $derived.by<CommunicatorKind | null>(() => {
+    if (call.toolName !== "connect_communicator") return null;
+    if (call.input == null || typeof call.input !== "object") return null;
+    const raw = (call.input as Record<string, unknown>).kind;
+    if (typeof raw !== "string") return null;
+    return KNOWN_KINDS.find((k) => k === raw) ?? null;
+  });
+
   /* ─── Artifact display extraction ───────────────────────────────── */
 
   const artifactDisplay = $derived.by<{ artifactId: string } | null>(() => {
@@ -350,6 +372,13 @@
 {#if provider != null}
   <div class="tool-card connect-service">
     <ConnectService {provider} onConnected={() => onCredentialConnected?.(provider)} />
+  </div>
+{:else if communicatorKind != null}
+  <div class="tool-card connect-service">
+    <ConnectCommunicator
+      kind={communicatorKind}
+      onConnected={() => onCredentialConnected?.(communicatorKind)}
+    />
   </div>
 {:else if artifactDisplay != null}
   <ArtifactCard artifactId={artifactDisplay.artifactId} />
