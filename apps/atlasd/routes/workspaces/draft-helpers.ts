@@ -3,6 +3,8 @@ import { join } from "node:path";
 import {
   type Issue,
   JobSpecificationSchema,
+  MemoryMountSchema,
+  MemoryOwnEntrySchema,
   type Registry,
   type ValidationReport,
   validateWorkspace,
@@ -29,6 +31,8 @@ const LIVE_FILE_NAME = "workspace.yml" as const;
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export type DraftItemKind = "agent" | "signal" | "job";
+
+export type MemoryItemKind = "memory-own" | "memory-mount";
 
 export interface FieldDiff {
   [field: string]: { from?: unknown; to?: unknown } | { added?: unknown[]; removed?: unknown[] };
@@ -307,7 +311,7 @@ function valuesEqual(a: unknown, b: unknown): boolean {
  * Nested keys use dot notation (e.g. "config.provider").
  * Array fields show added/removed elements.
  */
-function computeFlatDiff(
+export function computeFlatDiff(
   oldObj: Record<string, unknown>,
   newObj: Record<string, unknown>,
   prefix = "",
@@ -489,6 +493,123 @@ export async function upsertLiveItem(
 
   const diff = computeFlatDiff(oldValue, parseResult.data as Record<string, unknown>);
 
+  return { ok: true, value: { ok: true, diff, structuralIssues: null } };
+}
+
+// ==============================================================================
+// MEMORY ARRAY MUTATIONS
+// ==============================================================================
+
+function mergeMemoryArray(
+  arr: unknown[],
+  name: string,
+  entry: unknown,
+): { newArray: unknown[]; oldEntry: Record<string, unknown> } {
+  let oldEntry: Record<string, unknown> = {};
+  let found = false;
+  const newArray = arr.map((e) => {
+    if (typeof e === "object" && e !== null && (e as Record<string, unknown>).name === name) {
+      oldEntry = e as Record<string, unknown>;
+      found = true;
+      return entry;
+    }
+    return e;
+  });
+  return { newArray: found ? newArray : [...arr, entry], oldEntry };
+}
+
+/**
+ * Upsert a memory-own or memory-mount entry into the draft config.
+ * Merges by `name` (the `id` parameter serves as the entry name).
+ * Appends if no existing entry with that name is found.
+ */
+export async function upsertDraftMemoryEntry(
+  workspacePath: string,
+  kind: MemoryItemKind,
+  name: string,
+  config: unknown,
+): Promise<DraftResult<DraftItemResult>> {
+  const readResult = await readDraft(workspacePath);
+  if (!readResult.ok) return { ok: false, error: readResult.error };
+
+  const schema = kind === "memory-own" ? MemoryOwnEntrySchema : MemoryMountSchema;
+  const raw = typeof config === "object" && config !== null ? { ...config, name } : { name };
+  const parseResult = schema.safeParse(raw);
+  if (!parseResult.success) {
+    return { ok: false, error: `Invalid ${kind} config: ${parseResult.error.message}` };
+  }
+
+  const arrayKey = kind === "memory-own" ? "own" : "mounts";
+  const memory = readResult.value.memory ?? { own: [], mounts: [] };
+  const existingArray = (memory[arrayKey] as unknown[] | undefined) ?? [];
+  const { newArray, oldEntry } = mergeMemoryArray(existingArray, name, parseResult.data);
+
+  const updated = { ...readResult.value, memory: { ...memory, [arrayKey]: newArray } };
+
+  const validation = WorkspaceConfigSchema.safeParse(updated);
+  if (!validation.success) {
+    return {
+      ok: false,
+      error: `Draft validation failed after upsert: ${validation.error.message}`,
+    };
+  }
+
+  const writeResult = await writeDraft(workspacePath, validation.data);
+  if (!writeResult.ok) return { ok: false, error: writeResult.error };
+
+  const report = validateWorkspace(validation.data);
+  const structuralIssues = report.status === "error" ? report.errors : null;
+  const diff = computeFlatDiff(oldEntry, parseResult.data as Record<string, unknown>);
+
+  return { ok: true, value: { ok: true, diff, structuralIssues } };
+}
+
+/**
+ * Upsert a memory-own or memory-mount entry into the live config.
+ * Merges by `name` (the `id` parameter serves as the entry name).
+ * Appends if no existing entry with that name is found.
+ */
+export async function upsertLiveMemoryEntry(
+  workspacePath: string,
+  kind: MemoryItemKind,
+  name: string,
+  config: unknown,
+): Promise<DraftResult<DraftItemResult>> {
+  const readResult = await readLiveConfig(workspacePath);
+  if (!readResult.ok) return { ok: false, error: readResult.error };
+
+  const schema = kind === "memory-own" ? MemoryOwnEntrySchema : MemoryMountSchema;
+  const raw = typeof config === "object" && config !== null ? { ...config, name } : { name };
+  const parseResult = schema.safeParse(raw);
+  if (!parseResult.success) {
+    return { ok: false, error: `Invalid ${kind} config: ${parseResult.error.message}` };
+  }
+
+  const arrayKey = kind === "memory-own" ? "own" : "mounts";
+  const memory = readResult.value.memory ?? { own: [], mounts: [] };
+  const existingArray = (memory[arrayKey] as unknown[] | undefined) ?? [];
+  const { newArray, oldEntry } = mergeMemoryArray(existingArray, name, parseResult.data);
+
+  const updated = { ...readResult.value, memory: { ...memory, [arrayKey]: newArray } };
+
+  const validation = WorkspaceConfigSchema.safeParse(updated);
+  if (!validation.success) {
+    return {
+      ok: false,
+      error: `Live config validation failed after upsert: ${validation.error.message}`,
+    };
+  }
+
+  const report = validateWorkspace(validation.data);
+  if (report.status === "error") {
+    const diff = computeFlatDiff(oldEntry, parseResult.data as Record<string, unknown>);
+    return { ok: true, value: { ok: false, diff, structuralIssues: report.errors } };
+  }
+
+  const writeResult = await writeLiveConfig(workspacePath, validation.data);
+  if (!writeResult.ok) return { ok: false, error: writeResult.error };
+
+  const diff = computeFlatDiff(oldEntry, parseResult.data as Record<string, unknown>);
   return { ok: true, value: { ok: true, diff, structuralIssues: null } };
 }
 

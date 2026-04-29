@@ -77,11 +77,14 @@ import {
   type DraftItemKind,
   deleteDraftItem,
   discardDraft,
+  type MemoryItemKind,
   publishDraft,
   readDraft,
   removeLiveItem,
   upsertDraftItem,
+  upsertDraftMemoryEntry,
   upsertLiveItem,
+  upsertLiveMemoryEntry,
   validateDraft,
 } from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
@@ -2439,7 +2442,7 @@ const workspacesRoutes = daemonFactory
     },
   )
   // ─── DIRECT ITEM UPSERT (live config) ───────────────────────────────────
-  // Upsert an entity (agent/signal/job) into the live config.
+  // Upsert an entity (agent/signal/job/memory-own/memory-mount) into the live config.
   // Refuses the write if structural validation errors exist.
   .post(
     "/:workspaceId/items/:kind",
@@ -2447,7 +2450,7 @@ const workspacesRoutes = daemonFactory
       "param",
       z.object({
         workspaceId: z.string().min(1),
-        kind: z.enum(["agent", "signal", "job"] as const),
+        kind: z.enum(["agent", "signal", "job", "memory-own", "memory-mount"] as const),
       }),
     ),
     zValidator(
@@ -2464,7 +2467,10 @@ const workspacesRoutes = daemonFactory
         if (!workspace) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
-        const result = await upsertLiveItem(workspace.path, kind as DraftItemKind, id, config);
+        const result =
+          kind === "memory-own" || kind === "memory-mount"
+            ? await upsertLiveMemoryEntry(workspace.path, kind as MemoryItemKind, id, config)
+            : await upsertLiveItem(workspace.path, kind as DraftItemKind, id, config);
         if (!result.ok) {
           return c.json({ ok: false, error: result.error }, 500);
         }
@@ -2523,14 +2529,14 @@ const workspacesRoutes = daemonFactory
     },
   )
   // ─── DRAFT CRUD ─────────────────────────────────────────────────────────
-  // Upsert an entity (agent/signal/job) into the draft config
+  // Upsert an entity (agent/signal/job/memory-own/memory-mount) into the draft config
   .post(
     "/:workspaceId/draft/items/:kind",
     zValidator(
       "param",
       z.object({
         workspaceId: z.string().min(1),
-        kind: z.enum(["agent", "signal", "job"] as const),
+        kind: z.enum(["agent", "signal", "job", "memory-own", "memory-mount"] as const),
       }),
     ),
     zValidator(
@@ -2547,7 +2553,10 @@ const workspacesRoutes = daemonFactory
         if (!workspace) {
           return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
         }
-        const result = await upsertDraftItem(workspace.path, kind as DraftItemKind, id, config);
+        const result =
+          kind === "memory-own" || kind === "memory-mount"
+            ? await upsertDraftMemoryEntry(workspace.path, kind as MemoryItemKind, id, config)
+            : await upsertDraftItem(workspace.path, kind as DraftItemKind, id, config);
         if (!result.ok) {
           if (result.error === "No draft exists") {
             return c.json({ ok: false, error: result.error }, 409);

@@ -39,7 +39,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 
 **Tool selection.**
 - Discovery: `list_capabilities` (bundled agents + MCP servers, single call).
-- Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `remove_item`, `validate_workspace`, `publish_draft`, `discard_draft`.
+- Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `upsert_memory_own`, `upsert_memory_mount`, `remove_item`, `validate_workspace`, `publish_draft`, `discard_draft`.
 - Daemon CRUD (list, get, delete): `run_code` bash + curl to `localhost:8080`.
 - MCP install/enable/credentials: `using-mcp-servers` skill.
 - Codebase edits: `agent_claude-code`.
@@ -131,6 +131,21 @@ Inside draft (or direct), create entities in this order:
 Call `upsert_agent({ id, config, workspaceId? })`, `upsert_job({ id, config, workspaceId? })`, `upsert_signal({ id, config, workspaceId? })`. Each returns `{ ok, diff, structural_issues }`. Read `diff` to confirm intent. If `structural_issues` is non-null, fix them before proceeding — structural issues block the write. Pass `workspaceId` when building a workspace you just created from a chat session in a different workspace.
 
 Common structural issue codes: `unknown_agent_id` (job references an agent you haven't upserted yet — fix by ordering correctly), `fsm_structural_error` (states malformed), `npm_package_not_found` / `pypi_package_not_found` (MCP server transport args point to a bad package).
+
+**Memory stores.** Every workspace has a default memory baseline:
+
+| Name | Kind | Type | Notes |
+|---|---|---|---|
+| `notes` | own | short_term / narrative | Agent writes — observations, results, preferences |
+| `memory` | own | long_term / narrative | Long-lived context, populated by system reflector |
+| `user-notes` | mount | ro / workspace scope | Read-only view of the user workspace's `notes` store |
+| `user-memory` | mount | ro / workspace scope | Read-only view of the user workspace's `memory` store |
+
+To add a custom store: `upsert_memory_own({ id: "findings", config: { type: "short_term", strategy: "narrative" } })`.
+To add a cross-workspace mount: `upsert_memory_mount({ id: "shared-kb", config: { source: "<wsId>/narrative/kb", mode: "ro", scope: "workspace" } })`.
+Both tools upsert-by-name: passing an existing `id` replaces the entry; a new `id` appends to the array.
+
+`unknown_memory_store` validation error — fix path: an agent prompt references a store name (e.g. `"ghost-store"`) that isn't declared in `memory.own` or visible via `memory.mounts`. Fix by calling `upsert_memory_own({ id: "ghost-store", config: { type: "short_term", strategy: "narrative" } })` before the agent upsert, or update the prompt to reference an existing store name.
 
 ### 6. Validate
 

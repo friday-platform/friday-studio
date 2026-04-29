@@ -98,6 +98,8 @@ export function createUpsertTools(_logger: Logger): AtlasTools {
     upsert_agent: makePlaceholder("agent"),
     upsert_signal: makePlaceholder("signal"),
     upsert_job: makePlaceholder("job"),
+    upsert_memory_own: makePlaceholder("memory-own"),
+    upsert_memory_mount: makePlaceholder("memory-mount"),
   };
 }
 
@@ -110,7 +112,7 @@ export function createUpsertTools(_logger: Logger): AtlasTools {
  */
 export function createBoundUpsertTools(logger: Logger, workspaceId: string): AtlasTools {
   async function executeUpsert(
-    kind: "agent" | "signal" | "job",
+    kind: "agent" | "signal" | "job" | "memory-own" | "memory-mount",
     id: string,
     config: Record<string, unknown>,
     targetWorkspaceId: string,
@@ -266,6 +268,50 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         config: Record<string, unknown>;
         workspaceId?: string;
       }) => executeUpsert("job", id, config, providedId ?? workspaceId),
+    }),
+
+    upsert_memory_own: tool({
+      description:
+        "Upsert a memory store (own entry) into the current workspace. " +
+        "Pass `id` as the store name (e.g. 'notes', 'findings'). " +
+        "The `config` shape: `{ type: 'short_term' | 'long_term' | 'scratchpad', strategy?: 'narrative' | 'retrieval' | 'dedup' | 'kv' }`. " +
+        "Every workspace has default own stores: `notes` (short_term/narrative) and `memory` (long_term/narrative). " +
+        "Upserting an existing name replaces it; a new name appends to `memory.own`. " +
+        "If a draft exists, the entry is staged there; otherwise it writes directly to workspace.yml. " +
+        "Returns `{ ok, diff, structural_issues }`. " +
+        "Optional: pass workspaceId to target a different workspace.",
+      inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
+      execute: ({
+        id,
+        config,
+        workspaceId: providedId,
+      }: {
+        id: string;
+        config: Record<string, unknown>;
+        workspaceId?: string;
+      }) => executeUpsert("memory-own", id, config, providedId ?? workspaceId),
+    }),
+
+    upsert_memory_mount: tool({
+      description:
+        "Upsert a memory mount into the current workspace. " +
+        "Pass `id` as the mount name (e.g. 'user-notes', 'shared-kb'). " +
+        "The `config` shape: `{ source: '{wsId|_global}/{kind}/{memoryName}', mode: 'ro' | 'rw', scope: 'workspace' | 'job' | 'agent', scopeTarget?: string, filter?: {...} }`. " +
+        "Every workspace has default mounts: `user-notes` and `user-memory` (read-only from the user workspace, workspace scope). " +
+        "Upserting an existing name replaces it; a new name appends to `memory.mounts`. " +
+        "If a draft exists, the entry is staged there; otherwise it writes directly to workspace.yml. " +
+        "Returns `{ ok, diff, structural_issues }`. " +
+        "Optional: pass workspaceId to target a different workspace.",
+      inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
+      execute: ({
+        id,
+        config,
+        workspaceId: providedId,
+      }: {
+        id: string;
+        config: Record<string, unknown>;
+        workspaceId?: string;
+      }) => executeUpsert("memory-mount", id, config, providedId ?? workspaceId),
     }),
   };
 }
