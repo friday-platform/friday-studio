@@ -5,7 +5,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 const MemorySaveInput = z.object({
-  memoryName: z.string().describe("Memory name declared in workspace.yml (e.g. `notes`)"),
+  memoryName: z.string().describe("Memory store name — pick the store from <memory_stores> in the workspace context that best fits the content"),
   text: z.string().min(1),
   id: z.string().optional().describe("UUID; auto-generated if omitted"),
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -28,8 +28,10 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
   return {
     memory_save: tool({
       description:
-        "Save an entry to a named memory in this workspace. " +
-        "memoryName must be declared in workspace.yml (e.g. `notes`). Persists across sessions.",
+        "Save an entry to a named memory store in this workspace. " +
+        "Choose the store from <memory_stores> in your workspace context that best fits the content " +
+        "(e.g. preferences → `preferences`, facts → `memory`, working notes → `notes`). " +
+        "Persists across sessions.",
       inputSchema: MemorySaveInput,
       execute: async ({ memoryName, text, id, metadata }) => {
         const url = `${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(memoryName)}`;

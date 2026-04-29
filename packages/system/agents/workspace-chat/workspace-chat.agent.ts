@@ -334,6 +334,16 @@ export function formatWorkspaceSection(
     section += `\n<mcp_servers>${mcpServerIds.join(", ")}</mcp_servers>`;
   }
 
+  const ownStores = config?.memory?.own ?? [];
+  const rwMounts = (config?.memory?.mounts ?? []).filter((m) => m.mode === "rw");
+  if (ownStores.length > 0 || rwMounts.length > 0) {
+    const entries = [
+      ...ownStores.map((s) => `<store name="${s.name}" type="${s.type}"/>`),
+      ...rwMounts.map((m) => `<store name="${m.name}" type="mount-rw"/>`),
+    ];
+    section += `\n<memory_stores>\n${entries.join("\n")}\n</memory_stores>`;
+  }
+
   if (config?.communicators) {
     const wired = config.communicators;
     const entries = CommunicatorKindSchema.options.map(

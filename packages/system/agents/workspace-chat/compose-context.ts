@@ -143,10 +143,10 @@ export async function composeMemoryBlocks(
   const allIds = [primaryId, ...foregroundIds];
   const blocks: string[] = [];
 
-  // Track which source workspaces have already been emitted so that mounts
-  // and explicit foreground IDs pointing to the same workspace don't
+  // Track which (source workspace, store name) pairs have already been emitted
+  // so that mounts and explicit foreground IDs pointing to the same store don't
   // produce duplicate blocks.
-  const emittedSourceIds = new Set<string>();
+  const emittedStoreKeys = new Set<string>();
 
   const results = await Promise.allSettled(
     allIds.map(async (workspaceId) => {
@@ -171,30 +171,29 @@ export async function composeMemoryBlocks(
 
       const wsBlocks: string[] = [];
       for (const [sourceId, stores] of bySource) {
-        if (emittedSourceIds.has(sourceId)) continue;
-        emittedSourceIds.add(sourceId);
-
-        const entryResults = await Promise.allSettled(
+        const storeResults = await Promise.allSettled(
           stores.map(async (store) => {
+            const key = `${sourceId}:${store.name}`;
+            if (emittedStoreKeys.has(key)) return null;
+            emittedStoreKeys.add(key);
+
             const url = `${daemonUrl}/api/memory/${encodeURIComponent(store.workspaceId)}/narrative/${encodeURIComponent(store.name)}?limit=20`;
             const res = await fetch(url);
-            if (!res.ok) return [];
+            if (!res.ok) return null;
             const data = z.array(NarrativeEntrySchema).safeParse(await res.json());
-            return data.success ? data.data : [];
+            const entries = data.success ? data.data : [];
+            if (entries.length === 0) return null;
+
+            const lines = entries.map((e) => `- ${e.text}`);
+            return `<memory workspace="${sourceId}" store="${store.name}">\n${lines.join("\n")}\n</memory>`;
           }),
         );
 
-        const entries = entryResults
-          .filter(
-            (r): r is PromiseFulfilledResult<z.infer<typeof NarrativeEntrySchema>[]> =>
-              r.status === "fulfilled",
-          )
-          .flatMap((r) => r.value);
-
-        if (entries.length === 0) continue;
-
-        const lines = entries.map((e) => `- ${e.text}`);
-        wsBlocks.push(`<memory workspace="${sourceId}">\n${lines.join("\n")}\n</memory>`);
+        for (const r of storeResults) {
+          if (r.status === "fulfilled" && r.value !== null) {
+            wsBlocks.push(r.value);
+          }
+        }
       }
 
       return wsBlocks;
