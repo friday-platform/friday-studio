@@ -20,11 +20,15 @@
     markdownToHTML,
     toast,
   } from "@atlas/ui";
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { getClient } from "$lib/client";
   import { discoverQueries, type DiscoverDetail } from "$lib/queries/discover-queries";
+  import { workspaceQueries } from "$lib/queries";
   import DOMPurify from "dompurify";
+
+  const queryClient = useQueryClient();
 
   // ---------------------------------------------------------------------------
   // Queries
@@ -64,12 +68,31 @@
   let importing = $state(false);
 
   async function handleImport(): Promise<void> {
-    // TODO: build/fetch the workspace zip from GitHub and POST to
-    // /api/daemon/api/workspaces/import-bundle. Stubbed for now.
+    if (!selectedSlug || importing) return;
     importing = true;
-    await new Promise((r) => setTimeout(r, 400));
-    importing = false;
-    toast({ title: "Import not yet wired — coming next" });
+    try {
+      const res = await getClient().api.discover.import.$post({ query: { slug: selectedSlug } });
+      const body: unknown = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message =
+          body && typeof body === "object" && "error" in body && typeof body.error === "string"
+            ? body.error
+            : `Import failed (${res.status})`;
+        toast({ title: message, error: true });
+        return;
+      }
+      const parsed =
+        body && typeof body === "object" && body !== null
+          ? (body as { workspaceId?: string; name?: string })
+          : {};
+      await queryClient.invalidateQueries({ queryKey: workspaceQueries.all() });
+      toast({ title: `Imported: ${parsed.name ?? detail?.name ?? selectedSlug}` });
+      if (parsed.workspaceId) {
+        await goto(`/platform/${parsed.workspaceId}`);
+      }
+    } finally {
+      importing = false;
+    }
   }
 
   // ---------------------------------------------------------------------------

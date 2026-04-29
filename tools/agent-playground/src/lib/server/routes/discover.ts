@@ -1,12 +1,14 @@
 import process from "node:process";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import JSZip from "jszip";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 const REPO = process.env.DISCOVER_REPO ?? "friday-platform/friday-studio-examples";
 const PATH = process.env.DISCOVER_PATH ?? "";
 const REF = process.env.DISCOVER_REF ?? "main";
+const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 
 const GH_TOKEN = process.env.GITHUB_TOKEN ?? "";
 
@@ -210,6 +212,41 @@ async function fetchFolderListing(
   }
 }
 
+const TreeEntrySchema = z.object({
+  path: z.string(),
+  type: z.string(),
+});
+const TreeResponseSchema = z.object({
+  tree: z.array(TreeEntrySchema),
+  truncated: z.boolean(),
+});
+
+async function fetchTreeBlobs(
+  repo: string,
+  ref: string,
+  folderPath: string,
+): Promise<string[] | null> {
+  const url = `https://api.github.com/repos/${repo}/git/trees/${ref}?recursive=1`;
+  const { status, text } = await cachedFetch(url);
+  if (status < 200 || status >= 300) return null;
+  try {
+    const parsed = TreeResponseSchema.parse(JSON.parse(text));
+    if (parsed.truncated) return null;
+    const prefix = folderPath ? `${folderPath}/` : "";
+    return parsed.tree
+      .filter((e) => e.type === "blob" && (prefix === "" || e.path.startsWith(prefix)))
+      .map((e) => e.path);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchBytes(url: string): Promise<Uint8Array | null> {
+  const res = await fetch(url, { headers: ghHeaders });
+  if (res.status < 200 || res.status >= 300) return null;
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 export const discoverRoute = new Hono()
   .get("/list", async (c) => {
     const folders = await fetchFolderListing(REPO, REF, PATH);
@@ -219,8 +256,11 @@ export const discoverRoute = new Hono()
     const checks = await Promise.all(
       folders.map(async (folder) => {
         const folderPath = PATH ? `${PATH}/${folder}` : folder;
-        const text = await fetchText(rawUrl(REPO, REF, `${folderPath}/workspace.yml`));
-        return text !== null ? folder : null;
+        const [yml, lock] = await Promise.all([
+          fetchText(rawUrl(REPO, REF, `${folderPath}/workspace.yml`)),
+          fetchText(rawUrl(REPO, REF, `${folderPath}/workspace.lock`)),
+        ]);
+        return yml !== null && lock !== null ? folder : null;
       }),
     );
     const items: DiscoverItem[] = checks
@@ -263,4 +303,44 @@ export const discoverRoute = new Hono()
         htmlUrl: `https://github.com/${REPO}/tree/${REF}/${folderPath}`,
       },
     });
+  })
+  .post("/import", zValidator("query", ItemQuerySchema), async (c) => {
+    const { slug } = c.req.valid("query");
+    const folderPath = PATH ? `${PATH}/${slug}` : slug;
+
+    const blobs = await fetchTreeBlobs(REPO, REF, folderPath);
+    if (!blobs || blobs.length === 0) {
+      return c.json({ error: `Failed to list files at ${folderPath}` }, 502);
+    }
+
+    const zip = new JSZip();
+    const files = await Promise.all(
+      blobs.map(async (path) => {
+        const bytes = await fetchBytes(rawUrl(REPO, REF, path));
+        return { path, bytes };
+      }),
+    );
+    for (const { path, bytes } of files) {
+      if (!bytes) {
+        return c.json({ error: `Failed to fetch ${path}` }, 502);
+      }
+      const relPath = folderPath ? path.slice(folderPath.length + 1) : path;
+      zip.file(relPath, bytes);
+    }
+
+    const zipBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+
+    const formData = new FormData();
+    formData.append(
+      "bundle",
+      new Blob([new Uint8Array(zipBytes)], { type: "application/zip" }),
+      `${slug}.zip`,
+    );
+
+    const res = await fetch(`${DAEMON_URL}/api/workspaces/import-bundle`, {
+      method: "POST",
+      body: formData,
+    });
+    const body: unknown = await res.json().catch(() => ({}));
+    return c.json(body as Record<string, unknown>, res.status as 200 | 400 | 422 | 500);
   });
