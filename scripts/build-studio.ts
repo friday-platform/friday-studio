@@ -66,8 +66,6 @@ interface ExternalBundlePin {
    * (last URL segment); the matching line's hex digest is verified before
    * extraction. */
   shasumsUrl: (target: string) => string;
-  /** Optional: paths under outDir to delete after extract. */
-  prune?: (target: string) => string[];
 }
 
 const GH_VERSION = "2.92.0";
@@ -208,9 +206,6 @@ const EXTERNAL_BUNDLES: readonly ExternalBundlePin[] = [
     },
     outDir: "node-runtime",
     shasumsUrl: () => `https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`,
-    // Strip the C header tree (~60 MB on macOS) — needed only for
-    // building native modules from source, which Studio doesn't do.
-    prune: () => ["include", "share", "CHANGELOG.md", "README.md"],
   },
 ];
 
@@ -464,10 +459,6 @@ async function bundleExternalBundle(
   await rmRf(dest);
   await ensureDir(outDir);
   await Deno.rename(innerRoot, dest);
-
-  for (const path of bundle.prune?.(target) ?? []) {
-    await rmRf(join(dest, path));
-  }
 }
 
 async function bundleExternalCli(
