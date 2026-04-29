@@ -1,12 +1,11 @@
 <script lang="ts">
   import type { Component } from "svelte";
-  import { Icons, IconSmall } from "@atlas/ui";
-  import ArtifactCard from "./artifact-card.svelte";
-  import ConnectService from "./connect-service.svelte";
-  import DelegateToolCard from "./delegate-tool-card.svelte";
+  import { Icons, IconSmall, markdownToHTML } from "@atlas/ui";
+  import ToolCallCard from "./tool-call-card.svelte";
   import { jsonHighlighter } from "./json-highlighter";
   import {
     argPreview,
+    childrenAnyRunning,
     formatDuration,
     isError,
     isInProgress,
@@ -90,7 +89,7 @@
 
   const actionText = $derived(getActionText(call.toolName, call.input, call.state));
 
-  /* ─── Row-2 meta (tool name + extra) ───────────────────────────────── */
+  /* ─── Row-2 meta ─────────────────────────────────────────────────── */
 
   function getMetaText(toolName: string, input: unknown, output: unknown): string {
     const parts: string[] = [];
@@ -125,7 +124,7 @@
     return 0;
   }
 
-  /* ─── Status badge ─────────────────────────────────────────────────── */
+  /* ─── Status badge ───────────────────────────────────────────────── */
 
   function statusBadgeContent(
     state: ToolCallDisplay["state"],
@@ -162,6 +161,34 @@
   }
 
   const status = $derived(statusBadgeContent(call.state, call.toolCallId, call.durationMs, call.errorText));
+
+  /* ─── Toggle latch ───────────────────────────────────────────────── */
+
+  /** Undefined = no user choice yet; true/false = explicit open/close. */
+  let userChoice: boolean | undefined = $state(undefined);
+
+  /**
+   * Once children have been observed running, latch this so the card stays
+   * open after they finish.
+   */
+  let childrenWereRunning = $state(false);
+
+  $effect(() => {
+    if (call.children && childrenAnyRunning(call.children)) {
+      childrenWereRunning = true;
+    }
+  });
+
+  function handleToggleClick(e: Event, childrenRunning: boolean) {
+    const current = userChoice ?? (childrenAnyRunning(call.children ?? []) || childrenWereRunning);
+    userChoice = !current;
+  }
+
+  const delegateOpen = $derived.by(() => {
+    if (userChoice !== undefined) return userChoice;
+    if (call.children) return childrenAnyRunning(call.children) || childrenWereRunning;
+    return false;
+  });
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
 
@@ -203,32 +230,6 @@
     }
     return jsonHighlighter.codeToHtml(jsonStr, { lang: "json", theme: "atlas-json" });
   }
-
-  /* ─── Connect service extraction ─────────────────────────────────── */
-
-  const provider = $derived.by<string | null>(() => {
-    if (
-      call.toolName === "connect_service" &&
-      call.input != null &&
-      typeof call.input === "object" &&
-      "provider" in call.input &&
-      typeof (call.input as Record<string, unknown>).provider === "string"
-    ) {
-      return (call.input as Record<string, unknown>).provider as string;
-    }
-    return null;
-  });
-
-  /* ─── Artifact display extraction ───────────────────────────────── */
-
-  const artifactDisplay = $derived.by<{ artifactId: string } | null>(() => {
-    if (call.toolName !== "display_artifact") return null;
-    const inp = call.input;
-    if (typeof inp !== "object" || inp === null) return null;
-    const i = inp as Record<string, unknown>;
-    if (typeof i.artifactId !== "string") return null;
-    return { artifactId: i.artifactId };
-  });
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
@@ -294,89 +295,137 @@
   {/if}
 {/snippet}
 
-{#snippet cardBody(c: ToolCallDisplay, m: ToolMeta)}
-  <div class="tool-card-inner">
-    <div class="tool-card-content">
-      <!-- Row 1: icon + action + status -->
-      <div class="tool-card-row-primary">
-        <span class="tool-card-icon" aria-hidden="true">
-          <m.icon />
-        </span>
-        <span class="tool-card-action" title={actionText}>{actionText}</span>
-        <span class="tool-card-spacer"></span>
-        <span
-          class="status-indicator"
-          class:status-blue={status.tone === "blue"}
-          class:status-green={status.tone === "green"}
-          class:status-red={status.tone === "red"}
-          class:status-yellow={status.tone === "yellow"}
-          class:status-neutral={status.tone === "neutral"}
-          aria-label={status.text}
-          title={status.text}
-        >
-          {#if status.tone === "blue"}
-            <span class="status-dot" aria-hidden="true"></span>
-          {:else if status.tone === "green"}
-            <IconSmall.CheckCircle />
-          {:else if status.tone === "red"}
-            <IconSmall.XCircle />
-          {:else if status.tone === "yellow"}
-            <IconSmall.Clock />
-          {:else}
-            <span class="status-dot" aria-hidden="true"></span>
-          {/if}
-        </span>
-      </div>
-      <!-- Row 2: tool name + meta -->
-      <div class="tool-card-row-secondary">
-        <span class="tool-card-name">{c.toolName}</span>
-        {#if metaText}
-          <span class="tool-card-meta">{metaText}</span>
-        {/if}
-      </div>
-    </div>
-  </div>
-{/snippet}
-
-{#if provider != null}
-  <div class="tool-card connect-service">
-    <ConnectService {provider} onConnected={() => onCredentialConnected?.(provider)} />
-  </div>
-{:else if artifactDisplay != null}
-  <ArtifactCard artifactId={artifactDisplay.artifactId} />
-{:else if call.children && call.children.length > 0}
-  <DelegateToolCard {call} {onCredentialConnected} {depth} />
-{:else}
+{#if call.children && call.children.length > 0}
+  {@const childrenRunning = childrenAnyRunning(call.children)}
   <div
-    class="tool-card"
+    class="delegate-card"
+    class:open={delegateOpen}
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
   >
-    {@render cardBody(call, meta)}
-    {@render outputDrawer(call)}
+    <div
+      class="delegate-header"
+      role="button"
+      tabindex="0"
+      onclick={(e) => handleToggleClick(e, childrenRunning)}
+      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") handleToggleClick(e, childrenRunning); }}
+    >
+      <div class="delegate-header-inner">
+        <div class="delegate-header-content">
+          <div class="delegate-row-primary">
+            <span class="delegate-icon" aria-hidden="true">
+              <meta.icon />
+            </span>
+            <span class="delegate-action" title={actionText}>{actionText}</span>
+            <span class="delegate-spacer"></span>
+            <span
+              class="status-indicator"
+              class:status-blue={status.tone === "blue"}
+              class:status-green={status.tone === "green"}
+              class:status-red={status.tone === "red"}
+              class:status-yellow={status.tone === "yellow"}
+              class:status-neutral={status.tone === "neutral"}
+              aria-label={status.text}
+              title={status.text}
+            >
+              {#if status.tone === "blue"}
+                <span class="status-dot" aria-hidden="true"></span>
+              {:else if status.tone === "green"}
+                <IconSmall.CheckCircle />
+              {:else if status.tone === "red"}
+                <IconSmall.XCircle />
+              {:else if status.tone === "yellow"}
+                <IconSmall.Clock />
+              {:else}
+                <span class="status-dot" aria-hidden="true"></span>
+              {/if}
+            </span>
+          </div>
+          <div class="delegate-row-secondary">
+            <span class="delegate-name">{call.toolName}</span>
+            {#if metaText}
+              <span class="delegate-meta">{metaText}</span>
+            {/if}
+          </div>
+        </div>
+      </div>
+      <span class="delegate-chevron">
+        {#if delegateOpen}
+          <IconSmall.ChevronDown />
+        {:else}
+          <IconSmall.ChevronRight />
+        {/if}
+      </span>
+    </div>
+    {#if delegateOpen}
+      {#if call.reasoning || call.progress}
+        <div class="delegate-ephemeral">
+          {#if call.reasoning}
+            <div class="reasoning-feed">
+              {#each call.reasoning.split("\n").filter(l => l.trim()) as line}
+                <div class="reasoning-line">
+                  <span class="reasoning-dot" aria-hidden="true"></span>
+                  <span class="reasoning-text">{line}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          {#if call.progress}
+            <div class="progress-feed">
+              {#each call.progress as line}
+                <div class="progress-line">
+                  <span class="progress-dot" aria-hidden="true"></span>
+                  <span class="progress-text">{line}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+      <div class="delegate-children" style="--depth: {depth}">
+        {#each call.children as child (child.toolCallId || child.toolName)}
+          <ToolCallCard call={child} {onCredentialConnected} depth={depth + 1} />
+        {/each}
+      </div>
+      {#if call.delegateText}
+        <details class="tool-card-details">
+          <summary>
+            <span class="chevron-icon"><IconSmall.ChevronRight /></span>
+            response
+          </summary>
+          <div class="delegate-text markdown-body">
+            {@html markdownToHTML(call.delegateText)}
+          </div>
+        </details>
+      {/if}
+      {@render outputDrawer(call)}
+    {/if}
   </div>
 {/if}
 
 <style>
-  .tool-card {
-    background-color: var(--surface);
-    border-radius: var(--radius-2);
+  .delegate-card {
+    background-color: transparent;
     font-size: var(--font-size-2);
     overflow: hidden;
   }
 
-  .tool-card.with-children {
-    background-color: transparent;
-    border-radius: 0;
+  .delegate-header {
+    align-items: center;
+    cursor: pointer;
+    display: flex;
+    gap: var(--size-1);
+    user-select: none;
   }
 
-  .tool-card-inner {
+  .delegate-header-inner {
     display: flex;
+    flex: 1;
     overflow: hidden;
     padding: var(--size-1) 0;
   }
 
-  .tool-card-content {
+  .delegate-header-content {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -385,16 +434,14 @@
     padding: var(--size-1-5) var(--size-2-5);
   }
 
-  /* ─── Row 1: icon + action + status ───────────────────────────────── */
-
-  .tool-card-row-primary {
+  .delegate-row-primary {
     align-items: center;
     display: flex;
     gap: var(--size-1-5);
     min-inline-size: 0;
   }
 
-  .tool-card-icon {
+  .delegate-icon {
     color: var(--text-faded);
     display: inline-flex;
     flex-shrink: 0;
@@ -403,12 +450,12 @@
     opacity: 0.5;
   }
 
-  .tool-card-icon :global(svg) {
+  .delegate-icon :global(svg) {
     inline-size: 100%;
     block-size: 100%;
   }
 
-  .tool-card-action {
+  .delegate-action {
     color: var(--text-bright);
     flex: 1;
     font-size: var(--font-size-2);
@@ -419,8 +466,50 @@
     white-space: nowrap;
   }
 
-  .tool-card-spacer {
+  .delegate-spacer {
     flex: 0;
+  }
+
+  .delegate-chevron {
+    color: var(--text-faded);
+    display: inline-flex;
+    flex-shrink: 0;
+    inline-size: 14px;
+    block-size: 14px;
+    margin-inline-start: var(--size-1);
+    opacity: 0.5;
+    transition: transform 150ms ease;
+  }
+
+  .delegate-chevron :global(svg) {
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .delegate-row-secondary {
+    align-items: center;
+    display: flex;
+    gap: var(--size-1);
+    min-inline-size: 0;
+    padding-inline-start: calc(14px + var(--size-1-5));
+  }
+
+  .delegate-name {
+    color: var(--text-faded);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    font-weight: var(--font-weight-5);
+    opacity: 0.6;
+  }
+
+  .delegate-meta {
+    color: var(--text-faded);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    opacity: 0.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* ─── Status badge (pill with icon + text) ────────────────────────── */
@@ -468,32 +557,123 @@
     50% { opacity: 1; }
   }
 
-  /* ─── Row 2: name + meta ───────────────────────────────────────────── */
+  /* ─── Delegate ephemeral (reasoning + progress) ──────────────────── */
 
-  .tool-card-row-secondary {
-    align-items: center;
+  .delegate-ephemeral {
+    background-color: var(--surface-dark);
     display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    margin-inline-start: var(--size-3);
+    padding: var(--size-2) var(--size-2-5);
+  }
+
+  .reasoning-feed,
+  .progress-feed {
+    display: flex;
+    flex-direction: column;
     gap: var(--size-1);
-    min-inline-size: 0;
-    padding-inline-start: calc(14px + var(--size-1-5));
   }
 
-  .tool-card-name {
+  .reasoning-line,
+  .progress-line {
+    align-items: baseline;
+    display: flex;
+    gap: var(--size-1-5);
+  }
+
+  .reasoning-dot,
+  .progress-dot {
+    background-color: var(--text-faded);
+    border-radius: 50%;
+    flex-shrink: 0;
+    inline-size: 4px;
+    block-size: 4px;
+    opacity: 0.35;
+  }
+
+  .reasoning-text {
+    color: var(--text);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    line-height: 1.45;
+  }
+
+  .progress-text {
     color: var(--text-faded);
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0, 11px);
-    font-weight: var(--font-weight-5);
-    opacity: 0.6;
+    font-style: italic;
   }
 
-  .tool-card-meta {
-    color: var(--text-faded);
-    font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0, 11px);
-    opacity: 0.4;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* ─── Delegate text response ─────────────────────────────────────── */
+
+  .delegate-text {
+    background-color: var(--surface);
+    font-size: var(--font-size-2);
+    line-height: 1.55;
+    margin-inline-start: var(--size-3);
+    padding: var(--size-2) var(--size-2-5);
+  }
+
+  .delegate-text :global(p) {
+    margin-block: 0.4em;
+  }
+
+  .delegate-text :global(p:first-child) {
+    margin-block-start: 0;
+  }
+
+  .delegate-text :global(p:last-child) {
+    margin-block-end: 0;
+  }
+
+  .delegate-text :global(ul),
+  .delegate-text :global(ol) {
+    margin-block: 0.4em;
+    padding-inline-start: 1.4em;
+  }
+
+  .delegate-text :global(li) {
+    margin-block: 0.15em;
+  }
+
+  .delegate-text :global(table) {
+    border-collapse: collapse;
+    font-size: var(--font-size-1);
+    margin-block: 0.5em;
+    max-inline-size: 100%;
+  }
+
+  .delegate-text :global(th),
+  .delegate-text :global(td) {
+    border: 1px solid var(--color-border-1);
+    padding: var(--size-1) var(--size-2);
+    text-align: start;
+  }
+
+  .delegate-text :global(th) {
+    background-color: light-dark(hsl(220 12% 94%), color-mix(in srgb, var(--color-surface-3), transparent 30%));
+    font-weight: var(--font-weight-6);
+  }
+
+  .delegate-text :global(tr:nth-child(even) td) {
+    background-color: light-dark(hsl(220 12% 97%), color-mix(in srgb, var(--color-surface-2), transparent 50%));
+  }
+
+  /* ─── Nested children ────────────────────────────────────────────── */
+
+  .delegate-children {
+    display: none;
+    flex-direction: column;
+    gap: var(--size-1);
+    margin-inline-start: calc(var(--size-3) + var(--depth, 0) * var(--size-1));
+    padding-block-start: var(--size-1);
+    padding-inline-start: var(--size-2);
+  }
+
+  .delegate-card.open > .delegate-children {
+    display: flex;
   }
 
   /* ─── Output drawer ────────────────────────────────────────────────── */
@@ -614,13 +794,5 @@
   .tool-card-details :global(pre.shiki code) {
     font-family: var(--font-family-mono, ui-monospace, monospace);
     font-size: var(--font-size-0, 11px);
-  }
-
-  /* ─── Connect service override ─────────────────────────────────────── */
-
-  .tool-card.connect-service {
-    background: transparent;
-    border: none;
-    padding: 0;
   }
 </style>
