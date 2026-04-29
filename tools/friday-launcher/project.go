@@ -58,10 +58,11 @@ func commonServiceEnv() []string {
 
 // fridayEnv builds the env-var list specific to the friday daemon
 // process. Carries FRIDAY_CLAUDE_PATH, FRIDAY_UV_PATH, FRIDAY_UVX_PATH,
-// FRIDAY_NODE_PATH, FRIDAY_NPX_PATH (when bundled binaries are present
-// in binDir), plus the .env baseline. Without merging .env in here
-// friday's platform-model validation fails on every fresh install —
-// the daemon needs ANTHROPIC_API_KEY in its process environment.
+// FRIDAY_NODE_PATH, FRIDAY_NPX_PATH, FRIDAY_AGENT_BROWSER_PATH (when
+// bundled binaries are present in binDir), plus the .env baseline.
+// Without merging .env in here friday's platform-model validation
+// fails on every fresh install — the daemon needs ANTHROPIC_API_KEY
+// in its process environment.
 //
 // FRIDAY_CLAUDE_PATH discovery order:
 //  1. Explicit user override via FRIDAY_CLAUDE_PATH set in the
@@ -117,6 +118,19 @@ func fridayEnv(binDir string) []string {
 		if _, err := os.Stat(bin); err == nil {
 			env = append(env, b.envName+"="+bin)
 		}
+	}
+	// agent-browser is a single binary at <binDir>/agent-browser shipped
+	// via build-studio.ts EXTERNAL_CLIS. Friday's `web` agent invokes it
+	// via execFile (packages/bundled-agents/src/web/tools/browse.ts:67);
+	// surfacing the absolute path here lets start.tsx augmentPathWithTool
+	// include <binDir> in the daemon's PATH so the bare-name execFile
+	// call resolves.
+	abPath := filepath.Join(binDir, "agent-browser")
+	if runtime.GOOS == "windows" {
+		abPath += ".exe"
+	}
+	if _, err := os.Stat(abPath); err == nil {
+		env = append(env, "FRIDAY_AGENT_BROWSER_PATH="+abPath)
 	}
 	env = append(env, commonServiceEnv()...)
 	return env

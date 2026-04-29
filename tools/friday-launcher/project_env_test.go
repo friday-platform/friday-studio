@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,6 +49,46 @@ LINK_DEV_MODE=true
 			if !strings.Contains(joined, want) {
 				t.Errorf("service %q env missing %q\ngot:\n%s", name, want, joined)
 			}
+		}
+	}
+}
+
+// TestFridayEnv_EmitsAgentBrowserPath asserts the launcher surfaces
+// FRIDAY_AGENT_BROWSER_PATH when the bundled agent-browser binary is
+// present in binDir. Friday's `web` agent calls
+// execFile("agent-browser", ...) at runtime; without this env-var
+// emission, start.tsx can't augment PATH and the bare-name spawn
+// returns ENOENT.
+func TestFridayEnv_EmitsAgentBrowserPath(t *testing.T) {
+	tmpBin := t.TempDir()
+	binName := "agent-browser"
+	if runtime.GOOS == "windows" {
+		binName = "agent-browser.exe"
+	}
+	binPath := filepath.Join(tmpBin, binName)
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	env := fridayEnv(tmpBin)
+	want := "FRIDAY_AGENT_BROWSER_PATH=" + binPath
+	if !slices.Contains(env, want) {
+		t.Errorf("fridayEnv missing %q. got=%v", want, env)
+	}
+}
+
+// TestFridayEnv_OmitsAgentBrowserPathWhenAbsent asserts the launcher
+// stays silent (no env var) when the bundled binary isn't present —
+// e.g. during dev runs where the user hasn't built the runtime, or
+// future variants without agent-browser shipped. start.tsx logs a
+// debug line and the daemon continues; first browse call surfaces
+// ENOENT with a clear error.
+func TestFridayEnv_OmitsAgentBrowserPathWhenAbsent(t *testing.T) {
+	emptyBin := t.TempDir()
+	env := fridayEnv(emptyBin)
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "FRIDAY_AGENT_BROWSER_PATH=") {
+			t.Errorf("fridayEnv emitted %q despite missing binary", kv)
 		}
 	}
 }
