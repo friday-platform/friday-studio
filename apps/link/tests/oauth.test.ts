@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { rm } from "node:fs/promises";
 import process from "node:process";
 import { makeTempDir } from "@atlas/utils/temp.server";
@@ -823,6 +824,239 @@ describe("Static OAuth Integration", async () => {
   // Cleanup
   afterAll(async () => {
     if (mockServer) mockServer.controller.abort();
+    await rm(tempDir, { recursive: true });
+  });
+});
+
+describe("Delegated OAuth Integration", async () => {
+  const tempDir = makeTempDir();
+  const storage = new FileSystemStorageAdapter(tempDir);
+  const oauthService = new OAuthService(registry, storage);
+  const app = await createApp(
+    storage,
+    oauthService,
+    new NoOpPlatformRouteRepository(),
+    new NoOpCommunicatorWiringRepository(),
+  );
+
+  let refreshController: AbortController | undefined;
+  let refreshUrl: string | undefined;
+
+  it("completeFlow - parses pre-exchanged tokens from callback query params", async () => {
+    const providerId = "test-delegated-complete";
+    if (!registry.has(providerId)) {
+      registry.register(
+        defineOAuthProvider({
+          id: providerId,
+          displayName: "Test Delegated",
+          description: "Test delegated OAuth provider",
+          oauthConfig: {
+            mode: "delegated",
+            authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+            delegatedExchangeUri: "https://exchange.example.com",
+            delegatedRefreshUri: "https://refresh.example.com/refreshToken",
+            clientId: "test-delegated-client-id",
+            scopes: ["openid", "email"],
+            extraAuthParams: { access_type: "offline", prompt: "consent" },
+            encodeState: ({ csrfToken, finalRedirectUri }) =>
+              Buffer.from(
+                JSON.stringify({ uri: finalRedirectUri, manual: false, csrf: csrfToken }),
+              ).toString("base64"),
+          },
+          identify: async (tokens) => `delegated-user:${tokens.access_token.slice(0, 8)}`,
+        }),
+      );
+    }
+
+    // Initiate flow
+    const initiateRes = await app.request(`/v1/oauth/authorize/${providerId}`);
+    expect(initiateRes.status).toEqual(302);
+    const authUrl = initiateRes.headers.get("Location");
+    if (!authUrl) throw new Error("authUrl should be defined");
+
+    // Verify auth URL uses delegatedExchangeUri as redirect_uri, NOT the local callback
+    const authUrlObj = new URL(authUrl);
+    expect(authUrlObj.searchParams.get("redirect_uri")).toEqual("https://exchange.example.com");
+    expect(authUrlObj.searchParams.get("client_id")).toEqual("test-delegated-client-id");
+    expect(authUrlObj.searchParams.get("response_type")).toEqual("code");
+    expect(authUrlObj.searchParams.get("access_type")).toEqual("offline");
+    expect(authUrlObj.searchParams.get("prompt")).toEqual("consent");
+
+    // Verify state payload is base64-encoded JSON with the local callback URI
+    const statePayload = authUrlObj.searchParams.get("state");
+    if (!statePayload) throw new Error("state should be defined");
+    const decoded = z.object({ manual: z.boolean(), csrf: z.string(), uri: z.string() }).parse(
+      JSON.parse(Buffer.from(statePayload, "base64").toString("utf8")),
+    );
+    expect(decoded.manual).toBe(false);
+    expect(decoded.csrf).toBeDefined();
+    expect(decoded.uri).toMatch(/\/v1\/callback\//);
+
+    // The state JWT value is what gets echoed back by the Cloud Function
+    const stateJwt = decoded.csrf;
+
+    // Simulate Cloud Function redirect with pre-exchanged tokens
+    const callbackRes = await app.request(
+      `/v1/callback/${providerId}?` +
+        `access_token=delegated_access_token&` +
+        `refresh_token=delegated_refresh_token&` +
+        `expiry_date=1800000000000&` +
+        `scope=openid%20email&` +
+        `token_type=Bearer&` +
+        `state=${stateJwt}`,
+    );
+
+    expect(callbackRes.status).toEqual(200);
+    const callbackJson = z
+      .object({ status: z.string(), credential_id: z.string() })
+      .parse(await callbackRes.json());
+    expect(callbackJson.status).toEqual("success");
+
+    // Verify credential was created
+    const credRes = await app.request(`/v1/credentials/${callbackJson.credential_id}`);
+    expect(credRes.status).toEqual(200);
+    const credSummary = CredentialSummarySchema.parse(await credRes.json());
+    expect(credSummary).toMatchObject({ type: "oauth", provider: providerId });
+
+    // Verify internal API returns full credential with correct tokens
+    const internalRes = await app.request(
+      `/internal/v1/credentials/${callbackJson.credential_id}`,
+    );
+    expect(internalRes.status).toEqual(200);
+    const internalJson = z
+      .object({
+        credential: CredentialSchema,
+        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+      })
+      .parse(await internalRes.json());
+    expect(internalJson.status).toEqual("ready");
+    expect(internalJson.credential.secret.access_token).toEqual("delegated_access_token");
+    expect(internalJson.credential.secret.refresh_token).toEqual("delegated_refresh_token");
+    expect(internalJson.credential.secret.token_type).toEqual("Bearer");
+    expect(internalJson.credential.secret.expires_at).toEqual(1800000000); // ms / 1000
+  });
+
+  it("refreshCredential - calls delegated refresh endpoint and preserves original refresh_token", async () => {
+    // Start mock Cloud Function refresh endpoint
+    refreshController = new AbortController();
+    let actualPort = 0;
+    let serverReady = false;
+
+    void Deno.serve(
+      {
+        port: 0,
+        signal: refreshController.signal,
+        onListen: ({ port }) => {
+          actualPort = port;
+          serverReady = true;
+        },
+      },
+      async (req) => {
+        const url = new URL(req.url);
+        if (url.pathname === "/refreshToken" && req.method === "POST") {
+          const body = z.object({ refresh_token: z.string() }).parse(await req.json());
+          if (body.refresh_token === "delegated_refresh_token") {
+            return Response.json({
+              access_token: "refreshed_access_token",
+              expiry_date: 1900000000000,
+              scope: "openid email",
+              token_type: "Bearer",
+            });
+          }
+          return Response.json({ error: "invalid_grant" }, { status: 400 });
+        }
+        return new Response("Not Found", { status: 404 });
+      },
+    );
+
+    while (!serverReady) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    refreshUrl = `http://localhost:${actualPort}/refreshToken`;
+
+    const providerId = "test-delegated-refresh";
+    if (!registry.has(providerId)) {
+      registry.register(
+        defineOAuthProvider({
+          id: providerId,
+          displayName: "Test Delegated Refresh",
+          description: "Test delegated OAuth refresh",
+          oauthConfig: {
+            mode: "delegated",
+            authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+            delegatedExchangeUri: "https://exchange.example.com",
+            delegatedRefreshUri: refreshUrl,
+            clientId: "test-delegated-client-id",
+            scopes: ["openid", "email"],
+            extraAuthParams: { access_type: "offline", prompt: "consent" },
+            encodeState: ({ csrfToken, finalRedirectUri }) =>
+              Buffer.from(
+                JSON.stringify({ uri: finalRedirectUri, manual: false, csrf: csrfToken }),
+              ).toString("base64"),
+          },
+          identify: async (tokens) => `delegated-user:${tokens.access_token.slice(0, 8)}`,
+        }),
+      );
+    }
+
+    // Initiate flow and complete to get credential
+    const initiateRes = await app.request(`/v1/oauth/authorize/${providerId}`);
+    expect(initiateRes.status).toEqual(302);
+    const authUrl = initiateRes.headers.get("Location");
+    if (!authUrl) throw new Error("authUrl should be defined");
+    const statePayload = new URL(authUrl).searchParams.get("state");
+    if (!statePayload) throw new Error("state should be defined");
+    const stateJwt = z.object({ csrf: z.string() }).parse(
+      JSON.parse(Buffer.from(statePayload, "base64").toString("utf8")),
+    ).csrf;
+
+    const callbackRes = await app.request(
+      `/v1/callback/${providerId}?` +
+        `access_token=delegated_access_token&` +
+        `refresh_token=delegated_refresh_token&` +
+        `expiry_date=1800000000000&` +
+        `scope=openid%20email&` +
+        `token_type=Bearer&` +
+        `state=${stateJwt}`,
+    );
+    expect(callbackRes.status).toEqual(200);
+    const callbackJson = z
+      .object({ credential_id: z.string() })
+      .parse(await callbackRes.clone().json());
+
+    // Manually expire the token so proactive refresh triggers
+    const cred = await storage.get(callbackJson.credential_id, "dev");
+    if (!cred) throw new Error("cred should be defined");
+    const expiringCredInput = {
+      type: cred.type,
+      provider: cred.provider,
+      userIdentifier: cred.userIdentifier,
+      label: cred.label,
+      secret: {
+        ...cred.secret,
+        expires_at: Math.floor(Date.now() / 1000) + 60, // Expires in 1 minute (< 5 min buffer)
+      },
+    };
+    await storage.update(callbackJson.credential_id, expiringCredInput, "dev");
+
+    // Proactive refresh via internal endpoint
+    const internalRes = await app.request(`/internal/v1/credentials/${callbackJson.credential_id}`);
+    expect(internalRes.status).toEqual(200);
+    const internalJson = z
+      .object({
+        credential: CredentialSchema,
+        status: z.enum(["ready", "refreshed", "expired_no_refresh", "refresh_failed"]),
+      })
+      .parse(await internalRes.json());
+    expect(internalJson.status).toEqual("refreshed");
+    expect(internalJson.credential.secret.access_token).toEqual("refreshed_access_token");
+    // Cloud Function never returns a new refresh_token — original must be preserved
+    expect(internalJson.credential.secret.refresh_token).toEqual("delegated_refresh_token");
+  });
+
+  afterAll(async () => {
+    if (refreshController) refreshController.abort();
     await rm(tempDir, { recursive: true });
   });
 });

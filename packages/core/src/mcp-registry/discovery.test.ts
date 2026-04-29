@@ -239,7 +239,7 @@ describe("discoverMCPServers", () => {
             env: { WORKSPACE_MCP_PORT: "8001" },
           },
         },
-        platformEnv: { GOOGLE_OAUTH_CLIENT_ID: "test-client-id", MCP_ENABLE_OAUTH21: "true" },
+        platformEnv: { TEST_PLATFORM_VAR: "test-value", MCP_ENABLE_OAUTH21: "true" },
       } as Partial<MCPServerMetadata>);
 
       const result = await discoverMCPServers("ws-1", makeWorkspaceConfig({}));
@@ -247,7 +247,7 @@ describe("discoverMCPServers", () => {
       expect(entry).toBeDefined();
 
       expect(entry?.mergedConfig.startup?.env).toEqual({
-        GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
+        TEST_PLATFORM_VAR: "test-value",
         MCP_ENABLE_OAUTH21: "true",
         WORKSPACE_MCP_PORT: "8001",
       });
@@ -264,7 +264,7 @@ describe("discoverMCPServers", () => {
             env: { WORKSPACE_MCP_PORT: "8001" },
           },
         },
-        platformEnv: { GOOGLE_OAUTH_CLIENT_ID: "base-client-id" },
+        platformEnv: { TEST_PLATFORM_VAR: "base-value" },
       } as Partial<MCPServerMetadata>);
 
       const wsConfig = makeWorkspaceConfig({
@@ -274,7 +274,7 @@ describe("discoverMCPServers", () => {
             type: "command",
             command: "uvx",
             args: ["workspace-mcp"],
-            env: { GOOGLE_OAUTH_CLIENT_ID: "override-client-id", WORKSPACE_MCP_PORT: "8001" },
+            env: { TEST_PLATFORM_VAR: "override-value", WORKSPACE_MCP_PORT: "8001" },
           },
         },
       });
@@ -285,7 +285,7 @@ describe("discoverMCPServers", () => {
 
       // platformEnv forms the base; workspace startup.env takes precedence
       expect(entry?.mergedConfig.startup?.env).toEqual({
-        GOOGLE_OAUTH_CLIENT_ID: "override-client-id",
+        TEST_PLATFORM_VAR: "override-value",
         WORKSPACE_MCP_PORT: "8001",
       });
     });

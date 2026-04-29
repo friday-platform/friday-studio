@@ -64,3 +64,43 @@ deno task check                       # Type check
   are encrypted per-user).
 - **Dev mode** — `LINK_DEV_MODE=true` skips JWT verification, defaults user ID
   to `"dev"`. Tests use this.
+
+## Delegated OAuth mode
+
+Google Workspace providers (`google-calendar`, `google-gmail`, `google-drive`,
+`google-docs`, `google-sheets`) use **delegated mode** — the code→token exchange
+happens in an external Cloud Function rather than in Link.
+
+Why: Friday's own OAuth client is unverified and triggers Google's scary
+"unverified app" warning. The delegated flow piggybacks on the Gemini CLI
+Workspace Extension's **verified** client (`338689075713-...`) via its public
+Cloud Function at `https://google-workspace-extension.geminicli.com`.
+
+Flow:
+
+1. Link builds the auth URL with `redirect_uri = <Cloud Function>` and a base64
+   `state` payload containing `{uri: <local callback>, manual: false, csrf}`.
+2. User consents on Google. The consent screen says **"Gemini CLI Workspace
+   Extension"** — not Friday Studio. This is expected.
+3. Google redirects to the Cloud Function with an auth `code`.
+4. Cloud Function exchanges `code` for tokens (it holds the `client_secret`).
+5. Cloud Function redirects to the `uri` from the `state` payload with tokens in
+   query params: `?access_token=...&refresh_token=...&expiry_date=...`.
+6. Link's callback handler parses the tokens directly — no code exchange.
+7. Token refresh: Link POSTs `{refresh_token}` to the Cloud Function's
+   `/refreshToken` endpoint. Response has a new `access_token` but **never a new
+   `refresh_token`** — the original is preserved.
+
+### Critical constraints
+
+- **Localhost-only callback** — the Cloud Function only redirects to `localhost`
+  or `127.0.0.1`. If Link ever runs on a non-localhost URL, this flow breaks.
+- **Cloud Function dependency** — the entire Google integration depends on a
+  third-party endpoint Google can revoke or rate-limit at any time. If it goes
+  down, all Google OAuth flows and refreshes fail across all users.
+- **Scope subset** — the scopes Link requests must remain a subset of what
+  Gemini's verified GCP project covers. Adding a new Google scope outside that
+  set silently re-introduces the unverified-app warning.
+- **Token refresh never rotates** — `refreshDelegatedToken` explicitly preserves
+  the original `refresh_token` because the Cloud Function refresh response
+  doesn't include one.

@@ -150,14 +150,22 @@ describe("mcpServersRegistry", () => {
       expect(startup!.env).not.toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
     });
 
-    it.each(googleIds)("'%s' has platformEnv with OAuth credentials", (id) => {
+    it.each(googleIds)("'%s' has platformEnv with OAuth flags, stateless mode, and client_id (dummy secret)", (id) => {
       const server = mcpServersRegistry.servers[id];
       if (!server) throw new Error(`missing server '${id}' in registry`);
       expect(server.platformEnv).toBeDefined();
+      // client_id is required so workspace-mcp's ExternalOAuthProvider can
+      // verify Bearer tokens via Google's userinfo API.
+      // client_secret is required for FastMCP's GoogleProvider initialization
+      // (JWT key derivation) even in external-OAuth mode; the dummy value is
+      // NOT used for actual Google API calls — the real secret lives in the
+      // Cloud Function and never ships in this binary.
+      // STATELESS_MODE disables file-system writes (container-friendly).
       expect(server.platformEnv).toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
       expect(server.platformEnv).toHaveProperty("GOOGLE_OAUTH_CLIENT_SECRET");
       expect(server.platformEnv).toHaveProperty("MCP_ENABLE_OAUTH21");
       expect(server.platformEnv).toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
+      expect(server.platformEnv).toHaveProperty("WORKSPACE_MCP_STATELESS_MODE");
     });
 
     it.each(googleIds)("'%s' ready_url matches transport URL", (id) => {

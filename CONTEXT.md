@@ -24,7 +24,25 @@ A fourth type, `system`, exists in `WorkspaceAgentConfigSchema` but is reserved 
 Agents are declared in the top-level `agents` section and referenced by `agentId` within job FSM actions. **All bundled atlas agents take a string as per-invocation input** (the FSM action passes a string, the agent layers it on top of its own internal prompt).
 
 ### MCP Server
-An external tool server (stdio, HTTP, or SSE transport) that exposes tools agents can call. Declared in `tools.mcp.servers`. The daemon spawns the server process, manages its lifecycle, and routes tool calls from agents.
+An external tool server (stdio, HTTP, or SSE transport) that exposes tools agents can call. The daemon spawns the server process, manages its lifecycle, and routes tool calls from agents.
+
+### MCP Registry Entry
+A daemon-scoped catalog record that describes an MCP server and how to configure it for workspaces. It may carry a Link Provider blueprint for credential setup. Avoid using “MCP server” when you mean the catalog metadata record.
+
+### Blessed MCP Registry Entry
+An MCP Registry Entry shipped with the Friday binary. Blessed entries are supplied by the target daemon and are not exported in workspace bundles.
+
+### Dynamic MCP Registry Entry
+An MCP Registry Entry added by a user, registry import, or bundle import and stored in the daemon registry. Dynamic entries are portable bundle data.
+
+### Curated Upstream Override
+A Friday-maintained override applied while installing an upstream MCP registry entry, such as a display name or static Link Provider ID. The installed entry is still a Dynamic MCP Registry Entry, not a Blessed MCP Registry Entry.
+
+### Enabled MCP Server
+A workspace-scoped MCP server configuration declared under `tools.mcp.servers.<id>`. It may come from an MCP Registry Entry template or be authored directly in the workspace config.
+
+### Link Provider
+A credential schema registered with Link that tells `connect_service` how to collect OAuth or API-key credentials. A bundled dynamic Link Provider belongs one-to-one to its MCP Registry Entry and uses the same ID. Link Providers are recreated from bundle metadata, but credential values are not exported.
 
 ### Memory
 Persistent state across sessions. Three kinds:

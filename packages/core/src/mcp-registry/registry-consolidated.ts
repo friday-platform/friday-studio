@@ -17,7 +17,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Calendar management via workspace-mcp — list calendars, search events, create/modify/delete events, add attendees, create Google Meet links",
     constraints:
-      "Requires OAuth. Use for calendar queries, event creation, scheduling, meeting management. Bundled google-calendar agent provides high-level calendar operations. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8001 GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools calendar --transport streamable-http",
+      "Requires OAuth. Use for calendar queries, event creation, scheduling, meeting management. Bundled google-calendar agent provides high-level calendar operations. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=unused-dummy-secret-for-fastmcp-init WORKSPACE_MCP_PORT=8001 uvx workspace-mcp --tools calendar --transport streamable-http",
   },
   {
     id: "google-gmail",
@@ -29,7 +29,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Read and manage Gmail via workspace-mcp — search messages, read email content and attachments, send emails, create drafts, manage labels and filters. Full inbox access. This is the ONLY way to read email.",
     constraints:
-      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8002 GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools gmail --transport streamable-http",
+      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=unused-dummy-secret-for-fastmcp-init WORKSPACE_MCP_PORT=8002 uvx workspace-mcp --tools gmail --transport streamable-http",
   },
   {
     id: "google-drive",
@@ -41,7 +41,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Drive management via workspace-mcp — search files, list folders, create/update files, manage sharing and permissions, get download URLs",
     constraints:
-      "Requires OAuth. Use for file storage, searching, sharing, managing permissions, and document access. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8003 GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools drive --transport streamable-http",
+      "Requires OAuth. Use for file storage, searching, sharing, managing permissions, and document access. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=unused-dummy-secret-for-fastmcp-init WORKSPACE_MCP_PORT=8003 uvx workspace-mcp --tools drive --transport streamable-http",
   },
   {
     id: "google-docs",
@@ -53,7 +53,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Docs management via workspace-mcp — search docs, create documents, edit text, insert images/tables, find and replace, export to PDF",
     constraints:
-      "Requires OAuth. Use for document creation, editing, formatting, tables, images, and PDF export. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8004 GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools docs --transport streamable-http",
+      "Requires OAuth. Use for document creation, editing, formatting, tables, images, and PDF export. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=unused-dummy-secret-for-fastmcp-init WORKSPACE_MCP_PORT=8004 uvx workspace-mcp --tools docs --transport streamable-http",
   },
   {
     id: "google-sheets",
@@ -65,7 +65,7 @@ const GOOGLE_WORKSPACE_SERVICES = [
     description:
       "Full Google Sheets management via workspace-mcp — list spreadsheets, read/write cell values, create sheets, format cells, conditional formatting.",
     constraints:
-      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_PORT=8005 GOOGLE_OAUTH_CLIENT_ID=<id> GOOGLE_OAUTH_CLIENT_SECRET=<secret> uvx workspace-mcp --tools sheets --transport streamable-http",
+      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com GOOGLE_OAUTH_CLIENT_SECRET=unused-dummy-secret-for-fastmcp-init WORKSPACE_MCP_PORT=8005 uvx workspace-mcp --tools sheets --transport streamable-http",
   },
 ];
 
@@ -98,15 +98,21 @@ function createGoogleWorkspaceEntry(
         ready_url: defaultUrl,
       },
     },
-    // Platform-owned env vars injected at spawn time but never serialized to workspace.yml
+    // Platform-owned env vars injected at spawn time but never serialized to workspace.yml.
+    // OAuth tokens are minted by Link's delegated flow and passed to workspace-mcp as Bearer
+    // tokens in HTTP headers. client_id is required so workspace-mcp's
+    // ExternalOAuthProvider can verify tokens via Google's userinfo API.
+    // client_secret is required for FastMCP's GoogleProvider initialization
+    // (JWT key derivation) even in external-OAuth mode; it is NOT used for
+    // actual Google API calls — the real secret lives in the Cloud Function.
+    // STATELESS_MODE prevents file-system credential writes (container-friendly).
     platformEnv: {
-      // Desktop app client ID — PKCE provides real security but Google still
-      // requires client_secret present for Desktop app token endpoint.
-      GOOGLE_OAUTH_CLIENT_ID:
-        "121686085713-m7b2u1sari8j9l07ep3fodes3b85a1pm.apps.googleusercontent.com",
-      GOOGLE_OAUTH_CLIENT_SECRET: "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",
       MCP_ENABLE_OAUTH21: "true",
       EXTERNAL_OAUTH21_PROVIDER: "true",
+      WORKSPACE_MCP_STATELESS_MODE: "true",
+      GOOGLE_OAUTH_CLIENT_ID:
+        "338689075775-o75k922vn5fdl18qergr96rp8g63e4d7.apps.googleusercontent.com",
+      GOOGLE_OAUTH_CLIENT_SECRET: "unused-dummy-secret-for-fastmcp-init",
     },
     requiredConfig: [
       { key: tokenEnvKey, description: `${spec.name} access token from Link`, type: "string" },

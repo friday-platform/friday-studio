@@ -73,6 +73,11 @@
             <span class="status-label disconnected">Not connected</span>
 
             {#if cred.linkRef}
+              {#if cred.provider?.startsWith("google-")}
+                <span class="consent-note">
+                  Google sign-in shows "Gemini CLI Workspace Extension" — that's expected.
+                </span>
+              {/if}
               <Button
                 variant="secondary"
                 size="small"
@@ -268,6 +273,14 @@
 
   .status-label.muted {
     color: color-mix(in srgb, var(--color-text), transparent 25%);
+  }
+
+  .consent-note {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-size: var(--font-size-1);
+    font-style: italic;
+    inline-size: 100%;
+    line-height: 1.45;
   }
 
   .manual-toggle {

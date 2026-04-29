@@ -120,8 +120,8 @@ function makeHttpConfig(overrides?: Partial<MCPServerConfig["startup"]>): MCPSer
       command: "uvx",
       args: ["workspace-mcp", "--tools", "calendar", "--transport", "streamable-http"],
       env: {
-        GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
-        GOOGLE_OAUTH_CLIENT_SECRET: "test-secret",
+        TEST_PLATFORM_VAR: "test-value",
+        TEST_PLATFORM_SECRET: "test-secret",
         WORKSPACE_MCP_PORT: "8001",
       },
       ready_timeout_ms: 500,
@@ -160,7 +160,7 @@ describe("connectHttp startup", () => {
       "uvx",
       ["workspace-mcp", "--tools", "calendar", "--transport", "streamable-http"],
       expect.objectContaining({
-        env: expect.objectContaining({ GOOGLE_OAUTH_CLIENT_ID: "test-client-id" }),
+        env: expect.objectContaining({ TEST_PLATFORM_VAR: "test-value" }),
       }),
     );
 
@@ -260,7 +260,7 @@ describe("connectHttp startup", () => {
         type: "command",
         command: "uvx",
         args: ["workspace-mcp"],
-        env: { GOOGLE_OAUTH_CLIENT_ID: "client-id", WORKSPACE_MCP_PORT: "8001" },
+        env: { TEST_PLATFORM_VAR: "client-value", WORKSPACE_MCP_PORT: "8001" },
         ready_timeout_ms: 500,
         ready_interval_ms: 50,
       },
@@ -279,7 +279,7 @@ describe("connectHttp startup", () => {
     if (!spawnCall) throw new Error("expected mockSpawn to have been called");
     const spawnEnv = spawnCall[2].env as Record<string, string>;
     expect(spawnEnv).not.toHaveProperty("MY_TOKEN");
-    expect(spawnEnv).toHaveProperty("GOOGLE_OAUTH_CLIENT_ID", "client-id");
+    expect(spawnEnv).toHaveProperty("TEST_PLATFORM_VAR", "client-value");
 
     // HTTP headers must contain the bearer token but NOT startup env vars
     expect(MockHTTPTransport).toHaveBeenCalledWith(
@@ -293,7 +293,7 @@ describe("connectHttp startup", () => {
     const httpCall = MockHTTPTransport.mock.calls[0];
     if (!httpCall) throw new Error("expected MockHTTPTransport to have been called");
     const callArgs = httpCall[1] as { requestInit: { headers: Record<string, string> } };
-    expect(callArgs.requestInit.headers).not.toHaveProperty("GOOGLE_OAUTH_CLIENT_ID");
+    expect(callArgs.requestInit.headers).not.toHaveProperty("TEST_PLATFORM_VAR");
   });
 });
 
