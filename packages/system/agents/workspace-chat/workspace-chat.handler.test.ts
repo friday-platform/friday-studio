@@ -40,7 +40,7 @@ const mockFetchUserIdentitySection = vi.hoisted(() => vi.fn());
 const mockCreateConnectServiceTool = vi.hoisted(() => vi.fn());
 const mockCreateJobTools = vi.hoisted(() => vi.fn());
 const mockCreateAgentTool = vi.hoisted(() => vi.fn(() => ({})));
-const mockCreateListMCPServersTool = vi.hoisted(() => vi.fn());
+const mockCreateListCapabilitiesTool = vi.hoisted(() => vi.fn());
 
 const mockStreamText = vi.hoisted(() => vi.fn());
 const mockCreateUIMessageStream = vi.hoisted(() => vi.fn());
@@ -144,8 +144,8 @@ vi.mock("./tools/bundled-agent-tools.ts", () => ({ createAgentTool: mockCreateAg
 
 vi.mock("./tools/job-tools.ts", () => ({ createJobTools: mockCreateJobTools }));
 
-vi.mock("./tools/list-mcp-servers.ts", () => ({
-  createListMCPServersTool: mockCreateListMCPServersTool,
+vi.mock("./tools/list-capabilities.ts", () => ({
+  createListCapabilitiesTool: mockCreateListCapabilitiesTool,
 }));
 
 vi.mock("./tools/artifact-tools.ts", () => ({ artifactTools: {} }));
@@ -272,8 +272,8 @@ function setupDefaultMocks(existingMessages: AtlasUIMessage[] = []): void {
   mockCreateConnectServiceTool.mockReturnValue({ description: "connect" });
   mockCreateJobTools.mockReturnValue({});
   mockCreateAgentTool.mockReturnValue({});
-  mockCreateListMCPServersTool.mockReturnValue({
-    list_mcp_servers: { description: "List MCP servers" },
+  mockCreateListCapabilitiesTool.mockReturnValue({
+    list_capabilities: { description: "List capabilities" },
   });
 
   // ChatStorage
@@ -366,7 +366,7 @@ describe("workspace-chat handler", () => {
     mockCreateConnectServiceTool.mockReset();
     mockCreateJobTools.mockReset();
     mockCreateAgentTool.mockReset();
-    mockCreateListMCPServersTool.mockReset();
+    mockCreateListCapabilitiesTool.mockReset();
     mockStreamText.mockReset();
     mockCreateUIMessageStream.mockReset();
     mockConvertToModelMessages.mockReset();
@@ -648,22 +648,24 @@ describe("workspace-chat handler", () => {
     // Turn 1: Link has stripe-mcp provider but no credential yet
     mockFetchLinkSummary.mockResolvedValue({ providers: [{ id: "stripe-mcp" }], credentials: [] });
 
-    // Set up list_mcp_servers tool to return unconfigured stripe
-    mockCreateListMCPServersTool.mockReturnValue({
-      list_mcp_servers: {
-        description: "List MCP servers",
+    // Set up list_capabilities tool to return stripe as mcp_available (not yet enabled)
+    mockCreateListCapabilitiesTool.mockReturnValue({
+      list_capabilities: {
+        description: "List capabilities",
         parameters: {},
         execute: vi
           .fn()
-          .mockResolvedValue([
-            {
-              id: "stripe-mcp",
-              name: "Stripe",
-              configured: false,
-              provider: "stripe-mcp",
-              requiredConfig: ["STRIPE_API_KEY"],
-            },
-          ]),
+          .mockResolvedValue({
+            capabilities: [
+              {
+                kind: "mcp_available",
+                id: "stripe-mcp",
+                description: "Stripe payments",
+                provider: "stripe-mcp",
+                requiresConfig: ["STRIPE_API_KEY"],
+              },
+            ],
+          }),
       },
     });
 
@@ -721,7 +723,7 @@ describe("workspace-chat handler", () => {
             // Build assistant message based on turn
             let assistantMessage: AtlasUIMessage;
             if (originalMessages.length === 1) {
-              // Turn 1: list_mcp_servers → connect_service
+              // Turn 1: list_capabilities → connect_service
               assistantMessage = {
                 id: crypto.randomUUID(),
                 role: "assistant",
@@ -730,24 +732,26 @@ describe("workspace-chat handler", () => {
                   {
                     type: "tool-call",
                     toolCallId: "tc-1",
-                    toolName: "list_mcp_servers",
+                    toolName: "list_capabilities",
                     input: {},
                     dynamic: false,
                   } as unknown as AtlasUIMessage["parts"][number],
                   {
                     type: "tool-result",
                     toolCallId: "tc-1",
-                    toolName: "list_mcp_servers",
+                    toolName: "list_capabilities",
                     input: {},
-                    output: [
-                      {
-                        id: "stripe-mcp",
-                        name: "Stripe",
-                        configured: false,
-                        provider: "stripe-mcp",
-                        requiredConfig: ["STRIPE_API_KEY"],
-                      },
-                    ],
+                    output: {
+                      capabilities: [
+                        {
+                          kind: "mcp_available",
+                          id: "stripe-mcp",
+                          description: "Stripe payments",
+                          provider: "stripe-mcp",
+                          requiresConfig: ["STRIPE_API_KEY"],
+                        },
+                      ],
+                    },
                     dynamic: false,
                   } as unknown as AtlasUIMessage["parts"][number],
                   {
@@ -768,7 +772,7 @@ describe("workspace-chat handler", () => {
                 ],
               };
             } else {
-              // Turn 2: list_mcp_servers → delegate
+              // Turn 2: list_capabilities → delegate
               assistantMessage = {
                 id: crypto.randomUUID(),
                 role: "assistant",
@@ -777,16 +781,25 @@ describe("workspace-chat handler", () => {
                   {
                     type: "tool-call",
                     toolCallId: "tc-3",
-                    toolName: "list_mcp_servers",
+                    toolName: "list_capabilities",
                     input: {},
                     dynamic: false,
                   } as unknown as AtlasUIMessage["parts"][number],
                   {
                     type: "tool-result",
                     toolCallId: "tc-3",
-                    toolName: "list_mcp_servers",
+                    toolName: "list_capabilities",
                     input: {},
-                    output: [{ id: "stripe-mcp", name: "Stripe", configured: true }],
+                    output: {
+                      capabilities: [
+                        {
+                          kind: "mcp_enabled",
+                          id: "stripe-mcp",
+                          description: "Stripe payments",
+                          requiresConfig: [],
+                        },
+                      ],
+                    },
                     dynamic: false,
                   } as unknown as AtlasUIMessage["parts"][number],
                   {
@@ -825,8 +838,8 @@ describe("workspace-chat handler", () => {
     expect(capturedStreamTextCalls).toHaveLength(1);
     const turn1Args = capturedStreamTextCalls[0]!;
 
-    // Turn 1 tools include list_mcp_servers, connect_service, and delegate
-    expect(turn1Args.tools).toHaveProperty("list_mcp_servers");
+    // Turn 1 tools include list_capabilities, connect_service, and delegate
+    expect(turn1Args.tools).toHaveProperty("list_capabilities");
     expect(turn1Args.tools).toHaveProperty("connect_service");
     expect(turn1Args.tools).toHaveProperty("delegate");
 
@@ -848,7 +861,7 @@ describe("workspace-chat handler", () => {
       expect.objectContaining({
         role: "assistant",
         parts: expect.arrayContaining([
-          expect.objectContaining({ type: "tool-call", toolName: "list_mcp_servers" }),
+          expect.objectContaining({ type: "tool-call", toolName: "list_capabilities" }),
           expect.objectContaining({ type: "tool-call", toolName: "connect_service" }),
         ]),
       }),
@@ -879,14 +892,23 @@ describe("workspace-chat handler", () => {
       },
     });
 
-    // Update list_mcp_servers to return configured stripe for turn 2
-    mockCreateListMCPServersTool.mockReturnValue({
-      list_mcp_servers: {
-        description: "List MCP servers",
+    // Update list_capabilities to return stripe as mcp_enabled for turn 2
+    mockCreateListCapabilitiesTool.mockReturnValue({
+      list_capabilities: {
+        description: "List capabilities",
         parameters: {},
         execute: vi
           .fn()
-          .mockResolvedValue([{ id: "stripe-mcp", name: "Stripe", configured: true }]),
+          .mockResolvedValue({
+            capabilities: [
+              {
+                kind: "mcp_enabled",
+                id: "stripe-mcp",
+                description: "Stripe payments",
+                requiresConfig: [],
+              },
+            ],
+          }),
       },
     });
 
@@ -895,8 +917,8 @@ describe("workspace-chat handler", () => {
     expect(capturedStreamTextCalls).toHaveLength(2);
     const turn2Args = capturedStreamTextCalls[1]!;
 
-    // Turn 2 tools still include list_mcp_servers and delegate
-    expect(turn2Args.tools).toHaveProperty("list_mcp_servers");
+    // Turn 2 tools still include list_capabilities and delegate
+    expect(turn2Args.tools).toHaveProperty("list_capabilities");
     expect(turn2Args.tools).toHaveProperty("delegate");
 
     // Turn 2 messages include data-credential-linked

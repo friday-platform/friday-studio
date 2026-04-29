@@ -665,7 +665,7 @@ describe("system prompt ranking rubric", () => {
 
   it("prompt.txt contains MCP workflow instructions", async () => {
     const prompt = await readPromptText();
-    expect(prompt).toContain("list_mcp_servers");
+    expect(prompt).toContain("list_capabilities");
     expect(prompt).toContain("mcpServers");
   });
 });

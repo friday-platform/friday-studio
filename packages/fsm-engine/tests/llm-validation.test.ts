@@ -20,24 +20,12 @@ function passVerdict(): ValidationVerdict {
 
 /** Helper: uncertain verdict (mid-band confidence). */
 function uncertainVerdict(): ValidationVerdict {
-  return {
-    status: "uncertain",
-    confidence: 0.4,
-    threshold: 0.45,
-    issues: [],
-    retryGuidance: "",
-  };
+  return { status: "uncertain", confidence: 0.4, threshold: 0.45, issues: [], retryGuidance: "" };
 }
 
 /** Helper: fail verdict (below floor). */
 function failVerdict(retryGuidance: string): ValidationVerdict {
-  return {
-    status: "fail",
-    confidence: 0.1,
-    threshold: 0.45,
-    issues: [],
-    retryGuidance,
-  };
+  return { status: "fail", confidence: 0.1, threshold: 0.45, issues: [], retryGuidance };
 }
 
 /**
@@ -692,9 +680,7 @@ describe("LLM Action Validation Hook", () => {
       llmProvider: mockLLMProvider,
       validateOutput: (trace) => {
         if (trace.content.includes("ISSUE-1 and ISSUE-3")) {
-          return Promise.resolve({
-            verdict: failVerdict("ISSUE-1 was already in the seen table"),
-          });
+          return Promise.resolve({ verdict: failVerdict("ISSUE-1 was already in the seen table") });
         }
         return Promise.resolve({ verdict: passVerdict() });
       },

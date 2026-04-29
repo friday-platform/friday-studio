@@ -44,6 +44,7 @@ import {
   mapActionToStepStart,
   mapFsmEventToSessionEvent,
   mapStateSkippedToStepSkipped,
+  mapValidationAttemptToStepValidation,
   ReasoningResultStatus,
   SessionHistoryStorage,
   type SessionStreamEvent,
@@ -159,46 +160,55 @@ interface WorkspaceRuntimeInit {
 /**
  * Convert FSMEvent to AtlasUIMessageChunk for streaming
  *
- * FSMEvent types (data-fsm-state-transition, data-fsm-action-execution) are
- * structurally compatible with AtlasUIMessageChunk data events. This function
- * performs explicit property mapping to satisfy TypeScript without unsafe casts.
- *
- * @returns AtlasUIMessageChunk or null if event is not an FSM event
+ * Exhaustive over the FSMEvent union — `data-fsm-state-transition` and
+ * `data-fsm-action-execution` map to AtlasUIMessageChunk data events. The
+ * remaining variants (tool-call/tool-result/state-skipped/validation-attempt)
+ * ride the `sessionStream` pipeline instead, so this function returns `null`
+ * for them. The `never` tail forces a compile error if a new FSMEvent variant
+ * is added without an explicit case here.
  */
 function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
-  if (event.type === "data-fsm-state-transition") {
-    return {
-      type: "data-fsm-state-transition",
-      data: {
-        sessionId: event.data.sessionId,
-        workspaceId: event.data.workspaceId,
-        jobName: event.data.jobName,
-        fromState: event.data.fromState,
-        toState: event.data.toState,
-        triggeringSignal: event.data.triggeringSignal,
-        timestamp: event.data.timestamp,
-      },
-    };
+  switch (event.type) {
+    case "data-fsm-state-transition":
+      return {
+        type: "data-fsm-state-transition",
+        data: {
+          sessionId: event.data.sessionId,
+          workspaceId: event.data.workspaceId,
+          jobName: event.data.jobName,
+          fromState: event.data.fromState,
+          toState: event.data.toState,
+          triggeringSignal: event.data.triggeringSignal,
+          timestamp: event.data.timestamp,
+        },
+      };
+    case "data-fsm-action-execution":
+      return {
+        type: "data-fsm-action-execution",
+        data: {
+          sessionId: event.data.sessionId,
+          workspaceId: event.data.workspaceId,
+          jobName: event.data.jobName,
+          actionType: event.data.actionType,
+          actionId: event.data.actionId,
+          state: event.data.state,
+          status: event.data.status,
+          durationMs: event.data.durationMs,
+          error: event.data.error,
+          timestamp: event.data.timestamp,
+          inputSnapshot: event.data.inputSnapshot,
+        },
+      };
+    case "data-fsm-tool-call":
+    case "data-fsm-tool-result":
+    case "data-fsm-state-skipped":
+    case "data-fsm-validation-attempt":
+      return null;
+    default: {
+      const _exhaustive: never = event;
+      return _exhaustive;
+    }
   }
-  if (event.type === "data-fsm-action-execution") {
-    return {
-      type: "data-fsm-action-execution",
-      data: {
-        sessionId: event.data.sessionId,
-        workspaceId: event.data.workspaceId,
-        jobName: event.data.jobName,
-        actionType: event.data.actionType,
-        actionId: event.data.actionId,
-        state: event.data.state,
-        status: event.data.status,
-        durationMs: event.data.durationMs,
-        error: event.data.error,
-        timestamp: event.data.timestamp,
-        inputSnapshot: event.data.inputSnapshot,
-      },
-    };
-  }
-  return null;
 }
 
 /**
@@ -1225,6 +1235,14 @@ export class WorkspaceRuntime {
                 // Session history v2: map skipped states to step:skipped events
                 if (sessionStream && event.type === "data-fsm-state-skipped") {
                   sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
+                }
+
+                // mapValidationAttemptToStepValidation returns null when the
+                // source event is missing actionId — keeps the wire schema's
+                // actionId required without emitting orphan UI pills.
+                if (sessionStream && event.type === "data-fsm-validation-attempt") {
+                  const stepEvent = mapValidationAttemptToStepValidation(event);
+                  if (stepEvent) sessionStream.emit(stepEvent);
                 }
               },
               // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through

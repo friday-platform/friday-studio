@@ -144,20 +144,14 @@ describe("createBoundDraftTools", () => {
 
   it("publish_draft calls the draft publish endpoint", async () => {
     mockDraftPublishPost.mockResolvedValueOnce(
-      mockResponse(true, 200, {
-        success: true,
-        livePath: "/tmp/ws-1/workspace.yml",
-      }),
+      mockResponse(true, 200, { success: true, livePath: "/tmp/ws-1/workspace.yml" }),
     );
 
     const tools = createBoundDraftTools(logger, "ws-1");
     const result = await tools.publish_draft!.execute!({}, TOOL_CALL_OPTS);
 
     expect(mockDraftPublishPost).toHaveBeenCalledWith({ param: { workspaceId: "ws-1" } });
-    expect(result).toEqual({
-      success: true,
-      livePath: "/tmp/ws-1/workspace.yml",
-    });
+    expect(result).toEqual({ success: true, livePath: "/tmp/ws-1/workspace.yml" });
   });
 
   it("publish_draft returns report on validation failure", async () => {

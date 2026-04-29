@@ -9,7 +9,7 @@
  */
 
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { ValidationVerdictSchema } from "@atlas/hallucination";
+import { ValidationVerdictSchema } from "@atlas/hallucination/verdict";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------

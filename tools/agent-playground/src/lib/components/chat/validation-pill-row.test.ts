@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "svelte/server";
-import type { ValidationVerdict } from "@atlas/hallucination";
+import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 
 // `@atlas/ui` is a single-entry barrel that pulls @tanstack/svelte-table on
 // load. The component only needs five icons; stub them with an empty SVG

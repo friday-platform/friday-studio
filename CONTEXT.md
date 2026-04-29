@@ -14,12 +14,14 @@ An external event that triggers a job. Types: `http` (webhook), `schedule` (cron
 An FSM (finite state machine) pipeline that executes when a signal fires. Jobs are keyed by kebab-case IDs. Each job has an `fsm` block with XState-style states: action states (`{ entry: [...actions], on: { EVENT: { target: 'next' } } }`) and terminal states (`{ type: 'final' }`).
 
 ### Agent
-A compute unit invoked by a job FSM action. Three types:
-- `llm`: Inline LLM agent with provider, model, prompt, temperature, tools array.
-- `atlas`: Registered agent from the platform registry.
-- `user`: SDK agent (Python/TypeScript) compiled to WebAssembly.
+A compute unit invoked by a job FSM action. Three user-authorable types:
+- `llm`: Inline LLM agent with provider, model, prompt, temperature, tools array. The author wires it themselves.
+- `atlas`: Bundled platform agent (`web`, `email`, `slack`, `gh`, `claude-code`, `data-analyst`, `image-generation`, `knowledge`, etc.). The agent has its own internal prompt and tool surface; the author supplies a per-invocation string prompt as additive task context. Discoverable via `list_capabilities`.
+- `user`: SDK agent (Python/TypeScript) compiled to WebAssembly. The author registers the agent build, then references it by ID.
 
-Agents are declared in the top-level `agents` section and referenced by `agentId` within job FSM actions.
+A fourth type, `system`, exists in `WorkspaceAgentConfigSchema` but is reserved for platform-internal use — never authorable from workspace-chat, never surfaced in discovery.
+
+Agents are declared in the top-level `agents` section and referenced by `agentId` within job FSM actions. **All bundled atlas agents take a string as per-invocation input** (the FSM action passes a string, the agent layers it on top of its own internal prompt).
 
 ### MCP Server
 An external tool server (stdio, HTTP, or SSE transport) that exposes tools agents can call. Declared in `tools.mcp.servers`. The daemon spawns the server process, manages its lifecycle, and routes tool calls from agents.
@@ -59,7 +61,9 @@ A workspace can be in **direct mode** (default) or **draft mode** (opt-in). In d
 - The daemon loader ignores `.draft` files.
 - MCP server enable/disable participates in draft mode — config writes to draft, server startup deferred to publish.
 
-## Validator
+## Validator (Workspace)
+
+> Naming note: "Validator" without qualification means **this** — the workspace config compiler. The post-hoc LLM-output checker is the **Output Validator** (see below). Do not conflate.
 
 The workspace validator is the compiler. Three layers:
 1. **Structural:** Zod schema parse. Walks `ZodError.issues[]` and emits one `Issue` per issue with `path` (dot-notation) and `message` (plain English). Never string-coerces a `ZodError`.
@@ -68,13 +72,31 @@ The workspace validator is the compiler. Three layers:
 
 Output shape: `{ status: "ok" | "warning" | "error", errors: Issue[], warnings: Issue[] }`. Errors block publish; warnings do not.
 
+## Output Validator (Hallucination Judge)
+
+A separate, post-hoc verifier that runs on the output of an LLM action (FSM action or ad-hoc agent invocation). Not the workspace Validator above — different concept, different package (`@atlas/hallucination`).
+
+### Judge
+The LLM call inside the Output Validator that reads the agent's output plus its tool-result context and emits a structured opinion on whether the output is grounded. Out-of-scope for the judge: arithmetic, timezone conversion, date math (the most common false-positive class).
+
+### Verdict
+The Judge's structured output. Three-state status: `pass` / `uncertain` / `fail`. Status is **derived in code** from the judge's confidence and a threshold tied to supervision level, not picked by the judge. `uncertain` proceeds identically to `pass` downstream — it is observability only, not gating. Only `fail` triggers retry.
+
+### Issue
+A single per-claim entry on a Verdict. Carries a category (fixed enum: `sourcing`, `no-tools-called`, `judge-uncertain`, `judge-error`), a per-issue severity (derived in code from category, not judge-picked), the flagged claim, the judge's reasoning, and a citation — a verbatim quote from the tool result that should have backed the claim, or `null` when the issue is the absence of a tool call.
+
+### Supervision Level
+A workspace-scoped knob (`MINIMAL` / `STANDARD` / `PARANOID`) that sets the confidence threshold for the pass/uncertain boundary. Does not change retry behavior — that stays at one retry on `fail`.
+
 ## Tool Surface (workspace-chat)
 
 The workspace-chat agent exposes tools the LLM uses to build and manage workspaces. Current tools:
 
-**MCP Management (8):** `list_mcp_servers`, `search_mcp_servers`, `install_mcp_server`, `create_mcp_server`, `get_workspace_mcp_status`, `enable_mcp_server`, `disable_mcp_server`, `connect_service`
+**Discovery & MCP Management (8):** `list_capabilities`, `search_mcp_servers`, `install_mcp_server`, `create_mcp_server`, `get_mcp_dependencies`, `enable_mcp_server`, `disable_mcp_server`, `connect_service`
 
 **Workspace CRUD (9):** `create_workspace` (thin, name only), `upsert_agent`, `upsert_signal`, `upsert_job`, `remove_item`, `begin_draft`, `validate_workspace`, `publish_draft`, `discard_draft`
+
+`list_capabilities` is the unified discovery surface — returns bundled agents, enabled MCP servers, and available MCP servers as a flat tagged-union list. Bundled-first ordering, alphabetical within each kind. Cached once per session; re-call after `enable_mcp_server`. `get_mcp_dependencies` is the dependency-graph drill-down (which agents/jobs reference each enabled MCP server in this workspace).
 
 ## Key Decisions
 

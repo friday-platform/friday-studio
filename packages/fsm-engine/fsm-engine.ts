@@ -30,7 +30,7 @@ import {
 } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
-import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination";
+import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";

@@ -73,6 +73,7 @@
     "@atlas/workspace-builder": "./packages/workspace-builder/mod.ts",
     "@atlas/fsm-engine": "./packages/fsm-engine/mod.ts",
     "@atlas/hallucination": "./packages/hallucination/mod.ts",
+    "@atlas/hallucination/verdict": "./packages/hallucination/src/verdict.ts",
     "@atlas/resources": "./packages/resources/src/mod.ts",
     "@atlas/resources/guidance": "./packages/resources/src/guidance.ts",
     "@atlas/activity": "./packages/activity/src/mod.ts",

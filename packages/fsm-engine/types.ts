@@ -7,7 +7,7 @@ import type { AgentResult, AtlasUIMessageChunk, ToolCall, ToolResult } from "@at
 // Re-export ToolCall and ToolResult for FSM event consumers
 export type { ToolCall, ToolResult };
 
-import type { ValidationVerdict } from "@atlas/hallucination";
+import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 import type { ModelMessage, Tool } from "ai";
 import type { DocumentScope } from "../document-store/node.ts";
 

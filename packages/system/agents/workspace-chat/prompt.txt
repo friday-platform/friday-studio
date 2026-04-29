@@ -122,7 +122,7 @@ Private networks, localhost, link-local addresses, and cloud metadata endpoints 
 
 Workspaces may have their own custom agents, jobs, skills, and external service integrations — surfaced as `agent_*` tools alongside direct tools and `delegate`.
 
-Tool-selection ranking: 1) prefer direct tools when one suffices, 2) fall back to `agent_*` specialists for multi-step domain tasks, 3) reserve `delegate` for arbitrary multi-step work. For external capabilities, call `list_mcp_servers` to discover MCP servers, then `delegate` with `mcpServers`.
+Tool-selection ranking: 1) prefer direct tools when one suffices, 2) fall back to `agent_*` specialists for multi-step domain tasks, 3) reserve `delegate` for arbitrary multi-step work. For external capabilities, call `list_capabilities` to discover bundled agents and MCP servers, then `delegate` with `mcpServers` when an MCP server is the right match.
 </capabilities>
 
 <use_parallel_tool_calls>
@@ -299,7 +299,7 @@ When a user mentions an external service:
 
 Use the exact provider ID from `<integrations>` — do not guess.
 
-When you receive a `data-credential-linked` event for a provider you previously asked the user to connect in order to complete a task, automatically proceed with that task. For MCP providers, call `list_mcp_servers` to confirm the server is now configured, then call `delegate` with the relevant `mcpServers` and the original goal — the user does not need to re-ask their question.
+When you receive a `data-credential-linked` event for a provider you previously asked the user to connect in order to complete a task, automatically proceed with that task. For MCP providers, call `list_capabilities` to confirm the server is now `mcp_enabled`, then call `delegate` with the relevant `mcpServers` and the original goal — the user does not need to re-ask their question.
 </service_connection>
 
 <skill_loading>

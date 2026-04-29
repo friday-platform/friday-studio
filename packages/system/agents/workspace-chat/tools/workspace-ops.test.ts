@@ -187,10 +187,7 @@ describe("createBoundWorkspaceOpsTools", () => {
 
   it("calls DELETE /items/:kind/:id and returns success", async () => {
     mockItemsDelete.mockResolvedValueOnce(
-      mockResponse(true, 200, {
-        ok: true,
-        livePath: "/tmp/ws-1/workspace.yml",
-      }),
+      mockResponse(true, 200, { ok: true, livePath: "/tmp/ws-1/workspace.yml" }),
     );
 
     const tools = createBoundWorkspaceOpsTools(logger, "ws-1");
@@ -202,10 +199,7 @@ describe("createBoundWorkspaceOpsTools", () => {
     expect(mockItemsDelete).toHaveBeenCalledWith({
       param: { workspaceId: "ws-1", kind: "agent", id: "test-agent" },
     });
-    expect(result).toEqual({
-      ok: true,
-      livePath: "/tmp/ws-1/workspace.yml",
-    });
+    expect(result).toEqual({ ok: true, livePath: "/tmp/ws-1/workspace.yml" });
   });
 
   it("returns structured error when remove_item fails", async () => {

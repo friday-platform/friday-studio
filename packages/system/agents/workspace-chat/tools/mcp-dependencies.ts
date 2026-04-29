@@ -4,7 +4,7 @@ import type { Logger } from "@atlas/logger";
 import { tool } from "ai";
 import { z } from "zod";
 
-const WorkspaceMcpStatusInput = z.object({});
+const McpDependenciesInput = z.object({});
 
 interface ServerSummary {
   id: string;
@@ -15,33 +15,31 @@ interface ServerSummary {
   jobIds?: string[];
 }
 
-interface WorkspaceMcpStatusSuccess {
+interface McpDependenciesSuccess {
   enabled: ServerSummary[];
   available: ServerSummary[];
 }
 
-interface WorkspaceMcpStatusError {
+interface McpDependenciesError {
   error: string;
 }
 
 /**
- * Build the `get_workspace_mcp_status` tool for workspace chat.
+ * Build the `get_mcp_dependencies` tool for workspace chat.
  *
- * Returns the partition of MCP servers for this workspace: enabled
- * (present in workspace.tools.mcp.servers) and available (catalog servers
- * not yet enabled). The LLM can use this to answer "which MCP servers are
- * active in this workspace?" or to decide whether to enable a server.
+ * For each enabled MCP server in this workspace, returns the agents and jobs
+ * that reference it. Use before disabling or removing a server to see what
+ * would break.
  */
-export function createGetWorkspaceMcpStatusTool(workspaceId: string, logger: Logger): AtlasTools {
+export function createMcpDependenciesTool(workspaceId: string, logger: Logger): AtlasTools {
   return {
-    get_workspace_mcp_status: tool({
+    get_mcp_dependencies: tool({
       description:
-        "Get the MCP server status for this workspace. Returns two lists: " +
-        "'enabled' servers are currently wired into this workspace's agents, " +
-        "'available' servers are in the platform catalog but not yet enabled here. " +
-        "Use this when the user asks which MCP servers are active, or before enabling a server.",
-      inputSchema: WorkspaceMcpStatusInput,
-      execute: async (): Promise<WorkspaceMcpStatusSuccess | WorkspaceMcpStatusError> => {
+        "For each enabled MCP server in this workspace, return the agents and jobs that reference it. " +
+        "Use this before disabling or removing a server to see what would break. " +
+        "Also lists catalog servers that are available but not yet enabled here.",
+      inputSchema: McpDependenciesInput,
+      execute: async (): Promise<McpDependenciesSuccess | McpDependenciesError> => {
         try {
           const res = await client.workspaceMcp(workspaceId).index.$get();
           const body = await res.json();
@@ -51,8 +49,8 @@ export function createGetWorkspaceMcpStatusTool(workspaceId: string, logger: Log
             const errorMsg =
               typeof errorBody === "object" && errorBody !== null && "message" in errorBody
                 ? String(errorBody.message)
-                : `Failed to get workspace MCP status: ${res.status}`;
-            logger.warn("get_workspace_mcp_status failed", {
+                : `Failed to get MCP dependencies: ${res.status}`;
+            logger.warn("get_mcp_dependencies failed", {
               workspaceId,
               status: res.status,
               error: errorMsg,
@@ -84,7 +82,7 @@ export function createGetWorkspaceMcpStatusTool(workspaceId: string, logger: Log
             .safeParse(body);
 
           if (!parsed.success) {
-            logger.warn("get_workspace_mcp_status: unexpected response shape", {
+            logger.warn("get_mcp_dependencies: unexpected response shape", {
               workspaceId,
               body,
               issues: parsed.error.issues,
@@ -94,7 +92,7 @@ export function createGetWorkspaceMcpStatusTool(workspaceId: string, logger: Log
 
           const { enabled, available } = parsed.data;
 
-          logger.info("get_workspace_mcp_status succeeded", {
+          logger.info("get_mcp_dependencies succeeded", {
             workspaceId,
             enabledCount: enabled.length,
             availableCount: available.length,
@@ -103,8 +101,8 @@ export function createGetWorkspaceMcpStatusTool(workspaceId: string, logger: Log
           return { enabled, available };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          logger.warn("get_workspace_mcp_status threw", { workspaceId, error: message });
-          return { error: `Failed to get workspace MCP status: ${message}` };
+          logger.warn("get_mcp_dependencies threw", { workspaceId, error: message });
+          return { error: `Failed to get MCP dependencies: ${message}` };
         }
       },
     }),
