@@ -52,6 +52,7 @@ interface ExternalCliPin {
 const GH_VERSION = "2.92.0";
 const CLOUDFLARED_VERSION = "2026.3.0";
 const NATS_SERVER_VERSION = "2.12.8";
+const UV_VERSION = "0.11.8";
 
 const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
   {
@@ -123,6 +124,35 @@ const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
     },
     outName: (t) => (t.endsWith("windows-msvc") ? "nats-server.exe" : "nats-server"),
   },
+  // uv + uvx ship in one Astral release archive. We declare them as
+  // two pins (same URL, different innerPath) so each lands as its own
+  // entry in the staging tree. Yes the build downloads the archive
+  // twice — ~22 MB — acceptable cost for matching the existing
+  // single-binary-per-pin shape rather than introducing a new variant.
+  // Without these the daemon's MCP server-time tool fails with
+  // `spawn uvx ENOENT` on every fresh install.
+  ...(["uv", "uvx"] as const).map<ExternalCliPin>((bin) => ({
+    name: bin,
+    version: UV_VERSION,
+    url: (t) => {
+      const map: Record<string, string> = {
+        "aarch64-apple-darwin": `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-apple-darwin.tar.gz`,
+        "x86_64-apple-darwin": `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-apple-darwin.tar.gz`,
+        "x86_64-pc-windows-msvc": `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip`,
+      };
+      const url = map[t];
+      if (!url) throw new Error(`${bin}: unsupported target ${t}`);
+      return url;
+    },
+    innerPath: (t) => {
+      // macOS tarball nests under `uv-<triple>/`; Windows zip is flat.
+      if (t === "aarch64-apple-darwin") return `uv-aarch64-apple-darwin/${bin}`;
+      if (t === "x86_64-apple-darwin") return `uv-x86_64-apple-darwin/${bin}`;
+      if (t === "x86_64-pc-windows-msvc") return `${bin}.exe`;
+      throw new Error(`${bin}: unsupported target ${t}`);
+    },
+    outName: (t) => (t.endsWith("windows-msvc") ? `${bin}.exe` : bin),
+  })),
 ];
 
 // Pure-Go binaries built from the repo's go.mod. Cross-compile via GOOS/GOARCH;
