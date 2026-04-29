@@ -24,24 +24,18 @@ func fakeBinaryServer(t *testing.T, body []byte) string {
 	return srv.URL + "/binary"
 }
 
-// TestReleaseHashesCoverAllPlatforms pins the invariant that every
-// platform releaseURL knows how to build also has a sha256 entry in
-// releaseHashes. Bumping Version without regenerating hashes for
-// every supported arch fails this immediately.
-func TestReleaseHashesCoverAllPlatforms(t *testing.T) {
-	platforms := []struct{ goos, goarch string }{
-		{"darwin", "arm64"},
-		{"darwin", "amd64"},
-		{"linux", "amd64"},
-		{"linux", "arm64"},
-		{"windows", "amd64"},
+// TestAssetNameRoundTrips verifies assetName extracts the filename
+// portion from a release-asset URL, which is what we use as the lookup
+// key into the GitHub API's `assets` array.
+func TestAssetNameRoundTrips(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-darwin-arm64.tgz": "cloudflared-darwin-arm64.tgz",
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-linux-amd64":      "cloudflared-linux-amd64",
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-windows-amd64.exe": "cloudflared-windows-amd64.exe",
 	}
-	for _, p := range platforms {
-		key := p.goos + "/" + p.goarch
-		if hash, ok := releaseHashes[key]; !ok {
-			t.Errorf("releaseHashes missing entry for %s", key)
-		} else if len(hash) != 64 {
-			t.Errorf("releaseHashes[%s]: hex length %d, want 64", key, len(hash))
+	for url, want := range cases {
+		if got := assetName(url); got != want {
+			t.Errorf("assetName(%q) = %q, want %q", url, got, want)
 		}
 	}
 }

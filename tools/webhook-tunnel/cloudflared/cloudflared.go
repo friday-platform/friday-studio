@@ -3,15 +3,12 @@
 // $PATH → ~/.atlas/bin (cached prior download) → in-Go HTTPS download
 // from github.com/cloudflare/cloudflared releases.
 //
-// Downloads are atomic: tmp.<pid> → fsync → verify against a hash
-// pinned in this file → atomic rename. A partial/interrupted download
-// leaves no cached binary so the next call re-downloads.
-//
-// Cloudflare doesn't publish .sha256 sidecars on its releases, so the
-// hashes are pinned per-arch alongside Version. Bumping the version
-// is a two-step change: update Version, regenerate the hashes. The
-// release page on github.com/cloudflare/cloudflared is the source of
-// truth for both.
+// Downloads are atomic: tmp.<pid> → fsync → verify against the digest
+// reported by GitHub's releases API → atomic rename. A
+// partial/interrupted download leaves no cached binary so the next
+// call re-downloads. Bumping Version is a one-line change; the
+// expected hash is queried per-call from
+// api.github.com/repos/cloudflare/cloudflared/releases/tags/<version>.
 //
 // All public callers go through Resolve. Concurrent Resolve calls
 // inside one process are coalesced to a single download.
@@ -21,11 +18,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -33,27 +32,10 @@ import (
 	"time"
 )
 
-// Version is the pinned cloudflared release we download. Bumping this
-// requires also regenerating the entries in releaseHashes — see the
-// package doc for how.
-const Version = "2025.11.1"
-
-// releaseHashes is the sha256 of each per-arch asset for the pinned
-// Version. Regenerate by downloading each artifact:
-//
-//	for a in cloudflared-darwin-arm64.tgz cloudflared-darwin-amd64.tgz \
-//	         cloudflared-linux-amd64 cloudflared-linux-arm64 \
-//	         cloudflared-windows-amd64.exe; do
-//	  curl -sL "https://github.com/cloudflare/cloudflared/releases/download/${Version}/$a" \
-//	    | shasum -a 256
-//	done
-var releaseHashes = map[string]string{
-	"darwin/arm64":  "45cfbb59a720f60b873906aa6469f8c4058f26be6d351c3e2920bc9cb4714273",
-	"darwin/amd64":  "155a288fef19dba08f0c7145c16a207baf137462d8a1289a78bf8564f9e51244",
-	"linux/amd64":   "991dffd8889ee9f0147b6b48933da9e4407e68ea8c6d984f55fa2d3db4bb431d",
-	"linux/arm64":   "9979dc152097a29b6de4d1ef13e2f1821c67a6f096f88cc18f0fd25106305d3a",
-	"windows/amd64": "413f9b24dc6e61a455564651524f167b8ce29ac4ccd40703dea7af93cd37ed39",
-}
+// Version is the pinned cloudflared release we download. Bumping
+// this is a one-line change — the expected hash is fetched at
+// download time from GitHub's releases API.
+const Version = "2026.3.0"
 
 // downloadHTTPClient is a package-level HTTP client with a sane timeout.
 // The download itself can take a while on slow links; a per-request
@@ -163,9 +145,9 @@ func downloadAtomic(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	wantHex, ok := releaseHashes[runtime.GOOS+"/"+runtime.GOARCH]
-	if !ok {
-		return "", fmt.Errorf("cloudflared: no pinned hash for %s/%s", runtime.GOOS, runtime.GOARCH)
+	wantHex, err := fetchAssetDigest(ctx, Version, assetName(url))
+	if err != nil {
+		return "", fmt.Errorf("fetch asset digest: %w", err)
 	}
 
 	dst := cachedPath()
@@ -175,14 +157,13 @@ func downloadAtomic(ctx context.Context) (string, error) {
 	tmp := fmt.Sprintf("%s.tmp.%d", dst, os.Getpid())
 	defer func() { _ = os.Remove(tmp) }() // best-effort cleanup if we don't reach the rename
 
-	// Download body to tmp + compute sha256 in one pass.
 	hashHex, err := downloadToTmp(ctx, url, tmp)
 	if err != nil {
 		return "", err
 	}
 
 	if hashHex != wantHex {
-		return "", fmt.Errorf("sha256 mismatch: download=%s pinned=%s", hashHex, wantHex)
+		return "", fmt.Errorf("sha256 mismatch: download=%s upstream=%s", hashHex, wantHex)
 	}
 
 	// macOS releases ship the binary inside a tarball; unpack and
@@ -200,6 +181,51 @@ func downloadAtomic(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("rename to final path: %w", err)
 	}
 	return dst, nil
+}
+
+// assetName returns the file portion of a release-asset URL.
+func assetName(url string) string {
+	return path.Base(url)
+}
+
+// fetchAssetDigest queries GitHub's releases API for the named asset
+// in the pinned release tag and returns its sha256 hex digest. The
+// `digest` field GitHub reports is formatted "sha256:<hex>".
+func fetchAssetDigest(ctx context.Context, version, asset string) (string, error) {
+	apiURL := fmt.Sprintf("https://api.github.com/repos/cloudflare/cloudflared/releases/tags/%s", version)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := downloadHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub releases API HTTP %d", resp.StatusCode)
+	}
+	var rel struct {
+		Assets []struct {
+			Name   string `json:"name"`
+			Digest string `json:"digest"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", fmt.Errorf("decode release JSON: %w", err)
+	}
+	for _, a := range rel.Assets {
+		if a.Name != asset {
+			continue
+		}
+		hex, ok := strings.CutPrefix(a.Digest, "sha256:")
+		if !ok || len(hex) != 64 {
+			return "", fmt.Errorf("asset %q: unexpected digest %q", asset, a.Digest)
+		}
+		return strings.ToLower(hex), nil
+	}
+	return "", fmt.Errorf("asset %q not found in release %s", asset, version)
 }
 
 // downloadToTmp streams the URL into tmp, hashing as it goes. Returns
