@@ -73,6 +73,7 @@ const CLOUDFLARED_VERSION = "2026.3.0";
 const NATS_SERVER_VERSION = "2.12.8";
 const UV_VERSION = "0.11.8";
 const NODE_VERSION = "24.15.0";
+const AGENT_BROWSER_VERSION = "0.26.0";
 
 const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
   {
@@ -173,6 +174,30 @@ const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
     },
     outName: (t) => (t.endsWith("windows-msvc") ? `${bin}.exe` : bin),
   })),
+  // Friday's `web` agent invokes `agent-browser` via execFile (see
+  // packages/bundled-agents/src/web/tools/browse.ts:67). Bundling the
+  // native binary directly from upstream's GitHub Releases avoids the
+  // npm-install dance and keeps install-time network deps to one
+  // (Chrome download via `agent-browser install`, run during the wizard's
+  // "Setting up tools…" phase). Naming convention from agent-browser/
+  // scripts/postinstall.js: agent-browser-<platform>-<arch>(.exe).
+  {
+    name: "agent-browser",
+    version: AGENT_BROWSER_VERSION,
+    url: (t) => {
+      const map: Record<string, string> = {
+        "aarch64-apple-darwin": `https://github.com/vercel-labs/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/agent-browser-darwin-arm64`,
+        "x86_64-apple-darwin": `https://github.com/vercel-labs/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/agent-browser-darwin-x64`,
+        "x86_64-pc-windows-msvc": `https://github.com/vercel-labs/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/agent-browser-win32-x64.exe`,
+      };
+      const url = map[t];
+      if (!url) throw new Error(`agent-browser: unsupported target ${t}`);
+      return url;
+    },
+    // Single-file release — the URL IS the binary, no archive layer.
+    innerPath: () => "",
+    outName: (t) => (t.endsWith("windows-msvc") ? "agent-browser.exe" : "agent-browser"),
+  },
 ];
 
 // Directory bundles — assets that ship as a tree, not a single binary.
@@ -492,6 +517,45 @@ async function bundleExternalCli(
   await Deno.chmod(dest, 0o755).catch(() => {}); // no-op on Windows
 }
 
+/** Whether the build host can execute a binary built for `target`. Cross-
+ * arch builds (e.g. building x86_64 macOS artifacts on aarch64-apple-darwin
+ * via Rosetta is intentionally NOT trusted here — Rosetta presence is
+ * configurable and CI doesn't enable it) skip exec-dependent smoke tests. */
+function canExecTarget(target: string): boolean {
+  const hostOs = Deno.build.os; // "darwin" | "linux" | "windows"
+  const hostArch = Deno.build.arch; // "x86_64" | "aarch64"
+  if (target === "aarch64-apple-darwin") return hostOs === "darwin" && hostArch === "aarch64";
+  if (target === "x86_64-apple-darwin") return hostOs === "darwin" && hostArch === "x86_64";
+  if (target === "x86_64-pc-windows-msvc") return hostOs === "windows" && hostArch === "x86_64";
+  return false;
+}
+
+/** Run agent-browser --version against the freshly-bundled binary. Catches
+ * HTML 404 capture / wrong-arch slip / missing-exec-bit / corrupt-download
+ * cases that the HTTPS-only download path can't detect. Build fails loudly
+ * on any non-zero exit so a bad release never reaches users. */
+async function smokeTestAgentBrowser(target: string, stagingDir: string): Promise<void> {
+  const binName = target.endsWith("windows-msvc") ? "agent-browser.exe" : "agent-browser";
+  const binPath = join(stagingDir, binName);
+  console.log(`[build-studio] smoke test: ${binPath} --version`);
+  const result = await new Deno.Command(binPath, {
+    args: ["--version"],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!result.success) {
+    const out = new TextDecoder().decode(result.stdout);
+    const err = new TextDecoder().decode(result.stderr);
+    throw new Error(
+      `agent-browser smoke test failed (exit ${result.code}):\n` +
+        `  stdout: ${out.trim() || "<empty>"}\n` +
+        `  stderr: ${err.trim() || "<empty>"}`,
+    );
+  }
+  const version = new TextDecoder().decode(result.stdout).trim();
+  console.log(`[build-studio] smoke test ok: ${version}`);
+}
+
 async function archiveStaging(
   target: string,
   stagingDir: string,
@@ -615,6 +679,26 @@ async function main(): Promise<void> {
     }
     for (const bundle of EXTERNAL_BUNDLES) {
       await bundleExternalBundle(opts.target, bundle, stagingDir, scratchDir);
+    }
+
+    // Smoke test bundled agent-browser. The other EXTERNAL_CLIS get
+    // exercised at runtime by services that probe them on startup
+    // (gh, cloudflared, nats-server, uv/uvx via FRIDAY_*_PATH); a bad
+    // download surfaces immediately on first launch. agent-browser
+    // is only invoked by the `web` agent at user-action time, so a
+    // bad download wouldn't surface until a user runs a browse query.
+    // Build-time --version probes catch HTML 404 / wrong-arch /
+    // missing-exec-bit failures before publish.
+    //
+    // Only run when the build host can exec the target binary. Cross-
+    // arch builds skip the test silently — CI runs each target on
+    // its native host so the smoke test still runs in practice.
+    if (canExecTarget(opts.target)) {
+      await smokeTestAgentBrowser(opts.target, stagingDir);
+    } else {
+      console.log(
+        `[build-studio] skipping agent-browser smoke test (host ${Deno.build.arch}-${Deno.build.os} cannot exec target ${opts.target})`,
+      );
     }
   } else {
     console.log("[build-studio] --skip-external set, skipping CLI bundling");
