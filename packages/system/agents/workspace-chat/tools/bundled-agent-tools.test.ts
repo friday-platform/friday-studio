@@ -309,7 +309,7 @@ describe("createAgentTool — execute (artifactRefs surfacing)", () => {
 
     const result = await getExecute(tools.agent_test)({ prompt: "draw an owl" }, callOpts);
 
-    expect(result).toEqual({ description: "an owl", mode: "generate", artifactRefs: refs });
+    expect(result).toEqual({ description: "an owl", mode: "generate", artifacts: refs });
   });
 
   it("returns data unchanged when artifactRefs is absent", async () => {
@@ -321,7 +321,7 @@ describe("createAgentTool — execute (artifactRefs surfacing)", () => {
 
     const result = await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
     expect(result).toEqual({ response: "hello" });
-    expect(result).not.toHaveProperty("artifactRefs");
+    expect(result).not.toHaveProperty("artifacts");
   });
 
   it("returns data unchanged when artifactRefs is empty", async () => {
@@ -333,7 +333,7 @@ describe("createAgentTool — execute (artifactRefs surfacing)", () => {
 
     const result = await getExecute(tools.agent_test)({ prompt: "hi" }, callOpts);
     expect(result).toEqual({ response: "hello" });
-    expect(result).not.toHaveProperty("artifactRefs");
+    expect(result).not.toHaveProperty("artifacts");
   });
 
   it("does not merge when data is not a plain object (string / array / null)", async () => {

@@ -183,7 +183,7 @@ export function createAgentTool(atlasAgent: AtlasAgent, deps: CreateAgentToolDep
           payload.data !== null &&
           !Array.isArray(payload.data)
         ) {
-          return { ...payload.data, artifactRefs: refs };
+          return { ...payload.data, artifacts: refs };
         }
         return payload.data;
       }
