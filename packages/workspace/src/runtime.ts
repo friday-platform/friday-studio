@@ -56,6 +56,8 @@ import {
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
+import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
+import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { FileSystemDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
@@ -2083,7 +2085,10 @@ export class WorkspaceRuntime {
     if (workspaceMcpServers) {
       for (const [id, config] of Object.entries(workspaceMcpServers)) {
         if (id !== "atlas-platform") {
-          mcpConfigs[id] = config;
+          const registryEntry = mcpServersRegistry.servers[id];
+          mcpConfigs[id] = registryEntry?.platformEnv
+            ? applyPlatformEnv(config, registryEntry.platformEnv)
+            : config;
         }
       }
     }
@@ -2091,7 +2096,10 @@ export class WorkspaceRuntime {
     // Agent-declared MCP servers take precedence over workspace configs
     if (agentSource.metadata.mcp) {
       for (const [id, config] of Object.entries(agentSource.metadata.mcp)) {
-        mcpConfigs[id] = config;
+        const registryEntry = mcpServersRegistry.servers[id];
+        mcpConfigs[id] = registryEntry?.platformEnv
+          ? applyPlatformEnv(config, registryEntry.platformEnv)
+          : config;
       }
     }
 

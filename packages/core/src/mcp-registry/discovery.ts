@@ -118,9 +118,9 @@ function mergeServerConfig(base: MCPServerConfig, override: MCPServerConfig): MC
  * Merge registry-owned `platformEnv` into the runtime server config.
  * `platformEnv` forms the base; workspace `startup.env` takes precedence.
  * These vars are NOT serialized into workspace.yml — they live only in
- * registry metadata and are injected at discovery time.
+ * registry metadata and are injected at runtime via this function.
  */
-function applyPlatformEnv(
+export function applyPlatformEnv(
   config: MCPServerConfig,
   platformEnv?: Record<string, string | LinkCredentialRef>,
 ): MCPServerConfig {
