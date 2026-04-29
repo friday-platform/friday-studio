@@ -84,9 +84,8 @@ function createApp(opts: {
       .mockResolvedValue({
         atlas: null,
         workspace: {
-          id: workspaceId,
           version: "1.0",
-          workspace: { id: workspaceId, name: "demo-space" },
+          workspace: { name: "demo-space" },
         },
       }),
     registerWorkspace: registerSpy,

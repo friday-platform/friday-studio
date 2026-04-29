@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
@@ -51,7 +51,7 @@ import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
-import { stringify } from "@std/yaml";
+import { parse, stringify } from "@std/yaml";
 import { z } from "zod";
 import type { AppContext } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
@@ -120,6 +120,35 @@ const analytics = createAnalyticsClient();
  */
 function isTestMode(): boolean {
   return process.env.DENO_TESTING === "true" || process.env.VITEST === "true";
+}
+
+async function validateImportedWorkspace(
+  targetDir: string,
+  ctx: ValidationContext,
+): Promise<{ ok: true } | { ok: false; status: number; body: Record<string, unknown> }> {
+  const workspaceYmlPath = join(targetDir, "workspace.yml");
+  const workspaceYmlRaw = await readFile(workspaceYmlPath, "utf-8");
+  const workspaceYmlParsed = parse(workspaceYmlRaw);
+  const validationResult = WorkspaceConfigSchema.safeParse(workspaceYmlParsed);
+  if (!validationResult.success) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        success: false,
+        error: `Invalid workspace configuration: ${validationResult.error.issues.map((issue) => issue.message).join(", ")}`,
+      },
+    };
+  }
+  const report = await validateWorkspaceConfig(validationResult.data, ctx);
+  if (report.status === "hard_fail") {
+    return {
+      ok: false,
+      status: 422,
+      body: { success: false, error: "validation_failed", report },
+    };
+  }
+  return { ok: true };
 }
 
 function buildValidationContext(app: AppContext): ValidationContext {
@@ -977,6 +1006,19 @@ const workspacesRoutes = daemonFactory
       const errors: Array<{ name: string; error: string }> = [...result.errors];
       for (const entry of result.imported) {
         try {
+          const validation = await validateImportedWorkspace(
+            entry.path,
+            buildValidationContext(ctx),
+          );
+          if (!validation.ok) {
+            await rm(entry.path, { recursive: true, force: true });
+            const body = validation.body;
+            errors.push({
+              name: entry.name,
+              error: typeof body.error === "string" ? body.error : "validation_failed",
+            });
+            continue;
+          }
           const registered = await manager.registerWorkspace(entry.path, { name: entry.name });
           const memory = await materializeImportedMemory({
             importedWorkspaceDir: entry.path,
@@ -1231,6 +1273,12 @@ const workspacesRoutes = daemonFactory
       const result = await importBundle({ zipBytes, targetDir });
 
       const ctx = c.get("app");
+      const validation = await validateImportedWorkspace(targetDir, buildValidationContext(ctx));
+      if (!validation.ok) {
+        await rm(targetDir, { recursive: true, force: true });
+        return c.json(validation.body, validation.status);
+      }
+
       const manager = ctx.getWorkspaceManager();
       const registered = await manager.registerWorkspace(targetDir, {
         name: result.lockfile.workspace.name,
