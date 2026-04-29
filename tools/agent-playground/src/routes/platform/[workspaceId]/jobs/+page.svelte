@@ -1,14 +1,14 @@
 <!--
-  Jobs page — card-list layout showing all workspace jobs.
+  Jobs page — flat list of workspace jobs, styled after the MCP page.
 
-  Each job renders as an always-expanded card with header (title, Run button,
-  overflow menu), full description, and embedded pipeline topology diagram.
+  Each job renders as a grid row (name + trigger badges + actions) with
+  description, config strip, agent chips, and skills summary expanding
+  below in full-width grid cells.
 
   @component
 -->
 
 <script lang="ts">
-  import { deriveDataContracts, type DataContract } from "@atlas/config/data-contracts";
   import { deriveJobAgents } from "@atlas/config/job-agents";
   import {
     extractInitialStateIds,
@@ -18,85 +18,26 @@
   import { deriveSignalDetails, type SignalDetail } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents, type WorkspaceAgent } from "@atlas/config/workspace-agents";
-  import { DropdownMenu } from "@atlas/ui";
+  import { Button, DropdownMenu } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import InlineBadge from "$lib/components/shared/inline-badge.svelte";
-  import SchemaBlock from "$lib/components/shared/schema-block.svelte";
   import PipelineDiagram from "$lib/components/workspace/pipeline-diagram.svelte";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import { externalDaemonUrl } from "$lib/daemon-url";
   import {
     integrationQueries,
-    skillQueries,
     workspaceQueries,
     type IntegrationStatus,
   } from "$lib/queries";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
   const workspaceId = $derived(page.params.workspaceId ?? null);
-
   const configQuery = createQuery(() => workspaceQueries.config(workspaceId));
-
-  // Per-job skill pins — one round-trip for the whole page (vs N per-job
-  // fanout). Workspace-level and @friday/* skills come from
-  // `classifiedWorkspaceSkills` (same endpoint the Workspace Skills
-  // page already hits) so every job card can show an accurate
-  // "+ N inherited" count.
-  const jobBreakdownQuery = createQuery(() =>
-    skillQueries.jobSkillsBreakdown(workspaceId),
-  );
-  const classifiedSkillsQuery = createQuery(() =>
-    skillQueries.classifiedWorkspaceSkills(workspaceId),
-  );
-
-  // Split the classified-skills response into the same groups the job
-  // detail page uses, so the summary can surface "workspace" and "always"
-  // separately (the latter is the @friday/* bypass — useful context).
-  interface SharedSkillRow {
-    skillId: string;
-    namespace: string;
-    name: string | null;
-  }
-  const workspaceInheritedSkills = $derived.by((): SharedSkillRow[] => {
-    const c = classifiedSkillsQuery.data;
-    if (!c) return [];
-    // Workspace-level (assigned) + any non-friday globals. @friday/* is
-    // its own bucket so the UI can signal "always available" distinctly.
-    return [...c.assigned, ...c.global.filter((s) => s.namespace !== "friday")].map(
-      (s) => ({ skillId: s.skillId, namespace: s.namespace, name: s.name }),
-    );
-  });
-  const fridaySkills = $derived.by((): SharedSkillRow[] => {
-    const c = classifiedSkillsQuery.data;
-    if (!c) return [];
-    return c.global
-      .filter((s) => s.namespace === "friday")
-      .map((s) => ({ skillId: s.skillId, namespace: s.namespace, name: s.name }));
-  });
-
-  const jobSkillsMap = $derived.by((): Map<string, { skillId: string; namespace: string; name: string | null }[]> => {
-    const map = new Map<string, { skillId: string; namespace: string; name: string | null }[]>();
-    for (const entry of jobBreakdownQuery.data?.byJob ?? []) {
-      map.set(
-        entry.jobName,
-        entry.skills.map((s) => ({
-          skillId: s.skillId,
-          namespace: s.namespace,
-          name: s.name,
-        })),
-      );
-    }
-    return map;
-  });
-
-  function skillsForJob(
-    jobId: string,
-  ): { skillId: string; namespace: string; name: string | null }[] {
-    return jobSkillsMap.get(jobId) ?? [];
-  }
+  let searchQuery = $state("");
 
   const topology = $derived.by(() => {
     const data = configQuery.data;
@@ -131,7 +72,22 @@
     });
   });
 
-  /** Workspace signals keyed by ID for the RunJobDialog. */
+  const filteredJobEntries = $derived.by((): JobEntry[] => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query.length === 0) return jobEntries;
+    return jobEntries.filter((job) => {
+      const haystack = [
+        job.id,
+        job.title,
+        job.description ?? "",
+        ...job.triggers.map((trigger) => trigger.signal),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  });
+
   const workspaceSignals = $derived.by(
     (): Record<
       string,
@@ -156,23 +112,10 @@
     return deriveSignalDetails(data.config);
   });
 
-  /** Get signals that trigger a specific job. */
   function signalsForJob(jobId: string): SignalDetail[] {
     return signalDetails.filter((s) => s.triggeredJobs.includes(jobId));
   }
 
-  const dataContracts = $derived.by(() => {
-    const data = configQuery.data;
-    if (!data) return [];
-    return deriveDataContracts(data.config);
-  });
-
-  /** Get data contracts for a specific job. */
-  function contractsForJob(jobId: string): DataContract[] {
-    return dataContracts.filter((c) => c.jobId === jobId);
-  }
-
-  // --- Agent health data ---
   const preflightQuery = createQuery(() => integrationQueries.preflight(workspaceId));
   const workspaceAgents = $derived.by(() => {
     const data = configQuery.data;
@@ -188,7 +131,6 @@
     return map;
   });
 
-  /** Get workspace agent objects used in a specific job. */
   function agentsForJob(jobId: string): WorkspaceAgent[] {
     const data = configQuery.data;
     if (!data) return [];
@@ -239,50 +181,34 @@
     return agent.type;
   }
 
-  /** Extract schema properties for rendering. */
-  function schemaFields(
-    schema: object | null,
-  ): Array<{ name: string; type: string; required: boolean; description?: string }> {
-    if (!schema) return [];
-    const parsed = JsonSchemaObjectShape.safeParse(schema);
-    if (!parsed.success || !parsed.data.properties) return [];
-    const requiredSet = new Set<string>(parsed.data.required ?? []);
-    return Object.entries(parsed.data.properties).map(([name, rawDef]) => {
-      const prop = JsonSchemaPropertyShape.safeParse(rawDef);
-      const def = prop.success ? prop.data : undefined;
-      return {
-        name,
-        type: def?.type ?? "unknown",
-        required: requiredSet.has(name),
-        ...(def?.description ? { description: def.description } : {}),
-      };
-    });
-  }
-
   function providerLabel(provider: string): string {
     if (provider === "http") return "HTTP";
-    if (provider === "schedule") return "CRON";
+    if (provider === "schedule") return "SCHEDULE";
     return provider.toUpperCase();
   }
 
-  /** Scope topology nodes/edges to a single job. */
+  function triggerStrip(signal: SignalDetail): string {
+    if (signal.endpoint) return `POST ${signal.endpoint}`;
+    if (signal.schedule) return signal.schedule;
+    return signal.name;
+  }
+
   function scopeTopologyToJob(jobId: string) {
     if (!topology) return null;
     const jobSignalIds = new Set(signalsForJob(jobId).map((s) => `signal:${s.name}`));
-    const nodes = topology.nodes.filter((n) => {
-      if (n.jobId) return n.jobId === jobId;
-      if (n.type === "signal") return jobSignalIds.has(n.id);
+    const nodes = topology.nodes.filter((node) => {
+      if (node.jobId) return node.jobId === jobId;
+      if (node.type === "signal") return jobSignalIds.has(node.id);
       return true;
     });
-    const nodeIds = new Set(nodes.map((n) => n.id));
+    const nodeIds = new Set(nodes.map((node) => node.id));
     return {
       ...topology,
       nodes,
-      edges: topology.edges.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to)),
+      edges: topology.edges.filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to)),
     };
   }
 
-  /** Build a placeholder JSON body from a signal's schema properties. */
   function buildBodyFromSchema(schema: Record<string, unknown> | undefined): string {
     if (!schema) return "{}";
     const parsed = JsonSchemaObjectShape.safeParse(schema);
@@ -336,60 +262,111 @@
 
 <div class="jobs-page">
   {#if workspaceId}
-    <WorkspaceBreadcrumb {workspaceId} />
+    <WorkspaceBreadcrumb {workspaceId} section="Jobs" />
   {/if}
 
-  <header class="page-header">
-    <h1>Jobs</h1>
-    <p class="page-subtitle">
-      Jobs define the execution pipelines in your workspace. Each job orchestrates a sequence of
-      agent steps.
-    </p>
-  </header>
-
   {#if configQuery.isLoading}
-    <div class="empty-state">
-      <p>Loading jobs...</p>
-    </div>
+    <div class="empty-state"><p>Loading jobs…</p></div>
   {:else if configQuery.isError}
     <div class="empty-state">
       <p>Failed to load workspace config</p>
-      <span class="empty-hint">{configQuery.error?.message}</span>
-    </div>
-  {:else if jobEntries.length === 0}
-    <div class="empty-state">
-      <p>No jobs configured</p>
-      <span class="empty-hint">Add jobs to your workspace.yml to see them here</span>
+      <span class="empty-hint">{configQuery.error?.message ?? ""}</span>
     </div>
   {:else}
-    <div class="job-list">
-      {#each jobEntries as job (job.id)}
-        {@const jobTopology = scopeTopologyToJob(job.id)}
-        {@const jobContracts = contractsForJob(job.id)}
-        {@const jobAgents = agentsForJob(job.id)}
-        {@const jobSignals = signalsForJob(job.id)}
-        {@const jobPinned = skillsForJob(job.id)}
-        {@const totalVisible =
-          jobPinned.length + workspaceInheritedSkills.length + fridaySkills.length}
-        <div class="job-card" id="job-{job.id}">
-          <div class="card-header">
-            <h2 class="job-title">{job.title}</h2>
+    <section class="section">
+      <header class="page-header">
+        <div class="header-info">
+          <h1 class="page-title">Jobs</h1>
+          <p class="section-description">
+            Jobs are workflows that can be triggered by signals. Review each job's trigger, flow,
+            and assigned agents, or run and manage a job directly from this page.
+          </p>
+        </div>
+        <span class="count">{filteredJobEntries.length}</span>
+      </header>
 
-            <div class="card-actions">
-              <DropdownMenu.Root positioning={{ placement: "bottom-end" }}>
-                {#snippet children()}
+      <section class="search-section">
+        <div class="search-row">
+          <input
+            class="search-input"
+            type="text"
+            bind:value={searchQuery}
+            placeholder="Filter jobs…"
+            autocomplete="off"
+          />
+        </div>
+      </section>
+
+      {#if jobEntries.length === 0}
+        <p class="empty-hint">No jobs configured. Add jobs to your workspace.yml to see them here.</p>
+      {:else if filteredJobEntries.length === 0}
+        <p class="empty-hint">No jobs match your filter.</p>
+      {:else}
+        <div class="job-list">
+          {#each filteredJobEntries as job (job.id)}
+            {@const jobAgents = agentsForJob(job.id)}
+            {@const jobSignals = signalsForJob(job.id)}
+            {@const jobTopology = scopeTopologyToJob(job.id)}
+            <div class="job-row" id="job-{job.id}">
+              <a
+                class="row-main"
+                href={resolve("/platform/[workspaceId]/jobs/[jobName]", {
+                  workspaceId: workspaceId ?? "",
+                  jobName: job.id,
+                })}
+              >
+                <span
+                  class="job-dot"
+                  class:schedule={jobSignals.some((signal) => signal.provider === "schedule")}
+                ></span>
+                <span class="job-name">{job.title}</span>
+                {#each jobSignals as signal (signal.name)}
+                  <InlineBadge variant={signal.provider === "schedule" ? "warning" : "info"}>
+                    {providerLabel(signal.provider)}
+                  </InlineBadge>
+                {/each}
+              </a>
+
+              <div class="row-actions">
+                <Button
+                  size="small"
+                  href={resolve("/platform/[workspaceId]/jobs/[jobName]", {
+                    workspaceId: workspaceId ?? "",
+                    jobName: job.id,
+                  })}
+                >Manage</Button>
+                {#if workspaceId && job.triggers.length > 0}
+                  <RunJobDialog
+                    {workspaceId}
+                    jobId={job.id}
+                    jobTitle={job.title}
+                    signals={workspaceSignals}
+                    triggers={job.triggers}
+                  />
+                {/if}
+
+                <DropdownMenu.Root positioning={{ placement: "bottom-end", gutter: 10 }}>
                   <DropdownMenu.Trigger class="overflow-trigger" aria-label="Job options">
                     <span class="overflow-btn">&hellip;</span>
                   </DropdownMenu.Trigger>
-
                   <DropdownMenu.Content>
                     <DropdownMenu.Item
-                      onclick={() => goto(`/platform/${workspaceId}/jobs/${job.id}`)}
+                      onclick={() =>
+                        goto(
+                          resolve("/platform/[workspaceId]/jobs/[jobName]", {
+                            workspaceId: workspaceId ?? "",
+                            jobName: job.id,
+                          }),
+                        )}
                     >
                       Manage skills
                     </DropdownMenu.Item>
                     <DropdownMenu.Item
-                      onclick={() => goto(`/inspector?workspace=${workspaceId}&job=${job.id}`)}
+                      onclick={() =>
+                        goto(
+                          resolve("/inspector", {}) +
+                            `?workspace=${encodeURIComponent(workspaceId ?? "")}&job=${encodeURIComponent(job.id)}`,
+                        )}
                     >
                       Open in Job Inspector
                     </DropdownMenu.Item>
@@ -400,200 +377,73 @@
                       Copy CLI command
                     </DropdownMenu.Item>
                     <DropdownMenu.Item
-                      onclick={() => goto(`/platform/${workspaceId}/edit?path=jobs.${job.id}`)}
+                      onclick={() =>
+                        goto(
+                          resolve("/platform/[workspaceId]/edit", {
+                            workspaceId: workspaceId ?? "",
+                          }) + `?path=jobs.${encodeURIComponent(job.id)}`,
+                        )}
                     >
                       Edit configuration
                     </DropdownMenu.Item>
                   </DropdownMenu.Content>
-                {/snippet}
-              </DropdownMenu.Root>
-
-              {#if workspaceId && job.triggers.length > 0}
-                <RunJobDialog
-                  {workspaceId}
-                  jobId={job.id}
-                  jobTitle={job.title}
-                  signals={workspaceSignals}
-                  triggers={job.triggers}
-                />
-              {/if}
-            </div>
-          </div>
-
-          {#if job.description}
-            <p class="job-description">{job.description}</p>
-          {/if}
-
-          {#if jobTopology && jobTopology.nodes.length > 0}
-            <div class="diagram-area">
-              <PipelineDiagram topology={jobTopology} />
-            </div>
-          {/if}
-
-          {#if jobContracts.length > 0 && workspaceId}
-            <div class="contracts-section">
-              <h3 class="section-label">Data Contracts</h3>
-              <div class="contracts-list">
-                {#each jobContracts as contract (contract.fromStepId + ":" + contract.documentType)}
-                  <SchemaBlock {contract} {workspaceId} />
-                {/each}
+                </DropdownMenu.Root>
               </div>
-            </div>
-          {/if}
 
-          {#if jobAgents.length > 0}
-            <div class="agents-section">
-              <h3 class="section-label">Agents</h3>
-              <div class="agents-list">
-                {#each jobAgents as agent (agent.id)}
-                  {@const health = agentHealth(agent)}
-                  <a class="agent-row" href="/platform/{workspaceId}/agents#agent-{agent.id}">
-                    {#if health !== null}
-                      <span
-                        class="health-dot"
-                        class:connected={health === "connected"}
-                        class:degraded={health === "degraded"}
-                        class:disconnected={health === "disconnected"}
-                      ></span>
-                    {/if}
-                    <span class="agent-name">{agent.name}</span>
-                    <InlineBadge variant="success">{typeBadge(agent)}</InlineBadge>
-                  </a>
-                {/each}
-              </div>
-            </div>
-          {/if}
+              {#if job.description}
+                <p class="row-description">{job.description}</p>
+              {/if}
 
-          <div class="skills-section">
-            <div class="skills-header">
-              <h3 class="section-label">Skills</h3>
-              <span class="skills-total">{totalVisible} visible</span>
-              <a
-                class="manage-link"
-                href="/platform/{workspaceId}/jobs/{job.id}"
-                title="Manage pinned skills for this job"
-              >
-                Manage →
-              </a>
-            </div>
-
-            {#if totalVisible === 0}
-              <p class="skills-empty">
-                No skills yet. <a href="/platform/{workspaceId}/jobs/{job.id}">Pin one →</a>
-              </p>
-            {:else}
-              {#if jobPinned.length > 0}
-                <div class="skills-group">
-                  <span class="group-label">
-                    <span class="dot pin"></span>
-                    Pinned to this job
-                    <span class="group-count">{jobPinned.length}</span>
-                  </span>
-                  <div class="skills-list">
-                    {#each jobPinned as skill (skill.skillId)}
-                      <a
-                        class="skill-chip chip-pin"
-                        href="/skills/{skill.namespace}/{skill.name}"
-                        title={`${skill.namespace}/${skill.name}`}
-                      >
-                        <span class="chip-ns">{skill.namespace}</span>
-                        <span class="chip-slash">/</span>
-                        <span class="chip-name">{skill.name}</span>
-                      </a>
-                    {/each}
-                  </div>
+              {#if jobSignals.length > 0}
+                <div class="row-signals">
+                  <span class="signal-label">Signals</span>
+                  {#each jobSignals as signal (signal.name)}
+                    <p class="row-config">{triggerStrip(signal)}</p>
+                  {/each}
                 </div>
               {/if}
 
-              {#if workspaceInheritedSkills.length > 0}
-                <div class="skills-group">
-                  <span class="group-label">
-                    <span class="dot ws"></span>
-                    Inherited from workspace
-                    <span class="group-count">{workspaceInheritedSkills.length}</span>
-                  </span>
-                  <div class="skills-list">
-                    {#each workspaceInheritedSkills as skill (skill.skillId)}
-                      <a
-                        class="skill-chip chip-ws"
-                        href="/skills/{skill.namespace}/{skill.name}"
-                        title={`${skill.namespace}/${skill.name}`}
-                      >
-                        <span class="chip-ns">{skill.namespace}</span>
-                        <span class="chip-slash">/</span>
-                        <span class="chip-name">{skill.name}</span>
-                      </a>
-                    {/each}
+              <div class="row-details">
+                {#if jobTopology && jobTopology.nodes.length > 0}
+                  <div class="detail-block detail-block-flow">
+                    <span class="detail-label">Flow</span>
+                    <PipelineDiagram topology={jobTopology} compact />
                   </div>
-                </div>
-              {/if}
+                {/if}
 
-              {#if fridaySkills.length > 0}
-                <div class="skills-group">
-                  <span class="group-label">
-                    <span class="dot friday"></span>
-                    Always available
-                    <span class="group-count">{fridaySkills.length}</span>
-                  </span>
-                  <div class="skills-list">
-                    {#each fridaySkills as skill (skill.skillId)}
-                      <a
-                        class="skill-chip chip-friday"
-                        href="/skills/{skill.namespace}/{skill.name}"
-                        title={`${skill.namespace}/${skill.name}`}
-                      >
-                        <span class="chip-ns">{skill.namespace}</span>
-                        <span class="chip-slash">/</span>
-                        <span class="chip-name">{skill.name}</span>
-                      </a>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-            {/if}
-          </div>
-
-          {#if jobSignals.length > 0}
-            <div class="signals-section">
-              <h3 class="section-label">Triggers</h3>
-              <div class="signals-list">
-                {#each jobSignals as signal (signal.name)}
-                  {@const fields = schemaFields(signal.schema)}
-                  <div class="signal-entry">
-                    <div class="signal-header">
-                      <span class="signal-name">{signal.title ?? signal.name}</span>
-                      <InlineBadge variant="info">{providerLabel(signal.provider)}</InlineBadge>
-                      {#if signal.endpoint}
-                        <span class="signal-config">POST {signal.endpoint}</span>
-                      {:else if signal.schedule}
-                        <span class="signal-config">{signal.schedule}</span>
-                      {/if}
+                {#if jobAgents.length > 0}
+                  <div class="detail-block">
+                    <span class="detail-label">Agents</span>
+                    <div class="agent-chips">
+                      {#each jobAgents as agent (agent.id)}
+                        {@const health = agentHealth(agent)}
+                        <a
+                          class="agent-chip"
+                          href={resolve("/platform/[workspaceId]/agents", {
+                            workspaceId: workspaceId ?? "",
+                          }) + `#agent-${agent.id}`}
+                        >
+                          {#if health !== null}
+                            <span
+                              class="health-dot"
+                              class:connected={health === "connected"}
+                              class:degraded={health === "degraded"}
+                              class:disconnected={health === "disconnected"}
+                            ></span>
+                          {/if}
+                          <span class="chip-name">{agent.name}</span>
+                          <InlineBadge variant="success">{typeBadge(agent)}</InlineBadge>
+                        </a>
+                      {/each}
                     </div>
-
-                    {#if fields.length > 0}
-                      <div class="schema-fields">
-                        {#each fields as field (field.name)}
-                          <div class="schema-row">
-                            <span class="field-name">{field.name}</span>
-                            <span class="field-type">{field.type}</span>
-                            {#if field.required}
-                              <span class="field-required">required</span>
-                            {/if}
-                            {#if field.description}
-                              <span class="field-desc">{field.description}</span>
-                            {/if}
-                          </div>
-                        {/each}
-                      </div>
-                    {/if}
                   </div>
-                {/each}
+                {/if}
               </div>
             </div>
-          {/if}
+          {/each}
         </div>
-      {/each}
-    </div>
+      {/if}
+    </section>
   {/if}
 </div>
 
@@ -605,22 +455,29 @@
     padding: var(--size-8) var(--size-10);
   }
 
-  .page-header {
+  .search-section {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
-
-    h1 {
-      font-size: var(--font-size-7);
-      font-weight: var(--font-weight-6);
-    }
+    gap: var(--size-2);
+    padding-block: var(--size-4) var(--size-5);
   }
 
-  .page-subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-3);
-    line-height: 1.5;
-    max-inline-size: 50ch;
+  .search-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-3);
+  }
+
+  .search-input {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: inherit;
+    inline-size: 100%;
+    padding: var(--size-2) var(--size-3);
   }
 
   .empty-state {
@@ -630,55 +487,113 @@
     flex-direction: column;
     gap: var(--size-2);
     padding: var(--size-16) 0;
+  }
 
-    p {
-      font-size: var(--font-size-4);
-    }
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+  }
+
+  .page-header {
+    align-items: flex-start;
+    display: flex;
+    gap: var(--size-4);
+    justify-content: space-between;
+  }
+
+  .header-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+  }
+
+  .page-title {
+    color: var(--color-text);
+    font-size: var(--font-size-8);
+    font-weight: var(--font-weight-7);
+    line-height: var(--font-lineheight-1);
+    margin: 0;
+  }
+
+  .count {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-3);
+  }
+
+  .section-description {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-size: var(--font-size-3);
+    line-height: 1.6;
+    margin: 0;
+    max-inline-size: 68ch;
   }
 
   .empty-hint {
-    font-size: var(--font-size-2);
-    opacity: 0.6;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-size: var(--font-size-3);
+    margin: 0;
+    padding-block-start: var(--size-2);
   }
+
+  /* ---- Job list ---- */
 
   .job-list {
     display: flex;
     flex-direction: column;
-    gap: var(--size-3);
+    gap: var(--size-5);
   }
 
-  .job-card {
-    background: var(--color-surface-1);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-4);
-    padding: var(--size-5) var(--size-6);
+  .job-row {
+    align-items: start;
+    column-gap: var(--size-4);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    padding: var(--size-5) var(--size-4);
+    position: relative;
+    z-index: 1;
   }
 
-  .card-header {
+  /* ---- Row: main header line ---- */
+
+  .row-main {
     align-items: center;
+    color: inherit;
     display: flex;
     gap: var(--size-3);
-  }
-
-  .job-title {
-    flex: 1;
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
-    margin: 0;
     min-inline-size: 0;
+    padding-block-start: var(--size-1);
+    text-decoration: none;
   }
 
-  .card-actions {
+  .job-dot {
+    background-color: var(--color-info);
+    block-size: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    inline-size: 8px;
+  }
+
+  .job-dot.schedule {
+    background-color: var(--color-warning);
+  }
+
+  .job-name {
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+  }
+
+  /* ---- Row: actions ---- */
+
+  .row-actions {
     align-items: center;
     display: flex;
-    flex-shrink: 0;
-    gap: var(--size-1);
+    gap: var(--size-2);
+    position: relative;
+    z-index: 2;
   }
 
-  .card-actions :global(.overflow-trigger) {
+  .row-actions :global(.overflow-trigger) {
     border-radius: var(--radius-2);
   }
 
@@ -698,67 +613,114 @@
     color: var(--color-text);
   }
 
-  .job-description {
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    font-size: var(--font-size-2);
-    line-height: 1.5;
+  /* ---- Spanning row content ---- */
+
+  .row-description {
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    font-size: var(--font-size-3);
+    grid-column: 1 / -1;
+    line-height: 1.65;
     margin: 0;
-    max-inline-size: 60ch;
+    overflow: hidden;
+    padding-block-start: var(--size-3);
+    padding-inline-start: calc(8px + var(--size-3));
   }
 
-  .diagram-area {
-    border-block-start: 1px solid var(--color-border-1);
+  .row-signals {
+    align-items: baseline;
     display: flex;
-    flex-direction: column;
-    padding-block-start: var(--size-4);
+    gap: var(--size-2);
+    grid-column: 1 / -1;
+    padding-block-start: var(--size-3);
+    padding-inline-start: calc(8px + var(--size-3));
   }
 
-  /* ---- Data contracts section ---- */
+  .signal-label {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+    letter-spacing: var(--font-letterspacing-1);
+    text-transform: uppercase;
+  }
 
-  .contracts-section {
-    border-block-start: 1px solid var(--color-border-1);
+  .row-config {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-3);
+    margin: 0;
+  }
+
+  .row-details {
+    background: color-mix(in srgb, var(--color-surface-2), transparent 62%);
+    border-radius: var(--radius-4);
+    display: grid;
+    gap: var(--size-8);
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    margin-block-start: var(--size-5);
+    margin-inline-start: 0;
+    padding: var(--size-5) var(--size-5) var(--size-5) calc(8px + var(--size-3));
+    position: relative;
+    z-index: 2;
+  }
+
+  .detail-block {
+    align-content: start;
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-    padding-block-start: var(--size-4);
+    min-inline-size: 0;
   }
 
-  .contracts-list {
+  .detail-label {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-3);
+    font-weight: var(--font-weight-6);
+    letter-spacing: var(--font-letterspacing-1);
+    text-transform: uppercase;
+  }
+
+  .detail-block-flow :global(.pipeline--compact) {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .detail-block-flow :global(.pill),
+  .jobs-page :global(.button.size-small) {
+    font-size: var(--font-size-3);
+  }
+
+  .jobs-page :global(.inline-badge) {
+    font-size: var(--font-size-1);
+  }
+
+  .detail-block-flow :global(.pill) {
+    block-size: var(--size-7);
+    padding-inline: var(--size-2-5);
+  }
+
+  .agent-chips {
     display: flex;
-    flex-direction: column;
-    gap: var(--size-5);
+    flex-wrap: wrap;
+    gap: var(--size-3);
   }
 
-  /* ---- Agents section ---- */
-
-  .agents-section {
-    border-block-start: 1px solid var(--color-border-1);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    padding-block-start: var(--size-4);
-  }
-
-  .agents-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .agent-row {
+  .agent-chip {
     align-items: center;
+    background: var(--color-surface-2);
+    border: none;
+    border-radius: var(--radius-pill, 9999px);
     color: inherit;
-    display: flex;
-    gap: var(--size-2);
-    padding-block: var(--size-1-5);
+    display: inline-flex;
+    gap: var(--size-1);
+    min-block-size: var(--size-7);
+    padding: 0 var(--size-2-5);
     text-decoration: none;
+    transition: background 80ms ease;
   }
 
-  .agent-row:not(:last-child) {
-    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
-  }
-
-  .agent-row:hover {
-    background-color: color-mix(in srgb, var(--color-text), transparent 96%);
+  .agent-chip:hover {
+    background: color-mix(in srgb, var(--color-surface-2), var(--color-text) 6%);
   }
 
   .health-dot {
@@ -781,226 +743,17 @@
     background-color: var(--color-error);
   }
 
-  .agent-name {
-    color: var(--color-text);
-    font-size: var(--font-size-2);
+  .chip-name {
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1;
+    padding-inline-end: var(--size-1);
   }
 
-  /* ---- Skills section ---- */
+  @media (max-width: 900px) {
+    .row-details {
+      grid-template-columns: 1fr;
+    }
 
-  .skills-section {
-    border-block-start: 1px solid var(--color-border-1);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-3);
-    padding-block-start: var(--size-4);
-  }
-
-  .skills-header {
-    align-items: baseline;
-    display: flex;
-    gap: var(--size-2);
-  }
-
-  .skills-total {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-  }
-
-  .manage-link {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-1);
-    margin-inline-start: auto;
-    text-decoration: none;
-  }
-  .manage-link:hover {
-    color: var(--color-accent);
-  }
-
-  .skills-group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1-5);
-  }
-
-  .group-label {
-    align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    display: inline-flex;
-    font-size: var(--font-size-1);
-    gap: var(--size-1-5);
-  }
-
-  .group-label .dot {
-    block-size: 6px;
-    border-radius: 50%;
-    display: inline-block;
-    flex-shrink: 0;
-    inline-size: 6px;
-  }
-  .group-label .dot.pin { background: var(--color-accent); }
-  .group-label .dot.ws { background: var(--color-success); }
-  .group-label .dot.friday { background: var(--color-warning); }
-
-  .group-count {
-    background: var(--color-surface-3, rgba(255,255,255,0.06));
-    border-radius: 999px;
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    margin-inline-start: var(--size-1);
-    padding: 0 var(--size-1-5);
-  }
-
-  .skills-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1-5);
-  }
-
-  .skill-chip {
-    align-items: center;
-    border: 1px solid transparent;
-    border-radius: var(--radius-1);
-    color: var(--color-text);
-    display: inline-flex;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-    gap: 1px;
-    padding: 1px var(--size-2);
-    text-decoration: none;
-    transition: background 80ms ease;
-  }
-  .skill-chip.chip-pin {
-    background: color-mix(in srgb, var(--color-accent), transparent 88%);
-    border-color: color-mix(in srgb, var(--color-accent), transparent 70%);
-  }
-  .skill-chip.chip-pin:hover {
-    background: color-mix(in srgb, var(--color-accent), transparent 78%);
-  }
-  .skill-chip.chip-ws {
-    background: color-mix(in srgb, var(--color-success), transparent 88%);
-    border-color: color-mix(in srgb, var(--color-success), transparent 70%);
-  }
-  .skill-chip.chip-ws:hover {
-    background: color-mix(in srgb, var(--color-success), transparent 78%);
-  }
-  .skill-chip.chip-friday {
-    background: color-mix(in srgb, var(--color-warning), transparent 88%);
-    border-color: color-mix(in srgb, var(--color-warning), transparent 70%);
-  }
-  .skill-chip.chip-friday:hover {
-    background: color-mix(in srgb, var(--color-warning), transparent 78%);
-  }
-  .chip-ns { color: color-mix(in srgb, var(--color-text), transparent 40%); }
-  .chip-slash { color: color-mix(in srgb, var(--color-text), transparent 55%); }
-  .chip-name { color: var(--color-text); font-weight: 500; }
-
-  .skills-empty {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-1);
-    margin: 0;
-  }
-  .skills-empty a {
-    color: var(--color-accent);
-    text-decoration: none;
-  }
-  .skills-empty a:hover { text-decoration: underline; }
-
-  /* ---- Signals section ---- */
-
-  .signals-section {
-    border-block-start: 1px solid var(--color-border-1);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    padding-block-start: var(--size-4);
-  }
-
-  .section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    margin: 0;
-  }
-
-  .signals-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .signal-entry {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    padding: var(--size-2) 0;
-  }
-
-  .signal-entry:not(:last-child) {
-    border-block-end: 1px solid color-mix(in srgb, var(--color-border-1), transparent 50%);
-  }
-
-  .signal-header {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-  }
-
-  .signal-name {
-    color: var(--color-text);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-  }
-
-  .signal-config {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-  }
-
-  .schema-fields {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-    padding-inline-start: var(--size-2);
-  }
-
-  .schema-row {
-    align-items: baseline;
-    display: flex;
-    gap: var(--size-2);
-  }
-
-  .field-name {
-    color: var(--color-text);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-  }
-
-  .field-type {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-  }
-
-  .field-required {
-    color: var(--color-warning);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-  }
-
-  .field-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-0);
-    font-style: italic;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 </style>

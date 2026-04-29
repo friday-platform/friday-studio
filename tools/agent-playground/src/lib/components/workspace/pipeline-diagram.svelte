@@ -75,7 +75,7 @@
   function signalBadge(node: TopologyNode): string {
     const provider = node.metadata.provider;
     if (provider === "http") return "HTTP";
-    if (provider === "cron") return "Cron";
+    if (provider === "cron") return "Schedule";
     return "Manual";
   }
 
@@ -125,6 +125,8 @@
 
       <button
         class="pill"
+        class:pill--signal={node.type === "signal"}
+        class:pill--step={node.type === "agent-step"}
         class:pill--selected={selectedNodeId === node.id}
         class:pill--skipped={nodeStatusMap[node.id] === "skipped"}
         onclick={() => onNodeClick?.(node)}
@@ -135,7 +137,19 @@
             aria-label={nodeStatusMap[node.id]}
           ></span>
         {/if}
-        {node.type === "signal" ? (node.metadata.title ?? node.label) : stepName(node)}
+        <span
+          class="pill-icon"
+          class:pill-icon--signal={node.type === "signal"}
+          class:pill-icon--step={node.type === "agent-step"}
+          aria-hidden="true"
+        >
+          {#if node.type === "signal"}
+            <Icons.Bolt />
+          {:else}
+            <Icons.RectangleStack />
+          {/if}
+        </span>
+        <span>{node.type === "signal" ? (node.metadata.title ?? node.label) : stepName(node)}</span>
       </button>
     {/each}
   </div>
@@ -356,7 +370,7 @@
   .pill {
     align-items: center;
     background: var(--color-surface-2);
-    border: 1px solid color-mix(in srgb, var(--color-text), transparent 25%);
+    border: none;
     border-radius: var(--radius-pill, 9999px);
     color: var(--color-text);
     cursor: pointer;
@@ -367,6 +381,7 @@
     font-weight: var(--font-weight-5);
     height: 24px;
     line-height: 1;
+    gap: var(--size-1);
     padding: 0 var(--size-2);
     transition:
       border-color 150ms ease,
@@ -374,8 +389,39 @@
     white-space: nowrap;
   }
 
+  .pill--signal {
+    border-start-start-radius: var(--radius-1);
+    border-end-start-radius: var(--radius-1);
+  }
+
+  .pill-icon {
+    align-items: center;
+    block-size: 16px;
+    display: inline-flex;
+    inline-size: 16px;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  .pill-icon :global(svg) {
+    block-size: 12px;
+    inline-size: 12px;
+  }
+
+  .pill-icon--signal {
+    background: color-mix(in srgb, var(--color-info), transparent 80%);
+    border-radius: var(--radius-1);
+    color: var(--color-info);
+  }
+
+  .pill-icon--step {
+    background: color-mix(in srgb, var(--color-success), transparent 82%);
+    border-radius: 50%;
+    color: var(--color-success);
+  }
+
   .pill:hover {
-    border-color: var(--color-text);
+    background: color-mix(in srgb, var(--color-surface-2), var(--color-text) 6%);
   }
 
   .pill--selected {
