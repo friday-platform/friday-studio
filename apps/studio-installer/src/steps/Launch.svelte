@@ -314,12 +314,12 @@ function prettyName(name: string): string {
   h2 {
     font-size: 22px;
     font-weight: 700;
-    color: light-dark(#1a1a1a, #f0f0f0);
+    color: var(--color-text);
   }
 
   .subtitle {
     font-size: 14px;
-    color: light-dark(#555, #888);
+    color: var(--color-text-muted);
     max-width: 380px;
     line-height: 1.5;
   }
@@ -330,8 +330,8 @@ function prettyName(name: string): string {
   .spinner {
     width: 40px;
     height: 40px;
-    border: 4px solid light-dark(#e0e0e0, #1e1e1e);
-    border-top-color: #6b72f0;
+    border: 4px solid var(--color-border-1);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.9s linear infinite;
   }
@@ -355,12 +355,12 @@ function prettyName(name: string): string {
 
   .check-icon {
     background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
+    color: var(--color-success);
   }
 
   .error-icon {
     background: rgba(248, 113, 113, 0.15);
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .launching-state,
@@ -375,16 +375,16 @@ function prettyName(name: string): string {
   }
 
   .timeout-state h2 {
-    color: #fbbf24;
+    color: var(--color-warning);
   }
 
   .error-state h2 {
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .error-detail {
     font-size: 13px;
-    color: light-dark(#555, #888);
+    color: var(--color-text-muted);
     max-width: 380px;
     word-break: break-word;
     background: rgba(248, 113, 113, 0.08);
@@ -399,7 +399,7 @@ function prettyName(name: string): string {
     align-items: center;
     gap: 10px;
     font-size: 13px;
-    color: light-dark(#333, #ccc);
+    color: var(--color-text);
     padding: 4px 12px;
     width: 100%;
     max-width: 320px;
@@ -424,17 +424,17 @@ function prettyName(name: string): string {
 
   .pip-healthy {
     background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
+    color: var(--color-success);
   }
 
   .pip-failed {
     background: rgba(248, 113, 113, 0.15);
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .pip-spinner {
     background: rgba(107, 114, 240, 0.15);
-    color: #6b72f0;
+    color: var(--color-primary);
     animation: pulse 1.4s ease-in-out infinite;
   }
 
@@ -467,21 +467,21 @@ function prettyName(name: string): string {
   }
 
   .primary {
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
   }
 
   .primary:hover {
-    background: #5a62e0;
+    background: var(--color-primary); opacity: 0.9;
   }
 
   .secondary {
-    background: #1e1e1e;
-    color: #ccc;
-    border: 1px solid #2e2e2e;
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-1);
   }
 
   .secondary:hover {
-    background: #252525;
+    background: var(--color-surface-2);
   }
 </style>

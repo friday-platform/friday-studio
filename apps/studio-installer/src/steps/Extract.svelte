@@ -111,12 +111,12 @@ onMount(async () => {
   h2 {
     font-size: 22px;
     font-weight: 700;
-    color: light-dark(#1a1a1a, #f0f0f0);
+    color: var(--color-text);
   }
 
   .subtitle {
     font-size: 14px;
-    color: light-dark(#555, #777);
+    color: var(--color-text-muted);
     max-width: 340px;
     line-height: 1.5;
   }
@@ -124,8 +124,8 @@ onMount(async () => {
   .spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid light-dark(#e0e0e0, #1e1e1e);
-    border-top-color: #6b72f0;
+    border: 4px solid var(--color-border-1);
+    border-top-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 0.9s linear infinite;
   }
@@ -141,7 +141,7 @@ onMount(async () => {
     height: 48px;
     border-radius: 50%;
     background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
+    color: var(--color-success);
     font-size: 24px;
     display: flex;
     align-items: center;
@@ -153,7 +153,7 @@ onMount(async () => {
     height: 48px;
     border-radius: 50%;
     background: rgba(248, 113, 113, 0.15);
-    color: #f87171;
+    color: var(--color-error);
     font-size: 22px;
     display: flex;
     align-items: center;
@@ -168,12 +168,12 @@ onMount(async () => {
   }
 
   .error-state h2 {
-    color: #f87171;
+    color: var(--color-error);
   }
 
   .error-detail {
     font-size: 13px;
-    color: light-dark(#555, #888);
+    color: var(--color-text-muted);
     max-width: 380px;
     word-break: break-word;
     background: rgba(248, 113, 113, 0.08);
@@ -184,7 +184,7 @@ onMount(async () => {
 
   .error-hint {
     font-size: 12px;
-    color: #555;
+    color: var(--color-text-muted);
   }
 
   .extracting-state,

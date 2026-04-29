@@ -238,7 +238,7 @@ function reinstall(): void {
 
   .version-badge {
     font-size: 13px;
-    color: #6b72f0;
+    color: var(--color-primary);
     background: rgba(107, 114, 240, 0.12);
     padding: 4px 12px;
     border-radius: 20px;
@@ -250,7 +250,7 @@ function reinstall(): void {
     align-items: center;
     gap: 8px;
     font-size: 13px;
-    color: #fbbf24;
+    color: var(--color-warning);
     background: rgba(251, 191, 36, 0.1);
     border: 1px solid rgba(251, 191, 36, 0.25);
     border-radius: 8px;
@@ -280,22 +280,22 @@ function reinstall(): void {
   }
 
   .primary {
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
   }
 
   .primary:hover {
-    background: #5a62e0;
+    background: var(--color-primary); opacity: 0.9;
   }
 
   .secondary {
-    background: light-dark(#e8e8e8, #2a2a2a);
-    color: light-dark(#444, #ccc);
-    border: 1px solid light-dark(#d0d0d0, #3a3a3a);
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    border: 1px solid var(--color-border-1);
   }
 
   .secondary:hover {
-    background: light-dark(#ddd, #333);
+    opacity: 0.85;
   }
 
   .step-dots {
@@ -313,6 +313,6 @@ function reinstall(): void {
   }
 
   .dot.active {
-    background: #6b72f0;
+    background: var(--color-primary);
   }
 </style>

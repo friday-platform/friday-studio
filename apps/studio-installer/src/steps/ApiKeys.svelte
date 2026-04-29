@@ -182,13 +182,13 @@ async function handleSkip() {
   h2 {
     font-size: 20px;
     font-weight: 700;
-    color: light-dark(#1a1a1a, #f0f0f0);
+    color: var(--color-text);
     margin-bottom: 6px;
   }
 
   .subtitle {
     font-size: 13px;
-    color: light-dark(#555, #777);
+    color: var(--color-text-muted);
     line-height: 1.5;
   }
 
@@ -211,14 +211,14 @@ async function handleSkip() {
     gap: 8px;
     font-size: 13px;
     font-weight: 500;
-    color: light-dark(#333, #ccc);
+    color: var(--color-text);
   }
 
   .badge {
     font-size: 10px;
     font-weight: 600;
     background: rgba(107, 114, 240, 0.2);
-    color: #8b91f8;
+    color: var(--color-primary);
     padding: 2px 6px;
     border-radius: 4px;
     text-transform: uppercase;
@@ -227,10 +227,10 @@ async function handleSkip() {
 
   input,
   select {
-    background: #1a1a1a;
-    border: 1px solid #2e2e2e;
+    background: var(--color-surface-3);
+    border: 1px solid var(--color-border-1);
     border-radius: 7px;
-    color: light-dark(#1a1a1a, #f0f0f0);
+    color: var(--color-text);
     font-size: 13px;
     padding: 9px 12px;
     outline: none;
@@ -244,11 +244,11 @@ async function handleSkip() {
 
   input:focus,
   select:focus {
-    border-color: #6b72f0;
+    border-color: var(--color-primary);
   }
 
   input::placeholder {
-    color: #444;
+    color: var(--color-text-muted);
   }
 
   /* Custom dropdown chevron via background image (CSS-only, no JS) */
@@ -262,8 +262,8 @@ async function handleSkip() {
     top: 50%;
     width: 8px;
     height: 8px;
-    border-right: 1.5px solid #888;
-    border-bottom: 1.5px solid #888;
+    border-right: 1.5px solid var(--color-text-muted);
+    border-bottom: 1.5px solid var(--color-text-muted);
     transform: translateY(-70%) rotate(45deg);
     pointer-events: none;
   }
@@ -276,11 +276,11 @@ async function handleSkip() {
 
   .field-hint {
     font-size: 12px;
-    color: #555;
+    color: var(--color-text-muted);
   }
 
   .field-hint a {
-    color: #6b72f0;
+    color: var(--color-primary);
     text-decoration: none;
   }
 
@@ -290,7 +290,7 @@ async function handleSkip() {
 
   .warn {
     font-size: 12px;
-    color: #d4a52a;
+    color: var(--color-warning);
     background: rgba(212, 165, 42, 0.08);
     border: 1px solid rgba(212, 165, 42, 0.25);
     border-radius: 6px;
@@ -307,7 +307,7 @@ async function handleSkip() {
 
   .error {
     font-size: 13px;
-    color: #f87171;
+    color: var(--color-error);
     background: rgba(248, 113, 113, 0.1);
     border: 1px solid rgba(248, 113, 113, 0.2);
     border-radius: 6px;
@@ -331,12 +331,12 @@ async function handleSkip() {
   }
 
   .primary {
-    background: #6b72f0;
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-primary-text);
   }
 
   .primary:hover:not(:disabled) {
-    background: #5a62e0;
+    background: var(--color-primary); opacity: 0.9;
   }
 
   .primary:disabled {
@@ -346,13 +346,13 @@ async function handleSkip() {
 
   .skip {
     background: transparent;
-    color: #555;
+    color: var(--color-text-muted);
     font-size: 13px;
     padding: 10px 0;
   }
 
   .skip:hover:not(:disabled) {
-    color: light-dark(#555, #888);
+    color: var(--color-text-muted);
   }
 
   .skip:disabled {
