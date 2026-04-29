@@ -603,7 +603,7 @@
   .message-content {
     background-color: var(--color-surface-3);
     border-radius: var(--radius-3);
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     line-height: 1.55;
     padding: var(--size-2-5) var(--size-3);
     white-space: pre-wrap;
