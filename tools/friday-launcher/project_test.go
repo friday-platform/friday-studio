@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -79,5 +82,57 @@ func TestSupervisedProcessesPinSet(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("supervisedProcesses[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestCommonServiceEnv_AppliesDesktopDefaults asserts the launcher
+// always sets LINK_DEV_MODE for child services when the .env doesn't
+// override it. Pre-2026-04: link crashed every desktop install with
+// "POSTGRES_CONNECTION required in production" because nothing was
+// telling it this was a dev/desktop run.
+func TestCommonServiceEnv_AppliesDesktopDefaults(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	envDir := filepath.Join(tmp, ".friday", "local")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(envDir, ".env"),
+		[]byte("ANTHROPIC_API_KEY=sk-test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := commonServiceEnv()
+	for _, want := range []string{
+		"ANTHROPIC_API_KEY=sk-test",
+		"LINK_DEV_MODE=true",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("commonServiceEnv missing %q. got=%v", want, got)
+		}
+	}
+}
+
+// TestCommonServiceEnv_RespectsExplicitOverride verifies a user can
+// disable the desktop defaults from .env (e.g. LINK_DEV_MODE=false to
+// force the Postgres-backed code path during local Postgres testing).
+func TestCommonServiceEnv_RespectsExplicitOverride(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	envDir := filepath.Join(tmp, ".friday", "local")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(envDir, ".env"),
+		[]byte("LINK_DEV_MODE=false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got := commonServiceEnv()
+	if slices.Contains(got, "LINK_DEV_MODE=true") {
+		t.Errorf("explicit LINK_DEV_MODE=false was clobbered by default. got=%v", got)
+	}
+	if !slices.Contains(got, "LINK_DEV_MODE=false") {
+		t.Errorf("user's LINK_DEV_MODE=false missing from env. got=%v", got)
 	}
 }

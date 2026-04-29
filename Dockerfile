@@ -234,7 +234,6 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     AGENT_SOURCE_DIR=/home/atlas/agent-src \
     LINK_DEV_MODE=true \
     LINK_PORT=3100 \
-    DEV_MODE=true \
     SHELL=/bin/bash
 
 EXPOSE 8080 3100 5200 9090

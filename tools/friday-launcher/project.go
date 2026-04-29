@@ -15,16 +15,45 @@ import (
 // osGetenv is var-bound so tests can stub it.
 var osGetenv = os.Getenv
 
-// commonServiceEnv returns the KEY=VALUE pairs from ~/.friday/local/.env.
-// Every supervised service gets this as a baseline so the values the
-// installer's API Keys + platform-vars step persist (ANTHROPIC_API_KEY,
-// EXTERNAL_DAEMON_URL, EXTERNAL_TUNNEL_URL, FRIDAYD_URL, LINK_DEV_MODE,
-// …) are visible everywhere the launcher needs them — not just in
-// `friday`. The launcher itself inherits a near-empty env when spawned
-// from Finder/Spotlight, so without this merge each service would see
-// none of the user's configured keys / URLs.
+// desktopServiceDefaults are the env-var defaults the launcher always
+// asserts for child services because Studio is, by definition, a
+// desktop install — never a hosted production deploy.
+//
+//   - LINK_DEV_MODE=true: link's createPlatformRouteRepo and
+//     createCommunicatorWiringRepo throw "POSTGRES_CONNECTION required
+//     in production" without it. Studio has no Postgres; link has to
+//     fall back to NoOpPlatformRouteRepository + SqliteCommunicatorWiring.
+//
+// Defaults are ONLY applied when the user's .env doesn't already provide
+// the key, so an explicit override (e.g. setting LINK_DEV_MODE=false for
+// a Postgres-backed local test) wins.
+var desktopServiceDefaults = map[string]string{
+	"LINK_DEV_MODE": "true",
+}
+
+// commonServiceEnv returns the KEY=VALUE pairs from ~/.friday/local/.env
+// merged with the desktopServiceDefaults. Every supervised service gets
+// this as a baseline so the values the installer's API Keys + platform-
+// vars step persist (ANTHROPIC_API_KEY, EXTERNAL_DAEMON_URL,
+// EXTERNAL_TUNNEL_URL, FRIDAYD_URL, …) are visible everywhere the
+// launcher needs them — not just in `friday`. The launcher itself
+// inherits a near-empty env when spawned from Finder/Spotlight, so
+// without this merge each service would see none of the user's
+// configured keys / URLs.
 func commonServiceEnv() []string {
-	return loadDotEnv(filepath.Join(friendlyHome(), ".env"))
+	env := loadDotEnv(filepath.Join(friendlyHome(), ".env"))
+	seen := map[string]struct{}{}
+	for _, kv := range env {
+		if i := strings.IndexByte(kv, '='); i > 0 {
+			seen[kv[:i]] = struct{}{}
+		}
+	}
+	for k, v := range desktopServiceDefaults {
+		if _, ok := seen[k]; !ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	return env
 }
 
 // fridayEnv builds the env-var list specific to the friday daemon
