@@ -34,10 +34,18 @@
   let images: ImageAttachment[] = $state([]);
   let dragOver = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
+  let textareaEl: HTMLTextAreaElement | undefined = $state();
   /// <reference path="./speech-recognition.d.ts" />
 
   let recording = $state(false);
   let recognition: SpeechRecognition | null = $state(null);
+
+  $effect(() => {
+    if (!textareaEl) return;
+    value; // re-run when text changes
+    textareaEl.style.height = 'auto';
+    textareaEl.style.height = `${textareaEl.scrollHeight}px`;
+  });
 
   const hasContent = $derived(value.trim().length > 0 || images.length > 0);
   const sttSupported = typeof window !== "undefined"
@@ -221,6 +229,7 @@
     />
     <textarea
       data-testid="chat-input"
+      bind:this={textareaEl}
       bind:value
       onkeydown={handleKeydown}
       onpaste={handlePaste}
@@ -400,8 +409,10 @@
     font-family: inherit;
     font-size: var(--font-size-2);
     line-height: 1.5;
+    max-block-size: 200px;
     min-block-size: var(--size-6);
     outline: none;
+    overflow-y: auto;
     resize: none;
   }
 
