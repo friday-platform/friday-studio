@@ -475,6 +475,18 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       );
     }
 
+    // Check for FRIDAY_AGENT_BROWSER_PATH and augment PATH for the web
+    // agent's execFile("agent-browser", ...) call at
+    // packages/bundled-agents/src/web/tools/browse.ts:67. The launcher's
+    // fridayEnv() in tools/friday-launcher/project.go emits this when
+    // the bundled binary is present at <binDir>/agent-browser.
+    const agentBrowserPath = process.env.FRIDAY_AGENT_BROWSER_PATH;
+    if (agentBrowserPath) {
+      await augmentPathWithTool(agentBrowserPath, "agent-browser");
+    } else {
+      logger.debug("No FRIDAY_AGENT_BROWSER_PATH configured, web agent's browse tool may not work");
+    }
+
     // Check for FRIDAY_KEY and fetch credentials if present
     const atlasKey = process.env.FRIDAY_KEY;
     const localOnlyMode = isLocalOnlyMode(process.env.FRIDAY_LOCAL_ONLY);
