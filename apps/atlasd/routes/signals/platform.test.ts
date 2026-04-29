@@ -1,10 +1,34 @@
 import type { MergedConfig } from "@atlas/config";
 import type { WorkspaceEntry, WorkspaceManager } from "@atlas/workspace";
 import type { Chat } from "chat";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
 import type { ChatSdkInstance } from "../../src/chat-sdk/chat-sdk-instance.ts";
 import { createPlatformSignalRoutes } from "./platform.ts";
+
+const wiringMocks = vi.hoisted(() => ({
+  resolveCommunicatorByConnection:
+    vi.fn<
+      (
+        connectionId: string,
+        provider: string,
+      ) => Promise<{ workspaceId: string; credentialId: string; secret: unknown } | null>
+    >(),
+}));
+
+vi.mock("../../src/services/communicator-wiring.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/services/communicator-wiring.ts")>();
+  return {
+    ...actual,
+    resolveCommunicatorByConnection: wiringMocks.resolveCommunicatorByConnection,
+  };
+});
+
+beforeEach(() => {
+  wiringMocks.resolveCommunicatorByConnection.mockReset();
+  // Default: wiring miss — falls through to yml/communicators paths.
+  wiringMocks.resolveCommunicatorByConnection.mockResolvedValue(null);
+});
 
 /** Raw Slack event_callback payload (what the Gateway forwards). */
 const rawSlackEvent = {
@@ -238,6 +262,97 @@ describe("POST /slack", () => {
     const res = await postSlack(app);
 
     expect(res.status).toBe(500);
+  });
+
+  // Wiring-first routing: when communicator_wiring has a row for
+  // (slack, app_id), it overrides any yml signal-config match — the wiring
+  // table is the source of truth, populated by /connect-communicator. Stale
+  // legacy `signals.slack-chat.config.app_id` blocks (left over from prior
+  // tests, manual edits, etc.) must NOT misroute inbound events.
+  it("prefers communicator_wiring over yml signal-config for inbound routing", async () => {
+    wiringMocks.resolveCommunicatorByConnection.mockImplementation((connectionId, provider) => {
+      if (provider === "slack" && connectionId === "A012ABCD0A0") {
+        return Promise.resolve({
+          workspaceId: "ws-target",
+          credentialId: "cred-1",
+          secret: { app_id: "A012ABCD0A0" },
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const slackHandler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+
+    // ws-stale has the same app_id pinned in yml from a prior test — without
+    // wiring-first routing, this workspace would win and misdeliver.
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [
+        { id: "ws-stale", config: makeConfig("A012ABCD0A0") },
+        { id: "ws-target", config: makeConfig("A012ABCD0A0") },
+      ],
+      () => Promise.resolve(makeChatSdkInstance("slack", slackHandler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postSlack(app);
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-target");
+    expect(getOrCreateChatSdkInstance).not.toHaveBeenCalledWith("ws-stale");
+    expect(wiringMocks.resolveCommunicatorByConnection).toHaveBeenCalledWith(
+      "A012ABCD0A0",
+      "slack",
+    );
+  });
+
+  it("falls through to yml signal-config when communicator_wiring has no row", async () => {
+    // Default beforeEach mock returns null — explicit here for clarity.
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue(null);
+
+    const slackHandler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [{ id: "ws-yml", config: makeConfig("A012ABCD0A0") }],
+      () => Promise.resolve(makeChatSdkInstance("slack", slackHandler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postSlack(app);
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-yml");
+  });
+
+  it("returns 404 when wiring miss and no yml signal-config matches", async () => {
+    wiringMocks.resolveCommunicatorByConnection.mockResolvedValue(null);
+
+    const { daemon } = makeDaemon([{ id: "ws-other", config: makeConfig("A_OTHER_APP") }]);
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postSlack(app);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("falls through to yml when wiring lookup throws (resilient on Link errors)", async () => {
+    wiringMocks.resolveCommunicatorByConnection.mockRejectedValue(new Error("link unreachable"));
+
+    const slackHandler = vi
+      .fn<(req: Request) => Promise<Response>>()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    const { daemon, getOrCreateChatSdkInstance } = makeDaemon(
+      [{ id: "ws-yml", config: makeConfig("A012ABCD0A0") }],
+      () => Promise.resolve(makeChatSdkInstance("slack", slackHandler)),
+    );
+
+    const app = createPlatformSignalRoutes(daemon);
+    const res = await postSlack(app);
+
+    expect(res.status).toBe(200);
+    expect(getOrCreateChatSdkInstance).toHaveBeenCalledWith("ws-yml");
   });
 });
 

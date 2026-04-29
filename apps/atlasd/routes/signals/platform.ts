@@ -11,7 +11,10 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AtlasDaemon } from "../../src/atlas-daemon.ts";
-import { resolveCommunicatorByConnection } from "../../src/services/communicator-wiring.ts";
+import {
+  CommunicatorKindSchema,
+  resolveCommunicatorByConnection,
+} from "../../src/services/communicator-wiring.ts";
 
 const logger = createLogger({ component: "platform-signal-route" });
 
@@ -380,6 +383,12 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
  * `communicators[provider]` declaration — the new yml shape carries
  * `{ kind: <provider> }` with no inline config, so the configKey/value
  * branch only applies to the legacy `signals.<x>.config` path.
+ *
+ * Wiring-first: when `configValue` looks like a routing key for a
+ * communicator-managed provider (slack/telegram/discord/teams/whatsapp), the
+ * Link `communicator_wiring` table is the source of truth. Consult it before
+ * iterating yml signal-configs so stale legacy `signals.<x>.config` blocks
+ * (e.g. left over from prior tests) cannot misroute inbound events.
  */
 async function findWorkspaceByProvider(
   daemon: AtlasDaemon,
@@ -387,6 +396,22 @@ async function findWorkspaceByProvider(
   configKey?: string,
   configValue?: string,
 ): Promise<string | null> {
+  if (configValue) {
+    const wiringKind = CommunicatorKindSchema.safeParse(provider);
+    if (wiringKind.success) {
+      const resolved = await resolveCommunicatorByConnection(configValue, wiringKind.data).catch(
+        (error) => {
+          logger.warn("communicator_wiring_resolve_failed", {
+            provider,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        },
+      );
+      if (resolved) return resolved.workspaceId;
+    }
+  }
+
   const workspaces = await daemon.getWorkspaceManager().list();
 
   for (const ws of workspaces) {
