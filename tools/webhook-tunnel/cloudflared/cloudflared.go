@@ -3,9 +3,12 @@
 // $PATH → ~/.atlas/bin (cached prior download) → in-Go HTTPS download
 // from github.com/cloudflare/cloudflared releases.
 //
-// Downloads are atomic: tmp.<pid> → fsync → verify against the
-// official .sha256 sidecar → atomic rename. A partial/interrupted
-// download leaves no cached binary so the next call re-downloads.
+// Downloads are atomic: tmp.<pid> → fsync → verify against the digest
+// reported by GitHub's releases API → atomic rename. A
+// partial/interrupted download leaves no cached binary so the next
+// call re-downloads. Bumping Version is a one-line change; the
+// expected hash is queried per-call from
+// api.github.com/repos/cloudflare/cloudflared/releases/tags/<version>.
 //
 // All public callers go through Resolve. Concurrent Resolve calls
 // inside one process are coalesced to a single download.
@@ -15,11 +18,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -27,11 +32,10 @@ import (
 	"time"
 )
 
-// Version is the pinned cloudflared release we download. Bumping this
-// is a one-line change; per-platform sha256 hashes come from the
-// official .sha256 sidecar at download time so there's nothing else
-// to update.
-const Version = "2025.1.1"
+// Version is the pinned cloudflared release we download. Bumping
+// this is a one-line change — the expected hash is fetched at
+// download time from GitHub's releases API.
+const Version = "2026.3.0"
 
 // downloadHTTPClient is a package-level HTTP client with a sane timeout.
 // The download itself can take a while on slow links; a per-request
@@ -141,6 +145,11 @@ func downloadAtomic(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	wantHex, err := fetchAssetDigest(ctx, Version, assetName(url))
+	if err != nil {
+		return "", fmt.Errorf("fetch asset digest: %w", err)
+	}
+
 	dst := cachedPath()
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return "", fmt.Errorf("create cache dir: %w", err)
@@ -148,36 +157,23 @@ func downloadAtomic(ctx context.Context) (string, error) {
 	tmp := fmt.Sprintf("%s.tmp.%d", dst, os.Getpid())
 	defer func() { _ = os.Remove(tmp) }() // best-effort cleanup if we don't reach the rename
 
-	// 1. Fetch sidecar first — fail fast if the version doesn't have
-	//    one (rather than after a multi-MB download). The sidecar
-	//    text format is "<hex>  <filename>\n".
-	sidecarURL := url + ".sha256"
-	wantHex, err := fetchSha256Sidecar(ctx, sidecarURL)
-	if err != nil {
-		return "", fmt.Errorf("fetch sidecar: %w", err)
-	}
-
-	// 2. Download body to tmp + compute sha256 in one pass.
 	hashHex, err := downloadToTmp(ctx, url, tmp)
 	if err != nil {
 		return "", err
 	}
 
-	// 3. Compare. Mismatch → bail with the .tmp deferred-removed.
 	if hashHex != wantHex {
 		return "", fmt.Errorf("sha256 mismatch: download=%s upstream=%s", hashHex, wantHex)
 	}
 
-	// 4. macOS releases ship the binary inside a tarball; unpack and
-	//    overwrite tmp with the inner file before the final rename.
+	// macOS releases ship the binary inside a tarball; unpack and
+	// overwrite tmp with the inner file before the final rename.
 	if strings.HasSuffix(url, ".tgz") {
 		if err := unpackDarwinTarball(tmp); err != nil {
 			return "", err
 		}
 	}
 
-	// 5. chmod + atomic rename. cloudflared is an executable; the +x bit
-	// is essential.
 	if err := os.Chmod(tmp, 0o700); err != nil { //nolint:gosec // G302: executable needs +x
 		return "", fmt.Errorf("chmod: %w", err)
 	}
@@ -187,31 +183,49 @@ func downloadAtomic(ctx context.Context) (string, error) {
 	return dst, nil
 }
 
-// fetchSha256Sidecar GETs the .sha256 file from the cloudflared release
-// and returns the hex digest. The format is the standard
-// "<hex>  <filename>" sha256sum output.
-func fetchSha256Sidecar(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// assetName returns the file portion of a release-asset URL.
+func assetName(url string) string {
+	return path.Base(url)
+}
+
+// fetchAssetDigest queries GitHub's releases API for the named asset
+// in the pinned release tag and returns its sha256 hex digest. The
+// `digest` field GitHub reports is formatted "sha256:<hex>".
+func fetchAssetDigest(ctx context.Context, version, asset string) (string, error) {
+	apiURL := fmt.Sprintf("https://api.github.com/repos/cloudflare/cloudflared/releases/tags/%s", version)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := downloadHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("sidecar HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("GitHub releases API HTTP %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return "", err
+	var rel struct {
+		Assets []struct {
+			Name   string `json:"name"`
+			Digest string `json:"digest"`
+		} `json:"assets"`
 	}
-	parts := strings.Fields(string(body))
-	if len(parts) == 0 || len(parts[0]) != 64 {
-		return "", fmt.Errorf("sidecar: unexpected format %q", string(body))
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", fmt.Errorf("decode release JSON: %w", err)
 	}
-	return strings.ToLower(parts[0]), nil
+	for _, a := range rel.Assets {
+		if a.Name != asset {
+			continue
+		}
+		hex, ok := strings.CutPrefix(a.Digest, "sha256:")
+		if !ok || len(hex) != 64 {
+			return "", fmt.Errorf("asset %q: unexpected digest %q", asset, a.Digest)
+		}
+		return strings.ToLower(hex), nil
+	}
+	return "", fmt.Errorf("asset %q not found in release %s", asset, version)
 }
 
 // downloadToTmp streams the URL into tmp, hashing as it goes. Returns

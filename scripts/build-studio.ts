@@ -49,9 +49,9 @@ interface ExternalCliPin {
   outName: (target: string) => string;
 }
 
-const GH_VERSION = "2.78.0";
-const CLOUDFLARED_VERSION = "2025.10.1";
-const NATS_SERVER_VERSION = "2.12.7";
+const GH_VERSION = "2.92.0";
+const CLOUDFLARED_VERSION = "2026.3.0";
+const NATS_SERVER_VERSION = "2.12.8";
 
 const EXTERNAL_CLIS: readonly ExternalCliPin[] = [
   {
@@ -138,7 +138,6 @@ interface GoBinary {
 }
 
 const GO_BINARIES: readonly GoBinary[] = [
-  { name: "pty-server", pkg: "./tools/pty-server" },
   // friday-launcher is the post-install supervisor + tray app. Lives in
   // the root Go module like every other tools/* binary. cgo:true because
   // fyne.io/systray needs Cocoa on macOS (Windows backend is pure Win32 —

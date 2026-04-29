@@ -7,7 +7,7 @@ agents:
   claude-code:
     type: user
     agent: claude-code
-    description: Autonomous coding agent via Python WASM.
+    description: Autonomous coding agent.
     prompt: You are a coding assistant.
     env:
       ANTHROPIC_API_KEY: from_environment

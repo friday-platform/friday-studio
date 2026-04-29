@@ -63,7 +63,6 @@ func TestSupervisedProcessesPinSet(t *testing.T) {
 		"nats-server",
 		"friday",
 		"link",
-		"pty-server",
 		"webhook-tunnel",
 		"playground",
 	}

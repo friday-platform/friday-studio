@@ -69,7 +69,7 @@ emit_header() {
 # Third-Party Licenses
 
 This file lists every third-party dependency bundled into a shipped Friday
-Studio artifact (the daemon, CLI, web playground, Friday Launcher, pty-server,
+Studio artifact (the daemon, CLI, web playground, Friday Launcher,
 webhook tunnel, and Studio Installer). It is generated automatically by
 [`scripts/generate-third-party-licenses.sh`](scripts/generate-third-party-licenses.sh).
 
@@ -86,7 +86,7 @@ EOF
 emit_go() {
   echo "## Go modules" >> "$OUT"
   echo >> "$OUT"
-  echo "Bundled into: \`tools/friday-launcher\`, \`tools/pty-server\`, \`tools/webhook-tunnel\`." >> "$OUT"
+  echo "Bundled into: \`tools/friday-launcher\`, \`tools/webhook-tunnel\`." >> "$OUT"
   echo >> "$OUT"
   echo "| Module | Version | License | Source |" >> "$OUT"
   echo "| --- | --- | --- | --- |" >> "$OUT"

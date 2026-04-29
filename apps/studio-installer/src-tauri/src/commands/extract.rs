@@ -338,6 +338,19 @@ pub fn extract_archive(
         Ok(()) => {
             emitter.finish();
             if bak_path.exists() {
+                // The API Keys wizard step writes ~/.friday/local/.env
+                // *before* extract runs, so the rename-to-bak above
+                // hides it inside the backup tree. The archive doesn't
+                // contain .env (or .installed — written post-extract on
+                // earlier runs), so without this copy-back every install
+                // would wipe the user's API key and leave the daemon in
+                // a missing-credentials crash loop.
+                for name in [".env", ".installed"] {
+                    let src = bak_path.join(name);
+                    if src.exists() && !dest_path.join(name).exists() {
+                        let _ = fs::copy(&src, dest_path.join(name));
+                    }
+                }
                 let _ = fs::remove_dir_all(&bak_path);
             }
             Ok(())
@@ -346,10 +359,16 @@ pub fn extract_archive(
             let _ = emitter.channel.send(ExtractEvent::Error {
                 message: e.clone(),
             });
-            // Roll back: drop the partial new install and restore the backup.
+            // Roll back: drop the partial new install. When a backup
+            // exists, restore it (covers the update path). When it
+            // doesn't, the dest dir was created fresh by us inside
+            // this call — drop it too so a retry starts clean instead
+            // of unpacking on top of a half-extracted tree.
             if bak_path.exists() {
                 let _ = fs::remove_dir_all(&dest_path);
                 let _ = fs::rename(&bak_path, &dest_path);
+            } else {
+                let _ = fs::remove_dir_all(&dest_path);
             }
             Err(e)
         }

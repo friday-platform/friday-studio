@@ -170,8 +170,8 @@ Use the `debugging-friday` skill for deeper log forensics (GCS, correlation).
 ### `agent list`
 `agent list [-w <workspace>] [--user] [--json]`
 
-Agents in a workspace. `--user` lists user-built agents in `~/.atlas/agents/`
-(Python WASM). Falls back to `--user` mode if you're outside a workspace
+Agents in a workspace. `--user` lists user-built agents in `~/.atlas/agents/`.
+Falls back to `--user` mode if you're outside a workspace
 directory.
 
 ### `agent describe`
@@ -184,7 +184,7 @@ Full agent config as JSON (type, prompt, model, tools, integrations).
 ### `agent build`
 `agent build <dir> [--sdk-path <p>] [--wit-dir <p>] [--entry-point agent]`
 
-Builds a Python WASM agent. Runs componentize-py + jco. Writes to
+Builds a user agent. Writes to
 `~/.atlas/agents/`. The daemon auto-registers built agents on next restart
 when `AGENT_SOURCE_DIR` is set.
 

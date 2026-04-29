@@ -1,6 +1,6 @@
 # Sandbox constraints
 
-Friday agents compile to WebAssembly via `componentize-py`. The runtime is sandboxed CPython — no OS, no native extensions, no network of its own.
+Friday user agents run as subprocess processes (Python) that communicate with the daemon via NATS. The SDK provides a sandboxed execution model — all I/O goes through capability hooks.
 
 ## Mental model
 
@@ -8,7 +8,7 @@ An agent is a pure function `execute(prompt, ctx) -> ok|err`:
 - Called once per request, fresh module state each time
 - No filesystem, no network, no threads, no subprocesses
 - Reaches outside only through `ctx.llm`, `ctx.http`, `ctx.tools`, `ctx.stream`
-- Sync from its own view (JSPI bridges async invisibly)
+- Sync from its own view
 
 Treat it as a stateless pure function with four capability hooks. That model predicts every constraint below.
 
@@ -22,7 +22,7 @@ Treat it as a stateless pure function with four capability hooks. That model pre
 | `import numpy` / `pandas` | No alternative — rework the problem |
 | `open(path)` / `pathlib` | No filesystem |
 | `threading.Thread` / `multiprocessing` | Single-threaded. Sequential only. |
-| `asyncio.run(...)` / `async def execute` | Handler is sync. Capabilities too. |
+| `asyncio.run(...)` in a sync `execute` | Use `async def execute` if you need async — both supported |
 | `subprocess.run(...)` | Use an MCP tool |
 | Module-level state across calls | Fresh import each invocation |
 | Two `@agent` in one file | `RuntimeError` at import |
@@ -38,17 +38,18 @@ Root cause: most blocked packages depend on C extensions (`pydantic-core`, `ssl`
 
 ## Non-obvious conventions
 
-### `_bridge` import
+### `__main__` block
 
 ```python
-from friday_agent_sdk._bridge import Agent  # noqa: F401
+if __name__ == "__main__":
+    run()
 ```
 
-componentize-py discovers `Agent` through this import. Unused at runtime. Removing it breaks the build cryptically. Keep the `noqa`.
+Required in every agent file. The daemon spawns the file as a subprocess; without this block the process exits immediately and never registers with NATS.
 
 ### One agent per module
 
-Module-level registry; second `@agent` raises `RuntimeError`. Each file compiles to one WASM component. Two agents → two files.
+Module-level registry; second `@agent` raises `RuntimeError`. Each file defines one agent. Two agents → two files.
 
 ### Stateless
 
@@ -97,9 +98,9 @@ if ctx.llm is None:
 
 ## Short form
 
-1. Pure sync function.
+1. Sync or async function — both work.
 2. No packages beyond `friday_agent_sdk` + stdlib.
 3. `ctx.*` for all I/O.
 4. Return `ok(...)` / `err(...)`.
-5. Keep the `_bridge` import.
+5. `if __name__ == "__main__": run()` at end of file.
 6. One agent per file.

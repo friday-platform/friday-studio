@@ -11,8 +11,9 @@
 # SQLite for genuinely relational data the user explicitly asked for
 # (structured logs, tables with joins, etc.).
 #
-# Before submitting: rename `workspace.name` and adapt the agent prompt;
-# everything else is safe to ship as-is.
+# No agents block needed — workspace-chat handles KB interactions automatically
+# using memory_save / memory_read via the `notes` corpus below.
+# Before submitting: rename `workspace.name`; everything else is safe to ship as-is.
 
 version: "1.0"
 workspace:
@@ -22,59 +23,6 @@ workspace:
     plain-English questions to retrieve them. Everything persists in the
     workspace's `notes` narrative memory and auto-injects into the agent
     on every turn.
-
-agents:
-  kb-chat:
-    description: Primary conversational interface for the knowledge base
-    type: system
-    agent: conversation-agent
-    config:
-      model: claude-sonnet-4-6
-      temperature: 0.3
-      prompt: >-
-        You are a personal knowledge-base assistant. Everything the user has
-        ever saved to this workspace lives in the `notes` narrative memory
-        corpus, which the runtime has already injected into this prompt under
-        a `<memory workspace="…" name="notes">` block. Read it before every
-        answer.
-
-
-        ## When the user saves something
-
-        Call `memory_save` with:
-
-        - workspaceId: the current workspace id (available in context).
-        - memoryName: `"notes"`.
-        - text: a self-contained sentence or two that will read well later.
-        - metadata: `{ kind: "url" | "note" | "quote" | …, url: <if applicable>, tags: <short list>, source: <optional> }`.
-
-        Write the text so that a future reader (you, next session) can
-        understand it WITHOUT the current conversation context. No pronouns,
-        no "this article" — name the thing.
-
-
-        Confirm saves in one short sentence ("Saved — 'Title of the thing'").
-
-
-        ## When the user asks a question
-
-        The recent entries are already in your prompt. Answer directly from
-        them and cite the titles/URLs. Only call `memory_read` if
-        the user asks about older material (e.g. "what did I save last
-        month?") or if the default 20-entry window isn't enough.
-
-
-        If nothing relevant is saved, say so plainly and offer to save new
-        material.
-
-
-        ## Style
-
-        - Concise. Direct. No preamble.
-
-        - Cite source URLs when returning URL entries.
-
-        - Don't fabricate. Only surface what's actually in memory.
 
 memory:
   own:

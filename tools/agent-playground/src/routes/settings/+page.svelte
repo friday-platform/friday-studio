@@ -21,7 +21,7 @@
   import { Button, PageLayout, toast } from "@atlas/ui";
   import ModelChain from "$lib/components/settings/model-chain.svelte";
   import ModelPicker from "$lib/components/settings/model-picker.svelte";
-  import { EXTERNAL_TUNNEL_URL } from "$lib/daemon-url";
+  import { externalTunnelUrl } from "$lib/daemon-url";
   import { z } from "zod";
 
   const TunnelStatusSchema = z.object({ url: z.string().nullable() });
@@ -155,7 +155,7 @@
     tunnelLoading = true;
     tunnelError = null;
     try {
-      const res = await fetch(`${EXTERNAL_TUNNEL_URL}/status`);
+      const res = await fetch(`${externalTunnelUrl()}/status`);
       if (!res.ok) {
         tunnelError = `Tunnel unreachable (HTTP ${res.status})`;
         return;

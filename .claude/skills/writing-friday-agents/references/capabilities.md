@@ -1,6 +1,6 @@
 # Capabilities (`ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`)
 
-All external I/O goes through the host. `AgentContext` exposes four capabilities. Each is sync from the agent's view — WASM JSPI suspends and resumes. Never write `async`/`await` in the handler.
+All external I/O goes through the host. `AgentContext` exposes four capabilities. Each is sync from the agent's view. Never write `async`/`await` in the handler.
 
 Any capability can be `None` (test harness, missing config, unsupported context). Check first; return `err()`.
 

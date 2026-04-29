@@ -9,7 +9,6 @@ services:
       - "${FRIDAY_LINK_PORT:-13100}:3100"    # Link (credential/auth service)
       - "${FRIDAY_LEDGER_PORT:-13200}:3200"  # Ledger (resources + activity)
       - "${FRIDAY_STUDIO_PORT:-15200}:5200"  # Friday Studio (web UI)
-      - "${FRIDAY_PTY_PORT:-17681}:7681"     # PTY server (WebSocket terminal)
       - "${FRIDAY_TUNNEL_PORT:-19090}:9090"  # Webhook tunnel
     env_file:
       - path: .env
@@ -21,7 +20,6 @@ services:
       FRIDAY_LINK_PORT: ${FRIDAY_LINK_PORT:-13100}
       FRIDAY_LEDGER_PORT: ${FRIDAY_LEDGER_PORT:-13200}
       FRIDAY_STUDIO_PORT: ${FRIDAY_STUDIO_PORT:-15200}
-      FRIDAY_PTY_PORT: ${FRIDAY_PTY_PORT:-17681}
       FRIDAY_TUNNEL_PORT: ${FRIDAY_TUNNEL_PORT:-19090}
       KNOWLEDGE_DATA_DIR: ${KNOWLEDGE_DATA_DIR:-}
     volumes:
@@ -46,7 +44,6 @@ services:
           curl -sf http://localhost:8080/health &&
           curl -sf http://localhost:3100/health &&
           curl -sf http://localhost:3200/health &&
-          curl -sf http://localhost:7681/health &&
           curl -sf http://localhost:9090/health
       interval: 10s
       timeout: 5s

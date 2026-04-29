@@ -135,13 +135,12 @@ func TestCheckBinariesPresent_NonExistentBinDir(t *testing.T) {
 	}
 }
 
-// TestRequiredBinariesCountMatchesPlan: documents the cardinality
-// invariant — 6 supervised binaries, matching CLAUDE.md and the
-// wizard's checklist UI. Pinning here means a refactor that
-// silently drops one would fail this test in addition to
+// TestRequiredBinariesCountMatchesPlan documents the cardinality
+// invariant for the supervised binary set. A refactor that silently
+// drops or duplicates one fails this in addition to
 // TestSupervisedProcessesPinSet.
 func TestRequiredBinariesCountMatchesPlan(t *testing.T) {
-	if got := len(requiredBinaries()); got != 6 {
-		t.Errorf("requiredBinaries() count = %d, want 6 (CLAUDE.md)", got)
+	if got := len(requiredBinaries()); got != 5 {
+		t.Errorf("requiredBinaries() count = %d, want 5", got)
 	}
 }

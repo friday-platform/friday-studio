@@ -22,3 +22,6 @@ self-hosted-runner:
     - macos-14-large
     - macos-15-xlarge
     - macos-15-large
+    # Org-level self-hosted runner used by studio-build.yml's Windows job
+    # (see github.com/friday-platform/friday-studio/settings/actions/runners).
+    - windows-2025-8-cores

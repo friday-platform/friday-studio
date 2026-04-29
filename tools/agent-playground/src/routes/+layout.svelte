@@ -7,36 +7,17 @@
   import "@atlas/ui/markdown.css";
   import "../app.css";
   import favicon from "$lib/assets/favicon.png";
-  import Cheatsheet from "$lib/components/shared/cheatsheet.svelte";
   import Sidebar from "$lib/components/shared/sidebar.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
 
   const { children } = $props();
 
-  let cheatsheetOpen = $state(false);
-
   if (browser) startHealthPolling();
-
-  function handleGlobalKeydown(e: KeyboardEvent) {
-    // Shift+? (which is Shift+/ on US keyboards, but key === "?" regardless)
-    if (e.key === "?" && e.shiftKey) {
-      // Don't trigger when typing in inputs/textareas
-      const target = e.target;
-      if (!(target instanceof HTMLElement)) return;
-      const tag = target.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (target.isContentEditable) return;
-      e.preventDefault();
-      cheatsheetOpen = !cheatsheetOpen;
-    }
-  }
 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { enabled: browser, refetchOnReconnect: true } },
   });
 </script>
-
-<svelte:window onkeydown={handleGlobalKeydown} />
 
 <svelte:head>
   <title>Friday Studio</title>
@@ -53,14 +34,6 @@
     </main>
   </div>
 </QueryClientProvider>
-
-{#if cheatsheetOpen}
-  <Cheatsheet
-    onclose={() => {
-      cheatsheetOpen = false;
-    }}
-  />
-{/if}
 
 <NotificationPortal />
 

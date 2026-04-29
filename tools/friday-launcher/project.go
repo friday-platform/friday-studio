@@ -14,14 +14,23 @@ import (
 // osGetenv is var-bound so tests can stub it.
 var osGetenv = os.Getenv
 
-// fridayEnv builds the env-var list passed to the friday daemon
-// process. Carries FRIDAY_CLAUDE_PATH plus every KEY=VALUE pair the
-// installer wrote to ~/.friday/local/.env (where the wizard's API
-// Keys step persists ANTHROPIC_API_KEY / OPENAI_API_KEY / etc.).
-// Without merging .env in here friday's platform-model validation
-// fails on every fresh install — the daemon needs ANTHROPIC_API_KEY
-// in its process environment but inherits only what the launcher
-// inherited from its parent (Finder/Spotlight: empty).
+// commonServiceEnv returns the KEY=VALUE pairs from ~/.friday/local/.env.
+// Every supervised service gets this as a baseline so the values the
+// installer's API Keys + platform-vars step persist (ANTHROPIC_API_KEY,
+// EXTERNAL_DAEMON_URL, EXTERNAL_TUNNEL_URL, FRIDAYD_URL, LINK_DEV_MODE,
+// …) are visible everywhere the launcher needs them — not just in
+// `friday`. The launcher itself inherits a near-empty env when spawned
+// from Finder/Spotlight, so without this merge each service would see
+// none of the user's configured keys / URLs.
+func commonServiceEnv() []string {
+	return loadDotEnv(filepath.Join(friendlyHome(), ".env"))
+}
+
+// fridayEnv builds the env-var list specific to the friday daemon
+// process. Carries FRIDAY_CLAUDE_PATH plus the .env baseline. Without
+// merging .env in here friday's platform-model validation fails on
+// every fresh install — the daemon needs ANTHROPIC_API_KEY in its
+// process environment.
 //
 // FRIDAY_CLAUDE_PATH discovery order:
 //  1. Explicit user override via FRIDAY_CLAUDE_PATH set in the
@@ -45,7 +54,7 @@ func fridayEnv() []string {
 	if path := discoverClaudeBinary(); path != "" {
 		env = append(env, "FRIDAY_CLAUDE_PATH="+path)
 	}
-	env = append(env, loadDotEnv(filepath.Join(friendlyHome(), ".env"))...)
+	env = append(env, commonServiceEnv()...)
 	return env
 }
 
@@ -137,7 +146,6 @@ const signalSIGTERM = 15
 // services they depend on.
 var stopOrder = []string{
 	"playground",
-	"pty-server",
 	"webhook-tunnel",
 	"friday",
 	"link",
@@ -152,7 +160,6 @@ var startOrder = []string{
 	"nats-server",
 	"friday",
 	"link",
-	"pty-server",
 	"webhook-tunnel",
 	"playground",
 }
@@ -179,7 +186,6 @@ func supervisedProcessNames() []string {
 		"nats-server",
 		"friday",
 		"link",
-		"pty-server",
 		"webhook-tunnel",
 		"playground",
 	}
@@ -236,21 +242,19 @@ func supervisedProcesses(binDir string) []processSpec {
 			env:        fridayEnv(),
 			healthPort: "8080", healthPath: "/health",
 		},
-		// `link` requires LINK_DEV_MODE=true to skip the
+		// `link` historically required LINK_DEV_MODE=true to skip the
 		// POSTGRES_CONNECTION check on the platform-route + slack-app
-		// repos. Local installs don't have Postgres; the dev-mode
-		// in-memory NoOp repos are correct.
+		// repos. The installer now writes that into .env, so the
+		// commonServiceEnv() baseline below carries it; no per-service
+		// override needed.
 		{
 			name: "link", binary: filepath.Join(binDir, "link"),
-			env:        []string{"LINK_DEV_MODE=true"},
+			env:        commonServiceEnv(),
 			healthPort: "3100", healthPath: "/health",
 		},
 		{
-			name: "pty-server", binary: filepath.Join(binDir, "pty-server"),
-			healthPort: "7681", healthPath: "/health",
-		},
-		{
 			name: "webhook-tunnel", binary: filepath.Join(binDir, "webhook-tunnel"),
+			env:        commonServiceEnv(),
 			healthPort: "9090", healthPath: "/health",
 		},
 		{
@@ -262,7 +266,12 @@ func supervisedProcesses(binDir string) []processSpec {
 			// not-yet-bound race that a sidecar `/api/health` would
 			// silently green-light. project_test.go pins this so a
 			// future refactor can't quietly revert to the sidecar.
+			//
+			// Carries .env so EXTERNAL_DAEMON_URL / EXTERNAL_TUNNEL_URL
+			// reach static-server.ts, which injects them into the
+			// served HTML for the browser's window.__FRIDAY_CONFIG__.
 			name: "playground", binary: filepath.Join(binDir, "playground"),
+			env:        commonServiceEnv(),
 			healthPort: "5200", healthPath: "/",
 		},
 	}
@@ -276,7 +285,7 @@ func supervisedProcesses(binDir string) []processSpec {
 
 func portOverride(name string) string {
 	// Hyphens aren't valid in POSIX env var names, so swap them for
-	// underscores: FRIDAY_PORT_pty_server, not FRIDAY_PORT_pty-server.
+	// underscores: FRIDAY_PORT_webhook_tunnel, not FRIDAY_PORT_webhook-tunnel.
 	envName := "FRIDAY_PORT_" + strings.ReplaceAll(name, "-", "_")
 	return osGetenv(envName)
 }
