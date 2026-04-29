@@ -115,7 +115,6 @@ let sortedServices = $derived(
 
 async function onExitInstaller(): Promise<void> {
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("exit_installer");
   } catch {
     // ignore — wizard already closing or backend unreachable

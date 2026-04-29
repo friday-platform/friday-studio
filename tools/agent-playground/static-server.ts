@@ -143,8 +143,20 @@ const app = new Hono()
   // routing can take over.
   .get("/*", serveIndex);
 
+// Log only origins (protocol+host+port) — these are config URLs the user
+// expects in plain text, but never log paths or query strings, since a
+// bad/exotic env value could carry credentials or markup we don't want
+// surfaced in shipped logs (the URLs are also injected into served HTML
+// via window.__FRIDAY_CONFIG__, where escaping is handled separately).
+function origin(u: string): string {
+  try {
+    return new URL(u).origin;
+  } catch {
+    return "<invalid url>";
+  }
+}
 console.log(`[playground] listening on http://${HOST}:${PORT}`);
-console.log(`[playground] daemon proxy → ${DAEMON_URL}`);
-console.log(`[playground] external daemon → ${EXTERNAL_DAEMON_URL}`);
-if (EXTERNAL_TUNNEL_URL) console.log(`[playground] external tunnel → ${EXTERNAL_TUNNEL_URL}`);
+console.log(`[playground] daemon proxy → ${origin(DAEMON_URL)}`);
+console.log(`[playground] external daemon → ${origin(EXTERNAL_DAEMON_URL)}`);
+if (EXTERNAL_TUNNEL_URL) console.log(`[playground] external tunnel → ${origin(EXTERNAL_TUNNEL_URL)}`);
 Deno.serve({ port: PORT, hostname: HOST }, app.fetch);
