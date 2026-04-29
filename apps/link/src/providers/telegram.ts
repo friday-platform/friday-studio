@@ -15,7 +15,7 @@ import { defineApiKeyProvider } from "./types.ts";
  * Field names mirror `TelegramProviderConfigSchema` in
  * `packages/config/src/signals.ts`.
  */
-export const TelegramSecretSchema = z.object({ bot_token: z.string().min(1) });
+const TelegramSecretSchema = z.object({ bot_token: z.string().min(1) });
 
 /**
  * Stored secret post-`autoFields` injection. `webhook_secret` is required for

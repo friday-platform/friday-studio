@@ -38,20 +38,19 @@ export const TelegramCredentialSecretSchema = z.object({
   bot_token: z.string().min(1),
   webhook_secret: z.string().min(1),
 });
-export type TelegramCredentialSecret = z.infer<typeof TelegramCredentialSecretSchema>;
 
 /**
  * Per-kind credential secret schemas used for `deriveConnectionId` routing-key
  * extraction. Each schema only asserts the field used as the connection_id; the
  * full provider-side schema lives in `apps/link/src/providers/*.ts`.
  */
-export const DiscordCredentialSecretSchema = z.object({ application_id: z.string().min(1) });
+const DiscordCredentialSecretSchema = z.object({ application_id: z.string().min(1) });
 
-export const TeamsCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
+const TeamsCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
 
-export const WhatsappCredentialSecretSchema = z.object({ phone_number_id: z.string().min(1) });
+const WhatsappCredentialSecretSchema = z.object({ phone_number_id: z.string().min(1) });
 
-export const SlackCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
+const SlackCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
 
 function getLinkServiceUrl(): string {
   return process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
