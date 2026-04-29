@@ -30,9 +30,8 @@ export const webAgent = createAgent<string, WebAgentResult>({
     "research, finding current information, reading JS-rendered pages, logging into " +
     "sites, filling forms, completing multi-step web workflows, any task requiring " +
     "both search and browser interaction. " +
-    "NO ACCESS to personal user accounts, private data, or authenticated services — " +
-    "when the workspace lists a relevant MCP server (e.g. `google-gmail`, `google-calendar`), " +
-    "use `delegate` with `mcpServers` instead.",
+    "For tasks involving a specific service that has a workspace MCP server configured " +
+    "(e.g. `google-gmail`, `google-calendar`), use `delegate` with `mcpServers` instead of this agent.",
   constraints:
     "Requires `agent-browser` CLI for browser interaction. " +
     "Web search is available when a search provider key is configured " +
