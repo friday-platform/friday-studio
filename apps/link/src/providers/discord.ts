@@ -24,7 +24,7 @@ import { defineApiKeyProvider } from "./types.ts";
  * Field names mirror `DiscordProviderConfigSchema` in
  * `packages/config/src/signals.ts`.
  */
-export const DiscordSecretSchema = z.object({
+const DiscordSecretSchema = z.object({
   bot_token: z.string().min(1),
   public_key: z.string().min(1),
   application_id: z.string().min(1),

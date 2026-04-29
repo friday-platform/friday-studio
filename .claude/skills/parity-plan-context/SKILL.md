@@ -38,7 +38,7 @@ Line-range index into `docs/plans/2026-04-13-openclaw-parity-plan.md`:
 - `packages/adapters-md/` — Markdown-backed adapter implementations
 - `apps/atlasd/` — Daemon (routes, session management, workspace management)
 - `apps/atlasd/routes/workspaces/` — Workspace CRUD + update + signal endpoints
-- `agents/` — Python WASM agents (user-type, built via `deno task atlas agent build`)
+- `agents/` — User agents (built via `deno task atlas agent build`)
 - `workspaces/` — Workspace definitions (workspace.yml + skill/ dirs)
 - `workspaces/fast-loop/` — FAST Loop kernel (thick_endive)
 - `workspaces/fast-improvements-source/` — This workspace (braised_biscuit)
@@ -87,7 +87,7 @@ For each task kind, the files the architect should read FIRST.
 - Read this workspace (`workspaces/fast-improvements-source/`) as the prototype
 - Read `workspaces/fast-loop/workspace.yml` for dispatch patterns
 
-### agent-* tasks (Python WASM agents)
+### agent-* tasks (user agents)
 
 - Read `agents/<id>/agent.py` + `agents/<id>/agent.json`
 - Read `agents/<id>/test_*.py` for existing tests

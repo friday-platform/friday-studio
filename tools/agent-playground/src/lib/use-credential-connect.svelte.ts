@@ -38,7 +38,7 @@ interface CredentialConnectState {
  * Returns reactive state and action functions for connecting a credential
  * for the given provider.
  *
- * @param providerId - The provider identifier (e.g. "openai", "slack-app")
+ * @param providerId - The provider identifier (e.g. "openai", "slack")
  */
 export function useCredentialConnect(providerId: string) {
   // Per-instance reactive state

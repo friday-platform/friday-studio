@@ -24,15 +24,6 @@ const WiringResponseSchema = z.object({
 /** Per-workspace wiring state for one communicator provider. */
 export type WorkspaceWiring = z.infer<typeof WiringResponseSchema>["wiring"];
 
-const ConnectSlackResponseSchema = z.union([
-  z.object({ ok: z.literal(true), alreadyConnected: z.literal(true), app_id: z.string().optional() }),
-  z.object({ ok: z.literal(true), installRequired: z.literal(true) }),
-  z.object({ ok: z.literal(true), app_id: z.string().optional() }),
-]);
-
-/** Discriminated outcome of a connect-slack POST. */
-export type ConnectSlackResponse = z.infer<typeof ConnectSlackResponseSchema>;
-
 // ==============================================================================
 // QUERY FACTORY
 // ==============================================================================
@@ -73,72 +64,6 @@ export const wiringQueries = {
 // MUTATIONS
 // ==============================================================================
 
-/**
- * POST /api/daemon/workspaces/{id}/connect-slack with optional credential_id.
- *
- * Empty body probes wiring state — returns `installRequired` if no credential
- * is wired yet. Passing `credential_id` (after a successful OAuth) wires the
- * credential to the workspace.
- */
-export function useConnectSlack() {
-  const queryClient = useQueryClient();
-
-  return createMutation(() => ({
-    mutationFn: async (
-      input: { workspaceId: string; credentialId?: string },
-    ): Promise<ConnectSlackResponse> => {
-      const client = getDaemonClient();
-      const res = await client.workspace[":workspaceId"]["connect-slack"].$post({
-        param: { workspaceId: input.workspaceId },
-        json: input.credentialId ? { credential_id: input.credentialId } : {},
-      });
-      const body: unknown = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const errMsg =
-          typeof body === "object" && body !== null && "error" in body
-            ? String(body.error)
-            : `Connect Slack failed: ${res.status}`;
-        throw new Error(errMsg);
-      }
-      return ConnectSlackResponseSchema.parse(body);
-    },
-    onSuccess: (_data, input) => {
-      queryClient.invalidateQueries({ queryKey: wiringQueries.all() });
-      queryClient.invalidateQueries({
-        queryKey: integrationQueries.preflight(input.workspaceId).queryKey,
-      });
-    },
-  }));
-}
-
-/** POST /api/daemon/workspaces/{id}/disconnect-slack. */
-export function useDisconnectSlack() {
-  const queryClient = useQueryClient();
-
-  return createMutation(() => ({
-    mutationFn: async (input: { workspaceId: string }): Promise<void> => {
-      const client = getDaemonClient();
-      const res = await client.workspace[":workspaceId"]["disconnect-slack"].$post({
-        param: { workspaceId: input.workspaceId },
-      });
-      if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
-        const errMsg =
-          typeof body === "object" && body !== null && "error" in body
-            ? String(body.error)
-            : `Disconnect Slack failed: ${res.status}`;
-        throw new Error(errMsg);
-      }
-    },
-    onSuccess: (_data, input) => {
-      queryClient.invalidateQueries({ queryKey: wiringQueries.all() });
-      queryClient.invalidateQueries({
-        queryKey: integrationQueries.preflight(input.workspaceId).queryKey,
-      });
-    },
-  }));
-}
-
 const ConnectCommunicatorResponseSchema = z.object({
   ok: z.literal(true),
   kind: z.string(),
@@ -155,9 +80,6 @@ const DisconnectCommunicatorResponseSchema = z.object({
  * yml mutation + chat-sdk eviction atomically; the playground passes only
  * `kind` and `credential_id`. `connection_id` derivation lives server-side.
  *
- * Used for non-Slack apikey communicators (telegram, etc). Slack uses its
- * own `useConnectSlack` because of the app-install popup orchestration.
- *
  * `kind` flows through `mutate()` rather than the hook factory because
  * Svelte forbids calling hooks inside `{#each}` — one hook per card serves
  * all rows.
@@ -168,7 +90,7 @@ export function useConnectCommunicator() {
   return createMutation(() => ({
     mutationFn: async (input: {
       workspaceId: string;
-      kind: "telegram" | "discord" | "teams" | "whatsapp";
+      kind: "slack" | "telegram" | "discord" | "teams" | "whatsapp";
       credentialId: string;
     }): Promise<void> => {
       const client = getDaemonClient();
@@ -210,7 +132,7 @@ export function useDisconnectCommunicator() {
   return createMutation(() => ({
     mutationFn: async (input: {
       workspaceId: string;
-      kind: "telegram" | "discord" | "teams" | "whatsapp";
+      kind: "slack" | "telegram" | "discord" | "teams" | "whatsapp";
     }): Promise<void> => {
       const client = getDaemonClient();
       const res = await client.workspace[":workspaceId"]["disconnect-communicator"].$post({

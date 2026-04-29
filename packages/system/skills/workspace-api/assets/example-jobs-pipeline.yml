@@ -1,9 +1,11 @@
 # Jobs-first workspace example — bookmark tracker with tag filtering.
 #
-# Demonstrates the "chat ↔ jobs" contract. Chat sees `save_bookmark` and
-# `find_bookmarks` as tools. Each job has a signal, an FSM, and one agent.
-# The agent uses SQLite MCP tools — but those tools are INTERNAL to the
-# job. Chat never sees them, never calls them directly.
+# Demonstrates the "chat ↔ jobs" contract. Chat sees `save_bookmark`,
+# `find_bookmarks`, and `enrich_bookmark` as tools. Each job has a signal,
+# an FSM, and one agent. Mixed agent types: the SQL agents are `type: llm`
+# (custom domain reasoning, no bundled fit); the URL-enrichment agent is
+# `type: atlas, agent: "web"` (open-ended browsing — exactly the bundled
+# `web` agent's domain).
 #
 # Copy this shape for any workspace with:
 # - Structured storage (SQL, not narrative memory)
@@ -63,6 +65,17 @@ signals:
     config:
       path: "/bookmarks/find"
 
+  enrich-bookmark:
+    provider: http
+    description: "Fetch a URL's title and summary so chat can save a fully-formed bookmark"
+    schema:
+      type: object
+      properties:
+        url: { type: string }
+      required: [url]
+    config:
+      path: "/bookmarks/enrich"
+
 agents:
   bookmark-writer:
     type: llm
@@ -105,6 +118,18 @@ agents:
            by saved_at DESC, limited to the requested count.
         3. Return the results as a concise list: title, url, tags, date.
       tools: [read_query]
+
+  # Bundled `web` agent — open-ended browsing/scraping is exactly its
+  # domain, so we use `type: atlas` and supply only the user's *intent*
+  # in `prompt`. No browser MCP, no tool wiring, no instructions on how
+  # to drive a browser — the bundled agent already knows.
+  bookmark-enricher:
+    type: atlas
+    agent: "web"
+    description: "Fetches a URL's title and short summary so chat can save a fully-formed bookmark."
+    prompt: >-
+      Fetch the page at the given URL. Return the page title, a one-sentence
+      summary, and 3-5 topical tags suitable for filing the bookmark.
 
 jobs:
   save_bookmark:
@@ -156,6 +181,31 @@ jobs:
             DONE: { target: done }
         done: { type: final }
     config: { timeout: "1m", max_steps: 5 }
+
+  enrich_bookmark:
+    title: "Enrich a bookmark from URL"
+    description: "Fetches title/summary/tags for a URL using the bundled `web` agent. Chat then triggers `save_bookmark` with the enriched fields."
+    triggers: [{ signal: enrich-bookmark }]
+    fsm:
+      id: enrich-bookmark
+      initial: idle
+      states:
+        idle:
+          'on':
+            enrich-bookmark: { target: fetch }
+        fetch:
+          entry:
+            - type: agent
+              agentId: bookmark-enricher
+              outputTo: enrich-result
+              outputType: bookmark-enrich-result
+              prompt: "Enrich the URL. Return title, summary, and 3-5 tags."
+            - type: emit
+              event: DONE
+          'on':
+            DONE: { target: done }
+        done: { type: final }
+    config: { timeout: "2m", max_steps: 5 }
 
 memory:
   own:

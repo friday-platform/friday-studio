@@ -11,6 +11,17 @@ describe("AppInstallService", () => {
   let routeStorage: TestPlatformRouteRepository;
   let service: AppInstallService;
 
+  /** Mock secret shaped to satisfy AppInstallCredentialSecretSchema (github-only). */
+  function mockSecret(externalId: string) {
+    return {
+      platform: "github" as const,
+      externalId,
+      access_token: `tok-${externalId}`,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      github: { installationId: 0, organizationName: "Test", organizationId: 0 },
+    };
+  }
+
   const mockProvider = defineAppInstallProvider({
     id: "test-slack",
     platform: "slack",
@@ -33,12 +44,7 @@ describe("AppInstallService", () => {
           type: "oauth",
           provider: "test-slack",
           label: "Test Workspace",
-          secret: {
-            platform: "slack",
-            externalId: `team-${code}`,
-            access_token: `xoxb-${code}`,
-            token_type: "bot",
-          },
+          secret: mockSecret(`team-${code}`),
         },
       });
     },
@@ -170,17 +176,12 @@ describe("AppInstallService", () => {
           type: "oauth",
           provider: "test-slack",
           label: "Test Workspace",
-          secret: {
-            platform: "slack",
-            externalId: "team-reconcile-123",
-            access_token: "xoxb-token",
-            token_type: "bot",
-          },
+          secret: mockSecret("team-reconcile-123"),
         },
         "user-123",
       );
 
-      // Reconcile route — no-op for slack (uses per-app webhook routing)
+      // Reconcile route — no-op when usesRouteTable is false
       await service.reconcileRoute("test-slack", id, "user-123");
 
       // Slack skips platform_route, so no route should exist

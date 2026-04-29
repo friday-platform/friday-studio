@@ -413,7 +413,7 @@ describe("extractJobIntegrations", () => {
   test("extracts providers from bundled agent actions", () => {
     const config = makeConfig();
     const job = { fsm: { states: { step_0: { entry: [{ type: "agent", agentId: "slack" }] } } } };
-    expect(extractJobIntegrations(job, config)).toEqual(["slack-app"]);
+    expect(extractJobIntegrations(job, config)).toEqual(["slack"]);
   });
 
   test("combines providers from LLM tools and bundled agents", () => {
@@ -434,7 +434,7 @@ describe("extractJobIntegrations", () => {
         },
       },
     };
-    expect(extractJobIntegrations(job, config)).toEqual(["google", "slack-app"]);
+    expect(extractJobIntegrations(job, config)).toEqual(["google", "slack"]);
   });
 
   test("ignores unknown agent IDs", () => {
@@ -705,7 +705,7 @@ describe("injectBundledAgentRefs", () => {
     const agent = result.agents?.communicator;
     if (!agent || agent.type !== "atlas") throw new Error("Expected atlas agent");
     expect(agent.env).toMatchObject({
-      SLACK_MCP_XOXP_TOKEN: { from: "link", provider: "slack-app", key: "access_token" },
+      SLACK_MCP_XOXP_TOKEN: { from: "link", provider: "slack", key: "access_token" },
     });
   });
 

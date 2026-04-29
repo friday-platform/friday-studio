@@ -7,6 +7,7 @@ import type { AgentResult, AtlasUIMessageChunk, ToolCall, ToolResult } from "@at
 // Re-export ToolCall and ToolResult for FSM event consumers
 export type { ToolCall, ToolResult };
 
+import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 import type { ModelMessage, Tool } from "ai";
 import type { DocumentScope } from "../document-store/node.ts";
 
@@ -210,12 +211,42 @@ export interface FSMStateSkippedEvent {
   };
 }
 
+/**
+ * Lifecycle event for a single LLM-output validation attempt.
+ *
+ * Each attempt emits exactly one `running` event before the judge call and
+ * exactly one terminal event (`passed` or `failed`) after. `terminal` is
+ * present only on `failed` events: `false` for the first failure (a retry
+ * follows), `true` for the second failure (the action throws).
+ *
+ * actionId MUST match the actionId from the parent FSMActionExecutionEvent
+ * to allow UI correlation.
+ */
+export interface FSMValidationAttemptEvent {
+  type: "data-fsm-validation-attempt";
+  data: {
+    sessionId: string;
+    workspaceId: string;
+    jobName: string;
+    actionId?: string;
+    state: string;
+    attempt: number;
+    status: "running" | "passed" | "failed";
+    /** Present on `failed` events; `true` only on terminal failure. */
+    terminal?: boolean;
+    /** Present on `passed` and `failed` terminal events; absent on `running`. */
+    verdict?: ValidationVerdict;
+    timestamp: number;
+  };
+}
+
 export type FSMEvent =
   | FSMStateTransitionEvent
   | FSMActionExecutionEvent
   | FSMToolCallEvent
   | FSMToolResultEvent
-  | FSMStateSkippedEvent;
+  | FSMStateSkippedEvent
+  | FSMValidationAttemptEvent;
 
 /**
  * Signal with additional context for execution tracking and event streaming
@@ -248,6 +279,8 @@ export type { AgentResult };
 /** Trace data from an LLM action for hallucination detection */
 export interface LLMActionTrace {
   content: string;
+  /** Model reasoning text (e.g., extended-thinking output), if the model produced any. */
+  reasoning?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   model: string;
@@ -257,19 +290,26 @@ export interface LLMActionTrace {
 /**
  * Result of validating LLM output.
  * Named distinctly to avoid collision with ValidationResult in validator.ts.
+ *
+ * The verdict's `status` field drives retry policy: `pass` and `uncertain`
+ * proceed identically to downstream steps; `fail` triggers a single retry, and
+ * a second `fail` throws with the verdict attached on the error.
  */
 export interface LLMOutputValidationResult {
-  /** Whether the output passed validation */
-  valid: boolean;
-  /** Required when valid=false - feedback for retry prompt injection */
-  feedback?: string;
+  verdict: ValidationVerdict;
 }
 
 /**
  * Function type for validating LLM action output.
  * Returns a promise because real validators call LLMs for analysis.
+ *
+ * `abortSignal` lets callers cancel an in-flight judge call when a job is
+ * aborted mid-validation, so doomed validations do not waste tokens.
  */
-export type OutputValidator = (trace: LLMActionTrace) => Promise<LLMOutputValidationResult>;
+export type OutputValidator = (
+  trace: LLMActionTrace,
+  abortSignal?: AbortSignal,
+) => Promise<LLMOutputValidationResult>;
 
 export interface LLMProvider {
   call(params: {

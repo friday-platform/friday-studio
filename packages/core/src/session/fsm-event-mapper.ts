@@ -141,5 +141,43 @@ export function mapFsmEventToSessionEvent(fsmEvent: FSMEvent): SessionHistoryEve
           status: "completed" as const,
         },
       };
+
+    case "data-fsm-validation-attempt": {
+      // Validation attempts persist as `fsm-action` history events with the
+      // validation context spread into metadata. This keeps the durable
+      // history schema unchanged (no new variant) while preserving status,
+      // attempt index, terminal flag, and verdict for replay/debugging.
+      // Real-time SSE rendering is driven by the parallel `step:validation`
+      // SessionStreamEvent (see event-emission-mapper.ts).
+      const status =
+        fsmEvent.data.status === "running"
+          ? "started"
+          : fsmEvent.data.status === "passed"
+            ? "completed"
+            : "failed";
+      const executionId = fsmEvent.data.actionId
+        ? `${fsmEvent.data.jobName}:${fsmEvent.data.actionId}:${fsmEvent.data.state}`
+        : `${fsmEvent.data.jobName}:${fsmEvent.data.state}:${fsmEvent.data.timestamp}`;
+      return {
+        type: "fsm-action",
+        context: {
+          executionId,
+          metadata: {
+            fsmEventType: "validation-attempt",
+            attempt: fsmEvent.data.attempt,
+            validationStatus: fsmEvent.data.status,
+            ...(fsmEvent.data.terminal !== undefined && { terminal: fsmEvent.data.terminal }),
+            ...(fsmEvent.data.verdict !== undefined && { verdict: fsmEvent.data.verdict }),
+          },
+        },
+        data: {
+          jobName: fsmEvent.data.jobName,
+          state: fsmEvent.data.state,
+          actionType: "llm" as const,
+          actionId: fsmEvent.data.actionId,
+          status,
+        },
+      };
+    }
   }
 }

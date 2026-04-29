@@ -8,9 +8,6 @@ import { z } from "zod";
 // ENUMS AND CONSTANTS
 // ==============================================================================
 
-export const AgentType = z.enum(["llm", "system", "remote"]);
-export type AgentType = z.infer<typeof AgentType>;
-
 export const ExecutionStrategy = z.enum(["sequential", "parallel"]);
 export type ExecutionStrategy = z.infer<typeof ExecutionStrategy>;
 

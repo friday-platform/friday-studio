@@ -1,4 +1,4 @@
-import { MCPServerConfigSchema } from "@atlas/agent-sdk";
+import { EnvValueSchema, MCPServerConfigSchema } from "@atlas/agent-sdk";
 import { z } from "zod";
 
 /**
@@ -63,6 +63,13 @@ export const MCPServerMetadataSchema = z.object({
 
   // Configuration - uses official schema from @atlas/agent-sdk
   configTemplate: MCPServerConfigSchema,
+  /**
+   * Registry-owned environment variables that are merged into the runtime
+   * startup environment but are NOT serialized into workspace.yml.
+   * Used for platform-wide credentials and flags (e.g., Google OAuth client ID)
+   * that should not leak into per-workspace configuration.
+   */
+  platformEnv: z.record(z.string(), EnvValueSchema).optional(),
   requiredConfig: z.array(RequiredConfigFieldSchema).optional(),
 
   // README content fetched from the upstream repository (stored at install time)

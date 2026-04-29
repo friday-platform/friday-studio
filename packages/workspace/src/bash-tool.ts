@@ -1,6 +1,6 @@
 /**
- * Built-in "bash" tool for code agents.
- * Injected into the MCP tools dict so WASM agents can shell out via ctx.tools.call("bash", {...}).
+ * Built-in "bash" tool for user agents.
+ * Injected into the MCP tools dict so agents can shell out via ctx.tools.call("bash", {...}).
  */
 
 import { execFile } from "node:child_process";

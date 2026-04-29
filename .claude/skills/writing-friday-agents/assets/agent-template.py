@@ -2,8 +2,7 @@
 
 from dataclasses import dataclass
 
-from friday_agent_sdk import AgentContext, agent, err, ok, parse_input
-from friday_agent_sdk._bridge import Agent  # noqa: F401 — componentize-py needs this
+from friday_agent_sdk import AgentContext, agent, err, ok, parse_input, run
 
 
 @dataclass
@@ -30,3 +29,7 @@ def execute(prompt: str, ctx: AgentContext):
         model="anthropic:claude-haiku-4-5",
     )
     return ok({"reply": response.text})
+
+
+if __name__ == "__main__":
+    run()

@@ -227,6 +227,73 @@ describe("discoverMCPServers", () => {
         OVERRIDE_KEY: "new-value",
       });
     });
+
+    it("merges platformEnv into startup.env at discovery time", async () => {
+      mockRegistryServers["platform-server"] = makeStaticServer("platform-server", {
+        configTemplate: {
+          transport: { type: "http", url: "http://localhost:8001/mcp" },
+          startup: {
+            type: "command",
+            command: "uvx",
+            args: ["workspace-mcp"],
+            env: { WORKSPACE_MCP_PORT: "8001" },
+          },
+        },
+        platformEnv: {
+          GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
+          MCP_ENABLE_OAUTH21: "true",
+        },
+      } as Partial<MCPServerMetadata>);
+
+      const result = await discoverMCPServers("ws-1", makeWorkspaceConfig({}));
+      const entry = result.find((r) => r.metadata.id === "platform-server");
+      expect(entry).toBeDefined();
+
+      expect(entry?.mergedConfig.startup?.env).toEqual({
+        GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
+        MCP_ENABLE_OAUTH21: "true",
+        WORKSPACE_MCP_PORT: "8001",
+      });
+    });
+
+    it("workspace startup.env overrides platformEnv", async () => {
+      mockRegistryServers["platform-server"] = makeStaticServer("platform-server", {
+        configTemplate: {
+          transport: { type: "http", url: "http://localhost:8001/mcp" },
+          startup: {
+            type: "command",
+            command: "uvx",
+            args: ["workspace-mcp"],
+            env: { WORKSPACE_MCP_PORT: "8001" },
+          },
+        },
+        platformEnv: {
+          GOOGLE_OAUTH_CLIENT_ID: "base-client-id",
+        },
+      } as Partial<MCPServerMetadata>);
+
+      const wsConfig = makeWorkspaceConfig({
+        "platform-server": {
+          transport: { type: "http", url: "http://localhost:8001/mcp" },
+          startup: {
+            type: "command",
+            command: "uvx",
+            args: ["workspace-mcp"],
+            env: { GOOGLE_OAUTH_CLIENT_ID: "override-client-id", WORKSPACE_MCP_PORT: "8001" },
+          },
+        },
+      });
+
+      const result = await discoverMCPServers("ws-1", wsConfig);
+      const entry = result.find((r) => r.metadata.id === "platform-server");
+      expect(entry).toBeDefined();
+
+      // platformEnv forms the base; workspace startup.env takes precedence
+      expect(entry?.mergedConfig.startup?.env).toEqual({
+        GOOGLE_OAUTH_CLIENT_ID: "override-client-id",
+        WORKSPACE_MCP_PORT: "8001",
+      });
+    });
   });
 
   describe("workspace-only server description propagation", () => {

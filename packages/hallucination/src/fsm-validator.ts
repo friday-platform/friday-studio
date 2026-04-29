@@ -9,13 +9,9 @@ import type { AgentResult } from "@atlas/agent-sdk";
 import type { LLMActionTrace, LLMOutputValidationResult } from "@atlas/fsm-engine";
 import type { PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import {
-  analyzeResults,
-  containsSeverePatterns,
-  getSevereIssues,
-  type HallucinationDetectorConfig,
-} from "./detector.ts";
+import { type HallucinationDetectorConfig, validate } from "./detector.ts";
 import { SupervisionLevel } from "./supervision-levels.ts";
+import { getThresholdForLevel, statusFromConfidence } from "./verdict.ts";
 
 /**
  * Convert FSM LLM action trace to AgentResult for hallucination detection.
@@ -46,9 +42,10 @@ export function traceToAgentResult(trace: LLMActionTrace): AgentResult<string, s
  * Uses existing hallucination detector infrastructure.
  * Adapts LLMActionTrace -> AgentResult at the boundary.
  *
- * When `platformModels` is omitted, returns a no-op validator that reports
- * valid for every trace. Callers still being migrated onto the DI seam use
- * this fallback; production paths (workspace runtime) always pass a resolver.
+ * When `platformModels` is omitted, returns a no-op validator that reports a
+ * synthetic `pass` verdict for every trace. Callers still being migrated onto
+ * the DI seam use this fallback; production paths (workspace runtime) always
+ * pass a resolver.
  *
  * @param supervisionLevel - Controls validation strictness (defaults to STANDARD)
  * @param platformModels - Platform model resolver; `classifier` role drives validation
@@ -57,12 +54,28 @@ export function traceToAgentResult(trace: LLMActionTrace): AgentResult<string, s
 export function createFSMOutputValidator(
   supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
   platformModels?: PlatformModels,
-): (trace: LLMActionTrace) => Promise<LLMOutputValidationResult> {
+): (trace: LLMActionTrace, abortSignal?: AbortSignal) => Promise<LLMOutputValidationResult> {
+  const threshold = getThresholdForLevel(supervisionLevel);
+
   if (!platformModels) {
-    return () => Promise.resolve({ valid: true });
+    // No-op validator: synthesize a pass verdict at confidence 1.0 so consumers
+    // see a well-formed shape without paying for a judge call.
+    return () =>
+      Promise.resolve({
+        verdict: {
+          status: statusFromConfidence(1, threshold),
+          confidence: 1,
+          threshold,
+          issues: [],
+          retryGuidance: "",
+        },
+      });
   }
 
-  return async (trace: LLMActionTrace): Promise<LLMOutputValidationResult> => {
+  return async (
+    trace: LLMActionTrace,
+    abortSignal?: AbortSignal,
+  ): Promise<LLMOutputValidationResult> => {
     const agentResult = traceToAgentResult(trace);
 
     const config: HallucinationDetectorConfig = {
@@ -70,19 +83,7 @@ export function createFSMOutputValidator(
       logger: logger.child({ component: "fsm-output-validator" }),
     };
 
-    const analysis = await analyzeResults([agentResult], supervisionLevel, config);
-
-    // Same severity logic as validateAgentOutput in agent-helpers.ts
-    const isSevere = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
-
-    if (isSevere) {
-      const severeIssues = getSevereIssues(analysis.issues);
-      return {
-        valid: false,
-        feedback: severeIssues.length > 0 ? severeIssues.join("; ") : analysis.issues.join("; "),
-      };
-    }
-
-    return { valid: true };
+    const verdict = await validate(agentResult, supervisionLevel, config, abortSignal);
+    return { verdict };
   };
 }

@@ -114,6 +114,7 @@ export {
   ArtifactRefSchema,
   AtlasAgentConfigSchema,
   CreateAgentConfigValidationSchema,
+  EnvValueSchema,
   LinkCredentialRefSchema,
   MCPAuthConfigSchema,
   MCPServerConfigSchema,

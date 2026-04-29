@@ -44,7 +44,7 @@ export function createEnableMcpServerTool(workspaceId: string, logger: Logger): 
     enable_mcp_server: tool({
       description:
         "Enable an MCP server in this workspace. The server must already exist in the platform catalog " +
-        "(use search_mcp_servers or list_mcp_servers to find it). Idempotent — calling again succeeds with no mutation.",
+        "(use search_mcp_servers or list_capabilities to find it). Idempotent — calling again succeeds with no mutation.",
       inputSchema: EnableInputSchema,
       execute: async ({ serverId, workspaceId: targetWorkspaceId }): Promise<EnableResult> => {
         const effectiveWorkspaceId = targetWorkspaceId ?? workspaceId;

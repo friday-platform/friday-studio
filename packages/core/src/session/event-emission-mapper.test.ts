@@ -1,4 +1,9 @@
-import type { FSMActionExecutionEvent, FSMStateSkippedEvent } from "@atlas/fsm-engine";
+import type {
+  FSMActionExecutionEvent,
+  FSMStateSkippedEvent,
+  FSMValidationAttemptEvent,
+} from "@atlas/fsm-engine";
+import type { ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, test } from "vitest";
 import {
   type AgentResultData,
@@ -6,7 +11,9 @@ import {
   mapActionToStepComplete,
   mapActionToStepStart,
   mapStateSkippedToStepSkipped,
+  mapValidationAttemptToStepValidation,
 } from "./event-emission-mapper.ts";
+import { SessionStreamEventSchema } from "./session-events.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -251,5 +258,186 @@ describe("mapStateSkippedToStepSkipped", () => {
     const result = mapStateSkippedToStepSkipped(event);
 
     expect(result.stateId).toBe("deploy");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapValidationAttemptToStepValidation
+// ---------------------------------------------------------------------------
+
+function passVerdict(): ValidationVerdict {
+  return { status: "pass", confidence: 0.85, threshold: 0.45, issues: [], retryGuidance: "" };
+}
+
+function uncertainVerdict(): ValidationVerdict {
+  return {
+    status: "uncertain",
+    confidence: 0.4,
+    threshold: 0.45,
+    issues: [
+      {
+        category: "judge-uncertain",
+        severity: "info",
+        claim: "could not determine sourcing",
+        reasoning: "tool result was truncated",
+        citation: null,
+      },
+    ],
+    retryGuidance: "",
+  };
+}
+
+function failVerdict(): ValidationVerdict {
+  return {
+    status: "fail",
+    confidence: 0.2,
+    threshold: 0.45,
+    issues: [
+      {
+        category: "sourcing",
+        severity: "error",
+        claim: "company has 500 employees",
+        reasoning: "no tool was called",
+        citation: null,
+      },
+    ],
+    retryGuidance: "call a search tool before stating employee counts",
+  };
+}
+
+function validationAttemptEvent(
+  overrides: Partial<FSMValidationAttemptEvent["data"]> = {},
+): FSMValidationAttemptEvent {
+  return {
+    type: "data-fsm-validation-attempt",
+    data: {
+      sessionId: "sess-1",
+      workspaceId: "ws-1",
+      jobName: "my-job",
+      actionId: "researcher",
+      state: "research",
+      attempt: 1,
+      status: "running",
+      timestamp: 1707820800000,
+      ...overrides,
+    },
+  };
+}
+
+describe("mapValidationAttemptToStepValidation", () => {
+  test("maps running attempt to step:validation without verdict or terminal", () => {
+    const event = validationAttemptEvent({ status: "running", attempt: 1 });
+    const result = mapValidationAttemptToStepValidation(event);
+
+    expect(result).not.toBeNull();
+    expect(result).toMatchObject({
+      type: "step:validation",
+      sessionId: "sess-1",
+      actionId: "researcher",
+      attempt: 1,
+      status: "running",
+    });
+    expect(result?.terminal).toBeUndefined();
+    expect(result?.verdict).toBeUndefined();
+    expect(result?.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test("maps passed attempt with pass verdict", () => {
+    const verdict = passVerdict();
+    const event = validationAttemptEvent({ status: "passed", attempt: 1, verdict });
+    const result = mapValidationAttemptToStepValidation(event);
+
+    expect(result?.status).toBe("passed");
+    expect(result?.verdict).toEqual(verdict);
+    expect(result?.terminal).toBeUndefined();
+  });
+
+  test("maps passed attempt with uncertain verdict (still passes downstream)", () => {
+    const verdict = uncertainVerdict();
+    const event = validationAttemptEvent({ status: "passed", attempt: 1, verdict });
+    const result = mapValidationAttemptToStepValidation(event);
+
+    expect(result?.status).toBe("passed");
+    expect(result?.verdict?.status).toBe("uncertain");
+  });
+
+  test("maps failed-non-terminal attempt (retry follows)", () => {
+    const verdict = failVerdict();
+    const event = validationAttemptEvent({
+      status: "failed",
+      attempt: 1,
+      terminal: false,
+      verdict,
+    });
+    const result = mapValidationAttemptToStepValidation(event);
+
+    expect(result?.status).toBe("failed");
+    expect(result?.terminal).toBe(false);
+    expect(result?.verdict).toEqual(verdict);
+  });
+
+  test("maps failed-terminal attempt (action throws)", () => {
+    const verdict = failVerdict();
+    const event = validationAttemptEvent({ status: "failed", attempt: 2, terminal: true, verdict });
+    const result = mapValidationAttemptToStepValidation(event);
+
+    expect(result?.status).toBe("failed");
+    expect(result?.terminal).toBe(true);
+    expect(result?.attempt).toBe(2);
+  });
+
+  test("returns null when actionId is missing (cannot correlate)", () => {
+    const event = validationAttemptEvent({ actionId: undefined });
+    const result = mapValidationAttemptToStepValidation(event);
+
+    expect(result).toBeNull();
+  });
+
+  // Round-trip: emitter output must parse cleanly through SessionStreamEventSchema
+  // (the wire schema consumed by the playground). Covers all 5 lifecycle states
+  // per Task #24 acceptance criteria.
+  describe("round-trip through SessionStreamEventSchema", () => {
+    const lifecycleCases = [
+      { name: "running", event: validationAttemptEvent({ status: "running", attempt: 1 }) },
+      {
+        name: "passed-from-pass",
+        event: validationAttemptEvent({ status: "passed", attempt: 1, verdict: passVerdict() }),
+      },
+      {
+        name: "passed-from-uncertain",
+        event: validationAttemptEvent({
+          status: "passed",
+          attempt: 1,
+          verdict: uncertainVerdict(),
+        }),
+      },
+      {
+        name: "failed-with-terminal-false",
+        event: validationAttemptEvent({
+          status: "failed",
+          attempt: 1,
+          terminal: false,
+          verdict: failVerdict(),
+        }),
+      },
+      {
+        name: "failed-with-terminal-true",
+        event: validationAttemptEvent({
+          status: "failed",
+          attempt: 2,
+          terminal: true,
+          verdict: failVerdict(),
+        }),
+      },
+    ] as const;
+
+    test.each(lifecycleCases)("$name parses through SessionStreamEventSchema", ({ event }) => {
+      const mapped = mapValidationAttemptToStepValidation(event);
+      expect(mapped).not.toBeNull();
+      if (!mapped) return;
+
+      const parsed = SessionStreamEventSchema.parse(mapped);
+      expect(parsed).toEqual(mapped);
+    });
   });
 });

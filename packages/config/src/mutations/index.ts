@@ -48,6 +48,7 @@ export type {
   FSMOtherAction,
   FSMStateDefinition,
 } from "./fsm-types.ts";
+export { parseInlineFSM } from "./fsm-types.ts";
 // Integration derivation
 export type {
   IntegrationCredential,

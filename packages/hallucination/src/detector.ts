@@ -19,6 +19,15 @@ import type { ModelMessage } from "ai";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { SupervisionLevel } from "./supervision-levels.ts";
+import {
+  getThresholdForLevel,
+  type IssueCategory,
+  judgeErrorVerdict,
+  severityForCategory,
+  statusFromConfidence,
+  type ValidationIssue,
+  type ValidationVerdict,
+} from "./verdict.ts";
 
 /**
  * MCP CallToolResult content item — the actual payload inside tool result `output`.
@@ -30,22 +39,6 @@ const McpToolOutputSchema = z.object({
   content: z.array(McpContentItemSchema).optional(),
   isError: z.boolean().optional(),
 });
-
-/**
- * Check if issues indicate severe fabrication
- */
-export function containsSeverePatterns(issues: string[]): boolean {
-  const severePattern =
-    /fabricated|impossible|no tool access|false attribution|external data without tools/i;
-  return issues.some((issue) => severePattern.test(issue));
-}
-
-/**
- * Extract severe issues from a list of issues
- */
-export function getSevereIssues(issues: string[]): string[] {
-  return issues.filter((issue) => containsSeverePatterns([issue]));
-}
 
 /**
  * Error classification for LLM validation failures
@@ -169,10 +162,44 @@ interface DetectionMethodResult {
   issues: string[];
 }
 
+/** Maximum number of characters allowed in a citation string. */
+const CITATION_MAX_CHARS = 280;
+
+/**
+ * Schema enforced on the judge's `generateObject` output.
+ *
+ * Severity is NOT in the schema — it is derived in code from category via
+ * {@link severityForCategory} so the judge can never select it. Status is
+ * likewise derived in {@link validate} from confidence + supervision threshold.
+ *
+ * The category tuple is `satisfies`-checked against `IssueCategory` so that
+ * adding a category to `verdict.ts` without updating the schema is a compile
+ * error rather than silent drift.
+ */
+const ISSUE_CATEGORY_TUPLE = [
+  "sourcing",
+  "no-tools-called",
+  "judge-uncertain",
+  "judge-error",
+] as const satisfies readonly IssueCategory[];
+
+const JudgeOutputSchema = z.object({
+  confidence: z.number().min(0).max(1),
+  retryGuidance: z.string(),
+  issues: z.array(
+    z.object({
+      category: z.enum(ISSUE_CATEGORY_TUPLE),
+      claim: z.string(),
+      reasoning: z.string(),
+      citation: z.string().nullable(),
+    }),
+  ),
+});
+
+type JudgeOutput = z.infer<typeof JudgeOutputSchema>;
+
 interface LLMValidationResult {
-  valid: boolean;
-  confidence: number;
-  issues: string[];
+  output: JudgeOutput;
   source: "llm";
 }
 
@@ -181,6 +208,65 @@ export interface HallucinationDetectorConfig {
   platformModels: PlatformModels;
   logger?: Logger;
   retryConfig?: { enabled: boolean; maxRetries: number; baseDelayMs: number };
+}
+
+/**
+ * Run the LLM-output judge against a single agent result and return a structured verdict.
+ *
+ * Status (`pass` / `uncertain` / `fail`) is derived in code from confidence vs. the
+ * supervision-level threshold; the judge never picks status. Severity is derived from
+ * category via a static map; the judge never picks severity. Infrastructure failures
+ * (network, rate-limit, parse, judge crash) return a synthetic `uncertain` verdict —
+ * this function never throws.
+ */
+export async function validate(
+  result: AgentResult,
+  supervisionLevel: SupervisionLevel,
+  config: HallucinationDetectorConfig,
+  abortSignal?: AbortSignal,
+): Promise<ValidationVerdict> {
+  const threshold = getThresholdForLevel(supervisionLevel);
+
+  try {
+    const { output } = await validateWithLLM(
+      result,
+      config.platformModels,
+      config.logger,
+      abortSignal,
+    );
+    const issues: ValidationIssue[] = output.issues.map((raw) => ({
+      category: raw.category,
+      severity: severityForCategory(raw.category),
+      claim: raw.claim,
+      reasoning: raw.reasoning,
+      citation: clampCitation(raw.citation),
+    }));
+    return {
+      status: statusFromConfidence(output.confidence, threshold),
+      confidence: output.confidence,
+      threshold,
+      issues,
+      retryGuidance: output.retryGuidance,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    config.logger?.warn("Output validator: judge call failed, returning uncertain verdict", {
+      agentId: result.agentId,
+      error: message,
+    });
+    return judgeErrorVerdict(threshold, message);
+  }
+}
+
+/**
+ * Truncate citations the judge oversized despite the prompt cap. Keeps `null`
+ * intact — `null` is reserved for issues whose category is the absence of
+ * supporting evidence (e.g., `no-tools-called`).
+ */
+function clampCitation(citation: string | null): string | null {
+  if (citation == null) return null;
+  if (citation.length <= CITATION_MAX_CHARS) return citation;
+  return `${citation.slice(0, CITATION_MAX_CHARS - 1)}…`;
 }
 
 /**
@@ -246,20 +332,19 @@ async function performLLMValidation(
         : { type: "unknown", isRetryable: false, baseDelayMs: 0, maxRetries: 0 };
 
     const llmResult = await RetryableOperation.execute(operation, retryConfig, config.logger);
+    const issueStrings = llmResult.output.issues.map((i) => `${i.category}: ${i.claim}`);
 
-    // Emit result snapshot for diagnostics
     config.logger?.debug("HallucinationDetector: LLM validation result", {
       agentId: result.agentId,
-      confidence: llmResult.confidence,
-      issues: llmResult.issues,
-      valid: llmResult.valid,
+      confidence: llmResult.output.confidence,
+      issues: issueStrings,
     });
 
     return {
       method: "llm",
       agentId: result.agentId,
-      confidence: llmResult.confidence,
-      issues: llmResult.issues,
+      confidence: llmResult.output.confidence,
+      issues: issueStrings,
     };
   } catch (error) {
     const classification = LLMErrorClassifier.classify(error);
@@ -271,11 +356,12 @@ async function performLLMValidation(
       error,
     });
 
-    // Simple fallback - just add to issues and mark as not validated
+    // Infrastructure-failure fallback — confidence 0.4 keeps us in the `uncertain`
+    // band (above the 0.3 fail-floor) so judge outages never lose agent work.
     return {
       method: "llm",
       agentId: result.agentId,
-      confidence: 0.3, // Conservative fallback
+      confidence: 0.4,
       issues: [
         "Wasn't validated properly",
         `LLM validation failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -285,19 +371,17 @@ async function performLLMValidation(
 }
 
 /**
- * LLM validation with robust parsing
+ * LLM validation with structured output. Returns the judge's verbatim object
+ * (categorized issues, confidence, judge-phrased retry guidance). Severity and
+ * status are derived in {@link validate} — the schema deliberately does not
+ * expose them to the judge.
  */
 async function validateWithLLM(
   result: AgentResult,
   platformModels: PlatformModels,
   logger?: Logger,
+  abortSignal?: AbortSignal,
 ): Promise<LLMValidationResult> {
-  const ValidationSchema = z.object({
-    valid: z.boolean(),
-    confidence: z.number(),
-    issues: z.array(z.string()),
-  });
-
   try {
     const messages: ModelMessage[] = [
       {
@@ -312,11 +396,12 @@ async function validateWithLLM(
     const llmResult = await generateObject({
       model: platformModels.get("classifier"),
       messages,
-      schema: ValidationSchema,
+      schema: JudgeOutputSchema,
       temperature: 0.05,
-      maxOutputTokens: 1000,
+      maxOutputTokens: 1500,
       maxRetries: 3,
       experimental_repairText: repairJson,
+      abortSignal,
     });
 
     logger?.debug("AI SDK generateObject completed", {
@@ -325,12 +410,7 @@ async function validateWithLLM(
       usage: llmResult.usage,
     });
 
-    return {
-      valid: llmResult.object.valid,
-      confidence: llmResult.object.confidence,
-      issues: llmResult.object.issues,
-      source: "llm",
-    };
+    return { output: llmResult.object, source: "llm" };
   } catch (error) {
     throw new Error(
       `LLM validation failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -339,129 +419,83 @@ async function validateWithLLM(
 }
 
 /**
- * Build LLM validation system prompt
+ * Build LLM validation system prompt.
+ *
+ * The prompt is paired with {@link JudgeOutputSchema}; both must change
+ * together. The out-of-scope section and the bias-toward-valid rule exist to
+ * prevent the most common false-positive class — the judge making its own
+ * arithmetic, timezone, or date-math errors and flagging the agent's correct
+ * output as fabrication.
  */
 function buildValidationPrompt(): string {
   return `You detect AI agent fabrication by verifying data provenance.
 
 ## YOUR TASK
 
-Check if the agent's output contains fabricated information.
+For each factual claim in the agent's output, decide whether it is supported by the tool results or input data. Emit one structured issue per claim that is NOT supported.
+
+## OUT OF SCOPE — DO NOT ATTEMPT THESE CHECKS
+
+You are NOT a math, calendar, or timezone engine. The following are EXPLICITLY out of scope:
+
+1. **Arithmetic** — do not recompute sums, counts, percentages, durations, totals, or averages. If the agent says "3 + 5 = 8" or "the total is 142", trust it.
+2. **Timezone conversions** — do not convert between timezones, do not check whether a UTC time matches a local time, do not validate offsets.
+3. **Date math** — do not compute "days between", "next Monday", "X weeks from now", or any other date arithmetic. Do not validate weekday-of-date claims.
+4. **Unit conversions** — do not check "5 miles = 8.04 km" or any other unit conversion.
+
+These computations are the agent's responsibility, not yours. Your judgement on them is unreliable and produces false-positive fabrication claims. SKIP THEM.
+
+## BIAS TOWARD VALID WHEN UNCERTAIN
+
+False positives (rejecting correct work) are STRICTLY WORSE than false negatives (letting unsourced claims through) in this system. When you are not confident a claim is fabricated, treat it as sourced. Reserve fabrication flags for cases where you can clearly identify the missing source.
 
 ## WHAT IS FABRICATION
 
-1. **External data without access**
-   - Agent claims web/API/database data but called NO tools
-   - Agent references research without search tools
-   - Example: "According to LinkedIn, the company has 500 employees" (no tools called)
+1. **External data without access** — agent claims web/API/database data but called NO tools (category: \`no-tools-called\` if the agent called zero tools; otherwise \`sourcing\`).
+2. **False tool attribution** — agent claims a tool returned data that does not appear in any tool result (category: \`sourcing\`).
+3. **Fabricated examples due to missing tools** — agent admits lack of tool access then generates sample data anyway, when the task did not request synthetic data (category: \`sourcing\`).
 
-2. **False tool attribution**
-   - Agent claims "tool X returned Y" when tool X was never called
-   - Agent claims tool provided data that doesn't exist in tool results
-   - Example: Claims web_search results but web_search wasn't used
+## LEGITIMATE DATA OPERATIONS — NOT FABRICATION
 
-3. **Fabricated examples due to missing tools**
-   - Agent acknowledges lack of tool access and generates sample/example data
-   - Example: "I don't have access to the CRM, so here's example customer data: ..."
+- Reformatting: \`{"firstName":"Alice","lastName":"Smith"}\` → "Alice Smith"
+- Field extraction: picking 5 of 20 fields from a tool result
+- Summarization: condensing 500 words into 50
+- Number formatting: \`20000\` → "20,000"
+- Data transformation: CSV → JSON → text
+- Requested example data: when the task explicitly asks for synthetic/mock data
 
-## LEGITIMATE DATA OPERATIONS
+## ISSUE CATEGORIES
 
-1. **Data reformatting**
-   - Tool returns JSON: {"firstName": "Alice", "lastName": "Smith"}
-   - Agent outputs: "Alice Smith"
-   - ✓ This IS valid - extracted and formatted structured data
+You MUST pick exactly one of these for every issue:
 
-2. **Field extraction**
-   - Tool returns object with 20 fields
-   - Agent uses 5 relevant fields
-   - ✓ This IS valid - selective extraction from source data
+- \`sourcing\` — claim is not in tool results, input, or a direct logical inference from them, and at least one tool was called. Use a verbatim citation of the most relevant tool-result excerpt that should have backed the claim if you can identify one; otherwise use null.
+- \`no-tools-called\` — the agent called zero tools but produced claims that would require external data. \`citation\` is always null for this category — there is no source to quote.
+- \`judge-uncertain\` — you cannot tell from the available evidence whether the claim is sourced. Use sparingly; bias toward valid when uncertain. \`citation\` is null.
+- \`judge-error\` — reserved for runtime use; do not emit this category yourself.
 
-3. **Summarization**
-   - Tool returns 500 words
-   - Agent writes 50-word summary
-   - ✓ This IS valid - condensed but sourced information
+## CITATIONS
 
-4. **Number formatting**
-   - Tool returns: "20000"
-   - Agent says: "20,000 employees"
-   - ✓ This IS valid - formatting transformation
+When category is \`sourcing\`, set \`citation\` to a verbatim quote of the most relevant 1–3 lines from the tool result that should have supported the claim. The quote MUST be ≤ 280 characters. Do not paraphrase. If no tool result is even close to the claim, use null.
 
-5. **Data transformation**
-   - CSV → JSON → formatted text
-   - Multiple tool outputs combined into report
-   - ✓ This IS valid - legitimate data processing
+For \`no-tools-called\` and \`judge-uncertain\`, \`citation\` is always null.
 
-6. **Requested example data generation**
-   - Task: "Generate example user profiles for testing"
-   - Agent outputs: Sample profiles with made-up names/emails
-   - ✓ This IS valid - task explicitly requests synthetic data creation
+\`citation: null\` is reserved for cases where there is no source to quote (the categories above). Never use null because you "forgot to cite" — if a quote applies, include it.
 
-## VALIDATION PROCESS
+## RETRY GUIDANCE
 
-For each factual claim in the agent's output:
+\`retryGuidance\` is a single short string (1–3 sentences) addressed to the agent retrying this step. Phrase it as actionable instructions ("Call tool X before claiming Y", "Cite the tool result for the employee count"). When confidence is high (no real issues), \`retryGuidance\` may be an empty string.
 
-1. Check: Is this claim in the tool results? → SOURCED ✓
-2. Check: Is this claim in the input data? → SOURCED ✓
-3. Check: Is this a logical inference from #1 or #2? → SOURCED ✓
-4. Check: Does the task explicitly request example/sample/mock data generation? → LEGITIMATE GENERATION ✓
-5. Otherwise → FABRICATED ✗
+## CONFIDENCE
 
-## SCORING FORMULA
+Confidence is a number in [0, 1] expressing how confident you are that the agent's output is well-sourced. High confidence = sourced; low confidence = fabricated.
 
-Start at base score: 0.5
+Start at 0.7. For each \`sourcing\` or \`no-tools-called\` issue you emit, subtract 0.2. Clamp the final value to [0, 1]. If the output is well-sourced and you have no issues to emit, confidence stays at or above 0.7.
 
-For each claim in output:
-- Claim verifiable in tool results or input: +0.05
-- Claim is external/unverifiable: -0.25
-- Claim is fabricated example data: -0.30
+The system maps confidence to a status (\`pass\` / \`uncertain\` / \`fail\`); you do not select status.
 
-Final score clamped to [0.0, 1.0]
+## SEVERITY
 
-## EXAMPLES
-
-### Example 1: VALID (CSV Processing)
-Tools: bash returns {"contacts": [{"name": "Alice Smith", "company": "TechCorp"}]}
-Agent output: "Selected Alice Smith from TechCorp"
-Analysis: "Alice Smith" in results ✓, "TechCorp" in results ✓
-Score: 0.5 + 0.05 + 0.05 = 0.60
-Result: valid=true, confidence=0.6
-
-### Example 2: VALID (Data Transformation)
-Tools: bash returns {"employee_count": 20000}
-Agent output: "Company has 20,000 employees"
-Analysis: 20000 in results ✓, formatting is a legitimate transformation ✓
-Score: 0.5 + 0.05 = 0.55
-Result: valid=true, confidence=0.55
-
-### Example 3: FABRICATED (No Tool Access)
-Tools: NONE
-Agent output: "According to my research, XYZ Corp has 500 employees"
-Analysis: External claim ✗, no tool access ✗
-Score: 0.5 - 0.25 = 0.25
-Result: valid=false, confidence=0.25, issues=["External research claim without tool access"]
-
-### Example 4: VALID (Multi-field Extraction)
-Tools: bash returns {"firstName": "Bob", "lastName": "Jones", "title": "CEO", "company": "StartupCo"}
-Agent output: "Bob Jones is CEO at StartupCo"
-Analysis: All fields present in tool results ✓
-Score: 0.5 + 0.05 + 0.05 + 0.05 + 0.05 = 0.70
-Result: valid=true, confidence=0.7
-
-## IMPORTANT
-
-- Focus only on whether data exists in sources
-- Data transformation and reformatting ARE legitimate operations
-- Be lenient with formatting differences (20000 vs "20,000")
-- Only flag claims that are truly unsourced or explicitly fabricated examples
-
-## RESPONSE FORMAT
-
-Return ONLY valid JSON:
-{
-  "valid": boolean,
-  "confidence": number,
-  "issues": ["specific fabricated claims"]
-}`;
+Severity is derived from category in code; do not include it in your output.`;
 }
 
 /** Max chars per tool result sent to the validation LLM. */
@@ -499,6 +533,11 @@ function extractOutputText(output: unknown): string {
  * text content from MCP envelopes — strips envelope noise (toolCallId,
  * providerMetadata) that wastes tokens without aiding validation.
  *
+ * When a result exceeds {@link MAX_TOOL_RESULT_CHARS}, the tail is truncated
+ * and a single English banner is appended at the bottom so the judge can
+ * distinguish truncation from absence — the judge's most common false-positive
+ * class is flagging missing-tail content as fabrication.
+ *
  * @param toolResults - Typed tool results from agent execution
  * @returns Formatted string with all tool results, each capped at MAX_TOOL_RESULT_CHARS
  */
@@ -509,7 +548,12 @@ export function formatToolResults(toolResults: ToolResult[]): string {
       const header = `=== Tool Result ${i + 1}: ${tr.toolName}${inputText} ===`;
       try {
         const text = extractOutputText(tr.output);
-        return `${header}\n${text.length > MAX_TOOL_RESULT_CHARS ? `${text.slice(0, MAX_TOOL_RESULT_CHARS)}…` : text}`;
+        if (text.length <= MAX_TOOL_RESULT_CHARS) return `${header}\n${text}`;
+        const omitted = text.length - MAX_TOOL_RESULT_CHARS;
+        const banner =
+          `[TOOL RESULT TRUNCATED — ${omitted} bytes omitted from end. ` +
+          `The judge should not flag missing tail content as fabrication.]`;
+        return `${header}\n${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n${banner}`;
       } catch {
         return `${header}\n[Failed to serialize]`;
       }

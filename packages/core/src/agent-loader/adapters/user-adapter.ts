@@ -57,8 +57,8 @@ function parseVersionDir(name: string): { id: string; version: string } | null {
 
 /**
  * Loads user-built agents from disk.
- * Discovers WASM code agents at `{agentsDir}/{id}@{version}/` by reading
- * `metadata.json` sidecar files — no WASM instantiation during discovery.
+ * Discovers agents at `{agentsDir}/{id}@{version}/` by reading
+ * `metadata.json` sidecar files.
  */
 export class UserAdapter implements AgentAdapter {
   readonly adapterName = "user-agent-adapter";

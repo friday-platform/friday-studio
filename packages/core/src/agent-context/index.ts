@@ -22,11 +22,7 @@ import {
 } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { UserConfigurationError } from "../errors/user-configuration-error.ts";
-import {
-  hasUnusableCredentialCause,
-  resolveSlackAppByWorkspace,
-} from "../mcp-registry/credential-resolver.ts";
+import { hasUnusableCredentialCause } from "../mcp-registry/credential-resolver.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
@@ -243,8 +239,8 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 /**
  * Fetch all tools directly from MCP servers.
  * Discovers all workspace, registry, and static servers via discoverMCPServers,
- * applies agent-level overrides, injects atlas-platform, and resolves slack-app
- * credentials. Delegates to createMCPTools for the actual tool instantiation.
+ * applies agent-level overrides, and injects atlas-platform. Delegates to
+ * createMCPTools for the actual tool instantiation.
  */
 async function fetchAllTools(
   workspaceId: string,
@@ -306,42 +302,6 @@ async function fetchAllTools(
     serverIds: Object.keys(allServerConfigs),
   });
 
-  // slack-app credentials are wired per-workspace (not a user-level default).
-  // Resolve the workspace's wired bot credential and inject its ID so the
-  // downstream env resolver fetches the correct credential by ID.
-  await injectSlackAppCredentialId(allServerConfigs, workspaceId);
-
   const { tools, dispose } = await createMCPTools(allServerConfigs, logger, { signal });
   return { tools, release: dispose };
-}
-
-/**
- * Find a provider-only slack-app credential ref in MCP server envs and
- * replace it with the credential ID wired to this workspace.
- */
-export async function injectSlackAppCredentialId(
-  configs: Record<string, MCPServerConfig>,
-  workspaceId: string,
-): Promise<void> {
-  const ref = findSlackAppProviderRef(configs);
-  if (!ref) return;
-
-  const wired = await resolveSlackAppByWorkspace(workspaceId);
-  if (!wired) {
-    throw UserConfigurationError.missingConfiguration("slack", workspaceId, ["slack-app"], []);
-  }
-  ref.env[ref.key] = { ...ref.value, id: wired.credentialId };
-}
-
-/** Locate the first slack-app provider-only ref across all MCP server envs. */
-function findSlackAppProviderRef(configs: Record<string, MCPServerConfig>) {
-  for (const config of Object.values(configs)) {
-    if (!config.env) continue;
-    for (const [key, value] of Object.entries(config.env)) {
-      if (typeof value === "object" && value.provider === "slack-app" && !value.id) {
-        return { env: config.env, key, value };
-      }
-    }
-  }
-  return null;
 }

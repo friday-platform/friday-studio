@@ -228,9 +228,9 @@ The autopilot/self-modification loop uses this surface heavily. See
 - Generate a workspace.yml from a template, create it, fire a smoke-test signal
 - Update a single signal's cron schedule without rewriting workspace.yml
 - Read narrative memory to pick up an autopilot backlog item
-- Build and register a Python WASM agent
+- Build and register a user agent
 
-**For authoring Python WASM agents** (agent.py, `@agent` decorator, `ctx.llm` /
+**For authoring user agents** (agent.py, `@agent` decorator, `ctx.llm` /
 `ctx.http` / `ctx.tools` APIs, JSON Schema strict mode rules): use the
 `writing-friday-agents` skill (shipped with the agent-sdk repo). This skill
 covers build + register; `writing-friday-agents` covers the source.
@@ -266,6 +266,6 @@ image.
 - `references/http.md` — every HTTP route with request/response shape and side effects
 - `references/recipes.md` — end-to-end recipes for the autopilot/self-mod flywheel
 - `references/session-and-logs.md` — SessionView shape, aiSummary, SSE event types, log structure — the "did it work?" surface
-- `writing-friday-agents` skill (in the agent-sdk repo) — authoring Python WASM agents
+- `writing-friday-agents` skill (in the agent-sdk repo) — authoring user agents
 - `debugging-friday` skill — log forensics, GCS, multi-hop correlation
 - Project docs: `docs/STUDIO_QUICKSTART.md`, `docs/product-map.md`

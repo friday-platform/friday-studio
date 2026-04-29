@@ -18,7 +18,6 @@
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
-import { injectSlackAppCredentialId } from "@atlas/core/agent-context";
 import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
@@ -188,13 +187,6 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           for (const id of mcpServers) {
             const c = candidateMap.get(id);
             if (c) selectedConfigs[id] = c.mergedConfig;
-          }
-
-          try {
-            await injectSlackAppCredentialId(selectedConfigs, session.workspaceId);
-          } catch (err) {
-            const reason = err instanceof Error ? err.message : String(err);
-            return { ok: false, reason, toolsUsed: [] };
           }
 
           const serverEntries = Object.entries(selectedConfigs);

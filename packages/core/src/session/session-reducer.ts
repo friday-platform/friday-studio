@@ -77,6 +77,11 @@ export function reduceSessionEvent(
     case "step:skipped":
       return reduceStepSkipped(view, event);
 
+    case "step:validation":
+      // Validation pills are rendered via the playground accumulator (Task #28/#29);
+      // they do not aggregate into SessionView state.
+      return view;
+
     case "session:complete": {
       // Transition any remaining pending blocks to skipped
       const finalizedBlocks = view.agentBlocks.map((block) =>

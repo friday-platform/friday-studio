@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isBlockedIP, isBlockedIPv4, isBlockedIPv6, assertPublicHost } from "./web-fetch.ts";
+import { assertPublicHost, isBlockedIP, isBlockedIPv4, isBlockedIPv6 } from "./web-fetch.ts";
 
 // ---------------------------------------------------------------------------
 // SSRF guard — isBlockedIPv4

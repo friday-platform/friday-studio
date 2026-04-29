@@ -59,13 +59,13 @@ describe("useCredentialConnect", () => {
   });
 
   it("startAppInstall sets popupBlocked and blockedUrl when blocked", () => {
-    const connect = useCredentialConnect("slack-app");
+    const connect = useCredentialConnect("slack");
     vi.mocked(mockedPopup.startAppInstallFlow).mockReturnValue(null);
 
     connect.startAppInstall();
 
     expect(connect.popupBlocked).toBe(true);
-    expect(connect.blockedUrl).toBe("https://example.com/install/slack-app");
+    expect(connect.blockedUrl).toBe("https://example.com/install/slack");
   });
 
   it("submitApiKey calls PUT with correct body and provider", async () => {

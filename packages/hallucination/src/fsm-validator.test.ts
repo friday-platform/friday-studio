@@ -299,14 +299,26 @@ describe("formatToolResults", () => {
     expect(formatted).not.toContain("…");
   });
 
-  it("truncates individual results exceeding 50k chars", () => {
-    const hugePayload = "x".repeat(60_000);
+  it("appends truncation banner with omitted byte count when result exceeds 100KB cap", () => {
+    const overage = 5_000;
+    const hugePayload = "x".repeat(100_000 + overage);
     const results = [mcpResult("big_tool", hugePayload)];
 
     const formatted = formatToolResults(results);
 
-    expect(formatted).toContain("…");
-    expect(formatted.length).toBeLessThan(60_000);
+    expect(formatted).toContain(
+      `[TOOL RESULT TRUNCATED — ${overage} bytes omitted from end. The judge should not flag missing tail content as fabrication.]`,
+    );
+    expect(formatted.length).toBeLessThan(100_000 + overage);
+  });
+
+  it("does not append truncation banner when result fits under cap", () => {
+    const payload = "x".repeat(99_999);
+    const results = [mcpResult("big_tool", payload)];
+
+    const formatted = formatToolResults(results);
+
+    expect(formatted).not.toContain("[TOOL RESULT TRUNCATED");
   });
 
   it("falls back to JSON for non-MCP output shapes", () => {

@@ -95,17 +95,20 @@ function createGoogleWorkspaceEntry(
         command: "uvx",
         args: ["workspace-mcp", "--tools", spec.toolFlag, "--transport", "streamable-http"],
         env: {
-          // Desktop app client ID — PKCE provides real security but Google still
-          // requires client_secret present for Desktop app token endpoint.
-          GOOGLE_OAUTH_CLIENT_ID:
-            "121686085713-m7b2u1sari8j9l07ep3fodes3b85a1pm.apps.googleusercontent.com",
-          GOOGLE_OAUTH_CLIENT_SECRET: "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",
-          MCP_ENABLE_OAUTH21: "true",
-          EXTERNAL_OAUTH21_PROVIDER: "true",
           WORKSPACE_MCP_PORT: String(spec.defaultPort),
         },
         ready_url: defaultUrl,
       },
+    },
+    // Platform-owned env vars injected at spawn time but never serialized to workspace.yml
+    platformEnv: {
+      // Desktop app client ID — PKCE provides real security but Google still
+      // requires client_secret present for Desktop app token endpoint.
+      GOOGLE_OAUTH_CLIENT_ID:
+        "121686085713-m7b2u1sari8j9l07ep3fodes3b85a1pm.apps.googleusercontent.com",
+      GOOGLE_OAUTH_CLIENT_SECRET: "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",
+      MCP_ENABLE_OAUTH21: "true",
+      EXTERNAL_OAUTH21_PROVIDER: "true",
     },
     requiredConfig: [
       { key: tokenEnvKey, description: `${spec.name} access token from Link`, type: "string" },

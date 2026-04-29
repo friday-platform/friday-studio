@@ -22,8 +22,7 @@
  */
 
 import type { JobExecutionAgent, WorkspaceConfig } from "@atlas/config";
-import { extractFSMAgents } from "@atlas/config/mutations";
-import { FSMDefinitionSchema } from "@atlas/fsm-engine";
+import { extractFSMAgents, parseInlineFSM } from "@atlas/config/mutations";
 import { mcpServersRegistry } from "./registry-consolidated.ts";
 
 // ─── Public types ──────────────────────────────────────────────────────────
@@ -324,7 +323,7 @@ function checkFsmStructures(config: WorkspaceConfig): ValidationIssue[] {
   const jobs = config.jobs ?? {};
   for (const [jobName, job] of Object.entries(jobs)) {
     if (!job.fsm) continue;
-    const parsed = FSMDefinitionSchema.safeParse(job.fsm);
+    const parsed = parseInlineFSM(job.fsm, jobName);
     if (parsed.success) continue;
     for (const issue of parsed.error.issues) {
       const zodPath = issue.path.length > 0 ? `.${issue.path.join(".")}` : "";

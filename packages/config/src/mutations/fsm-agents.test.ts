@@ -338,11 +338,12 @@ describe("extractFSMAgents", () => {
         "invalid-fsm-job": {
           description: "Job with invalid FSM",
           triggers: [{ signal: "webhook" }],
-          // Missing required 'id' field - fails FSMDefinitionSchema.safeParse()
+          // Invalid state structure — 'type' must be "final" or omitted, not "action"
           fsm: {
             initial: "step_0",
             states: {
               step_0: {
+                type: "action",
                 entry: [{ type: "agent", agentId: "should-be-skipped" }],
                 on: { DONE: { target: "complete" } },
               },
@@ -446,11 +447,12 @@ describe("updateFSMAgent", () => {
           "bad-fsm-job": {
             description: "Job with invalid FSM structure",
             triggers: [{ signal: "webhook" }],
-            // FSM exists but fails FSMDefinitionSchema.safeParse() - missing required 'id' field
+            // FSM exists but fails FSMDefinitionSchema.safeParse() — 'type' must be "final" or omitted
             fsm: {
               initial: "step_0",
               states: {
                 step_0: {
+                  type: "action",
                   entry: [{ type: "agent", agentId: "test" }],
                   on: { DONE: { target: "complete" } },
                 },

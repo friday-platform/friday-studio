@@ -127,7 +127,7 @@ curl -s -X POST http://localhost:8080/api/skills/scoping/$SKILL_ID/assignments \
   -d "{\"workspaceIds\":[\"$WS_ID\"]}"
 ```
 
-## Build + register Python WASM agent
+## Build + register user agent
 
 **Full authoring workflow: use the `writing-friday-agents` skill (shipped
 with the agent-sdk repo).**

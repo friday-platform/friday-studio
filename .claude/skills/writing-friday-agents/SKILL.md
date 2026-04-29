@@ -1,6 +1,6 @@
 ---
 name: writing-friday-agents
-description: "Write, edit, or debug a Friday agent using the `friday_agent_sdk` Python SDK. Use when creating a new agent, adding LLM/HTTP/MCP capabilities, fixing `ctx.llm is None` errors, debugging componentize-py or WASM build failures, or any work mentioning `@agent`, `AgentContext`, `ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`, `ok()`/`err()`, `parse_input`/`parse_operation`, or the `_bridge` import. Use even when the user says \"write a Python function that does X\" inside `packages/python/examples/`, an `agents/` directory, or any Friday agent project. Friday agents compile to WebAssembly and run in a sandbox with no pip, no threads, no filesystem, and no direct network — authoring patterns are non-obvious. Consult this skill before writing code."
+description: "Write, edit, or debug a Friday agent using the `friday_agent_sdk` Python SDK. Use when creating a new agent, adding LLM/HTTP/MCP capabilities, fixing `ctx.llm is None` errors, debugging agent build failures, or any work mentioning `@agent`, `AgentContext`, `ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`, `ok()`/`err()`, `parse_input`/`parse_operation`, or the `_bridge` import. Use even when the user says \"write a Python function that does X\" inside `packages/python/examples/`, an `agents/` directory, or any Friday agent project. Friday user agents run as subprocess processes via NATS — authoring patterns are non-obvious. Consult this skill before writing code."
 user-invocable: false
 ---
 
@@ -8,14 +8,14 @@ user-invocable: false
 
 ## Mental model
 
-A Friday agent is a sync Python function compiled to a WebAssembly component:
+A Friday agent is a sync Python function that runs as a subprocess via NATS:
 
 ```python
 def execute(prompt: str, ctx: AgentContext) -> OkResult | ErrResult:
     ...
 ```
 
-Sandbox: no filesystem, no network, no threads, Python stdlib only. All I/O — LLM, HTTP, MCP tools, UI streaming — goes through `ctx`. Each invocation is a fresh import; module-level state never persists.
+All I/O — LLM, HTTP, MCP tools, UI streaming — goes through `ctx`. Each invocation is a fresh import; module-level state never persists.
 
 Treat the agent as a pure function with four capability hooks. `import requests`, `import anthropic`, `pip install pydantic`, module caches, threading — all fail.
 
@@ -26,8 +26,7 @@ Copy `assets/agent-template.py` or start from this:
 ```python
 from dataclasses import dataclass
 
-from friday_agent_sdk import AgentContext, agent, err, ok, parse_input
-from friday_agent_sdk._bridge import Agent  # noqa: F401 — componentize-py needs this
+from friday_agent_sdk import AgentContext, agent, err, ok, parse_input, run
 
 
 @dataclass
@@ -54,13 +53,17 @@ def execute(prompt: str, ctx: AgentContext):
         model="anthropic:claude-haiku-4-5",
     )
     return ok({"reply": response.text})
+
+
+if __name__ == "__main__":
+    run()
 ```
 
 Non-obvious:
-- `_bridge` import is required. componentize-py discovers the `Agent` class through it. Keep the `# noqa: F401`.
-- Handler is **sync**. No `async def execute`. Capabilities also look sync (JSPI bridges async under the hood).
+- `if __name__ == "__main__": run()` block is required. Without it the subprocess exits immediately on launch and no agent is registered.
+- Handler can be sync or async (`def execute` or `async def execute`) — both work.
 - One `@agent` per file. A second raises `RuntimeError`.
-- Return `ok(...)` or `err(...)`. Raw dicts/strings fail the bridge.
+- Return `ok(...)` or `err(...)`. Raw dicts/strings fail.
 
 ## Picking a capability
 
@@ -94,14 +97,13 @@ Wrap capability calls — `LlmError`, `HttpError`, `ToolCallError` — and retur
 
 ## Top footguns
 
-1. **Missing `_bridge` import.** Build fails cryptically. Keep `from friday_agent_sdk._bridge import Agent`.
+1. **Missing `if __name__ == "__main__": run()`.** Process exits immediately; no agent registered. Every agent file needs this.
 2. **Reaching for `requests`/`httpx`/`anthropic`/`pydantic`.** Use `ctx.http` / `ctx.llm` / dataclasses.
 3. **Assuming state persists.** Every call re-imports the module. Persist through MCP tools or returned data.
 4. **Returning a raw value.** `return "hi"` fails. Wrap in `ok()`.
-5. **Writing `async def execute`.** Handler must be sync.
-6. **Two `@agent` decorators in one file.** `RuntimeError`. Split into separate files.
-7. **Skipping null checks on `ctx.llm` / `ctx.http` / `ctx.tools`.** They can be `None`. Return an `err()`.
-8. **Pydantic schemas for `parse_input`.** Use dataclasses. Pydantic imports are blocked.
+5. **Two `@agent` decorators in one file.** `RuntimeError`. Split into separate files.
+6. **Skipping null checks on `ctx.llm` / `ctx.http` / `ctx.tools`.** They can be `None`. Return an `err()`.
+7. **Pydantic schemas for `parse_input`.** Use dataclasses. Pydantic imports are blocked.
 
 ## When to read a reference
 

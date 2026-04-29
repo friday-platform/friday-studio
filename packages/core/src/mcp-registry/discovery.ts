@@ -46,9 +46,12 @@ export async function discoverMCPServers(
   // Static blessed servers
   for (const [id, metadata] of Object.entries(staticServers)) {
     const workspaceOverride = workspaceServers[id];
-    const mergedConfig = workspaceOverride
-      ? mergeServerConfig(metadata.configTemplate, workspaceOverride)
-      : metadata.configTemplate;
+    const mergedConfig = applyPlatformEnv(
+      workspaceOverride
+        ? mergeServerConfig(metadata.configTemplate, workspaceOverride)
+        : metadata.configTemplate,
+      metadata.platformEnv,
+    );
 
     candidates.set(id, {
       metadata,
@@ -60,9 +63,12 @@ export async function discoverMCPServers(
   // Registry-imported servers
   for (const metadata of registryServers) {
     const workspaceOverride = workspaceServers[metadata.id];
-    const mergedConfig = workspaceOverride
-      ? mergeServerConfig(metadata.configTemplate, workspaceOverride)
-      : metadata.configTemplate;
+    const mergedConfig = applyPlatformEnv(
+      workspaceOverride
+        ? mergeServerConfig(metadata.configTemplate, workspaceOverride)
+        : metadata.configTemplate,
+      metadata.platformEnv,
+    );
 
     candidates.set(metadata.id, {
       metadata,
@@ -106,6 +112,27 @@ async function fetchWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfi
 
 function mergeServerConfig(base: MCPServerConfig, override: MCPServerConfig): MCPServerConfig {
   return { ...base, ...override, env: mergeEnv(base.env, override.env) };
+}
+
+/**
+ * Merge registry-owned `platformEnv` into the runtime server config.
+ * `platformEnv` forms the base; workspace `startup.env` takes precedence.
+ * These vars are NOT serialized into workspace.yml — they live only in
+ * registry metadata and are injected at discovery time.
+ */
+function applyPlatformEnv(
+  config: MCPServerConfig,
+  platformEnv?: Record<string, string | LinkCredentialRef>,
+): MCPServerConfig {
+  if (!platformEnv || Object.keys(platformEnv).length === 0) return config;
+  if (!config.startup) return config;
+  return {
+    ...config,
+    startup: {
+      ...config.startup,
+      env: { ...platformEnv, ...config.startup.env },
+    },
+  };
 }
 
 function mergeEnv(

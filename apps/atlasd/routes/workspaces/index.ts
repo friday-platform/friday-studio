@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import { createAnalyticsClient, EventNames } from "@atlas/analytics";
@@ -15,7 +15,6 @@ import { WorkspaceConfigSchema } from "@atlas/config";
 import {
   applyMutation,
   type CredentialUsage,
-  deleteSignal,
   extractCredentials,
   stripCredentialRefs,
   toIdRefs,
@@ -33,13 +32,11 @@ import {
 } from "@atlas/core/mcp-registry/config-validator";
 import {
   CredentialNotFoundError,
-  deleteSlackApp,
   fetchLinkCredential,
   InvalidProviderError,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   resolveCredentialsByProvider,
-  resolveSlackAppByWorkspace,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { createDefaultResolvers } from "@atlas/core/mcp-registry/resolvers";
@@ -54,27 +51,19 @@ import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
 import { getAtlasHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
-import { stringify } from "@std/yaml";
+import { parse, stringify } from "@std/yaml";
 import { z } from "zod";
 import type { AppContext } from "../../src/factory.ts";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 import {
+  CommunicatorKindSchema,
   deriveConnectionId,
   disconnectCommunicator,
-  NonSlackCommunicatorKindSchema,
   removeCommunicatorMutation,
   resolveTunnelUrl,
   setCommunicatorMutation,
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
-import {
-  createLinkUnwiredClient,
-  createLinkWireClient,
-  disableSlackEventSubscriptions,
-  enableSlackEventSubscriptions,
-  slackSignalMutation,
-  tryAutoWireSlackApp,
-} from "../../src/services/slack-auto-wire.ts";
 import { getCurrentUser } from "../me/adapter.ts";
 import { applyBlueprint, loadWorkspaceBlueprint } from "./blueprint-recompile.ts";
 import {
@@ -131,6 +120,35 @@ const analytics = createAnalyticsClient();
  */
 function isTestMode(): boolean {
   return process.env.DENO_TESTING === "true" || process.env.VITEST === "true";
+}
+
+async function validateImportedWorkspace(
+  targetDir: string,
+  ctx: ValidationContext,
+): Promise<{ ok: true } | { ok: false; status: number; body: Record<string, unknown> }> {
+  const workspaceYmlPath = join(targetDir, "workspace.yml");
+  const workspaceYmlRaw = await readFile(workspaceYmlPath, "utf-8");
+  const workspaceYmlParsed = parse(workspaceYmlRaw);
+  const validationResult = WorkspaceConfigSchema.safeParse(workspaceYmlParsed);
+  if (!validationResult.success) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        success: false,
+        error: `Invalid workspace configuration: ${validationResult.error.issues.map((issue) => issue.message).join(", ")}`,
+      },
+    };
+  }
+  const report = await validateWorkspaceConfig(validationResult.data, ctx);
+  if (report.status === "hard_fail") {
+    return {
+      ok: false,
+      status: 422,
+      body: { success: false, error: "validation_failed", report },
+    };
+  }
+  return { ok: true };
 }
 
 function buildValidationContext(app: AppContext): ValidationContext {
@@ -548,10 +566,7 @@ const workspacesRoutes = daemonFactory
       );
       const allProviders = [...new Set(providerOnlyRefs.map((ref) => ref.provider))];
 
-      // slack-app credentials are 1:1 with workspaces — never auto-resolve from the
-      // generic pool. Always require a fresh bot install via the setup flow.
-      const uniqueProviders = allProviders.filter((p) => p !== "slack-app");
-      const hasSlackApp = allProviders.includes("slack-app");
+      const uniqueProviders = allProviders;
 
       type ResolvedCredentialInfo = {
         path: string;
@@ -645,12 +660,6 @@ const workspacesRoutes = daemonFactory
           }));
       }
 
-      // slack-app credentials are 1:1 with workspaces — always require fresh
-      // bot install via setup flow, regardless of existing credentials.
-      if (hasSlackApp) {
-        unresolvedProviders.push("slack-app");
-      }
-
       // Reference validator — catches LLM hallucinations (bad npm packages,
       // typoed agent ids, unknown skills, etc.) before they land on disk.
       // Registry-confirmed 404 and cross-ref typos are hard-fail; registry
@@ -722,32 +731,6 @@ const workspacesRoutes = daemonFactory
           });
         }
 
-        // Best-effort Slack auto-wire: find unwired slack-app credential, wire it,
-        // and inject a provider: "slack" signal into the workspace config.
-        // Skip when slack-app refs are present — those require a fresh bot install
-        // via the setup flow, not reuse of an existing credential.
-        let slackWired: { credentialId: string; appId: string } | undefined;
-        if (!hasSlackApp) {
-          try {
-            const wireResult = await tryAutoWireSlackApp(
-              { findUnwired: createLinkUnwiredClient(), wireToWorkspace: createLinkWireClient() },
-              workspace.id,
-              finalWorkspaceName,
-              validatedConfig.workspace.description,
-            );
-            if (wireResult) {
-              slackWired = wireResult;
-              await applyMutation(workspacePath, slackSignalMutation(wireResult.appId));
-              await enableSlackEventSubscriptions(wireResult.credentialId);
-            }
-          } catch (wireError) {
-            logger.warn("Slack auto-wire failed during workspace creation", {
-              workspaceId: workspace.id,
-              error: stringifyError(wireError),
-            });
-          }
-        }
-
         // Provision resources declared in the imported config
         let resourceErrors: string[] | undefined;
         if (validatedConfig.resources && validatedConfig.resources.length > 0 && created) {
@@ -778,7 +761,6 @@ const workspacesRoutes = daemonFactory
             ...(strippedCredentialPaths && strippedCredentialPaths.length > 0
               ? { strippedCredentials: strippedCredentialPaths }
               : {}),
-            ...(slackWired ? { slackWired } : {}),
             ...(unresolvedCredentialPaths && unresolvedCredentialPaths.length > 0
               ? { unresolvedCredentials: unresolvedCredentialPaths }
               : {}),
@@ -824,27 +806,6 @@ const workspacesRoutes = daemonFactory
         analytics.emit({ eventName: EventNames.WORKSPACE_CREATED, userId, workspaceId: entry.id });
       }
 
-      // Best-effort Slack auto-wire
-      let slackWired: { credentialId: string; appId: string } | undefined;
-      try {
-        const wireResult = await tryAutoWireSlackApp(
-          { findUnwired: createLinkUnwiredClient(), wireToWorkspace: createLinkWireClient() },
-          entry.id,
-          name ?? entry.name,
-          description,
-        );
-        if (wireResult) {
-          slackWired = wireResult;
-          await applyMutation(path, slackSignalMutation(wireResult.appId));
-          await enableSlackEventSubscriptions(wireResult.credentialId);
-        }
-      } catch (wireError) {
-        logger.warn("Slack auto-wire failed during workspace add", {
-          workspaceId: entry.id,
-          error: stringifyError(wireError),
-        });
-      }
-
       // Convert to API response format
       const workspaceInfo = {
         id: entry.id,
@@ -855,7 +816,6 @@ const workspacesRoutes = daemonFactory
         createdAt: entry.createdAt,
         lastSeen: entry.lastSeen,
         created,
-        ...(slackWired ? { slackWired } : {}),
       };
 
       return c.json(workspaceInfo, created ? 201 : 200);
@@ -1046,6 +1006,19 @@ const workspacesRoutes = daemonFactory
       const errors: Array<{ name: string; error: string }> = [...result.errors];
       for (const entry of result.imported) {
         try {
+          const validation = await validateImportedWorkspace(
+            entry.path,
+            buildValidationContext(ctx),
+          );
+          if (!validation.ok) {
+            await rm(entry.path, { recursive: true, force: true });
+            const body = validation.body;
+            errors.push({
+              name: entry.name,
+              error: typeof body.error === "string" ? body.error : "validation_failed",
+            });
+            continue;
+          }
           const registered = await manager.registerWorkspace(entry.path, { name: entry.name });
           const memory = await materializeImportedMemory({
             importedWorkspaceDir: entry.path,
@@ -1300,6 +1273,12 @@ const workspacesRoutes = daemonFactory
       const result = await importBundle({ zipBytes, targetDir });
 
       const ctx = c.get("app");
+      const validation = await validateImportedWorkspace(targetDir, buildValidationContext(ctx));
+      if (!validation.ok) {
+        await rm(targetDir, { recursive: true, force: true });
+        return c.json(validation.body, validation.status);
+      }
+
       const manager = ctx.getWorkspaceManager();
       const registered = await manager.registerWorkspace(targetDir, {
         name: result.lockfile.workspace.name,
@@ -1619,30 +1598,6 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: "incomplete_setup", missingProviders }, 422);
         }
 
-        // Wire slack-app credential to workspace if present (mapping table + signal app_id)
-        const slackAppCred = credentials.find(
-          (cred) => cred.provider === "slack-app" && cred.credentialId,
-        );
-        if (slackAppCred?.credentialId) {
-          try {
-            const wireClient = createLinkWireClient();
-            const appId = await wireClient(
-              slackAppCred.credentialId,
-              workspaceId,
-              workspace.name,
-              config.workspace.workspace?.description,
-            );
-            await applyMutation(workspace.path, slackSignalMutation(appId));
-            await enableSlackEventSubscriptions(slackAppCred.credentialId);
-          } catch (wireError) {
-            logger.warn("Slack wiring failed during setup completion", {
-              workspaceId,
-              credentialId: slackAppCred.credentialId,
-              error: stringifyError(wireError),
-            });
-          }
-        }
-
         // All credentials connected — clear requires_setup
         const newMetadata = { ...workspace.metadata, requires_setup: false };
         await manager.updateWorkspaceStatus(workspaceId, workspace.status, {
@@ -1655,194 +1610,21 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  // Connect Slack to a workspace. If a slack-app credential is already wired,
-  // reuse it without OAuth. Otherwise the client must run OAuth and pass the
-  // new credential_id; calling without one is a probe that returns
-  // `{ installRequired: true }`.
-  .post(
-    "/:workspaceId/connect-slack",
-    zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator("json", z.object({ credential_id: z.string().min(1).optional() })),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      const { credential_id } = c.req.valid("json");
-      const ctx = c.get("app");
-
-      try {
-        const manager = ctx.getWorkspaceManager();
-        const workspace = await manager.find({ id: workspaceId });
-        if (!workspace) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-
-        const config = await manager.getWorkspaceConfig(workspace.id);
-        if (!config) {
-          return c.json({ error: "Failed to load workspace configuration" }, 500);
-        }
-
-        const signals = config.workspace.signals ?? {};
-        const existingSlack = Object.values(signals).find((s) => s.provider === "slack");
-        if (existingSlack) {
-          const appId =
-            existingSlack.provider === "slack" ? existingSlack.config.app_id : undefined;
-          return c.json({ ok: true, alreadyConnected: true, app_id: appId }, 200);
-        }
-
-        // An already-wired slack-app takes precedence over any client-supplied credential_id.
-        const wired = await resolveSlackAppByWorkspace(workspaceId);
-
-        let credentialId: string;
-        let appId: string;
-        if (wired) {
-          credentialId = wired.credentialId;
-          appId = wired.appId;
-        } else if (credential_id) {
-          credentialId = credential_id;
-          const wireClient = createLinkWireClient();
-          appId = await wireClient(
-            credential_id,
-            workspaceId,
-            workspace.name,
-            config.workspace.workspace?.description,
-          );
-        } else {
-          return c.json({ ok: true, installRequired: true }, 200);
-        }
-
-        // Write the signal first. If this fails we must NOT enable events or
-        // evict the Chat SDK on top of a half-written config — the Link
-        // credential stays wired and the probe-style retry will reuse it.
-        const mutationResult = await applyMutation(workspace.path, slackSignalMutation(appId));
-        if (!mutationResult.ok) {
-          logger.error("connect_slack_mutation_failed", {
-            workspaceId,
-            appId,
-            credentialId,
-            reusedWiredCredential: !!wired,
-            error: mutationResult.error,
-          });
-          return mapMutationError(c, mutationResult.error, "Slack signal mutation conflicted");
-        }
-
-        await enableSlackEventSubscriptions(credentialId);
-        await ctx.evictChatSdkInstance(workspaceId);
-
-        logger.info("slack_connected_to_workspace", {
-          workspaceId,
-          appId,
-          credentialId,
-          reusedWiredCredential: !!wired,
-        });
-        return c.json({ ok: true, app_id: appId }, 200);
-      } catch (error) {
-        logger.error("connect_slack_failed", { workspaceId, credential_id, error });
-        return c.json({ error: `Failed to connect Slack: ${stringifyError(error)}` }, 500);
-      }
-    },
-  )
-  // Disconnect Slack from a workspace. Removes the chat signal and disables
-  // event subscriptions. The slack-app credential is GC'd only if nothing
-  // else in the workspace still references it (explicit MCP/agent env vars
-  // or implicit refs from bundled agents).
-  .post(
-    "/:workspaceId/disconnect-slack",
-    zValidator("param", z.object({ workspaceId: z.string() })),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      const ctx = c.get("app");
-
-      try {
-        const manager = ctx.getWorkspaceManager();
-        const workspace = await manager.find({ id: workspaceId });
-        if (!workspace) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-
-        const config = await manager.getWorkspaceConfig(workspace.id);
-        if (!config) {
-          return c.json({ error: "Failed to load workspace configuration" }, 500);
-        }
-
-        const signals = config.workspace.signals ?? {};
-        const signalEntry = Object.entries(signals).find(([, s]) => s.provider === "slack");
-        if (!signalEntry) {
-          return c.json({ ok: true, alreadyDisconnected: true }, 200);
-        }
-
-        const [signalId] = signalEntry;
-        // Bail BEFORE any external side effects if the signal write fails —
-        // otherwise we'd leave the signal on disk with the Slack app deleted.
-        const mutationResult = await applyMutation(workspace.path, (cfg) =>
-          deleteSignal(cfg, signalId, { force: true }),
-        );
-        if (!mutationResult.ok) {
-          logger.error("disconnect_slack_mutation_failed", {
-            workspaceId,
-            signalId,
-            error: mutationResult.error,
-          });
-          return mapMutationError(c, mutationResult.error, "Slack signal mutation conflicted");
-        }
-
-        // May already be gone if Link state drifted from the workspace config.
-        const wired = await resolveSlackAppByWorkspace(workspaceId);
-
-        let deletedApp = false;
-        if (wired) {
-          await disableSlackEventSubscriptions(wired.credentialId);
-
-          // injectBundledAgentRefs hydrates implicit refs from bundled agents
-          // so extractCredentials sees them when checking if slack-app is still used.
-          const after = await manager.getWorkspaceConfig(workspace.id);
-          const configAfter = after?.workspace ?? config.workspace;
-          const injected = injectBundledAgentRefs(configAfter);
-          const stillUsed = extractCredentials(injected).some((u) => u.provider === "slack-app");
-
-          if (!stillUsed) {
-            await deleteSlackApp(wired.appId);
-            deletedApp = true;
-          } else {
-            logger.info("slack_app_kept_on_disconnect", {
-              workspaceId,
-              appId: wired.appId,
-              reason: "still_referenced_by_workspace",
-            });
-          }
-        }
-
-        await ctx.evictChatSdkInstance(workspaceId);
-
-        logger.info("slack_disconnected_from_workspace", { workspaceId, signalId, deletedApp });
-        return c.json({ ok: true, deletedApp }, 200);
-      } catch (error) {
-        logger.error("disconnect_slack_failed", { workspaceId, error });
-        return c.json({ error: `Failed to disconnect Slack: ${stringifyError(error)}` }, 500);
-      }
-    },
-  )
-  // Connect a non-Slack communicator (telegram/discord/teams/whatsapp) to a
+  // Connect a communicator (slack/telegram/discord/teams/whatsapp) to a
   // workspace. Wires the credential to the workspace via Link's
   // communicator_wiring table (single source of truth for secrets) and adds
-  // a kind-only block to workspace.yml for visibility. Slack uses the
-  // dedicated /connect-slack route because of its app-install OAuth flow.
+  // a kind-only block to workspace.yml for visibility.
   .post(
     "/:workspaceId/connect-communicator",
     zValidator("param", z.object({ workspaceId: z.string() })),
     zValidator(
       "json",
-      z.object({
-        kind: z.union([z.literal("slack"), NonSlackCommunicatorKindSchema]),
-        credential_id: z.string().min(1),
-      }),
+      z.object({ kind: CommunicatorKindSchema, credential_id: z.string().min(1) }),
     ),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
       const { kind, credential_id } = c.req.valid("json");
       const ctx = c.get("app");
-
-      if (kind === "slack") {
-        return c.json({ error: "Use /connect-slack for Slack" }, 400);
-      }
 
       try {
         const manager = ctx.getWorkspaceManager();
@@ -1897,24 +1679,17 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  // Disconnect a non-Slack communicator from a workspace. Removes the wiring
-  // row in Link, removes the kind block from workspace.yml, and evicts the
-  // chat-sdk so the next message dispatch picks up the absence.
+  // Disconnect a communicator from a workspace. Removes the wiring row in
+  // Link, removes the kind block from workspace.yml, and evicts the chat-sdk
+  // so the next message dispatch picks up the absence.
   .post(
     "/:workspaceId/disconnect-communicator",
     zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator(
-      "json",
-      z.object({ kind: z.union([z.literal("slack"), NonSlackCommunicatorKindSchema]) }),
-    ),
+    zValidator("json", z.object({ kind: CommunicatorKindSchema })),
     async (c) => {
       const { workspaceId } = c.req.valid("param");
       const { kind } = c.req.valid("json");
       const ctx = c.get("app");
-
-      if (kind === "slack") {
-        return c.json({ error: "Use /disconnect-slack for Slack" }, 400);
-      }
 
       try {
         const manager = ctx.getWorkspaceManager();

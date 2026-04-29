@@ -1,3 +1,4 @@
+import { WorkspaceAgentConfigSchema } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -263,5 +264,96 @@ describe("createBoundUpsertTools", () => {
       structural_issues: null,
       error: "Draft agent upsert failed",
     });
+  });
+});
+
+// ===========================================================================
+// upsert_agent description: must teach the LLM all three authorable type
+// shapes (llm | atlas | user). type: "system" is server-internal and must NOT
+// be advertised. Snapshot guards against regressions that trim the description
+// back to the llm-only shape or accidentally re-add the system row.
+// ===========================================================================
+
+describe("upsert_agent tool description", () => {
+  function getDescription(): string {
+    const tools = createBoundUpsertTools(makeLogger(), "ws-1");
+    const description = tools.upsert_agent?.description;
+    if (typeof description !== "string") {
+      throw new Error("upsert_agent description must be a string");
+    }
+    return description;
+  }
+
+  it("enumerates all three authorable agent type shapes", () => {
+    const description = getDescription();
+    expect(description).toContain('type: "llm"');
+    expect(description).toContain('type: "atlas"');
+    expect(description).toContain('type: "user"');
+  });
+
+  it("references list_capabilities as the discovery surface", () => {
+    expect(getDescription()).toContain("list_capabilities");
+  });
+
+  it('does not advertise type: "system" (server-internal only)', () => {
+    const description = getDescription();
+    expect(description).not.toContain('type: "system"');
+    expect(description).not.toContain("type: system");
+  });
+});
+
+// ===========================================================================
+// WorkspaceAgentConfigSchema acceptance: the discriminated union accepts all
+// four variants server-side. The chat-facing description only advertises three
+// (llm | atlas | user); the server still parses type: "system" because it is
+// used for platform-internal agents.
+//
+// Note: there is intentionally no `unknown_bundled_agent` validation case
+// here. The bundled-agent-discovery design doc keeps server runtime unchanged
+// (see § Module Boundaries) and lists registry-membership validation under
+// § Out of Scope as the post-ship escalation path if telemetry shows the LLM
+// still produces unknown atlas agent ids despite list_capabilities + the
+// SKILL rewrite. Don't add registry-membership validation here without
+// re-opening that decision.
+// ===========================================================================
+
+describe("WorkspaceAgentConfigSchema acceptance", () => {
+  it('accepts type: "atlas" with agent: "web"', () => {
+    const parsed = WorkspaceAgentConfigSchema.parse({
+      type: "atlas",
+      agent: "web",
+      description: "Scrape headlines",
+      prompt: "Fetch the top stories from Hacker News",
+    });
+    expect(parsed.type).toBe("atlas");
+  });
+
+  it('accepts type: "atlas" with legacy alias agent: "browser"', () => {
+    const parsed = WorkspaceAgentConfigSchema.parse({
+      type: "atlas",
+      agent: "browser",
+      description: "Legacy browser agent reference",
+      prompt: "Render a page",
+    });
+    expect(parsed.type).toBe("atlas");
+  });
+
+  it('accepts type: "user" with a registered agent id', () => {
+    const parsed = WorkspaceAgentConfigSchema.parse({
+      type: "user",
+      agent: "csv-parser",
+      description: "Parse CSV input",
+      prompt: "Map column A to field X",
+    });
+    expect(parsed.type).toBe("user");
+  });
+
+  it('accepts type: "system" server-side (not advertised in chat)', () => {
+    const parsed = WorkspaceAgentConfigSchema.parse({
+      type: "system",
+      agent: "internal-router",
+      description: "Platform-internal agent",
+    });
+    expect(parsed.type).toBe("system");
   });
 });

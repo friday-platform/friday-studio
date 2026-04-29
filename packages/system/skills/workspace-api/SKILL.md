@@ -12,9 +12,21 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 
 **Reachability model.** Signals trigger jobs. Jobs run agents. Agents call MCP tools and read/write memory. Nothing else triggers anything else. An agent declared without a wrapping job is unreachable. Memory is accessed by agents, not signals or jobs directly.
 
+**Agent types — pick in this order.**
+
+| Type | When | Example |
+|---|---|---|
+| `atlas` | A bundled platform agent fits the task **and its `constraints` allow it** | `type: atlas, agent: "web"` |
+| `user` | Mechanical / deterministic work, custom Python or TS SDK agent | `type: user, agent: "csv-parser"` |
+| `llm` | Open-ended reasoning with no bundled fit | `type: llm, config: { prompt, tools }` |
+
+**Decision rule.** Check `atlas` first via `list_capabilities`. Then `user`. `llm` is the fallback, not the default.
+
+**Bundled vs MCP-as-tool.** Bundled when the work is open-ended within a domain (you want a sub-agent that reasons). MCP server when the work is deterministic / single-call (you want a tool). A `web` bundled agent that browses, scrapes, and summarises beats `playwright-mcp` wired into a `type: llm` agent every time the work is open-ended; a single `slack_post_message` call is cleanest as an MCP tool.
+
 **7-step recipe.**
-1. Identify required MCP servers from the user's intent.
-2. For each not yet enabled: `enable_mcp_server` (see `using-mcp-servers` skill).
+1. `list_capabilities` once at session start to see bundled agents + enabled MCP servers + catalog.
+2. Wire capabilities by `kind`: `bundled` → straight into `upsert_agent`; `mcp_enabled` → already wired; `mcp_available` → `enable_mcp_server` first.
 3. For each provider needing credentials: `connect_service`.
 4. Decide direct vs draft: single atomic change → direct; multi-entity build → draft.
 5. If draft: `begin_draft` (pass `workspaceId` if targeting a newly created workspace). Then `upsert_agent` → `upsert_job` → `upsert_signal` in dependency order (agents before jobs, jobs before signals). **All draft/upsert tools accept an optional `workspaceId` parameter.** Use it after `create_workspace` so operations land on the new workspace, not the current session workspace.
@@ -26,6 +38,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 - Draft: upserts stage to `workspace.yml.draft`, permissive per-entity validation, cross-entity checks at `validate_workspace` + `publish_draft`. Best for new workspaces or pipelines.
 
 **Tool selection.**
+- Discovery: `list_capabilities` (bundled agents + MCP servers, single call).
 - Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `remove_item`, `validate_workspace`, `publish_draft`, `discard_draft`.
 - Daemon CRUD (list, get, delete): `run_code` bash + curl to `localhost:8080`.
 - MCP install/enable/credentials: `using-mcp-servers` skill.
@@ -67,13 +80,21 @@ user message → workspace-chat (platform meta-agent)
 
 Follow this order exactly. Skipping steps produces the failure modes documented in real chat transcripts.
 
-### 1. Identify required MCP servers
+### 1. List available capabilities
 
-From the user's intent, list every external tool the workspace needs (SQLite, GitHub, filesystem, fetch, etc.). For each, check if it's already in the workspace's `tools.mcp.servers`. If not, plan to enable it.
+Call `list_capabilities` once at the start of any new workspace work. The response returns bundled agents first (alphabetical), then enabled MCP servers, then available MCP servers from the catalog. Scan top-down and pick the first match for each piece of work the workspace needs — bundled comes first because it is zero-config and platform-managed.
 
-### 2. Enable MCP servers
+The result is stable for the session — re-call only after `enable_mcp_server` (which adds to the enabled set). Bundled agents and the catalog do not change during a session. **Do not duplicate this list into the skill or your own notes; `list_capabilities` is the source of truth.**
 
-For each missing server, call `enable_mcp_server`. If the server isn't in the platform catalog yet, call `search_mcp_servers` → `install_mcp_server` first. See the `using-mcp-servers` skill for the full decision tree (install vs enable vs create custom).
+Scan top-down and pick the first match **whose `constraints` don't rule out the user's intent**. Bundled comes first because it is zero-config, but a bundled agent that cannot do what the user asked is worse than a correctly wired MCP tool.
+
+### 2. Wire capabilities
+
+For each capability you picked, branch on the entry's `kind`:
+
+- **`bundled`** — pass straight into `upsert_agent` as `type: atlas, agent: "<id>"`. No enable step, no credentials beyond what the agent declares in `requiresConfig`.
+- **`mcp_enabled`** — already wired into the workspace. Reference the server's tools directly from your agent's `tools` array.
+- **`mcp_available`** — call `enable_mcp_server` first. If the server isn't in the platform catalog yet, call `search_mcp_servers` → `install_mcp_server` first. See the `using-mcp-servers` skill for the full decision tree.
 
 ### 2b. Discover tool names
 
@@ -292,51 +313,60 @@ A common pattern: the user and chat prove out a flow interactively using real MC
 
 ---
 
-## LLM vs Python agent decision matrix
+## Agent type — worked examples
 
-Workspaces support two agent types: `type: llm` (inline LLM, most common) and `type: user` (Python/TS SDK agent, registered via NATS).
+The cheat-sheet table covers the decision rule. These are worked examples for each authorable type.
 
-| Use `type: llm` when | Use `type: user` (Python) when |
-|---|---|
-| The logic is "figure out what to do" — classification, summarization, routing decisions, creative generation. | The work is mechanical — parsing, transforming, multipart uploads, deterministic routing, heavy data crunching. |
-| The task benefits from reasoning inside the prompt and tool-calling loop. | The LLM-loop tax (token latency, cost) dominates the value of the task. |
-| One focused `generate_text` or `generate_object` call with a strong prompt suffices. | The task requires libraries unavailable to the LLM (Pandas, PIL, custom compiled code). |
-| Speed of iteration matters more than runtime cost. | The task runs unattended at high frequency and cost must be minimized. |
-
-**Examples:**
-- A triage agent that reads an email and decides "urgent / tracking / ignore" → `llm`.
-- A parser that extracts structured fields from 10,000 PDFs and writes to SQLite → `user` (Python).
-- A map-builder that calls an LLM for design but Python for tile rendering → hybrid: `llm` agent delegates to a `user` agent for the render step.
-
-Python agent creation is an out-of-flow step the user kicks off explicitly. See the `writing-friday-agents` skill for authoring, deploying, and registering SDK agents.
+- **`atlas` (bundled platform agent).** Browse + scrape + summarise the top headlines from Hacker News → `type: atlas, agent: "web"`. Send a daily email summary → `type: atlas, agent: "email"`. Post a daily standup to Slack → `type: atlas, agent: "slack"`. The bundled agent already knows the domain — you supply intent in `prompt`, not mechanics.
+- **`user` (Python or TS SDK agent).** A parser that extracts structured fields from 10,000 PDFs and writes to SQLite → `user` (Python). A tile renderer using PIL → `user`. Reach for `user` when the work is mechanical, the LLM-loop tax dominates, or the task needs libraries unavailable to the LLM (Pandas, PIL, custom compiled code). Python-agent authoring is an out-of-flow step the user kicks off explicitly — see the `writing-friday-agents` skill.
+- **`llm` (inline LLM with prompt + tools).** A triage agent that reads an email and classifies "urgent / tracking / ignore" with no bundled fit → `type: llm`. Use `llm` when the logic is "figure out what to do" *and* no bundled agent covers the domain. If a bundled agent covers the domain, prefer `atlas` even when the work is reasoning-heavy.
+- **Hybrid.** A map-builder that calls an LLM for design but Python for tile rendering — one `llm` agent delegates to one `user` agent for the render step.
 
 ---
 
 ## Top gotchas — read before writing any config
 
-1. **Pass `workspaceId` after `create_workspace`.** The draft and upsert tools default to the current session workspace. When you create a new workspace from a chat session in a different workspace, every subsequent `begin_draft`, `upsert_*`, `validate_workspace`, `publish_draft`, `discard_draft`, `enable_mcp_server`, and `disable_mcp_server` call must include `workspaceId: '<new-id>'` or the changes land on the wrong workspace.
+1. **Don't reach for an MCP server when a bundled agent exists for the same domain *and* the work is open-ended.** Common over-MCP traps: `playwright-mcp` instead of `type: atlas, agent: "web"`; `smtp-mcp` instead of `type: atlas, agent: "email"`; `slack-mcp` instead of `type: atlas, agent: "slack"`. The flip side: when the work is a deterministic single call, MCP-as-tool is the right pick — don't over-bundle. Run `list_capabilities` first; if a bundled agent matches and the work is open-ended, use it.
 
-2. **Jobs must use `fsm:`, not `execution:`**. The schema accepts both; the runtime silently skips any job lacking `fsm:` and signal dispatch fails at runtime with `"No FSM job handles signal '<name>'"`.
+2. **Atlas agents are self-contained black boxes — they do not invoke MCP tools.** Bundled agents ship with hard-wired transport (SendGrid for `email`, Playwright for `web`, etc.). If the user's intent requires calling a specific MCP tool — e.g., `google-gmail/send_gmail_message`, `github-mcp/create_issue` — `type: atlas` is the wrong choice. To call an MCP tool, use `type: llm` with the tool in `config.tools`. **Read the bundled agent's `constraints` in `list_capabilities`.** That's where the agent explicitly flags what it *cannot* do (e.g., `email` → "For reading Gmail, use the google-gmail MCP server"). If `constraints` rule out the intent, skip the bundled agent and fall through to MCP-enabled / MCP-available.
 
-3. **FSM shape is XState-style.** States are `{ entry: [...actions], on: { EVENT: { target: 'next' } } }` or `{ type: 'final' }`. Do **not** use `type: action, action: {...}, next: ...` — the validator rejects it with `fsm_structural_error`.
+3. **For `type: atlas`, the `prompt` field is task-specific context layered on the agent's bundled behavior.** Describe the user's intent, not the mechanics. The bundled agent already knows how to drive a browser / send email / call the GitHub API — don't re-teach it.
+
+   ```yaml
+   agents:
+     news-scout:
+       type: atlas
+       agent: "web"
+       prompt: |
+         Pull the top 5 headlines from news.ycombinator.com.
+         Save the title, URL, and points to memory under "daily-headlines".
+   ```
+
+3. **`browser` and `research` are server-side aliases for the unified `web` agent.** They are not advertised in `list_capabilities` and you should not write them in new workspaces. If you encounter `agent: "browser"` or `agent: "research"` in an existing workspace, leave it alone — the server still accepts it.
+
+4. **Pass `workspaceId` after `create_workspace`.** The draft and upsert tools default to the current session workspace. When you create a new workspace from a chat session in a different workspace, every subsequent `begin_draft`, `upsert_*`, `validate_workspace`, `publish_draft`, `discard_draft`, `enable_mcp_server`, and `disable_mcp_server` call must include `workspaceId: '<new-id>'` or the changes land on the wrong workspace.
+
+5. **Jobs must use `fsm:`, not `execution:`**. The schema accepts both; the runtime silently skips any job lacking `fsm:` and signal dispatch fails at runtime with `"No FSM job handles signal '<name>'"`.
+
+6. **FSM shape is XState-style.** States are `{ entry: [...actions], on: { EVENT: { target: 'next' } } }` or `{ type: 'final' }`. Do **not** use `type: action, action: {...}, next: ...` — the validator rejects it with `fsm_structural_error`.
 
    For detailed job authoring guidance, load `@friday/writing-workspace-jobs` before creating or editing any `fsm:` job.
 
    For detailed signal authoring guidance (schema payloads, provider configs, path collisions), load `@friday/writing-workspace-signals` before creating or editing any signal.
 
-4. **`write_file` writes to scratch only** (`{FRIDAY_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
+7. **`write_file` writes to scratch only** (`{FRIDAY_HOME}/scratch/{sessionId}/`). To edit a workspace on disk, use `run_code` with an absolute path.
 
-5. **Always call `list_mcp_tools` before referencing MCP tools in an agent.** Tool names are not predictable — they come from the server implementation, not the server ID. Guessing produces `unknown_tool` validation errors. Call `list_mcp_tools({ serverId })`, then use the returned names verbatim in the agent's `tools` array. The returned names are already prefixed as `serverId/toolName`.
+8. **Always call `list_mcp_tools` before referencing MCP tools in an agent.** Tool names are not predictable — they come from the server implementation, not the server ID. Guessing produces `unknown_tool` validation errors. Call `list_mcp_tools({ serverId })`, then use the returned names verbatim in the agent's `tools` array. The returned names are already prefixed as `serverId/toolName`.
 
-6. **Never report "saved to memory" without verifying.** Setup can look successful end-to-end and still silently fail. Before reporting success:
+9. **Never report "saved to memory" without verifying.** Setup can look successful end-to-end and still silently fail. Before reporting success:
    1. Fire the signal once with a canary payload.
    2. Poll `GET /api/sessions/:id` until terminal (`completed` / `failed`).
    3. Read back with `GET /api/memory/:workspaceId/narrative/:memoryName`.
    4. Surface any mismatch explicitly — don't paper over it.
 
-7. **Always resolve workspace IDs from the API.** Runtime IDs like `layered_ham` are random per daemon. Never hardcode them.
+10. **Always resolve workspace IDs from the API.** Runtime IDs like `layered_ham` are random per daemon. Never hardcode them.
 
-8. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
+11. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
 ---
 
@@ -347,6 +377,7 @@ Python agent creation is an out-of-flow step the user kicks off explicitly. See 
 - `references/updating-workspaces.md` — partial-update API details, disk-edit path, when to use each.
 - `references/messaging-signals.md` — Slack, Telegram, WhatsApp signal configuration.
 - `references/platform-friday-yml.md` — platform-level overrides (transport, auth, rate limits).
+- `references/agent-types.md` — `atlas` / `user` / `llm` worked examples with full agent + FSM wiring.
 - `writing-workspace-jobs` skill — FSM job authoring: trigger wiring, MCP tool naming, state-machine shapes, validation error decoder, runtime anti-patterns. Load before creating or editing any `fsm:` job.
 - `writing-workspace-signals` skill — Signal authoring: JSON Schema payloads, provider configs, HTTP path collisions, cron validation, runtime payload checks. Load before creating or editing any signal that accepts parameters or needs a webhook endpoint.
 - `using-mcp-servers` skill — MCP catalog, install/enable/disable, credentials, delegation.

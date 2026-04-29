@@ -8,7 +8,7 @@
  * @module
  */
 
-import { parseFSMDefinition } from "./mutations/fsm-types.ts";
+import { parseInlineFSM } from "./mutations/fsm-types.ts";
 
 // ==============================================================================
 // TYPES
@@ -21,6 +21,8 @@ interface JobLike {
     [key: string]: unknown;
   };
   fsm?: unknown;
+  /** Job name — required for parsing inline FSMs which don't carry their own `id` */
+  name?: string;
   [key: string]: unknown;
 }
 
@@ -43,7 +45,7 @@ export function deriveJobAgents(job: JobLike): string[] {
   }
 
   if (job.fsm) {
-    const parsed = parseFSMDefinition(job.fsm);
+    const parsed = parseInlineFSM(job.fsm, job.name ?? "unknown-job");
     if (!parsed.success) return [];
 
     const seen = new Set<string>();

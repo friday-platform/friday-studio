@@ -9,12 +9,10 @@ import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
 import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
 import {
-  analyzeResults as analyzeHallucinations,
-  containsSeverePatterns,
-  getSevereIssues,
-  type HallucinationAnalysis,
   type HallucinationDetectorConfig,
   SupervisionLevel,
+  ValidationFailedError,
+  validate as validateOutput,
 } from "@atlas/hallucination";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts, type DatetimeContext, type PlatformModels } from "@atlas/llm";
@@ -237,50 +235,25 @@ export async function validateAgentOutput(
       logger: logger.child({ component: "hallucination-detector" }),
     };
 
-    try {
-      const analysis: HallucinationAnalysis = await analyzeHallucinations(
-        [result],
-        supervisionLevel,
-        hallucinationDetectorConfig,
-      );
+    const verdict = await validateOutput(result, supervisionLevel, hallucinationDetectorConfig);
 
-      logger.info("Agent confidence validation", {
+    logger.info("Agent output validation", {
+      agentId: result.agentId,
+      status: verdict.status,
+      confidence: verdict.confidence,
+      threshold: verdict.threshold,
+      issuesCount: verdict.issues.length,
+      issues: verdict.issues,
+    });
+
+    if (verdict.status === "fail") {
+      logger.error("Agent output failed validation", {
         agentId: result.agentId,
-        confidence: analysis.averageConfidence,
-        issues: analysis.issues,
-        issuesCount: analysis.issues.length,
+        confidence: verdict.confidence,
+        retryGuidance: verdict.retryGuidance,
+        issues: verdict.issues,
       });
-
-      // Check for severe hallucinations
-      const isSevere = analysis.averageConfidence < 0.3 || containsSeverePatterns(analysis.issues);
-
-      if (isSevere) {
-        const severeIssues = getSevereIssues(analysis.issues);
-
-        logger.error("SEVERE HALLUCINATION DETECTED", {
-          agentId: result.agentId,
-          confidence: analysis.averageConfidence,
-          severeIssues,
-          allIssues: analysis.issues,
-        });
-
-        throw new Error(
-          `Agent ${result.agentId} hallucinated: ${
-            severeIssues.length > 0 ? severeIssues.join("; ") : analysis.issues.join("; ")
-          }`,
-        );
-      }
-    } catch (error) {
-      // If the error is from our validation above, re-throw it
-      if (error instanceof Error && error.message.includes("hallucinated")) {
-        throw error;
-      }
-
-      // Otherwise log and continue (validation system failure shouldn't block execution)
-      logger.error("Failed to validate agent result", {
-        agentId: result.agentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      throw new ValidationFailedError(verdict, result.agentId);
     }
   } else if (agentType === "llm") {
     logger.debug("Skipping hallucination detection — no platformModels injected", {

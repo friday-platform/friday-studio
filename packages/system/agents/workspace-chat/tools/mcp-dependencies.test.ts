@@ -1,6 +1,6 @@
 import type { Logger } from "@atlas/logger";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createGetWorkspaceMcpStatusTool } from "./workspace-mcp-status.ts";
+import { createMcpDependenciesTool } from "./mcp-dependencies.ts";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
@@ -38,17 +38,17 @@ const TOOL_CALL_OPTS = {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("createGetWorkspaceMcpStatusTool", () => {
+describe("createMcpDependenciesTool", () => {
   const logger = makeLogger();
 
   beforeEach(() => {
     mockFetch.mockReset();
   });
 
-  it("returns object with get_workspace_mcp_status key", () => {
-    const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    expect(tools).toHaveProperty("get_workspace_mcp_status");
-    expect(tools.get_workspace_mcp_status).toBeDefined();
+  it("returns object with get_mcp_dependencies key", () => {
+    const tools = createMcpDependenciesTool("ws-1", logger);
+    expect(tools).toHaveProperty("get_mcp_dependencies");
+    expect(tools.get_mcp_dependencies).toBeDefined();
   });
 
   it("returns enabled and available partition on success", async () => {
@@ -70,8 +70,8 @@ describe("createGetWorkspaceMcpStatusTool", () => {
         }),
     });
 
-    const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
+    const tools = createMcpDependenciesTool("ws-1", logger);
+    const result = await tools.get_mcp_dependencies!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       enabled: [
@@ -89,8 +89,8 @@ describe("createGetWorkspaceMcpStatusTool", () => {
       json: () => Promise.resolve({ message: "Internal server error" }),
     });
 
-    const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
+    const tools = createMcpDependenciesTool("ws-1", logger);
+    const result = await tools.get_mcp_dependencies!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({ error: "Internal server error" });
   });
@@ -102,8 +102,8 @@ describe("createGetWorkspaceMcpStatusTool", () => {
       json: () => Promise.resolve({ unexpected: "shape" }),
     });
 
-    const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
+    const tools = createMcpDependenciesTool("ws-1", logger);
+    const result = await tools.get_mcp_dependencies!.execute!({}, TOOL_CALL_OPTS);
 
     expect(result).toEqual({
       error: "Unexpected response shape from workspace MCP status endpoint.",
@@ -113,12 +113,12 @@ describe("createGetWorkspaceMcpStatusTool", () => {
   it("returns error when fetch throws", async () => {
     mockFetch.mockRejectedValueOnce(new Error("Network failure"));
 
-    const tools = createGetWorkspaceMcpStatusTool("ws-1", logger);
-    const result = await tools.get_workspace_mcp_status!.execute!({}, TOOL_CALL_OPTS);
+    const tools = createMcpDependenciesTool("ws-1", logger);
+    const result = await tools.get_mcp_dependencies!.execute!({}, TOOL_CALL_OPTS);
 
-    expect(result).toEqual({ error: "Failed to get workspace MCP status: Network failure" });
+    expect(result).toEqual({ error: "Failed to get MCP dependencies: Network failure" });
     expect(logger.warn).toHaveBeenCalledWith(
-      "get_workspace_mcp_status threw",
+      "get_mcp_dependencies threw",
       expect.objectContaining({ workspaceId: "ws-1", error: "Network failure" }),
     );
   });
