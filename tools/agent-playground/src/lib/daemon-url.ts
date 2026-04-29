@@ -1,7 +1,11 @@
 import { z } from "zod";
 
-// Server-only DAEMON_BASE_URL lives in `$lib/server/daemon-base-url.ts`
-// so this module stays browser-safe (no `process` reference).
+/** Base URL of the local Atlas daemon. Used by the SvelteKit dev proxy
+ * (`/api/daemon/*` route). The compiled binary uses static-server.ts
+ * which reads `FRIDAYD_URL` from env for the same purpose; this dev
+ * path always targets the default 8080 since it only runs under
+ * `deno task playground`. */
+export const DAEMON_BASE_URL = "http://localhost:8080";
 
 interface RuntimeConfig {
 	externalDaemonUrl?: string;
