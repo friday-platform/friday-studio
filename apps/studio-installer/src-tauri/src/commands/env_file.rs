@@ -92,17 +92,6 @@ pub fn write_env_file(
     let existing_content = fs::read_to_string(&path).unwrap_or_default();
     let mut lines = parse_env_lines(&existing_content);
 
-    // One-shot migration: drop a previously-seeded hardcoded FRIDAY_KEY
-    // so the daemon's ensureLocalFridayKey() bootstrap regenerates a
-    // fresh ephemeral JWT on next start. Old installs received this
-    // exact value from earlier installer builds; only that exact match
-    // is removed so any user-supplied real token survives untouched.
-    const LEGACY_HARDCODED_FRIDAY_KEY: &str =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsb2NhbC11c2VyIn0.local";
-    lines.retain(|(k, v)| {
-        !matches!(k.as_deref(), Some("FRIDAY_KEY")) || v.trim() != LEGACY_HARDCODED_FRIDAY_KEY
-    });
-
     // Build a map of existing keys for fast lookup
     let existing_keys: HashMap<String, usize> = lines
         .iter()
