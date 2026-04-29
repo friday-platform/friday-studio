@@ -88,7 +88,6 @@
         "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
       }
     },
-    "tools/pty-server": { "project": ["**/*.{ts,js}!"], "ignoreDependencies": ["tsx"] },
     "tools/agent-playground": {
       "entry": [
         "cli.ts!",
@@ -97,6 +96,7 @@
         "src/routes/**/*.svelte!",
         "src/**/*.test.ts"
       ],
+      "ignore": ["src/lib/cheatsheet-commands.ts", "src/lib/components/shared/cheatsheet.svelte"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.ts!", "*.js!"],
       "paths": {
         "$lib": ["./src/lib"],

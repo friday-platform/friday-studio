@@ -12,7 +12,7 @@
   import { DropdownMenu } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import RunJobDialog from "$lib/components/workspace/run-job-dialog.svelte";
-  import { EXTERNAL_DAEMON_URL } from "$lib/daemon-url";
+  import { externalDaemonUrl } from "$lib/daemon-url";
   import { JsonSchemaObjectShape, JsonSchemaPropertyShape } from "$lib/schema-utils";
 
   type Job = {
@@ -69,7 +69,7 @@
           "curl -X POST",
           `-H 'Content-Type: application/json'`,
           `-d '${escaped}'`,
-          `${EXTERNAL_DAEMON_URL}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
+          `${externalDaemonUrl()}/api/workspaces/${workspaceId}/signals/${trigger.signal}`,
         ].join(" \\\n  ");
         navigator.clipboard.writeText(curl);
       }

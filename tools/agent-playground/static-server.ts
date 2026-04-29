@@ -12,11 +12,19 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { serveStatic } from "hono/deno";
+import { parse as parseHtml } from "node-html-parser";
 import { api } from "./src/lib/server/router.ts";
 
 const PORT = Number(process.env.PLAYGROUND_PORT ?? "5200");
 const HOST = process.env.PLAYGROUND_HOST ?? "127.0.0.1";
 const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
+
+// Browser-facing URLs. The launcher owns the port layout, so we can't
+// bake these into the bundle — read them at runtime and inject into the
+// served HTML. Daemon URL falls back to FRIDAYD_URL since the daemon
+// proxy and the browser-facing daemon are the same endpoint in Studio.
+const EXTERNAL_DAEMON_URL = process.env.EXTERNAL_DAEMON_URL ?? DAEMON_URL;
+const EXTERNAL_TUNNEL_URL = process.env.EXTERNAL_TUNNEL_URL ?? null;
 
 // Resolve `./build` relative to this source file, so the path is correct
 // both when running via `deno run` from any cwd and when running as a
@@ -24,6 +32,27 @@ const DAEMON_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILD_ROOT = join(HERE, "build");
 const INDEX_HTML = join(BUILD_ROOT, "index.html");
+
+const RUNTIME_CONFIG: Record<string, string> = {
+  externalDaemonUrl: EXTERNAL_DAEMON_URL,
+};
+if (EXTERNAL_TUNNEL_URL) RUNTIME_CONFIG.externalTunnelUrl = EXTERNAL_TUNNEL_URL;
+const CONFIG_JSON = JSON.stringify(RUNTIME_CONFIG).replace(/</g, "\\u003c");
+const CONFIG_SCRIPT_HTML = `<script>window.__FRIDAY_CONFIG__=${CONFIG_JSON};</script>`;
+
+let CACHED_HTML: string | null = null;
+async function indexHtml(): Promise<string> {
+  if (CACHED_HTML !== null) return CACHED_HTML;
+  const raw = await Deno.readTextFile(INDEX_HTML);
+  const root = parseHtml(raw);
+  const head = root.querySelector("head");
+  if (!head) {
+    throw new Error(`build/index.html is missing a <head> element — refusing to serve`);
+  }
+  head.appendChild(parseHtml(CONFIG_SCRIPT_HTML));
+  CACHED_HTML = root.toString();
+  return CACHED_HTML;
+}
 
 // Daemon proxy for /api/daemon/*. The SvelteKit dev server has this as
 // src/routes/api/daemon/[...path]/+server.ts, but adapter-static strips
@@ -76,9 +105,13 @@ const daemonProxy = new Hono().all("/api/daemon/*", async (c) => {
   return new Response(res.body, { status: res.status, headers: responseHeaders });
 });
 
+// Serve the index with the runtime-config script tag injected. This
+// covers both `/` and the SPA fallback below; a static-file serve of
+// build/index.html would skip the injection.
 const app = new Hono()
   .route("/", daemonProxy)
   .route("/", api)
+  .get("/", async (c) => c.html(await indexHtml()))
   .use(
     "/*",
     serveStatic({
@@ -87,12 +120,24 @@ const app = new Hono()
     }),
   )
   // SPA fallback: any GET that doesn't resolve to a file or `/api/*` route
-  // gets the SvelteKit shell so client-side routing can take over.
-  .get("/*", async (c) => {
-    const html = await Deno.readTextFile(INDEX_HTML);
-    return c.html(html);
-  });
+  // gets the SvelteKit shell (with config injected) so client-side
+  // routing can take over.
+  .get("/*", async (c) => c.html(await indexHtml()));
 
+// Log only origins (protocol+host+port) — these are config URLs the user
+// expects in plain text, but never log paths or query strings, since a
+// bad/exotic env value could carry credentials or markup we don't want
+// surfaced in shipped logs (the URLs are also injected into served HTML
+// via window.__FRIDAY_CONFIG__, where escaping is handled separately).
+function origin(u: string): string {
+  try {
+    return new URL(u).origin;
+  } catch {
+    return "<invalid url>";
+  }
+}
 console.log(`[playground] listening on http://${HOST}:${PORT}`);
-console.log(`[playground] daemon proxy → ${DAEMON_URL}`);
+console.log(`[playground] daemon proxy → ${origin(DAEMON_URL)}`);
+console.log(`[playground] external daemon → ${origin(EXTERNAL_DAEMON_URL)}`);
+if (EXTERNAL_TUNNEL_URL) console.log(`[playground] external tunnel → ${origin(EXTERNAL_TUNNEL_URL)}`);
 Deno.serve({ port: PORT, hostname: HOST }, app.fetch);

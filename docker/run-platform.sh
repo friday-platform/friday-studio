@@ -100,16 +100,11 @@ deno run -A --no-lock npm:vite dev --host 0.0.0.0 --port 5200 --logLevel warn &
 PLAYGROUND_PID=$!
 cd /app
 
-echo "[platform] Starting pty-server on :7681..."
-pty-server &
-PTY_PID=$!
-
 echo "[platform] Starting webhook-tunnel on :9090..."
 FRIDAYD_URL=http://localhost:8080 webhook-tunnel &
 TUNNEL_PID=$!
 
 wait_for_service "agent-playground" "http://localhost:5200"
-wait_for_service "pty-server" "http://localhost:7681/health"
 wait_for_service "webhook-tunnel" "http://localhost:9090/health"
 
 echo ""
@@ -118,7 +113,6 @@ echo "  Friday Platform is ready!"
 echo ""
 echo "  Friday Studio:       http://localhost:${FRIDAY_STUDIO_PORT:-15200}"
 echo "  Daemon API:          http://localhost:${FRIDAY_DAEMON_PORT:-18080}"
-echo "  PTY Server:          http://localhost:${FRIDAY_PTY_PORT:-17681}"
 echo "  Webhook Tunnel:      http://localhost:${FRIDAY_TUNNEL_PORT:-19090}"
 echo "  Link Service:        http://localhost:${FRIDAY_LINK_PORT:-13100}"
 echo "================================================================"
@@ -126,7 +120,7 @@ echo ""
 
 # ── Keep alive ───────────────────────────────────────────────────────────────
 # Wait for any service to exit — if one dies, stop everything
-wait -n $ATLASD_PID $LINK_PID $PLAYGROUND_PID $PTY_PID $TUNNEL_PID 2>/dev/null || true
+wait -n $ATLASD_PID $LINK_PID $PLAYGROUND_PID $TUNNEL_PID 2>/dev/null || true
 
 echo "[platform] A service exited unexpectedly. Shutting down..."
 shutdown

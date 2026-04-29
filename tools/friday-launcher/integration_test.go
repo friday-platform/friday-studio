@@ -3,8 +3,8 @@
 // Integration tests for friday-launcher. Real subprocesses, no mocks
 // (matching the testing skill's preference for end-to-end coverage).
 //
-// These tests build a fresh launcher binary, spawn six stub services
-// on fixed ports (18080, 13100, 17681, 19090, 15200, 18222), and hit
+// These tests build a fresh launcher binary, spawn five stub services
+// on fixed ports (18080, 13100, 19090, 15200, 18222), and hit
 // localhost — so they assume nothing else on the host is using those
 // ports. To keep `go test ./...` clean, the file is gated behind the
 // `integration` build tag. Run with:
@@ -108,14 +108,13 @@ func buildLauncherAndStubs(t *testing.T) (launcherPath, binDir string) {
 		"nats-server":    {"18222", "/healthz"},
 		"friday":         {"18080", "/health"},
 		"link":           {"13100", "/health"},
-		"pty-server":     {"17681", "/health"},
 		"webhook-tunnel": {"19090", "/health"},
 		// Decision #32: playground probes `/` (the public SvelteKit
 		// root), not a sidecar. The stub program reads HEALTH_PATH
 		// and serves the same handler at any path, so the test
 		// observes the real probe rule: launcher hits the path
 		// project.go declares.
-		"playground":     {"15200", "/"},
+		"playground": {"15200", "/"},
 	}
 	for name, w := range wrappers {
 		writeWrapper(t, binDir, name, stubBin, w.port, w.healthPath, "")
@@ -140,7 +139,6 @@ func portEnv() []string {
 		"FRIDAY_PORT_nats_server=18222",
 		"FRIDAY_PORT_friday=18080",
 		"FRIDAY_PORT_link=13100",
-		"FRIDAY_PORT_pty_server=17681",
 		"FRIDAY_PORT_webhook_tunnel=19090",
 		"FRIDAY_PORT_playground=15200",
 	}
@@ -206,7 +204,7 @@ func startLauncher(t *testing.T, launcherPath, binDir string) (*exec.Cmd, string
 // wrapper used by TestUninstall_AlwaysSweepsEvenWhenLauncherStopsCleanly;
 // added here so a prior interrupted run doesn't leave a 29999 stub
 // alive that interferes with the next run's launcher startup.
-var testStubPorts = []int{18222, 18080, 13100, 17681, 19090, 15200, 29999}
+var testStubPorts = []int{18222, 18080, 13100, 19090, 15200, 29999}
 
 // killStaleStubs frees the test ports before a test starts. Each test
 // runs in its own t.TempDir() bin path; the per-test cleanup only
@@ -247,7 +245,6 @@ func waitHealthy(t *testing.T) {
 		"http://127.0.0.1:18222/healthz",
 		"http://127.0.0.1:18080/health",
 		"http://127.0.0.1:13100/health",
-		"http://127.0.0.1:17681/health",
 		"http://127.0.0.1:19090/health",
 		"http://127.0.0.1:15200/", // Decision #32 — see wrapper map.
 	}
@@ -330,7 +327,7 @@ func TestSIGTERMCleanShutdown(t *testing.T) {
 		t.Errorf("pid file still present after shutdown: err=%v", err)
 	}
 	// All ports should be free.
-	for _, port := range []int{18080, 13100, 17681, 19090, 15200} {
+	for _, port := range []int{18080, 13100, 19090, 15200} {
 		conn, err := exec.Command("lsof", "-i",
 			"tcp:"+strconv.Itoa(port), "-sTCP:LISTEN", "-t").Output()
 		if err == nil && len(conn) > 0 {
@@ -521,10 +518,10 @@ func TestRestartAllOrder(t *testing.T) {
 		t.Skip("integration test")
 	}
 	expectedStopOrder := []string{
-		"playground", "pty-server", "webhook-tunnel", "friday", "link", "nats-server",
+		"playground", "webhook-tunnel", "friday", "link", "nats-server",
 	}
 	expectedStartOrder := []string{
-		"nats-server", "friday", "link", "pty-server", "webhook-tunnel", "playground",
+		"nats-server", "friday", "link", "webhook-tunnel", "playground",
 	}
 	if !slicesEqual(stopOrder, expectedStopOrder) {
 		t.Errorf("stopOrder mismatch:\n want %q\n  got %q",

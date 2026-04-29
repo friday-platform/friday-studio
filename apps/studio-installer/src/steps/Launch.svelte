@@ -1,4 +1,5 @@
 <script lang="ts">
+import { invoke } from "@tauri-apps/api/core";
 import { onMount } from "svelte";
 import {
   extendWaitDeadline,
@@ -22,7 +23,6 @@ onMount(async () => {
   // if no provider key is on disk. Catching it here lets us drive
   // the user back to API Keys with a specific message instead of
   // letting them wait through the timeout watching it bounce.
-  const { invoke } = await import("@tauri-apps/api/core");
   const hasKey = await invoke<boolean>("env_file_has_provider_key").catch(() => false);
   if (!hasKey) {
     needsApiKey = true;
@@ -115,7 +115,6 @@ let sortedServices = $derived(
 
 async function onExitInstaller(): Promise<void> {
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("exit_installer");
   } catch {
     // ignore — wizard already closing or backend unreachable
@@ -138,10 +137,6 @@ function statusClass(status: string): string {
   return "pip pip-spinner";
 }
 
-// Pretty service name. The launcher reports "nats-server", "friday",
-// "link", "pty-server", "webhook-tunnel", "playground" — we display
-// each with a friendlier label so the user doesn't have to map raw
-// process names to product surfaces.
 function prettyName(name: string): string {
   switch (name) {
     case "nats-server":
@@ -150,8 +145,6 @@ function prettyName(name: string): string {
       return "Friday daemon";
     case "link":
       return "Authentication";
-    case "pty-server":
-      return "Terminal";
     case "webhook-tunnel":
       return "Webhook tunnel";
     case "playground":

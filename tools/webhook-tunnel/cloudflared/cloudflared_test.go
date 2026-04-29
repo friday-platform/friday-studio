@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,45 +12,37 @@ import (
 	"testing"
 )
 
-// fakeRelease serves a body + matching .sha256 sidecar from an
-// in-process test server. mismatchHash forces the sidecar to advertise
-// a wrong hash so we can test rejection.
-func fakeRelease(t *testing.T, body []byte, mismatchHash bool) (binURL, sidecarURL string) {
+// fakeBinaryServer serves arbitrary bytes at /binary. Used by the
+// download tests to exercise the streaming hash path without hitting
+// the network.
+func fakeBinaryServer(t *testing.T, body []byte) string {
 	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/binary", func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(body)
-	})
-	mux.HandleFunc("/binary.sha256", func(w http.ResponseWriter, _ *http.Request) {
-		hash := sha256.Sum256(body)
-		hex := hex.EncodeToString(hash[:])
-		if mismatchHash {
-			hex = strings.Repeat("0", 64)
-		}
-		_, _ = fmt.Fprintf(w, "%s  binary\n", hex)
-	})
-	srv := httptest.NewServer(mux)
+	}))
 	t.Cleanup(srv.Close)
-	return srv.URL + "/binary", srv.URL + "/binary.sha256"
+	return srv.URL + "/binary"
 }
 
-func TestFetchSha256Sidecar(t *testing.T) {
-	body := []byte("hello cloudflared")
-	_, sidecarURL := fakeRelease(t, body, false)
-	got, err := fetchSha256Sidecar(context.Background(), sidecarURL)
-	if err != nil {
-		t.Fatalf("fetch: %v", err)
+// TestAssetNameRoundTrips verifies assetName extracts the filename
+// portion from a release-asset URL, which is what we use as the lookup
+// key into the GitHub API's `assets` array.
+func TestAssetNameRoundTrips(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-darwin-arm64.tgz":  "cloudflared-darwin-arm64.tgz",
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-linux-amd64":       "cloudflared-linux-amd64",
+		"https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-windows-amd64.exe": "cloudflared-windows-amd64.exe",
 	}
-	hash := sha256.Sum256(body)
-	want := hex.EncodeToString(hash[:])
-	if got != want {
-		t.Errorf("hash: want %s, got %s", want, got)
+	for url, want := range cases {
+		if got := assetName(url); got != want {
+			t.Errorf("assetName(%q) = %q, want %q", url, got, want)
+		}
 	}
 }
 
-func TestDownloadAtomicHappyPath(t *testing.T) {
+func TestDownloadToTmpHappyPath(t *testing.T) {
 	body := []byte("fake cloudflared binary contents")
-	binURL, _ := fakeRelease(t, body, false)
+	binURL := fakeBinaryServer(t, body)
 	tmp := filepath.Join(t.TempDir(), "out.bin")
 	gotHash, err := downloadToTmp(context.Background(), binURL, tmp)
 	if err != nil {
@@ -67,26 +58,6 @@ func TestDownloadAtomicHappyPath(t *testing.T) {
 	}
 	if string(got) != string(body) {
 		t.Errorf("body mismatch")
-	}
-}
-
-func TestSidecarMismatchRejected(t *testing.T) {
-	body := []byte("xyz")
-	binURL, sidecarURL := fakeRelease(t, body, true) // sidecar lies
-	wantHex, err := fetchSha256Sidecar(context.Background(), sidecarURL)
-	if err != nil {
-		t.Fatalf("sidecar fetch: %v", err)
-	}
-	if !strings.HasPrefix(wantHex, "0000") {
-		t.Fatalf("expected mismatched hash, got %s", wantHex)
-	}
-	tmp := filepath.Join(t.TempDir(), "out.bin")
-	gotHex, err := downloadToTmp(context.Background(), binURL, tmp)
-	if err != nil {
-		t.Fatalf("download: %v", err)
-	}
-	if gotHex == wantHex {
-		t.Errorf("expected hash mismatch — sidecar should have lied")
 	}
 }
 

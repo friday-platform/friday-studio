@@ -1,16 +1,15 @@
-# Friday Platform image: atlasd + link + agent-playground + webhook-tunnel + pty-server
+# Friday Platform image: atlasd + link + agent-playground + webhook-tunnel
 #
 # Build:
 #   docker build -t friday-platform .
 #
 # Run:
-#   docker run --env-file .env -p 18080:8080 -p 13100:3100 -p 15200:5200 -p 17681:7681 -p 19090:9090 friday-platform
+#   docker run --env-file .env -p 18080:8080 -p 13100:3100 -p 15200:5200 -p 19090:9090 friday-platform
 #
 # Ports:
 #   18080  atlasd (daemon API) - mapped to container port 8080
 #   13100  link (credential/auth service) - mapped to container port 3100
 #   15200  agent-playground (web UI) - mapped to container port 5200
-#   17681  pty-server (WebSocket PTY for CLI cheatsheet terminal) - mapped to container port 7681
 #   19090  webhook-tunnel - mapped to container port 9090
 
 # ============================================================================
@@ -80,7 +79,7 @@ RUN RUST_MIN_STACK=16777216 deno compile -q --no-check --allow-all \
     apps/link/src/index.ts
 
 # ============================================================================
-# Stage 2: Go builder — compile webhook-tunnel and pty-server binaries
+# Stage 2: Go builder — compile webhook-tunnel binary
 # ============================================================================
 FROM golang:1.26-bookworm AS go-builder
 
@@ -94,9 +93,8 @@ COPY pkg ./pkg
 COPY tools ./tools
 COPY apps ./apps
 
-# Static, fully-portable binaries (CGO disabled).
-RUN CGO_ENABLED=0 go build -o /out/webhook-tunnel ./tools/webhook-tunnel && \
-    CGO_ENABLED=0 go build -o /out/pty-server     ./tools/pty-server
+# Static, fully-portable binary (CGO disabled).
+RUN CGO_ENABLED=0 go build -o /out/webhook-tunnel ./tools/webhook-tunnel
 
 # ============================================================================
 # Stage 3: Runtime — all services in one container
@@ -162,7 +160,6 @@ RUN mkdir -p /data/atlas /data/link /tmp/.npm /app/config && \
 COPY --from=deno-builder /app/bin/atlas         /usr/local/bin/atlas
 COPY --from=deno-builder /app/bin/link          /usr/local/bin/link
 COPY --from=go-builder   /out/webhook-tunnel    /usr/local/bin/webhook-tunnel
-COPY --from=go-builder   /out/pty-server        /usr/local/bin/pty-server
 
 WORKDIR /app
 
@@ -201,7 +198,7 @@ COPY --chown=atlas:atlas --from=deno-builder /app/.agents /app/.agents
 COPY --chown=atlas:atlas --from=deno-builder /app/node_modules /app/node_modules
 
 # Deno cache — only what the playground needs at runtime.
-# The compiled binaries (atlas, link, webhook-tunnel, pty-server) are self-contained.
+# The compiled binaries (atlas, link, webhook-tunnel) are self-contained.
 COPY --chown=atlas:atlas --from=deno-builder /deno-dir /deno-dir
 # Fix /deno-dir top-level dir ownership (base image creates it as deno:deno,
 # COPY --chown only sets ownership on copied contents, not the existing dir)
@@ -240,12 +237,11 @@ ENV DENO_NO_UPDATE_CHECK=1 \
     DEV_MODE=true \
     SHELL=/bin/bash
 
-EXPOSE 8080 3100 5200 7681 9090
+EXPOSE 8080 3100 5200 9090
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -sf http://localhost:8080/health > /dev/null && \
         curl -sf http://localhost:3100/health > /dev/null && \
-        curl -sf http://localhost:7681/health > /dev/null && \
         curl -sf http://localhost:9090/health > /dev/null || exit 1
 
 ENTRYPOINT ["/app/run-platform.sh"]

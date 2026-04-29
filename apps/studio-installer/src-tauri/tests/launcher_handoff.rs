@@ -151,7 +151,6 @@ fn override_home(test_home: &PathBuf) {
     env::set_var("FRIDAY_PORT_nats_server", "28222");
     env::set_var("FRIDAY_PORT_friday", "28080");
     env::set_var("FRIDAY_PORT_link", "23100");
-    env::set_var("FRIDAY_PORT_pty_server", "27681");
     env::set_var("FRIDAY_PORT_webhook_tunnel", "29090");
     env::set_var("FRIDAY_PORT_playground", "25200");
 }
@@ -214,7 +213,6 @@ fn installer_launcher_handoff_and_clean_shutdown() {
     write_wrapper(&install_dir, &stub, "nats-server", "28222", "/healthz");
     write_wrapper(&install_dir, &stub, "friday", "28080", "/health");
     write_wrapper(&install_dir, &stub, "link", "23100", "/health");
-    write_wrapper(&install_dir, &stub, "pty-server", "27681", "/health");
     write_wrapper(&install_dir, &stub, "webhook-tunnel", "29090", "/health");
     write_wrapper(&install_dir, &stub, "playground", "25200", "/");
 
@@ -243,7 +241,6 @@ fn installer_launcher_handoff_and_clean_shutdown() {
             "http://127.0.0.1:28222/healthz",
             "http://127.0.0.1:28080/health",
             "http://127.0.0.1:23100/health",
-            "http://127.0.0.1:27681/health",
             "http://127.0.0.1:29090/health",
             "http://127.0.0.1:25200/",
         ];

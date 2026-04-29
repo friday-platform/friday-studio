@@ -68,7 +68,6 @@ export const ListCapabilitiesResultSchema = z.union([
 
 export type ListCapabilitiesSuccess = z.infer<typeof ListCapabilitiesSuccessSchema>;
 export type ListCapabilitiesError = z.infer<typeof ListCapabilitiesErrorSchema>;
-export type ListCapabilitiesResult = z.infer<typeof ListCapabilitiesResultSchema>;
 
 const KIND_ORDER: Record<Capability["kind"], number> = {
   bundled: 0,
