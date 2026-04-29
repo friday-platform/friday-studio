@@ -166,12 +166,11 @@ export async function createMCPTools(
       const reason = actualError instanceof Error ? actualError.message : String(actualError);
       // Omit the generic install hint when the reason already contains specific
       // process output (e.g. ENOENT from a bad root path) — it's misleading there.
-      const hint = reason.includes("\n") || reason.includes("ENOENT") || reason.includes("Error:")
-        ? ""
-        : " Check that the command is installed and available in the container.";
-      throw new Error(
-        `MCP server "${serverId}" failed to start (${command}): ${reason}.${hint}`,
-      );
+      const hint =
+        reason.includes("\n") || reason.includes("ENOENT") || reason.includes("Error:")
+          ? ""
+          : " Check that the command is installed and available in the container.";
+      throw new Error(`MCP server "${serverId}" failed to start (${command}): ${reason}.${hint}`);
     }
   }
 

@@ -402,7 +402,11 @@ describe("expandArtifactRefsInDocuments", () => {
             summary: "Already expanded",
             artifactRef: { id: "art-123", type: "file", summary: "Test" },
             artifactContent: {
-              "art-123": { type: "file", version: 1, data: { path: FIXTURE_PATH, mimeType: "text/plain" } },
+              "art-123": {
+                type: "file",
+                version: 1,
+                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+              },
             },
           },
         },
@@ -412,7 +416,11 @@ describe("expandArtifactRefsInDocuments", () => {
           data: {
             summary: "Also expanded",
             artifactContent: {
-              "art-456": { type: "file", version: 1, data: { path: FIXTURE_PATH, mimeType: "text/plain" } },
+              "art-456": {
+                type: "file",
+                version: 1,
+                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+              },
             },
           },
         },

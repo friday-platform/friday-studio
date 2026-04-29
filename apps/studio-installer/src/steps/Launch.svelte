@@ -87,9 +87,7 @@ async function onOpenLogs(): Promise<void> {
 // is stuck or another service is in failed state the browser would
 // hit a daemon that isn't going to recover, so we'd be sending the
 // user into a broken UI. Bail-out belongs to Exit instead.
-let hasFailedService = $derived.by(() =>
-  store.services.some((s) => s.status === "failed"),
-);
+let hasFailedService = $derived.by(() => store.services.some((s) => s.status === "failed"));
 let canOpenAnyway = $derived.by(() => {
   if (store.launchStage !== "timeout") return false;
   if (hasFailedService) return false;

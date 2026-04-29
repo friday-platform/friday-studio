@@ -733,7 +733,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...connectServiceTool,
           ...jobTools,
           ...artifactTools,
-          ...createArtifactsCreateTool({ sessionId: adHocSessionId, workspaceId, streamId: session.streamId }),
+          ...createArtifactsCreateTool({
+            sessionId: adHocSessionId,
+            workspaceId,
+            streamId: session.streamId,
+          }),
           ...resourceTools,
           ...createMemorySaveTool(workspaceId, logger),
           ...webFetchTool,

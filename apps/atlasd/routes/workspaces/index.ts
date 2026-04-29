@@ -142,11 +142,7 @@ async function validateImportedWorkspace(
   }
   const report = await validateWorkspaceConfig(validationResult.data, ctx);
   if (report.status === "hard_fail") {
-    return {
-      ok: false,
-      status: 422,
-      body: { success: false, error: "validation_failed", report },
-    };
+    return { ok: false, status: 422, body: { success: false, error: "validation_failed", report } };
   }
   return { ok: true };
 }

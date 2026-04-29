@@ -239,10 +239,7 @@ describe("discoverMCPServers", () => {
             env: { WORKSPACE_MCP_PORT: "8001" },
           },
         },
-        platformEnv: {
-          GOOGLE_OAUTH_CLIENT_ID: "test-client-id",
-          MCP_ENABLE_OAUTH21: "true",
-        },
+        platformEnv: { GOOGLE_OAUTH_CLIENT_ID: "test-client-id", MCP_ENABLE_OAUTH21: "true" },
       } as Partial<MCPServerMetadata>);
 
       const result = await discoverMCPServers("ws-1", makeWorkspaceConfig({}));
@@ -267,9 +264,7 @@ describe("discoverMCPServers", () => {
             env: { WORKSPACE_MCP_PORT: "8001" },
           },
         },
-        platformEnv: {
-          GOOGLE_OAUTH_CLIENT_ID: "base-client-id",
-        },
+        platformEnv: { GOOGLE_OAUTH_CLIENT_ID: "base-client-id" },
       } as Partial<MCPServerMetadata>);
 
       const wsConfig = makeWorkspaceConfig({
