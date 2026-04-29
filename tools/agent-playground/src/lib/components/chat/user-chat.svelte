@@ -1076,7 +1076,6 @@
   function handleCredentialConnected(provider: string): void {
     if (!chat) return;
     const parts: QueuedMessageParts = [
-      { type: "text", text: `Connected ${provider}.` },
       { type: "data-credential-linked", data: { provider, displayName: provider } },
     ];
     if (streaming) {
