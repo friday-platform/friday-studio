@@ -59,7 +59,6 @@ const DiscoverDetailResponseSchema = z.object({
   }),
 });
 
-export type DiscoverItem = z.infer<typeof DiscoverItemSchema>;
 export type DiscoverDetail = z.infer<typeof DiscoverDetailResponseSchema>;
 
 export const discoverQueries = {
