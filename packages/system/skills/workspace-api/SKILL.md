@@ -16,7 +16,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 
 | Type | When | Example |
 |---|---|---|
-| `atlas` | A bundled platform agent fits the task | `type: atlas, agent: "web"` |
+| `atlas` | A bundled platform agent fits the task **and its `constraints` allow it** | `type: atlas, agent: "web"` |
 | `user` | Mechanical / deterministic work, custom Python or TS SDK agent | `type: user, agent: "csv-parser"` |
 | `llm` | Open-ended reasoning with no bundled fit | `type: llm, config: { prompt, tools }` |
 
@@ -85,6 +85,8 @@ Follow this order exactly. Skipping steps produces the failure modes documented 
 Call `list_capabilities` once at the start of any new workspace work. The response returns bundled agents first (alphabetical), then enabled MCP servers, then available MCP servers from the catalog. Scan top-down and pick the first match for each piece of work the workspace needs — bundled comes first because it is zero-config and platform-managed.
 
 The result is stable for the session — re-call only after `enable_mcp_server` (which adds to the enabled set). Bundled agents and the catalog do not change during a session. **Do not duplicate this list into the skill or your own notes; `list_capabilities` is the source of truth.**
+
+Scan top-down and pick the first match **whose `constraints` don't rule out the user's intent**. Bundled comes first because it is zero-config, but a bundled agent that cannot do what the user asked is worse than a correctly wired MCP tool.
 
 ### 2. Wire capabilities
 
@@ -326,7 +328,9 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 
 1. **Don't reach for an MCP server when a bundled agent exists for the same domain *and* the work is open-ended.** Common over-MCP traps: `playwright-mcp` instead of `type: atlas, agent: "web"`; `smtp-mcp` instead of `type: atlas, agent: "email"`; `slack-mcp` instead of `type: atlas, agent: "slack"`. The flip side: when the work is a deterministic single call, MCP-as-tool is the right pick — don't over-bundle. Run `list_capabilities` first; if a bundled agent matches and the work is open-ended, use it.
 
-2. **For `type: atlas`, the `prompt` field is task-specific context layered on the agent's bundled behavior.** Describe the user's intent, not the mechanics. The bundled agent already knows how to drive a browser / send email / call the GitHub API — don't re-teach it.
+2. **Atlas agents are self-contained black boxes — they do not invoke MCP tools.** Bundled agents ship with hard-wired transport (SendGrid for `email`, Playwright for `web`, etc.). If the user's intent requires calling a specific MCP tool — e.g., `google-gmail/send_gmail_message`, `github-mcp/create_issue` — `type: atlas` is the wrong choice. To call an MCP tool, use `type: llm` with the tool in `config.tools`. **Read the bundled agent's `constraints` in `list_capabilities`.** That's where the agent explicitly flags what it *cannot* do (e.g., `email` → "For reading Gmail, use the google-gmail MCP server"). If `constraints` rule out the intent, skip the bundled agent and fall through to MCP-enabled / MCP-available.
+
+3. **For `type: atlas`, the `prompt` field is task-specific context layered on the agent's bundled behavior.** Describe the user's intent, not the mechanics. The bundled agent already knows how to drive a browser / send email / call the GitHub API — don't re-teach it.
 
    ```yaml
    agents:

@@ -64,6 +64,9 @@ jobs:
 
 **Key rules.**
 
+- `type: atlas` agents are black-box implementations with their own
+  built-in behavior. They do **not** call MCP tools. If the task requires
+  a specific MCP server tool, use `type: llm`.
 - The `prompt` field is task-specific intent layered on the agent's
   bundled behavior. The `web` agent already knows how to drive a
   browser, run a search, and fetch URLs — don't re-teach it those

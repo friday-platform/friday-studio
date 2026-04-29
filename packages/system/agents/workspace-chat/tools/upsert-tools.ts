@@ -206,6 +206,8 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         'Use when the work is open-ended ("figure out what to do") and no bundled agent fits.\n' +
         '- `type: "atlas"` — bundled platform agent (web, email, slack, gh, etc.). Shape: ' +
         "`{ type, agent, description, prompt, config?, env? }`. " +
+        "Does not accept a `tools` array — the bundled agent is a self-contained black box. " +
+        "If you need to call MCP tools, use `type: \"llm\"`. " +
         "Discover available `agent` ids by calling `list_capabilities` first. " +
         "The `prompt` is task-specific context layered on the agent's bundled behavior — " +
         "describe the user's intent, not the mechanics. " +

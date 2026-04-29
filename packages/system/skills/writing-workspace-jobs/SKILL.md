@@ -292,6 +292,22 @@ Symptom: `"No FSM job handles signal '<name>'"`
 
 Fix: Rewrite as `fsm:` with `initial` and `states`.
 
+### Atlas agent silently ignoring MCP tools
+
+`type: atlas` agents are self-contained — they do not use the agent's `tools`
+array. Adding `tools: ["google-gmail/send_gmail_message"]` to an `atlas` agent
+is silently ignored at runtime. The bundled agent runs its own hard-coded
+behavior instead.
+
+Symptom: Agent completes without error, but the MCP tool was never called. The
+output shows the bundled agent's default behavior (e.g., SendGrid email instead
+of Gmail, generic web search instead of GitHub API).
+
+Fix: Change to `type: llm`, set `config.provider` and `config.model`, move the
+prompt into `config.prompt`, and keep the `tools` array. Or, if the bundled
+agent already covers the domain, drop the `tools` array entirely and let the
+bundled agent do its job.
+
 ### Initial state with no signal handler
 
 The `initial` state must handle the trigger signal name in its `on` map.
