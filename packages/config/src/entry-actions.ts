@@ -11,7 +11,7 @@
 
 import { JobSpecificationSchema } from "./jobs.ts";
 import type { FSMAction, FSMStateDefinition } from "./mutations/fsm-types.ts";
-import { parseFSMDefinition } from "./mutations/fsm-types.ts";
+import { parseInlineFSM } from "./mutations/fsm-types.ts";
 import type { WorkspaceConfig } from "./workspace.ts";
 
 // ==============================================================================
@@ -67,7 +67,7 @@ export function deriveAllEntryActions(config: WorkspaceConfig): Map<string, Entr
     const job = JobSpecificationSchema.safeParse(rawJob);
     if (!job.success || !job.data.fsm) continue;
 
-    const parsed = parseFSMDefinition(job.data.fsm);
+    const parsed = parseInlineFSM(job.data.fsm, jobId);
     if (!parsed.success) continue;
 
     for (const [stateId, state] of Object.entries(parsed.data.states)) {

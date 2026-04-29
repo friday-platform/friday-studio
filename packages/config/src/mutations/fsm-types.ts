@@ -41,3 +41,21 @@ export type FSMOtherAction = Exclude<FSMAction, FSMAgentAction | FSMLLMAction>;
 export function parseFSMDefinition(fsm: unknown) {
   return FSMDefinitionSchema.safeParse(fsm);
 }
+
+/**
+ * Parse an inline FSM embedded in a workspace job config.
+ *
+ * Inline FSMs in workspace.yml don't include `id` — the job name is the identity.
+ * The runtime injects `id` before instantiating the engine; this helper does the
+ * same for config-layer code that reads FSMs (validation, extraction, topology,
+ * data-contracts, etc.).
+ *
+ * @param fsm - Raw FSM object from workspace config
+ * @param jobId - Job identifier to use as the FSM id when missing
+ * @returns Safe parse result with injected id if needed
+ */
+export function parseInlineFSM(fsm: unknown, jobId: string) {
+  const fsmWithId =
+    typeof fsm === "object" && fsm !== null ? { id: jobId, ...fsm } : fsm;
+  return FSMDefinitionSchema.safeParse(fsmWithId);
+}

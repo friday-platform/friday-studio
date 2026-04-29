@@ -9,7 +9,7 @@ import { type Draft, produce } from "immer";
 import { z } from "zod";
 import { type JobSpecification, JobSpecificationSchema } from "../jobs.ts";
 import type { WorkspaceConfig } from "../workspace.ts";
-import { type FSMAction, parseFSMDefinition } from "./fsm-types.ts";
+import { type FSMAction, parseInlineFSM } from "./fsm-types.ts";
 import { type MutationResult, notFoundError, typeChangeError, validationError } from "./types.ts";
 
 // ==============================================================================
@@ -142,8 +142,8 @@ function resolveFSMAgent(config: WorkspaceConfig, pathId: string): ResolvedFSMAg
   const job = getJob(config, jobId);
   if (!job?.fsm) return null;
 
-  // Parse FSM with Zod schema - return null for invalid FSMs
-  const parsed = parseFSMDefinition(job.fsm);
+  // Parse FSM with Zod schema - return null for invalid FSMs.
+  const parsed = parseInlineFSM(job.fsm, jobId);
   if (!parsed.success) return null;
   const fsm = parsed.data;
 
@@ -258,8 +258,8 @@ export function extractFSMAgents(config: WorkspaceConfig): Record<string, FSMAge
     if (!job.success) continue;
     if (!job.data.fsm) continue;
 
-    // Parse FSM with Zod schema - skip invalid FSMs
-    const parsed = parseFSMDefinition(job.data.fsm);
+    // Parse FSM with Zod schema - skip invalid FSMs.
+    const parsed = parseInlineFSM(job.data.fsm, jobId);
     if (!parsed.success) continue;
     const fsm = parsed.data;
     if (!fsm.states) continue;

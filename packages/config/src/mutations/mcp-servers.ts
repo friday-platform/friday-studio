@@ -9,7 +9,7 @@ import type { MCPServerConfig } from "@atlas/agent-sdk";
 import { produce } from "immer";
 import { JobSpecificationSchema } from "../jobs.ts";
 import type { WorkspaceConfig } from "../workspace.ts";
-import { parseFSMDefinition } from "./fsm-types.ts";
+import { parseInlineFSM } from "./fsm-types.ts";
 import {
   type AgentCascadeTarget,
   conflictError,
@@ -68,7 +68,7 @@ export function findServerReferences(config: WorkspaceConfig, serverId: string):
       if (!job.success) continue;
       if (!job.data.fsm) continue;
 
-      const parsed = parseFSMDefinition(job.data.fsm);
+      const parsed = parseInlineFSM(job.data.fsm, jobId);
       if (!parsed.success) continue;
       const fsm = parsed.data;
       if (!fsm.states) continue;

@@ -6,7 +6,7 @@
 
 import { JobSpecificationSchema } from "./jobs.ts";
 import { extractFSMAgents, type FSMAgentResponse } from "./mutations/fsm-agents.ts";
-import { parseFSMDefinition } from "./mutations/fsm-types.ts";
+import { parseInlineFSM } from "./mutations/fsm-types.ts";
 import type { WorkspaceConfig } from "./workspace.ts";
 
 // ==============================================================================
@@ -102,7 +102,7 @@ export function deriveTopology(config: WorkspaceConfig): Topology {
 
       if (!job.data.fsm) continue;
 
-      const parsed = parseFSMDefinition(job.data.fsm);
+      const parsed = parseInlineFSM(job.data.fsm, jobId);
       if (!parsed.success) continue;
       const fsm = parsed.data;
 
