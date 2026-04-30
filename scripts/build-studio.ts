@@ -542,7 +542,9 @@ function canExecTarget(target: string): boolean {
  * on any non-zero exit so a bad release never reaches users. */
 async function smokeTestAgentBrowser(target: string, stagingDir: string): Promise<void> {
   const binName = target.endsWith("windows-msvc") ? "agent-browser.exe" : "agent-browser";
-  const binPath = join(stagingDir, binName);
+  // Stack 3: agent-browser lives under <staging>/bin/ alongside the
+  // other supervised binaries.
+  const binPath = join(stagingDir, "bin", binName);
   console.log(`[build-studio] smoke test: ${binPath} --version`);
   const result = await new Deno.Command(binPath, {
     args: ["--version"],
@@ -666,13 +668,42 @@ async function main(): Promise<void> {
     await run(["npm", "run", "build"], { cwd: join(repoRoot, "tools/agent-playground") });
   }
 
+  // Stack 3 split-destination layout:
+  //   <staging>/friday-launcher              ← top-level: macOS .app
+  //                                              wrapper launches this
+  //                                              path, must stay where
+  //                                              the wrapper expects it.
+  //   <staging>/bin/friday                   ← every supervised binary
+  //   <staging>/bin/link                       lives under bin/ so it
+  //   <staging>/bin/webhook-tunnel             can't collide with a
+  //   <staging>/bin/playground                 user-data dir name (e.g.
+  //   <staging>/bin/nats-server                link-data/wiring.db) and
+  //   <staging>/bin/agent-browser              the launcher's friday-home
+  //   <staging>/bin/cloudflared                stays clean of binaries.
+  //   <staging>/bin/gh
+  //   <staging>/bin/uv
+  //   <staging>/bin/uvx
+  //   <staging>/bin/node-runtime/...
+  //
+  // friday-launcher's auto-detect (tools/friday-launcher/main.go:260-296)
+  // already prefers ~/.friday/local/bin/ over the flat layout, so this
+  // change is the only piece needed on the package side — the launcher
+  // picks it up automatically.
+  const binStaging = join(stagingDir, "bin");
+  await ensureDir(binStaging);
+
   if (!opts.skipCompile) {
     for (const bin of DENO_BINARIES) {
-      const outPath = join(stagingDir, `${bin.name}${exeExt(opts.target)}`);
+      const outPath = join(binStaging, `${bin.name}${exeExt(opts.target)}`);
       await compileDeno(opts.target, bin, outPath, repoRoot);
     }
     for (const bin of GO_BINARIES) {
-      const outPath = join(stagingDir, `${bin.name}${exeExt(opts.target)}`);
+      // friday-launcher is the .app's entry point — it needs to live
+      // at the top of the install dir so the macOS Info.plist's
+      // ProgramArguments path resolves. Every other Go binary is
+      // launcher-supervised and goes under bin/.
+      const dest = bin.name === "friday-launcher" ? stagingDir : binStaging;
+      const outPath = join(dest, `${bin.name}${exeExt(opts.target)}`);
       await compileGo(opts.target, bin, outPath, repoRoot);
     }
   } else {
@@ -681,10 +712,10 @@ async function main(): Promise<void> {
 
   if (!opts.skipExternal) {
     for (const cli of EXTERNAL_CLIS) {
-      await bundleExternalCli(opts.target, cli, stagingDir, scratchDir);
+      await bundleExternalCli(opts.target, cli, binStaging, scratchDir);
     }
     for (const bundle of EXTERNAL_BUNDLES) {
-      await bundleExternalBundle(opts.target, bundle, stagingDir, scratchDir);
+      await bundleExternalBundle(opts.target, bundle, binStaging, scratchDir);
     }
 
     // Smoke test bundled agent-browser. The other EXTERNAL_CLIS get

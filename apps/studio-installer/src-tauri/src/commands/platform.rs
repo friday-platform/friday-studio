@@ -19,9 +19,16 @@ pub fn current_platform() -> &'static str {
     }
 }
 
-/// Returns the absolute path of the install root the installer should write to
-/// and the launcher should spawn binaries from. Single source of truth so the
-/// extract dest and launch dir don't drift.
+/// Returns the absolute path of the install root the installer writes the
+/// runtime tarball into. User-data and per-service state (`logs/`, `pids/`,
+/// `state.json`, `.env`, `link-data/`, etc.) live under this dir, alongside
+/// the .app's `friday-launcher` entry point.
+///
+/// `bin_dir()` returns the supervised-binary location underneath. They're
+/// split (Stack 3 split-destination layout) so user data can never collide
+/// with a binary file name — the original "link binary at ~/.friday/local/
+/// link" vs "link's wiring.db dir at ~/.friday/local/link/" collision that
+/// surfaced in v0.1.47.
 #[tauri::command]
 pub fn install_dir() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Cannot resolve home directory")?;
@@ -29,6 +36,20 @@ pub fn install_dir() -> Result<String, String> {
     p.to_str()
         .map(|s| s.to_owned())
         .ok_or_else(|| "Install path is not valid UTF-8".to_owned())
+}
+
+/// Returns the absolute path of the supervised-binaries directory:
+/// `<install_dir>/bin/`. Companion to `install_dir()`. Tauri callers that
+/// resolve a specific binary (agent-browser doctor, startup scripts, etc.)
+/// must use this — `install_dir()` itself holds user-data and the .app's
+/// own entry point only.
+#[tauri::command]
+pub fn bin_dir() -> Result<String, String> {
+    let install = install_dir()?;
+    let p = std::path::PathBuf::from(install).join("bin");
+    p.to_str()
+        .map(|s| s.to_owned())
+        .ok_or_else(|| "Bin path is not valid UTF-8".to_owned())
 }
 
 #[cfg(test)]

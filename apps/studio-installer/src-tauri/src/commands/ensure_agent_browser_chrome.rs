@@ -25,26 +25,27 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
-use crate::commands::platform::install_dir;
+use crate::commands::platform::{bin_dir, install_dir};
 
 #[tauri::command]
 pub async fn ensure_agent_browser_chrome() -> Result<(), String> {
     let install_dir_path = PathBuf::from(install_dir()?);
+    let bin_dir_path = PathBuf::from(bin_dir()?);
 
     let bin_name = if cfg!(windows) {
         "agent-browser.exe"
     } else {
         "agent-browser"
     };
-    // Runtime tar.zst extracts binaries directly into <install>/, NOT
-    // <install>/bin/. Confirmed against the launcher's own resolution
-    // path at tools/friday-launcher/project.go:fridayEnv() which joins
-    // the bare binary name onto binDir (which equals install_dir here).
-    // Earlier shape (`install_dir.join("bin").join(...)`) silently
-    // returned Err, the JS catch in Extract.svelte marked the agent-
-    // browser pip ✗, and the user reached the playground without
-    // Chrome — surfacing as ENOENT at first browse call.
-    let ab_bin = install_dir_path.join(bin_name);
+    // Stack 3 split-destination layout: supervised binaries live under
+    // <install_dir>/bin/, alongside the rest of the launcher-spawned
+    // tools (friday, link, webhook-tunnel, playground, …). install_dir
+    // itself holds user-data + the .app's friday-launcher entry point
+    // only. Pre-Stack-3 builds put everything flat under install_dir,
+    // which collided with user-data dir names — the link binary at
+    // ~/.friday/local/link clashed with link's wiring.db dir of the
+    // same name. Splitting them eliminates that whole class of bug.
+    let ab_bin = bin_dir_path.join(bin_name);
 
     if !ab_bin.exists() {
         // Bundling failed — runtime tar.zst didn't include it. Surface
