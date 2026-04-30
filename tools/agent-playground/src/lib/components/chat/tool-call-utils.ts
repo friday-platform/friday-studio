@@ -21,6 +21,7 @@ export function isInProgress(state: ToolCallDisplay["state"]): boolean {
 export function needsUserAction(call: ToolCallDisplay): boolean {
   if (call.toolName === "display_artifact") return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
+  if (call.toolName === "connect_communicator" && call.state === "output-available") return true;
   return false;
 }
 
