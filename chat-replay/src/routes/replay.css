@@ -80,6 +80,7 @@ button {
   border-radius: var(--radius-7);
   box-shadow: var(--shadow-5);
   padding: var(--size-4);
+  zoom: reset;
 }
 
 .overlay-head {
@@ -119,11 +120,20 @@ button {
 }
 
 .replay-loader {
-  align-items: start;
   display: grid;
-  grid-template-columns: minmax(18rem, 1fr) minmax(24rem, 1.5fr) auto;
   gap: var(--size-3);
+  grid-template-columns: minmax(14rem, 1fr) minmax(24rem, 2fr);
   padding: var(--size-3) var(--size-4);
+}
+
+.replay-loader-input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.replay-loader-input button {
+  align-self: flex-end;
 }
 
 .replay-loader code {
@@ -194,11 +204,27 @@ button {
   gap: var(--size-1);
 }
 
+.ctrl-speed-sep {
+  color: var(--text-muted);
+  font-size: var(--font-size-1);
+}
+
 .ctrl-speed-label {
   color: var(--text-muted);
   font-size: var(--font-size-2);
-  min-inline-size: 4.5rem;
+  min-inline-size: 2.5rem;
   text-align: center;
+}
+
+.ctrl-global-input {
+  background: var(--surface-raised);
+  border: 1px solid var(--color-border-1);
+  border-radius: var(--radius-3);
+  color: var(--text);
+  font-size: var(--font-size-2);
+  inline-size: 4.5rem;
+  padding: var(--size-1) var(--size-1-5);
+  text-align: end;
 }
 
 .ctrl-view {
