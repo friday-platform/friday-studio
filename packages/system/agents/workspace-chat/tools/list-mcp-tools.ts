@@ -14,11 +14,15 @@ const ListMcpToolsInput = z.object({
     ),
 });
 
-const ToolItemSchema = z.object({ name: z.string(), description: z.string().optional() });
+const ToolItemSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  inputSchema: z.record(z.string(), z.unknown()).nullable().optional(),
+});
 
 export interface ListMcpToolsSuccess {
   ok: true;
-  tools: Array<{ name: string; description?: string }>;
+  tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> | null }>;
 }
 
 export interface ListMcpToolsError {
@@ -30,18 +34,24 @@ export interface ListMcpToolsError {
 /**
  * Build the `list_mcp_tools` tool for workspace chat.
  *
- * Spins up an MCP server and returns the exact tool names it exposes.
- * The server is started temporarily and shut down immediately; no
- * workspace state is modified. Use this before writing an agent config
- * that references MCP tools.
+ * Spins up an MCP server and returns tool names (prefixed with serverId/),
+ * descriptions, and input schemas.
+ *
+ * **Name format:** returned names are prefixed — e.g. "google-gmail/search_gmail_messages".
+ * Use the prefixed name verbatim in a type:llm agent's `config.tools` array so the
+ * workspace validator can verify which server owns which tool. Strip the "{serverId}/"
+ * prefix when writing Python agent code: ctx.tools.call("search_gmail_messages", args).
  */
 export function createListMcpToolsTool(logger: Logger): AtlasTools {
   return {
     list_mcp_tools: tool({
       description:
-        "Spin up an MCP server and list the exact tool names it exposes. " +
-        "Use this before writing an agent config that references MCP tools — " +
-        "it tells you the precise tool names to put in the agent's `tools` array. " +
+        "Spin up an MCP server and list the tool names, descriptions, and input schemas it exposes. " +
+        "Use this before writing agent code or workspace config that references MCP tools — " +
+        "inputSchema shows the exact parameter names and types to pass. " +
+        "Names are returned as '{serverId}/{toolName}' (e.g. 'google-gmail/search_gmail_messages'). " +
+        "Use the full prefixed name in a type:llm agent config.tools array. " +
+        "Strip the prefix for Python agent ctx.tools.call() — use just 'search_gmail_messages'. " +
         "The server is started temporarily and shut down immediately; no workspace state is modified.",
       inputSchema: ListMcpToolsInput,
       execute: async ({ serverId }): Promise<ListMcpToolsSuccess | ListMcpToolsError> => {
@@ -81,8 +91,6 @@ export function createListMcpToolsTool(logger: Logger): AtlasTools {
             };
           }
 
-          // Error responses from the probe endpoint are usually 200 with ok:false,
-          // but handle non-200 defensively.
           const fallback =
             typeof body === "object" && body !== null && "error" in body
               ? String(body.error)

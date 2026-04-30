@@ -727,13 +727,15 @@ export const mcpRegistryRouter = daemonFactory
           signal: AbortSignal.timeout(5000),
         });
 
-        const tools = Object.entries(result.tools).map(([name, tool]) => ({
-          name,
-          description:
-            typeof (tool as Record<string, unknown>).description === "string"
-              ? (tool as Record<string, unknown>).description
-              : undefined,
-        }));
+        const tools = Object.entries(result.tools).map(([name, tool]) => {
+          const t = tool as Record<string, unknown>;
+          const schema = t.inputSchema as Record<string, unknown> | undefined;
+          return {
+            name,
+            description: typeof t.description === "string" ? t.description : undefined,
+            inputSchema: (schema?.jsonSchema ?? null) as Record<string, unknown> | null,
+          };
+        });
 
         await result.dispose();
         return c.json({ ok: true as const, tools });

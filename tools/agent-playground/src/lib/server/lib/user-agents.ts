@@ -1,7 +1,7 @@
 /**
  * User agents discovery for the playground.
  *
- * Discovers user-built WASM agents from ~/.friday/local/agents/ via the UserAdapter.
+ * Discovers user-built Python agents from the agents directory via the UserAdapter.
  * Replaces the previous hardcoded proto import.
  */
 

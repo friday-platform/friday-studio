@@ -1,17 +1,36 @@
 # MCP tools
 
-MCP (Model Context Protocol) reaches external systems — GitHub, Postgres, Notion, time, etc. Declare servers in the decorator; call tools through `ctx.tools`.
+MCP (Model Context Protocol) reaches external systems — GitHub, Postgres, Gmail, etc. Call tools through `ctx.tools`.
 
 ## Contents
 
-- Declaring servers — decorator shape, env vars, credential refs
+- Workspace MCP vs decorator MCP — which to use
+- Declaring additional servers — decorator shape
 - Discovering tools — `ctx.tools.list()` returns definitions
 - Calling a tool — `ctx.tools.call(name, input)`
 - LLM-driven tool use — loop pattern with `response.text` parsing
 - Errors — don't swallow; let the runtime surface them
 - Testing — mocking `ctx.tools` in unit tests
 
-## Declaring servers
+## Workspace MCP vs decorator MCP
+
+**User Python agents automatically inherit all MCP servers enabled in the workspace's `tools.mcp.servers`.** You do NOT need to declare them again in `@agent(mcp={...})`. The runtime merges workspace MCP + agent-declared MCP before passing them to `ctx.tools`.
+
+```python
+# Workspace has google-gmail in tools.mcp.servers — just call it directly:
+@agent(id="inbox-agent", version="1.0.0", description="...")
+def execute(prompt: str, ctx: AgentContext):
+    result = ctx.tools.call("search_gmail_messages", {"query": "is:unread"})
+    return ok({"emails": result})
+```
+
+Use `@agent(mcp={...})` only when:
+- The server is **not** in the workspace `tools.mcp.servers`
+- You need a server-specific override for this agent only
+
+**Discovering tool names:** Use `list_mcp_tools({ serverId: "google-gmail" })` in chat to discover tool names. It returns prefixed names like `google-gmail/search_gmail_messages` — that prefix belongs in a `type: llm` agent's `config.tools` array, not in Python code. Strip the `{serverId}/` prefix when writing `ctx.tools.call(...)`: the Python agent always uses the bare name: `ctx.tools.call("search_gmail_messages", ...)`. At runtime, `ctx.tools.list()` also returns bare unprefixed names.
+
+## Declaring additional servers
 
 ```python
 @agent(
@@ -60,12 +79,46 @@ try:
         "get_current_time",
         {"timezone": "America/Los_Angeles"},
     )
-    # result: dict (MCP response, already parsed)
 except ToolCallError as e:
     return err(f"Tool call failed: {e}")
 ```
 
 Arguments must match the tool's `input_schema`.
+
+**Return value format.** `ctx.tools.call()` returns the raw MCP content envelope — a dict, not a string:
+
+```python
+{"content": [{"type": "text", "text": "Message ID: abc123\nSubject: ..."}]}
+```
+
+Extract the text explicitly — never pass the dict to regex or string methods:
+
+```python
+def _get_text(result: dict) -> str:
+    for item in result.get("content", []):
+        if isinstance(item, dict) and item.get("type") == "text":
+            return item.get("text", "")
+    return ""
+```
+
+The text content format is server-defined — don't assume separators or structure. Probe the actual output (or check the MCP server source) before writing a parser against it.
+
+**`isError` flag.** MCP servers return auth failures and other errors as a successful dict with `isError: True`:
+
+```python
+{"isError": True, "content": [{"type": "text", "text": "Error: 401 Unauthorized"}]}
+```
+
+This is **NOT** raised as `ToolCallError` — it comes back as a normal return value. Always check before using the result:
+
+```python
+result = ctx.tools.call("search_gmail_messages", {"query": "is:unread"})
+if result.get("isError"):
+    return err(f"Gmail error: {_get_text(result)}")
+text = _get_text(result)
+```
+
+`ToolCallError` is raised only for daemon-level failures: unknown session, NATS timeout, or explicit `{"error": "..."}` responses from the runtime.
 
 ## LLM-driven tool use
 

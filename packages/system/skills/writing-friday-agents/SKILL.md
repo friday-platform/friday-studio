@@ -106,7 +106,8 @@ Key points: `stream.intent` fires before any blocking work; tool listing and LLM
 |---|---|---|
 | Generate text or structured objects | `ctx.llm.generate` / `ctx.llm.generate_object` | `capabilities.md`, `structured-output.md` |
 | Call an external HTTP API | `ctx.http.fetch` | `capabilities.md` |
-| GitHub/Postgres/Notion/etc. integration | `ctx.tools.call` + `mcp={...}` decorator | `mcp-tools.md` |
+| GitHub/Postgres/Notion/etc. (workspace-enabled) | `ctx.tools.call` — workspace MCP tools auto-available | `mcp-tools.md` |
+| GitHub/Postgres/Notion/etc. (not workspace-enabled) | `ctx.tools.call` + `mcp={...}` decorator to add the server | `mcp-tools.md` |
 | Web scraping / page fetch | `ctx.http.fetch` — try first; add MCP browser server only when JS rendering is required | `capabilities.md` |
 | Progress to user | `ctx.stream.intent` / `ctx.stream.progress` | `capabilities.md` |
 | API tokens/secrets | `ctx.env["MY_TOKEN"]` + `environment=` decorator | `capabilities.md` |
@@ -146,6 +147,10 @@ Wrap capability calls — `LlmError`, `HttpError`, `ToolCallError` — and retur
 5. **Two `@agent` decorators in one file.** `RuntimeError`. Split into separate files.
 6. **Pydantic schemas for `parse_input`.** Use dataclasses. Pydantic is not installed.
 7. **Adding an MCP browser/fetch server when the workspace already has web tools.** If workspace-chat has `agent_web` or `web_fetch` in scope, prefer those for web research rather than wiring a new MCP server to the agent. Inside the agent, `ctx.http.fetch()` handles plain HTTP; only reach for an MCP browser server when the page requires JavaScript rendering.
+8. **Declaring workspace MCP in the decorator.** If the workspace already has a server in `tools.mcp.servers` (e.g., `google-gmail`), the agent gets it automatically — no `@agent(mcp={...})` needed. Only use the decorator for servers that are NOT enabled at the workspace level.
+9. **Treating `ctx.tools.call()` result as a string.** It returns a dict: `{"content": [{"type": "text", "text": "..."}]}`. Extract text explicitly — see `references/mcp-tools.md`.
+10. **Not checking `isError` before using MCP results.** Auth failures and MCP errors return `{"isError": True, "content": [...error text...]}` — this is NOT raised as `ToolCallError`. Always check `result.get("isError")` first or you'll silently process an error message as real data.
+11. **Using `list_mcp_tools` names verbatim in `ctx.tools.call`.** `list_mcp_tools` returns prefixed names (`google-gmail/search_gmail_messages`) — the prefix is correct for `type: llm` agent `config.tools`. Strip it for Python agents: `ctx.tools.call("search_gmail_messages", ...)` not `ctx.tools.call("google-gmail/search_gmail_messages", ...)`.
 
 ## Registering an agent with Friday
 
@@ -187,10 +192,14 @@ When a user asks you to build a workspace with a custom Python agent, load both
 `writing-friday-agents` (for the agent code) and `workspace-api` (for the workspace
 wiring) and follow this sequence:
 
-1. Write the Python agent source using the boilerplate above.
-2. Write it to a clean `/tmp/` subdirectory.
-3. Call `POST /api/agents/register` — confirm `ok: true`.
-4. Fetch the workspace config, add a `type: user` agent entry and a job FSM that
+1. If the agent needs external services (Gmail, GitHub, etc.), call `enable_mcp_server` to
+   add them to `tools.mcp.servers` first. The Python agent inherits these automatically —
+   no decorator config needed.
+2. Call `list_mcp_tools({ serverId })` to discover tool names and their `inputSchema`. Read the inputSchema for each tool you'll call — it gives the exact parameter names and types. Don't guess parameter names from descriptions; wrong names cause validation errors at runtime (pydantic for Python MCP servers, Zod for TypeScript ones).
+3. Write the Python agent source using the boilerplate above. Use `ctx.tools.call("tool_name", args)` directly.
+4. Write it to a clean `/tmp/` subdirectory.
+5. Call `POST /api/agents/register` — confirm `ok: true`.
+6. Fetch the workspace config, add a `type: user` agent entry and a job FSM that
    invokes it, and write the updated config back to disk.
 
 The `workspace-api` skill has the complete FSM and job schema; the key for custom

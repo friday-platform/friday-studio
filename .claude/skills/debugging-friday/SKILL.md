@@ -9,6 +9,35 @@ compatibility: Requires gcloud CLI configured for GCS queries
 Prerequisite: Daemon running (`deno task atlas daemon start`). See CLAUDE.md for
 basic CLI usage.
 
+## Reading Chat Files Directly
+
+Chat transcripts are stored as JSON files. Given a URL like
+`http://localhost:5200/platform/{workspaceId}/chat/{chatId}`, the file is at:
+
+```
+~/.atlas/chats/{workspaceId}/{chatId}.json
+```
+
+The `messages` array uses `parts` (not `content`). Each part has a `type` field.
+Tool calls appear as `tool-{name}` types; errors are in `output.error`. The FSM
+session events that show agent execution status are in `data-nested-chunk` parts.
+
+```bash
+# Quick parse to see messages and errors
+python3 -c "
+import json
+data = json.load(open('/path/to/chat.json'))
+for m in data['messages']:
+    for p in m.get('parts', []):
+        if p.get('type', '').startswith('tool-') and p.get('output', {}).get('error'):
+            print('ERROR:', p['output']['error'])
+        elif p.get('type') == 'data-nested-chunk':
+            chunk = p['data']['chunk']
+            if 'error' in chunk.get('data', {}):
+                print('FSM ERROR:', chunk['data']['error'])
+"
+```
+
 ## Local Log Analysis
 
 ```bash

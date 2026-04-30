@@ -153,6 +153,15 @@ jobs:
   agent id is registered, validation fails with `unknown_user_agent`.
   Confirm registration before writing the config.
 
+**MCP access for `type: user` agents.** User Python agents automatically
+inherit all MCP servers from the workspace's `tools.mcp.servers` block —
+`ctx.tools.call("tool_name", args)` works without any `@agent(mcp={...})`
+decorator if the server is already enabled for the workspace. The Python
+agent's `@agent(mcp={...})` decorator is only needed for servers that are
+**not** in `tools.mcp.servers`. To make an MCP server available to a
+`type: user` agent: add the server to `tools.mcp.servers` via
+`enable_mcp_server` (workspace config), not to the agent decorator.
+
 **See also.** `packages/system/workspaces/system.yml` has many
 `type: user` agents wired into the autopilot FSM (`status-watcher`,
 `planner`, `dispatcher`, `reflector`).
