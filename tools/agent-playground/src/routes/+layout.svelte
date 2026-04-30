@@ -8,6 +8,7 @@
   import "../app.css";
   import favicon from "$lib/assets/favicon.png";
   import Sidebar from "$lib/components/shared/sidebar.svelte";
+  import CommandPalette from "$lib/components/shared/command-palette.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
 
   const { children } = $props();
@@ -17,7 +18,43 @@
   const queryClient = new QueryClient({
     defaultOptions: { queries: { enabled: browser, refetchOnReconnect: true } },
   });
+
+  let paletteOpen = $state(false);
+  let paletteMode = $state<"chat" | "switcher">("chat");
+
+  /**
+   * Bare `/` opens chat mode. Cmd/Ctrl+/ opens switcher mode.
+   * Bare `/` is suppressed while typing in inputs/textareas/contenteditables;
+   * the modified form is allowed to fire from anywhere.
+   */
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    const t = e.target as HTMLElement | null;
+    if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      paletteMode = "chat";
+      paletteOpen = true;
+      return;
+    }
+    if (e.key === "/" && (e.metaKey || e.ctrlKey) && !e.altKey) {
+      // Cmd/Ctrl+/ is a default keymap inside code editors (e.g., CodeMirror toggle-comment).
+      if (t?.isContentEditable) return;
+      e.preventDefault();
+      paletteMode = "switcher";
+      paletteOpen = true;
+      return;
+    }
+    if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (t) {
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+    }
+    e.preventDefault();
+    paletteMode = "chat";
+    paletteOpen = true;
+  }
 </script>
+
+<svelte:window onkeydown={handleGlobalKeydown} />
 
 <svelte:head>
   <title>Friday Studio</title>
@@ -33,6 +70,10 @@
       </div>
     </main>
   </div>
+
+  {#if paletteOpen}
+    <CommandPalette initialMode={paletteMode} onclose={() => (paletteOpen = false)} />
+  {/if}
 </QueryClientProvider>
 
 <NotificationPortal />
