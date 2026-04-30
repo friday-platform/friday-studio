@@ -284,7 +284,10 @@ function createCommunicatorWiringRepo(): CommunicatorWiringRepository {
     return new PostgresCommunicatorWiringRepository(sql);
   }
   if (config.devMode) {
-    const dbDir = join(getFridayHome(), "link");
+    // `link/` collides with the link binary itself when the launcher
+    // unpacks all binaries flat into ~/.friday/local — `link-data/`
+    // is a sibling directory that can coexist.
+    const dbDir = join(getFridayHome(), "link-data");
     mkdirSync(dbDir, { recursive: true });
     const dbPath = join(dbDir, "wiring.db");
     logger.info("Using SqliteCommunicatorWiringRepository", { dbPath });
