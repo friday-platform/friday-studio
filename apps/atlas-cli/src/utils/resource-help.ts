@@ -235,13 +235,6 @@ monitoring.`,
     ],
     seeAlso: ["session", "workspace"],
   },
-
-  version: {
-    overview: `
-Display Atlas version information.`,
-    commonTasks: ["Show current version: atlas version"],
-    seeAlso: ["daemon"],
-  },
 };
 
 /**

@@ -51,39 +51,6 @@ async function runCLI(
 // on first invocation; on a cold runner that overruns vitest's 5s default.
 // Match runCLI's 15s subprocess timeout file-wide.
 describe("CLI output contract", { timeout: 15_000 }, () => {
-  it("atlas version → prints version and channel", async () => {
-    const { stdout, exitCode } = await runCLI("version");
-    expect(exitCode).toBe(0);
-    expect(stdout).toMatch(/^atlas v\S+ \((stable|nightly|edge)\)$/);
-  });
-
-  it("atlas v → alias for version command", async () => {
-    const { stdout, exitCode } = await runCLI("v");
-    expect(exitCode).toBe(0);
-    expect(stdout).toMatch(/^atlas v\S+ \((stable|nightly|edge)\)$/);
-  });
-
-  it("atlas version --json → outputs JSON version info", async () => {
-    const { stdout, exitCode } = await runCLI("version", "--json");
-    expect(exitCode).toBe(0);
-    const parsed = z
-      .object({ version: z.string(), isCompiled: z.boolean(), isDev: z.boolean() })
-      .parse(JSON.parse(stdout));
-    expect(parsed.version).toBeTruthy();
-  });
-
-  it("atlas version --help → prints help text (handled by gunshi)", async () => {
-    const { stdout, exitCode } = await runCLI("version", "--help");
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("version");
-  });
-
-  it("atlas version --version → prints version (handled by gunshi)", async () => {
-    const { stdout, exitCode } = await runCLI("version", "--version");
-    expect(exitCode).toBe(0);
-    expect(stdout).toMatch(/\S+/); // version string present (dev or semver)
-  });
-
   it("atlas chat (legacy command) → routes to yargs, not gunshi", async () => {
     const { stdout, stderr } = await runCLI("chat");
 
@@ -95,12 +62,6 @@ describe("CLI output contract", { timeout: 15_000 }, () => {
   it("atlas (no args) → routes to yargs, exits non-zero", async () => {
     const { exitCode } = await runCLI();
     expect(exitCode).not.toBe(0);
-  });
-
-  it("atlas --version (top-level flag) → routes to yargs with version output", async () => {
-    const { stdout, exitCode } = await runCLI("--version");
-    expect(exitCode).toBe(0);
-    expect(stdout).toContain("Atlas");
   });
 
   it("atlas nonexistent → error message, exit code non-zero", async () => {

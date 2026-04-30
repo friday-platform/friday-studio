@@ -1,5 +1,5 @@
 import process from "node:process";
-import { getVersionInfo, stringifyError } from "@atlas/utils";
+import { stringifyError } from "@atlas/utils";
 
 /**
  * CLI entry point — routes between native gunshi commands and legacy yargs commands.
@@ -10,8 +10,6 @@ import { getVersionInfo, stringifyError } from "@atlas/utils";
  */
 
 const NATIVE_COMMANDS = new Set([
-  "version",
-  "v",
   "skill",
   "sk",
   "signal",
@@ -52,7 +50,6 @@ if (cmd && NATIVE_COMMANDS.has(cmd)) {
   // Native gunshi path — let gunshi handle --help/--version flags naturally
   const { cli, define } = await import("gunshi");
   const { alias } = await import("./utils/alias.ts");
-  const { versionCommand } = await import("./cli/commands/version.ts");
   const { skillCommand } = await import("./cli/commands/skill/index.ts");
   const { signalCommand } = await import("./cli/commands/signal/index.ts");
   const { workspaceCommand } = await import("./cli/commands/workspace/index.ts");
@@ -67,10 +64,7 @@ if (cmd && NATIVE_COMMANDS.has(cmd)) {
   try {
     await cli(argv, mainCommand, {
       name: "atlas",
-      version: getVersionInfo().version,
       subCommands: {
-        version: versionCommand,
-        v: alias(versionCommand),
         skill: skillCommand,
         sk: alias(skillCommand),
         signal: signalCommand,
