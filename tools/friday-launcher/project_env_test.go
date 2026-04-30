@@ -93,6 +93,67 @@ func TestFridayEnv_OmitsAgentBrowserPathWhenAbsent(t *testing.T) {
 	}
 }
 
+// TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides closes the
+// gap that made FRIDAY_PORT_PLAYGROUND=15200 in ~/.friday/local/.env
+// silently ignored: portOverride() reads via os.Getenv, but pre-fix
+// the .env values flowed only into spawned-service envs (via
+// commonServiceEnv) — never into the launcher's own process env.
+// importDotEnvIntoProcessEnv() bridges that gap; this test pins the
+// behavior so a future refactor can't regress it.
+func TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides(t *testing.T) {
+	tmpHome := t.TempDir()
+	envDir := filepath.Join(tmpHome, ".friday", "local")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(envDir, ".env")
+	envContent := "FRIDAY_PORT_PLAYGROUND=15200\nLINK_DEV_MODE=true\n"
+	if err := os.WriteFile(envFile, []byte(envContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", tmpHome)
+	// Make sure the test starts from a clean slate for the keys we
+	// expect importDotEnvIntoProcessEnv to populate.
+	t.Setenv("FRIDAY_PORT_PLAYGROUND", "")
+	os.Unsetenv("FRIDAY_PORT_PLAYGROUND")
+
+	importDotEnvIntoProcessEnv()
+
+	if got := os.Getenv("FRIDAY_PORT_PLAYGROUND"); got != "15200" {
+		t.Errorf("FRIDAY_PORT_PLAYGROUND after import = %q, want 15200", got)
+	}
+	// portOverride consults os.Getenv with the same translation rule the
+	// public contract documents (uppercase, hyphens → underscores).
+	if got := portOverride("playground"); got != "15200" {
+		t.Errorf("portOverride(playground) after import = %q, want 15200", got)
+	}
+}
+
+// TestImportDotEnvIntoProcessEnv_PreservesExistingEnv asserts that an
+// already-set value (e.g. shell export) wins over the .env file. This
+// matches deno's --env-file precedence rule: process env > file. A
+// regression that flipped the precedence would silently override the
+// user's deliberate shell-level overrides on every restart.
+func TestImportDotEnvIntoProcessEnv_PreservesExistingEnv(t *testing.T) {
+	tmpHome := t.TempDir()
+	envDir := filepath.Join(tmpHome, ".friday", "local")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(envDir, ".env")
+	if err := os.WriteFile(envFile, []byte("FRIDAY_PORT_FRIDAY=18080\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("FRIDAY_PORT_FRIDAY", "29999") // shell-level value
+
+	importDotEnvIntoProcessEnv()
+
+	if got := os.Getenv("FRIDAY_PORT_FRIDAY"); got != "29999" {
+		t.Errorf("shell value clobbered: FRIDAY_PORT_FRIDAY = %q, want 29999", got)
+	}
+}
+
 // TestSupervisedProcesses_PortOverridesPropagate verifies that
 // FRIDAY_PORT_<name> env vars don't just update the launcher's own
 // readiness probe (which the original portOverride code already did)

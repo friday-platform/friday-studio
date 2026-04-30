@@ -163,6 +163,29 @@ func fridayEnv(binDir string) []string {
 // untouched. Mirrors apps/studio-installer/src-tauri/src/commands/
 // env_file.rs's render side closely enough that anything
 // write_env_file produces, this can read back.
+// importDotEnvIntoProcessEnv loads ~/.friday/local/.env and exports each
+// KV into the launcher's own process environment, preserving any value
+// already present in the launcher's env (shell exports / parent process
+// take precedence over the file). Required for FRIDAY_PORT_<NAME> and
+// any other launcher-side knob: portOverride() reads via os.Getenv,
+// which doesn't see KVs that flow only through commonServiceEnv() into
+// spawned services. Without this call, a user setting
+// `FRIDAY_PORT_PLAYGROUND=15200` in .env would have no effect because
+// the launcher itself never observes the variable.
+func importDotEnvIntoProcessEnv() {
+	for _, kv := range loadDotEnv(filepath.Join(friendlyHome(), ".env")) {
+		i := strings.IndexByte(kv, '=')
+		if i <= 0 {
+			continue
+		}
+		key, value := kv[:i], kv[i+1:]
+		if _, alreadySet := os.LookupEnv(key); alreadySet {
+			continue
+		}
+		_ = os.Setenv(key, value)
+	}
+}
+
 func loadDotEnv(path string) []string {
 	data, err := os.ReadFile(path) //nolint:gosec // launcher-controlled path under $HOME
 	if err != nil {

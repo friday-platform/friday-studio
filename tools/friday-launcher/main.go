@@ -115,6 +115,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "friday-launcher: %s\n", err)
 		os.Exit(1)
 	}
+	// Pull KVs from ~/.friday/local/.env into the launcher's own process
+	// env so launcher-side helpers that read via os.Getenv (portOverride,
+	// FRIDAY_LAUNCHER_*) see the same configuration the spawned services
+	// receive via commonServiceEnv. Existing shell exports win — only
+	// unset keys are populated.
+	importDotEnvIntoProcessEnv()
 	setupLogging()
 
 	// --autostart {enable|disable|status} runs as a one-shot CLI,
