@@ -187,7 +187,46 @@ emails-result: <emails data>
 calendar-result: <calendar data>
 ```
 
-Use array `inputFrom` for "combine N results". Reach for code action only when data needs transformation, derivation, or validation logic LLM should not see.
+Use array `inputFrom` for "combine N results".
+
+## Crossing session boundaries
+
+`inputFrom` only reads documents in the current FSM session. Every signal fires a fresh session with an empty doc store — a job triggered by signal B cannot `inputFrom` a document produced by a prior session of signal A.
+
+Pass the data on the signal payload. Declare the fields the next job needs in the signal `schema`; the caller (chat agent, webhook) includes them when firing the signal. The runtime auto-seeds `prepareResult.config` from the payload, so action prompts can reference `{{inputs.<field>}}` directly — no `inputFrom` wiring.
+
+```yaml
+signals:
+  apply-actions:
+    provider: http
+    config: { path: /apply-actions }
+    schema:
+      type: object
+      properties:
+        actions: { type: string }
+        items:   { type: string }
+      required: [actions, items]
+
+jobs:
+  apply-actions:
+    triggers: [{ signal: apply-actions }]
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on: { apply-actions: { target: act } }
+        act:
+          entry:
+            - type: agent
+              agentId: action-agent
+              prompt: |
+                Apply {{inputs.actions}} to {{inputs.items}}.
+          type: final
+```
+
+`type: user` Python agents that call `parse_input(prompt, MyDataclass)` see the wrapped shape `{ "config": { ... } }` rather than the fields at the top level. Either keep `{{inputs.<field>}}` interpolation in the action prompt as above, or unwrap `config` in the agent before typing — see `writing-friday-agents` → `references/input-parsing.md` for the snippet.
+
+For data too large for the payload, persist with the artifact + memory pattern — producer calls `artifacts_create` then `memory_save` to record the id; consumer reads the id from injected memory and calls `artifacts_get`. See the `writing-to-memory` skill.
 
 ## Conditional branching
 
@@ -335,6 +374,14 @@ Symptom: Second agent receives empty or undefined input.
 
 Fix: Add `outputTo: <doc-id>` to producer and `inputFrom: <same-doc-id>` to consumer.
 
+### `inputFrom` reaching across sessions
+
+`inputFrom` only sees documents from the current FSM session. A separate signal starts a fresh session with an empty doc store — `inputFrom: foo-result` referring to a document produced by another job's session resolves to "(none)" and the session fails before the agent runs.
+
+Symptom: `Signal '<name>' session failed: inputFrom: document '<id>' not found. Available documents: (none)`.
+
+Fix: pass the data on the signal payload — see "Crossing session boundaries".
+
 ## Order of declaration
 
 Build workspace in this order:
@@ -365,3 +412,4 @@ Removes panic-driven shotgun debugging producing orphaned agents, malformed FSMs
 
 - `writing-workspace-signals` — Signal authoring: JSON Schema payloads, provider configs, HTTP path collisions, cron validation. Load before creating or editing any signal that accepts parameters or needs webhook endpoint.
 - `workspace-api` — Workspace building workflow: draft mode, CRUD, validation, reachability model, tool selection.
+- `writing-to-memory` — Artifact + memory reference pattern for the cross-session bridge described above. Load when a job needs to hand large or persistent data to a later session.

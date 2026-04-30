@@ -77,6 +77,20 @@ The payload's `operation` string picks the dataclass. Every schema must include 
 | Optional JSON, may be raw text | `parse_input(prompt)` (no schema) |
 | Nested/polymorphic per-field | `json.loads` + hand validation |
 
+## FSM-triggered agents: unwrap `config`
+
+Agents invoked from a workspace FSM action receive the signal payload wrapped one level deep, as `{ "config": { ...payload-fields... } }`. The wrap is added by the runtime when it auto-seeds `prepareResult` from a signal — `parse_input(prompt, MyInput)` against the raw prompt then fails because the schema fields live one level down.
+
+Unwrap before typing:
+
+```python
+raw = parse_input(prompt)  # untyped dict
+payload = raw.get("config", raw)  # tolerate both wrapped and flat
+data = parse_input(json.dumps(payload), MyInput)
+```
+
+Same agent stays usable from non-FSM call sites that pass the schema fields at the top level — the `raw.get("config", raw)` fallback handles both.
+
 ## Value validation
 
 Dataclasses give presence + type, not value constraints. Check by hand:
