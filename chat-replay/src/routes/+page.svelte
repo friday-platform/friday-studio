@@ -55,6 +55,7 @@
   let eventDelays = $state<Record<number, number>>({});
   let loadedUrls = $state<string[]>([]);
   let timelineFilter = $state<number | null>(null);
+  let editingDelayIndex = $state<number | null>(null);
   let speedFactor = $state(1.0);
   let useSourceTiming = $state(false);
   let mounted = $state(false);
@@ -411,6 +412,7 @@
 
   function clampIndex(value: number): number { return Math.max(0, Math.min(value, Math.max(0, events.length - 1))); }
   function setIndex(value: number) { currentIndex = clampIndex(value); }
+  function resetDelays() { eventDelays = {}; }
   function stop() { playing = false; if (timer !== undefined) window.clearTimeout(timer); timer = undefined; }
   function effectiveDelay(index: number): number {
     const base = eventDelays[index] ?? (useSourceTiming ? naturalEventDelays[index] : undefined) ?? speedMs;
@@ -744,7 +746,13 @@
         <section class="replay-inspector">
           <aside class="replay-panel">
             <div class="replay-panel-title">
-              <span>Timeline</span>
+              <div class="timeline-title-row">
+                <span>Timeline</span>
+                <div class="timeline-title-actions">
+                  <button type="button" class="timeline-filter-btn" onclick={() => { setIndex(0); timelineFilter = null; document.querySelector(".timeline-row-wrap")?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }} title="Go to first event">↑ First</button>
+                  <button type="button" class="timeline-filter-btn" onclick={resetDelays} title="Reset all delay overrides">Reset</button>
+                </div>
+              </div>
               <div class="timeline-filters">
                 {#each ([null, 500, 1000, 3000, 5000] as const) as f}
                   <button type="button" class="timeline-filter-btn" class:active={timelineFilter === f} onclick={() => timelineFilter = f}>
@@ -755,7 +763,7 @@
             </div>
             <div class="replay-scroll">
               {#each events as event, index}
-                {#if timelineFilter === null || effectiveDelay(index) > timelineFilter}
+                {#if timelineFilter === null || editingDelayIndex === index || effectiveDelay(index) > timelineFilter}
                 <div class="timeline-row-wrap" class:active={index === currentIndex} class:seen={index <= currentIndex} class:future={index > currentIndex}>
                   <button type="button" class="timeline-row" onclick={() => setIndex(index)}>
                     <span class="timeline-icon">{eventIcon(event)}</span>
@@ -779,6 +787,8 @@
                     min="0"
                     step="100"
                     title="Delay override for this event (ms)"
+                    onfocus={() => { editingDelayIndex = index; }}
+                    onblur={() => { editingDelayIndex = null; }}
                     oninput={(e) => {
                       const v = e.currentTarget.valueAsNumber;
                       if (isNaN(v) || v <= 0) delete eventDelays[index];
@@ -800,7 +810,7 @@
     </div>
   {/if}
 
-  <main class="replay-main" style={chatMainStyle}>
+  <main class="replay-main" class:aspect-constrained={chatAspect !== "full"} style={chatMainStyle}>
     <section class="replay-panel replay-chat-panel" class:aspect-constrained={chatAspect !== "full"} style={chatPanelStyle}>
       {#if overlayOpen}
         <div class="replay-chat-head">
