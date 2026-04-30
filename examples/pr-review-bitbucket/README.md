@@ -65,7 +65,7 @@ automatically when pull requests are created.
 1. Open the space in the Studio and find the **Signals** section — copy the
    webhook URL and secret for the `review-pr` signal
 2. Go to your Bitbucket repo **Settings → Webhooks → Add webhook**
-   (e.g. `https://bitbucket.org/insanelygreatteam/google_workspace_mcp/admin/webhooks`)
+   (e.g. `https://bitbucket.org/your-org/your-repo/admin/webhooks`)
 3. Fill in:
    - **Title:** `Friday`
    - **URL:** the webhook URL from the Studio

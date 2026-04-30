@@ -89,7 +89,7 @@ ticket is labeled `ai-fix`.
 
 1. Open the space in the Studio and find the **Signals** section — copy the
    webhook URL and secret for the `process-labeled-bugs` signal
-2. Go to **https://insanelygreatteam.atlassian.net/plugins/servlet/webhooks**
+2. Go to **https://your-team.atlassian.net/plugins/servlet/webhooks**
 3. Click **Create a WebHook**
 4. Fill in:
    - **Name:** `Friday — labeled bugs`

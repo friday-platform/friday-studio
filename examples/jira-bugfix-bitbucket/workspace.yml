@@ -26,7 +26,7 @@ signals:
           title: Bitbucket repository URL
           description: >-
             Full Bitbucket repository URL
-            (e.g., https://bitbucket.org/insanelygreatteam/google_workspace_mcp)
+            (e.g., https://bitbucket.org/your-org/your-repo)
       required:
         - issue_key
 
@@ -237,7 +237,7 @@ jobs:
                 throw new Error('Missing required input: issue_key');
               }
 
-              const repoUrl = event.data?.repo_url || 'https://bitbucket.org/insanelygreatteam/google_workspace_mcp';
+              const repoUrl = event.data?.repo_url || 'https://bitbucket.org/your-org/your-repo';
 
               context.setResult('pipeline-input', { issue_key: issueKey, repo_url: repoUrl });
 
@@ -282,7 +282,7 @@ jobs:
               }
 
               const repoUrl = context.results['pipeline-input']?.repo_url
-                || 'https://bitbucket.org/insanelygreatteam/google_workspace_mcp';
+                || 'https://bitbucket.org/your-org/your-repo';
 
               // Delete old jira-operation doc, create bb-operation for repo-clone
               context.deleteDoc('jira-operation');
@@ -393,7 +393,7 @@ jobs:
               const ticket = context.results['ticket-output'];
               const input = context.results['pipeline-input'];
               const repoUrl = input?.repo_url
-                || 'https://bitbucket.org/insanelygreatteam/google_workspace_mcp';
+                || 'https://bitbucket.org/your-org/your-repo';
 
               if (!fix) {
                 throw new Error('Fix output not found — implement step must complete first');

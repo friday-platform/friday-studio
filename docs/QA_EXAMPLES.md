@@ -158,7 +158,7 @@ Where `{provider}` is `github`, `bitbucket`, `jira`, or `raw`.
 ### 5b. Configure Bitbucket webhook
 
 1. Go to your repo settings:
-   **https://bitbucket.org/insanelygreatteam/google_workspace_mcp/admin/webhooks**
+   **https://bitbucket.org/your-org/your-repo/admin/webhooks**
 2. Click **Add webhook**
 3. Fill in:
    - **Title:** `Friday`
@@ -174,9 +174,9 @@ Where `{provider}` is `github`, `bitbucket`, `jira`, or `raw`.
 
 **Test it:**
 - [ ] Open a new pull request in the repo (or use an existing one:
-      [PR #40](https://bitbucket.org/insanelygreatteam/google_workspace_mcp/pull-requests/40),
-      [PR #41](https://bitbucket.org/insanelygreatteam/google_workspace_mcp/pull-requests/41),
-      [PR #42](https://bitbucket.org/insanelygreatteam/google_workspace_mcp/pull-requests/42))
+      [PR #40](https://bitbucket.org/your-org/your-repo/pull-requests/40),
+      [PR #41](https://bitbucket.org/your-org/your-repo/pull-requests/41),
+      [PR #42](https://bitbucket.org/your-org/your-repo/pull-requests/42))
 - [ ] Verify the pipeline starts automatically in the Studio
 - [ ] Verify review comments appear on the pull request
 
@@ -206,7 +206,7 @@ Where `{provider}` is `github`, `bitbucket`, `jira`, or `raw`.
 ### 5d. Configure Jira webhook
 
 1. Go to Jira webhook settings:
-   **https://insanelygreatteam.atlassian.net/plugins/servlet/webhooks**
+   **https://your-team.atlassian.net/plugins/servlet/webhooks**
 2. Click **Create a WebHook**
 3. Fill in:
    - **Name:** `Friday`
@@ -223,9 +223,9 @@ Where `{provider}` is `github`, `bitbucket`, `jira`, or `raw`.
 
 **Test it:**
 Use one of the pre-created test tickets:
-- [DEV-8](https://insanelygreatteam.atlassian.net/browse/DEV-8) — calendar cache bug (High)
-- [DEV-9](https://insanelygreatteam.atlassian.net/browse/DEV-9) — filename truncation (Medium)
-- [DEV-10](https://insanelygreatteam.atlassian.net/browse/DEV-10) — email validation (Medium)
+- [DEV-8](https://your-team.atlassian.net/browse/DEV-8) — calendar cache bug (High)
+- [DEV-9](https://your-team.atlassian.net/browse/DEV-9) — filename truncation (Medium)
+- [DEV-10](https://your-team.atlassian.net/browse/DEV-10) — email validation (Medium)
 
 All three have the `ai-fix` and `bug` labels and are in "To Do" status.
 

@@ -165,10 +165,8 @@ describe("parseRepoUrl", () => {
   });
 
   test("parses URL with subpath (e.g. /src/main/)", () => {
-    const result = parseRepoUrl(
-      "https://bitbucket.org/insanelygreatteam/google_workspace_mcp/src/main/",
-    );
-    expect(result).toEqual({ workspace: "insanelygreatteam", repo_slug: "google_workspace_mcp" });
+    const result = parseRepoUrl("https://bitbucket.org/your-org/your-repo/src/main/");
+    expect(result).toEqual({ workspace: "your-org", repo_slug: "your-repo" });
   });
 
   test("throws on wrong hostname", () => {
