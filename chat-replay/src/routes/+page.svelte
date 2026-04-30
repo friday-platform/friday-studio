@@ -646,12 +646,21 @@
           <span class="ctrl-pos">{events.length === 0 ? 0 : currentIndex + 1} / {events.length}</span>
         </div>
         <div class="ctrl-speed">
-          <button class="replay-btn" type="button" onclick={() => stepSpeed(false)} aria-label="Slower">−</button>
-          <span class="ctrl-speed-label">{speedLabel()}</span>
-          <button class="replay-btn" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+</button>
-          <span class="ctrl-speed-sep">·</span>
-          <input type="number" class="ctrl-global-input" bind:value={speedMs} min="0" max="60000" step="50" aria-label="Base delay (ms)" title="Base delay — 1× plays at this speed" oninput={() => { if (playing) play(); }} />
-          <span class="ctrl-speed-sep">ms</span>
+          <div class="ctrl-labeled">
+            <span class="ctrl-label">Speed</span>
+            <div class="ctrl-speed-row">
+              <button class="replay-btn" type="button" onclick={() => stepSpeed(false)} aria-label="Slower">−</button>
+              <span class="ctrl-speed-val">{speedLabel()}</span>
+              <button class="replay-btn" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+</button>
+            </div>
+          </div>
+          <div class="ctrl-labeled">
+            <span class="ctrl-label">Base delay</span>
+            <div class="ctrl-base-row">
+              <input type="number" class="ctrl-global-input" bind:value={speedMs} min="0" max="60000" step="50" aria-label="Base delay (ms)" title="Base delay — 1× plays at this speed" oninput={() => { if (playing) play(); }} />
+              <span class="ctrl-base-unit">ms</span>
+            </div>
+          </div>
         </div>
         <div class="ctrl-view">
           <label class="ctrl-source-timing" title="Use actual message timestamps as delays">

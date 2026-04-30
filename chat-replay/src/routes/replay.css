@@ -198,22 +198,49 @@ button {
 }
 
 .ctrl-speed {
-  align-items: center;
+  align-items: stretch;
   display: flex;
   flex-shrink: 0;
+  gap: var(--size-3);
+}
+
+.ctrl-labeled {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
   gap: var(--size-1);
 }
 
-.ctrl-speed-sep {
+.ctrl-label {
   color: var(--text-muted);
   font-size: var(--font-size-1);
+  font-weight: var(--font-weight-6);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
-.ctrl-speed-label {
+.ctrl-speed-row {
+  align-items: center;
+  display: flex;
+  gap: var(--size-1);
+}
+
+.ctrl-speed-val {
   color: var(--text-muted);
   font-size: var(--font-size-2);
   min-inline-size: 2.5rem;
   text-align: center;
+}
+
+.ctrl-base-row {
+  align-items: center;
+  display: flex;
+  gap: var(--size-1);
+}
+
+.ctrl-base-unit {
+  color: var(--text-muted);
+  font-size: var(--font-size-1);
 }
 
 .ctrl-global-input {
