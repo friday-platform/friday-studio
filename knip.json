@@ -1,6 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "ignoreUnresolved": ["./\\$types"],
   "workspaces": {
     ".": { "entry": ["reset.d.ts!"], "project": ["*.ts!"] },
     "packages/activity": {
@@ -104,9 +103,19 @@
         "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
         "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
       }
+    },
+    "chat-replay": {
+      "entry": ["src/routes/**/*.svelte!"],
+      "project": ["src/routes/**/*.{ts,svelte}!"],
+      "ignore": ["src/lib/**"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
     }
   },
-  "ignore": ["deprecated/**"],
   "ignoreDependencies": ["@types/deno", "@anthropic-ai/claude-agent-sdk"],
   "ignoreBinaries": ["svelte-kit", "svelte-package", "prettier"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true, "function": true, "class": true },

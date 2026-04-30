@@ -362,7 +362,6 @@ export async function resolveFileType(
   return undefined;
 }
 
-
 /** Validate uploaded file extension. Magic byte detection happens later in createArtifactFromFile. */
 function validateUpload(file: File): ValidationResult {
   const mimeType = getValidatedMimeType(file.name);

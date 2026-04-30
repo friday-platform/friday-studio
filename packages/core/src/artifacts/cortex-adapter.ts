@@ -1083,6 +1083,4 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       return fail(`Failed to read file: ${stringifyError(error)}`);
     }
   }
-
 }
-

@@ -54,9 +54,7 @@ function getTypeGuardError(
         hint: `Example: delegate({ goal: '...' })`,
       };
     case "artifact_ref":
-      return {
-        error: `"${slug}" is a read-only file. Use artifacts_get to access it.`,
-      };
+      return { error: `"${slug}" is a read-only file. Use artifacts_get to access it.` };
     default:
       entry satisfies never;
       return null;

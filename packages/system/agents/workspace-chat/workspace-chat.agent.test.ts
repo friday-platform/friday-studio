@@ -170,13 +170,13 @@ describe("formatWorkspaceSection", () => {
       communicators: {},
     } as never);
     expect(result).toContain(
-      '<communicators>\n' +
+      "<communicators>\n" +
         '<communicator kind="slack" wired="false"/>\n' +
         '<communicator kind="telegram" wired="false"/>\n' +
         '<communicator kind="discord" wired="false"/>\n' +
         '<communicator kind="teams" wired="false"/>\n' +
         '<communicator kind="whatsapp" wired="false"/>\n' +
-        '</communicators>',
+        "</communicators>",
     );
   });
 
@@ -197,10 +197,7 @@ describe("formatWorkspaceSection", () => {
     const result = formatWorkspaceSection("ws-two-wired", makeDetails(), {
       version: "1.0",
       workspace: { name: "ws-two-wired" },
-      communicators: {
-        slack: { kind: "slack" },
-        telegram: { kind: "telegram" },
-      },
+      communicators: { slack: { kind: "slack" }, telegram: { kind: "telegram" } },
     } as never);
     expect(result).toContain('<communicator kind="slack" wired="true"/>');
     expect(result).toContain('<communicator kind="telegram" wired="true"/>');
@@ -444,9 +441,9 @@ describe("parseResourceEntries", () => {
           type: "artifact_ref",
           slug: "plan",
           name: "Plan",
-          description: "Workspace plan",
+          description: "Plan file",
           artifactId: "art-1",
-          artifactType: "workspace-plan",
+          artifactType: "file",
           createdAt: ts,
           updatedAt: ts,
         },
@@ -454,7 +451,7 @@ describe("parseResourceEntries", () => {
     };
     const entries = parseResourceEntries(data);
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ type: "artifact_ref", artifactType: "workspace-plan" });
+    expect(entries[0]).toMatchObject({ type: "artifact_ref", artifactType: "file" });
   });
 
   it("parses artifact_ref entries with 'unavailable' type", () => {

@@ -18,7 +18,6 @@ function makeArtifact(
   });
 }
 
-
 /** Stub adapter that returns provided artifacts from getManyLatest */
 function makeStubStorage(artifacts: Artifact[]): ArtifactStorageAdapter {
   const notImpl = () => Promise.resolve({ ok: false as const, error: "not implemented" });
@@ -490,7 +489,10 @@ describe("enrichCatalogEntries", () => {
       },
     ];
 
-    const result = await enrichCatalogEntries(entries, makeStubStorage([fileArtifact, pdfArtifact]));
+    const result = await enrichCatalogEntries(
+      entries,
+      makeStubStorage([fileArtifact, pdfArtifact]),
+    );
 
     expect(result).toHaveLength(5);
     expect(result[0]).toMatchObject({ type: "document", slug: "d1" });

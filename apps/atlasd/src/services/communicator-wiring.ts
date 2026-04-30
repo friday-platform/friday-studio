@@ -17,8 +17,8 @@
 
 import process from "node:process";
 import {
-  type CommunicatorKind,
   CommunicatorConfigSchema,
+  type CommunicatorKind,
   CommunicatorKindSchema,
   type WorkspaceConfig,
 } from "@atlas/config";
@@ -29,8 +29,8 @@ import { z } from "zod";
 
 const logger = createLogger({ component: "communicator-wiring" });
 
-export { CommunicatorKindSchema };
 export type { CommunicatorKind };
+export { CommunicatorKindSchema };
 
 /** Telegram credential secret as stored in Link after autoFields injection. */
 export const TelegramCredentialSecretSchema = z.object({

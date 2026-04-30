@@ -109,7 +109,7 @@ function makeCortexObject(overrides: {
     metadata: {
       artifact_id: overrides.artifactId,
       revision: overrides.revision ?? 1,
-      artifact_type: overrides.artifactType ?? "summary",
+      artifact_type: overrides.artifactType ?? "file",
       title: `Artifact ${overrides.artifactId}`,
       summary: "Test artifact",
       workspace_id: overrides.workspaceId,
@@ -125,8 +125,12 @@ function makeCortexObject(overrides: {
   };
 }
 
-/** JSON blob content that parses as a valid summary artifact */
-const SUMMARY_BLOB = JSON.stringify({ type: "summary", version: 1, data: "Test summary content" });
+/** JSON blob content that parses as a valid file artifact */
+const SUMMARY_BLOB = JSON.stringify({
+  type: "file",
+  version: 1,
+  data: { path: "/tmp/test-fixture.txt", mimeType: "text/plain" },
+});
 
 describe("CortexStorageAdapter: list race condition fallback", () => {
   it("listByWorkspace returns artifacts when is_latest=true query is empty during update window", async () => {
@@ -406,7 +410,7 @@ describe("CortexStorageAdapter: includeData=false (metadata-only)", () => {
       const summary = result.data[0];
       if (!summary) throw new Error("expected summary");
       expect(summary.id).toBe("art-sum-1");
-      expect(summary.type).toBe("summary");
+      expect(summary.type).toBe("file");
       expect(summary.revision).toBe(3);
       expect(summary.title).toBe("Artifact art-sum-1");
       expect(summary.summary).toBe("Test artifact");
@@ -481,8 +485,8 @@ describe("CortexStorageAdapter: includeData=false (metadata-only)", () => {
   it("skips objects with non-ISO created_at via Zod datetime validation", async () => {
     const adapter = new CortexStorageAdapter("http://localhost:9999");
 
-    const goodObj = makeCortexObject({ artifactId: "good", artifactType: "summary" });
-    const badObj = makeCortexObject({ artifactId: "bad", artifactType: "summary" });
+    const goodObj = makeCortexObject({ artifactId: "good", artifactType: "file" });
+    const badObj = makeCortexObject({ artifactId: "bad", artifactType: "file" });
     // Corrupt the created_at to a non-ISO datetime string
     badObj.metadata.created_at = "not-a-date";
 
@@ -508,7 +512,7 @@ describe("CortexStorageAdapter: includeData=false (metadata-only)", () => {
   it("skips objects with invalid artifact_type metadata", async () => {
     const adapter = new CortexStorageAdapter("http://localhost:9999");
 
-    const goodObj = makeCortexObject({ artifactId: "good", artifactType: "summary" });
+    const goodObj = makeCortexObject({ artifactId: "good", artifactType: "file" });
     const badObj = makeCortexObject({ artifactId: "bad", artifactType: "nonexistent-type" });
 
     const fetchSpy = vi.fn((url: string | URL | Request) => {

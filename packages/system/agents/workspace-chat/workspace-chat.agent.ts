@@ -924,7 +924,9 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
               ...(await convertToModelMessages(sanitizedMessages, {
                 convertDataPart: (part) => {
                   if (part.type === "data-credential-linked") {
-                    const data = (part as { type: string; data?: { displayName?: string; provider?: string } }).data;
+                    const data = (
+                      part as { type: string; data?: { displayName?: string; provider?: string } }
+                    ).data;
                     const name = data?.displayName ?? data?.provider ?? "service";
                     return { type: "text" as const, text: `Connected ${name}.` };
                   }

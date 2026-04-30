@@ -1,11 +1,11 @@
 <script lang="ts">
-  import "@atlas/ui/tokens.css";
-  import "@atlas/ui/colors.css";
-  import "@atlas/ui/markdown.css";
-  import "$lib/../app.css";
-  import "./replay.css";
+import "@atlas/ui/tokens.css";
+import "@atlas/ui/colors.css";
+import "@atlas/ui/markdown.css";
+import "$lib/../app.css";
+import "./replay.css";
 
-  const { children } = $props();
+const { children } = $props();
 </script>
 
 <svelte:head>

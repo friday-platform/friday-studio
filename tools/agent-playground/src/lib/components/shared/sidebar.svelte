@@ -182,7 +182,7 @@
   </nav>
 
   <div class="footer">
-    <a href="https://platform.hellofriday.ai/docs" target="_blank">Docs</a>
+    <a href="https://docs.hellofriday.ai" target="_blank">Docs</a>
 
     <span class="status-wrapper">
       <button

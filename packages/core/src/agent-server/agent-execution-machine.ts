@@ -291,10 +291,7 @@ export function createAgentExecutionMachine(
         const stream = context.preparedContext?.stream;
         if (!stream) return;
         try {
-          stream.emit({
-            type: "data-integration-disconnected",
-            data: { integrations },
-          });
+          stream.emit({ type: "data-integration-disconnected", data: { integrations } });
         } catch (err) {
           logger.warn("Failed to emit integration-disconnected event", {
             agentId: context.agentId,

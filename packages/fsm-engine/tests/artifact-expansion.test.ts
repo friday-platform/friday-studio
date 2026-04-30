@@ -24,7 +24,14 @@ function makeFileInput(): ArtifactDataInput {
   return { type: "file", version: 1, data: { path: FIXTURE_PATH } };
 }
 
-describe("expandArtifactRefsInDocuments", () => {
+/** Skip when daemon isn't reachable. The whole suite hits the real /api endpoints. */
+const DAEMON_RUNNING = await fetch("http://127.0.0.1:8080/api/health", {
+  signal: AbortSignal.timeout(500),
+})
+  .then((r) => r.ok)
+  .catch(() => false);
+
+describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
   // Track created artifacts for cleanup
   const createdArtifactIds: string[] = [];
 

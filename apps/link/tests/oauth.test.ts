@@ -863,7 +863,8 @@ describe("Delegated OAuth Integration", async () => {
                 JSON.stringify({ uri: finalRedirectUri, manual: false, csrf: csrfToken }),
               ).toString("base64"),
           },
-          identify: async (tokens) => `delegated-user:${tokens.access_token.slice(0, 8)}`,
+          identify: (tokens) =>
+            Promise.resolve(`delegated-user:${tokens.access_token.slice(0, 8)}`),
         }),
       );
     }
@@ -885,9 +886,9 @@ describe("Delegated OAuth Integration", async () => {
     // Verify state payload is base64-encoded JSON with the local callback URI
     const statePayload = authUrlObj.searchParams.get("state");
     if (!statePayload) throw new Error("state should be defined");
-    const decoded = z.object({ manual: z.boolean(), csrf: z.string(), uri: z.string() }).parse(
-      JSON.parse(Buffer.from(statePayload, "base64").toString("utf8")),
-    );
+    const decoded = z
+      .object({ manual: z.boolean(), csrf: z.string(), uri: z.string() })
+      .parse(JSON.parse(Buffer.from(statePayload, "base64").toString("utf8")));
     expect(decoded.manual).toBe(false);
     expect(decoded.csrf).toBeDefined();
     expect(decoded.uri).toMatch(/\/v1\/callback\//);
@@ -919,9 +920,7 @@ describe("Delegated OAuth Integration", async () => {
     expect(credSummary).toMatchObject({ type: "oauth", provider: providerId });
 
     // Verify internal API returns full credential with correct tokens
-    const internalRes = await app.request(
-      `/internal/v1/credentials/${callbackJson.credential_id}`,
-    );
+    const internalRes = await app.request(`/internal/v1/credentials/${callbackJson.credential_id}`);
     expect(internalRes.status).toEqual(200);
     const internalJson = z
       .object({
@@ -995,7 +994,8 @@ describe("Delegated OAuth Integration", async () => {
                 JSON.stringify({ uri: finalRedirectUri, manual: false, csrf: csrfToken }),
               ).toString("base64"),
           },
-          identify: async (tokens) => `delegated-user:${tokens.access_token.slice(0, 8)}`,
+          identify: (tokens) =>
+            Promise.resolve(`delegated-user:${tokens.access_token.slice(0, 8)}`),
         }),
       );
     }
@@ -1007,9 +1007,9 @@ describe("Delegated OAuth Integration", async () => {
     if (!authUrl) throw new Error("authUrl should be defined");
     const statePayload = new URL(authUrl).searchParams.get("state");
     if (!statePayload) throw new Error("state should be defined");
-    const stateJwt = z.object({ csrf: z.string() }).parse(
-      JSON.parse(Buffer.from(statePayload, "base64").toString("utf8")),
-    ).csrf;
+    const stateJwt = z
+      .object({ csrf: z.string() })
+      .parse(JSON.parse(Buffer.from(statePayload, "base64").toString("utf8"))).csrf;
 
     const callbackRes = await app.request(
       `/v1/callback/${providerId}?` +

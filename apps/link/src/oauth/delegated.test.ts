@@ -32,9 +32,11 @@ describe("buildDelegatedAuthUrl", () => {
 
   it("encodes finalRedirectUri inside state, not as redirect_uri", () => {
     const url = new URL(buildDelegatedAuthUrl(config, "csrf-1", "http://localhost:3100/cb"));
-    const decoded = z.object({ uri: z.string(), csrf: z.string(), manual: z.boolean() }).parse(
-      JSON.parse(Buffer.from(url.searchParams.get("state") ?? "", "base64").toString("utf8")),
-    );
+    const decoded = z
+      .object({ uri: z.string(), csrf: z.string(), manual: z.boolean() })
+      .parse(
+        JSON.parse(Buffer.from(url.searchParams.get("state") ?? "", "base64").toString("utf8")),
+      );
     expect(decoded.uri).toBe("http://localhost:3100/cb");
     expect(decoded.csrf).toBe("csrf-1");
     expect(decoded.manual).toBe(false);
