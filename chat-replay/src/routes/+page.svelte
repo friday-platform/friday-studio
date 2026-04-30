@@ -127,6 +127,26 @@
     return piiCustomTermsText.split(/[\n,]+/).map(t => t.trim()).filter(t => t.length > 0);
   }
 
+  function filterJson(value: unknown): unknown {
+    if (typeof value === "string") return filterText(value);
+    if (Array.isArray(value)) return value.map(filterJson);
+    if (value !== null && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, filterJson(v)]));
+    }
+    return value;
+  }
+
+  function filterToolCall(call: ToolCallDisplay): ToolCallDisplay {
+    return {
+      ...call,
+      input: filterJson(call.input),
+      output: filterJson(call.output),
+      errorText: call.errorText !== undefined ? filterText(call.errorText) : undefined,
+      reasoning: call.reasoning !== undefined ? filterText(call.reasoning) : undefined,
+      children: call.children?.map(filterToolCall),
+    };
+  }
+
   function filterText(text: string): string {
     if (!piiEnabled) return text;
     let s = text;
@@ -263,7 +283,7 @@
         const display = toolMap.get(stringValue(part.toolCallId, ""));
         if (display) {
           flushText();
-          toolBuffer.push(sanitizeStaticToolCall(display));
+          toolBuffer.push(filterToolCall(sanitizeStaticToolCall(display)));
         }
       }
     }
