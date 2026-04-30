@@ -4,7 +4,7 @@
  * Accepts JSON { entrypoint: string } where entrypoint is the absolute path to the
  * agent's entry file (e.g. /home/user/my-agent/agent.py). Spawns the agent with
  * FRIDAY_VALIDATE_ID so it publishes its metadata over NATS, then installs the agent
- * to ~/.atlas/agents/{id}@{version}/.
+ * to ~/.friday/local/agents/{id}@{version}/.
  */
 
 import { spawn } from "node:child_process";
@@ -14,7 +14,7 @@ import { basename, dirname, join } from "node:path";
 import process from "node:process";
 import { AgentLLMConfigSchema, MCPServerConfigSchema } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { StringCodec } from "nats";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
@@ -122,7 +122,7 @@ registerAgentRoute.post("/register", async (c) => {
   }
 
   // Install: copy source files + write metadata.json
-  const agentsDir = join(getAtlasHome(), "agents");
+  const agentsDir = join(getFridayHome(), "agents");
   const artifactName = `${metadata.id}@${metadata.version}`;
   const tmpDir = join(agentsDir, `${artifactName}.tmp`);
   const finalDir = join(agentsDir, artifactName);

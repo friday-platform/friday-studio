@@ -173,7 +173,7 @@ curl -X PUT http://localhost:8080/api/config/env \
   -d '{"envVars":{"ANTHROPIC_API_KEY":"sk-...","GITHUB_TOKEN":"ghp_..."}}'
 ```
 
-Writes to `~/.atlas/.env`. Daemon picks up on next restart.
+Writes to `~/.friday/local/.env`. Daemon picks up on next restart.
 
 ## Send a prompt + follow up
 

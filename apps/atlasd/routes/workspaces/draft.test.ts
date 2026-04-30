@@ -41,7 +41,7 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
 
 vi.mock("@atlas/utils/paths.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@atlas/utils/paths.server")>()),
-  getAtlasHome: vi.fn(() => "/tmp"),
+  getFridayHome: vi.fn(() => "/tmp"),
 }));
 
 function createMinimalConfig(): WorkspaceConfig {

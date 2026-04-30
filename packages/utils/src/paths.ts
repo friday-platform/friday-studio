@@ -50,7 +50,7 @@ export function isSystemService(): boolean {
  * - System mode: /var/lib/atlas
  * - User mode: ~/.atlas
  */
-export function getAtlasHome(): string {
+export function getFridayHome(): string {
   const atlasHome = process.env.FRIDAY_HOME;
   if (atlasHome) {
     return atlasHome;
@@ -87,7 +87,7 @@ export function getAtlasHome(): string {
  * Get the Atlas memory directory (global)
  */
 export function getAtlasMemoryDir(): string {
-  return join(getAtlasHome(), "memory");
+  return join(getFridayHome(), "memory");
 }
 
 /**
@@ -95,5 +95,5 @@ export function getAtlasMemoryDir(): string {
  * Used for storing generated/transformed files that need to persist
  */
 export function getWorkspaceFilesDir(workspaceId: string): string {
-  return join(getAtlasHome(), "artifacts", workspaceId);
+  return join(getFridayHome(), "artifacts", workspaceId);
 }

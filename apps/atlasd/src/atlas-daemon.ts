@@ -25,7 +25,7 @@ import { PlatformMCPServer } from "@atlas/mcp-server";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
 import { flush as flushSentry } from "@atlas/sentry";
 import type { LibraryStorageAdapter } from "@atlas/storage";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createKVStorage,
   createLibraryStorage,
@@ -378,7 +378,7 @@ export class AtlasDaemon {
     logger.info("Initializing agent registry...");
     const agentRegistry = new CoreAgentRegistry({
       includeSystemAgents: true,
-      userAgentsDir: join(getAtlasHome(), "agents"),
+      userAgentsDir: join(getFridayHome(), "agents"),
     });
     await agentRegistry.initialize();
     logger.info("Agent registry initialized");
@@ -466,7 +466,7 @@ export class AtlasDaemon {
 
     // Initialize session history v2 adapter + registry
     this.sessionHistoryAdapter = new LocalSessionHistoryAdapter(
-      join(getAtlasHome(), "sessions-v2"),
+      join(getFridayHome(), "sessions-v2"),
     );
     this.sessionStreamRegistry = new SessionStreamRegistry(nc);
     this.sessionStreamRegistry.start();

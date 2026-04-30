@@ -9,7 +9,7 @@ import { memoryNarrativeRoutes } from "./index.ts";
 
 let mockAtlasHome = "";
 
-vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => mockAtlasHome }));
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => mockAtlasHome }));
 
 const EntryArraySchema = z.array(NarrativeEntrySchema);
 

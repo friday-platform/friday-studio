@@ -12,7 +12,7 @@ import { seedMemories } from "@atlas/memory";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SYSTEM_WORKSPACES } from "@atlas/system/workspaces";
 import { randomColor } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { parse as parseDotenv } from "@std/dotenv";
 import { getCanonicalKind } from "./canonical.ts";
 import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
@@ -94,7 +94,7 @@ export function validateMCPEnvironmentForWorkspace(
       `Missing required environment variables for workspace:\n${formatted}\n\n` +
         `Set these in:\n` +
         `  - ${workspaceEnvHint}\n` +
-        `  - ~/.atlas/.env\n` +
+        `  - ${join(getFridayHome(), ".env")}\n` +
         `  - System environment`,
     );
   }
@@ -286,7 +286,7 @@ export class WorkspaceManager {
     const ownEntries = config.workspace.memory?.own ?? [];
     if (ownEntries.length > 0) {
       try {
-        const memoryAdapter = new MdMemoryAdapter({ root: getAtlasHome() });
+        const memoryAdapter = new MdMemoryAdapter({ root: getFridayHome() });
         await seedMemories(memoryAdapter, entry.id, ownEntries);
       } catch (error) {
         logger.warn("Failed to seed workspace memories", { workspaceId: entry.id, error });
@@ -609,14 +609,14 @@ export class WorkspaceManager {
   }
 
   /**
-   * Auto-import user workspaces from ~/.atlas/workspaces.
+   * Auto-import user workspaces from ~/.friday/local/workspaces.
    *
    * Searches a small depth for directories containing workspace.yml, de-dupes, validates
    * configs, logs and skips invalid ones. Never throws; returns import count.
    */
   private async importExistingWorkspaces(): Promise<number> {
     const workspaces: string[] = [];
-    const atlasWorkspacesDir = join(getAtlasHome(), "workspaces");
+    const atlasWorkspacesDir = join(getFridayHome(), "workspaces");
     const commonPaths = [atlasWorkspacesDir];
 
     for (const basePath of commonPaths) {
@@ -723,6 +723,7 @@ export class WorkspaceManager {
         ".git",
         "node_modules",
         ".atlas",
+        ".friday",
         "dist",
         "build",
         ".next",

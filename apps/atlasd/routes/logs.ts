@@ -1,5 +1,5 @@
 /**
- * GET /api/logs/tail — reads ~/.atlas/logs/global.log from a byte offset,
+ * GET /api/logs/tail — reads ~/.friday/local/logs/global.log from a byte offset,
  * parses JSONL, filters by level, returns structured entries with next_offset
  * for cursor-based pagination.
  *
@@ -11,7 +11,7 @@ import { Buffer } from "node:buffer";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { logger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { validator } from "hono-openapi";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
@@ -107,7 +107,7 @@ const logsRoutes = daemonFactory.createApp();
 logsRoutes.get("/tail", validator("query", LogTailQuerySchema), async (c) => {
   const { since_offset, limit, level_filter } = c.req.valid("query");
   const allowedLevels = new Set(level_filter.split(",").map((l) => l.trim().toLowerCase()));
-  const logPath = join(getAtlasHome(), "logs", LOG_FILE_NAME);
+  const logPath = join(getFridayHome(), "logs", LOG_FILE_NAME);
 
   const emptyResponse: LogTailResponse = {
     entries: [],

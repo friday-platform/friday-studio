@@ -5,12 +5,12 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isErrnoException } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { DocumentStore } from "./document-store.ts";
 import type { DocumentScope, StoredDocument } from "./types.ts";
 
 export interface FileSystemDocumentStoreOptions {
-  /** Base storage path. Defaults to ~/.atlas/workspaces */
+  /** Base storage path. Defaults to ~/.friday/local/workspaces */
   basePath?: string;
 }
 
@@ -19,13 +19,13 @@ export class FileSystemDocumentStore extends DocumentStore {
 
   constructor(options: FileSystemDocumentStoreOptions = {}) {
     super();
-    this.basePath = options.basePath || join(getAtlasHome(), "workspaces");
+    this.basePath = options.basePath || join(getFridayHome(), "workspaces");
   }
 
   /** Build file path for a document */
   private buildPath(scope: DocumentScope, type: string, id: string): string {
     if (scope.sessionId) {
-      // Session-scoped: ~/.atlas/workspaces/{workspaceId}/sessions/{sessionId}/{type}/{id}.json
+      // Session-scoped: ~/.friday/local/workspaces/{workspaceId}/sessions/{sessionId}/{type}/{id}.json
       return join(
         this.basePath,
         scope.workspaceId,
@@ -36,7 +36,7 @@ export class FileSystemDocumentStore extends DocumentStore {
       );
     }
 
-    // Workspace-scoped: ~/.atlas/workspaces/{workspaceId}/{type}/{id}.json
+    // Workspace-scoped: ~/.friday/local/workspaces/{workspaceId}/{type}/{id}.json
     return join(this.basePath, scope.workspaceId, type, `${id}.json`);
   }
 

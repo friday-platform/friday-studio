@@ -24,6 +24,7 @@ import type {
 } from "@atlas/core/library";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { typeByExtension } from "@std/media-types";
 import type { KVStorage } from "./kv-storage.ts";
 
@@ -41,7 +42,12 @@ const EXTENSION_OVERRIDES: Record<string, string> = {
  * Library storage configuration
  */
 export interface LibraryStorageConfig {
-  /** Base directory for content storage. Defaults to ~/.atlas/library */
+  /**
+   * Base directory for content storage. Defaults to a platform-conventional
+   * path (XDG / macOS Application Support / Windows %APPDATA%) when running
+   * standalone, or `<friday-home>/library` under the Friday Studio launcher.
+   * Override via env var `FRIDAY_LIBRARY_DIR`.
+   */
   contentDir?: string;
   /** Whether to organize content by source subdirectories */
   organizeBySource?: boolean;
@@ -52,40 +58,48 @@ export interface LibraryStorageConfig {
 }
 
 /**
- * Get default library storage directory following XDG Base Directory specification
+ * Resolve the default library content directory.
+ *
+ * Two layers:
+ *
+ * 1. **Under the Friday Studio launcher** (`FRIDAY_HOME` is exported, set
+ *    by `commonServiceEnv` in tools/friday-launcher), library content lives
+ *    at `<FRIDAY_HOME>/library` — i.e. `~/.friday/local/library`. Pinning
+ *    it to the launcher-owned home keeps every supervised storage in one
+ *    place and avoids leaking content into platform-shared XDG dirs that
+ *    the user didn't pick.
+ *
+ * 2. **Standalone / dev / manual `atlas daemon start`** — follow the XDG
+ *    Base Directory specification per platform so existing standalone
+ *    installations don't lose their library on upgrade and content lives
+ *    where users expect it (macOS Application Support, Linux ~/.local/
+ *    share, Windows %LOCALAPPDATA%).
  */
 function getDefaultLibraryDir(): string {
-  // Implement XDG Base Directory specification manually
-  if (process.platform === "win32") {
-    // Windows: Use LOCALAPPDATA or APPDATA
-    const localAppData = process.env.LOCALAPPDATA;
-    if (localAppData) {
-      return join(localAppData, "Atlas", "library");
-    }
-    const appData = process.env.APPDATA;
-    if (appData) {
-      return join(appData, "Atlas", "library");
-    }
-  } else if (process.platform === "darwin") {
-    // macOS: Use ~/Library/Application Support
-    const homeDir = process.env.HOME;
-    if (homeDir) {
-      return join(homeDir, "Library", "Application Support", "Atlas", "library");
-    }
-  } else {
-    // Linux/Unix: Use XDG_DATA_HOME or ~/.local/share
-    const xdgDataHome = process.env.XDG_DATA_HOME;
-    if (xdgDataHome) {
-      return join(xdgDataHome, "atlas", "library");
-    }
-    const homeDir = process.env.HOME;
-    if (homeDir) {
-      return join(homeDir, ".local", "share", "atlas", "library");
-    }
+  // Launcher-managed install: keep everything under FRIDAY_HOME.
+  if (process.env.FRIDAY_HOME) {
+    return join(getFridayHome(), "library");
   }
 
-  // Fallback to current directory
-  return join(process.cwd(), ".atlas", "library");
+  // Standalone install: XDG Base Directory specification per platform.
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData) return join(localAppData, "Atlas", "library");
+    const appData = process.env.APPDATA;
+    if (appData) return join(appData, "Atlas", "library");
+  } else if (process.platform === "darwin") {
+    const homeDir = process.env.HOME;
+    if (homeDir) return join(homeDir, "Library", "Application Support", "Atlas", "library");
+  } else {
+    const xdgDataHome = process.env.XDG_DATA_HOME;
+    if (xdgDataHome) return join(xdgDataHome, "atlas", "library");
+    const homeDir = process.env.HOME;
+    if (homeDir) return join(homeDir, ".local", "share", "atlas", "library");
+  }
+
+  // Last-resort fallback when neither FRIDAY_HOME nor any platform env is
+  // populated — defer to getFridayHome() (which itself has CWD detection).
+  return join(getFridayHome(), "library");
 }
 
 /**

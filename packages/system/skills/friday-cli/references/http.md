@@ -220,7 +220,7 @@ Mount: `/api/activity`. Auth required.
 
 ## Config
 
-- `GET /api/config/env` — `{ envVars }` from `~/.atlas/.env`
+- `GET /api/config/env` — `{ envVars }` from `~/.friday/local/.env`
 - `PUT /api/config/env` — body `{ envVars }`. Creates dir if missing.
 
 ## Daemon

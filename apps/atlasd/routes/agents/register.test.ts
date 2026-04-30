@@ -55,7 +55,7 @@ vi.mock("nats", () => ({
   }),
 }));
 
-vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => "/mock-atlas-home" }));
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => "/mock-atlas-home" }));
 
 vi.mock("node:fs/promises", () => ({
   cp: vi.fn().mockResolvedValue(undefined),

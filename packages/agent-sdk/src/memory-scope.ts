@@ -3,7 +3,7 @@
  *
  * Canonical source for the memory scope taxonomy:
  *   1. GLOBAL  — synthetic workspace id "_global", write-gated to kernel
- *   2. PER-WORKSPACE — owned by exactly one workspace at ~/.atlas/memory/{wsId}/
+ *   2. PER-WORKSPACE — owned by exactly one workspace at ~/.friday/local/memory/{wsId}/
  *   3. MOUNTED — runtime alias resolved from workspace.yml memory.mounts[]
  *
  * The MemoryAdapter interface is scope-agnostic at the call site. The

@@ -63,7 +63,7 @@ import {
   registry,
   traceModel,
 } from "@atlas/llm";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { jsonSchema, stepCountIs, streamText, tool } from "ai";
 import dotenv from "dotenv";
 import { z } from "zod";
@@ -75,7 +75,7 @@ import { createScore } from "../../lib/scoring.ts";
 // `loadCredentials()` (which requires FRIDAY_KEY for the gateway fetch) and
 // load just the dotenv files. ANTHROPIC_API_KEY is the minimum.
 dotenv.config();
-const globalAtlasEnv = join(getAtlasHome(), ".env");
+const globalAtlasEnv = join(getFridayHome(), ".env");
 if (existsSync(globalAtlasEnv)) {
   dotenv.config({ path: globalAtlasEnv, override: true });
 }

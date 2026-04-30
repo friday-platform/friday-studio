@@ -92,3 +92,121 @@ func TestFridayEnv_OmitsAgentBrowserPathWhenAbsent(t *testing.T) {
 		}
 	}
 }
+
+// TestSupervisedProcesses_PortOverridesPropagate verifies that
+// FRIDAY_PORT_<name> env vars don't just update the launcher's own
+// readiness probe (which the original portOverride code already did)
+// but also propagate the port into the supervised binary itself —
+// either as a CLI flag (friday's --port) or an env var (LINK_PORT,
+// TUNNEL_PORT, PLAYGROUND_PORT). Without this propagation the launcher
+// would probe the override port while the binary stays on its hardcoded
+// default, and the supervisor stays "starting" forever.
+func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
+	t.Setenv("FRIDAY_PORT_friday", "18080")
+	t.Setenv("FRIDAY_PORT_link", "13100")
+	t.Setenv("FRIDAY_PORT_webhook_tunnel", "19090")
+	t.Setenv("FRIDAY_PORT_playground", "15200")
+
+	specs := supervisedProcesses("/tmp/bin")
+
+	cases := []struct {
+		name string
+		// One of args / env must contain the wantSubstring.
+		check    string
+		wantArg  string // exact-arg expectation: presence of the literal token in args
+		wantEnv  string // KEY=VAL expectation: presence in env
+		wantPort string // healthPort
+	}{
+		{name: "friday", check: "args", wantArg: "--port", wantPort: "18080"},
+		{name: "link", check: "env", wantEnv: "LINK_PORT=13100", wantPort: "13100"},
+		{name: "webhook-tunnel", check: "env", wantEnv: "TUNNEL_PORT=19090", wantPort: "19090"},
+		{name: "playground", check: "env", wantEnv: "PLAYGROUND_PORT=15200", wantPort: "15200"},
+	}
+
+	for _, tc := range cases {
+		var found *processSpec
+		for i := range specs {
+			if specs[i].name == tc.name {
+				found = &specs[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("service %q missing from supervisedProcesses", tc.name)
+		}
+
+		if found.healthPort != tc.wantPort {
+			t.Errorf("service %q: healthPort = %q, want %q",
+				tc.name, found.healthPort, tc.wantPort)
+		}
+
+		switch tc.check {
+		case "args":
+			// For friday, both the flag and the value must appear, and
+			// the value must immediately follow the flag.
+			joined := strings.Join(found.args, " ")
+			want := tc.wantArg + " " + tc.wantPort
+			if !strings.Contains(joined, want) {
+				t.Errorf("service %q: args missing %q\ngot: %s",
+					tc.name, want, joined)
+			}
+		case "env":
+			if !slices.Contains(found.env, tc.wantEnv) {
+				t.Errorf("service %q: env missing %q\ngot:\n%s",
+					tc.name, tc.wantEnv, strings.Join(found.env, "\n"))
+			}
+		}
+	}
+}
+
+// TestPlaygroundURL_HonorsPortOverride asserts the tray opens the
+// correct URL when the playground port is overridden. Without this
+// the tray click after a port override silently lands on
+// http://localhost:5200 (default) and the user sees connection
+// refused.
+func TestPlaygroundURL_HonorsPortOverride(t *testing.T) {
+	if got := playgroundURL(); got != "http://localhost:5200" {
+		t.Errorf("default playgroundURL = %q, want http://localhost:5200", got)
+	}
+	t.Setenv("FRIDAY_PORT_playground", "15200")
+	if got := playgroundURL(); got != "http://localhost:15200" {
+		t.Errorf("overridden playgroundURL = %q, want http://localhost:15200", got)
+	}
+}
+
+// TestCommonServiceEnv_EmitsFridayHome guards the contract that
+// drives the entire ~/.friday/local redirect: every supervised
+// service (friday daemon, link, webhook-tunnel, playground) must
+// receive FRIDAY_HOME so getFridayHome() in @atlas/utils resolves
+// to the launcher-owned home. Without this, services fall back to
+// the legacy ~/.atlas location and homes silently drift apart —
+// the original bug that motivated commit 41ead9310.
+//
+// Walks supervisedProcesses() rather than spot-checking the factory
+// helper, so a refactor that swaps any one service's `env:
+// commonServiceEnv()` to a custom slice surfaces immediately.
+func TestCommonServiceEnv_EmitsFridayHome(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	want := "FRIDAY_HOME=" + filepath.Join(tmpHome, ".friday", "local")
+
+	specs := supervisedProcesses("/tmp/bin")
+	required := []string{"friday", "link", "webhook-tunnel", "playground"}
+	for _, name := range required {
+		var found *processSpec
+		for i := range specs {
+			if specs[i].name == name {
+				found = &specs[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("service %q missing from supervisedProcesses", name)
+		}
+		if !slices.Contains(found.env, want) {
+			t.Errorf("service %q env missing %q\ngot:\n%s",
+				name, want, strings.Join(found.env, "\n"))
+		}
+	}
+}

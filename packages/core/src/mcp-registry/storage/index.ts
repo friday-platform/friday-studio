@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import process from "node:process";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import type { MCPRegistryStorageAdapter } from "./adapter.ts";
 import { CortexMCPRegistryAdapter } from "./cortex-adapter.ts";
 import { LocalMCPRegistryAdapter } from "./local-adapter.ts";
@@ -32,7 +32,7 @@ export async function getMCPRegistryAdapter(): Promise<MCPRegistryStorageAdapter
     cachedAdapter = new CortexMCPRegistryAdapter(cortexUrl, atlasKey);
   } else {
     if (!cachedKv) {
-      cachedKv = await Deno.openKv(join(getAtlasHome(), "mcp-registry.db"));
+      cachedKv = await Deno.openKv(join(getFridayHome(), "mcp-registry.db"));
     }
     cachedAdapter = new LocalMCPRegistryAdapter(cachedKv);
   }

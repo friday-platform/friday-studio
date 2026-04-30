@@ -1,7 +1,7 @@
 // Package cloudflared resolves a usable cloudflared binary for the
 // tunnel manager. Discovery has four tiers: sibling of own binary →
-// $PATH → ~/.atlas/bin (cached prior download) → in-Go HTTPS download
-// from github.com/cloudflare/cloudflared releases.
+// $PATH → ~/.friday/local/bin (cached prior download) → in-Go HTTPS
+// download from github.com/cloudflare/cloudflared releases.
 //
 // Downloads are atomic: tmp.<pid> → fsync → verify against the digest
 // reported by GitHub's releases API → atomic rename. A
@@ -54,8 +54,8 @@ type resolveResult struct {
 }
 
 // Resolve returns a path to a usable cloudflared binary, downloading
-// to ~/.atlas/bin/ if discovery comes up empty. The returned path is
-// safe to pass directly to exec.Command.
+// to ~/.friday/local/bin/ if discovery comes up empty. The returned
+// path is safe to pass directly to exec.Command.
 func Resolve(ctx context.Context) (string, error) {
 	if path, ok := lookupSibling(); ok {
 		return path, nil
@@ -97,7 +97,7 @@ func cachedPath() string {
 		// on a misconfigured system.
 		return "/tmp/cloudflared"
 	}
-	bin := filepath.Join(home, ".atlas", "bin", "cloudflared")
+	bin := filepath.Join(home, ".friday", "local", "bin", "cloudflared")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}

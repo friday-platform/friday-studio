@@ -56,7 +56,7 @@ export const agentsRoute = new Hono().get("/", async (c) => {
     };
   });
 
-  // Discover user agents from ~/.atlas/agents/
+  // Discover user agents from ~/.friday/local/agents/
   const userAgents = await listUserAgents();
   const emptyExamples: string[] = [];
   const emptyRequired: ReturnType<typeof toRequiredConfigEntry>[] = [];

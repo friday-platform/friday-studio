@@ -3,7 +3,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { exists } from "@atlas/utils/fs.server";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import type { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "logs";
@@ -29,7 +29,7 @@ export function builder(y: YargsInstance) {
     .option("workspace", { type: "string", describe: "Filter by workspace ID" });
 }
 
-/** Log entry from ~/.atlas/logs/*.log files (JSON lines) */
+/** Log entry from ~/.friday/local/logs/*.log files (JSON lines) */
 interface LogEntry {
   timestamp: string; // ISO 8601: "2025-12-19T20:44:24.029Z"
   level: string; // lowercase: "debug", "info", "warn", "error"
@@ -53,7 +53,7 @@ async function readLogFile(path: string): Promise<LogEntry[]> {
 }
 
 async function readAllLogs(): Promise<LogEntry[]> {
-  const logsDir = join(getAtlasHome(), "logs");
+  const logsDir = join(getFridayHome(), "logs");
 
   // Defensive: handle missing logs directory (fresh install)
   if (!(await exists(logsDir))) {
@@ -120,7 +120,7 @@ async function getChatWorkspaceId(chatId: string): Promise<string> {
  * Only reads workspace-specific log file, not global logs.
  */
 async function readWorkspaceLogs(workspaceId: string): Promise<LogEntry[]> {
-  const logsDir = join(getAtlasHome(), "logs");
+  const logsDir = join(getFridayHome(), "logs");
   const wsLogPath = join(logsDir, "workspaces", `${workspaceId}.log`);
 
   if (!(await exists(wsLogPath))) {

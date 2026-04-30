@@ -9,7 +9,7 @@ import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { createLogger, logger } from "@atlas/logger";
 import { enrichCatalogEntries, toCatalogEntries } from "@atlas/resources";
 import { stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import Papa from "papaparse";
 import { z } from "zod";
@@ -312,7 +312,7 @@ const resourceRoutes = daemonFactory
       const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
       const artifactsDir = usingCortex
         ? join(tmpdir(), "atlas-artifacts")
-        : join(getAtlasHome(), "uploads", "artifacts");
+        : join(getFridayHome(), "uploads", "artifacts");
       await mkdir(artifactsDir, { recursive: true });
 
       const persistedPath = join(

@@ -48,7 +48,7 @@ export function registerConvertTaskToWorkspaceTool(server: McpServer, ctx: ToolC
         // 2. Build workspace plan from task result
         // 3. Enrich signal based on signal type
         // 4. Generate workspace.yml using buildWorkspaceConfig()
-        // 5. Write files to ~/.atlas/workspaces/{workspace-name}/
+        // 5. Write files to ~/.friday/local/workspaces/{workspace-name}/
         // 6. Register workspace via daemon API
 
         ctx.logger.info("Workspace conversion not yet implemented", { taskResultId });

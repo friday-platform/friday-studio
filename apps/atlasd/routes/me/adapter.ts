@@ -4,7 +4,7 @@ import process from "node:process";
 import { decodeJwtPayload } from "@atlas/core/credentials";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { z } from "zod";
 import { type UserIdentity, UserIdentitySchema } from "./schemas.ts";
 
@@ -214,7 +214,7 @@ async function patchPersonaService(
 }
 
 function getLocalProfilePath(): string {
-  return join(getAtlasHome(), "profile.json");
+  return join(getFridayHome(), "profile.json");
 }
 
 const LocalProfileSchema = z.record(z.string(), z.unknown());
@@ -262,7 +262,7 @@ async function updateLocalProfile(
   if (fields.profile_photo !== undefined) overrides.profile_photo = fields.profile_photo;
 
   // Save overrides
-  const dir = getAtlasHome();
+  const dir = getFridayHome();
   await mkdir(dir, { recursive: true });
   await writeFile(getLocalProfilePath(), JSON.stringify(overrides, null, 2));
 

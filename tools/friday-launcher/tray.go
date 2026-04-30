@@ -276,7 +276,7 @@ func (t *trayController) openBrowser(reason string) {
 		log.Info("browser-open suppressed by --no-browser", "reason", reason)
 		return
 	}
-	const url = "http://localhost:5200"
+	url := playgroundURL()
 	log.Info("opening browser", "reason", reason, "url", url)
 	if err := openURLInBrowser(url); err != nil {
 		log.Error("openBrowser failed", "error", err)

@@ -23,6 +23,7 @@ import {
   resolveEnvValues,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
@@ -232,8 +233,7 @@ async function connectServer(
  */
 function interpolateArg(arg: string): string {
   const home = process.env.HOME ?? "";
-  const atlasHome = process.env.FRIDAY_HOME ?? (home ? `${home}/.atlas` : "");
-  return arg.replaceAll("${HOME}", home).replaceAll("${FRIDAY_HOME}", atlasHome);
+  return arg.replaceAll("${HOME}", home).replaceAll("${FRIDAY_HOME}", getFridayHome());
 }
 
 async function connectStdio(

@@ -315,51 +315,62 @@
               {/if}
             {:else if segment.type === "tool-burst"}
               {@const calls = segment.calls}
-              {@const anyRunning = calls.some((c) => isInProgress(c.state))}
-              {@const anyError = calls.some((c) => isError(c.state))}
+              {@const regularCalls = calls.filter((c) => !needsUserAction(c))}
+              {@const actionCalls = calls.filter((c) => needsUserAction(c))}
+              {@const anyRunning = regularCalls.some((c) => isInProgress(c.state))}
+              {@const anyError = regularCalls.some((c) => isError(c.state))}
               {@const isOpen = isBurstOpen(segment.id)}
-              <div class="tool-burst" class:open={isOpen}>
-                <div
-                  class="tool-burst-bar"
-                  role="button"
-                  tabindex="0"
-                  onclick={() => toggleBurst(segment.id)}
-                  onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") toggleBurst(segment.id); }}
-                >
-                  <span class="burst-icon" aria-hidden="true">
-                    {#if anyRunning}
-                      <span class="burst-pulse"></span>
-                    {:else if anyError}
-                      <span class="burst-error-mark">!</span>
-                    {:else}
-                      <span class="burst-success-mark">✓</span>
-                    {/if}
-                  </span>
-                  <span class="burst-label">{toolBurstSummary(calls)}</span>
-                  <span class="burst-chevron" aria-hidden="true">
-                    <IconSmall.ChevronRight />
-                  </span>
-                </div>
-                {#if isOpen}
-                  <div class="tool-burst-body">
-                    {#if segment.reasoning}
-                      <div class="burst-reasoning">
-                        {#each segment.reasoning.split("\n").filter((l) => l.trim()) as line}
-                          <div class="reasoning-line">
-                            <span class="reasoning-dot" aria-hidden="true"></span>
-                            <span class="reasoning-text">{line}</span>
-                          </div>
+              {#if regularCalls.length > 0}
+                <div class="tool-burst" class:open={isOpen}>
+                  <div
+                    class="tool-burst-bar"
+                    role="button"
+                    tabindex="0"
+                    onclick={() => toggleBurst(segment.id)}
+                    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") toggleBurst(segment.id); }}
+                  >
+                    <span class="burst-icon" aria-hidden="true">
+                      {#if anyRunning}
+                        <span class="burst-pulse"></span>
+                      {:else if anyError}
+                        <span class="burst-error-mark">!</span>
+                      {:else}
+                        <span class="burst-success-mark">✓</span>
+                      {/if}
+                    </span>
+                    <span class="burst-label">{toolBurstSummary(regularCalls)}</span>
+                    <span class="burst-chevron" aria-hidden="true">
+                      <IconSmall.ChevronRight />
+                    </span>
+                  </div>
+                  {#if isOpen}
+                    <div class="tool-burst-body">
+                      {#if segment.reasoning}
+                        <div class="burst-reasoning">
+                          {#each segment.reasoning.split("\n").filter((l) => l.trim()) as line}
+                            <div class="reasoning-line">
+                              <span class="reasoning-dot" aria-hidden="true"></span>
+                              <span class="reasoning-text">{line}</span>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                      <div class="tool-call-list">
+                        {#each regularCalls as call (call.toolCallId || call.toolName)}
+                          <ToolCallCard {call} {onCredentialConnected} />
                         {/each}
                       </div>
-                    {/if}
-                    <div class="tool-call-list">
-                      {#each calls as call (call.toolCallId || call.toolName)}
-                        <ToolCallCard {call} {onCredentialConnected} />
-                      {/each}
                     </div>
-                  </div>
-                {/if}
-              </div>
+                  {/if}
+                </div>
+              {/if}
+              {#if actionCalls.length > 0}
+                <div class="tool-call-list">
+                  {#each actionCalls as call (call.toolCallId || call.toolName)}
+                    <ToolCallCard {call} {onCredentialConnected} />
+                  {/each}
+                </div>
+              {/if}
             {/if}
           {/each}
 

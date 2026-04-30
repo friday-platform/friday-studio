@@ -31,7 +31,7 @@ Environment variables:
 | Variable                     | Description                              | Default                   |
 | ---------------------------- | ---------------------------------------- | ------------------------- |
 | `LINK_PORT`                  | HTTP server port                         | `3100`                    |
-| `LINK_CREDENTIALS_PATH`      | Credentials storage directory            | `~/.atlas/credentials`    |
+| `LINK_CREDENTIALS_PATH`      | Credentials storage directory            | `~/.friday/local/credentials` |
 | `LINK_DEV_MODE`              | Skip JWT verification                    | `false`                   |
 | `LINK_JWT_PUBLIC_KEY_FILE`   | Path to RS256 public key (prod mode)     | Required if not dev mode  |
 | `LINK_STATE_SIGNING_KEY_FILE`| Secret for signing OAuth state JWTs      | Random UUID (ephemeral)   |

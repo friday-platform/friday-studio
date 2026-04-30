@@ -182,7 +182,7 @@ information the `agentBlocks[]` array does in the final summary.
 
 ## Logs
 
-**Location**: `~/.atlas/logs/global.log` + `~/.atlas/logs/workspaces/<workspaceId>.log`
+**Location**: `~/.friday/local/logs/global.log` + `~/.friday/local/logs/workspaces/<workspaceId>.log`
 
 **Format**: NDJSON. One JSON object per line:
 

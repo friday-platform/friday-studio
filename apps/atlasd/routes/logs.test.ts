@@ -37,7 +37,7 @@ vi.mock("node:fs/promises", () => ({
   open: (...args: unknown[]) => mockOpen(args[0] as string, args[1] as string),
 }));
 
-vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => "/mock/atlas" }));
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => "/mock/atlas" }));
 
 vi.mock("@atlas/logger", () => ({
   logger: {

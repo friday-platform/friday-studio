@@ -5,7 +5,7 @@ import { enterTraceScope, type TraceEntry } from "@atlas/llm";
 import { logger } from "@atlas/logger/console";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { parseSSEEvents } from "@atlas/utils/sse";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -33,7 +33,7 @@ export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody)
 
   // User agents proxy to daemon via NATS subprocess protocol
   if (await userAgentExists(agentId)) {
-    const adapter = new UserAdapter(join(getAtlasHome(), "agents"));
+    const adapter = new UserAdapter(join(getFridayHome(), "agents"));
     const agentSource = await adapter.loadAgent(agentId);
     if (!agentSource.metadata.entrypoint) {
       return c.json({ error: `Agent "${agentId}" has no entrypoint` }, 400);

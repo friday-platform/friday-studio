@@ -1,7 +1,7 @@
 /**
  * User agents discovery for the playground.
  *
- * Discovers user-built WASM agents from ~/.atlas/agents/ via the UserAdapter.
+ * Discovers user-built WASM agents from ~/.friday/local/agents/ via the UserAdapter.
  * Replaces the previous hardcoded proto import.
  */
 
@@ -9,10 +9,10 @@ import { join } from "node:path";
 import process from "node:process";
 import type { AgentSummary } from "@atlas/core/agent-loader";
 import { UserAdapter } from "@atlas/core/agent-loader";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 
 function resolveAgentSourceDir(): string {
-  return process.env.AGENT_SOURCE_DIR ?? join(getAtlasHome(), "agents");
+  return process.env.AGENT_SOURCE_DIR ?? join(getFridayHome(), "agents");
 }
 
 /** List user-built agents from disk. Re-scans on every call (no caching). */

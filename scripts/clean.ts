@@ -4,7 +4,7 @@ import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import { isErrnoException, stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 
 /**
  * Clean script to remove Atlas data directory contents
@@ -16,7 +16,7 @@ const PRESERVED_ENTRIES = new Set([".env", "bin"]);
 const PRESERVED_SUFFIXES = ["_client_id", "_client_secret"];
 
 async function cleanAgents() {
-  const atlasHome = getAtlasHome();
+  const atlasHome = getFridayHome();
   const agentsDir = join(atlasHome, "agents");
   try {
     await rm(agentsDir, { recursive: true, force: true });
@@ -28,7 +28,7 @@ async function cleanAgents() {
 }
 
 async function clean() {
-  const atlasHome = getAtlasHome();
+  const atlasHome = getFridayHome();
 
   try {
     let didDelete = false;

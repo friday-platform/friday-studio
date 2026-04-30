@@ -49,7 +49,7 @@ import { createLedgerClient } from "@atlas/resources";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { parse, stringify } from "@std/yaml";
 import { z } from "zod";
@@ -684,7 +684,7 @@ const workspacesRoutes = daemonFactory
 
       const workspaceAdapter = new FilesystemWorkspaceCreationAdapter();
       const finalWorkspaceName = workspaceName || validatedConfig.workspace.name;
-      const basePath = join(getAtlasHome(), "workspaces");
+      const basePath = join(getFridayHome(), "workspaces");
 
       try {
         const workspacePath = await workspaceAdapter.createWorkspaceDirectory(
@@ -929,7 +929,7 @@ const workspacesRoutes = daemonFactory
             config: cfg,
             mode,
             logger: bundleLogger,
-            ...(mode === "migration" ? { memoryDir: join(getAtlasHome(), "memory", ws.id) } : {}),
+            ...(mode === "migration" ? { memoryDir: join(getFridayHome(), "memory", ws.id) } : {}),
           });
           bundles.push({ id: ws.id, name: built.name, bundleBytes: built.bundleBytes });
         } catch (err) {
@@ -940,7 +940,7 @@ const workspacesRoutes = daemonFactory
       let globalSkillsBytes: Uint8Array | undefined;
       let globalSkillsStatus = "not-requested";
       if (includeGlobalSkills) {
-        const skillsDbPath = join(getAtlasHome(), "skills.db");
+        const skillsDbPath = join(getFridayHome(), "skills.db");
         const exported = await exportGlobalSkills({ skillsDbPath });
         if (exported.bytes) {
           globalSkillsBytes = exported.bytes;
@@ -988,7 +988,7 @@ const workspacesRoutes = daemonFactory
       }
       const zipBytes = new Uint8Array(await file.arrayBuffer());
 
-      const atlasHome = getAtlasHome();
+      const atlasHome = getFridayHome();
       const workspacesRoot = join(atlasHome, "workspaces");
       await mkdir(workspacesRoot, { recursive: true });
 
@@ -1231,7 +1231,7 @@ const workspacesRoutes = daemonFactory
         mode,
         logger: bundleLogger,
         ...(mode === "migration"
-          ? { memoryDir: join(getAtlasHome(), "memory", workspace.id) }
+          ? { memoryDir: join(getFridayHome(), "memory", workspace.id) }
           : {}),
       });
 
@@ -1263,7 +1263,7 @@ const workspacesRoutes = daemonFactory
       }
       const zipBytes = new Uint8Array(await file.arrayBuffer());
 
-      const atlasHome = getAtlasHome();
+      const atlasHome = getFridayHome();
       const importRoot = join(atlasHome, "workspaces");
       await mkdir(importRoot, { recursive: true });
       const uniqueSuffix = Date.now().toString(36);
@@ -2163,13 +2163,13 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: `Cannot delete canonical workspace '${workspaceId}'` }, 403);
         }
 
-        // Check if workspace is in .atlas directory
-        const atlasDir = getAtlasHome();
+        // Check if workspace is inside the daemon's friday-home dir
+        const fridayDir = getFridayHome();
         const workspacePath = workspace.path;
 
-        if (workspacePath.startsWith(atlasDir)) {
+        if (workspacePath.startsWith(fridayDir)) {
           // Create unregistered directory if it doesn't exist
-          const unregisteredDir = join(atlasDir, "unregistered");
+          const unregisteredDir = join(fridayDir, "unregistered");
           await mkdir(unregisteredDir, { recursive: true });
 
           // Move workspace to unregistered folder with collision handling

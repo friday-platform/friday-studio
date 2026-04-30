@@ -27,9 +27,9 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { SessionStreamRegistry } from "../../src/session-stream-registry.ts";
 import { sessionsRoutes } from "./index.ts";
 
-// Mock getAtlasHome so the v1 file check uses our temp directory
+// Mock getFridayHome so the v1 file check uses our temp directory
 const mockAtlasHome = vi.hoisted(() => ({ value: "" }));
-vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => mockAtlasHome.value }));
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => mockAtlasHome.value }));
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -199,7 +199,7 @@ describe("Session History v2 Routes", () => {
       `session-history-v2-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     await mkdir(testDir, { recursive: true });
-    // Point getAtlasHome() at our temp directory so v1 file checks work
+    // Point getFridayHome() at our temp directory so v1 file checks work
     mockAtlasHome.value = testDir;
     adapter = new LocalSessionHistoryAdapter(testDir);
     registry = new SessionStreamRegistry(mockNatsConnection());

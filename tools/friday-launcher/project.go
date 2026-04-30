@@ -53,6 +53,13 @@ func commonServiceEnv() []string {
 			env = append(env, k+"="+v)
 		}
 	}
+	// Pin every supervised service to the launcher-owned home. The friday
+	// daemon's getFridayHome() reads FRIDAY_HOME first; sibling services
+	// (link, webhook-tunnel, playground) that resolve their own paths via
+	// the same helper need the same value, otherwise their data drifts to
+	// the legacy ~/.atlas fallback while the daemon writes to
+	// ~/.friday/local — homes diverge silently.
+	env = append(env, "FRIDAY_HOME="+friendlyHome())
 	return env
 }
 
@@ -132,6 +139,13 @@ func fridayEnv(binDir string) []string {
 	if _, err := os.Stat(abPath); err == nil {
 		env = append(env, "FRIDAY_AGENT_BROWSER_PATH="+abPath)
 	}
+	// commonServiceEnv() carries FRIDAY_HOME (which redirects getFridayHome
+	// for every consumer — workspaces, chats, sessions, skills.db,
+	// storage.db, memory, logs, .env), the .env baseline, and shared
+	// LINK_DEV_MODE etc. Sibling services (link, webhook-tunnel, playground)
+	// receive the same baseline; pinning FRIDAY_HOME there ensures their
+	// own getFridayHome() resolves to the same launcher-owned home rather
+	// than drifting to the legacy ~/.atlas fallback.
 	env = append(env, commonServiceEnv()...)
 	return env
 }
@@ -354,8 +368,44 @@ func supervisedProcesses(binDir string) []processSpec {
 		},
 	}
 	for i, s := range specs {
-		if v := portOverride(s.name); v != "" {
-			specs[i].healthPort = v
+		port := portOverride(s.name)
+		if port == "" {
+			continue
+		}
+		// Update the launcher's own readiness probe so it watches the
+		// right socket.
+		specs[i].healthPort = port
+		// Propagate the override into the supervised binary itself.
+		// Each service exposes its own port-config knob — the launcher
+		// has to know about each, since (a) the bind-port mechanism
+		// differs (CLI flag vs env var) and (b) the env var names
+		// don't match the launcher's FRIDAY_PORT_* convention.
+		switch s.name {
+		case "friday":
+			// atlas-cli reads `--port <n>` (apps/atlas-cli/.../daemon/
+			// start.tsx:68). Append after `daemon start`; yargs accepts
+			// flag-after-positional for parsed args.
+			specs[i].args = append(specs[i].args, "--port", port)
+		case "link":
+			// apps/link/src/config.ts:40 reads LINK_PORT (default 3100).
+			specs[i].env = append(specs[i].env, "LINK_PORT="+port)
+		case "webhook-tunnel":
+			// tools/webhook-tunnel/main.go:11 reads TUNNEL_PORT
+			// (default 9090).
+			specs[i].env = append(specs[i].env, "TUNNEL_PORT="+port)
+		case "playground":
+			// tools/agent-playground/static-server.ts:18 reads
+			// PLAYGROUND_PORT (default 5200).
+			specs[i].env = append(specs[i].env, "PLAYGROUND_PORT="+port)
+		case "nats-server":
+			// nats-server uses --port <n> at index 1 of its args; the
+			// monitoring --http_port stays on the default 8222 so the
+			// healthPort override above is a no-op for nats. We don't
+			// expose nats-server's protocol port via FRIDAY_PORT_*
+			// today — atlasd's NatsManager probes the well-known 4222
+			// (apps/atlasd/src/nats-manager.ts), so moving it would
+			// also require coordinated env wiring on the daemon side.
+			// Skip until there's a real need.
 		}
 	}
 	return specs
@@ -366,6 +416,20 @@ func portOverride(name string) string {
 	// underscores: FRIDAY_PORT_webhook_tunnel, not FRIDAY_PORT_webhook-tunnel.
 	envName := "FRIDAY_PORT_" + strings.ReplaceAll(name, "-", "_")
 	return osGetenv(envName)
+}
+
+// playgroundURL returns the loopback URL the tray opens in the user's
+// browser when the platform reaches "all healthy". Honors the
+// FRIDAY_PORT_playground override so installs that move playground off
+// 5200 (e.g. to avoid collision with another local Friday instance) get
+// the right URL — without this the tray click silently lands on the
+// wrong port and the user sees a "can't connect" page.
+func playgroundURL() string {
+	port := portOverride("playground")
+	if port == "" {
+		port = "5200"
+	}
+	return "http://localhost:" + port
 }
 
 // newProjectFromSpecs builds the typed types.Project from a list of

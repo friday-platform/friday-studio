@@ -17,7 +17,6 @@ export const COMMANDS: CommandInfo[] = [
   { command: "daemon", aliases: ["d"], description: "Manage Atlas daemon" },
   { command: "logs", aliases: ["log"], description: "View session logs" },
   { command: "ps", description: "List active sessions (alias for 'session list')" },
-  { command: "version", aliases: ["v"], description: "Show Atlas version information" },
   { command: "help", aliases: ["h"], description: "Show help information" },
 ];
 

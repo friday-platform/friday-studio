@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import type { Database } from "@db/sqlite";
 import { ulid } from "ulid";
 import { z } from "zod";
@@ -292,5 +292,5 @@ export class LocalActivityAdapter implements ActivityStorageAdapter {
 }
 
 function getDefaultDbDir(): string {
-  return getAtlasHome();
+  return getFridayHome();
 }

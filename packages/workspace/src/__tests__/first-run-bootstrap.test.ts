@@ -13,7 +13,7 @@ import { RegistryStorageAdapter } from "../registry-storage-adapter.ts";
 
 const hoisted = vi.hoisted(() => ({ atlasHome: "/tmp/atlas-first-run-default" }));
 
-vi.mock("@atlas/utils/paths.server", () => ({ getAtlasHome: () => hoisted.atlasHome }));
+vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => hoisted.atlasHome }));
 
 vi.mock("@atlas/system/workspaces", () => ({ SYSTEM_WORKSPACES: {} }));
 

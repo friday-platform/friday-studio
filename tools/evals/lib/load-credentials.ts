@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { type Credentials, fetchCredentials, setToEnv } from "@atlas/core/credentials";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import dotenv from "dotenv";
 
 /** Override points for testing — production callers should omit. */
@@ -16,13 +16,13 @@ const prodDeps: CredentialDeps = { fetch: fetchCredentials, setEnv: setToEnv };
 /**
  * Loads `.env` files and fetches bundled API credentials into `process.env`.
  *
- * Reads `.env` from cwd first, then falls back to `~/.atlas/.env`.
+ * Reads `.env` from cwd first, then falls back to `~/.friday/local/.env`.
  * Requires `FRIDAY_KEY` to be present after dotenv loading.
  */
 export async function loadCredentials(deps: CredentialDeps = prodDeps) {
   dotenv.config();
 
-  const globalAtlasEnv = join(getAtlasHome(), ".env");
+  const globalAtlasEnv = join(getFridayHome(), ".env");
   if (existsSync(globalAtlasEnv)) {
     dotenv.config({ path: globalAtlasEnv, override: true });
   }

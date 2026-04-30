@@ -4,7 +4,7 @@ import { parseResult, client as v2Client } from "@atlas/client/v2";
 import { ConfigLoader } from "@atlas/config";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { define } from "gunshi";
 import { render } from "ink";
 import { AgentListComponent } from "../../../modules/agents/agent-list-component.tsx";
@@ -18,7 +18,7 @@ export const listCommand = define({
     workspace: { type: "string", short: "w", description: "Workspace ID or name" },
     user: {
       type: "boolean",
-      description: "List user-built agents from ~/.atlas/agents/",
+      description: "List user-built agents from <friday-home>/agents/",
       default: false,
     },
   },
@@ -147,7 +147,7 @@ export const listCommand = define({
 });
 
 async function listUserAgents(json: boolean): Promise<void> {
-  const agentsDir = join(getAtlasHome(), "agents");
+  const agentsDir = join(getFridayHome(), "agents");
   const adapter = new UserAdapter(agentsDir);
   const agents = await adapter.listAgents();
 
@@ -166,7 +166,7 @@ async function listUserAgents(json: boolean): Promise<void> {
     );
   } else {
     if (agents.length === 0) {
-      console.log("No user-built agents found in ~/.atlas/agents/");
+      console.log(`No user-built agents found in ${join(getFridayHome(), "agents")}`);
       return;
     }
 

@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { createLogger } from "@atlas/logger";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
@@ -31,7 +31,7 @@ runAgentRoute.post("/:id/run", zValidator("json", RunRequestSchema), async (c) =
     return c.json({ error: "NATS not ready" }, 503);
   }
 
-  const adapter = new UserAdapter(join(getAtlasHome(), "agents"));
+  const adapter = new UserAdapter(join(getFridayHome(), "agents"));
   const agentSource = await adapter.loadAgent(id).catch(() => null);
   if (!agentSource) {
     return c.json({ error: `Agent "${id}" not found` }, 404);

@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
 import { typeByExtension } from "@std/media-types";
@@ -78,7 +78,7 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
   private readonly kvPath: string;
 
   constructor(kvPath?: string) {
-    this.kvPath = kvPath || join(getAtlasHome(), "storage.db");
+    this.kvPath = kvPath || join(getFridayHome(), "storage.db");
   }
 
   /** Create artifact with initial revision 1 */

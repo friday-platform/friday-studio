@@ -1,9 +1,9 @@
 import { mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { logger } from "@atlas/logger";
 import { flush as flushSentry, initSentry } from "@atlas/sentry";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { getConnInfo } from "hono/deno";
 import { HTTPException } from "hono/http-exception";
 import { jwt } from "hono/jwt";
@@ -284,7 +284,7 @@ function createCommunicatorWiringRepo(): CommunicatorWiringRepository {
     return new PostgresCommunicatorWiringRepository(sql);
   }
   if (config.devMode) {
-    const dbDir = join(homedir(), ".atlas", "link");
+    const dbDir = join(getFridayHome(), "link");
     mkdirSync(dbDir, { recursive: true });
     const dbPath = join(dbDir, "wiring.db");
     logger.info("Using SqliteCommunicatorWiringRepository", { dbPath });

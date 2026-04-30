@@ -8,7 +8,9 @@
 
   Clicking a slot opens <ModelPicker> — a modal flyout with provider
   pills, search, and an inline "Save & unlock" flow for locked providers
-  that writes directly to ~/.atlas/.env without leaving the modal.
+  that writes directly to the daemon's .env file (resolved server-side
+  via getFridayHome — `~/.friday/local/.env` under the Studio launcher,
+  `~/.atlas/.env` for manual / dev runs) without leaving the modal.
 
   Save button at the bottom PUTs `/api/config/models` with chains; the
   daemon validates each entry via `createPlatformModels` before writing
@@ -125,6 +127,10 @@
   // ─── State ─────────────────────────────────────────────────────────
 
   let envRows = $state<EnvRow[]>([]);
+  // Resolved server-side via getFridayHome() — `~/.friday/local/.env` under the
+  // Studio launcher (FRIDAY_HOME set), `~/.atlas/.env` for manual / dev runs.
+  // Surfaced in the UI so the labels match the file actually being read/written.
+  let envPath = $state<string | null>(null);
   let models = $state<ModelInfo[]>([]);
   let catalog = $state<CatalogEntry[]>([]);
   // Per-role editable chain. Reflects the user's in-flight edits; flushed
@@ -199,6 +205,10 @@
         return [];
       }
       const data: unknown = await res.json();
+      if (typeof data === "object" && data !== null && "envPath" in data) {
+        const rawPath = (data as { envPath: unknown }).envPath;
+        envPath = typeof rawPath === "string" ? rawPath : null;
+      }
       if (
         typeof data === "object" &&
         data !== null &&
@@ -436,7 +446,8 @@
       throw new Error(`Save failed (HTTP ${putRes.status}): ${text}`);
     }
 
-    successFlash = `Saved ${envVar} to ~/.atlas/.env. Restart the daemon to apply.`;
+    const savedTo = envPath ?? "the daemon's .env file";
+    successFlash = `Saved ${envVar} to ${savedTo}. Restart the daemon to apply.`;
     setTimeout(() => {
       if (successFlash && successFlash.includes(envVar)) successFlash = null;
     }, 4000);
@@ -876,7 +887,7 @@
 
             <div class="env-body">
               <p class="section-sub">
-                From <code>~/.atlas/.env</code>
+                From <code>{envPath ?? "the daemon's .env file"}</code>
                 . Secrets (
                 <em>KEY</em>
                 ,
@@ -1085,7 +1096,7 @@
         Settings are resolved at daemon startup. Per-role models come from
         <code>friday.yml</code>
         ; environment variables come from
-        <code>~/.atlas/.env</code>
+        <code>{envPath ?? "the daemon's .env file"}</code>
         . Both take effect on the next daemon restart.
       </p>
     </PageLayout.Sidebar>

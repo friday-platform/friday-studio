@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import { fail, isErrnoException, type Result, stringifyError, success } from "@atlas/utils";
-import { getAtlasHome } from "@atlas/utils/paths.server";
+import { getFridayHome } from "@atlas/utils/paths.server";
 
 import { z } from "zod";
 import {
@@ -272,7 +272,7 @@ export interface ListSessionsResult {
 // ---------------------------------------------------------------------------
 
 function getSessionDir(): string {
-  return join(getAtlasHome(), "sessions");
+  return join(getFridayHome(), "sessions");
 }
 
 function getMetadataFile(sessionId: string): string {

@@ -141,7 +141,7 @@ Runtime id, sessions, and memory are all preserved.
 import json, urllib.request
 
 WS = "grilled_xylem"
-WS_PATH = "/path/to/.atlas/workspaces/my-workspace/workspace.yml"
+WS_PATH = "/path/to/.friday/local/workspaces/my-workspace/workspace.yml"
 
 # 1. Read current config (API gives parsed JSON — no YAML parsing needed)
 with urllib.request.urlopen(f"http://localhost:8080/api/workspaces/{WS}/config") as resp:
@@ -190,7 +190,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 const config = JSON.parse(readFileSync("/tmp/config.json", "utf8"));
 const yaml = stringify(config);
 
-const WS_PATH = "/path/to/.atlas/workspaces/my-workspace/workspace.yml";
+const WS_PATH = "/path/to/.friday/local/workspaces/my-workspace/workspace.yml";
 writeFileSync(WS_PATH, yaml);
 console.log("wrote", yaml.length, "bytes");
 ```
@@ -201,7 +201,7 @@ Or skip YAML entirely and keep the file as JSON-flavored YAML — the daemon's
 ```python
 # run_code, language: python
 import json
-WS_PATH = "/path/to/.atlas/workspaces/my-workspace/workspace.yml"
+WS_PATH = "/path/to/.friday/local/workspaces/my-workspace/workspace.yml"
 with open(WS_PATH, "w") as f:
     json.dump(config, f, indent=2)
 ```

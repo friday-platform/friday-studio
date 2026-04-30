@@ -30,7 +30,7 @@ export interface BuildWorkspaceBundleInput {
   logger: Logger;
   /**
    * Optional path to this workspace's narrative memory dir
-   * (`~/.atlas/memory/<workspaceId>/`). Only honored in `mode: migration`.
+   * (`~/.friday/local/memory/<workspaceId>/`). Only honored in `mode: migration`.
    */
   memoryDir?: string;
 }
