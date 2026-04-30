@@ -142,12 +142,16 @@
     return `${cap(first)} ${cap(last)}`;
   }
 
-  function parsedCustomTermGroups(): Array<{ canonical: string; aliases: string[] }> {
+  function parsedCustomTermGroups(): Array<{ aliases: string[]; replacement: string | null }> {
     return piiCustomTermsText
       .split(/\n+/)
-      .map(line => line.split(/,+/).map(t => t.trim()).filter(t => t.length > 0))
-      .filter(group => group.length > 0)
-      .map(group => ({ canonical: group[0]!, aliases: group }));
+      .map(line => {
+        const [aliasPart = "", replacementPart] = line.split(/→|->/, 2);
+        const aliases = aliasPart.split(/,+/).map(t => t.trim()).filter(t => t.length > 0);
+        const replacement = replacementPart?.trim() || null;
+        return { aliases, replacement };
+      })
+      .filter(g => g.aliases.length > 0);
   }
 
   function filterJson(value: unknown): unknown {
@@ -193,10 +197,10 @@
     }
     if (piiCategories.ip) s = s.replace(/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, fakeIp);
     if (piiCategories.phone) s = s.replace(/(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/g, fakePhone);
-    for (const { canonical, aliases } of parsedCustomTermGroups()) {
-      const replacement = fakeName(canonical);
+    for (const { aliases, replacement } of parsedCustomTermGroups()) {
+      const text = replacement ?? fakeName(aliases[0]!);
       for (const alias of aliases) {
-        s = s.replace(new RegExp(alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), replacement);
+        s = s.replace(new RegExp(alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), text);
       }
     }
     return s;
@@ -586,19 +590,26 @@
       </section>
 
       <section class="replay-pii" aria-label="PII filter">
-        <label class="pii-master">
-          <input type="checkbox" bind:checked={piiEnabled} />
-          PII filter
-        </label>
-        {#if piiEnabled}
-          <label><input type="checkbox" bind:checked={piiCategories.email} /> Emails</label>
-          <label><input type="checkbox" bind:checked={piiCategories.phone} /> Phones</label>
-          <label><input type="checkbox" bind:checked={piiCategories.ip} /> IPs</label>
-          <label><input type="checkbox" bind:checked={piiCategories.uuid} /> UUIDs</label>
-          <label class="pii-terms-label">
-            Names / custom terms
-            <textarea class="pii-terms" bind:value={piiCustomTermsText} placeholder="Kenneth Kouot, Ken&#10;Acme Corp, ACME&#10;(each line = one identity; commas = aliases)"></textarea>
+        <div class="pii-left">
+          <label class="pii-master">
+            <input type="checkbox" bind:checked={piiEnabled} />
+            PII filter
           </label>
+          {#if piiEnabled}
+            <div class="pii-categories">
+              <label><input type="checkbox" bind:checked={piiCategories.email} /> Emails</label>
+              <label><input type="checkbox" bind:checked={piiCategories.phone} /> Phones</label>
+              <label><input type="checkbox" bind:checked={piiCategories.ip} /> IPs</label>
+              <label><input type="checkbox" bind:checked={piiCategories.uuid} /> UUIDs</label>
+            </div>
+          {/if}
+        </div>
+        {#if piiEnabled}
+          <div class="pii-right">
+            <span class="pii-terms-heading">Names &amp; phrases</span>
+            <textarea class="pii-terms" bind:value={piiCustomTermsText} placeholder="Kenneth Kouot, Ken&#10;Acme Corp"></textarea>
+            <p class="pii-hint">One identity per line · commas = aliases · add <code>→ Name</code> to pin the replacement</p>
+          </div>
         {/if}
       </section>
 
