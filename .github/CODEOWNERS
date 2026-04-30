@@ -1,2 +1,5 @@
+# Default owners — all changes need at least one of these reviewers.
+* @ljagiello @Vpr99
+
 # GitHub Actions and workflows
-/.github/ @ljagiello
+/.github/ @ljagiello @Vpr99

@@ -1,18 +1,18 @@
 # Friday Agent Studio & Toolkit — Quickstart
 
-Get [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit) running locally with the
+Get [FAST](https://docs.hellofriday.ai/) (Friday Agent Studio & Toolkit) running locally with the
 Friday Studio installer, load a space, and run your first agentic workflow.
 
 ## Overview
 
-[FAST](https://platform.hellofriday.ai/docs/) is a configuration-driven agentic orchestration runtime. You define
-[**spaces**](https://platform.hellofriday.ai/docs/core-concepts/spaces) composed of three building blocks:
+[FAST](https://docs.hellofriday.ai/) is a configuration-driven agentic orchestration runtime. You define
+[**spaces**](https://docs.hellofriday.ai/core-concepts/spaces) composed of three building blocks:
 
-- [**Signals**](https://platform.hellofriday.ai/docs/core-concepts/signals) — how external events start your jobs (webhooks, cron, Slack,
+- [**Signals**](https://docs.hellofriday.ai/core-concepts/signals) — how external events start your jobs (webhooks, cron, Slack,
   etc.)
-- [**Agents**](https://platform.hellofriday.ai/docs/core-concepts/agents) — built-in or custom agents that execute operations (Bitbucket,
+- [**Agents**](https://docs.hellofriday.ai/core-concepts/agents) — built-in or custom agents that execute operations (Bitbucket,
   Jira, Claude Code, etc.)
-- [**Jobs**](https://platform.hellofriday.ai/docs/core-concepts/jobs) — workflows composed of agents, tools, skills, and data contracts
+- [**Jobs**](https://docs.hellofriday.ai/core-concepts/jobs) — workflows composed of agents, tools, skills, and data contracts
   that run step by step
 
 Everything is driven by a single `workspace.yml` configuration file. That makes

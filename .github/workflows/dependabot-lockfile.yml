@@ -25,7 +25,17 @@ permissions: {}
 
 jobs:
   update-lockfile:
-    if: github.actor == 'dependabot[bot]'
+    # Defense in depth:
+    #   1. Only run on the canonical repo — forks never see DEPENDABOT_PAT.
+    #   2. Only run when the PR's head repo matches base — blocks fork PRs
+    #      even if they somehow trip github.actor (they can't, but belt+braces).
+    #   3. Only run when github.actor is dependabot[bot] — github.actor is set
+    #      by GitHub from the triggering identity and cannot be spoofed by PR
+    #      contents.
+    if: >-
+      github.repository == 'friday-platform/friday-studio'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 

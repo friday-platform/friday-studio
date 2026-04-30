@@ -1,6 +1,6 @@
 # Jira Bug Fix (Bitbucket)
 
-End-to-end bug fix pipeline built with [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit). Reads a Jira bug ticket, clones the Bitbucket repo,
+End-to-end bug fix pipeline built with [FAST](https://docs.hellofriday.ai/) (Friday Agent Studio & Toolkit). Reads a Jira bug ticket, clones the Bitbucket repo,
 implements the fix with Claude Code, opens a pull request, and comments on the Jira ticket
 with the link.
 
@@ -100,8 +100,8 @@ a pull request.
 
 ## Learn more
 
-- [Quick start](https://platform.hellofriday.ai/docs/getting-started/quickstart) — get FAST running with Docker
-- [Agents](https://platform.hellofriday.ai/docs/core-concepts/agents) — built-in and custom agents
-- [Jobs](https://platform.hellofriday.ai/docs/core-concepts/jobs) — how workflows orchestrate agents step by step
-- [Signals](https://platform.hellofriday.ai/docs/core-concepts/signals) — how external events trigger jobs
-- [Studio](https://platform.hellofriday.ai/docs/tools/studio) — manage spaces, watch executions, test agents
+- [Quick start](https://docs.hellofriday.ai/getting-started/quickstart) — get FAST running with Docker
+- [Agents](https://docs.hellofriday.ai/core-concepts/agents) — built-in and custom agents
+- [Jobs](https://docs.hellofriday.ai/core-concepts/jobs) — how workflows orchestrate agents step by step
+- [Signals](https://docs.hellofriday.ai/core-concepts/signals) — how external events trigger jobs
+- [Studio](https://docs.hellofriday.ai/tools/studio) — manage spaces, watch executions, test agents

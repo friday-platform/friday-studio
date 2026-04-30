@@ -1,6 +1,6 @@
 # Jira Bug Fix (Labeled)
 
-Autonomous bug fix pipeline built with [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit) that picks up Jira tickets labeled `ai-fix`.
+Autonomous bug fix pipeline built with [FAST](https://docs.hellofriday.ai/) (Friday Agent Studio & Toolkit) that picks up Jira tickets labeled `ai-fix`.
 Searches a project for the highest-priority bug in "To Do" status, claims it,
 implements the fix, opens a Bitbucket pull request, comments on the ticket, and transitions
 it to Done.
@@ -107,8 +107,8 @@ pull request, and transitions the ticket to Done.
 
 ## Learn more
 
-- [Quick start](https://platform.hellofriday.ai/docs/getting-started/quickstart) — get FAST running with Docker
-- [Agents](https://platform.hellofriday.ai/docs/core-concepts/agents) — built-in and custom agents
-- [Jobs](https://platform.hellofriday.ai/docs/core-concepts/jobs) — how workflows orchestrate agents step by step
-- [Signals](https://platform.hellofriday.ai/docs/core-concepts/signals) — how external events trigger jobs
-- [Studio](https://platform.hellofriday.ai/docs/tools/studio) — manage spaces, watch executions, test agents
+- [Quick start](https://docs.hellofriday.ai/getting-started/quickstart) — get FAST running with Docker
+- [Agents](https://docs.hellofriday.ai/core-concepts/agents) — built-in and custom agents
+- [Jobs](https://docs.hellofriday.ai/core-concepts/jobs) — how workflows orchestrate agents step by step
+- [Signals](https://docs.hellofriday.ai/core-concepts/signals) — how external events trigger jobs
+- [Studio](https://docs.hellofriday.ai/tools/studio) — manage spaces, watch executions, test agents

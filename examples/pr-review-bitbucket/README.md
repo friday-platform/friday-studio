@@ -1,6 +1,6 @@
 # PR Code Review (Bitbucket)
 
-Automated pull request code review for Bitbucket Cloud using [FAST](https://platform.hellofriday.ai/docs/) (Friday Agent Studio & Toolkit). Accepts a Bitbucket pull request
+Automated pull request code review for Bitbucket Cloud using [FAST](https://docs.hellofriday.ai/) (Friday Agent Studio & Toolkit). Accepts a Bitbucket pull request
 URL, clones the repository, performs a thorough code review with Claude Code, and
 posts structured inline comments back on the pull request.
 
@@ -90,8 +90,8 @@ Now creating a pull request in that repo will automatically trigger a review.
 
 ## Learn more
 
-- [Quick start](https://platform.hellofriday.ai/docs/getting-started/quickstart) — get FAST running with Docker
-- [Agents](https://platform.hellofriday.ai/docs/core-concepts/agents) — built-in and custom agents
-- [Jobs](https://platform.hellofriday.ai/docs/core-concepts/jobs) — how workflows orchestrate agents step by step
-- [Skills](https://platform.hellofriday.ai/docs/core-concepts/skills) — structured instruction sets for consistent agent output
-- [Studio](https://platform.hellofriday.ai/docs/tools/studio) — manage spaces, watch executions, test agents
+- [Quick start](https://docs.hellofriday.ai/getting-started/quickstart) — get FAST running with Docker
+- [Agents](https://docs.hellofriday.ai/core-concepts/agents) — built-in and custom agents
+- [Jobs](https://docs.hellofriday.ai/core-concepts/jobs) — how workflows orchestrate agents step by step
+- [Skills](https://docs.hellofriday.ai/core-concepts/skills) — structured instruction sets for consistent agent output
+- [Studio](https://docs.hellofriday.ai/tools/studio) — manage spaces, watch executions, test agents

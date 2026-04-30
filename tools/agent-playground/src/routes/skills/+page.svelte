@@ -21,7 +21,7 @@
       each task and follow it exactly.
       <a
         class="learn-more"
-        href="https://platform.hellofriday.ai/docs/tools/skills"
+        href="https://docs.hellofriday.ai/tools/skills"
         target="_blank"
         rel="noopener noreferrer"
       >

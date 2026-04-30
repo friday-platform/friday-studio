@@ -47,7 +47,7 @@
         shareable, repeatable. Drop a workspace.yml to get started.
         <a
           class="learn-more"
-          href="https://platform.hellofriday.ai/docs/core-concepts/spaces"
+          href="https://docs.hellofriday.ai/core-concepts/spaces"
           target="_blank"
           rel="noopener noreferrer"
         >
