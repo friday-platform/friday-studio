@@ -495,7 +495,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="replay-shell" onmousemove={showToggle}>
-  <button class="overlay-toggle" class:hidden={!toggleVisible && !overlayOpen} type="button" onclick={() => (overlayOpen = true)}>
+  <button class="overlay-toggle" class:hidden={playing || (!toggleVisible && !overlayOpen)} type="button" onclick={() => (overlayOpen = true)}>
     Controls <span>⌘K</span>
   </button>
 
