@@ -20,6 +20,7 @@
 <script lang="ts">
   import { Button } from "@atlas/ui";
   import { parseSSEEvents } from "@atlas/utils/sse";
+  import { createQuery } from "@tanstack/svelte-query";
   import { getArtifactHint } from "$lib/artifact-hints.ts";
   import { getClient } from "$lib/client.ts";
   import AgentReferencePanel from "$lib/components/agents/agent-reference-panel.svelte";
@@ -27,6 +28,7 @@
   import OperationForm from "$lib/components/shared/operation-form.svelte";
   import RunCard from "$lib/components/workspace/run-card.svelte";
   import * as promptHistory from "$lib/prompt-history.ts";
+  import { workspaceQueries } from "$lib/queries";
   import type { AgentMetadata, AgentPreflightCredential } from "$lib/queries";
   import { loadRuns, saveRuns } from "$lib/run-history.ts";
   import type { RunRecord } from "$lib/run-history.ts";
@@ -45,6 +47,12 @@
   let { agent, credentials, onBack, onOAuthConnect, onApiKeyConnect }: Props = $props();
 
   let input = $state("");
+  /**
+   * Workspace context for user agents. When set, the daemon resolves the
+   * workspace's MCP servers (workspace-level + agent decorator-level) and
+   * exercises the agent against real services. `undefined` runs MCP-disabled.
+   */
+  let selectedWorkspaceId = $state<string | undefined>(undefined);
   let manualOverrides = $state<Record<string, string>>({});
   let runs = $state<RunRecord[]>(loadRuns(agent.id));
   let execution = $state<ExecutionStatus>({ state: "idle" });
@@ -65,6 +73,9 @@
       ? { ...r, status: "error" as const, events: [...r.events, { type: "error" as const, data: { error: "Interrupted" } }] }
       : r,
   );
+
+  const workspacesQuery = createQuery(() => workspaceQueries.list());
+  const workspaces = $derived(workspacesQuery.data ?? []);
 
   /** Green when no required credentials are disconnected. */
   const healthy = $derived(!credentials.some((c) => c.required && c.status === "disconnected"));
@@ -260,6 +271,7 @@
           agentId: agent.id,
           input: buildInput(),
           env: Object.keys(manualOverrides).length > 0 ? manualOverrides : undefined,
+          workspaceId: selectedWorkspaceId,
         },
       });
 
@@ -332,6 +344,28 @@
             <p class="agent-constraints">{agent.constraints}</p>
           {/if}
         </div>
+      {/if}
+
+      {#if agent.source === "user" && workspaces.length > 0}
+        <div class="workspace-selector">
+          <label for="workbench-workspace">Workspace context</label>
+          <select id="workbench-workspace" bind:value={selectedWorkspaceId}>
+            <option value={undefined}>None — MCP disabled (pure logic test)</option>
+            {#each workspaces as ws (ws.id)}
+              <option value={ws.id}>{ws.name || ws.id}</option>
+            {/each}
+          </select>
+          {#if selectedWorkspaceId}
+            <span class="workspace-warning">
+              Real workspace — calls hit live services and may mutate state.
+            </span>
+          {/if}
+        </div>
+        <p class="workspace-hint">
+          Decorator-only MCP (servers declared via <code>@agent(mcp=…)</code> not enabled at the
+          workspace level) is honored. Servers without resolved credentials will fail at startup
+          — same failure mode as production.
+        </p>
       {/if}
 
       {#if isStructuredAgent && agent.inputSchema}
@@ -538,6 +572,53 @@
     font-style: italic;
     line-height: var(--font-lineheight-3);
     margin: 0;
+  }
+
+  /* ── Workspace context selector ── */
+
+  .workspace-selector {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-2);
+  }
+
+  .workspace-selector label {
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    letter-spacing: var(--font-letterspacing-2);
+    text-transform: uppercase;
+  }
+
+  .workspace-selector select {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: var(--font-size-2);
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .workspace-warning {
+    color: var(--color-warning);
+    font-size: var(--font-size-1);
+  }
+
+  .workspace-hint {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+    font-size: var(--font-size-1);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .workspace-hint code {
+    background: var(--color-surface-2);
+    border-radius: var(--radius-1);
+    font-family: var(--font-family-mono, monospace);
+    font-size: var(--font-size-0);
+    padding: 0 var(--size-1);
   }
 
   /* ── Input section ── */

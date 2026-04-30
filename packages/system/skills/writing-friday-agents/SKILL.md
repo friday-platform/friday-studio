@@ -151,6 +151,7 @@ Wrap capability calls — `LlmError`, `HttpError`, `ToolCallError` — and retur
 9. **Treating `ctx.tools.call()` result as a string.** It returns a dict: `{"content": [{"type": "text", "text": "..."}]}`. Extract text explicitly — see `references/mcp-tools.md`.
 10. **Not checking `isError` before using MCP results.** Auth failures and MCP errors return `{"isError": True, "content": [...error text...]}` — this is NOT raised as `ToolCallError`. Always check `result.get("isError")` first or you'll silently process an error message as real data.
 11. **Using `list_mcp_tools` names verbatim in `ctx.tools.call`.** `list_mcp_tools` returns prefixed names (`google-gmail/search_gmail_messages`) — the prefix is correct for `type: llm` agent `config.tools`. Strip it for Python agents: `ctx.tools.call("search_gmail_messages", ...)` not `ctx.tools.call("google-gmail/search_gmail_messages", ...)`.
+12. **Treating "registered" as "working".** A successful `POST /api/agents/register` only confirms the `@agent` decorator parsed and the NATS handshake succeeded — nothing about the actual handler ran. Skipping the validation invoke means the first failure surfaces during a real user invocation against real data, and you've corrupted the user's mental model of the workspace. Always exercise via `POST /api/agents/:id/run` with at least one fixture before wiring into a job. See `references/validating.md`.
 
 ## Registering an agent with Friday
 
@@ -175,8 +176,8 @@ On failure: `ok: false` + `error` string + `phase`. `phase: "validate"` = agent
 didn't start or NATS handshake timed out (check for Python syntax errors, missing
 imports). `phase: "write"` = filesystem error after validation.
 
-**Wire into workspace** — once registered, reference it in `workspace.yml` and load
-the `workspace-api` skill to add a job that invokes it:
+**Wire into workspace** — once registered AND validated (see below), reference it in
+`workspace.yml` and load the `workspace-api` skill to add a job that invokes it:
 
 ```yaml
 agents:
@@ -185,6 +186,47 @@ agents:
     agent: "my-agent"          # must match id in @agent decorator
     description: "What it does"
 ```
+
+## Validating before wiring into a workspace
+
+`POST /api/agents/register` confirms the decorator parsed — it does not exercise
+the handler. Before adding the agent to a workspace job, invoke it directly with
+representative input and at least one stress input (chosen specifically to break
+the agent — long content, embedded newlines, batch sizes that stress LLM token
+limits):
+
+```bash
+# Pure-logic test (MCP disabled — fast, no side effects)
+curl -N -X POST http://localhost:8080/api/agents/my-agent/run \
+  -H "Content-Type: application/json" \
+  -d '{"input": "<your fixture>"}'
+
+# Workspace-context test (real MCP servers, real credentials, real side effects)
+curl -N -X POST 'http://localhost:8080/api/agents/my-agent/run?workspaceId=ws_id' \
+  -H "Content-Type: application/json" \
+  -d '{"input": "<your fixture>"}'
+```
+
+The endpoint streams SSE: `progress` events from `ctx.stream.*`, then a single
+`result` (on `ok()`) or `error` (on `err()` or exception), then `done`. If the
+result envelope is right and the streamed progress events make sense, the agent
+works. If MCP tools are involved and the workspace has real credentials, the
+test exercises them end-to-end — same code path as production.
+
+**Two fixtures, minimum:**
+
+1. **Representative** — what a typical real invocation looks like.
+2. **Stress** — chosen specifically to break the agent. Long strings
+   (>1000 chars), embedded newlines/quotes/control chars, batch sizes that
+   stress LLM token limits, missing optional fields, empty arrays. Most agent
+   failures (especially around `generate_object` and JSON parsing) only
+   surface under input shapes a clean fixture won't have. The mindset is
+   *"what input do I suspect might break this?"* — then run it.
+
+Skip this step → the first failure is a real user invocation against real
+data. Don't let "registered: ok" trick you into thinking you're done. See
+`references/validating.md` for fixture patterns and what to inspect in stream
+events.
 
 ## Full end-to-end flow from chat
 
@@ -199,7 +241,11 @@ wiring) and follow this sequence:
 3. Write the Python agent source using the boilerplate above. Use `ctx.tools.call("tool_name", args)` directly.
 4. Write it to a clean `/tmp/` subdirectory.
 5. Call `POST /api/agents/register` — confirm `ok: true`.
-6. Fetch the workspace config, add a `type: user` agent entry and a job FSM that
+6. Validate via `POST /api/agents/:id/run?workspaceId=…` with at least one
+   representative fixture and one stress fixture (see "Validating before wiring
+   into a workspace" above). Confirm the `result` event matches what the job
+   downstream expects. Iterate on the agent code until both fixtures pass.
+7. Fetch the workspace config, add a `type: user` agent entry and a job FSM that
    invokes it, and write the updated config back to disk.
 
 The `workspace-api` skill has the complete FSM and job schema; the key for custom
@@ -212,6 +258,7 @@ code agents is `type: user` with `agent:` matching the decorator id.
 - `references/structured-output.md` — JSON Schema for `generate_object`
 - `references/mcp-tools.md` — server config, tool-calling loop, LLM-driven tool use
 - `references/sandbox-constraints.md` — what to avoid and why
+- `references/validating.md` — fixture-driven invoke loop, stress inputs, what to inspect in stream events
 
 Assets:
 - `assets/agent-template.py` — minimal boilerplate with `parse_input`

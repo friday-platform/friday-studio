@@ -19,6 +19,7 @@ const ExecuteBody = z.object({
   agentId: z.string().min(1),
   input: z.string(),
   env: z.record(z.string(), z.string()).optional(),
+  workspaceId: z.string().optional(),
 });
 
 /**
@@ -29,7 +30,7 @@ const ExecuteBody = z.object({
  * read artifacts during execution.
  */
 export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody), async (c) => {
-  const { agentId, input, env } = c.req.valid("json");
+  const { agentId, input, env, workspaceId } = c.req.valid("json");
 
   // User agents proxy to daemon via NATS subprocess protocol
   if (await userAgentExists(agentId)) {
@@ -40,7 +41,10 @@ export const executeRoute = new Hono().post("/", zValidator("json", ExecuteBody)
     }
     // Relay SSE events from daemon — raw Response passthrough is silently buffered by Hono
     return createSSEStream(async (emitter, signal) => {
-      const res = await fetch(`${DAEMON_BASE_URL}/api/agents/${agentId}/run`, {
+      const url = workspaceId
+        ? `${DAEMON_BASE_URL}/api/agents/${agentId}/run?workspaceId=${encodeURIComponent(workspaceId)}`
+        : `${DAEMON_BASE_URL}/api/agents/${agentId}/run`;
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input, env }),
