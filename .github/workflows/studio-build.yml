@@ -171,10 +171,20 @@ jobs:
           # & + wait the whole step finishes in roughly the slowest single
           # binary's time.
           PIDS=()
-          # Binary names match the staging output of build-studio.ts —
-          # keep this list in sync with DENO_BINARIES + GO_BINARIES +
-          # EXTERNAL_CLIS in scripts/build-studio.ts.
-          for f in friday link playground webhook-tunnel friday-launcher gh cloudflared; do
+          # Binary paths match the staging output of build-studio.ts —
+          # Stack 3 split-destination layout puts every supervised
+          # binary under <staging>/bin/, with friday-launcher alone at
+          # the top level (the macOS .app's entry point). Keep this
+          # list in sync with DENO_BINARIES + GO_BINARIES + EXTERNAL_CLIS
+          # in scripts/build-studio.ts.
+          for f in \
+              "bin/friday" \
+              "bin/link" \
+              "bin/playground" \
+              "bin/webhook-tunnel" \
+              "friday-launcher" \
+              "bin/gh" \
+              "bin/cloudflared"; do
             (
               # `gtimeout` (coreutils) caps each codesign call at 5 min.
               # Apple's TSA can hang for hours under load; without a
