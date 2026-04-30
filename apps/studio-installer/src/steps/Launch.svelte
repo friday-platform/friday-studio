@@ -305,6 +305,7 @@ function prettyName(name: string): string {
         <div class="spinner" aria-label="Starting Studio"></div>
         <h2>Starting Friday Studio…</h2>
         <p class="subtitle">Waiting for services to report healthy.</p>
+        <p class="hint">First boot can take 30–60 seconds.</p>
         {#each sortedServices as svc (svc.name)}
           <div class="row">
             <span class={statusClass(svc.status)} aria-hidden="true"
@@ -348,6 +349,15 @@ function prettyName(name: string): string {
     color: var(--color-text-muted);
     max-width: 380px;
     line-height: 1.5;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    opacity: 0.75;
+    max-width: 380px;
+    line-height: 1.5;
+    margin-top: -4px;
   }
 
   /* Spinner ring contrast: in light mode the ring needs to be a
