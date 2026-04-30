@@ -523,7 +523,41 @@
     else if (event.key === "-") { event.preventDefault(); stepSpeed(false); }
   }
 
+  const SETTINGS_KEY = "chat-replay-settings";
+
+  $effect(() => {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        piiEnabled,
+        piiCategories: { email: piiCategories.email, phone: piiCategories.phone, ip: piiCategories.ip, uuid: piiCategories.uuid },
+        piiCustomTermsText,
+        chatAspect,
+        speedMs,
+        inspectorOpen,
+      }));
+    } catch { /* ignore */ }
+  });
+
   onMount(() => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (raw) {
+        const s = JSON.parse(raw) as Record<string, unknown>;
+        if (typeof s.piiEnabled === "boolean") piiEnabled = s.piiEnabled;
+        if (s.piiCategories && typeof s.piiCategories === "object") {
+          const c = s.piiCategories as Record<string, unknown>;
+          if (typeof c.email === "boolean") piiCategories.email = c.email;
+          if (typeof c.phone === "boolean") piiCategories.phone = c.phone;
+          if (typeof c.ip === "boolean") piiCategories.ip = c.ip;
+          if (typeof c.uuid === "boolean") piiCategories.uuid = c.uuid;
+        }
+        if (typeof s.piiCustomTermsText === "string") piiCustomTermsText = s.piiCustomTermsText;
+        if (typeof s.chatAspect === "string") chatAspect = s.chatAspect;
+        if (typeof s.speedMs === "number") speedMs = s.speedMs;
+        if (typeof s.inspectorOpen === "boolean") inspectorOpen = s.inspectorOpen;
+      }
+    } catch { /* ignore */ }
+
     const urls = chatUrlsFromLocation();
     urlText = urls.join("\n");
     if (urls.length > 0) void loadUrls(urls);
