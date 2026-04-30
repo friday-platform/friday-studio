@@ -6,10 +6,5 @@
     "./registry": "./src/registry.ts",
     "./shared-schemas": "./src/shared-schemas.ts"
   },
-  "imports": {
-    "@db/sqlite": "jsr:@db/sqlite@0.13",
-    "@std/async": "jsr:@std/async@^1.0.15",
-    "@std/encoding": "jsr:@std/encoding@^1.0.10",
-    "@std/media-types": "jsr:@std/media-types@^1.1.0"
-  }
+  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13", "@std/async": "jsr:@std/async@^1.0.15" }
 }
