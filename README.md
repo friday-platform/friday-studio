@@ -195,3 +195,13 @@ mines agent commit footers into CLAUDE.md.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components and data flow
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to send patches (CLA required)
 - [`SECURITY.md`](SECURITY.md) — vulnerability disclosure
+
+## License
+
+Friday is **source-available** under the [Business Source License 1.1](LICENSE).
+You can read, modify, and self-host the code; production use that competes with
+Tempest Labs' offering requires a commercial license. The license converts to
+Apache-2.0 on **2027-04-29**.
+
+Third-party components retain their original licenses — see
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) and [`NOTICE`](NOTICE).
