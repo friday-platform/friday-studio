@@ -51,6 +51,8 @@
   let timer: number | undefined = $state();
   let toggleVisible = $state(true);
   let toggleHideTimer: number | undefined;
+  let eventDelays = $state<Record<number, number>>({});
+  let mounted = $state(false);
 
   function showToggle() {
     toggleVisible = true;
@@ -382,12 +384,16 @@
 
   function clampIndex(value: number): number { return Math.max(0, Math.min(value, Math.max(0, events.length - 1))); }
   function setIndex(value: number) { currentIndex = clampIndex(value); }
-  function stop() { playing = false; if (timer !== undefined) window.clearInterval(timer); timer = undefined; }
-  function play() {
-    stop();
-    playing = true;
-    timer = window.setInterval(() => currentIndex >= events.length - 1 ? stop() : currentIndex = clampIndex(currentIndex + 1), speedMs);
+  function stop() { playing = false; if (timer !== undefined) window.clearTimeout(timer); timer = undefined; }
+  function scheduleNext() {
+    const delay = eventDelays[currentIndex] ?? speedMs;
+    timer = window.setTimeout(() => {
+      if (!playing) return;
+      if (currentIndex >= events.length - 1) { stop(); }
+      else { currentIndex = clampIndex(currentIndex + 1); scheduleNext(); }
+    }, delay);
   }
+  function play() { stop(); playing = true; scheduleNext(); }
   function togglePlay() { playing ? stop() : play(); }
   function handleSpeedChange() { if (playing) play(); }
   function stepSpeed(faster: boolean) {
@@ -420,7 +426,7 @@
     const title = event.chat.chat.title ?? event.chat.chat.workspaceId;
     return event.kind === "workspace" ? `Switched to ${title}` : title;
   }
-  function loadSnapshot(value: Snapshot) { stop(); snapshot = value; currentIndex = 0; loadError = null; }
+  function loadSnapshot(value: Snapshot) { stop(); snapshot = value; currentIndex = 0; loadError = null; eventDelays = {}; }
 
   function chatUrlsFromLocation(): string[] {
     const params = new URLSearchParams(window.location.search);
@@ -519,13 +525,14 @@
     if (event.key === " ") { event.preventDefault(); togglePlay(); }
     else if (event.key === "j") { event.preventDefault(); setIndex(currentIndex - 1); }
     else if (event.key === "k") { event.preventDefault(); setIndex(currentIndex + 1); }
-    else if (event.key === "+" || event.key === "=") { event.preventDefault(); stepSpeed(true); }
-    else if (event.key === "-") { event.preventDefault(); stepSpeed(false); }
+    else if (event.shiftKey && (event.key === "+" || event.key === "=")) { event.preventDefault(); stepSpeed(true); }
+    else if (event.shiftKey && event.key === "-") { event.preventDefault(); stepSpeed(false); }
   }
 
   const SETTINGS_KEY = "chat-replay-settings";
 
   $effect(() => {
+    if (!mounted) return;
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
         piiEnabled,
@@ -561,6 +568,7 @@
     const urls = chatUrlsFromLocation();
     urlText = urls.join("\n");
     if (urls.length > 0) void loadUrls(urls);
+    mounted = true;
   });
 </script>
 
@@ -599,7 +607,7 @@
         <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex + 1)}>Next <span>K</span></button>
         <input type="range" min="0" max={Math.max(0, events.length - 1)} value={currentIndex} oninput={(event) => setIndex(event.currentTarget.valueAsNumber)} />
         <div class="speed-control">
-          <button class="replay-btn speed-step" type="button" onclick={() => stepSpeed(false)} aria-label="Slower">−</button>
+          <button class="replay-btn speed-step" type="button" onclick={() => stepSpeed(false)} aria-label="Slower">− <span>Shift−</span></button>
           <div class="speed-info">
             <span>Speed: {speedLabel()}</span>
             <input
@@ -612,7 +620,7 @@
               aria-label="Playback speed"
             />
           </div>
-          <button class="replay-btn speed-step" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+</button>
+          <button class="replay-btn speed-step" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+ <span>Shift+</span></button>
         </div>
         <span class="replay-muted">{events.length === 0 ? 0 : currentIndex + 1} / {events.length}</span>
         <select bind:value={chatAspect} aria-label="Chat aspect ratio" onchange={handleAspectPreview}>
@@ -653,10 +661,27 @@
             <div class="replay-panel-title">Timeline</div>
             <div class="replay-scroll">
               {#each events as event, index}
-                <button type="button" class:active={index === currentIndex} class:seen={index <= currentIndex} class:future={index > currentIndex} class="timeline-row" onclick={() => setIndex(index)}>
-                  <span class="timeline-icon">{eventIcon(event)}</span>
-                  <span><span class="timeline-label">{event.label}</span><span class="timeline-meta">{event.workspaceId} · {event.kind}</span></span>
-                </button>
+                <div class="timeline-row-wrap" class:active={index === currentIndex} class:seen={index <= currentIndex} class:future={index > currentIndex}>
+                  <button type="button" class="timeline-row" onclick={() => setIndex(index)}>
+                    <span class="timeline-icon">{eventIcon(event)}</span>
+                    <span><span class="timeline-label">{event.label}</span><span class="timeline-meta">{event.workspaceId} · {event.kind}</span></span>
+                  </button>
+                  <input
+                    type="number"
+                    class="delay-input"
+                    class:has-value={eventDelays[index] !== undefined}
+                    placeholder="ms"
+                    value={eventDelays[index] ?? ""}
+                    min="0"
+                    step="100"
+                    title="Delay override for this event (ms)"
+                    oninput={(e) => {
+                      const v = e.currentTarget.valueAsNumber;
+                      if (isNaN(v) || v <= 0) delete eventDelays[index];
+                      else eventDelays[index] = v;
+                    }}
+                  />
+                </div>
               {/each}
             </div>
           </aside>
