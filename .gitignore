@@ -75,7 +75,6 @@ cover.out
 test-workspace-watcher*
 
 # Eval snapshots
-**/__snapshots__/
 **/snapshots/
 
 # Web Client Output
