@@ -142,8 +142,12 @@
     return `${cap(first)} ${cap(last)}`;
   }
 
-  function parsedCustomTerms(): string[] {
-    return piiCustomTermsText.split(/[\n,]+/).map(t => t.trim()).filter(t => t.length > 0);
+  function parsedCustomTermGroups(): Array<{ canonical: string; aliases: string[] }> {
+    return piiCustomTermsText
+      .split(/\n+/)
+      .map(line => line.split(/,+/).map(t => t.trim()).filter(t => t.length > 0))
+      .filter(group => group.length > 0)
+      .map(group => ({ canonical: group[0]!, aliases: group }));
   }
 
   function filterJson(value: unknown): unknown {
@@ -189,8 +193,11 @@
     }
     if (piiCategories.ip) s = s.replace(/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, fakeIp);
     if (piiCategories.phone) s = s.replace(/(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/g, fakePhone);
-    for (const term of parsedCustomTerms()) {
-      s = s.replace(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), fakeName);
+    for (const { canonical, aliases } of parsedCustomTermGroups()) {
+      const replacement = fakeName(canonical);
+      for (const alias of aliases) {
+        s = s.replace(new RegExp(alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), replacement);
+      }
     }
     return s;
   }
@@ -590,7 +597,7 @@
           <label><input type="checkbox" bind:checked={piiCategories.uuid} /> UUIDs</label>
           <label class="pii-terms-label">
             Names / custom terms
-            <textarea class="pii-terms" bind:value={piiCustomTermsText} placeholder="Kenneth Kouot, Acme Corp&#10;(one per line or comma-separated)"></textarea>
+            <textarea class="pii-terms" bind:value={piiCustomTermsText} placeholder="Kenneth Kouot, Ken&#10;Acme Corp, ACME&#10;(each line = one identity; commas = aliases)"></textarea>
           </label>
         {/if}
       </section>
