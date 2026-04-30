@@ -102,9 +102,20 @@
     return Math.abs(h);
   }
 
+  function cap(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  function getPersona(key: string) {
+    const h = stableHash(key.toLowerCase());
+    return {
+      first: FAKE_FIRST[h % FAKE_FIRST.length],
+      last: FAKE_LAST[(h >> 4) % FAKE_LAST.length],
+      domain: FAKE_DOMAINS[(h >> 8) % FAKE_DOMAINS.length],
+    };
+  }
+
   function fakeEmail(original: string): string {
-    const h = stableHash(original);
-    return `${FAKE_FIRST[h % FAKE_FIRST.length]}.${FAKE_LAST[(h >> 4) % FAKE_LAST.length]}@${FAKE_DOMAINS[(h >> 8) % FAKE_DOMAINS.length]}`;
+    const { first, last, domain } = getPersona(original);
+    return `${first}.${last}@${domain}`;
   }
 
   function fakePhone(original: string): string {
@@ -127,8 +138,8 @@
   }
 
   function fakeName(original: string): string {
-    const h = stableHash(original.toLowerCase());
-    return `${FAKE_FIRST[h % FAKE_FIRST.length]} ${FAKE_LAST[(h >> 4) % FAKE_LAST.length]}`;
+    const { first, last } = getPersona(original);
+    return `${cap(first)} ${cap(last)}`;
   }
 
   function parsedCustomTerms(): string[] {
@@ -159,7 +170,23 @@
     if (!piiEnabled) return text;
     let s = text;
     if (piiCategories.uuid) s = s.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, fakeUuid);
-    if (piiCategories.email) s = s.replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, fakeEmail);
+    if (piiCategories.email) {
+      // "Display Name <email>" — use the email's persona for both so they always match
+      const placed = new Set<string>();
+      s = s.replace(
+        /([A-Za-z][a-zA-Z'-]*(?: [A-Za-z][a-zA-Z'-]*){0,3})\s*<([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})>/g,
+        (_, _name, email) => {
+          const { first, last, domain } = getPersona(email);
+          const fe = `${first}.${last}@${domain}`;
+          placed.add(fe);
+          return `${cap(first)} ${cap(last)} <${fe}>`;
+        }
+      );
+      // Standalone emails — skip ones already placed by the combined pattern above
+      s = s.replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+        (email) => placed.has(email) ? email : fakeEmail(email)
+      );
+    }
     if (piiCategories.ip) s = s.replace(/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, fakeIp);
     if (piiCategories.phone) s = s.replace(/(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/g, fakePhone);
     for (const term of parsedCustomTerms()) {
