@@ -285,7 +285,7 @@ export const evals = [
     config: { input: "a", run: () => "a", outputDir: "${TEST_OUTPUT_DIR}" },
   },
   {
-    name: "email/send",
+    name: "slack/post",
     adapter,
     config: { input: "b", run: () => "b", outputDir: "${TEST_OUTPUT_DIR}" },
   },

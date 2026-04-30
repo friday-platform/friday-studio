@@ -125,7 +125,7 @@ describe("readOutputDir", () => {
 
   it("filters by evalName substring", async () => {
     const a = makeResult({ evalName: "data-analyst/query", timestamp: "2026-02-17T10:00:00.000Z" });
-    const b = makeResult({ evalName: "email/refusal", timestamp: "2026-02-17T10:00:00.000Z" });
+    const b = makeResult({ evalName: "slack/post", timestamp: "2026-02-17T10:00:00.000Z" });
 
     await writeEvalResult(a, TEST_OUTPUT_DIR);
     await writeEvalResult(b, TEST_OUTPUT_DIR);

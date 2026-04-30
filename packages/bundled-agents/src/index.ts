@@ -1,7 +1,6 @@
 import { BbOutputSchema, bbAgent } from "./bb/agent.ts";
 import { ClaudeCodeOutputSchema, claudeCodeAgent } from "./claude-code/agent.ts";
 import { CsvFilterSamplerOutputSchema, csvFilterSamplerAgent } from "./csv/filter.ts";
-import { EmailOutputSchema, emailAgent } from "./email/communicator.ts";
 import { FathomOutputSchema, fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { GhOutputSchema, ghAgent } from "./gh/agent.ts";
 import { HubSpotOutputSchema, hubspotAgent } from "./hubspot/index.ts";
@@ -44,8 +43,6 @@ export {
   csvFilterSamplerAgent,
   discoverAudioFiles,
   discoverImageFiles,
-  EmailOutputSchema,
-  emailAgent,
   FathomOutputSchema,
   fathomGetTranscriptAgent,
   GhOutputSchema,

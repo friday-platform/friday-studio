@@ -50,7 +50,7 @@ interface RoutingCase extends BaseEvalCase {
   expectedCapabilities: string[];
   /**
    * Capability IDs that must NOT appear in any agent's capabilities.
-   * Used for disambiguation cases (e.g., "slack" not "email").
+   * Used for disambiguation cases (e.g., "slack" not "google-gmail").
    */
   forbiddenCapabilities?: string[];
   /**
@@ -106,13 +106,6 @@ const cases: RoutingCase[] = [
     expectedCapabilities: ["slack"],
   },
   {
-    id: "send-email",
-    name: "bundled - send summary email",
-    input: "Send a weekly summary email to team@company.com with project updates.",
-    expectedCapabilities: ["email"],
-    forbiddenCapabilities: ["google-gmail"],
-  },
-  {
     id: "transcribe-audio",
     name: "bundled - transcribe audio file",
     input: "Transcribe this audio file",
@@ -145,7 +138,6 @@ const cases: RoutingCase[] = [
     name: "mcp - read Gmail inbox",
     input: "Read my Gmail inbox, find emails from investors this week, and summarize them.",
     expectedCapabilities: ["google-gmail"],
-    forbiddenCapabilities: ["email"],
   },
   {
     id: "update-google-sheet",
@@ -168,7 +160,7 @@ const cases: RoutingCase[] = [
     name: "disambig - Slack notification not email",
     input: "Send a Slack notification to #alerts when the cron job completes.",
     expectedCapabilities: ["slack"],
-    forbiddenCapabilities: ["email", "google-gmail"],
+    forbiddenCapabilities: ["google-gmail"],
   },
   {
     id: "fathom-not-calendar",
@@ -244,7 +236,6 @@ const cases: RoutingCase[] = [
     input:
       "Send me a Slack summary of unread emails from the last 24 hours and highlight anything urgent.",
     expectedCapabilities: ["google-gmail", "slack"],
-    forbiddenCapabilities: ["email"],
   },
   {
     id: "website-sentry-email",
@@ -338,7 +329,7 @@ const cases: RoutingCase[] = [
     input:
       "Surface urgent emails from my Gmail inbox so I don't have to live in it. Notify me in Slack.",
     expectedCapabilities: ["google-gmail", "slack"],
-    forbiddenCapabilities: ["email", "research"],
+    forbiddenCapabilities: ["research"],
   },
   {
     id: "website-survey-insights",

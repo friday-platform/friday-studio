@@ -478,7 +478,6 @@ async function runWorkspaceChatTurn(userPrompt: string): Promise<RunOutcome> {
 // ---------------------------------------------------------------------------
 
 const BROWSER_MCP_IDS = new Set(["playwright-mcp", "puppeteer-mcp", "browser-mcp"]);
-const EMAIL_MCP_IDS = new Set(["smtp-mcp", "sendmail-mcp"]);
 
 function findUpsertWithType(captures: CapturedToolCalls, type: string, agent?: string) {
   return captures.upsertAgents.find(
@@ -493,7 +492,7 @@ function findUpsertWithType(captures: CapturedToolCalls, type: string, agent?: s
 interface BundledAgentCase extends BaseEvalCase {
   /** Required `type` literal in the upsert_agent call. */
   expectedType: "atlas";
-  /** Expected bundled `agent` id (`web`, `email`, `slack`). */
+  /** Expected bundled `agent` id (`web`, `slack`). */
   expectedAgent: string;
   /** MCP server ids the LLM must NOT enable for this case. Empty = no constraint. */
   forbiddenMcpIds: ReadonlySet<string>;
@@ -507,14 +506,6 @@ const cases: BundledAgentCase[] = [
     expectedType: "atlas",
     expectedAgent: "web",
     forbiddenMcpIds: BROWSER_MCP_IDS,
-  },
-  {
-    id: "daily-email-summary",
-    name: "email - daily summary digest",
-    input: "I want a workspace that sends me a daily email summary.",
-    expectedType: "atlas",
-    expectedAgent: "email",
-    forbiddenMcpIds: EMAIL_MCP_IDS,
   },
   {
     id: "slack-daily-standup",
@@ -532,9 +523,9 @@ interface SmokeCase extends BaseEvalCase {
 }
 
 const smokeCase: SmokeCase = {
-  id: "fetch-and-email",
-  name: "smoke - fetch URL daily and email result",
-  input: "Build a workspace that fetches a URL daily and emails me the result.",
+  id: "fetch-and-summarize",
+  name: "smoke - fetch URL daily and summarize",
+  input: "Build a workspace that fetches a URL daily and summarizes the content.",
   requireAnyAtlas: true,
 };
 

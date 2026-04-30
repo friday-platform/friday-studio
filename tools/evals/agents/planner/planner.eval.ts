@@ -63,9 +63,9 @@ const cases: PlannerCase[] = [
   // Split: different services = separate agents
   // maxAgentCount allows an optional summarizer between services (not ideal but acceptable)
   {
-    id: "research-then-email",
-    name: "split - research then email",
-    input: "Research competitors and email me a summary",
+    id: "research-then-slack",
+    name: "split - research then slack",
+    input: "Research competitors and post a summary to Slack",
     expectedAgentCount: 2,
     maxAgentCount: 3,
   },

@@ -4,7 +4,6 @@ import { z } from "zod";
 import { bbAgent } from "./bb/agent.ts";
 import { claudeCodeAgent } from "./claude-code/agent.ts";
 import { csvFilterSamplerAgent } from "./csv/filter.ts";
-import { emailAgent } from "./email/communicator.ts";
 import { fathomGetTranscriptAgent } from "./fathom-ai/get-transcript.ts";
 import { ghAgent } from "./gh/agent.ts";
 import { hubspotAgent } from "./hubspot/index.ts";
@@ -25,7 +24,6 @@ export const bundledAgents: AtlasAgent[] = [
   slackCommunicatorAgent,
   webAgent,
   summaryAgent,
-  emailAgent,
   fathomGetTranscriptAgent,
   claudeCodeAgent,
   ghAgent,
@@ -39,7 +37,7 @@ export const bundledAgents: AtlasAgent[] = [
 ];
 
 /** Agents hidden from discovery surfaces (list_capabilities, system prompts). */
-const HIDDEN_FROM_DISCOVERY = new Set(["email", "csv-filter-sampler", "fathom-get-transcript"]);
+const HIDDEN_FROM_DISCOVERY = new Set(["csv-filter-sampler", "fathom-get-transcript"]);
 
 /** Subset of bundled agents advertised in discovery surfaces. */
 export const discoverableBundledAgents = bundledAgents.filter(
