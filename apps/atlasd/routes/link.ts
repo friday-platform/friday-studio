@@ -11,7 +11,22 @@ import { proxy } from "hono/proxy";
 
 const linkRoutes = new Hono();
 
-const LINK_SERVICE_URL = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+/**
+ * Where the daemon proxies /api/link/* requests to. Resolution order:
+ *   1. LINK_SERVICE_URL — explicit override (production / Docker)
+ *   2. http://localhost:$FRIDAY_PORT_LINK — desktop installs that
+ *      moved link off the conventional 3100 (e.g. the launcher's
+ *      port-override mechanism). Without this fallback the daemon
+ *      hits :3100 (default) while link binds to FRIDAY_PORT_LINK,
+ *      every credential lookup fails with ECONNREFUSED, and the
+ *      workspace-chat agent can't reach Gmail / Slack / etc.
+ *   3. http://localhost:3100 — legacy default for in-tree dev runs.
+ */
+const LINK_SERVICE_URL =
+  process.env.LINK_SERVICE_URL ??
+  (process.env.FRIDAY_PORT_LINK
+    ? `http://localhost:${process.env.FRIDAY_PORT_LINK}`
+    : "http://localhost:3100");
 const PROXY_PREFIX = "/api/link";
 
 /**

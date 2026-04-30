@@ -196,6 +196,13 @@ pub fn write_env_file(
         ("FRIDAYD_URL", "http://localhost:18080"),
         ("EXTERNAL_DAEMON_URL", "http://localhost:18080"),
         ("EXTERNAL_TUNNEL_URL", "http://localhost:19090"),
+        // Daemon proxies /api/link/* to LINK_SERVICE_URL; without this
+        // line it falls back to the legacy :3100 and credential lookups
+        // for Gmail / Slack / etc. fail with ECONNREFUSED. atlasd's
+        // resolver also accepts FRIDAY_PORT_LINK as a port-only
+        // fallback, but seeding the full URL here is the canonical
+        // shape and keeps the env file readable.
+        ("LINK_SERVICE_URL", "http://localhost:13100"),
     ];
     for (k, v) in platform_vars {
         match existing_keys.get(k) {

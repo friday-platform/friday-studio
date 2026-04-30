@@ -131,7 +131,15 @@ function isConnectPattern(msg: string): boolean {
 async function createLinkProvider(
   provider: DynamicApiKeyProviderInput | DynamicOAuthProviderInput,
 ): Promise<string | undefined> {
-  const linkServiceUrl = process.env.LINK_SERVICE_URL ?? "http://localhost:3100";
+  // Same resolution order as the link proxy in routes/link.ts —
+  // explicit LINK_SERVICE_URL beats FRIDAY_PORT_LINK fallback beats
+  // the legacy :3100 default. Keeps desktop port-override installs
+  // talking to the right link binary.
+  const linkServiceUrl =
+    process.env.LINK_SERVICE_URL ??
+    (process.env.FRIDAY_PORT_LINK
+      ? `http://localhost:${process.env.FRIDAY_PORT_LINK}`
+      : "http://localhost:3100");
   const url = `${linkServiceUrl}/v1/providers`;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const atlasKey = process.env.FRIDAY_KEY;
