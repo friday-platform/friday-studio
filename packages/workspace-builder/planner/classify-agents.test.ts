@@ -23,7 +23,6 @@ function makeAgent(overrides: Partial<Agent> & { capabilities: string[] }): Agen
 
 describe("classifyAgents — bundled agent lookup", () => {
   it.each([
-    { capabilityId: "email", expectedBundledId: "email" },
     { capabilityId: "slack", expectedBundledId: "slack" },
     { capabilityId: "research", expectedBundledId: "research" },
   ])("sets bundledId when capability '$capabilityId' exists in bundled registry", ({
@@ -94,7 +93,7 @@ describe("classifyAgents — empty capabilities", () => {
 
 describe("classifyAgents — mixed bundled + MCP clarification", () => {
   it("emits mixed-bundled-mcp clarification when agent has both types", () => {
-    const agents = [makeAgent({ id: "mixed", name: "Mixed", capabilities: ["email", "github"] })];
+    const agents = [makeAgent({ id: "mixed", name: "Mixed", capabilities: ["slack", "github"] })];
     const { clarifications } = classifyAgents(agents);
     expect(clarifications).toContainEqual(
       expect.objectContaining({ agentId: "mixed", issue: { type: "mixed-bundled-mcp" } }),
@@ -112,19 +111,19 @@ describe("classifyAgents — mixed bundled + MCP clarification", () => {
 describe("classifyAgents — multiple bundled clarification", () => {
   it("emits multiple-bundled clarification when agent has two bundled IDs", () => {
     const agents = [
-      makeAgent({ id: "notifier", name: "Notifier", capabilities: ["email", "slack"] }),
+      makeAgent({ id: "notifier", name: "Notifier", capabilities: ["slack", "web"] }),
     ];
     const { clarifications } = classifyAgents(agents);
     expect(clarifications).toContainEqual(
       expect.objectContaining({
         agentId: "notifier",
-        issue: { type: "multiple-bundled", bundledIds: ["email", "slack"] },
+        issue: { type: "multiple-bundled", bundledIds: ["slack", "web"] },
       }),
     );
   });
 
   it("does not set bundledId when multiple bundled IDs are found", () => {
-    const agents = [makeAgent({ capabilities: ["email", "slack"] })];
+    const agents = [makeAgent({ capabilities: ["slack", "web"] })];
     classifyAgents(agents);
     expect(agents[0]?.bundledId).toBeUndefined();
   });
@@ -161,7 +160,7 @@ describe("classifyAgents — unknown capability clarification", () => {
 describe("classifyAgents — unknown IDs alongside mixed/multiple-bundled", () => {
   it("emits unknown-capability + mixed-bundled-mcp for mixed combo with unknown", () => {
     const agents = [
-      makeAgent({ id: "combo", name: "Combo", capabilities: ["email", "github", "nonexistent"] }),
+      makeAgent({ id: "combo", name: "Combo", capabilities: ["slack", "github", "nonexistent"] }),
     ];
     const { clarifications } = classifyAgents(agents);
 
@@ -181,7 +180,7 @@ describe("classifyAgents — unknown IDs alongside mixed/multiple-bundled", () =
       makeAgent({
         id: "notifier",
         name: "Notifier",
-        capabilities: ["email", "slack", "nonexistent"],
+        capabilities: ["slack", "web", "nonexistent"],
       }),
     ];
     const { clarifications } = classifyAgents(agents);
@@ -193,7 +192,7 @@ describe("classifyAgents — unknown IDs alongside mixed/multiple-bundled", () =
     });
     expect(clarifications[1]).toMatchObject({
       agentId: "notifier",
-      issue: { type: "multiple-bundled", bundledIds: ["email", "slack"] },
+      issue: { type: "multiple-bundled", bundledIds: ["slack", "web"] },
     });
   });
 });
@@ -305,12 +304,12 @@ describe("classifyAgents — dynamic MCP server resolution", () => {
 describe("classifyAgents — multiple agents coexisting", () => {
   it("handles bundled and MCP agents in same batch", () => {
     const agents = [
-      makeAgent({ id: "emailer", capabilities: ["email"] }),
+      makeAgent({ id: "slacker", capabilities: ["slack"] }),
       makeAgent({ id: "gh-bot", capabilities: ["github"] }),
     ];
     classifyAgents(agents);
     expect(agents).toEqual([
-      expect.objectContaining({ id: "emailer", bundledId: "email" }),
+      expect.objectContaining({ id: "slacker", bundledId: "slack" }),
       expect.objectContaining({
         id: "gh-bot",
         mcpServers: [{ serverId: "github", name: "GitHub" }],
@@ -324,19 +323,6 @@ describe("classifyAgents — multiple agents coexisting", () => {
 // ---------------------------------------------------------------------------
 
 describe("classifyAgents — config requirements", () => {
-  it("extracts config requirements for bundled email agent", () => {
-    const agents = [makeAgent({ id: "mailer", name: "Mailer", capabilities: ["email"] })];
-    const { configRequirements } = classifyAgents(agents);
-
-    expect(configRequirements).toEqual([
-      expect.objectContaining({
-        agentId: "mailer",
-        integration: { type: "bundled", bundledId: "email" },
-        requiredConfig: expect.arrayContaining([expect.objectContaining({ source: "env" })]),
-      }),
-    ]);
-  });
-
   it("extracts config requirements for MCP github agent", () => {
     const agents = [makeAgent({ id: "gh-bot", name: "GitHub Bot", capabilities: ["github"] })];
     const { configRequirements } = classifyAgents(agents);
