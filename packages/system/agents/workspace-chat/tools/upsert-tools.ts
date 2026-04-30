@@ -206,11 +206,12 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         '- `type: "llm"` — inline LLM agent. Shape: ' +
         "`{ type, description, config: { provider, model, prompt, tools? } }`. " +
         'Use when the work is open-ended ("figure out what to do") and no bundled agent fits.\n' +
-        '- `type: "atlas"` — bundled platform agent (web, email, slack, gh, etc.). Shape: ' +
+        '- `type: "atlas"` — bundled platform agent (web, slack, gh, etc.). Shape: ' +
         "`{ type, agent, description, prompt, config?, env? }`. " +
         "Does not accept a `tools` array — the bundled agent is a self-contained black box and " +
-        "does NOT invoke MCP tools. Each atlas agent is scope-limited (e.g. the bundled `email` " +
-        "agent composes and sends; it does NOT read inboxes or modify message state). " +
+        "does NOT invoke MCP tools. Each atlas agent is tightly scope-limited — some are " +
+        "outbound-only (e.g. message senders), some are read-only (e.g. scrapers), and none " +
+        "maintain authenticated session state across calls. " +
         "Before picking `type: atlas`, call `list_capabilities` and verify the agent's " +
         "`constraints` field covers the user's intent end-to-end. If the user's task crosses " +
         "a constraint — mutating state the agent only reads, needing a specific MCP tool, or " +
