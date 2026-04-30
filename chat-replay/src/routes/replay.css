@@ -42,6 +42,15 @@ button {
   margin-inline-start: var(--size-1);
 }
 
+.replay-btn {
+  background: color-mix(in srgb, var(--surface), transparent 10%);
+  border: 1px solid var(--color-border-1);
+  border-radius: var(--radius-round);
+  box-shadow: var(--shadow-4);
+  color: var(--text);
+  padding: var(--size-1-5) var(--size-3);
+}
+
 .overlay-backdrop {
   position: fixed;
   inset: 0;
@@ -131,9 +140,18 @@ button {
 .replay-controls {
   align-items: center;
   display: grid;
-  grid-template-columns: auto auto auto 1fr minmax(12rem, 18rem) auto auto;
+  grid-template-columns: auto auto auto 1fr minmax(12rem, 18rem) auto auto auto;
   gap: var(--size-2);
   padding: var(--size-3) var(--size-4);
+}
+
+.replay-controls select {
+  background: var(--surface-raised);
+  border: 1px solid var(--color-border-1);
+  border-radius: var(--radius-4);
+  color: var(--text);
+  font-size: var(--font-size-2);
+  padding: var(--size-1-5) var(--size-2);
 }
 
 .replay-controls input[type="range"] {

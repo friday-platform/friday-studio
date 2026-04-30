@@ -51,6 +51,29 @@
   let timer: number | undefined = $state();
   let piiEnabled = $state(false);
   let piiCategories = $state({ email: true, phone: true, ip: true, uuid: true });
+  let chatAspect = $state("full");
+
+  const ASPECT_OPTIONS = [
+    { value: "full", label: "Full width" },
+    { value: "mobile", label: "Mobile (390px)" },
+    { value: "tablet", label: "Tablet (768px)" },
+    { value: "16:9", label: "16:9 — Landscape" },
+    { value: "9:16", label: "9:16 — Shorts/Reels" },
+    { value: "4:3", label: "4:3 — Classic TV" },
+    { value: "3:4", label: "3:4 — Portrait tablet" },
+    { value: "1:1", label: "1:1 — Square" },
+    { value: "21:9", label: "21:9 — Ultra-wide" },
+  ] as const;
+
+  const SPEED_PRESETS = [80, 200, 400, 650, 1000, 1200];
+
+  const chatMainStyle = $derived(chatAspect !== "full" ? "justify-items: center; align-items: center;" : "");
+  const chatPanelStyle = $derived(
+    chatAspect === "full" ? "" :
+    chatAspect === "mobile" ? "max-inline-size: 390px; margin-inline: auto;" :
+    chatAspect === "tablet" ? "max-inline-size: 768px; margin-inline: auto;" :
+    `aspect-ratio: ${chatAspect.replace(":", " / ")}; block-size: auto; max-block-size: calc(100dvh - var(--size-2)); margin-inline: auto;`
+  );
 
   const events = $derived(buildEvents(snapshot));
   const currentEvent = $derived(events[currentIndex]);
@@ -286,6 +309,12 @@
   }
   function togglePlay() { playing ? stop() : play(); }
   function handleSpeedChange() { if (playing) play(); }
+  function stepSpeed(faster: boolean) {
+    const idx = SPEED_PRESETS.findIndex(p => p >= speedMs);
+    const safeIdx = idx === -1 ? SPEED_PRESETS.length - 1 : idx;
+    const next = faster ? SPEED_PRESETS[safeIdx - 1] : SPEED_PRESETS[safeIdx + 1];
+    if (next !== undefined) { speedMs = next; handleSpeedChange(); }
+  }
   function speedLabel(): string {
     if (speedMs >= 1000) return "Slow";
     if (speedMs >= 500) return "Normal";
@@ -393,10 +422,12 @@
       overlayOpen = !overlayOpen;
       return;
     }
-    if (event.key === " " && !isEditableTarget(event.target)) {
-      event.preventDefault();
-      togglePlay();
-    }
+    if (isEditableTarget(event.target)) return;
+    if (event.key === " ") { event.preventDefault(); togglePlay(); }
+    else if (event.key === "j") { event.preventDefault(); setIndex(currentIndex - 1); }
+    else if (event.key === "k") { event.preventDefault(); setIndex(currentIndex + 1); }
+    else if (event.key === "+" || event.key === "=") { event.preventDefault(); stepSpeed(true); }
+    else if (event.key === "-") { event.preventDefault(); stepSpeed(false); }
   }
 
   onMount(() => {
@@ -436,12 +467,12 @@
       </form>
 
       <section class="replay-controls" aria-label="Replay controls">
-        <button type="button" onclick={() => setIndex(currentIndex - 1)}>Prev</button>
-        <button type="button" onclick={togglePlay}>{playing ? "Pause" : "Play"} <span>Space</span></button>
-        <button type="button" onclick={() => setIndex(currentIndex + 1)}>Next</button>
+        <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex - 1)}>Prev <span>J</span></button>
+        <button class="replay-btn" type="button" onclick={togglePlay}>{playing ? "Pause" : "Play"} <span>Space</span></button>
+        <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex + 1)}>Next <span>K</span></button>
         <input type="range" min="0" max={Math.max(0, events.length - 1)} value={currentIndex} oninput={(event) => setIndex(event.currentTarget.valueAsNumber)} />
         <label class="speed-control">
-          <span>Speed: {speedLabel()}</span>
+          <span>Speed: {speedLabel()} <span class="replay-muted">+ / −</span></span>
           <input
             type="range"
             min="80"
@@ -453,6 +484,11 @@
           />
         </label>
         <span class="replay-muted">{events.length === 0 ? 0 : currentIndex + 1} / {events.length}</span>
+        <select bind:value={chatAspect} aria-label="Chat aspect ratio">
+          {#each ASPECT_OPTIONS as opt}
+            <option value={opt.value}>{opt.label}</option>
+          {/each}
+        </select>
         <button type="button" onclick={() => (inspectorOpen = !inspectorOpen)}>{inspectorOpen ? "Hide" : "Show"} timeline/event</button>
       </section>
 
@@ -492,12 +528,14 @@
     </div>
   {/if}
 
-  <main class="replay-main">
-    <section class="replay-panel replay-chat-panel">
-      <div class="replay-chat-head">
-        <div class="replay-chat-title">{currentChatTitle()}</div>
-        <div class="replay-muted">{currentEvent?.chat.chat.id ?? ""}</div>
-      </div>
+  <main class="replay-main" style={chatMainStyle}>
+    <section class="replay-panel replay-chat-panel" style={chatPanelStyle}>
+      {#if overlayOpen}
+        <div class="replay-chat-head">
+          <div class="replay-chat-title">{currentChatTitle()}</div>
+          <div class="replay-muted">{currentEvent?.chat.chat.id ?? ""}</div>
+        </div>
+      {/if}
       <div class="replay-chat-body">
         <ChatMessageList messages={visibleMessages} />
       </div>
