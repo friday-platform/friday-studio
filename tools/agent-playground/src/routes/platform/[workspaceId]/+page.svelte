@@ -577,37 +577,29 @@
           </div>
         </div>
 
-        <div class="skeleton-cards">
-          <a class="skeleton-card" href="/discover">
-            <div class="skeleton-card-icon">
+        <div class="discovery-cards">
+          <a class="discovery-card" href="/discover">
+            <div class="discovery-card-icon">
               <IconLarge.Compass />
             </div>
-            <div class="skeleton-card-body">
-              <div class="skeleton-card-title">Discover Spaces</div>
-              <div class="skeleton-card-sub">Explore how others are using Friday, then build your own.</div>
-              <div class="skeleton-lines">
-                <div class="skeleton-line" style="inline-size: 90%"></div>
-                <div class="skeleton-line" style="inline-size: 55%"></div>
-              </div>
+            <div class="discovery-card-body">
+              <div class="discovery-card-title">Discover Spaces</div>
+              <div class="discovery-card-sub">Explore how others are using Friday, then build your own.</div>
             </div>
           </a>
 
           <a
-            class="skeleton-card"
+            class="discovery-card"
             href="https://docs.hellofriday.ai"
             target="_blank"
             rel="noopener noreferrer"
           >
-            <div class="skeleton-card-icon">
+            <div class="discovery-card-icon">
               <IconLarge.Write />
             </div>
-            <div class="skeleton-card-body">
-              <div class="skeleton-card-title">Docs</div>
-              <div class="skeleton-card-sub">Learn more about Friday Studio.</div>
-              <div class="skeleton-lines">
-                <div class="skeleton-line" style="inline-size: 80%"></div>
-                <div class="skeleton-line" style="inline-size: 60%"></div>
-              </div>
+            <div class="discovery-card-body">
+              <div class="discovery-card-title">Docs</div>
+              <div class="discovery-card-sub">Learn more about Friday Studio.</div>
             </div>
           </a>
         </div>
@@ -1133,8 +1125,8 @@
     }
   }
 
-  /* Skeleton discovery cards */
-  .skeleton-cards {
+  /* Discovery cards */
+  .discovery-cards {
     display: grid;
     gap: var(--size-4);
     grid-template-columns: repeat(2, 1fr);
@@ -1142,7 +1134,7 @@
     width: 100%;
   }
 
-  .skeleton-card {
+  .discovery-card {
     background: var(--color-surface-1);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-3);
@@ -1150,57 +1142,42 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-    opacity: 0.6;
-    padding: var(--size-4) var(--size-4);
+    padding: var(--size-4);
     text-decoration: none;
     transition:
       background-color 120ms ease,
-      border-color 120ms ease,
-      opacity 120ms ease;
+      border-color 120ms ease;
   }
 
-  a.skeleton-card:hover {
+  a.discovery-card:hover {
     background-color: var(--color-surface-2);
     border-color: color-mix(in srgb, var(--color-accent, #1171df), transparent 60%);
-    opacity: 1;
   }
 
-  .skeleton-card-icon {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
+  .discovery-card-icon {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
 
     :global(svg) {
-      block-size: 20px;
-      inline-size: 20px;
+      block-size: 22px;
+      inline-size: 22px;
     }
   }
 
-  .skeleton-card-body {
+  .discovery-card-body {
     display: flex;
     flex-direction: column;
     gap: var(--size-1-5);
   }
 
-  .skeleton-card-title {
-    font-size: var(--font-size-2);
+  .discovery-card-title {
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-6);
   }
 
-  .skeleton-card-sub {
+  .discovery-card-sub {
     color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-2);
     line-height: var(--font-lineheight-3);
-  }
-
-  .skeleton-lines {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1-5);
-  }
-
-  .skeleton-line {
-    background: color-mix(in srgb, var(--color-text), transparent 82%);
-    block-size: var(--size-2);
-    border-radius: var(--radius-round);
   }
 
   /* Empty / loading states */

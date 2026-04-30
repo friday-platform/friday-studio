@@ -78,7 +78,7 @@
 
   .section-action {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
     margin-inline-start: auto;
     text-decoration: none;
     transition: color 120ms ease;

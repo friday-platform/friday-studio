@@ -327,7 +327,7 @@
   .signal-name {
     color: var(--color-text);
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
     overflow: hidden;
     text-overflow: ellipsis;
