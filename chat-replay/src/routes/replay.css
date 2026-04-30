@@ -473,25 +473,6 @@ button {
   overflow: hidden;
 }
 
-.replay-chat-body .message-list {
-  block-size: 100%;
-  flex: 1 1 auto;
-  scroll-behavior: smooth;
-}
-
-.replay-chat-body .message-list::before {
-  content: "";
-  margin-block-start: auto;
-}
-
-.replay-chat-body .message {
-  flex-shrink: 0;
-}
-
-.replay-chat-body .empty-state {
-  display: none;
-}
-
 .aspect-preview-badge {
   background: hsl(0 0% 0% / 0.6);
   border-radius: var(--radius-round);
