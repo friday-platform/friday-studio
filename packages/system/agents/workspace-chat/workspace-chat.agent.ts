@@ -921,7 +921,16 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
             messages: [
               { role: ROLE_SYSTEM, content: systemPrompt },
               { role: ROLE_SYSTEM, content: datetimeMessage },
-              ...(await convertToModelMessages(sanitizedMessages)),
+              ...(await convertToModelMessages(sanitizedMessages, {
+                convertDataPart: (part) => {
+                  if (part.type === "data-credential-linked") {
+                    const data = (part as { type: string; data?: { displayName?: string; provider?: string } }).data;
+                    const name = data?.displayName ?? data?.provider ?? "service";
+                    return { type: "text" as const, text: `Connected ${name}.` };
+                  }
+                  return undefined;
+                },
+              })),
             ],
             tools: allTools,
             toolChoice: "auto",

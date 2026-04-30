@@ -1168,12 +1168,23 @@
   }
 
   /**
+   * Tracks recent credential-linked sends per provider to deduplicate rapid-fire
+   * callbacks from multiple connect-service cards for the same provider.
+   */
+  const recentlyLinked = new Map<string, number>();
+
+  /**
    * Called when the user successfully connects a credential via an inline
    * connect_service card. Sends a lightweight user message so the agent
    * retries on its next turn with the updated <integrations> state.
    */
   function handleCredentialConnected(provider: string): void {
     if (!chat) return;
+    const now = Date.now();
+    const last = recentlyLinked.get(provider);
+    if (last !== undefined && now - last < 5000) return;
+    recentlyLinked.set(provider, now);
+
     const parts: QueuedMessageParts = [
       { type: "data-credential-linked", data: { provider, displayName: provider } },
     ];
