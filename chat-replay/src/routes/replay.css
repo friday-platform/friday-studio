@@ -193,11 +193,23 @@ button {
 }
 
 .replay-pii {
-  align-items: center;
+  align-items: start;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-2) var(--size-3);
   font-size: var(--font-size-2);
+  gap: var(--size-4);
+}
+
+.pii-left {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--size-2);
+}
+
+.pii-categories {
+  display: grid;
+  gap: var(--size-1-5);
+  grid-template-columns: 1fr 1fr;
 }
 
 .replay-pii label {
@@ -207,14 +219,20 @@ button {
   gap: var(--size-1);
 }
 
-.replay-pii .pii-master {
+.pii-master {
   font-weight: var(--font-weight-6);
 }
 
-.pii-terms-label {
-  align-items: start;
+.pii-right {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--size-1);
+  min-inline-size: 0;
+}
+
+.pii-terms-heading {
+  font-weight: var(--font-weight-6);
 }
 
 .pii-terms {
@@ -224,9 +242,22 @@ button {
   color: var(--text);
   font: var(--font-size-1) / 1.4 var(--font-mono);
   min-block-size: 4rem;
-  min-inline-size: 16rem;
   padding: var(--size-1-5) var(--size-2);
   resize: vertical;
+  inline-size: 100%;
+}
+
+.pii-hint {
+  color: var(--text-muted);
+  font-size: var(--font-size-1);
+  margin: 0;
+}
+
+.pii-hint code {
+  background: var(--surface-raised);
+  border-radius: var(--radius-2);
+  color: var(--text);
+  padding: 0 var(--size-1);
 }
 
 .replay-main {
