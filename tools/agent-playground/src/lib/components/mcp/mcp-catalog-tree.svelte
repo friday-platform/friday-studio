@@ -163,10 +163,10 @@
                 style:--dot-color={securityColor(server.securityRating)}
               ></span>
               <span class="item-name">{server.name}</span>
+              <span class="item-meta">{transportBadge(server)}</span>
               {#if isOfficialServer(server)}
                 <span class="official-pill">Official</span>
               {/if}
-              <span class="item-meta">{transportBadge(server)}</span>
             </button>
           {/each}
         </div>
@@ -186,10 +186,10 @@
                 style:--dot-color={securityColor(server.securityRating)}
               ></span>
               <span class="item-name">{server.name}</span>
+              <span class="item-meta">{transportBadge(server)}</span>
               {#if isOfficialServer(server)}
                 <span class="official-pill">Official</span>
               {/if}
-              <span class="item-meta">{transportBadge(server)}</span>
             </button>
           {/each}
         </div>
@@ -209,10 +209,10 @@
                 style:--dot-color={securityColor(server.securityRating)}
               ></span>
               <span class="item-name">{server.name}</span>
+              <span class="item-meta">{transportBadge(server)}</span>
               {#if isOfficialServer(server)}
                 <span class="official-pill">Official</span>
               {/if}
-              <span class="item-meta">{transportBadge(server)}</span>
             </button>
           {/each}
         </div>
@@ -359,15 +359,15 @@
   }
 
   .official-pill {
-    background: var(--color-accent);
+    background-color: color-mix(in srgb, var(--color-accent), transparent 88%);
     border-radius: var(--radius-1);
-    color: var(--color-surface-1);
+    color: color-mix(in srgb, var(--color-accent), var(--color-text) 35%);
     flex-shrink: 0;
     font-size: var(--font-size-0);
     font-weight: var(--font-weight-5);
-    letter-spacing: 0.02em;
-    line-height: 1;
-    padding: 1px 5px;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    text-transform: uppercase;
   }
 
   .item-meta {
