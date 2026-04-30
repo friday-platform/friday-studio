@@ -100,20 +100,32 @@ func TestFridayEnv_OmitsAgentBrowserPathWhenAbsent(t *testing.T) {
 // to the launcher-owned home. Without this, services fall back to
 // the legacy ~/.atlas location and homes silently drift apart —
 // the original bug that motivated commit 41ead9310.
+//
+// Walks supervisedProcesses() rather than spot-checking the factory
+// helper, so a refactor that swaps any one service's `env:
+// commonServiceEnv()` to a custom slice surfaces immediately.
 func TestCommonServiceEnv_EmitsFridayHome(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 
-	env := commonServiceEnv()
 	want := "FRIDAY_HOME=" + filepath.Join(tmpHome, ".friday", "local")
-	if !slices.Contains(env, want) {
-		t.Errorf("commonServiceEnv missing %q. got=%v", want, env)
-	}
 
-	// fridayEnv composes commonServiceEnv, so the daemon must inherit
-	// FRIDAY_HOME too.
-	dEnv := fridayEnv(t.TempDir())
-	if !slices.Contains(dEnv, want) {
-		t.Errorf("fridayEnv missing %q (via commonServiceEnv). got=%v", want, dEnv)
+	specs := supervisedProcesses("/tmp/bin")
+	required := []string{"friday", "link", "webhook-tunnel", "playground"}
+	for _, name := range required {
+		var found *processSpec
+		for i := range specs {
+			if specs[i].name == name {
+				found = &specs[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("service %q missing from supervisedProcesses", name)
+		}
+		if !slices.Contains(found.env, want) {
+			t.Errorf("service %q env missing %q\ngot:\n%s",
+				name, want, strings.Join(found.env, "\n"))
+		}
 	}
 }
