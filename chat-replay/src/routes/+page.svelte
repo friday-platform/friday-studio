@@ -3,6 +3,7 @@
   import { extractToolCalls, flattenToolCalls } from "$lib/components/chat/extract-tool-calls.ts";
   import type { ChatMessage, Segment, ToolCallDisplay } from "$lib/components/chat/types";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { Icons, IconSmall } from "@atlas/ui";
   import { onMount, tick } from "svelte";
   import { z } from "zod";
 
@@ -52,6 +53,7 @@
   let toggleVisible = $state(true);
   let toggleHideTimer: number | undefined;
   let eventDelays = $state<Record<number, number>>({});
+  let useSourceTiming = $state(false);
   let mounted = $state(false);
 
   function showToggle() {
@@ -91,6 +93,7 @@
   const events = $derived(buildEvents(snapshot));
   const currentEvent = $derived(events[currentIndex]);
   const visibleMessages = $derived(buildVisibleMessages(snapshot, currentIndex));
+  const naturalEventDelays = $derived(buildNaturalDelays(events));
 
   // --- PII filter ---
 
@@ -218,6 +221,22 @@
           result.push({ kind: "part", chatIndex, messageIndex, partIndex, workspaceId, chat, message, label: eventLabel(part, message.role), detail: eventDetail(part) });
         }
       }
+    }
+    return result;
+  }
+
+  function buildNaturalDelays(evts: ReplayEvent[]): Record<number, number> {
+    const result: Record<number, number> = {};
+    for (let i = 0; i < evts.length - 1; i++) {
+      const curr = evts[i];
+      const next = evts[i + 1];
+      // Same message: parts stream fast, no natural delay
+      if (curr.kind === "part" && next.kind === "part" &&
+          curr.chatIndex === next.chatIndex && curr.messageIndex === next.messageIndex) continue;
+      const currTs = curr.kind === "part" ? timestampForMessage(curr.message, curr.chat) : timestampForChat(curr.chat);
+      const nextTs = next.kind === "part" ? timestampForMessage(next.message, next.chat) : timestampForChat(next.chat);
+      const diff = nextTs - currTs;
+      if (diff > 50 && diff < 300_000) result[i] = diff; // 50ms–5min
     }
     return result;
   }
@@ -386,7 +405,7 @@
   function setIndex(value: number) { currentIndex = clampIndex(value); }
   function stop() { playing = false; if (timer !== undefined) window.clearTimeout(timer); timer = undefined; }
   function scheduleNext() {
-    const delay = eventDelays[currentIndex] ?? speedMs;
+    const delay = eventDelays[currentIndex] ?? (useSourceTiming ? naturalEventDelays[currentIndex] : undefined) ?? speedMs;
     timer = window.setTimeout(() => {
       if (!playing) return;
       if (currentIndex >= events.length - 1) { stop(); }
@@ -541,6 +560,7 @@
         chatAspect,
         speedMs,
         inspectorOpen,
+        useSourceTiming,
       }));
     } catch { /* ignore */ }
   });
@@ -562,6 +582,7 @@
         if (typeof s.chatAspect === "string") chatAspect = s.chatAspect;
         if (typeof s.speedMs === "number") speedMs = s.speedMs;
         if (typeof s.inspectorOpen === "boolean") inspectorOpen = s.inspectorOpen;
+        if (typeof s.useSourceTiming === "boolean") useSourceTiming = s.useSourceTiming;
       }
     } catch { /* ignore */ }
 
@@ -603,9 +624,11 @@
 
       <section class="replay-controls" aria-label="Replay controls">
         <div class="ctrl-transport">
-          <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex - 1)}>Prev <span>J</span></button>
-          <button class="replay-btn" type="button" onclick={togglePlay}>{playing ? "Pause" : "Play"} <span>Space</span></button>
-          <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex + 1)}>Next <span>K</span></button>
+          <button class="replay-btn ctrl-icon" type="button" onclick={() => setIndex(currentIndex - 1)} aria-label="Previous (J)"><IconSmall.ChevronLeft /></button>
+          <button class="replay-btn ctrl-icon ctrl-play" type="button" onclick={togglePlay} aria-label={playing ? "Pause (Space)" : "Play (Space)"}>
+            {#if playing}<Icons.Pause />{:else}<Icons.TriangleRight />{/if}
+          </button>
+          <button class="replay-btn ctrl-icon" type="button" onclick={() => setIndex(currentIndex + 1)} aria-label="Next (K)"><IconSmall.ChevronRight /></button>
         </div>
         <div class="ctrl-scrubber">
           <input type="range" min="0" max={Math.max(0, events.length - 1)} value={currentIndex} oninput={(e) => setIndex(e.currentTarget.valueAsNumber)} />
@@ -617,6 +640,10 @@
           <button class="replay-btn" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+</button>
         </div>
         <div class="ctrl-view">
+          <label class="ctrl-source-timing" title="Use actual message timestamps as delays">
+            <input type="checkbox" bind:checked={useSourceTiming} />
+            Source timing
+          </label>
           <select bind:value={chatAspect} aria-label="Chat aspect ratio" onchange={handleAspectPreview}>
             {#each ASPECT_OPTIONS as opt}
               <option value={opt.value}>{opt.label}</option>
@@ -627,22 +654,20 @@
       </section>
 
       <section class="replay-pii" aria-label="PII filter">
-        <div class="pii-left">
+        <div class="pii-head">
           <label class="pii-master">
             <input type="checkbox" bind:checked={piiEnabled} />
             PII filter
           </label>
-          {#if piiEnabled}
-            <div class="pii-categories">
-              <label><input type="checkbox" bind:checked={piiCategories.email} /> Emails</label>
-              <label><input type="checkbox" bind:checked={piiCategories.phone} /> Phones</label>
-              <label><input type="checkbox" bind:checked={piiCategories.ip} /> IPs</label>
-              <label><input type="checkbox" bind:checked={piiCategories.uuid} /> UUIDs</label>
-            </div>
-          {/if}
+          <div class="pii-categories" class:pii-off={!piiEnabled}>
+            <label><input type="checkbox" bind:checked={piiCategories.email} disabled={!piiEnabled} /> Emails</label>
+            <label><input type="checkbox" bind:checked={piiCategories.phone} disabled={!piiEnabled} /> Phones</label>
+            <label><input type="checkbox" bind:checked={piiCategories.ip} disabled={!piiEnabled} /> IPs</label>
+            <label><input type="checkbox" bind:checked={piiCategories.uuid} disabled={!piiEnabled} /> UUIDs</label>
+          </div>
         </div>
         {#if piiEnabled}
-          <div class="pii-right">
+          <div class="pii-body">
             <span class="pii-terms-heading">Names &amp; phrases</span>
             <textarea class="pii-terms" bind:value={piiCustomTermsText} placeholder="Kenneth Kouot, Ken&#10;Acme Corp"></textarea>
             <p class="pii-hint">One identity per line · commas = aliases · add <code>→ Name</code> to pin the replacement</p>
@@ -663,7 +688,10 @@
                       <span class="timeline-label">{event.label}</span>
                       <span class="timeline-meta">
                         {event.workspaceId} · {event.kind}
-                        <span class="timeline-delay" class:is-override={eventDelays[index] !== undefined}>{eventDelays[index] ?? speedMs}ms</span>
+                        <span class="timeline-delay"
+                          class:is-override={eventDelays[index] !== undefined}
+                          class:is-source={useSourceTiming && eventDelays[index] === undefined && naturalEventDelays[index] !== undefined}
+                        >{eventDelays[index] ?? (useSourceTiming ? naturalEventDelays[index] : undefined) ?? speedMs}ms</span>
                       </span>
                     </span>
                   </button>

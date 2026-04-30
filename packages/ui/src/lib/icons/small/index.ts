@@ -1,6 +1,7 @@
 import type { Component } from "svelte";
 import CaretDown from "./caret-down.svelte";
 import CaretRight from "./caret-right.svelte";
+import ChevronLeft from "./chevron-left.svelte";
 import Check from "./check.svelte";
 import CheckCircle from "./check-circle.svelte";
 import ChevronDown from "./chevron-down.svelte";
@@ -20,6 +21,7 @@ export const IconSmall: Record<string, Component> = {
   CaretDown,
   CaretRight,
   Check,
+  ChevronLeft,
   CheckCircle,
   ChevronDown,
   ChevronRight,

@@ -17,8 +17,9 @@ import RectangleStack from "./rectangle-stack.svelte";
 import Plus from "./plus.svelte";
 import TriangleRight from "./triangle-right.svelte";
 import TripleDots from "./triple-dots.svelte";
+import Pause from "./pause.svelte";
 
-export const Icons: Record<string, Component> = { Bolt, Bookmark, Close, CodeBracketSquare, DocumentArrowUp, DocumentText, DotFilled, DotOpen, Eye, EyeClosed, FolderOpen, GlobeAlt, Link, Pencil, Plus, RectangleStack, TriangleRight, TripleDots };
+export const Icons: Record<string, Component> = { Bolt, Bookmark, Close, CodeBracketSquare, DocumentArrowUp, DocumentText, DotFilled, DotOpen, Eye, EyeClosed, FolderOpen, GlobeAlt, Link, Pause, Pencil, Plus, RectangleStack, TriangleRight, TripleDots };
 
 export { IconLarge } from "./large/index.js";
 export { IconSmall } from "./small/index.js";
