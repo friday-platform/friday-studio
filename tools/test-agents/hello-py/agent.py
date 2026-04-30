@@ -5,7 +5,7 @@ Requires friday_agent_sdk. From a checkout of friday-platform/agent-sdk:
     pip install -e ./packages/python
 """
 
-from friday_agent_sdk import AgentContext, agent, err, ok
+from friday_agent_sdk import AgentContext, LlmError, agent, err, ok
 
 
 @agent(
@@ -34,11 +34,11 @@ def execute(prompt: str, ctx: AgentContext):
             ],
             model="anthropic:claude-haiku-4-5",
         )
-    except Exception as e:
+    except LlmError as e:
         return err(f"LLM call failed: {e}")
 
     llm_text = response.text or ""
-    ctx.stream.progress(f"LLM responded ({response.model}, {response.usage.get('outputTokens', '?')} tokens).")
+    ctx.stream.progress(f"LLM responded ({response.model}, {response.usage.get('output_tokens', '?')} tokens).")
 
     tool_summary = (
         ", ".join(t.name for t in tools[:5]) + ("..." if len(tools) > 5 else "")
