@@ -23,9 +23,6 @@ coverage/
 *.swo
 *~
 
-# Apps with their own Dockerfiles (separate build pipelines)
-apps/friday-website/
-
 # Node modules (if any)
 node_modules/
 
@@ -82,10 +79,7 @@ Cargo.toml
 # Lint and format configs (keep main ones)
 lint-staged.config.js
 
-# Infrastructure, analytics, and editor configs not needed in any image
-infra/
-supabase/
-analytics/
+# Editor configs not needed in any image
 .claude/
 .husky/
 .zed/
