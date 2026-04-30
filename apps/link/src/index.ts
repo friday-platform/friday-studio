@@ -326,5 +326,12 @@ if (import.meta.main) {
   Deno.addSignalListener("SIGINT", () => shutdown("SIGINT"));
   Deno.addSignalListener("SIGTERM", () => shutdown("SIGTERM"));
 
-  server = Deno.serve({ port: config.port, onListen: () => {}, handler: app.fetch });
+  // Bind loopback-only on desktop installs — link holds OAuth tokens
+  // and is meant to be reached from the daemon on the same machine,
+  // not from the LAN. Deno.serve defaults to 0.0.0.0; pass an explicit
+  // hostname so a host firewall misconfiguration can't expose
+  // credentials. LINK_BIND_HOST escape hatch for production / containers
+  // that need 0.0.0.0 (Docker networking).
+  const hostname = Deno.env.get("LINK_BIND_HOST") ?? "127.0.0.1";
+  server = Deno.serve({ port: config.port, hostname, onListen: () => {}, handler: app.fetch });
 }

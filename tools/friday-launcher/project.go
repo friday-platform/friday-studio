@@ -332,7 +332,13 @@ func supervisedProcesses(binDir string) []processSpec {
 		// else (NATS itself doesn't speak HTTP on the protocol port).
 		{
 			name: "nats-server", binary: filepath.Join(binDir, "nats-server"),
-			args:       []string{"--port", "4222", "--jetstream", "--http_port", "8222"},
+			// `--addr 127.0.0.1` binds both the protocol port (4222)
+			// and the monitoring HTTP server (8222) to loopback only.
+			// Desktop installs are single-machine; nats-server holds
+			// session/event traffic + JetStream state, none of which
+			// should be reachable from the LAN. atlasd's NatsManager
+			// connects via 127.0.0.1:4222 so loopback-only is fine.
+			args:       []string{"--addr", "127.0.0.1", "--port", "4222", "--jetstream", "--http_port", "8222"},
 			healthPort: "8222", healthPath: "/healthz",
 		},
 		// `friday` is the atlas-cli daemon binary. Without an explicit

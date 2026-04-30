@@ -68,8 +68,17 @@ func main() {
 
 	r := newRouter()
 
+	// Bind loopback-only by default — webhook-tunnel exposes the local
+	// receiver that cloudflared bridges public traffic into. Direct LAN
+	// access bypasses the cloudflared-side authentication / signing the
+	// receiver assumes is on the public path. TUNNEL_BIND_HOST escape
+	// hatch for containers / production where 0.0.0.0 is needed.
+	bindHost := os.Getenv("TUNNEL_BIND_HOST")
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
+	}
 	srv := &http.Server{
-		Addr:              fmt.Sprintf("0.0.0.0:%d", cfg.Port),
+		Addr:              fmt.Sprintf("%s:%d", bindHost, cfg.Port),
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
