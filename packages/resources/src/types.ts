@@ -66,7 +66,6 @@ export type ResourceEntry =
       artifactId: string;
       artifactType: ArtifactType | "unavailable";
       mimeType?: string;
-      rowCount?: number;
       createdAt: string;
       updatedAt: string;
     };

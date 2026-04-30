@@ -28,13 +28,7 @@ export interface ArtifactInputHint {
  * Keyed by agent id from the bundled-agents registry.
  */
 const ARTIFACT_INPUT_HINTS: Record<string, ArtifactInputHint> = {
-  "data-analyst": {
-    accept: [".csv", ".sqlite", ".db"],
-    required: true,
-    label: "Dataset to analyze",
-    mode: "artifact-ref",
-  },
-  "csv-filter-sampler": {
+"csv-filter-sampler": {
     accept: [".csv"],
     required: true,
     label: "CSV file to filter and sample",

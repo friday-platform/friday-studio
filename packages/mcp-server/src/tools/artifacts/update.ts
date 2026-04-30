@@ -12,8 +12,8 @@ import { createErrorResponse, createSuccessResponse, stripArtifactFilePaths } fr
 /**
  * Wraps raw artifact data with the required {type, version, data} envelope.
  * Accepts either:
- * - Already wrapped: {type: "workspace-plan", version: 1, data: {...}}
- * - Raw inner data: {workspace: {...}, signals: [...], ...}
+ * - Already wrapped: {type: "file", version: 1, data: {path: "..."}}
+ * - Raw inner data: {path: "..."}
  */
 function wrapArtifactData(type: ArtifactType, rawData: unknown): ArtifactDataInput {
   // First, unstringify if needed
@@ -43,7 +43,7 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
         data: z
           .unknown()
           .describe(
-            "New artifact data. Can be the raw inner data (e.g., {workspace, signals, agents, jobs} for workspace-plan) or fully wrapped {type, version, data}.",
+            "New artifact data. Can be the raw inner data (e.g., {path: '/tmp/file.md'}) or fully wrapped {type: 'file', version: 1, data: {path: '...'}}.",
           ),
         title: z
           .string()

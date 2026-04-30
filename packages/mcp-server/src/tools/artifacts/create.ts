@@ -14,12 +14,12 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
     "artifacts_create",
     {
       description:
-        "Create a new artifact (summary, workspace-plan, calendar-schedule, slack-summary, table, file, web-search, skill-draft, database)",
+        "Create a new file artifact. Stores a file by path and associates it with the current chat or workspace.",
       inputSchema: {
         data: z
           .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)
           .describe(
-            "Artifact envelope: { type, version, data }. type must be one of: summary, workspace-plan, calendar-schedule, slack-summary, table, file, web-search, skill-draft, database. version is always 1 (except workspace-plan v2). data is the type-specific payload. Example for summary: { type: 'summary', version: 1, data: 'text content here' }",
+            "Artifact envelope: { type, version, data }. Currently only type 'file' is supported. version is always 1. data is the file payload: { path: '/path/to/file' }. Example: { type: 'file', version: 1, data: { path: '/tmp/content.md' } }. To store text/markdown content, write it to a file first, then pass the path here.",
           ),
         title: z
           .string()

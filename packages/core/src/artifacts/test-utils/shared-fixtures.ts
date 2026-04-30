@@ -3,7 +3,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CreateArtifactInput } from "../model.ts";
-import type { DatabaseSchema } from "../primitives.ts";
 
 /** Absolute path to the shared fixture file for file-type artifact tests. */
 const FIXTURE_FILE = new URL("./test-fixture.txt", import.meta.url).pathname;
@@ -163,23 +162,3 @@ export async function cleanupTempFile(path: string): Promise<void> {
   }
 }
 
-/**
- * Create a database artifact input for testing.
- * Requires a pre-created SQLite database file.
- */
-export function createDatabaseArtifactInput(
-  dbPath: string,
-  schema: DatabaseSchema,
-  overrides?: Partial<CreateArtifactInput>,
-): CreateArtifactInput {
-  return {
-    data: {
-      type: "file",
-      version: 1,
-      data: { path: dbPath, sourceFileName: "test-data.csv", schema },
-    },
-    title: "Test Database",
-    summary: `${schema.rowCount} rows, ${schema.columns.length} columns`,
-    ...overrides,
-  };
-}

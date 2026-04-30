@@ -55,7 +55,7 @@ function getTypeGuardError(
       };
     case "artifact_ref":
       return {
-        error: `"${slug}" is a read-only file. Use artifacts_get to access it, or agent_data-analyst for queries.`,
+        error: `"${slug}" is a read-only file. Use artifacts_get to access it.`,
       };
     default:
       entry satisfies never;

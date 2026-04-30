@@ -5,8 +5,6 @@
  * Used by web client share functionality.
  */
 
-import type { TableData, WebSearchData } from "./primitives.ts";
-
 /**
  * Escape HTML special characters to prevent XSS
  */
@@ -19,7 +17,7 @@ export function escapeHTML(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
-/** Common plan shape accepted by renderWorkspacePlanHTML (v1 WorkspacePlan and v2 WorkspaceBlueprint). */
+/** Common plan shape accepted by renderWorkspacePlanHTML. */
 interface RenderablePlan {
   workspace: { name: string; purpose: string };
   signals: Array<{ id: string; description?: string }>;
@@ -28,7 +26,7 @@ interface RenderablePlan {
 }
 
 /**
- * Render a workspace plan to HTML. Accepts both v1 WorkspacePlan and v2 WorkspaceBlueprint.
+ * Render a workspace plan to HTML.
  */
 export function renderWorkspacePlanHTML(plan: RenderablePlan): string {
   const parts: string[] = [];
@@ -64,61 +62,3 @@ export function renderWorkspacePlanHTML(plan: RenderablePlan): string {
   return parts.join("\n");
 }
 
-/**
- * Render table data to HTML
- */
-export function renderTableHTML(data: TableData): string {
-  const parts: string[] = [];
-
-  parts.push(`<table>`);
-
-  // Header row
-  parts.push(`<thead><tr>`);
-  for (const header of data.headers) {
-    parts.push(`<th>${escapeHTML(header)}</th>`);
-  }
-  parts.push(`</tr></thead>`);
-
-  // Data rows
-  parts.push(`<tbody>`);
-  for (const row of data.rows) {
-    parts.push(`<tr>`);
-    for (let col = 0; col < data.headers.length; col++) {
-      const value = row[col];
-      const displayValue = value !== undefined && value !== null ? String(value) : "";
-      parts.push(`<td>${escapeHTML(displayValue)}</td>`);
-    }
-    parts.push(`</tr>`);
-  }
-  parts.push(`</tbody>`);
-
-  parts.push(`</table>`);
-
-  return parts.join("\n");
-}
-
-/**
- * Render web search data to HTML.
- * Renders escaped response text (caller handles markdown conversion)
- * and sources as a horizontal grid of linked cards.
- */
-export function renderWebSearchHTML(data: WebSearchData): string {
-  const parts: string[] = [];
-
-  parts.push(`<div class="web-search-response">${escapeHTML(data.response)}</div>`);
-
-  if (data.sources.length > 0) {
-    parts.push(`<div class="web-search-sources">`);
-    for (const source of data.sources) {
-      parts.push(
-        `<a href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer" class="source-card">`,
-      );
-      parts.push(`<h3>${escapeHTML(source.pageTitle)}</h3>`);
-      parts.push(`<p>${escapeHTML(source.siteName)}</p>`);
-      parts.push(`</a>`);
-    }
-    parts.push(`</div>`);
-  }
-
-  return parts.join("\n");
-}

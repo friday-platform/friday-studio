@@ -117,7 +117,6 @@
       "text/markdown": "Markdown",
       "text/csv": "CSV",
       "text/html": "HTML",
-      "application/x-sqlite3": "SQLite",
       "image/png": "PNG",
       "image/jpeg": "JPEG",
       "image/gif": "GIF",

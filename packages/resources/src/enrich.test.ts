@@ -18,22 +18,6 @@ function makeArtifact(
   });
 }
 
-function makeDatabaseArtifact(id: string, rowCount: number): Artifact {
-  return makeArtifact({
-    id,
-    type: "file",
-    data: {
-      type: "file",
-      version: 1,
-      data: {
-        path: `/tmp/${id}.db`,
-        mimeType: "application/x-sqlite3",
-        sourceFileName: "data.csv",
-        schema: { tableName: "data", rowCount, columns: [{ name: "id", type: "INTEGER" }] },
-      },
-    },
-  });
-}
 
 /** Stub adapter that returns provided artifacts from getManyLatest */
 function makeStubStorage(artifacts: Artifact[]): ArtifactStorageAdapter {
@@ -51,8 +35,6 @@ function makeStubStorage(artifacts: Artifact[]): ArtifactStorageAdapter {
     listByChat: vi.fn().mockImplementation(notImpl),
     readFileContents: vi.fn().mockImplementation(notImpl),
     readBinaryContents: vi.fn().mockImplementation(notImpl),
-    readDatabasePreview: vi.fn().mockImplementation(notImpl),
-    downloadDatabaseFile: vi.fn().mockImplementation(notImpl),
   };
 }
 
@@ -393,32 +375,6 @@ describe("enrichCatalogEntries", () => {
       artifactId: "art-1",
       artifactType: "file",
     });
-    expect(result[0]).not.toHaveProperty("rowCount");
-  });
-
-  it("enriches database artifact-ref entries with rowCount", async () => {
-    const artifact = makeDatabaseArtifact("art-db", 150);
-    const entries: ResourceCatalogEntry[] = [
-      {
-        type: "artifact_ref",
-        slug: "my-db",
-        name: "My Database",
-        description: "A database resource",
-        artifactId: "art-db",
-        createdAt: now,
-        updatedAt: now,
-      },
-    ];
-
-    const result = await enrichCatalogEntries(entries, makeStubStorage([artifact]));
-
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
-      type: "artifact_ref",
-      artifactType: "file",
-      mimeType: "application/x-sqlite3",
-      rowCount: 150,
-    });
   });
 
   it("produces artifactType 'unavailable' for missing artifacts", async () => {
@@ -442,7 +398,6 @@ describe("enrichCatalogEntries", () => {
       artifactId: "art-gone",
       artifactType: "unavailable",
     });
-    expect(result[0]).not.toHaveProperty("rowCount");
   });
 
   it("makes a single batch getManyLatest call for all artifact-ref entries", async () => {
@@ -478,7 +433,15 @@ describe("enrichCatalogEntries", () => {
 
   it("handles mixed entry types in a single call", async () => {
     const fileArtifact = makeArtifact({ id: "art-file", type: "file" });
-    const dbArtifact = makeDatabaseArtifact("art-db", 99);
+    const pdfArtifact = makeArtifact({
+      id: "art-pdf",
+      type: "file",
+      data: {
+        type: "file",
+        version: 1,
+        data: { path: "/tmp/art-pdf.md", mimeType: "text/markdown" },
+      },
+    });
 
     const entries: ResourceCatalogEntry[] = [
       {
@@ -509,10 +472,10 @@ describe("enrichCatalogEntries", () => {
       },
       {
         type: "artifact_ref",
-        slug: "db1",
-        name: "DB",
+        slug: "pdf1",
+        name: "PDF",
         description: "",
-        artifactId: "art-db",
+        artifactId: "art-pdf",
         createdAt: now,
         updatedAt: now,
       },
@@ -527,7 +490,7 @@ describe("enrichCatalogEntries", () => {
       },
     ];
 
-    const result = await enrichCatalogEntries(entries, makeStubStorage([fileArtifact, dbArtifact]));
+    const result = await enrichCatalogEntries(entries, makeStubStorage([fileArtifact, pdfArtifact]));
 
     expect(result).toHaveLength(5);
     expect(result[0]).toMatchObject({ type: "document", slug: "d1" });
@@ -535,18 +498,15 @@ describe("enrichCatalogEntries", () => {
     expect(result[2]).toMatchObject({ type: "external_ref", slug: "e1" });
     expect(result[3]).toMatchObject({
       type: "artifact_ref",
-      slug: "db1",
+      slug: "pdf1",
       artifactType: "file",
-      mimeType: "application/x-sqlite3",
-      rowCount: 99,
+      mimeType: "text/markdown",
     });
     expect(result[4]).toMatchObject({
       type: "artifact_ref",
       slug: "m1",
       artifactType: "unavailable",
     });
-    expect(result[1]).not.toHaveProperty("rowCount");
-    expect(result[4]).not.toHaveProperty("rowCount");
   });
 
   it("returns empty array for empty input", async () => {

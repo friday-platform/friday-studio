@@ -111,15 +111,6 @@ export async function enrichCatalogEntries(
 
     const mimeType = artifact.data.data.mimeType;
 
-    if (mimeType === "application/x-sqlite3" && artifact.data.data.schema) {
-      return {
-        ...entry,
-        artifactType: artifact.type,
-        mimeType,
-        rowCount: artifact.data.data.schema.rowCount,
-      };
-    }
-
     return { ...entry, artifactType: artifact.type, mimeType };
   });
 }

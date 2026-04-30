@@ -3,7 +3,6 @@ import { basename, extname, join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
 import { typeByExtension } from "@std/media-types";
 import { openKv } from "../kv.ts";
@@ -14,11 +13,7 @@ import type {
   ArtifactSummary,
   CreateArtifactInput,
 } from "./model.ts";
-import type {
-  ArtifactStorageAdapter,
-  DatabasePreview,
-  ReadDatabasePreviewOptions,
-} from "./types.ts";
+import type { ArtifactStorageAdapter } from "./types.ts";
 
 /** Strip `data` from an Artifact to produce an ArtifactSummary. */
 function toSummary(artifact: Artifact): ArtifactSummary {
@@ -102,8 +97,6 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
         path: fileInput.path,
         mimeType,
         originalName: fileInput.originalName || basename(fileInput.path),
-        ...(fileInput.schema && { schema: fileInput.schema }),
-        ...(fileInput.sourceFileName && { sourceFileName: fileInput.sourceFileName }),
       },
     };
 
@@ -198,8 +191,6 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
         path: fileInput.path,
         mimeType,
         originalName: fileInput.originalName || basename(fileInput.path),
-        ...(fileInput.schema && { schema: fileInput.schema }),
-        ...(fileInput.sourceFileName && { sourceFileName: fileInput.sourceFileName }),
       },
     };
 
@@ -518,79 +509,4 @@ export class LocalStorageAdapter implements ArtifactStorageAdapter {
     }
   }
 
-  /**
-   * Read database preview for a database artifact.
-   * Returns first N rows with headers and truncation info.
-   */
-  async readDatabasePreview(
-    options: ReadDatabasePreviewOptions,
-  ): Promise<Result<DatabasePreview, string>> {
-    const DEFAULT_MAX_ROWS = 1000;
-    const { id, revision, maxRows = DEFAULT_MAX_ROWS } = options;
-
-    const artifactResult = await this.get({ id, revision });
-    if (!artifactResult.ok) {
-      return fail(artifactResult.error);
-    }
-
-    const artifact = artifactResult.data;
-    if (!artifact) {
-      return fail(`Artifact ${id} not found`);
-    }
-
-    if (artifact.data.data.mimeType !== "application/x-sqlite3" || !artifact.data.data.schema) {
-      return fail(`Artifact ${id} is not a database type`);
-    }
-
-    const { path, schema } = artifact.data.data;
-
-    let db: InstanceType<typeof Database> | null = null;
-    try {
-      db = new Database(path, { readonly: true });
-      const tableName = schema.tableName.replace(/"/g, '""');
-      const rows = db.prepare(`SELECT * FROM "${tableName}" LIMIT ?`).all(maxRows) as Record<
-        string,
-        unknown
-      >[];
-
-      return success({
-        headers: schema.columns.map((c) => c.name),
-        rows,
-        totalRows: schema.rowCount,
-        truncated: schema.rowCount > maxRows,
-      });
-    } catch (error) {
-      logger.error("Failed to read database preview", { id, path, error: stringifyError(error) });
-      return fail(`Failed to read database: ${stringifyError(error)}`);
-    } finally {
-      db?.close();
-    }
-  }
-
-  /**
-   * Get local path to database file.
-   * For local storage, the file is already local so no download needed.
-   */
-  async downloadDatabaseFile(input: {
-    id: string;
-    revision?: number;
-    outputDir?: string;
-  }): Promise<Result<{ path: string; isTemporary: boolean }, string>> {
-    const artifactResult = await this.get({ id: input.id, revision: input.revision });
-    if (!artifactResult.ok) {
-      return fail(artifactResult.error);
-    }
-
-    const artifact = artifactResult.data;
-    if (!artifact) {
-      return fail(`Artifact ${input.id} not found`);
-    }
-
-    if (artifact.data.data.mimeType !== "application/x-sqlite3") {
-      return fail(`Artifact ${input.id} is not a database type`);
-    }
-
-    // Local storage: file already exists locally, no download needed
-    return success({ path: artifact.data.data.path, isTemporary: false });
-  }
 }

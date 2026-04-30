@@ -30,31 +30,7 @@ describe("buildResourceGuidance", () => {
     expect(result).toContain("- contacts: Customer contact list with enrichment fields");
   });
 
-  it("renders artifact-ref database resources as Datasets", () => {
-    const resources: ResourceEntry[] = [
-      {
-        type: "artifact_ref",
-        slug: "sales_data",
-        name: "Sales Data",
-        description: "Daily sales CSV upload",
-        artifactId: "abc-123-uuid",
-        artifactType: "file",
-        mimeType: "application/x-sqlite3",
-        rowCount: 1800000,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    const result = buildResourceGuidance(resources);
-
-    expect(result).toContain("Datasets (read-only, query via data-analyst / DuckDB):");
-    expect(result).toContain(
-      "- sales_data (artifact abc-123-uuid, 1.8M rows): Daily sales CSV upload",
-    );
-  });
-
-  it("renders artifact-ref non-database resources as Files", () => {
+  it("renders artifact-ref resources as Files", () => {
     const resources: ResourceEntry[] = [
       {
         type: "artifact_ref",
@@ -212,18 +188,6 @@ describe("buildResourceGuidance", () => {
       },
       {
         type: "artifact_ref",
-        slug: "sales_data",
-        name: "Sales Data",
-        description: "Sales CSV",
-        artifactId: "abc-123",
-        artifactType: "file",
-        mimeType: "application/x-sqlite3",
-        rowCount: 50000,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-      {
-        type: "artifact_ref",
         slug: "product_spec",
         name: "Product Spec",
         description: "Spec PDF",
@@ -258,124 +222,16 @@ describe("buildResourceGuidance", () => {
 
     expect(result).toContain("## Workspace Resources");
     expect(result).toContain("Documents");
-    expect(result).toContain("Datasets");
     expect(result).toContain("Files");
     expect(result).toContain("External");
     expect(result).not.toContain("broken");
 
     // Verify section ordering
     const documentsIdx = result.indexOf("Documents");
-    const datasetsIdx = result.indexOf("Datasets");
     const filesIdx = result.indexOf("Files");
     const externalIdx = result.indexOf("External");
-    expect(documentsIdx).toBeLessThan(datasetsIdx);
-    expect(datasetsIdx).toBeLessThan(filesIdx);
+    expect(documentsIdx).toBeLessThan(filesIdx);
     expect(filesIdx).toBeLessThan(externalIdx);
-  });
-
-  it("formats row count with compact notation", () => {
-    const resources: ResourceEntry[] = [
-      {
-        type: "artifact_ref",
-        slug: "big_data",
-        name: "Big Data",
-        description: "Lots of rows",
-        artifactId: "big-uuid",
-        artifactType: "file",
-        mimeType: "application/x-sqlite3",
-        rowCount: 2500000,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    const result = buildResourceGuidance(resources);
-
-    expect(result).toContain("2.5M rows");
-  });
-
-  it("formats row count in thousands as compact K notation", () => {
-    const resources: ResourceEntry[] = [
-      {
-        type: "artifact_ref",
-        slug: "mid_data",
-        name: "Mid Data",
-        description: "Medium dataset",
-        artifactId: "mid-uuid",
-        artifactType: "file",
-        mimeType: "application/x-sqlite3",
-        rowCount: 50000,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    const result = buildResourceGuidance(resources);
-
-    expect(result).toContain("50K rows");
-  });
-
-  it("formats 1.5M row count with one decimal place", () => {
-    const resources: ResourceEntry[] = [
-      {
-        type: "artifact_ref",
-        slug: "big_data",
-        name: "Big Data",
-        description: "Large dataset",
-        artifactId: "big-uuid",
-        artifactType: "file",
-        mimeType: "application/x-sqlite3",
-        rowCount: 1500000,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    const result = buildResourceGuidance(resources);
-
-    expect(result).toContain("1.5M rows");
-  });
-
-  it("formats row count under 1000 as plain number", () => {
-    const resources: ResourceEntry[] = [
-      {
-        type: "artifact_ref",
-        slug: "small_data",
-        name: "Small Data",
-        description: "Few rows",
-        artifactId: "small-uuid",
-        artifactType: "file",
-        mimeType: "application/x-sqlite3",
-        rowCount: 42,
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    const result = buildResourceGuidance(resources);
-
-    expect(result).toContain("42 rows");
-  });
-
-  it("omits row count for datasets when not provided", () => {
-    const resources: ResourceEntry[] = [
-      {
-        type: "artifact_ref",
-        slug: "no_count",
-        name: "No Count",
-        description: "No row count",
-        artifactId: "nc-uuid",
-        artifactType: "file",
-        mimeType: "application/x-sqlite3",
-        createdAt: "2026-01-01T00:00:00Z",
-        updatedAt: "2026-01-01T00:00:00Z",
-      },
-    ];
-
-    const result = buildResourceGuidance(resources);
-
-    expect(result).toContain("- no_count (artifact nc-uuid): No row count");
-    expect(result).not.toContain("rows");
   });
 });
 
@@ -423,7 +279,7 @@ describe("buildDeclarationGuidance", () => {
     expect(result).toContain("- meeting_notes: Running meeting notes");
   });
 
-  it("renders artifact ref declarations", () => {
+  it("renders artifact ref declarations as Files", () => {
     const resources: ResourceDeclaration[] = [
       {
         type: "artifact_ref",
@@ -437,7 +293,7 @@ describe("buildDeclarationGuidance", () => {
     const result = buildDeclarationGuidance(resources);
 
     expect(result).toContain("## Workspace Resources");
-    expect(result).toContain("Datasets (read-only, query via data-analyst / DuckDB):");
+    expect(result).toContain("Files (read-only, access via artifacts_get):");
     expect(result).toContain("- sales_data (artifact abc-123-uuid): Uploaded CSV for analysis");
   });
 

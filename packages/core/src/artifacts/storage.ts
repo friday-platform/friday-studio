@@ -3,7 +3,7 @@ import { createLogger } from "@atlas/logger";
 import { CortexStorageAdapter } from "./cortex-adapter.ts";
 import { LocalStorageAdapter } from "./local-adapter.ts";
 import type { ArtifactDataInput, CreateArtifactInput } from "./model.ts";
-import type { ArtifactStorageAdapter, ReadDatabasePreviewOptions } from "./types.ts";
+import type { ArtifactStorageAdapter } from "./types.ts";
 
 const logger = createLogger({ name: "artifact-storage" });
 
@@ -64,7 +64,4 @@ export const ArtifactStorage: ArtifactStorageAdapter = {
   readFileContents: (input: { id: string; revision?: number }) => adapter.readFileContents(input),
   readBinaryContents: (input: { id: string; revision?: number }) =>
     adapter.readBinaryContents(input),
-  readDatabasePreview: (input: ReadDatabasePreviewOptions) => adapter.readDatabasePreview(input),
-  downloadDatabaseFile: (input: { id: string; revision?: number; outputDir?: string }) =>
-    adapter.downloadDatabaseFile(input),
 };

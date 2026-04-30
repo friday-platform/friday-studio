@@ -67,10 +67,15 @@ The user mentioned that they would like newsletters from substack.com to be arch
 
 Anything over ~500 chars (result sets, reports, structured data, analyses) must not go directly into memory — it will bloat every future turn's system prompt.
 
-**Step 1 — save the content as an artifact:**
+**Step 1 — write to a file, then create an artifact:**
 ```
-artifacts_create(type="document", title="Q1 email analysis", content=<full content>)
-→ { id: "art_abc123" }
+write_file(path="/tmp/q1-analysis.md", content=<full content>)
+artifacts_create(
+  data={type:"file", version:1, data:{path:"/tmp/q1-analysis.md"}},
+  title="Q1 email analysis",
+  summary="..."
+)
+→ { artifactId: "art_abc123" }
 ```
 
 **Step 2 — save a terse reference to memory:**

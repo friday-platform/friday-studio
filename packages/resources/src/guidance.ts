@@ -4,18 +4,6 @@ import type { ResourceEntry } from "./types.ts";
 /** Extract a single variant from the ResourceEntry discriminated union. */
 type ResourceEntryOf<T extends ResourceEntry["type"]> = Extract<ResourceEntry, { type: T }>;
 
-/** Formats a row count as a compact string (e.g. 1.8M, 50K, 42). */
-function formatRowCount(count: number): string {
-  if (count >= 1_000_000) {
-    const millions = count / 1_000_000;
-    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
-  }
-  if (count >= 1_000) {
-    const thousands = count / 1_000;
-    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1)}K`;
-  }
-  return String(count);
-}
 
 /**
  * Options for tool-aware resource guidance rendering.
@@ -33,15 +21,9 @@ export function buildResourceGuidance(
   const documents = resources.filter(
     (r): r is ResourceEntryOf<"document"> => r.type === "document",
   );
-  const datasets = resources.filter(
-    (r): r is ResourceEntryOf<"artifact_ref"> =>
-      r.type === "artifact_ref" && r.mimeType === "application/x-sqlite3",
-  );
   const files = resources.filter(
     (r): r is ResourceEntryOf<"artifact_ref"> =>
-      r.type === "artifact_ref" &&
-      r.mimeType !== "application/x-sqlite3" &&
-      r.artifactType !== "unavailable",
+      r.type === "artifact_ref" && r.artifactType !== "unavailable",
   );
   const externals = resources.filter(
     (r): r is ResourceEntryOf<"external_ref"> => r.type === "external_ref",
@@ -49,7 +31,6 @@ export function buildResourceGuidance(
 
   if (
     documents.length === 0 &&
-    datasets.length === 0 &&
     files.length === 0 &&
     externals.length === 0
   ) {
@@ -62,14 +43,6 @@ export function buildResourceGuidance(
     lines.push("", "Documents (use resource_read for queries, resource_write for mutations):");
     for (const d of documents) {
       lines.push(`- ${d.slug}: ${d.description}`);
-    }
-  }
-
-  if (datasets.length > 0) {
-    lines.push("", "Datasets (read-only, query via data-analyst / DuckDB):");
-    for (const d of datasets) {
-      const rowSuffix = d.rowCount != null ? `, ${formatRowCount(d.rowCount)} rows` : "";
-      lines.push(`- ${d.slug} (artifact ${d.artifactId}${rowSuffix}): ${d.description}`);
     }
   }
 
@@ -135,7 +108,7 @@ export function buildDeclarationGuidance(resources: ResourceDeclaration[]): stri
   }
 
   if (artifactRefs.length > 0) {
-    lines.push("", "Datasets (read-only, query via data-analyst / DuckDB):");
+    lines.push("", "Files (read-only, access via artifacts_get):");
     for (const a of artifactRefs) {
       lines.push(`- ${a.slug} (artifact ${a.artifactId}): ${a.description}`);
     }

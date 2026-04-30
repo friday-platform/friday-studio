@@ -1,11 +1,8 @@
-import { createWriteStream } from "node:fs";
-import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { unlink } from "node:fs/promises";
+import { basename, extname } from "node:path";
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { Database } from "@db/sqlite";
 import { deadline } from "@std/async";
 import { decodeBase64 } from "@std/encoding/base64";
 import { typeByExtension } from "@std/media-types";
@@ -17,16 +14,10 @@ import type {
   CreateArtifactInput,
 } from "./model.ts";
 import { ArtifactDataSchema, ArtifactSummarySchema, ArtifactTypeSchema } from "./model.ts";
-import type { DatabaseSchema } from "./primitives.ts";
-import type {
-  ArtifactStorageAdapter,
-  DatabasePreview,
-  ReadDatabasePreviewOptions,
-} from "./types.ts";
+import type { ArtifactStorageAdapter } from "./types.ts";
 
 const logger = createLogger({ name: "cortex-artifact-storage" });
 const DEFAULT_TIMEOUT_MS = 10_000; // 10 seconds
-const MAX_PREVIEW_DB_SIZE = 50 * 1024 * 1024; // 50MB - skip preview for larger files
 const BASE64_PREFIX = new Uint8Array([98, 97, 115, 101, 54, 52, 58]); // "base64:"
 
 function hasBase64Prefix(bytes: Uint8Array): boolean {
@@ -231,102 +222,6 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
   }
 
   /**
-   * Download a blob from Cortex and stream it directly to a file on disk.
-   * Avoids buffering the entire response in memory.
-   * Handles old base64-prefixed format by sniffing the first 7 bytes.
-   *
-   * @returns true if file was written, false if 404/empty
-   */
-  private async downloadBlobToFile(cortexId: string, destPath: string): Promise<boolean> {
-    // Streaming downloads can take a long time for large files.
-    // Disable the abort timeout — backpressure and TCP timeouts govern the flow.
-    const response = await this.request<Response>("GET", `/objects/${cortexId}`, undefined, {
-      streamResponse: true,
-      timeoutMs: 0,
-    });
-
-    if (!response?.body) {
-      return false;
-    }
-
-    const reader = response.body.getReader();
-
-    // Read enough to check for base64 prefix
-    const initialChunks: Uint8Array[] = [];
-    let initialLength = 0;
-
-    // Accumulate at least 7 bytes to check prefix
-    while (initialLength < BASE64_PREFIX.length) {
-      const { done, value } = await reader.read();
-      if (done || !value) {
-        // Stream ended before we got 7 bytes — write what we have directly
-        if (initialLength === 0) {
-          reader.releaseLock();
-          return false;
-        }
-        break;
-      }
-      initialChunks.push(value);
-      initialLength += value.length;
-    }
-
-    // Concatenate initial chunks for prefix check
-    const headBuffer = new Uint8Array(initialLength);
-    let offset = 0;
-    for (const chunk of initialChunks) {
-      headBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    // Check for old base64 format
-    const isBase64 = hasBase64Prefix(headBuffer);
-
-    if (isBase64) {
-      // Old format: read remaining stream into memory and base64-decode
-      // Old uploads were bounded by the former 100MB limit, so this is safe
-      const remaining: Uint8Array[] = [headBuffer.subarray(BASE64_PREFIX.length)];
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done || !value) break;
-        remaining.push(value);
-      }
-      reader.releaseLock();
-
-      const totalLength = remaining.reduce((sum, chunk) => sum + chunk.length, 0);
-      const combined = new Uint8Array(totalLength);
-      let pos = 0;
-      for (const chunk of remaining) {
-        combined.set(chunk, pos);
-        pos += chunk.length;
-      }
-
-      const base64Data = new TextDecoder().decode(combined);
-      const decoded = decodeBase64(base64Data);
-      await writeFile(destPath, decoded);
-      return true;
-    }
-
-    // New format: stream directly to disk
-    const writeStream = createWriteStream(destPath);
-    try {
-      // Write the initial bytes we already read
-      await writeChunk(writeStream, headBuffer);
-
-      // Pipe the remainder
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done || !value) break;
-        await writeChunk(writeStream, value);
-      }
-    } finally {
-      reader.releaseLock();
-      await closeWriteStream(writeStream);
-    }
-
-    return true;
-  }
-
-  /**
    * Upload binary file to Cortex and return the cortex ID.
    * Handles both text and binary files with base64 encoding.
    * Used by both file and database artifact uploads.
@@ -443,84 +338,17 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
     return success({ cortexId: artifactDataUploadResponse.id, artifactData });
   }
 
-  /**
-   * Upload database artifact to Cortex.
-   * Uploads the .db file binary and creates the artifact data blob with schema metadata.
-   *
-   * @returns Object containing cortexId and artifactData for the uploaded database
-   */
-  private async uploadDatabaseArtifact(
-    localPath: string,
-    sourceFileName: string,
-    schema: DatabaseSchema,
-  ): Promise<Result<{ cortexId: string; artifactData: ArtifactData }, string>> {
-    // 1. Upload the binary .db file
-    const uploadResult = await this.uploadBinaryFile(localPath);
-    if (!uploadResult.ok) {
-      return fail(uploadResult.error);
-    }
-
-    const { cortexId: fileContentCortexId } = uploadResult.data;
-
-    // 2. Create artifact data with cortex:// reference and schema metadata
-    const artifactData: ArtifactData = {
-      type: "file",
-      version: 1,
-      data: {
-        path: `cortex://${fileContentCortexId}`,
-        mimeType: "application/x-sqlite3",
-        sourceFileName,
-        schema,
-      },
-    };
-
-    // 3. Upload artifact data as second blob (so get() can retrieve it like non-file artifacts)
-    const artifactDataJson = JSON.stringify(artifactData);
-    const artifactDataUploadResponse = await this.request<CreateObjectResponse>(
-      "POST",
-      "/objects",
-      artifactDataJson,
-      { parseJson: true },
-    );
-
-    if (!artifactDataUploadResponse?.id) {
-      return fail("Failed to upload artifact data to Cortex: no ID returned");
-    }
-
-    return success({ cortexId: artifactDataUploadResponse.id, artifactData });
-  }
-
   /** Create artifact with initial revision 1 */
   async create(input: CreateArtifactInput): Promise<Result<Artifact, string>> {
     try {
       const artifactId = crypto.randomUUID();
       const revision = 1;
 
-      let artifactData: ArtifactData;
-      let cortexId: string;
-
-      if (input.data.data.schema) {
-        // SQLite database: upload binary and preserve schema metadata
-        const { path: localPath, sourceFileName, schema } = input.data.data;
-        const uploadResult = await this.uploadDatabaseArtifact(
-          localPath,
-          sourceFileName ?? basename(localPath),
-          schema,
-        );
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-        cortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
-      } else {
-        // Regular file: detect MIME type and upload binary
-        const uploadResult = await this.uploadFileArtifact(input.data.data.path);
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-        cortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
+      const uploadResult = await this.uploadFileArtifact(input.data.data.path);
+      if (!uploadResult.ok) {
+        return fail(uploadResult.error);
       }
+      const { cortexId, artifactData } = uploadResult.data;
 
       // 2. Set metadata
       const metadata: CortexMetadata = {
@@ -591,31 +419,11 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
       const currentRevision = currentObject.metadata.revision;
 
       // 2. Upload new blob (with proper file handling)
-      let artifactData: ArtifactData;
-      let newCortexId: string;
-
-      if (input.data.data.schema) {
-        // SQLite database: upload binary and preserve schema metadata
-        const { path: localPath, sourceFileName, schema } = input.data.data;
-        const uploadResult = await this.uploadDatabaseArtifact(
-          localPath,
-          sourceFileName ?? basename(localPath),
-          schema,
-        );
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-        newCortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
-      } else {
-        // Regular file: detect MIME type and upload binary
-        const uploadResult = await this.uploadFileArtifact(input.data.data.path);
-        if (!uploadResult.ok) {
-          return fail(uploadResult.error);
-        }
-        newCortexId = uploadResult.data.cortexId;
-        artifactData = uploadResult.data.artifactData;
+      const updateUploadResult = await this.uploadFileArtifact(input.data.data.path);
+      if (!updateUploadResult.ok) {
+        return fail(updateUploadResult.error);
       }
+      const { cortexId: newCortexId, artifactData } = updateUploadResult.data;
 
       // 3. Set new object metadata with is_latest=FALSE first
       // This ensures the new object is queryable by artifact_id even before we complete the swap
@@ -1276,204 +1084,5 @@ export class CortexStorageAdapter implements ArtifactStorageAdapter {
     }
   }
 
-  /**
-   * Read database preview for database-type artifacts.
-   *
-   * For databases stored in Cortex:
-   * 1. Check file size before downloading
-   * 2. Files > 50MB: return schema info only (tooLargeForPreview: true)
-   * 3. Files <= 50MB: download to temp file, query, cleanup
-   */
-  async readDatabasePreview(
-    options: ReadDatabasePreviewOptions,
-  ): Promise<Result<DatabasePreview, string>> {
-    const DEFAULT_MAX_ROWS = 1000;
-    const { id, revision, maxRows = DEFAULT_MAX_ROWS } = options;
-
-    try {
-      // 1. Get artifact and verify it's a database type
-      const artifactResult = await this.get({ id, revision });
-      if (!artifactResult.ok) {
-        return fail(artifactResult.error);
-      }
-
-      const artifact = artifactResult.data;
-      if (!artifact) {
-        return fail(`Artifact ${id} not found`);
-      }
-
-      if (artifact.data.data.mimeType !== "application/x-sqlite3" || !artifact.data.data.schema) {
-        return fail(`Artifact ${id} is not a database type`);
-      }
-
-      const { path, schema } = artifact.data.data;
-
-      // Validate cortex:// path format
-      if (!path.startsWith("cortex://")) {
-        return fail(`Invalid Cortex path: ${path}`);
-      }
-
-      const cortexId = path.replace("cortex://", "");
-
-      // 2. Get object metadata to check content_size
-      const queryUrl = `/objects?${new URLSearchParams({ id: cortexId })}`;
-      const objects = await this.request<CortexObject[]>("GET", queryUrl, undefined, {
-        parseJson: true,
-      });
-
-      if (!objects || objects.length === 0) {
-        return fail(`Database file not found in Cortex: ${cortexId}`);
-      }
-
-      // biome-ignore lint/style/noNonNullAssertion: length check above guarantees [0] exists
-      const cortexObject = objects[0]!;
-      const contentSize = cortexObject.content_size;
-
-      // 3. Check size threshold - skip download for large files
-      if (contentSize !== null && contentSize > MAX_PREVIEW_DB_SIZE) {
-        logger.debug("Database too large for preview", {
-          artifactId: id,
-          cortexId,
-          contentSize,
-          threshold: MAX_PREVIEW_DB_SIZE,
-        });
-
-        return success({
-          headers: schema.columns.map((c) => c.name),
-          rows: [],
-          totalRows: schema.rowCount,
-          truncated: true,
-          tooLargeForPreview: true,
-        });
-      }
-
-      // 4. Stream database file directly to temp file on disk
-      const tempDir = join(tmpdir(), `atlas-preview-${crypto.randomUUID()}`);
-      const tempPath = join(tempDir, `preview-${id}.db`);
-
-      let db: InstanceType<typeof Database> | null = null;
-      try {
-        await mkdir(tempDir, { recursive: true });
-        const downloaded = await this.downloadBlobToFile(cortexId, tempPath);
-        if (!downloaded) {
-          return fail(`Failed to download database file from Cortex`);
-        }
-
-        // 6. Query the database
-        db = new Database(tempPath, { readonly: true });
-        const tableName = schema.tableName.replace(/"/g, '""');
-        const rows = db.prepare(`SELECT * FROM "${tableName}" LIMIT ?`).all(maxRows) as Record<
-          string,
-          unknown
-        >[];
-
-        return success({
-          headers: schema.columns.map((c) => c.name),
-          rows,
-          totalRows: schema.rowCount,
-          truncated: schema.rowCount > maxRows,
-        });
-      } finally {
-        // 7. Cleanup: close database and remove temp files
-        db?.close();
-        try {
-          await rm(tempDir, { recursive: true, force: true });
-        } catch (cleanupError) {
-          logger.warn("Failed to cleanup temp preview directory", {
-            tempDir,
-            error: stringifyError(cleanupError),
-          });
-        }
-      }
-    } catch (error) {
-      logger.error("Failed to read database preview", {
-        artifactId: id,
-        error: stringifyError(error),
-      });
-      return fail(`Failed to read database preview: ${stringifyError(error)}`);
-    }
-  }
-
-  /**
-   * Download database file from Cortex to a local path.
-   *
-   * For Cortex storage, downloads the base64-encoded database binary,
-   * decodes it, and writes to a temporary file in the specified output directory.
-   */
-  async downloadDatabaseFile(input: {
-    id: string;
-    revision?: number;
-    outputDir?: string;
-  }): Promise<Result<{ path: string; isTemporary: boolean }, string>> {
-    try {
-      // 1. Get artifact and verify it's a database type
-      const artifactResult = await this.get({ id: input.id, revision: input.revision });
-      if (!artifactResult.ok) {
-        return fail(artifactResult.error);
-      }
-
-      const artifact = artifactResult.data;
-      if (!artifact) {
-        return fail(`Artifact ${input.id} not found`);
-      }
-
-      if (artifact.data.data.mimeType !== "application/x-sqlite3") {
-        return fail(`Artifact ${input.id} is not a database type`);
-      }
-
-      const { path: cortexPath } = artifact.data.data;
-
-      // Validate cortex:// path format
-      if (!cortexPath.startsWith("cortex://")) {
-        return fail(`Invalid Cortex path: ${cortexPath}`);
-      }
-
-      const cortexId = cortexPath.replace("cortex://", "");
-
-      // 2. Stream database file directly to disk
-      const outputDir = input.outputDir || join(tmpdir(), `atlas-db-${crypto.randomUUID()}`);
-      const outputPath = join(outputDir, `${input.id}.db`);
-
-      await mkdir(outputDir, { recursive: true });
-      const downloaded = await this.downloadBlobToFile(cortexId, outputPath);
-      if (!downloaded) {
-        return fail(`Failed to download database file from Cortex`);
-      }
-
-      logger.debug("Downloaded database file from Cortex", {
-        artifactId: input.id,
-        cortexId,
-        outputPath,
-      });
-
-      return success({ path: outputPath, isTemporary: true });
-    } catch (error) {
-      logger.error("Failed to download database file", {
-        artifactId: input.id,
-        error: stringifyError(error),
-      });
-      return fail(`Failed to download database file: ${stringifyError(error)}`);
-    }
-  }
 }
 
-/** Write a chunk to a Node writable stream, resolving when flushed. */
-function writeChunk(
-  stream: ReturnType<typeof createWriteStream>,
-  chunk: Uint8Array,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    stream.write(chunk, (err: Error | null | undefined) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-}
-
-/** Close a Node writable stream and wait for it to finish. */
-function closeWriteStream(stream: ReturnType<typeof createWriteStream>): Promise<void> {
-  return new Promise((resolve, reject) => {
-    stream.on("error", reject);
-    stream.end(() => resolve());
-  });
-}

@@ -8,12 +8,10 @@ import {
   type ArtifactDataInput,
   type ArtifactWithContents,
   CreateArtifactSchema,
-  type DatabasePreview,
   UpdateArtifactSchema,
 } from "@atlas/core/artifacts";
 import {
   ConverterError,
-  convertCsvToSqlite,
   docxToMarkdown,
   pdfToMarkdown,
   pptxToMarkdown,
@@ -38,7 +36,6 @@ import { type PlatformModels, smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { Database } from "@db/sqlite";
 import { zValidator } from "@hono/zod-validator";
 import { fileTypeFromFile } from "file-type";
 import JSZip from "jszip";
@@ -136,34 +133,6 @@ async function convertUploadedFile(opts: {
 
   const ext = extname(fileName).toLowerCase();
   const resolvedExt = resolvedMime ? (MIME_TO_EXTENSION.get(resolvedMime) ?? ext) : ext;
-
-  // CSV -> SQLite
-  if (resolvedMime === "text/csv") {
-    const dbPath = join(artifactsDir, `${crypto.randomUUID()}.db`);
-    try {
-      const tableName = sanitizeTableName(fileName);
-      const { schema } = await convertCsvToSqlite(filePath, dbPath, tableName);
-      return {
-        ok: true,
-        title: fileName,
-        summary: `${schema.rowCount.toLocaleString()} rows, ${schema.columns.length} columns`,
-        data: {
-          type: "file",
-          version: 1,
-          data: { path: dbPath, sourceFileName: fileName, schema },
-        },
-      };
-    } catch (error) {
-      await unlink(dbPath).catch(() => {});
-      logger.error("Failed to convert CSV to SQLite", {
-        filename: fileName,
-        error: stringifyError(error),
-      });
-      return { ok: false, error: "CSV conversion failed" };
-    } finally {
-      await unlink(filePath).catch(() => {});
-    }
-  }
 
   // PDF -> markdown
   if (resolvedMime === "application/pdf") {
@@ -393,28 +362,6 @@ export async function resolveFileType(
   return undefined;
 }
 
-/** Sanitize filename into valid SQLite table name. */
-function sanitizeTableName(filename: string): string {
-  const baseName = filename.replace(/\.csv$/i, "");
-  const sanitized = baseName
-    .toLowerCase()
-    .replace(/[^a-z0-9_]/g, "_")
-    .replace(/__+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/^(\d)/, "_$1")
-    .slice(0, 64);
-  return sanitized || "data";
-}
-
-/** Format a value as a CSV cell with proper escaping. */
-function formatCsvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const str = String(value);
-  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
 
 /** Validate uploaded file extension. Magic byte detection happens later in createArtifactFromFile. */
 function validateUpload(file: File): ValidationResult {
@@ -739,7 +686,6 @@ const artifactsApp = daemonFactory
 
       const artifact = result.data;
       let contents: string | undefined;
-      let preview: DatabasePreview | undefined;
 
       // For file artifacts, include contents inline
       if (artifact.data.type === "file") {
@@ -753,21 +699,7 @@ const artifactsApp = daemonFactory
         // If read fails (binary file, etc.), still return artifact metadata
       }
 
-      // For SQLite database artifacts, include preview data
-      if (artifact.data.data.mimeType === "application/x-sqlite3") {
-        const previewResult = await ArtifactStorage.readDatabasePreview({
-          id,
-          revision: query?.revision,
-        });
-        if (previewResult.ok) {
-          preview = previewResult.data;
-        } else {
-          // Log error but don't fail the request - return artifact without preview
-          logger.warn("Failed to read database preview", { id, error: previewResult.error });
-        }
-      }
-
-      return c.json({ artifact, contents, preview }, 200);
+      return c.json({ artifact, contents }, 200);
     },
   )
   /** List artifacts - optionally filter by workspace or chat */
@@ -828,123 +760,6 @@ const artifactsApp = daemonFactory
     }
 
     return c.json({ success: true }, 200);
-  })
-  /** Export database artifact as CSV */
-  .get("/:id/export", zValidator("param", z.object({ id: z.string() })), async (c) => {
-    const { id } = c.req.valid("param");
-
-    const result = await ArtifactStorage.get({ id });
-
-    if (!result.ok) {
-      return c.json({ error: result.error }, 500);
-    }
-
-    if (!result.data) {
-      return c.json({ error: "Artifact not found" }, 404);
-    }
-
-    const artifact = result.data;
-
-    if (artifact.data.data.mimeType !== "application/x-sqlite3" || !artifact.data.data.schema) {
-      return c.json({ error: "Export only available for SQLite database artifacts" }, 400);
-    }
-
-    const { path, schema, sourceFileName } = artifact.data.data;
-
-    // Stream CSV export from SQLite database
-    let db: InstanceType<typeof Database> | null = null;
-    let iterator: ReturnType<ReturnType<InstanceType<typeof Database>["prepare"]>["iter"]> | null =
-      null;
-
-    try {
-      db = new Database(path, { readonly: true });
-      const tableName = schema.tableName.replace(/"/g, '""');
-      const stmt = db.prepare(`SELECT * FROM "${tableName}"`);
-      iterator = stmt.iter();
-
-      const columnNames = schema.columns.map((col) => col.name);
-
-      const stream = new ReadableStream({
-        start(controller) {
-          // Write CSV header row
-          const header = `${columnNames.map((name) => formatCsvCell(name)).join(",")}\n`;
-          controller.enqueue(new TextEncoder().encode(header));
-        },
-
-        pull(controller) {
-          try {
-            // biome-ignore lint/style/noNonNullAssertion: iterator guaranteed non-null while stream is active
-            const result = iterator!.next();
-            if (result.done) {
-              // Close resources and end stream
-              stmt.finalize();
-              // biome-ignore lint/style/noNonNullAssertion: db guaranteed non-null while stream is active
-              db!.close();
-              db = null;
-              iterator = null;
-              controller.close();
-              return;
-            }
-
-            const row = result.value as Record<string, unknown>;
-            const line = `${columnNames.map((name) => formatCsvCell(row[name])).join(",")}\n`;
-            controller.enqueue(new TextEncoder().encode(line));
-          } catch (error) {
-            // Cleanup on error
-            try {
-              stmt.finalize();
-            } catch {
-              // Ignore finalize errors during cleanup
-            }
-            if (db) {
-              db.close();
-              db = null;
-            }
-            iterator = null;
-            controller.error(error);
-          }
-        },
-
-        cancel() {
-          // Cleanup when stream is cancelled
-          try {
-            stmt.finalize();
-          } catch {
-            // Ignore finalize errors during cleanup
-          }
-          if (db) {
-            db.close();
-            db = null;
-          }
-          iterator = null;
-        },
-      });
-
-      // Escape backslashes first, then double-quotes — without the backslash
-      // pass, a name containing `\"` would become `\\"` (a literal backslash
-      // followed by an unescaped quote that closes the header value early).
-      const safeFileName = (sourceFileName ?? "export.csv")
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"');
-
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/csv",
-          "Content-Disposition": `attachment; filename="${safeFileName}"`,
-        },
-      });
-    } catch (error) {
-      // Cleanup on setup error
-      if (db) {
-        db.close();
-      }
-      logger.error("Failed to export database artifact", {
-        id,
-        path,
-        error: stringifyError(error),
-      });
-      return c.json({ error: "Failed to export database" }, 500);
-    }
   })
   /** Serve raw binary content for file artifacts */
   .get(
