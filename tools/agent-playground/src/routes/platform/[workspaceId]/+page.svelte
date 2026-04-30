@@ -16,7 +16,7 @@
   import { deriveSignalDetails } from "@atlas/config/signal-details";
   import { deriveTopology } from "@atlas/config/topology";
   import { deriveWorkspaceAgents } from "@atlas/config/workspace-agents";
-  import { Button, Dialog, DropdownMenu, IconLarge, IconSmall, Icons, toast } from "@atlas/ui";
+  import { Button, Dialog, DropdownMenu, IconLarge, Icons, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { browser } from "$app/environment";
@@ -260,6 +260,19 @@
   );
 
   let startMessage = $state("");
+  let composerInputEl = $state<HTMLTextAreaElement | undefined>(undefined);
+
+  $effect(() => {
+    // Re-evaluate when the message changes.
+    void startMessage;
+    const el = composerInputEl;
+    if (!el) return;
+    el.style.height = "auto";
+    const max = 240;
+    const next = Math.min(el.scrollHeight, max);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+  });
 
   const SUGGESTED_PROMPTS = [
     "Automate inbox triage",
@@ -538,6 +551,7 @@
             class="composer-input"
             placeholder="What do you need done?"
             bind:value={startMessage}
+            bind:this={composerInputEl}
             onkeydown={handleStartKeydown}
             rows={3}
           ></textarea>
@@ -564,47 +578,38 @@
         </div>
 
         <div class="skeleton-cards">
-          <div class="skeleton-card">
-            <div class="skeleton-card-icon">
-              <IconLarge.Target />
-            </div>
-            <div class="skeleton-card-body">
-              <div class="skeleton-card-title">How It Works</div>
-              <div class="skeleton-card-sub">Define it, don't build it.</div>
-              <div class="skeleton-lines">
-                <div class="skeleton-line" style="inline-size: 85%"></div>
-                <div class="skeleton-line" style="inline-size: 65%"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="skeleton-card">
+          <a class="skeleton-card" href="/discover">
             <div class="skeleton-card-icon">
               <IconLarge.Compass />
             </div>
             <div class="skeleton-card-body">
-              <div class="skeleton-card-title">Space Directory</div>
+              <div class="skeleton-card-title">Discover Spaces</div>
               <div class="skeleton-card-sub">Explore how others are using Friday, then build your own.</div>
               <div class="skeleton-lines">
                 <div class="skeleton-line" style="inline-size: 90%"></div>
                 <div class="skeleton-line" style="inline-size: 55%"></div>
               </div>
             </div>
-          </div>
+          </a>
 
-          <div class="skeleton-card">
+          <a
+            class="skeleton-card"
+            href="https://docs.hellofriday.ai"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <div class="skeleton-card-icon">
               <IconLarge.Write />
             </div>
             <div class="skeleton-card-body">
               <div class="skeleton-card-title">Docs</div>
-              <div class="skeleton-card-sub">Everything you need to get started.</div>
+              <div class="skeleton-card-sub">Learn more about Friday Studio.</div>
               <div class="skeleton-lines">
                 <div class="skeleton-line" style="inline-size: 80%"></div>
                 <div class="skeleton-line" style="inline-size: 60%"></div>
               </div>
             </div>
-          </div>
+          </a>
         </div>
       </div>
     {/if}
@@ -883,7 +888,7 @@
   }
 
   .row-name {
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
     min-inline-size: 0;
     overflow: hidden;
@@ -895,7 +900,7 @@
     color: color-mix(in srgb, var(--color-text), transparent 30%);
     flex-shrink: 0;
     font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-2);
     position: relative;
     z-index: 1;
   }
@@ -903,7 +908,7 @@
   .row-time {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
     flex-shrink: 0;
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-2);
     position: relative;
     z-index: 1;
   }
@@ -1132,7 +1137,7 @@
   .skeleton-cards {
     display: grid;
     gap: var(--size-4);
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     max-inline-size: 580px;
     width: 100%;
   }
@@ -1141,11 +1146,23 @@
     background: var(--color-surface-1);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-3);
+    color: inherit;
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-    opacity: 0.5;
+    opacity: 0.6;
     padding: var(--size-4) var(--size-4);
+    text-decoration: none;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      opacity 120ms ease;
+  }
+
+  a.skeleton-card:hover {
+    background-color: var(--color-surface-2);
+    border-color: color-mix(in srgb, var(--color-accent, #1171df), transparent 60%);
+    opacity: 1;
   }
 
   .skeleton-card-icon {
