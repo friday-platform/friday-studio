@@ -335,7 +335,6 @@
     if (chatAspect !== "full") {
       aspectPreviewActive = true;
       aspectPreviewTimer = window.setTimeout(() => {
-        chatAspect = "full";
         aspectPreviewActive = false;
         aspectPreviewTimer = undefined;
       }, 3000);
