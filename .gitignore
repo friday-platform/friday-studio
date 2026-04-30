@@ -87,6 +87,8 @@ apps/web-client/.vercel
 apps/web-client/.netlify
 apps/web-client/.wrangler
 apps/web-client/.svelte-kit
+chat-replay/.svelte-kit
+chat-replay/chats.snapshot.json
 apps/web-client/build
 
 # Vite
