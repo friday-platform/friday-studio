@@ -339,16 +339,34 @@ pub fn extract_archive(
             emitter.finish();
             if bak_path.exists() {
                 // The API Keys wizard step writes ~/.friday/local/.env
-                // *before* extract runs, so the rename-to-bak above
-                // hides it inside the backup tree. The archive doesn't
-                // contain .env (or .installed — written post-extract on
-                // earlier runs), so without this copy-back every install
-                // would wipe the user's API key and leave the daemon in
-                // a missing-credentials crash loop.
-                for name in [".env", ".installed"] {
+                // and friday.yml *before* extract runs, so the
+                // rename-to-bak above hides them inside the backup
+                // tree. The archive doesn't contain user-state files
+                // (.env, .installed, friday.yml, malformed-yml
+                // backups), so without this copy-back every install
+                // would wipe them — for friday.yml that means the
+                // daemon boots against the default Anthropic chain
+                // and crashes for non-Anthropic users. Glob friday.yml*
+                // to also restore the *.bak.<ts> files
+                // read_friday_yml_or_recover writes during malformed
+                // recovery, so a user who hand-edited can still find
+                // their pre-corruption content.
+                for name in [".env", ".installed", "friday.yml"] {
                     let src = bak_path.join(name);
                     if src.exists() && !dest_path.join(name).exists() {
                         let _ = fs::copy(&src, dest_path.join(name));
+                    }
+                }
+                if let Ok(entries) = fs::read_dir(&bak_path) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name();
+                        let name_str = name.to_string_lossy();
+                        if name_str.starts_with("friday.yml.bak.") {
+                            let dst = dest_path.join(&name);
+                            if !dst.exists() {
+                                let _ = fs::copy(entry.path(), &dst);
+                            }
+                        }
                     }
                 }
                 let _ = fs::remove_dir_all(&bak_path);
