@@ -15,6 +15,7 @@
   import {
     Button,
     IconSmall,
+    Icons,
     ListDetail,
     MarkdownRendered,
     markdownToHTML,
@@ -188,7 +189,13 @@
           {#if detail.description}
             <p class="description">{detail.description}</p>
           {/if}
-          <a class="meta" href={detail.source.htmlUrl} target="_blank" rel="noopener noreferrer">
+          <a
+            class="github-button"
+            href={detail.source.htmlUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span class="github-icon"><Icons.Github /></span>
             View on GitHub
           </a>
         </div>
@@ -479,15 +486,38 @@
     max-inline-size: 72ch;
   }
 
-  .meta {
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
+  .github-button {
+    align-items: center;
+    align-self: flex-start;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    display: inline-flex;
     font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-1-5);
+    margin-block-start: var(--size-1);
+    padding: var(--size-1) var(--size-2-5);
     text-decoration: none;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease;
   }
 
-  .meta:hover {
-    color: var(--color-accent);
-    text-decoration: underline;
+  .github-button:hover {
+    background: var(--color-surface-3);
+    border-color: color-mix(in srgb, var(--color-text), transparent 60%);
+  }
+
+  .github-icon {
+    align-items: center;
+    display: inline-flex;
+  }
+
+  .github-icon :global(svg) {
+    block-size: 14px;
+    inline-size: 14px;
   }
 
   .header-actions {
@@ -577,60 +607,9 @@
 
   /* ─── README ──────────────────────────────────────────────────────────── */
 
-  .readme-content {
-    color: color-mix(in srgb, var(--color-text), transparent 10%);
-    font-size: var(--font-size-2);
-    line-height: 1.6;
-  }
-
-  .readme-content :global(h1) {
-    font-size: var(--font-size-5);
-    font-weight: var(--font-weight-6);
-    margin-block: var(--size-4) var(--size-2);
-  }
-
-  .readme-content :global(h2) {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
-    margin-block: var(--size-4) var(--size-2);
-  }
-
-  .readme-content :global(h3) {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin-block: var(--size-3) var(--size-1);
-  }
-
-  .readme-content :global(p) {
-    margin-block: var(--size-2);
-  }
-
-  .readme-content :global(ul),
-  .readme-content :global(ol) {
-    margin-block: var(--size-2);
-    padding-inline-start: var(--size-5);
-  }
-
-  .readme-content :global(li) {
-    margin-block: var(--size-0-5);
-  }
-
-  .readme-content :global(a) {
-    color: var(--color-accent);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
   .readme-content :global(img) {
     border-radius: var(--radius-2);
     max-inline-size: 100%;
-  }
-
-  .readme-content :global(blockquote) {
-    border-inline-start: 3px solid var(--color-border-1);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    margin: var(--size-2) 0;
-    padding-inline-start: var(--size-3);
   }
 
   /* ─── Status banners ──────────────────────────────────────────────────── */

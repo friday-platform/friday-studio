@@ -256,21 +256,25 @@ export const discoverRoute = new Hono()
     const checks = await Promise.all(
       folders.map(async (folder) => {
         const folderPath = PATH ? `${PATH}/${folder}` : folder;
-        const [yml, lock] = await Promise.all([
-          fetchText(rawUrl(REPO, REF, `${folderPath}/workspace.yml`)),
+        const [meta, lock] = await Promise.all([
+          fetchWorkspaceMeta(REPO, REF, folderPath),
           fetchText(rawUrl(REPO, REF, `${folderPath}/workspace.lock`)),
         ]);
-        return yml !== null && lock !== null ? folder : null;
+        return meta.hasWorkspaceYml && lock !== null ? { folder, meta } : null;
       }),
     );
     const items: DiscoverItem[] = checks
-      .filter((folder): folder is string => folder !== null)
-      .map((folder) => ({
+      .filter((entry): entry is { folder: string; meta: WorkspaceMeta } => entry !== null)
+      .map(({ folder, meta }) => ({
         slug: folder,
-        name: humanizeSlug(folder),
-        description: "",
+        name: meta.name ?? humanizeSlug(folder),
+        description: meta.description ?? "",
         hasWorkspaceYml: true,
-        counts: { signals: 0, agents: 0, jobs: 0 },
+        counts: {
+          signals: meta.signals.length,
+          agents: meta.agents.length,
+          jobs: meta.jobs.length,
+        },
       }));
     return c.json({ source: { repo: REPO, path: PATH, ref: REF }, items });
   })

@@ -246,7 +246,13 @@
       {#if localPath}
         <div class="meta-row">
           <dt>Path</dt>
-          <dd class="meta-path" title={localPath}>{localPath}</dd>
+          <dd class="meta-path" title={localPath}>
+            <a
+              href={serveUrl ?? "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+            >{localPath}</a>
+          </dd>
         </div>
       {/if}
       {#if mimeType}
@@ -320,21 +326,21 @@
   }
 
   .open-btn {
-    background: var(--surface);
-    border: 1px solid var(--color-border-1);
+    background: var(--color-accent);
+    border: 1px solid var(--color-accent);
     border-radius: var(--radius-1);
-    color: var(--text-faded);
+    color: var(--color-text-on-accent, white);
     cursor: pointer;
     flex-shrink: 0;
     font-family: inherit;
-    font-size: var(--font-size-0, 11px);
-    padding: 2px 8px;
-    transition: color 100ms ease, border-color 100ms ease;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: 3px 10px;
+    transition: opacity 100ms ease;
   }
 
   .open-btn:hover:not(:disabled) {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
+    opacity: 0.85;
   }
 
   .open-btn:disabled {
@@ -456,5 +462,15 @@
     direction: rtl;
     text-align: start;
     unicode-bidi: plaintext;
+  }
+
+  .meta-path a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .meta-path a:hover {
+    color: var(--color-accent);
+    text-decoration: underline;
   }
 </style>
