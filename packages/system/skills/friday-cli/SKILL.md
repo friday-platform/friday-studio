@@ -257,8 +257,6 @@ image.
   Re-list.
 - **Session starts but no agent output** — check `deno task atlas logs
   --session <id>` (`debugging-friday` skill has the log playbook).
-- **HTTP route returns HTML instead of JSON** — you hit the web-client dev
-  server on :15200 by accident. The daemon is :8080.
 - **`"Signal 'X' not found"` on `POST /signals/:id` immediately after
   creating the signal** — the runtime hasn't seen the edit yet. Three
   common causes: (a) you used the `write_file` tool to edit `workspace.yml`,

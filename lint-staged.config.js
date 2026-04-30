@@ -64,8 +64,6 @@ export default {
     // Exclude files in directories that deno.json excludes from linting —
     // passing only excluded files causes `deno lint` to fail with "No target files found".
     const DENO_LINT_EXCLUDED = [
-      "/apps/friday-website/src/",
-      "/apps/atlas-auth-ui/src/",
       "/packages/ui/src/",
       "/tools/agent-playground/src/",
       "/tools/chat-replay/",
@@ -85,6 +83,4 @@ export default {
     const args = [...normal.map((f) => `"${f}"`), ...parenDirs.map((d) => `"${d}"`)];
     return [`deno lint --fix ${args.join(" ")}`];
   },
-  "apps/web-client/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
-  "apps/atlas-auth-ui/**/*.{ts,js,svelte,css,html,json}": "npx prettier --write --ignore-unknown",
 };

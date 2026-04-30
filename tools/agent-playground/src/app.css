@@ -14,7 +14,7 @@
   --editor-dimmed: light-dark(hsl(230 32% 14% / 0.7), hsl(40 12% 95% / 0.55));
 }
 
-/* Reset (from web-client/src/reset.css) */
+/* Reset */
 
 a,
 hr {

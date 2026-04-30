@@ -2,7 +2,6 @@
   Status pill badge for session/step execution states.
 
   Renders a rounded pill with icon + label, colored by status.
-  Matches the web-client "Complete" / "Failed" / "Running" badge pattern.
 
   @component
   @param {"completed" | "failed" | "active" | "skipped" | "pending" | "cancelled"} status - Execution status

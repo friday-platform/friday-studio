@@ -3,8 +3,7 @@
  *
  * Uses CSS custom properties from the atlas design system so the theme
  * adapts automatically to light/dark mode via `prefers-color-scheme`.
- * Syntax colors follow the shiki theme in `apps/web-client` — keys blue,
- * strings green, numbers yellow, booleans purple.
+ * Syntax color scheme: keys blue, strings green, numbers yellow, booleans purple.
  *
  * Token tags matched against `@lezer/yaml` grammar output.
  *

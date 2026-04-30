@@ -1201,10 +1201,10 @@ export class WorkspaceRuntime {
           timestamp: session.startedAt.toISOString(),
         });
 
-        // Emit session-start to the client's SSE stream so the web-client can
-        // display the session ID (e.g. in the "Report issue" button). This only
-        // covers live streaming — for persistence across page reloads, the
-        // conversation agent also injects this part before saving to chat storage.
+        // Emit session-start to the client's SSE stream so the UI can display
+        // the session ID (e.g. in the "Report issue" button). This only covers
+        // live streaming — for persistence across page reloads, the conversation
+        // agent also injects this part before saving to chat storage.
         if (onStreamEvent) {
           await onStreamEvent({ type: "data-session-start", data: { sessionId } });
         }

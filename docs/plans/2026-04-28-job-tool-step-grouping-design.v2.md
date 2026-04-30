@@ -229,7 +229,7 @@ No database changes. `data-agent-step-start`, `data-agent-step-complete`, and `d
 
 - **Parallel step execution**: the FSM engine executes states sequentially. The tree structure supports parallel step siblings (two `StepDisplay` nodes under the same job tool), but the reducer and runtime do not need to handle simultaneous active steps. Parallel execution is a future runtime feature.
 - **Step reasoning text rendering**: `reasoning` is plumbed through the schema and stored on `StepDisplay`, but a rich reasoning timeline (expandable per-thought) is a follow-up UI enhancement. The initial renderer shows reasoning as a simple expandable text block.
-- **Web-client rendering**: only `agent-playground` gets the step card renderer. `apps/web-client` will show agent-step-start/complete as unknown `data-*` parts (harmless) until the unification pass ports the reducer.
+- **Other client rendering**: only `agent-playground` gets the step card renderer in this pass. Any other client consuming the SSE stream will see agent-step-start/complete as unknown `data-*` parts (harmless) until its reducer is updated.
 - **Delegate inside job tool**: if a job tool's inner agent calls `delegate`, the delegate's nested-chunk envelopes already carry `parentToolCallId: delegateToolCallId`. With step grouping, those delegates appear as children of the step, not of the job tool directly. This is correct — no special handling needed.
 
 ## Further Notes

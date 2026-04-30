@@ -1,6 +1,5 @@
 /**
  * Helpers for deriving form field metadata from JSON Schema properties.
- * Adapted from apps/web-client for the agent-playground.
  *
  * @module
  */

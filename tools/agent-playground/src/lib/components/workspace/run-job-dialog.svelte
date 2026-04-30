@@ -2,7 +2,7 @@
   Modal dialog for running a workspace job. Derives form fields from the
   trigger signal's JSON Schema, then fires the signal via the daemon.
 
-  Uses the Melt UI Dialog from @atlas/ui — identical to the web-client pattern.
+  Uses the Melt UI Dialog from @atlas/ui.
 
   @component
   @param {string} workspaceId - Active workspace ID

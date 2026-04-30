@@ -1,7 +1,6 @@
 <!--
   ConnectService — interactive credential card for the chat message list.
 
-  Mirrors the web-client connect-service flow:
   - Fetches provider details from Link
   - Renders OAuth button, app-install button, or API-key inline form
   - Opens popup for OAuth/app-install; submits inline form for API keys

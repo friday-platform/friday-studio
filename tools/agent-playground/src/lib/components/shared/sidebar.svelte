@@ -305,7 +305,7 @@
     color: var(--color-text);
   }
 
-  /* --- Nav section (matches web-client nav) --- */
+  /* --- Nav section --- */
 
   .sidebar-nav {
     display: flex;
@@ -446,7 +446,7 @@
     }
   }
 
-  /* --- Sub-nav (matches web-client .sub-nav) --- */
+  /* --- Sub-nav --- */
 
   .sub-nav {
     display: flex;

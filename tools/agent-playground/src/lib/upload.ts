@@ -1,7 +1,6 @@
 /**
- * File upload utility for the playground.
- * Adapted from apps/web-client/src/lib/utils/upload.ts — talks directly
- * to the daemon's /api/artifacts/upload endpoint.
+ * File upload utility for the playground. Talks directly to the daemon's
+ * /api/artifacts/upload endpoint.
  */
 
 import {

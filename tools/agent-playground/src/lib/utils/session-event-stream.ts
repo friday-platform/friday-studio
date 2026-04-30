@@ -1,9 +1,8 @@
 /**
  * SSE consumer for session event streaming through the daemon proxy.
  *
- * Adapted from `apps/web-client/src/lib/utils/session-event-stream.ts` for
- * the playground's `/api/daemon/` proxy. Connects to the session SSE endpoint
- * and yields parsed session events for use with TanStack `streamedQuery`.
+ * Connects to the session SSE endpoint via the playground's `/api/daemon/`
+ * proxy and yields parsed session events for use with TanStack `streamedQuery`.
  *
  * @module
  */

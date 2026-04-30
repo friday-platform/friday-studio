@@ -1,6 +1,5 @@
 /**
  * Upload state machine. Plain TS (no runes) so it's directly testable.
- * Adapted from apps/web-client/src/lib/components/upload-controller.ts.
  */
 
 import { uploadFile, validateFile, type UploadStatus } from "./upload.ts";

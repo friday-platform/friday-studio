@@ -15,7 +15,6 @@
       "!**/node_modules",
       "!**/vendor",
       "!packages/vendor",
-      "!apps/web-client",
       "!packages/ui",
       "!tools/agent-playground",
       "!tools/chat-replay",

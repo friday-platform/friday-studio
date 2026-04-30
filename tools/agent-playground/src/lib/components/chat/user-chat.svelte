@@ -105,11 +105,10 @@
 
   /**
    * Playground chat wired to the `user` workspace via `@ai-sdk/svelte`'s
-   * {@link ChatImpl} and {@link DefaultChatTransport}. This component is the
-   * thin playground equivalent of `apps/web-client`'s chat-provider, without
-   * the production concerns (X-Turn-Started-At timer, GA4 analytics,
-   * OAuth return flow, query-client sidebar invalidation, resume-stream
-   * abort wiring). It reuses the same backend contract:
+   * {@link ChatImpl} and {@link DefaultChatTransport}. Minimal wiring without
+   * production concerns (X-Turn-Started-At timer, GA4 analytics, OAuth return
+   * flow, query-client sidebar invalidation, resume-stream abort wiring).
+   * Uses the same backend contract as production clients:
    *
    *   - `POST /api/workspaces/<wsId>/chat`          — first and follow-up turns
    *   - `GET  /api/workspaces/<wsId>/chat/:chatId`  — rehydrate on mount

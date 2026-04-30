@@ -7,33 +7,11 @@ interact with it.
 
 | Service | URL | Startup |
 |---------|-----|---------|
-| Everything | Both ports below | `deno task dev:full` |
 | Daemon (API) | `http://localhost:8080` | `deno task atlas daemon start --detached` |
-| Web Client | `http://localhost:1420` | `cd apps/web-client && npm run dev` |
+| Agent playground | `http://localhost:5200` | `deno task playground` |
 
-`deno task dev:full` starts both the daemon and web client. Alternatively, start
-them separately. The web client expects the daemon to be running — it won't
-start it automatically.
-
-## Web Client Routes
-
-```
-(app)/                              # Authenticated app shell
-├── chat/[[chatId]]                 # Chat interface (optional chatId)
-├── spaces/[spaceId]/               # Workspace detail
-│   ├── edit                        # Workspace config editor
-│   ├── chat/[[chatId]]             # Workspace chat (optional chatId)
-│   └── sessions/                   # Workspace session list
-│       └── [sessionId]             # Session detail within workspace
-├── sessions/                       # Global session list
-│   └── [sessionId]                 # Session detail (standalone)
-├── library/                        # Artifact library
-│   └── [artifactId]               # Artifact viewer
-├── settings                        # Credentials and integrations
-│
-/about                              # Version info
-/oauth/callback                     # OAuth popup callback
-```
+The playground expects the daemon to be running on `:8080` — it won't start it
+automatically.
 
 ## Key API Endpoints
 
@@ -139,19 +117,19 @@ deno task atlas logs --level error,warn
 ## Auth in Dev Mode
 
 - No FRIDAY_KEY needed — falls back to "default-user" identity
-- No login page — daemon accepts requests without authentication
+- Daemon accepts requests without authentication
 - OAuth integrations (Google, Slack, GitHub, etc.) require real credentials
-  configured via Settings page
+  configured via the Link service
 - OAuth flow: popup-based → `/oauth/callback` → postMessage to opener
 - Credentials can expire — check status via `GET /link/v1/credentials`
 
 ## Gotchas
 
-- **Daemon must run first** — web client connects to `localhost:8080` on load
+- **Daemon must run first** — clients connect to `localhost:8080` on load
 - **Live reload** — daemon auto-restarts on code changes, no manual restart
   needed
-- **Port conflicts** — daemon 8080, web client 1420, both must be free
+- **Port conflicts** — daemon 8080, playground 5200, both must be free
 - **Workspace names are generated** — slugs like `herbal_ginger`, not
   user-chosen names
-- **SSE streams** — chat and session detail pages use SSE, not polling
+- **SSE streams** — chat and session endpoints use SSE, not polling
 - **Popup blockers** — OAuth falls back to same-tab redirect if popup blocked
