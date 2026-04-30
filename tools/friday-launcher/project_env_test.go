@@ -102,10 +102,10 @@ func TestFridayEnv_OmitsAgentBrowserPathWhenAbsent(t *testing.T) {
 // would probe the override port while the binary stays on its hardcoded
 // default, and the supervisor stays "starting" forever.
 func TestSupervisedProcesses_PortOverridesPropagate(t *testing.T) {
-	t.Setenv("FRIDAY_PORT_friday", "18080")
-	t.Setenv("FRIDAY_PORT_link", "13100")
-	t.Setenv("FRIDAY_PORT_webhook_tunnel", "19090")
-	t.Setenv("FRIDAY_PORT_playground", "15200")
+	t.Setenv("FRIDAY_PORT_FRIDAY", "18080")
+	t.Setenv("FRIDAY_PORT_LINK", "13100")
+	t.Setenv("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090")
+	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
 
 	specs := supervisedProcesses("/tmp/bin")
 
@@ -168,7 +168,7 @@ func TestPlaygroundURL_HonorsPortOverride(t *testing.T) {
 	if got := playgroundURL(); got != "http://localhost:5200" {
 		t.Errorf("default playgroundURL = %q, want http://localhost:5200", got)
 	}
-	t.Setenv("FRIDAY_PORT_playground", "15200")
+	t.Setenv("FRIDAY_PORT_PLAYGROUND", "15200")
 	if got := playgroundURL(); got != "http://localhost:15200" {
 		t.Errorf("overridden playgroundURL = %q, want http://localhost:15200", got)
 	}

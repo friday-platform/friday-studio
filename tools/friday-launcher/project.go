@@ -289,8 +289,8 @@ func supervisedProcessNames() []string {
 //
 // The actual binaries are expected to live alongside the launcher in
 // the platform tarball. For QA / stub-based local dev, individual
-// ports can be overridden via env vars FRIDAY_PORT_<name>
-// (e.g. FRIDAY_PORT_playground=15200) so that tests don't collide
+// ports can be overridden via env vars FRIDAY_PORT_<NAME>
+// (e.g. FRIDAY_PORT_PLAYGROUND=15200) so that tests don't collide
 // with a developer's real Friday instance running on the production
 // ports.
 func supervisedProcesses(binDir string) []processSpec {
@@ -412,9 +412,10 @@ func supervisedProcesses(binDir string) []processSpec {
 }
 
 func portOverride(name string) string {
-	// Hyphens aren't valid in POSIX env var names, so swap them for
-	// underscores: FRIDAY_PORT_webhook_tunnel, not FRIDAY_PORT_webhook-tunnel.
-	envName := "FRIDAY_PORT_" + strings.ReplaceAll(name, "-", "_")
+	// Env vars use the conventional uppercase shape, with hyphens swapped
+	// for underscores (POSIX rules): FRIDAY_PORT_WEBHOOK_TUNNEL, not
+	// FRIDAY_PORT_webhook-tunnel.
+	envName := "FRIDAY_PORT_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
 	return osGetenv(envName)
 }
 

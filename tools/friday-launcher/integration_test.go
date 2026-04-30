@@ -133,14 +133,14 @@ func writeWrapper(t *testing.T, binDir, name, stubBin, port, healthPath, extra s
 	}
 }
 
-// portEnv returns the FRIDAY_PORT_<name> env vars.
+// portEnv returns the FRIDAY_PORT_<NAME> env vars.
 func portEnv() []string {
 	return []string{
-		"FRIDAY_PORT_nats_server=18222",
-		"FRIDAY_PORT_friday=18080",
-		"FRIDAY_PORT_link=13100",
-		"FRIDAY_PORT_webhook_tunnel=19090",
-		"FRIDAY_PORT_playground=15200",
+		"FRIDAY_PORT_NATS_SERVER=18222",
+		"FRIDAY_PORT_FRIDAY=18080",
+		"FRIDAY_PORT_LINK=13100",
+		"FRIDAY_PORT_WEBHOOK_TUNNEL=19090",
+		"FRIDAY_PORT_PLAYGROUND=15200",
 	}
 }
 
