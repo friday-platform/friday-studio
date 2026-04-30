@@ -159,8 +159,8 @@ tools/
 
 Config: `friday.yml` (platform-wide — see
 [`docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml`](docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml))
-· `workspace.yml` (per-workspace) · [`CLAUDE.md`](CLAUDE.md) (dev guidelines +
-hard rules)
+· `workspace.yml` (per-workspace) · [`CONTRIBUTING.md`](CONTRIBUTING.md) (dev
+guidelines + code style)
 
 ## AI Workflow
 
@@ -184,22 +184,30 @@ Claude Code skills support a structured planning-to-execution pipeline:
 
 6. **Ship** — `/opening-pr` creates a PR with summary and test plan.
 
-Post-ship: `/reviewing-code` for reviewing others' PRs. `/remembering-learnings`
-mines agent commit footers into CLAUDE.md.
+Post-ship: `/reviewing-code` for reviewing others' PRs.
 
 ## Learn more
 
-- [`CLAUDE.md`](CLAUDE.md) — hard rules, code philosophy, gotchas
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components and data flow
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to send patches (CLA required)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to send patches, code style, hard
+  rules (CLA required)
 - [`SECURITY.md`](SECURITY.md) — vulnerability disclosure
 
 ## License
 
 Friday is **source-available** under the [Business Source License 1.1](LICENSE).
-You can read, modify, and self-host the code; production use that competes with
-Tempest Labs' offering requires a commercial license. The license converts to
-Apache-2.0 on **2027-04-29**.
+You can read, modify, and self-host the code under the
+[Additional Use Grant](LICENSE), which permits free production use for personal
+use, organizations under 5 people, and businesses with under $1M ARR.
+Production use outside those bounds, or that competes with Tempest Labs'
+offering, requires a commercial license. Each released version converts
+automatically to **Apache-2.0 one year after that version is first
+distributed** (so the current version's Change Date is **2027-04-30**; later
+versions get their own date).
+
+For commercial-license inquiries: legal@tempest.team.
 
 Third-party components retain their original licenses — see
-[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) and [`NOTICE`](NOTICE).
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) and [`NOTICE`](NOTICE)
+(includes MPL-2.0 §3.2 source-availability notice and license elections for
+dual/tri-licensed deps).

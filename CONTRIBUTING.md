@@ -16,8 +16,8 @@ to know before opening a pull request.
 
 ## Development setup
 
-Detailed environment notes live in [`CLAUDE.md`](./CLAUDE.md) and
-[`README.md`](./README.md). The short version:
+Detailed environment notes live in [`README.md`](./README.md). The short
+version:
 
 ```bash
 # Deno + TypeScript (core platform)
@@ -119,7 +119,7 @@ GitHub advisory; email security@hellofriday.ai as a fallback.
 
 ## Code style
 
-Project-specific conventions live in [`CLAUDE.md`](./CLAUDE.md). Highlights:
+Project-specific conventions:
 
 - **TypeScript**: no `any`, no `as` assertions (use Zod), static imports only,
   validate external input with Zod. Use `@atlas/logger`, never `console.*`.
