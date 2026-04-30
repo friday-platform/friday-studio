@@ -147,23 +147,26 @@ fn spawn_detached_cleanup(volume: &std::path::Path) {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
     let escaped_volume_name_as = applescript_string(&volume_name);
+    // Volume name is unused now that we don't tell Finder to close the
+    // window — keep the binding declared above so a future fix that
+    // restores the close step doesn't have to re-derive it.
+    let _ = escaped_volume_name_as;
     let script = format!(
         r#"sleep 2
 hdiutil detach {volume} -force >/dev/null 2>&1 || true
-# hdiutil unmounts the disk but leaves the Finder window that was
-# auto-opened when the DMG was first mounted hanging around. Tell
-# Finder to close any window whose name matches the (now-detached)
-# volume label so the user doesn't see a stale ghost window after
-# we exit. Errors are silent — if Finder isn't running or
-# AppleScript is restricted, the window will close when the user
-# clicks the red dot.
-osascript -e 'tell application "Finder" to close (every window whose name is {volume_name_as})' >/dev/null 2>&1 || true
+# Earlier revisions ran `osascript -e 'tell application "Finder" to
+# close (every window whose name is …)'` here to clean up the Finder
+# window that auto-opened when the DMG was first mounted. That
+# triggers macOS's Automation TCC prompt ("osascript wants access to
+# control Finder") on every install — every user gets the modal once
+# per machine. Modern Finder closes the window on its own when the
+# source volume goes away in most cases; in the rare miss, the user
+# closes it with one click. Worth the tradeoff to avoid the prompt.
 dmg=$(mdfind 'kMDItemFSName == "FridayStudioInstaller_*.dmg"' 2>/dev/null | head -1)
 if [ -n "$dmg" ] && [ -e "$dmg" ]; then
   mv "$dmg" "$HOME/.Trash/" 2>/dev/null || true
 fi"#,
         volume = escaped_volume,
-        volume_name_as = escaped_volume_name_as,
     );
     // nohup + sh -c + & detaches the job from our process group, so
     // it survives our app.exit(0). stdin/stdout/stderr go to
