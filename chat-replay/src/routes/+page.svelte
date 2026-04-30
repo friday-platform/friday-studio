@@ -525,8 +525,8 @@
     if (event.key === " ") { event.preventDefault(); togglePlay(); }
     else if (event.key === "j") { event.preventDefault(); setIndex(currentIndex - 1); }
     else if (event.key === "k") { event.preventDefault(); setIndex(currentIndex + 1); }
-    else if (event.shiftKey && (event.key === "+" || event.key === "=")) { event.preventDefault(); stepSpeed(true); }
-    else if (event.shiftKey && event.key === "-") { event.preventDefault(); stepSpeed(false); }
+    else if (event.shiftKey && event.code === "Equal") { event.preventDefault(); stepSpeed(true); }
+    else if (event.shiftKey && event.code === "Minus") { event.preventDefault(); stepSpeed(false); }
   }
 
   const SETTINGS_KEY = "chat-replay-settings";
@@ -615,8 +615,8 @@
               min="80"
               max="1200"
               step="10"
-              bind:value={speedMs}
-              oninput={handleSpeedChange}
+              value={1280 - speedMs}
+              oninput={(e) => { speedMs = 1280 - e.currentTarget.valueAsNumber; handleSpeedChange(); }}
               aria-label="Playback speed"
             />
           </div>
