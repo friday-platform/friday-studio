@@ -16,9 +16,7 @@
         {
           "id": "6HTATBwB1fKq0mjL",
           "role": "user",
-          "metadata": {
-            "timestamp": "2026-04-29T22:00:59.641Z"
-          },
+          "metadata": { "timestamp": "2026-04-29T22:00:59.641Z" },
           "parts": [
             {
               "type": "text",
@@ -37,9 +35,7 @@
             "modelId": "claude-sonnet-4-6"
           },
           "parts": [
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-load_skill",
               "toolCallId": "toolu_01SqEDQL5UgeUUWVpbfmvPHU",
@@ -62,20 +58,8 @@
                   "assets/minimal-job-template.yml": "# Minimal valid FSM job \u2014 copy, paste, adapt.\n#\n# This is the smallest job that actually runs. Every other field is optional.\n# The runtime dispatches signals to jobs, then the FSM handles them.\n# The initial state MUST have an `on` handler for the trigger signal name.\n\njobs:\n  my-job:\n    description: \"One-line description of what this job does\"\n    triggers:\n      - signal: my-signal\n    fsm:\n      initial: idle\n      states:\n        idle:\n          on:\n            my-signal: { target: run }\n        run:\n          entry:\n            - type: agent\n              agentId: my-agent\n          type: final\n"
                 }
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "tool-load_skill",
@@ -105,24 +89,10 @@
                   "assets/hello-py.py": "from friday_agent_sdk import AgentContext, agent, err, ok\n\n\n@agent(\n    id=\"hello-py\",\n    version=\"1.0.0\",\n    description=\"Minimal worked example \u2014 LLM + tool listing + streaming progress.\",\n)\ndef execute(prompt: str, ctx: AgentContext):\n    ctx.stream.intent(f'Processing: \"{prompt}\"')\n\n    tools = ctx.tools.list()\n    ctx.stream.progress(f\"Found {len(tools)} available tool(s).\")\n\n    ctx.stream.progress(\"Calling LLM...\")\n    try:\n        response = ctx.llm.generate(\n            messages=[\n                {\"role\": \"system\", \"content\": \"You are a concise assistant. Reply in 1-2 sentences.\"},\n                {\"role\": \"user\", \"content\": prompt},\n            ],\n            model=\"anthropic:claude-haiku-4-5\",\n        )\n    except Exception as e:\n        return err(f\"LLM call failed: {e}\")\n\n    ctx.stream.progress(f\"LLM responded ({response.model}, {response.usage.get('outputTokens', '?')} tokens).\")\n\n    tool_summary = (\n        \", \".join(t.name for t in tools[:5]) + (\"...\" if len(tools) > 5 else \"\")\n        if tools\n        else \"none\"\n    )\n\n    return ok({\n        \"reply\": response.text or \"\",\n        \"toolsAvailable\": tool_summary,\n        \"model\": response.model,\n    })\n\n\nif __name__ == \"__main__\":\n    from friday_agent_sdk import run\n    run()\n"
                 }
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "Good, both skills loaded. Now let me check what Gmail tools are available and then create the workspace.",
@@ -163,51 +133,23 @@
                   }
                 ]
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "tool-list_mcp_tools",
               "toolCallId": "toolu_013dTCVSvREnPyoxjHXScyWr",
               "state": "output-available",
-              "input": {
-                "serverId": "google-gmail"
-              },
+              "input": { "serverId": "google-gmail" },
               "output": {
                 "ok": false,
                 "error": "Unexpected response shape from MCP registry",
                 "phase": "tools"
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "Gmail needs to be connected first. Let me connect it, then build the workspace.",
@@ -217,46 +159,24 @@
               "type": "tool-connect_service",
               "toolCallId": "toolu_013opgHx6BweYCa5BKGoALKW",
               "state": "output-available",
-              "input": {
-                "provider": "google-gmail"
-              },
+              "input": { "provider": "google-gmail" },
               "output": {
                 "provider": "google-gmail",
-                "progress": {
-                  "label": "Connecting to google-gmail",
-                  "status": "active"
-                }
+                "progress": { "label": "Connecting to google-gmail", "status": "active" }
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             }
           ]
         },
         {
           "id": "EcTHbEgEBaCirvWk",
           "role": "user",
-          "metadata": {
-            "timestamp": "2026-04-29T22:01:24.301Z"
-          },
+          "metadata": { "timestamp": "2026-04-29T22:01:24.301Z" },
           "parts": [
             {
               "type": "data-credential-linked",
-              "data": {
-                "provider": "google-gmail",
-                "displayName": "google-gmail"
-              }
+              "data": { "provider": "google-gmail", "displayName": "google-gmail" }
             }
           ]
         },
@@ -271,49 +191,26 @@
             "modelId": "claude-sonnet-4-6"
           },
           "parts": [
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-enable_mcp_server",
               "toolCallId": "toolu_01AWaM3wX2rz38qRge4gWdtf",
               "state": "output-available",
-              "input": {
-                "serverId": "google-gmail"
-              },
+              "input": { "serverId": "google-gmail" },
               "output": {
                 "success": true,
-                "server": {
-                  "id": "google-gmail",
-                  "name": "Gmail"
-                },
+                "server": { "id": "google-gmail", "name": "Gmail" },
                 "message": "MCP server 'Gmail' is now enabled in this workspace."
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-list_mcp_tools",
               "toolCallId": "toolu_016iG6G69RY1kPP7kvQuqrtA",
               "state": "output-available",
-              "input": {
-                "serverId": "google-gmail"
-              },
+              "input": { "serverId": "google-gmail" },
               "output": {
                 "ok": true,
                 "tools": [
@@ -375,24 +272,10 @@
                   }
                 ]
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "Good \u2014 I have all the Gmail tools. Now let me create the workspace and build everything.",
@@ -414,87 +297,37 @@
                   "path": "/Users/kenneth/.atlas/workspaces/Inbox Zero"
                 }
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-enable_mcp_server",
               "toolCallId": "toolu_01UFCCTFeiKKgtKoho3dNaDj",
               "state": "output-available",
-              "input": {
-                "serverId": "google-gmail",
-                "workspaceId": "glazed_ink"
-              },
+              "input": { "serverId": "google-gmail", "workspaceId": "glazed_ink" },
               "output": {
                 "success": true,
-                "server": {
-                  "id": "google-gmail",
-                  "name": "Gmail"
-                },
+                "server": { "id": "google-gmail", "name": "Gmail" },
                 "message": "MCP server 'Gmail' is now enabled in this workspace."
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-begin_draft",
               "toolCallId": "toolu_01KMRk3dE9Xeqnpowkf4eUJ2",
               "state": "output-available",
-              "input": {
-                "workspaceId": "glazed_ink"
-              },
+              "input": { "workspaceId": "glazed_ink" },
               "output": {
                 "success": true,
                 "draftPath": "/Users/kenneth/.atlas/workspaces/Inbox Zero/workspace.yml.draft"
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "Now upsert the memory store for preferences, then agents, then jobs, then signals:",
@@ -506,45 +339,22 @@
               "state": "output-available",
               "input": {
                 "id": "preferences",
-                "config": {
-                  "type": "long_term",
-                  "strategy": "narrative"
-                },
+                "config": { "type": "long_term", "strategy": "narrative" },
                 "workspaceId": "glazed_ink"
               },
               "output": {
                 "ok": true,
                 "diff": {
-                  "name": {
-                    "to": "preferences"
-                  },
-                  "type": {
-                    "to": "long_term"
-                  },
-                  "strategy": {
-                    "to": "narrative"
-                  }
+                  "name": { "to": "preferences" },
+                  "type": { "to": "long_term" },
+                  "strategy": { "to": "narrative" }
                 },
                 "structural_issues": null
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-upsert_agent",
               "toolCallId": "toolu_01GMHaK21PoQpoDxpET3uysJ",
@@ -577,9 +387,7 @@
                   "description": {
                     "to": "Fetches the latest 10 unread emails and presents them one-by-one for interactive triage with letter-key actions."
                   },
-                  "type": {
-                    "to": "llm"
-                  },
+                  "type": { "to": "llm" },
                   "config": {
                     "to": {
                       "provider": "anthropic",
@@ -600,24 +408,10 @@
                 },
                 "structural_issues": null
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-upsert_agent",
               "toolCallId": "toolu_01PnrRitVv14YinwNQuZfMAY",
@@ -650,9 +444,7 @@
                   "description": {
                     "to": "Proactively triages unread inbox with learned preferences, takes high-confidence actions automatically, writes a disk report."
                   },
-                  "type": {
-                    "to": "llm"
-                  },
+                  "type": { "to": "llm" },
                   "config": {
                     "to": {
                       "provider": "anthropic",
@@ -673,24 +465,10 @@
                 },
                 "structural_issues": null
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-upsert_signal",
               "toolCallId": "toolu_01CD2Qh1Wfpk6cXTv1FycpQW",
@@ -700,9 +478,7 @@
                 "config": {
                   "provider": "http",
                   "description": "Trigger interactive inbox triage \u2014 pull 10 unread emails and review with letter-key actions",
-                  "config": {
-                    "path": "/inbox-zero/triage"
-                  }
+                  "config": { "path": "/inbox-zero/triage" }
                 },
                 "workspaceId": "glazed_ink"
               },
@@ -712,31 +488,13 @@
                   "description": {
                     "to": "Trigger interactive inbox triage \u2014 pull 10 unread emails and review with letter-key actions"
                   },
-                  "provider": {
-                    "to": "http"
-                  },
-                  "config": {
-                    "to": {
-                      "path": "/inbox-zero/triage"
-                    }
-                  }
+                  "provider": { "to": "http" },
+                  "config": { "to": { "path": "/inbox-zero/triage" } }
                 },
                 "structural_issues": null
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "tool-upsert_signal",
@@ -747,10 +505,7 @@
                 "config": {
                   "provider": "schedule",
                   "description": "Proactive inbox processing \u2014 runs daily at 8am PT, auto-acts on high-confidence emails and writes a report",
-                  "config": {
-                    "schedule": "0 8 * * *",
-                    "timezone": "America/Los_Angeles"
-                  }
+                  "config": { "schedule": "0 8 * * *", "timezone": "America/Los_Angeles" }
                 },
                 "workspaceId": "glazed_ink"
               },
@@ -760,36 +515,15 @@
                   "description": {
                     "to": "Proactive inbox processing \u2014 runs daily at 8am PT, auto-acts on high-confidence emails and writes a report"
                   },
-                  "provider": {
-                    "to": "schedule"
-                  },
-                  "config": {
-                    "to": {
-                      "schedule": "0 8 * * *",
-                      "timezone": "America/Los_Angeles"
-                    }
-                  }
+                  "provider": { "to": "schedule" },
+                  "config": { "to": { "schedule": "0 8 * * *", "timezone": "America/Los_Angeles" } }
                 },
                 "structural_issues": null
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-upsert_job",
               "toolCallId": "toolu_013siCxRBSBThHBrtZtyU8Lv",
@@ -798,21 +532,11 @@
                 "id": "triage-inbox-job",
                 "config": {
                   "description": "Interactive inbox triage \u2014 presents 10 unread emails with (A)rchive (K)eep (U)nread (D)elete (S)ubscribe actions",
-                  "triggers": [
-                    {
-                      "signal": "triage-inbox"
-                    }
-                  ],
+                  "triggers": [{ "signal": "triage-inbox" }],
                   "fsm": {
                     "initial": "idle",
                     "states": {
-                      "idle": {
-                        "on": {
-                          "triage-inbox": {
-                            "target": "review"
-                          }
-                        }
-                      },
+                      "idle": { "on": { "triage-inbox": { "target": "review" } } },
                       "review": {
                         "entry": [
                           {
@@ -821,20 +545,11 @@
                             "outputTo": "triage-result",
                             "prompt": "Load preferences, fetch the 10 most recent unread emails, and walk through each one interactively presenting (A)rchive (K)eep (U)nread (D)elete (S)ubscribe options. Save preference patterns to memory after completing all 10."
                           },
-                          {
-                            "type": "emit",
-                            "event": "DONE"
-                          }
+                          { "type": "emit", "event": "DONE" }
                         ],
-                        "on": {
-                          "DONE": {
-                            "target": "done"
-                          }
-                        }
+                        "on": { "DONE": { "target": "done" } }
                       },
-                      "done": {
-                        "type": "final"
-                      }
+                      "done": { "type": "final" }
                     }
                   }
                 },
@@ -846,24 +561,12 @@
                   "description": {
                     "to": "Interactive inbox triage \u2014 presents 10 unread emails with (A)rchive (K)eep (U)nread (D)elete (S)ubscribe actions"
                   },
-                  "triggers": {
-                    "to": [
-                      {
-                        "signal": "triage-inbox"
-                      }
-                    ]
-                  },
+                  "triggers": { "to": [{ "signal": "triage-inbox" }] },
                   "fsm": {
                     "to": {
                       "initial": "idle",
                       "states": {
-                        "idle": {
-                          "on": {
-                            "triage-inbox": {
-                              "target": "review"
-                            }
-                          }
-                        },
+                        "idle": { "on": { "triage-inbox": { "target": "review" } } },
                         "review": {
                           "entry": [
                             {
@@ -872,44 +575,21 @@
                               "outputTo": "triage-result",
                               "prompt": "Load preferences, fetch the 10 most recent unread emails, and walk through each one interactively presenting (A)rchive (K)eep (U)nread (D)elete (S)ubscribe options. Save preference patterns to memory after completing all 10."
                             },
-                            {
-                              "type": "emit",
-                              "event": "DONE"
-                            }
+                            { "type": "emit", "event": "DONE" }
                           ],
-                          "on": {
-                            "DONE": {
-                              "target": "done"
-                            }
-                          }
+                          "on": { "DONE": { "target": "done" } }
                         },
-                        "done": {
-                          "type": "final"
-                        }
+                        "done": { "type": "final" }
                       }
                     }
                   }
                 },
                 "structural_issues": null
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-upsert_job",
               "toolCallId": "toolu_01EMYLp5cxXr1dJAnANNjdAU",
@@ -918,21 +598,11 @@
                 "id": "autopilot-inbox-job",
                 "config": {
                   "description": "Proactive daily inbox processing \u2014 auto-acts on high-confidence emails using learned preferences, writes markdown report to ~/inbox-zero-reports/",
-                  "triggers": [
-                    {
-                      "signal": "autopilot-inbox"
-                    }
-                  ],
+                  "triggers": [{ "signal": "autopilot-inbox" }],
                   "fsm": {
                     "initial": "idle",
                     "states": {
-                      "idle": {
-                        "on": {
-                          "autopilot-inbox": {
-                            "target": "process"
-                          }
-                        }
-                      },
+                      "idle": { "on": { "autopilot-inbox": { "target": "process" } } },
                       "process": {
                         "entry": [
                           {
@@ -941,20 +611,11 @@
                             "outputTo": "autopilot-result",
                             "prompt": "Load preferences from memory, fetch up to 25 unread emails, classify each with a confidence score, auto-act on confidence >= 0.85, leave the rest untouched, write a markdown report to ~/inbox-zero-reports/report-{timestamp}.md, and update preference memory."
                           },
-                          {
-                            "type": "emit",
-                            "event": "DONE"
-                          }
+                          { "type": "emit", "event": "DONE" }
                         ],
-                        "on": {
-                          "DONE": {
-                            "target": "done"
-                          }
-                        }
+                        "on": { "DONE": { "target": "done" } }
                       },
-                      "done": {
-                        "type": "final"
-                      }
+                      "done": { "type": "final" }
                     }
                   }
                 },
@@ -966,24 +627,12 @@
                   "description": {
                     "to": "Proactive daily inbox processing \u2014 auto-acts on high-confidence emails using learned preferences, writes markdown report to ~/inbox-zero-reports/"
                   },
-                  "triggers": {
-                    "to": [
-                      {
-                        "signal": "autopilot-inbox"
-                      }
-                    ]
-                  },
+                  "triggers": { "to": [{ "signal": "autopilot-inbox" }] },
                   "fsm": {
                     "to": {
                       "initial": "idle",
                       "states": {
-                        "idle": {
-                          "on": {
-                            "autopilot-inbox": {
-                              "target": "process"
-                            }
-                          }
-                        },
+                        "idle": { "on": { "autopilot-inbox": { "target": "process" } } },
                         "process": {
                           "entry": [
                             {
@@ -992,108 +641,45 @@
                               "outputTo": "autopilot-result",
                               "prompt": "Load preferences from memory, fetch up to 25 unread emails, classify each with a confidence score, auto-act on confidence >= 0.85, leave the rest untouched, write a markdown report to ~/inbox-zero-reports/report-{timestamp}.md, and update preference memory."
                             },
-                            {
-                              "type": "emit",
-                              "event": "DONE"
-                            }
+                            { "type": "emit", "event": "DONE" }
                           ],
-                          "on": {
-                            "DONE": {
-                              "target": "done"
-                            }
-                          }
+                          "on": { "DONE": { "target": "done" } }
                         },
-                        "done": {
-                          "type": "final"
-                        }
+                        "done": { "type": "final" }
                       }
                     }
                   }
                 },
                 "structural_issues": null
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-validate_workspace",
               "toolCallId": "toolu_014fTVjhtApw3Cr5uMwqP7mL",
               "state": "output-available",
-              "input": {
-                "workspaceId": "glazed_ink"
-              },
-              "output": {
-                "status": "ok",
-                "errors": [],
-                "warnings": []
-              },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "input": { "workspaceId": "glazed_ink" },
+              "output": { "status": "ok", "errors": [], "warnings": [] },
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
-            {
-              "type": "text",
-              "text": "Clean. Publishing.",
-              "state": "done"
-            },
+            { "type": "step-start" },
+            { "type": "text", "text": "Clean. Publishing.", "state": "done" },
             {
               "type": "tool-publish_draft",
               "toolCallId": "toolu_01M1k349aSQdEZf9fbEXNLfn",
               "state": "output-available",
-              "input": {
-                "workspaceId": "glazed_ink"
-              },
+              "input": { "workspaceId": "glazed_ink" },
               "output": {
                 "success": true,
                 "livePath": "/Users/kenneth/.atlas/workspaces/Inbox Zero/workspace.yml"
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "**[Inbox Zero](/platform/glazed_ink)** is live. Here's what's in it:\n\n---\n\n**Job 1 \u2014 Interactive Triage** (trigger: on demand)\n\nRun it from the workspace and it will:\n1. Pull your 10 most recent unread emails\n2. Show each one as a card with a preview\n3. Wait for your letter key:\n   - **(A)** Archive \u2014 removes from inbox\n   - **(K)** Keep \u2014 moves on, no change\n   - **(U)** Mark Unread \u2014 restores unread state\n   - **(D)** Delete \u2014 sends to trash\n   - **(S)** Unsubscribe \u2014 surfaces the unsubscribe link and archives\n\nAfter the session, it writes your patterns (senders, domains, action tendencies) to a persistent `preferences` memory store. On future sessions, it reads those preferences and highlights suggested actions next to each option.\n\n---\n\n**Job 2 \u2014 Autopilot** (daily at 8:00 AM PT)\n\nRuns automatically every morning:\n- Reads your accumulated preferences from memory\n- Fetches up to 25 unread emails\n- Scores each one with a confidence value (0.0\u20131.0)\n- Auto-acts on anything \u2265 0.85 confidence based on your patterns\n- Leaves ambiguous emails untouched\n- Writes a markdown report to `~/inbox-zero-reports/report-YYYY-MM-DD-HH-MM.md` with a full action table + a \"Needs Review\" section for anything it skipped\n\n---\n\nThe preference model is cumulative \u2014 the more triage sessions you run, the more confidently the autopilot can act. Head over to [Inbox Zero](/platform/glazed_ink) to start your first triage.",
@@ -1126,15 +712,8 @@
         {
           "id": "UdrDfCOpCP85c5x2",
           "role": "user",
-          "metadata": {
-            "timestamp": "2026-04-29T22:03:36.374Z"
-          },
-          "parts": [
-            {
-              "type": "text",
-              "text": "Let's work through my unreads."
-            }
-          ]
+          "metadata": { "timestamp": "2026-04-29T22:03:36.374Z" },
+          "parts": [{ "type": "text", "text": "Let's work through my unreads." }]
         },
         {
           "id": "avrFWPhE5p45tdro",
@@ -1147,16 +726,12 @@
             "modelId": "claude-sonnet-4-6"
           },
           "parts": [
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-triage-inbox-job",
               "toolCallId": "toolu_012vdeEoffmD8tKtgqd8BPzP",
               "state": "output-available",
-              "input": {
-                "prompt": "Triage Ken's unread emails interactively."
-              },
+              "input": { "prompt": "Triage Ken's unread emails interactively." },
               "output": {
                 "success": true,
                 "sessionId": "bfffd7bd-068d-49a1-b9da-ed593978749f",
@@ -1171,20 +746,8 @@
                   }
                 ]
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "data-nested-chunk",
@@ -1192,9 +755,7 @@
                 "parentToolCallId": "toolu_012vdeEoffmD8tKtgqd8BPzP",
                 "chunk": {
                   "type": "data-session-start",
-                  "data": {
-                    "sessionId": "bfffd7bd-068d-49a1-b9da-ed593978749f"
-                  }
+                  "data": { "sessionId": "bfffd7bd-068d-49a1-b9da-ed593978749f" }
                 }
               }
             },
@@ -1231,10 +792,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01U2fw3TWzibHQ1GeGS2Pcdx",
                   "toolName": "memory_read",
-                  "input": {
-                    "workspaceId": "chat_9mVCnEame6",
-                    "memoryName": "preferences"
-                  }
+                  "input": { "workspaceId": "chat_9mVCnEame6", "memoryName": "preferences" }
                 }
               }
             },
@@ -1265,10 +823,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01ALeXL5BjmfQxfLwyJtyRTQ",
                   "toolName": "search_gmail_messages",
-                  "input": {
-                    "query": "is:unread in:inbox",
-                    "page_size": 10
-                  }
+                  "input": { "query": "is:unread in:inbox", "page_size": 10 }
                 }
               }
             },
@@ -1280,11 +835,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_01ALeXL5BjmfQxfLwyJtyRTQ",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -1332,11 +883,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_01VPsxraNJERetALsJjUNj5V",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -1466,9 +1013,7 @@
                 }
               }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "GitHub Actions failure notification \u2014 what's the call on this one, Ken?\n\n```\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n[#1 of 10] Subject: [friday-platform/friday-studio] Run failed: Test - main (2da49b0)\nFrom: Kenneth Kouot <notifications@github.com>\nDate: Wed, 29 Apr 2026 15:01:58 -0700\nPreview: Test workflow run \u2014 test failed (11 annotations). View run \u2192\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n(A) Archive  (K) Keep  (U) Mark Unread  (D) Delete  (S) Unsubscribe\n```",
@@ -1479,15 +1024,8 @@
         {
           "id": "x7CNs0QudMVLcgbw",
           "role": "user",
-          "metadata": {
-            "timestamp": "2026-04-29T22:04:32.485Z"
-          },
-          "parts": [
-            {
-              "type": "text",
-              "text": "U and always mark these unread"
-            }
-          ]
+          "metadata": { "timestamp": "2026-04-29T22:04:32.485Z" },
+          "parts": [{ "type": "text", "text": "U and always mark these unread" }]
         },
         {
           "id": "9m1WBW3ecMNdiBAV",
@@ -1500,9 +1038,7 @@
             "modelId": "claude-sonnet-4-6"
           },
           "parts": [
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "Got it \u2014 marking unread and saving that preference.",
@@ -1516,34 +1052,16 @@
                 "memoryName": "preferences",
                 "text": "GitHub Actions failure notifications (from notifications@github.com, subject contains \"Run failed\") \u2192 always Mark Unread (U)"
               },
-              "output": {
-                "saved": true
-              },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "output": { "saved": true },
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-triage-inbox-job",
               "toolCallId": "toolu_01NZvPU88ZJujUCf3c3GGb6n",
               "state": "output-available",
-              "input": {
-                "prompt": "Mark email #1 as Unread, then show email #2."
-              },
+              "input": { "prompt": "Mark email #1 as Unread, then show email #2." },
               "output": {
                 "success": true,
                 "sessionId": "a2ace204-c3a8-4b5e-8349-46ace682a11d",
@@ -1558,20 +1076,8 @@
                   }
                 ]
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "data-nested-chunk",
@@ -1579,9 +1085,7 @@
                 "parentToolCallId": "toolu_01NZvPU88ZJujUCf3c3GGb6n",
                 "chunk": {
                   "type": "data-session-start",
-                  "data": {
-                    "sessionId": "a2ace204-c3a8-4b5e-8349-46ace682a11d"
-                  }
+                  "data": { "sessionId": "a2ace204-c3a8-4b5e-8349-46ace682a11d" }
                 }
               }
             },
@@ -1618,10 +1122,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01FZ9zx9bEzWVwNxzKciWNfA",
                   "toolName": "memory_read",
-                  "input": {
-                    "workspaceId": "tempest",
-                    "memoryName": "preferences"
-                  }
+                  "input": { "workspaceId": "tempest", "memoryName": "preferences" }
                 }
               }
             },
@@ -1652,10 +1153,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_0136S4kEkjhX2i7Neekh29Su",
                   "toolName": "search_gmail_messages",
-                  "input": {
-                    "query": "is:unread in:inbox",
-                    "page_size": 10
-                  }
+                  "input": { "query": "is:unread in:inbox", "page_size": 10 }
                 }
               }
             },
@@ -1667,11 +1165,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_0136S4kEkjhX2i7Neekh29Su",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -1719,11 +1213,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_01FntxfkUAjyAMLxAyNVmBjp",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -1746,12 +1236,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01NKucK9TTvBJ6ncTsS5QVyr",
                   "toolName": "modify_gmail_message_labels",
-                  "input": {
-                    "message_id": "19ddb436115bd89d",
-                    "add_label_ids": [
-                      "UNREAD"
-                    ]
-                  }
+                  "input": { "message_id": "19ddb436115bd89d", "add_label_ids": ["UNREAD"] }
                 }
               }
             },
@@ -1763,11 +1248,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_01NKucK9TTvBJ6ncTsS5QVyr",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -1897,9 +1378,7 @@
                 }
               }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "\u2705 #1 marked unread. Preference saved.\n\n```\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n[#2 of 10] Subject: [friday-platform/friday-studio] Run failed: Lint JS - main (2da49b0)\nFrom: Kenneth Kouot <notifications@github.com>\nDate: Wed, 29 Apr 2026 15:00:41 -0700\nPreview: Lint JS workflow \u2014 biome-check failed (1 annotation).\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n(A) Archive  (K) Keep  (U) Mark Unread [suggested]  (D) Delete  (S) Unsubscribe\n```\n\n\ud83d\udca1 Suggested: **U** \u2014 same pattern. Confirm or override?",
@@ -1910,15 +1389,8 @@
         {
           "id": "EYTsnmJc0EeiQFdP",
           "role": "user",
-          "metadata": {
-            "timestamp": "2026-04-29T22:05:13.955Z"
-          },
-          "parts": [
-            {
-              "type": "text",
-              "text": "Confirm"
-            }
-          ]
+          "metadata": { "timestamp": "2026-04-29T22:05:13.955Z" },
+          "parts": [{ "type": "text", "text": "Confirm" }]
         },
         {
           "id": "aeAmRA7YWQHaHb9l",
@@ -1931,16 +1403,12 @@
             "modelId": "claude-sonnet-4-6"
           },
           "parts": [
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-triage-inbox-job",
               "toolCallId": "toolu_01DgWzSasLauvtRaQynpHAzQ",
               "state": "output-available",
-              "input": {
-                "prompt": "Mark email #2 as Unread, then show email #3."
-              },
+              "input": { "prompt": "Mark email #2 as Unread, then show email #3." },
               "output": {
                 "success": true,
                 "sessionId": "542b68f2-5a4f-4083-899d-ab8d0bbf81f4",
@@ -1955,20 +1423,8 @@
                   }
                 ]
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "data-nested-chunk",
@@ -1976,9 +1432,7 @@
                 "parentToolCallId": "toolu_01DgWzSasLauvtRaQynpHAzQ",
                 "chunk": {
                   "type": "data-session-start",
-                  "data": {
-                    "sessionId": "542b68f2-5a4f-4083-899d-ab8d0bbf81f4"
-                  }
+                  "data": { "sessionId": "542b68f2-5a4f-4083-899d-ab8d0bbf81f4" }
                 }
               }
             },
@@ -2015,10 +1469,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_014BDHHjnfFQW1VBBGG7MSp5",
                   "toolName": "memory_read",
-                  "input": {
-                    "workspaceId": "tempest",
-                    "memoryName": "preferences"
-                  }
+                  "input": { "workspaceId": "tempest", "memoryName": "preferences" }
                 }
               }
             },
@@ -2049,10 +1500,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01JMnPtQbMnzMsFYtCLVy76D",
                   "toolName": "search_gmail_messages",
-                  "input": {
-                    "query": "is:unread in:inbox",
-                    "page_size": 10
-                  }
+                  "input": { "query": "is:unread in:inbox", "page_size": 10 }
                 }
               }
             },
@@ -2064,11 +1512,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_01JMnPtQbMnzMsFYtCLVy76D",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -2116,11 +1560,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_014khHdYyti5QsncVXCWvuMx",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -2143,12 +1583,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_014AY1x4P3M9H8spt4hZDXss",
                   "toolName": "modify_gmail_message_labels",
-                  "input": {
-                    "message_id": "19ddb42348465a24",
-                    "add_label_ids": [
-                      "UNREAD"
-                    ]
-                  }
+                  "input": { "message_id": "19ddb42348465a24", "add_label_ids": ["UNREAD"] }
                 }
               }
             },
@@ -2160,11 +1595,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_014AY1x4P3M9H8spt4hZDXss",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -2294,9 +1725,7 @@
                 }
               }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "\u2705 #2 done.\n\n```\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n[#3 of 10] Subject: [friday-platform/friday-studio] Run failed: Test - main (243afe1)\nFrom: Kenneth Kouot <notifications@github.com>\nDate: Wed, 29 Apr 2026 14:46:29 -0700\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n(A) Archive  (K) Keep  (U) Mark Unread [suggested]  (D) Delete  (S) Unsubscribe\n```\n\n\ud83d\udca1 Same pattern \u2014 **U**?",
@@ -2307,15 +1736,8 @@
         {
           "id": "yEibxy8y1kxzFQAm",
           "role": "user",
-          "metadata": {
-            "timestamp": "2026-04-29T22:05:53.283Z"
-          },
-          "parts": [
-            {
-              "type": "text",
-              "text": "yes, and auto U these from now on"
-            }
-          ]
+          "metadata": { "timestamp": "2026-04-29T22:05:53.283Z" },
+          "parts": [{ "type": "text", "text": "yes, and auto U these from now on" }]
         },
         {
           "id": "m8qdzRv54qFZOltU",
@@ -2328,16 +1750,12 @@
             "modelId": "claude-sonnet-4-6"
           },
           "parts": [
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-triage-inbox-job",
               "toolCallId": "toolu_01FvJ3g2B3xoViSVdtGYevui",
               "state": "output-available",
-              "input": {
-                "prompt": "Mark email #3 as Unread, then show email #4."
-              },
+              "input": { "prompt": "Mark email #3 as Unread, then show email #4." },
               "output": {
                 "success": true,
                 "sessionId": "d5a1da34-dc69-4420-84fd-d1be3b9797ed",
@@ -2352,20 +1770,8 @@
                   }
                 ]
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "data-nested-chunk",
@@ -2373,9 +1779,7 @@
                 "parentToolCallId": "toolu_01FvJ3g2B3xoViSVdtGYevui",
                 "chunk": {
                   "type": "data-session-start",
-                  "data": {
-                    "sessionId": "d5a1da34-dc69-4420-84fd-d1be3b9797ed"
-                  }
+                  "data": { "sessionId": "d5a1da34-dc69-4420-84fd-d1be3b9797ed" }
                 }
               }
             },
@@ -2412,10 +1816,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01MwXzYZvKMiDLksbZN9k7XF",
                   "toolName": "memory_read",
-                  "input": {
-                    "workspaceId": "tempest",
-                    "memoryName": "preferences"
-                  }
+                  "input": { "workspaceId": "tempest", "memoryName": "preferences" }
                 }
               }
             },
@@ -2446,10 +1847,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01GydzY2CAQyAF52hRvzxLTd",
                   "toolName": "search_gmail_messages",
-                  "input": {
-                    "query": "is:unread in:inbox",
-                    "page_size": 10
-                  }
+                  "input": { "query": "is:unread in:inbox", "page_size": 10 }
                 }
               }
             },
@@ -2461,11 +1859,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_01GydzY2CAQyAF52hRvzxLTd",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -2513,11 +1907,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_014uAQ9APYWpQSbv8HGWD8GF",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -2540,12 +1930,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_014UqBQCEwFxRaMmVenQarXt",
                   "toolName": "modify_gmail_message_labels",
-                  "input": {
-                    "message_id": "19ddb35323b6e3c3",
-                    "add_label_ids": [
-                      "UNREAD"
-                    ]
-                  }
+                  "input": { "message_id": "19ddb35323b6e3c3", "add_label_ids": ["UNREAD"] }
                 }
               }
             },
@@ -2557,11 +1942,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_014UqBQCEwFxRaMmVenQarXt",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -2691,9 +2072,7 @@
                 }
               }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "The preference was already saved \u2014 I'll make sure the autopilot handles these automatically going forward. The note in memory already covers this pattern, and the autopilot will apply it without prompting you.\n\n```\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n[#4 of 10] Subject: [friday-platform/friday-studio] Run failed: Lint JS - main (243afe1)\nFrom: Kenneth Kouot <notifications@github.com>\nDate: Wed, 29 Apr 2026 14:45:23 -0700\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n(A) Archive  (K) Keep  (U) Mark Unread [suggested]  (D) Delete  (S) Unsubscribe\n```\n\n\ud83d\udca1 **U** again?",
@@ -2704,15 +2083,8 @@
         {
           "id": "OZ2X3QsMxh6QmQPV",
           "role": "user",
-          "metadata": {
-            "timestamp": "2026-04-29T22:06:27.718Z"
-          },
-          "parts": [
-            {
-              "type": "text",
-              "text": "Oh wait, I meant mark them read and A"
-            }
-          ]
+          "metadata": { "timestamp": "2026-04-29T22:06:27.718Z" },
+          "parts": [{ "type": "text", "text": "Oh wait, I meant mark them read and A" }]
         },
         {
           "id": "OjcAFEamH2jrTCq3",
@@ -2725,9 +2097,7 @@
             "modelId": "claude-sonnet-4-6"
           },
           "parts": [
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "Got it \u2014 Archive and mark read. Updating the preference now.",
@@ -2737,9 +2107,7 @@
               "type": "tool-memory_read",
               "toolCallId": "toolu_01Av83xEi6esrescko5V2Amr",
               "state": "output-available",
-              "input": {
-                "memoryName": "preferences"
-              },
+              "input": { "memoryName": "preferences" },
               "output": {
                 "entries": [
                   {
@@ -2750,24 +2118,10 @@
                 ],
                 "count": 1
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-memory_remove",
               "toolCallId": "toolu_01MzFXfkndzRQWz7dhQiNfPY",
@@ -2776,27 +2130,11 @@
                 "memoryName": "preferences",
                 "entryId": "2bfb4341-f5c9-4846-a3db-cde1a42f3520"
               },
-              "output": {
-                "removed": true
-              },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "output": { "removed": true },
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-memory_save",
               "toolCallId": "toolu_01LvwzUnaPwBptummsBv1m9c",
@@ -2805,34 +2143,16 @@
                 "memoryName": "preferences",
                 "text": "GitHub Actions failure notifications (from notifications@github.com, subject contains \"Run failed\") \u2192 always Archive (A)"
               },
-              "output": {
-                "saved": true
-              },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "output": { "saved": true },
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "tool-triage-inbox-job",
               "toolCallId": "toolu_01HaXnCduwvXDUaYGiHicvJF",
               "state": "output-available",
-              "input": {
-                "prompt": "Archive email #4, then show email #5."
-              },
+              "input": { "prompt": "Archive email #4, then show email #5." },
               "output": {
                 "success": true,
                 "sessionId": "abe741b2-0f45-4a38-b0ae-d386fb19b688",
@@ -2847,20 +2167,8 @@
                   }
                 ]
               },
-              "callProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              },
-              "resultProviderMetadata": {
-                "anthropic": {
-                  "caller": {
-                    "type": "direct"
-                  }
-                }
-              }
+              "callProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } },
+              "resultProviderMetadata": { "anthropic": { "caller": { "type": "direct" } } }
             },
             {
               "type": "data-nested-chunk",
@@ -2868,9 +2176,7 @@
                 "parentToolCallId": "toolu_01HaXnCduwvXDUaYGiHicvJF",
                 "chunk": {
                   "type": "data-session-start",
-                  "data": {
-                    "sessionId": "abe741b2-0f45-4a38-b0ae-d386fb19b688"
-                  }
+                  "data": { "sessionId": "abe741b2-0f45-4a38-b0ae-d386fb19b688" }
                 }
               }
             },
@@ -2907,10 +2213,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_016qH8qcJrL2q9B3tcF9VaA9",
                   "toolName": "memory_read",
-                  "input": {
-                    "workspaceId": "chat_9mVCnEame6",
-                    "memoryName": "preferences"
-                  }
+                  "input": { "workspaceId": "chat_9mVCnEame6", "memoryName": "preferences" }
                 }
               }
             },
@@ -2941,10 +2244,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_01NDDddcUW4QBon5vyFso96y",
                   "toolName": "search_gmail_messages",
-                  "input": {
-                    "query": "is:unread in:inbox",
-                    "page_size": 10
-                  }
+                  "input": { "query": "is:unread in:inbox", "page_size": 10 }
                 }
               }
             },
@@ -2956,11 +2256,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_01NDDddcUW4QBon5vyFso96y",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -3008,11 +2304,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_014YfHYt4ip7Lc79y5nSJaQr",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -3035,12 +2327,7 @@
                   "type": "tool-input-available",
                   "toolCallId": "toolu_015osK4HrrZpxwYXJ3nqqBQR",
                   "toolName": "modify_gmail_message_labels",
-                  "input": {
-                    "message_id": "19ddb34303a1f964",
-                    "remove_label_ids": [
-                      "INBOX"
-                    ]
-                  }
+                  "input": { "message_id": "19ddb34303a1f964", "remove_label_ids": ["INBOX"] }
                 }
               }
             },
@@ -3052,11 +2339,7 @@
                   "type": "tool-output-available",
                   "toolCallId": "toolu_015osK4HrrZpxwYXJ3nqqBQR",
                   "output": {
-                    "_meta": {
-                      "fastmcp": {
-                        "wrap_result": true
-                      }
-                    },
+                    "_meta": { "fastmcp": { "wrap_result": true } },
                     "content": [
                       {
                         "type": "text",
@@ -3186,9 +2469,7 @@
                 }
               }
             },
-            {
-              "type": "step-start"
-            },
+            { "type": "step-start" },
             {
               "type": "text",
               "text": "Preference updated. #4 archived.\n\n```\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n[#5 of 10] Subject: [friday-platform/friday-studio] Run failed: Test - main (ff670a8)\nFrom: Kenneth Kouot <notifications@github.com>\nDate: Wed, 29 Apr 2026 14:42 PDT\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n(A) Archive [suggested]  (K) Keep  (U) Mark Unread  (D) Delete  (S) Unsubscribe\n```\n\n\ud83d\udca1 **A**?",

@@ -866,4 +866,3 @@ describe("LocalAdapter: Errors", () => {
     expect(result.error.includes("not found")).toEqual(true);
   });
 });
-

@@ -170,13 +170,13 @@ describe("formatWorkspaceSection", () => {
       communicators: {},
     } as never);
     expect(result).toContain(
-      '<communicators>\n' +
+      "<communicators>\n" +
         '<communicator kind="slack" wired="false"/>\n' +
         '<communicator kind="telegram" wired="false"/>\n' +
         '<communicator kind="discord" wired="false"/>\n' +
         '<communicator kind="teams" wired="false"/>\n' +
         '<communicator kind="whatsapp" wired="false"/>\n' +
-        '</communicators>',
+        "</communicators>",
     );
   });
 
@@ -197,10 +197,7 @@ describe("formatWorkspaceSection", () => {
     const result = formatWorkspaceSection("ws-two-wired", makeDetails(), {
       version: "1.0",
       workspace: { name: "ws-two-wired" },
-      communicators: {
-        slack: { kind: "slack" },
-        telegram: { kind: "telegram" },
-      },
+      communicators: { slack: { kind: "slack" }, telegram: { kind: "telegram" } },
     } as never);
     expect(result).toContain('<communicator kind="slack" wired="true"/>');
     expect(result).toContain('<communicator kind="telegram" wired="true"/>');

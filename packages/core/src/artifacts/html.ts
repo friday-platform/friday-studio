@@ -61,4 +61,3 @@ export function renderWorkspacePlanHTML(plan: RenderablePlan): string {
 
   return parts.join("\n");
 }
-

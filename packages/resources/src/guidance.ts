@@ -4,7 +4,6 @@ import type { ResourceEntry } from "./types.ts";
 /** Extract a single variant from the ResourceEntry discriminated union. */
 type ResourceEntryOf<T extends ResourceEntry["type"]> = Extract<ResourceEntry, { type: T }>;
 
-
 /**
  * Options for tool-aware resource guidance rendering.
  * @property availableTools - When provided, instructions are adapted to the caller's tool surface.
@@ -29,11 +28,7 @@ export function buildResourceGuidance(
     (r): r is ResourceEntryOf<"external_ref"> => r.type === "external_ref",
   );
 
-  if (
-    documents.length === 0 &&
-    files.length === 0 &&
-    externals.length === 0
-  ) {
+  if (documents.length === 0 && files.length === 0 && externals.length === 0) {
     return "";
   }
 

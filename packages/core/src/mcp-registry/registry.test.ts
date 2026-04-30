@@ -150,7 +150,9 @@ describe("mcpServersRegistry", () => {
       expect(startup!.env).not.toHaveProperty("EXTERNAL_OAUTH21_PROVIDER");
     });
 
-    it.each(googleIds)("'%s' has platformEnv with OAuth flags, stateless mode, and dummy client_id/secret", (id) => {
+    it.each(
+      googleIds,
+    )("'%s' has platformEnv with OAuth flags, stateless mode, and dummy client_id/secret", (id) => {
       const server = mcpServersRegistry.servers[id];
       if (!server) throw new Error(`missing server '${id}' in registry`);
       expect(server.platformEnv).toBeDefined();

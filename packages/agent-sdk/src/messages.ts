@@ -269,9 +269,7 @@ export type AtlasDataEvents = {
   "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
-  "integration-disconnected": z.infer<
-    (typeof AtlasDataEventSchemas)["integration-disconnected"]
-  >;
+  "integration-disconnected": z.infer<(typeof AtlasDataEventSchemas)["integration-disconnected"]>;
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
   "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;
   "inner-tool-call": z.infer<(typeof AtlasDataEventSchemas)["inner-tool-call"]>;

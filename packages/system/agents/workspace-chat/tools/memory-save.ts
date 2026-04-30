@@ -5,7 +5,11 @@ import { tool } from "ai";
 import { z } from "zod";
 
 const MemorySaveInput = z.object({
-  memoryName: z.string().describe("Memory store name — pick the store from <memory_stores> in the workspace context that best fits the content"),
+  memoryName: z
+    .string()
+    .describe(
+      "Memory store name — pick the store from <memory_stores> in the workspace context that best fits the content",
+    ),
   text: z.string().min(1),
   id: z.string().optional().describe("UUID; auto-generated if omitted"),
   metadata: z.record(z.string(), z.unknown()).optional(),

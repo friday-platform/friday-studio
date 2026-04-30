@@ -22,7 +22,11 @@ const ToolItemSchema = z.object({
 
 export interface ListMcpToolsSuccess {
   ok: true;
-  tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> | null }>;
+  tools: Array<{
+    name: string;
+    description?: string;
+    inputSchema?: Record<string, unknown> | null;
+  }>;
 }
 
 export interface ListMcpToolsError {

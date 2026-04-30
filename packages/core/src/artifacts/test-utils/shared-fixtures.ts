@@ -161,4 +161,3 @@ export async function cleanupTempFile(path: string): Promise<void> {
     // Ignore errors if file doesn't exist
   }
 }
-

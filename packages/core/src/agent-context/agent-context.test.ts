@@ -612,7 +612,9 @@ describe("buildAgentContext agent MCP config precedence", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockDispose.mockClear().mockResolvedValue(undefined);
-    mockCreateMCPTools.mockClear().mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
+    mockCreateMCPTools
+      .mockClear()
+      .mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
     mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;

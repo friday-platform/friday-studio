@@ -232,7 +232,8 @@ function buildDisconnectedEntry(
   return {
     serverId,
     provider: extractProviderFromConfig(config),
-    kind: error.status === "expired_no_refresh" ? "credential_expired" : "credential_refresh_failed",
+    kind:
+      error.status === "expired_no_refresh" ? "credential_expired" : "credential_refresh_failed",
     message: enriched.message,
   };
 }
