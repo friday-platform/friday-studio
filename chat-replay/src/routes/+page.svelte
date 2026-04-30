@@ -53,7 +53,7 @@
   let toggleVisible = $state(true);
   let toggleHideTimer: number | undefined;
   let eventDelays = $state<Record<number, number>>({});
-  let speedMultiplier = $state(1.0);
+  let speedFactor = $state(1.0);
   let useSourceTiming = $state(false);
   let mounted = $state(false);
 
@@ -81,7 +81,7 @@
     { value: "21:9", label: "21:9 — Ultra-wide" },
   ] as const;
 
-  const MULTIPLIER_PRESETS = [0.1, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0];
+  const SPEED_PRESETS = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0];
 
   const chatMainStyle = $derived(chatAspect !== "full" ? "justify-items: center; align-items: center;" : "");
   const chatPanelStyle = $derived(
@@ -412,7 +412,7 @@
   function stop() { playing = false; if (timer !== undefined) window.clearTimeout(timer); timer = undefined; }
   function effectiveDelay(index: number): number {
     const base = eventDelays[index] ?? (useSourceTiming ? naturalEventDelays[index] : undefined) ?? speedMs;
-    return Math.max(0, Math.round(base * speedMultiplier));
+    return Math.max(0, Math.round(base / speedFactor));
   }
   function scheduleNext() {
     timer = window.setTimeout(() => {
@@ -423,13 +423,17 @@
   }
   function play() { stop(); playing = true; scheduleNext(); }
   function togglePlay() { playing ? stop() : play(); }
-  function stepMultiplier(faster: boolean) {
-    const idx = MULTIPLIER_PRESETS.findIndex(p => p >= speedMultiplier);
-    const safeIdx = idx === -1 ? MULTIPLIER_PRESETS.length - 1 : idx;
-    const next = faster ? MULTIPLIER_PRESETS[safeIdx - 1] : MULTIPLIER_PRESETS[safeIdx + 1];
-    if (next !== undefined) { speedMultiplier = next; if (playing) play(); }
+  function stepSpeed(faster: boolean) {
+    const idx = SPEED_PRESETS.findIndex(p => p >= speedFactor);
+    const safeIdx = idx === -1 ? SPEED_PRESETS.length - 1 : idx;
+    const next = faster ? SPEED_PRESETS[safeIdx + 1] : SPEED_PRESETS[safeIdx - 1];
+    if (next !== undefined) { speedFactor = next; if (playing) play(); }
   }
-  function multiplierLabel(): string { return speedMultiplier === 1 ? "1×" : `${speedMultiplier < 1 ? speedMultiplier.toFixed(2).replace(/\.?0+$/, "") : speedMultiplier % 1 === 0 ? speedMultiplier.toFixed(0) : speedMultiplier.toFixed(1)}×`; }
+  function speedLabel(): string {
+    if (speedFactor % 1 === 0) return `${speedFactor}×`;
+    if (speedFactor < 1) return `${speedFactor.toFixed(2).replace(/0+$/, "")}×`;
+    return `${speedFactor.toFixed(1)}×`;
+  }
   function handleAspectPreview() {
     if (aspectPreviewTimer !== undefined) window.clearTimeout(aspectPreviewTimer);
     if (chatAspect !== "full") {
@@ -547,8 +551,8 @@
     if (event.key === " ") { event.preventDefault(); togglePlay(); }
     else if (event.key === "j") { event.preventDefault(); setIndex(currentIndex - 1); }
     else if (event.key === "k") { event.preventDefault(); setIndex(currentIndex + 1); }
-    else if (event.shiftKey && event.code === "Equal") { event.preventDefault(); stepMultiplier(true); }
-    else if (event.shiftKey && event.code === "Minus") { event.preventDefault(); stepMultiplier(false); }
+    else if (event.shiftKey && event.code === "Equal") { event.preventDefault(); stepSpeed(true); }
+    else if (event.shiftKey && event.code === "Minus") { event.preventDefault(); stepSpeed(false); }
   }
 
   const SETTINGS_KEY = "chat-replay-settings";
@@ -562,7 +566,7 @@
         piiCustomTermsText,
         chatAspect,
         speedMs,
-        speedMultiplier,
+        speedFactor,
         inspectorOpen,
         useSourceTiming,
       }));
@@ -585,7 +589,7 @@
         if (typeof s.piiCustomTermsText === "string") piiCustomTermsText = s.piiCustomTermsText;
         if (typeof s.chatAspect === "string") chatAspect = s.chatAspect;
         if (typeof s.speedMs === "number") speedMs = s.speedMs;
-        if (typeof s.speedMultiplier === "number") speedMultiplier = s.speedMultiplier;
+        if (typeof s.speedFactor === "number") speedFactor = s.speedFactor;
         if (typeof s.inspectorOpen === "boolean") inspectorOpen = s.inspectorOpen;
         if (typeof s.useSourceTiming === "boolean") useSourceTiming = s.useSourceTiming;
       }
@@ -642,11 +646,12 @@
           <span class="ctrl-pos">{events.length === 0 ? 0 : currentIndex + 1} / {events.length}</span>
         </div>
         <div class="ctrl-speed">
-          <input type="number" class="ctrl-global-input" bind:value={speedMs} min="0" max="60000" step="50" aria-label="Global delay (ms)" title="Global fallback delay in ms" oninput={() => { if (playing) play(); }} />
+          <button class="replay-btn" type="button" onclick={() => stepSpeed(false)} aria-label="Slower">−</button>
+          <span class="ctrl-speed-label">{speedLabel()}</span>
+          <button class="replay-btn" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+</button>
+          <span class="ctrl-speed-sep">·</span>
+          <input type="number" class="ctrl-global-input" bind:value={speedMs} min="0" max="60000" step="50" aria-label="Base delay (ms)" title="Base delay — 1× plays at this speed" oninput={() => { if (playing) play(); }} />
           <span class="ctrl-speed-sep">ms</span>
-          <button class="replay-btn" type="button" onclick={() => stepMultiplier(false)} aria-label="Slower">−</button>
-          <span class="ctrl-speed-label">{multiplierLabel()}</span>
-          <button class="replay-btn" type="button" onclick={() => stepMultiplier(true)} aria-label="Faster">+</button>
         </div>
         <div class="ctrl-view">
           <label class="ctrl-source-timing" title="Use actual message timestamps as delays">
