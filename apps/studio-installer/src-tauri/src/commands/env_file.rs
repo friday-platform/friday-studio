@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_yml::{Mapping, Value};
+use serde_norway::{Mapping, Value};
 
 fn env_file_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
@@ -354,7 +354,7 @@ fn friday_yml_path() -> Result<PathBuf, String> {
 }
 
 /// `version: "1.0"` is `z.literal("1.0")` in the daemon's schema —
-/// a *string*. Without explicit string construction serde_yml may
+/// a *string*. Without explicit string construction serde_norway may
 /// emit `version: 1.0` (unquoted, parsed back as float) and Zod
 /// validation would reject. Always go through this helper.
 fn version_value() -> Value {
@@ -401,7 +401,7 @@ fn read_friday_yml_or_recover(path: &Path) -> Result<Mapping, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Mapping::new()),
         Err(e) => return Err(format!("read friday.yml at {}: {e}", path.display())),
     };
-    match serde_yml::from_str::<Value>(&raw) {
+    match serde_norway::from_str::<Value>(&raw) {
         Ok(Value::Mapping(m)) => Ok(m),
         Ok(_) | Err(_) => {
             // Backup + treat as empty. We swallow the rename error
@@ -482,10 +482,10 @@ fn manage_friday_yml_at(path: &Path, provider: WizardProvider) -> Result<(), Str
         return Ok(());
     }
 
-    // Serialise + write. serde_yml's default emitter quotes strings
+    // Serialise + write. serde_norway's default emitter quotes strings
     // when needed (including `"1.0"`), so version_value() round-trips
     // as a string per the schema requirement.
-    let yaml = serde_yml::to_string(&Value::Mapping(current))
+    let yaml = serde_norway::to_string(&Value::Mapping(current))
         .map_err(|e| format!("Failed to serialise friday.yml: {e}"))?;
 
     if let Some(parent) = path.parent() {
@@ -508,7 +508,7 @@ mod friday_yml_tests {
 
     fn read_map(path: &Path) -> Mapping {
         let raw = fs::read_to_string(path).expect("read");
-        match serde_yml::from_str::<Value>(&raw).expect("parse") {
+        match serde_norway::from_str::<Value>(&raw).expect("parse") {
             Value::Mapping(m) => m,
             other => panic!("expected map, got {other:?}"),
         }
@@ -637,7 +637,7 @@ mod friday_yml_tests {
         let m = read_map(&path);
 
         // version is a STRING — the schema requires z.literal("1.0").
-        // serde_yml emitter must quote it; if we get Value::Number
+        // serde_norway emitter must quote it; if we get Value::Number
         // here the daemon would reject the file.
         assert_eq!(
             m.get(&Value::String("version".into())),

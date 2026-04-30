@@ -115,7 +115,7 @@ func TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides(t *testing.T) {
 	// Make sure the test starts from a clean slate for the keys we
 	// expect importDotEnvIntoProcessEnv to populate.
 	t.Setenv("FRIDAY_PORT_PLAYGROUND", "")
-	os.Unsetenv("FRIDAY_PORT_PLAYGROUND")
+	_ = os.Unsetenv("FRIDAY_PORT_PLAYGROUND")
 
 	importDotEnvIntoProcessEnv()
 

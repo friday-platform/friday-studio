@@ -36,9 +36,13 @@ ruzstd = "0.7"
 # YAML round-trip used by env_file.rs to manage ~/.friday/local/friday.yml
 # selectively (only the `models:` key — preserves any `server:` /
 # `tools:` / etc. the user or Settings UI authored). Mirrors the
-# daemon-side @std/yaml usage in apps/atlasd/routes/config.ts. serde_yml
-# is the actively-maintained fork of the deprecated serde_yaml.
-serde_yml = "0.0.12"
+# daemon-side @std/yaml usage in apps/atlasd/routes/config.ts.
+# serde_norway is the actively-maintained fork of the deprecated
+# serde_yaml; chosen over serde_yml after RustSec flagged serde_yml +
+# its libyml dep as unsound and unmaintained (GHSA-hhw4-xg65-fp2x +
+# GHSA-gfxp-f68g-8x78). serde_norway uses unsafe-libyaml-norway which
+# is actively maintained.
+serde_norway = "0.9"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
