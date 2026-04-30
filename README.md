@@ -145,8 +145,6 @@ apps/
 packages/             # @atlas/* libraries — core, agent-sdk, config,
                       # fsm-engine, llm, logger, mcp, memory, skills,
                       # storage, workspace, signals, …
-agents/               # Bundled Python WASM agents (planner, dispatcher,
-                      # reflector, skill-author, …)
 examples/             # Self-contained workspace.yml examples
                       # (claude-code-smoke, pr-review-github,
                       # jira-bugfix-labeled, …)

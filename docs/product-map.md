@@ -92,7 +92,7 @@ Base: `http://localhost:8080/api`
 
 - `GET /agents` — list all available agents (bundled + user-built)
 - `GET /agents/:agentId` — get agent metadata by ID
-- `POST /agents/build` — build Python WASM agent from uploaded .py files (multipart/form-data)
+- `POST /agents/register` — register a NATS-protocol agent from a local `.py` or `.ts` file
 
 ### Credentials (Link service)
 
