@@ -148,7 +148,10 @@ vi.mock("./tools/list-capabilities.ts", () => ({
   createListCapabilitiesTool: mockCreateListCapabilitiesTool,
 }));
 
-vi.mock("./tools/artifact-tools.ts", () => ({ artifactTools: {} }));
+vi.mock("./tools/artifact-tools.ts", () => ({
+  artifactTools: {},
+  createArtifactsCreateTool: vi.fn(() => ({})),
+}));
 
 vi.mock("./prompt.txt", () => ({ default: "SYSTEM_PROMPT_PLACEHOLDER" }));
 
@@ -843,9 +846,8 @@ describe("workspace-chat handler", () => {
     expect(turn1Args.tools).toHaveProperty("connect_service");
     expect(turn1Args.tools).toHaveProperty("delegate");
 
-    // Turn 1 stopWhen includes connectServiceSucceeded
-    expect(turn1Args.stopWhen).toHaveLength(2);
-    expect(turn1Args.stopWhen).toEqual([expect.any(Function), expect.any(Function)]);
+    // Turn 1 stopWhen includes step-cap, connectServiceSucceeded, connectCommunicatorSucceeded
+    expect(turn1Args.stopWhen).toHaveLength(3);
 
     // Turn 1 messages include the user query
     expect(turn1Args.messages).toEqual(

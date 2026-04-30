@@ -183,7 +183,7 @@ tools:
       timeout:
         progressTimeout: 2m
         maxTotalTimeout: 30m
-    servers:
+    servers: {}
       # `filesystem`, `time`, `github`, and the `google-*` services are
       # registered as built-ins and available to every workspace without
       # being declared here. Override an entry by id to change its config —
