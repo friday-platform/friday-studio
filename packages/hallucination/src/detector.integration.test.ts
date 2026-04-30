@@ -13,8 +13,8 @@
 
 import process from "node:process";
 import type { AgentResult } from "@atlas/agent-sdk";
-import { createPlatformModels } from "@atlas/llm";
-import { describe, expect, it } from "vitest";
+import { createPlatformModels, type PlatformModels } from "@atlas/llm";
+import { beforeAll, describe, expect, it } from "vitest";
 import { validate } from "./detector.ts";
 import { SupervisionLevel } from "./supervision-levels.ts";
 
@@ -38,8 +38,16 @@ function buildResult(overrides: Partial<Omit<SuccessResult, "ok">>): SuccessResu
 }
 
 describe.skipIf(!CAN_RUN_INTEGRATION)("validate (Real Haiku judge)", () => {
-  const platformModels = createPlatformModels(null);
-  const config = { platformModels };
+  // Construct lazily — `createPlatformModels` validates env at call time and
+  // throws when ANTHROPIC_API_KEY is missing. Calling it at describe-body scope
+  // would crash file load even when describe.skipIf would skip the cases.
+  let platformModels: PlatformModels;
+  let config: { platformModels: PlatformModels };
+
+  beforeAll(() => {
+    platformModels = createPlatformModels(null);
+    config = { platformModels };
+  });
 
   it("well-sourced output does not fail (pass or uncertain)", { timeout: 20_000 }, async () => {
     const result = buildResult({

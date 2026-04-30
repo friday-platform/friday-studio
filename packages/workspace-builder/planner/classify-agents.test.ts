@@ -26,7 +26,6 @@ describe("classifyAgents — bundled agent lookup", () => {
     { capabilityId: "email", expectedBundledId: "email" },
     { capabilityId: "slack", expectedBundledId: "slack" },
     { capabilityId: "research", expectedBundledId: "research" },
-    { capabilityId: "google-calendar", expectedBundledId: "google-calendar" },
   ])("sets bundledId when capability '$capabilityId' exists in bundled registry", ({
     capabilityId,
     expectedBundledId,

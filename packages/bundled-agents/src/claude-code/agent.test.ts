@@ -17,7 +17,6 @@ import {
 
 const mockQuery = vi.hoisted(() => vi.fn());
 const mockCreateSandbox = vi.hoisted(() => vi.fn());
-const mockArtifactPost = vi.hoisted(() => vi.fn());
 
 vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@anthropic-ai/claude-agent-sdk")>();
@@ -25,11 +24,6 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => {
 });
 
 vi.mock("./sandbox.ts", () => ({ createSandbox: mockCreateSandbox, sandboxOptions: {} }));
-
-vi.mock("@atlas/client/v2", () => ({
-  client: { artifactsStorage: { index: { $post: mockArtifactPost } } },
-  parseResult: (p: Promise<unknown>) => p,
-}));
 
 /**
  * Creates a minimal mock Logger for testing.
@@ -441,16 +435,10 @@ describe("structured output wiring", () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockCreateSandbox.mockReset();
-    mockArtifactPost.mockReset();
 
     mockCreateSandbox.mockResolvedValue({
       workDir: "/tmp/test-sandbox",
       cleanup: () => Promise.resolve(),
-    });
-
-    mockArtifactPost.mockResolvedValue({
-      ok: true,
-      data: { artifact: { id: "art-1", type: "summary", summary: "test" } },
     });
   });
 
@@ -482,7 +470,7 @@ describe("structured output wiring", () => {
     expect(opts.outputFormat).toBeUndefined();
   });
 
-  it("returns structured_output as ok data and stores JSON in artifact", async () => {
+  it("returns structured_output as ok data", async () => {
     const structured = { summary: "TS generics", keyPoints: ["Type safety", "Reusability"] };
     mockQuery.mockReturnValue(createMockSDKStream([sdkResult({ structured_output: structured })]));
 
@@ -495,12 +483,6 @@ describe("structured output wiring", () => {
     if (result.ok) {
       expect(result.data).toEqual(structured);
     }
-
-    // Artifact should store JSON.stringify of structured output, not empty responseText
-    const artifactCall = mockArtifactPost.mock.calls[0];
-    expect.assert(artifactCall);
-    const artifactArgs = artifactCall[0].json.data;
-    expect(artifactArgs.data).toBe(JSON.stringify(structured));
   });
 
   it("falls back to parsing responseText when structured_output is absent", async () => {

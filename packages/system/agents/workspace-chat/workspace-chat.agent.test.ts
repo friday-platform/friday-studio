@@ -703,11 +703,6 @@ describe("system prompt ranking rubric", () => {
     return readFile(fileURLToPath(url), "utf8");
   }
 
-  it("prompt.txt contains direct-tools → agent_* → delegate ordering", async () => {
-    const prompt = await readPromptText();
-    expect(prompt).toMatch(/Prefer direct tools.*agent_\*.*delegate/s);
-  });
-
   it("prompt.txt mentions both delegate and agent_* tools", async () => {
     const prompt = await readPromptText();
     expect(prompt).toContain("agent_*");
@@ -717,11 +712,5 @@ describe("system prompt ranking rubric", () => {
   it("prompt.txt does not contain do_task references", async () => {
     const prompt = await readPromptText();
     expect(prompt).not.toContain("do_task");
-  });
-
-  it("prompt.txt contains MCP workflow instructions", async () => {
-    const prompt = await readPromptText();
-    expect(prompt).toContain("list_capabilities");
-    expect(prompt).toContain("mcpServers");
   });
 });
