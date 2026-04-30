@@ -271,3 +271,39 @@ func TestCommonServiceEnv_EmitsFridayHome(t *testing.T) {
 		}
 	}
 }
+
+// TestCommonServiceEnv_EmitsFridayConfigPath guards the wizard ↔
+// daemon contract for friday.yml lookup. atlas-daemon.ts reads
+// `FRIDAY_CONFIG_PATH ?? process.cwd()` to find friday.yml. Under the
+// launcher, cwd is whatever process-compose inherits (typically `/`
+// on macOS), so without an explicit pin the daemon would never find
+// the wizard's friday.yml at ~/.friday/local/friday.yml. This test
+// asserts every supervised service receives the pinned value;
+// per-service propagation matters because a future refactor that
+// swaps one service's `env: commonServiceEnv()` to a custom slice
+// would silently drop the var for that service.
+func TestCommonServiceEnv_EmitsFridayConfigPath(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	want := "FRIDAY_CONFIG_PATH=" + filepath.Join(tmpHome, ".friday", "local")
+
+	specs := supervisedProcesses("/tmp/bin")
+	required := []string{"friday", "link", "webhook-tunnel", "playground"}
+	for _, name := range required {
+		var found *processSpec
+		for i := range specs {
+			if specs[i].name == name {
+				found = &specs[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatalf("service %q missing from supervisedProcesses", name)
+		}
+		if !slices.Contains(found.env, want) {
+			t.Errorf("service %q env missing %q\ngot:\n%s",
+				name, want, strings.Join(found.env, "\n"))
+		}
+	}
+}

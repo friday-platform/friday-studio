@@ -60,6 +60,14 @@ func commonServiceEnv() []string {
 	// the legacy ~/.atlas fallback while the daemon writes to
 	// ~/.friday/local — homes diverge silently.
 	env = append(env, "FRIDAY_HOME="+friendlyHome())
+	// Pin the daemon's friday.yml search dir to the launcher-owned home.
+	// atlas-daemon.ts reads `FRIDAY_CONFIG_PATH ?? process.cwd()`; under
+	// the launcher cwd is whatever process-compose inherits (typically
+	// `/` on macOS — no WorkingDir on the supervised ProcessConfig). The
+	// installer wizard writes ~/.friday/local/friday.yml on non-Anthropic
+	// installs; without this pin the daemon would never find that file
+	// and would crash at boot trying to resolve Anthropic credentials.
+	env = append(env, "FRIDAY_CONFIG_PATH="+friendlyHome())
 	return env
 }
 

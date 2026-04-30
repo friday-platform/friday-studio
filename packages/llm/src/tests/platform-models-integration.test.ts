@@ -136,3 +136,79 @@ models:
     expect(() => createPlatformModels(config)).toThrow(PlatformModelsConfigError);
   });
 });
+
+/**
+ * Fixtures verifying the wizard's per-provider friday.yml emissions land in a
+ * usable PlatformModels resolver. The YAML strings here are the exact bytes
+ * `apps/studio-installer/src-tauri/src/commands/env_file.rs::manage_friday_yml`
+ * writes for each non-Anthropic provider — keep in sync with `wizard_models_for`.
+ */
+describe("wizard friday.yml fixtures resolve through pipeline", () => {
+  let workspaceDir: string | null = null;
+
+  afterEach(async () => {
+    if (workspaceDir) {
+      await rm(workspaceDir, { recursive: true, force: true });
+      workspaceDir = null;
+    }
+  });
+
+  const WIZARD_FIXTURES = [
+    {
+      provider: "OpenAI",
+      envVar: "OPENAI_API_KEY",
+      yaml: `version: "1.0"
+workspace:
+  name: atlas-platform
+models:
+  labels: openai:gpt-5.4-nano
+  classifier: openai:gpt-5.4-mini
+  planner: openai:gpt-5.5
+  conversational: openai:gpt-5.5
+`,
+    },
+    {
+      provider: "Google",
+      envVar: "GEMINI_API_KEY",
+      yaml: `version: "1.0"
+workspace:
+  name: atlas-platform
+models:
+  labels: google:gemini-3-flash
+  classifier: google:gemini-3-flash
+  planner: google:gemini-3.1-pro-preview
+  conversational: google:gemini-3.1-pro-preview
+`,
+    },
+    {
+      provider: "Groq",
+      envVar: "GROQ_API_KEY",
+      yaml: `version: "1.0"
+workspace:
+  name: atlas-platform
+models:
+  labels: groq:openai/gpt-oss-20b
+  classifier: groq:openai/gpt-oss-20b
+  planner: groq:openai/gpt-oss-120b
+  conversational: groq:openai/gpt-oss-120b
+`,
+    },
+  ] as const;
+
+  for (const fixture of WIZARD_FIXTURES) {
+    it(`${fixture.provider}: wizard YAML resolves all four roles with only ${fixture.envVar}`, async () => {
+      process.env[fixture.envVar] = `test-${fixture.envVar.toLowerCase()}`;
+      workspaceDir = await makeWorkspaceDir(fixture.yaml);
+
+      const source = new FilesystemAtlasConfigSource(workspaceDir);
+      const config = await source.load();
+      expect(config).not.toBeNull();
+
+      const models = createPlatformModels(config);
+      expect(models.get("labels")).toBeDefined();
+      expect(models.get("classifier")).toBeDefined();
+      expect(models.get("planner")).toBeDefined();
+      expect(models.get("conversational")).toBeDefined();
+    });
+  }
+});

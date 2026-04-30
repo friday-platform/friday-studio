@@ -33,6 +33,12 @@ zip = "0.6"
 # pain. The studio bundle ships as .tar.zst (tar+zstd) for ~10–15% size
 # win over tar.gz; ruzstd handles the decompression at install time.
 ruzstd = "0.7"
+# YAML round-trip used by env_file.rs to manage ~/.friday/local/friday.yml
+# selectively (only the `models:` key — preserves any `server:` /
+# `tools:` / etc. the user or Settings UI authored). Mirrors the
+# daemon-side @std/yaml usage in apps/atlasd/routes/config.ts. serde_yml
+# is the actively-maintained fork of the deprecated serde_yaml.
+serde_yml = "0.0.12"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
