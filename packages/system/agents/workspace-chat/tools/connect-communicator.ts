@@ -24,7 +24,7 @@ const KIND_DISPLAY_NAMES: Record<CommunicatorKind, string> = {
 export function createConnectCommunicatorTool() {
   return tool({
     description:
-      "Wire an external chat platform (Slack, Telegram, Discord, Teams, WhatsApp) as a surface for this conversation, so the user can continue chatting with Friday from there.",
+      "Wire an *inbound chat surface* — Slack, Telegram, Discord, Microsoft Teams, or WhatsApp — so the user can type to Friday from that client and Friday's replies arrive there. Use ONLY when the user wants to reach Friday from one of these five platforms. Do NOT use for OAuth, credentials, Gmail, email, SMS, calendars, file storage, or any service Friday calls on the user's behalf — those go through the service-connection flow (`connect_service` / `enable_mcp_server` / `delegate`).",
     inputSchema: z.object({
       kind: CommunicatorKindSchema.describe("Chat platform to wire as a communicator surface"),
     }),
