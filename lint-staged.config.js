@@ -68,6 +68,7 @@ export default {
       "/apps/atlas-auth-ui/src/",
       "/packages/ui/src/",
       "/tools/agent-playground/src/",
+      "/tools/chat-replay/",
       "/deprecated/",
     ];
     const filtered = files.filter(

@@ -23,6 +23,7 @@
     "tools/agent-playground/src/lib/queries/**",
     "tools/agent-playground/src/lib/stores/**",
     "tools/agent-playground/src/lib/utils/markdown.ts",
+    "tools/chat-replay",
     "opensrc",
     "types"
   ],

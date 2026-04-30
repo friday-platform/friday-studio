@@ -18,6 +18,7 @@
       "!apps/web-client",
       "!packages/ui",
       "!tools/agent-playground",
+      "!tools/chat-replay",
       "!opensrc",
       "!.claude"
     ]

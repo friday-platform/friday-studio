@@ -66,9 +66,6 @@ lgtm/
 build/
 
 # Go binaries
-apps/bounce/bounce
-apps/atlas-operator/bin/
-apps/atlas-operator/atlas-manager
 *.test
 
 # Go coverage
@@ -82,14 +79,8 @@ test-workspace-watcher*
 **/snapshots/
 
 # Web Client Output
-apps/web-client/.output
-apps/web-client/.vercel
-apps/web-client/.netlify
-apps/web-client/.wrangler
-apps/web-client/.svelte-kit
 chat-replay/.svelte-kit
 chat-replay/chats.snapshot.json
-apps/web-client/build
 
 # Vite
 vite.config.js.timestamp-*
@@ -98,34 +89,13 @@ vite.config.ts.timestamp-*
 dist/
 .playwright-mcp/
 
-# Slack cache files
-.channels_cache_v2.json
-.users_cache.json
-/bounce
-/bounceadmin
-
 # Temp files
 temp/
 tmp/
 .beads/
-apps/signal-gateway/signal-gateway
-apps/gateway/gateway
-gateway
 
 # bv (beads viewer) local config and caches
 .bv/
-
-# cypheradmin binary
-apps/cypher/cypheradmin/cypheradmin
-
-# bounceadmin binary
-apps/bounce/bounceadmin/bounceadmin
-atlas-otel-collector
-
-# Ralph coverage progress
-test-coverage-progress.txt
-scripts/ralph/progress.txt
-scripts/ralph/PRD.json
 
 # opensrc - source code for packages
 opensrc/
