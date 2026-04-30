@@ -51,6 +51,7 @@
   let timer: number | undefined = $state();
   let piiEnabled = $state(false);
   let piiCategories = $state({ email: true, phone: true, ip: true, uuid: true });
+  let piiCustomTermsText = $state("");
   let chatAspect = $state("full");
 
   const ASPECT_OPTIONS = [
@@ -115,6 +116,15 @@
     return `${hex(h, 8)}-${hex(h >> 4, 4)}-4${hex(h >> 8, 3)}-${["8", "9", "a", "b"][h & 3]}${hex(h >> 12, 3)}-${hex(h, 12)}`;
   }
 
+  function fakeName(original: string): string {
+    const h = stableHash(original.toLowerCase());
+    return `${FAKE_FIRST[h % FAKE_FIRST.length]} ${FAKE_LAST[(h >> 4) % FAKE_LAST.length]}`;
+  }
+
+  function parsedCustomTerms(): string[] {
+    return piiCustomTermsText.split(/[\n,]+/).map(t => t.trim()).filter(t => t.length > 0);
+  }
+
   function filterText(text: string): string {
     if (!piiEnabled) return text;
     let s = text;
@@ -122,6 +132,9 @@
     if (piiCategories.email) s = s.replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, fakeEmail);
     if (piiCategories.ip) s = s.replace(/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, fakeIp);
     if (piiCategories.phone) s = s.replace(/(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/g, fakePhone);
+    for (const term of parsedCustomTerms()) {
+      s = s.replace(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), fakeName);
+    }
     return s;
   }
 
@@ -502,6 +515,10 @@
           <label><input type="checkbox" bind:checked={piiCategories.phone} /> Phones</label>
           <label><input type="checkbox" bind:checked={piiCategories.ip} /> IPs</label>
           <label><input type="checkbox" bind:checked={piiCategories.uuid} /> UUIDs</label>
+          <label class="pii-terms-label">
+            Names / custom terms
+            <textarea class="pii-terms" bind:value={piiCustomTermsText} placeholder="Kenneth Kouot, Acme Corp&#10;(one per line or comma-separated)"></textarea>
+          </label>
         {/if}
       </section>
 

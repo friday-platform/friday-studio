@@ -191,6 +191,24 @@ button {
   font-weight: var(--font-weight-6);
 }
 
+.pii-terms-label {
+  align-items: start;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.pii-terms {
+  background: var(--surface-raised);
+  border: 1px solid var(--color-border-1);
+  border-radius: var(--radius-4);
+  color: var(--text);
+  font: var(--font-size-1) / 1.4 var(--font-mono);
+  min-block-size: 4rem;
+  min-inline-size: 16rem;
+  padding: var(--size-1-5) var(--size-2);
+  resize: vertical;
+}
+
 .replay-main {
   display: grid;
   grid-template-rows: 100dvh;
