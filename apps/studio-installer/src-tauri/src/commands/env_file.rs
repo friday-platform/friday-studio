@@ -134,16 +134,49 @@ pub fn write_env_file(
     // would (1) ship a known token in clear in source and (2) skip the
     // daemon's richer payload (iss / email / user_metadata) for no
     // benefit — the signature isn't verified in local mode anyway.
+    // Friday Studio reserves its own non-default port range so a user
+    // running another local Friday instance, a stock atlasd from source,
+    // or another tool on the conventional 5200/8080 ports doesn't clash
+    // with the installed launcher. Coordinated set the wizard ALWAYS
+    // writes on every install (overwrite semantics — see below):
+    //
+    //   FRIDAY_PORT_FRIDAY            18080  ← daemon (was 8080)
+    //   FRIDAY_PORT_LINK              13100  ← link (was 3100)
+    //   FRIDAY_PORT_WEBHOOK_TUNNEL    19090  ← tunnel (was 9090)
+    //   FRIDAY_PORT_PLAYGROUND        15200  ← studio UI (was 5200)
+    //
+    // The launcher imports ~/.friday/local/.env into its own process env
+    // (tools/friday-launcher/main.go's importDotEnvIntoProcessEnv), so
+    // portOverride() picks up these values when supervisedProcesses()
+    // builds each spec. The matching EXTERNAL_*_URL / FRIDAYD_URL values
+    // below ensure the playground UI's window.__FRIDAY_CONFIG__ points
+    // at the moved daemon + tunnel — auto-derive isn't possible because
+    // the URLs may also include user-controlled hostnames or schemes
+    // (reverse proxies, future cloud mode).
+    //
+    // OVERWRITE semantics: pre-Stack-3 builds wrote these values only
+    // when the key was missing, so users would silently get whatever
+    // was in .env from a previous version. That left installs running
+    // on the legacy 8080/5200 ports even after a fresh install — the
+    // exact bug the user hit. Always-overwrite means the installer is
+    // the source of truth for port configuration; users who genuinely
+    // want different ports can edit .env after install (the launcher
+    // re-reads it on every restart).
     let platform_vars = [
         ("FRIDAY_LOCAL_ONLY", "true"),
         ("LINK_DEV_MODE", "true"),
-        ("FRIDAYD_URL", "http://localhost:8080"),
-        ("EXTERNAL_DAEMON_URL", "http://localhost:8080"),
-        ("EXTERNAL_TUNNEL_URL", "http://localhost:9090"),
+        ("FRIDAY_PORT_FRIDAY", "18080"),
+        ("FRIDAY_PORT_LINK", "13100"),
+        ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090"),
+        ("FRIDAY_PORT_PLAYGROUND", "15200"),
+        ("FRIDAYD_URL", "http://localhost:18080"),
+        ("EXTERNAL_DAEMON_URL", "http://localhost:18080"),
+        ("EXTERNAL_TUNNEL_URL", "http://localhost:19090"),
     ];
     for (k, v) in platform_vars {
-        if !existing_keys.contains_key(k) {
-            lines.push((Some(k.to_string()), v.to_string()));
+        match existing_keys.get(k) {
+            Some(&i) => lines[i] = (Some(k.to_string()), v.to_string()),
+            None => lines.push((Some(k.to_string()), v.to_string())),
         }
     }
 
