@@ -208,14 +208,15 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         'Use when the work is open-ended ("figure out what to do") and no bundled agent fits.\n' +
         '- `type: "atlas"` — bundled platform agent (web, email, slack, gh, etc.). Shape: ' +
         "`{ type, agent, description, prompt, config?, env? }`. " +
-        "Does not accept a `tools` array — the bundled agent is a self-contained black box. " +
-        'If you need to call MCP tools, use `type: "llm"`. ' +
-        "Discover available `agent` ids by calling `list_capabilities` first. " +
-        "The `prompt` is task-specific context layered on the agent's bundled behavior — " +
-        "describe the user's intent, not the mechanics. " +
-        "Use when a bundled agent fits the task domain — this should be your default for " +
-        "web scraping, email sending, Slack messaging, GitHub ops, image generation, " +
-        "data analysis, and similar.\n" +
+        "Does not accept a `tools` array — the bundled agent is a self-contained black box and " +
+        "does NOT invoke MCP tools. Each atlas agent is scope-limited (e.g. the bundled `email` " +
+        "agent composes and sends; it does NOT read inboxes or modify message state). " +
+        "Before picking `type: atlas`, call `list_capabilities` and verify the agent's " +
+        "`constraints` field covers the user's intent end-to-end. If the user's task crosses " +
+        "a constraint — mutating state the agent only reads, needing a specific MCP tool, or " +
+        'operating on a provider the agent does not ship support for — use `type: "llm"` ' +
+        "with the right MCP server enabled instead. The `prompt` is task-specific context " +
+        "layered on the agent's bundled behavior — describe the user's intent, not the mechanics.\n" +
         '- `type: "user"` — registered Python/TS SDK code agent. Shape: ' +
         "`{ type, agent, prompt?, env? }`. " +
         "Use when the work is mechanical (parsing, transforming, deterministic routing) " +
