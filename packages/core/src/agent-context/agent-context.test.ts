@@ -17,13 +17,14 @@ import { packSkillArchive, SkillStorage } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Import LocalSkillAdapter directly from file since it's not exported from the package
 import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";
-import { LinkCredentialNotFoundError } from "../mcp-registry/credential-resolver.ts";
 import { clearMountContextRegistry, setMountContext } from "../mount-context-registry.ts";
 import { createAgentContextBuilder } from "./index.ts";
 
-// Mock createMCPTools — default returns empty tools with noop dispose
+// Mock createMCPTools — default returns empty tools, no disconnected, noop dispose
 const mockDispose = vi.fn().mockResolvedValue(undefined);
-const mockCreateMCPTools = vi.fn().mockResolvedValue({ tools: {}, dispose: mockDispose });
+const mockCreateMCPTools = vi
+  .fn()
+  .mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
 
 vi.mock("@atlas/mcp", () => ({
   createMCPTools: (...args: unknown[]) => mockCreateMCPTools(...args),
@@ -84,7 +85,7 @@ describe("buildAgentContext skill injection", () => {
     vi.restoreAllMocks();
     mockWarn.mockClear();
     mockDispose.mockResolvedValue(undefined);
-    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
     mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     // Create temp database for skills
@@ -277,6 +278,7 @@ describe("buildAgentContext skill injection", () => {
     mockCreateMCPTools.mockResolvedValue({
       tools: { load_skill: unifiedLoadSkillTool },
       dispose: mockDispose,
+      disconnected: [],
     });
 
     const buildAgentContext = createAgentContextBuilder({
@@ -505,7 +507,7 @@ describe("buildAgentContext credential error propagation", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockDispose.mockResolvedValue(undefined);
-    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
     mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;
@@ -517,23 +519,72 @@ describe("buildAgentContext credential error propagation", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("re-throws when createMCPTools rejects with LinkCredentialNotFoundError", async () => {
-    // Simulate the cause-wrapped shape that production emits:
-    // enriched LinkCredentialNotFoundError wraps the original as .cause
-    const inner = new LinkCredentialNotFoundError("cred_deleted");
-    const credError = new LinkCredentialNotFoundError(inner.credentialId, "some-server");
-    credError.cause = inner;
-
-    mockCreateMCPTools.mockRejectedValue(credError);
+  it("surfaces disconnected integrations from createMCPTools instead of throwing", async () => {
+    // createMCPTools now skips servers with dead credentials and returns them
+    // in `disconnected` rather than throwing. The session continues running
+    // with whatever tools loaded successfully.
+    mockCreateMCPTools.mockResolvedValue({
+      tools: {},
+      dispose: mockDispose,
+      disconnected: [
+        {
+          serverId: "google-calendar",
+          provider: "google-calendar",
+          kind: "credential_refresh_failed",
+          message:
+            "The credential for 'google-calendar' could not be refreshed. Reconnect the integration to continue.",
+        },
+      ],
+    });
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
       platformModels: fakePlatformModels,
     });
 
-    await expect(
-      buildAgentContext(createTestAgent(), createTestSessionData("ws-cred-fail"), "test"),
-    ).rejects.toThrow(credError);
+    const result = await buildAgentContext(
+      createTestAgent(),
+      createTestSessionData("ws-cred-fail"),
+      "test",
+    );
+
+    expect(result.disconnectedIntegrations).toHaveLength(1);
+    expect(result.disconnectedIntegrations[0]).toMatchObject({
+      serverId: "google-calendar",
+      kind: "credential_refresh_failed",
+    });
+    expect(Object.keys(result.context.tools)).toHaveLength(0);
+  });
+
+  it("returns partial tools and disconnected list when one of multiple servers is broken", async () => {
+    mockCreateMCPTools.mockResolvedValue({
+      tools: { healthy_tool: { description: "healthy" } as never },
+      dispose: mockDispose,
+      disconnected: [
+        {
+          serverId: "google-calendar",
+          provider: "google-calendar",
+          kind: "credential_expired",
+          message:
+            "The credential for 'google-calendar' has expired. Reconnect the integration to continue.",
+        },
+      ],
+    });
+
+    const buildAgentContext = createAgentContextBuilder({
+      logger: mockLogger,
+      platformModels: fakePlatformModels,
+    });
+
+    const { context, disconnectedIntegrations } = await buildAgentContext(
+      createTestAgent(),
+      createTestSessionData("ws-partial"),
+      "test",
+    );
+
+    expect(Object.keys(context.tools)).toContain("healthy_tool");
+    expect(disconnectedIntegrations).toHaveLength(1);
+    expect(disconnectedIntegrations[0].kind).toBe("credential_expired");
   });
 
   it("swallows non-credential errors and returns empty tools", async () => {
@@ -544,13 +595,14 @@ describe("buildAgentContext credential error propagation", () => {
       platformModels: fakePlatformModels,
     });
 
-    const { context } = await buildAgentContext(
+    const { context, disconnectedIntegrations } = await buildAgentContext(
       createTestAgent(),
       createTestSessionData("ws-generic-fail"),
       "test",
     );
 
     expect(Object.keys(context.tools)).toHaveLength(0);
+    expect(disconnectedIntegrations).toHaveLength(0);
   });
 });
 
@@ -560,7 +612,7 @@ describe("buildAgentContext agent MCP config precedence", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockDispose.mockClear().mockResolvedValue(undefined);
-    mockCreateMCPTools.mockClear().mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockCreateMCPTools.mockClear().mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
     mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;
@@ -628,7 +680,7 @@ describe("buildAgentContext MCP dispose lifecycle", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mockDispose.mockResolvedValue(undefined);
-    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
     mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;
@@ -680,7 +732,7 @@ describe("buildAgentContext memory mount resolution", () => {
     vi.restoreAllMocks();
     mockWarn.mockClear();
     mockDispose.mockResolvedValue(undefined);
-    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose });
+    mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
     mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
 
     originalFetch = globalThis.fetch;

@@ -432,6 +432,24 @@
             </div>
           {/if}
 
+          {#if message.disconnectedIntegrations && message.disconnectedIntegrations.length > 0}
+            <!-- Non-fatal info chip: an MCP integration's credential is dead so
+                 its tools were skipped this session. The session still ran;
+                 the user just needs to reconnect the integration to use those
+                 tools again. -->
+            <div class="message-notice" role="status">
+              <span class="message-notice-icon" aria-hidden="true">⚠</span>
+              <div class="message-notice-body">
+                {#each message.disconnectedIntegrations as integration (integration.serverId)}
+                  <div class="message-notice-row">
+                    <strong>{integration.provider ?? integration.serverId}</strong>
+                    is disconnected — reconnect in Settings → Connections to use those tools.
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
           <!-- Per-message overflow menu. Holds the timestamp today; later
                actions (branch, read aloud, copy, etc.) hang off the same
                Content. User/assistant only — system messages stay quiet. -->
@@ -613,6 +631,32 @@
     opacity: 0.85;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+
+  .message-notice {
+    align-items: flex-start;
+    background-color: light-dark(#fffbeb, color-mix(in srgb, #d97706, black 70%));
+    border: 1px solid light-dark(#fde68a, color-mix(in srgb, #d97706, black 40%));
+    border-radius: var(--radius-3);
+    color: light-dark(#92400e, #fde68a);
+    display: flex;
+    font-size: var(--font-size-2);
+    gap: var(--size-2);
+    line-height: 1.5;
+    padding: var(--size-2-5) var(--size-3);
+  }
+  .message-notice-icon {
+    flex-shrink: 0;
+    font-size: 1.1em;
+  }
+  .message-notice-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+  }
+  .message-notice-row {
+    overflow-wrap: anywhere;
   }
 
   .message-content {

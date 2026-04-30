@@ -134,8 +134,14 @@ describe("createMCPTools", () => {
     expect((error as Error).message).toContain("spawn failed");
   });
 
-  it("re-throws LinkCredentialNotFoundError immediately", async () => {
-    mockResolveEnvValues.mockRejectedValue(new LinkCredentialNotFoundError("cred_123"));
+  it("skips server with LinkCredentialNotFoundError and continues", async () => {
+    mockResolveEnvValues.mockRejectedValueOnce(new LinkCredentialNotFoundError("cred_123"));
+
+    // Healthy second server still connects and contributes its tool
+    mockCreateMCPClient.mockResolvedValueOnce({
+      tools: vi.fn().mockResolvedValue({ "other-tool": { description: "ok" } }),
+      close: vi.fn().mockResolvedValue(undefined),
+    });
 
     const configs: Record<string, MCPServerConfig> = {
       "needs-cred": {
@@ -145,43 +151,60 @@ describe("createMCPTools", () => {
       "other-server": { transport: { type: "stdio", command: "echo", args: [] } },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(LinkCredentialNotFoundError);
-    // Should NOT have tried the second server
-    expect(mockCreateMCPClient).not.toHaveBeenCalled();
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.tools).toHaveProperty("other-tool");
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0]).toMatchObject({
+      serverId: "needs-cred",
+      kind: "credential_not_found",
+    });
+    // Only the healthy server should have connected
+    expect(mockCreateMCPClient).toHaveBeenCalledTimes(1);
   });
 
-  it("re-throws NoDefaultCredentialError immediately", async () => {
-    mockResolveEnvValues.mockRejectedValue(new NoDefaultCredentialError("github"));
+  it("skips server with NoDefaultCredentialError and records provider", async () => {
+    mockResolveEnvValues.mockRejectedValueOnce(new NoDefaultCredentialError("github"));
 
     const configs: Record<string, MCPServerConfig> = {
       "needs-cred": {
         transport: { type: "stdio", command: "echo", args: [] },
         env: { TOKEN: { from: "link" as const, id: "cred_123", key: "token" } },
       },
-      "other-server": { transport: { type: "stdio", command: "echo", args: [] } },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(NoDefaultCredentialError);
-    // Should NOT have tried the second server
-    expect(mockCreateMCPClient).not.toHaveBeenCalled();
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(Object.keys(result.tools)).toHaveLength(0);
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0]).toMatchObject({
+      serverId: "needs-cred",
+      provider: "github",
+      kind: "no_default_credential",
+    });
   });
 
-  it("re-throws LinkCredentialExpiredError immediately", async () => {
-    mockResolveEnvValues.mockRejectedValue(
-      new LinkCredentialExpiredError("cred_456", "expired_no_refresh"),
-    );
+  it("skips server with LinkCredentialExpiredError and classifies refresh kind", async () => {
+    mockResolveEnvValues
+      .mockRejectedValueOnce(new LinkCredentialExpiredError("cred_456", "refresh_failed"))
+      .mockRejectedValueOnce(new LinkCredentialExpiredError("cred_789", "expired_no_refresh"));
 
     const configs: Record<string, MCPServerConfig> = {
-      "expired-cred": {
+      "refresh-failed": {
         transport: { type: "stdio", command: "echo", args: [] },
         env: { TOKEN: { from: "link" as const, id: "cred_456", key: "token" } },
       },
+      "expired-no-refresh": {
+        transport: { type: "stdio", command: "echo", args: [] },
+        env: { TOKEN: { from: "link" as const, id: "cred_789", key: "token" } },
+      },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(LinkCredentialExpiredError);
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.disconnected).toHaveLength(2);
+    expect(result.disconnected[0].kind).toBe("credential_refresh_failed");
+    expect(result.disconnected[1].kind).toBe("credential_expired");
   });
 
   it("applies allow filter to server tools", async () => {
@@ -317,7 +340,7 @@ describe("createMCPTools", () => {
     expect(closeB).toHaveBeenCalledTimes(1);
   });
 
-  it("enriches LinkCredentialNotFoundError with server name", async () => {
+  it("disconnected entry message names the server when error lacked it", async () => {
     mockResolveEnvValues.mockRejectedValue(new LinkCredentialNotFoundError("cred_123"));
 
     const configs: Record<string, MCPServerConfig> = {
@@ -327,14 +350,14 @@ describe("createMCPTools", () => {
       },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(LinkCredentialNotFoundError);
-    expect.assert(error instanceof LinkCredentialNotFoundError);
-    expect(error.message).toContain("my-slack-server");
-    expect(error.credentialId).toBe("cred_123");
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0].serverId).toBe("my-slack-server");
+    expect(result.disconnected[0].message).toContain("my-slack-server");
   });
 
-  it("enriches LinkCredentialExpiredError with server name", async () => {
+  it("disconnected entry surfaces the LinkCredentialExpired refresh status", async () => {
     mockResolveEnvValues.mockRejectedValue(
       new LinkCredentialExpiredError("cred_456", "refresh_failed"),
     );
@@ -346,12 +369,14 @@ describe("createMCPTools", () => {
       },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(LinkCredentialExpiredError);
-    expect.assert(error instanceof LinkCredentialExpiredError);
-    expect(error.message).toContain("my-github-server");
-    expect(error.credentialId).toBe("cred_456");
-    expect(error.status).toBe("refresh_failed");
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0]).toMatchObject({
+      serverId: "my-github-server",
+      kind: "credential_refresh_failed",
+    });
+    expect(result.disconnected[0].message).toContain("my-github-server");
   });
 
   it("retries stdio connection that fails then succeeds", async () => {
@@ -436,7 +461,7 @@ describe("createMCPTools", () => {
     expect(failedClose).toHaveBeenCalledTimes(1);
   });
 
-  it("cleans up already-connected clients when credential error is thrown", async () => {
+  it("keeps already-connected clients alive when a later server has a credential error", async () => {
     const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
     // Server A connects successfully
@@ -446,7 +471,6 @@ describe("createMCPTools", () => {
     });
 
     // Server B has a credential error during env resolution
-    // (Server A has no env, so resolveEnvValues is only called for server B)
     mockResolveEnvValues.mockRejectedValueOnce(new LinkCredentialNotFoundError("cred_missing"));
 
     const configs: Record<string, MCPServerConfig> = {
@@ -457,9 +481,14 @@ describe("createMCPTools", () => {
       },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(LinkCredentialNotFoundError);
-    // Server A's client must have been closed despite the throw
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.tools).toHaveProperty("tool-a");
+    expect(result.disconnected).toHaveLength(1);
+    expect(result.disconnected[0].serverId).toBe("server-b");
+    // Server A's client stays alive — only dispose() should close it
+    expect(closeA).not.toHaveBeenCalled();
+    await result.dispose();
     expect(closeA).toHaveBeenCalledTimes(1);
   });
 
@@ -676,8 +705,7 @@ describe("createMCPTools", () => {
     expect(result.tools).not.toHaveProperty("not-in-allow");
   });
 
-  it("re-throws credential error with existing serverName without re-enriching", async () => {
-    // Error already has serverName set — should be thrown as-is, not re-wrapped
+  it("preserves existing serverName on the credential error message instead of re-enriching", async () => {
     mockResolveEnvValues.mockRejectedValue(
       new LinkCredentialNotFoundError("cred_789", "original-server"),
     );
@@ -689,12 +717,14 @@ describe("createMCPTools", () => {
       },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(LinkCredentialNotFoundError);
-    expect.assert(error instanceof LinkCredentialNotFoundError);
-    // Should preserve the original serverName, not overwrite with "different-server"
-    expect(error.message).toContain("original-server");
-    expect(error.serverName).toBe("original-server");
+    const result = await createMCPTools(configs, fakeLogger);
+
+    expect(result.disconnected).toHaveLength(1);
+    // serverId still reflects the loop key, but the message keeps the original
+    // serverName the error was constructed with — no double-enrichment.
+    expect(result.disconnected[0].serverId).toBe("different-server");
+    expect(result.disconnected[0].message).toContain("original-server");
+    expect(result.disconnected[0].message).not.toContain("different-server");
   });
 
   it("cleans up already-connected clients when signal is aborted before next server", async () => {

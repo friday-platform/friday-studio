@@ -10,7 +10,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import type { MCPServerConfig } from "@atlas/config";
 import type { PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { createMCPTools } from "@atlas/mcp";
+import { createMCPTools, type DisconnectedIntegration } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
 import {
   createLoadSkillTool,
@@ -22,7 +22,6 @@ import {
 } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { hasUnusableCredentialCause } from "../mcp-registry/credential-resolver.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
@@ -49,6 +48,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     context: AgentContext;
     enrichedPrompt: string;
     releaseMCPTools: () => Promise<void>;
+    disconnectedIntegrations: DisconnectedIntegration[];
   }> {
     const agentLogger = logger.child({
       agentId: agent.metadata.id,
@@ -59,6 +59,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
 
     let allTools: Record<string, AtlasTool> = {};
     let releaseMCPTools: () => Promise<void> = () => Promise.resolve();
+    let disconnectedIntegrations: DisconnectedIntegration[] = [];
     agentLogger.debug("Building agent context", {
       agentId: agent.metadata.id,
       hasMcpConfig: !!agent.mcpConfig,
@@ -73,17 +74,18 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
       );
       allTools = fetched.tools;
       releaseMCPTools = fetched.release;
+      disconnectedIntegrations = fetched.disconnected;
 
-      agentLogger.info("Pre-fetched tools", { toolCount: Object.keys(allTools).length });
+      agentLogger.info("Pre-fetched tools", {
+        toolCount: Object.keys(allTools).length,
+        disconnectedCount: disconnectedIntegrations.length,
+      });
     } catch (error) {
-      // Credential errors must surface to the user — re-throw so the session fails
-      // instead of silently running the agent without any tools.
-      if (hasUnusableCredentialCause(error)) {
-        throw error;
-      }
-
+      // Credential errors are now handled per-server inside createMCPTools and
+      // surfaced via `disconnected`; only non-credential failures (transport,
+      // startup, etc.) still throw. Continue with empty tools so the agent can
+      // at least respond rather than aborting the session.
       agentLogger.error("Failed to pre-fetch tools", { error });
-      // Continue with empty tools rather than failing entirely
       allTools = {};
     }
 
@@ -228,6 +230,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
           await release();
           await cleanupSkills?.();
         },
+        disconnectedIntegrations,
       };
     } catch (err) {
       await releaseMCPTools();
@@ -247,7 +250,11 @@ async function fetchAllTools(
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   logger: Logger,
   signal?: AbortSignal,
-): Promise<{ tools: Record<string, AtlasTool>; release: () => Promise<void> }> {
+): Promise<{
+  tools: Record<string, AtlasTool>;
+  release: () => Promise<void>;
+  disconnected: DisconnectedIntegration[];
+}> {
   logger.debug("Fetching tools from MCP servers", {
     workspaceId,
     agentMCPServerCount: agentMCPConfig ? Object.keys(agentMCPConfig).length : 0,
@@ -302,6 +309,8 @@ async function fetchAllTools(
     serverIds: Object.keys(allServerConfigs),
   });
 
-  const { tools, dispose } = await createMCPTools(allServerConfigs, logger, { signal });
-  return { tools, release: dispose };
+  const { tools, dispose, disconnected } = await createMCPTools(allServerConfigs, logger, {
+    signal,
+  });
+  return { tools, release: dispose, disconnected };
 }

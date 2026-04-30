@@ -89,6 +89,21 @@ export const AtlasDataEventSchemas = {
     artifactLabel: z.string().optional(),
   }),
   "credential-linked": z.object({ provider: z.string(), displayName: z.string() }),
+  "integration-disconnected": z.object({
+    integrations: z.array(
+      z.object({
+        serverId: z.string(),
+        provider: z.string().optional(),
+        kind: z.enum([
+          "credential_not_found",
+          "credential_expired",
+          "credential_refresh_failed",
+          "no_default_credential",
+        ]),
+        message: z.string(),
+      }),
+    ),
+  }),
   intent: z.object({ content: z.string() }),
   "artifact-attached": z.object({
     artifactIds: z.array(z.string()),
@@ -254,6 +269,9 @@ export type AtlasDataEvents = {
   "fsm-state-transition": z.infer<(typeof AtlasDataEventSchemas)["fsm-state-transition"]>;
   "fsm-action-execution": z.infer<(typeof AtlasDataEventSchemas)["fsm-action-execution"]>;
   "credential-linked": z.infer<(typeof AtlasDataEventSchemas)["credential-linked"]>;
+  "integration-disconnected": z.infer<
+    (typeof AtlasDataEventSchemas)["integration-disconnected"]
+  >;
   intent: z.infer<(typeof AtlasDataEventSchemas)["intent"]>;
   "artifact-attached": z.infer<(typeof AtlasDataEventSchemas)["artifact-attached"]>;
   "inner-tool-call": z.infer<(typeof AtlasDataEventSchemas)["inner-tool-call"]>;

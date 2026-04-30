@@ -1,4 +1,5 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
+import type { DisconnectedIntegrationNotice } from "./types.ts";
 
 /**
  * Part types that represent in-stream error conditions. When the workspace
@@ -6,8 +7,18 @@ import type { AtlasUIMessage } from "@atlas/agent-sdk";
  * `data-error` (generic), `data-agent-error` (agent executor), or
  * `data-agent-timeout` (tool timeout). We surface all three as "this turn
  * errored" in the UI.
+ *
+ * `data-integration-disconnected` is intentionally NOT in this set — it's a
+ * non-fatal notice rendered as an info chip, not a session-failure banner.
  */
 const ERROR_PART_TYPES = new Set(["data-error", "data-agent-error", "data-agent-timeout"]);
+
+const INTEGRATION_KIND_VALUES = new Set([
+  "credential_not_found",
+  "credential_expired",
+  "credential_refresh_failed",
+  "no_default_credential",
+]);
 
 /**
  * Part types that count as "user can see something for this message" — text,
@@ -27,6 +38,7 @@ export function hasRenderableContent(msg: AtlasUIMessage): boolean {
       t === "file" ||
       t === "reasoning" ||
       t === "dynamic-tool" ||
+      t === "data-integration-disconnected" ||
       ERROR_PART_TYPES.has(t) ||
       t.startsWith("tool-")
     );
@@ -67,4 +79,42 @@ export function hasErrorPart(msg: AtlasUIMessage): boolean {
     const t = (p as { type: unknown }).type;
     return typeof t === "string" && ERROR_PART_TYPES.has(t);
   });
+}
+
+/**
+ * Pull every `data-integration-disconnected` notice carried on this message.
+ * Multiple parts (across re-renders) are concatenated into one list so the UI
+ * can render a single chip per disconnected integration.
+ */
+export function extractDisconnectedIntegrations(
+  msg: AtlasUIMessage,
+): DisconnectedIntegrationNotice[] | undefined {
+  if (!Array.isArray(msg.parts)) return undefined;
+  const seen = new Map<string, DisconnectedIntegrationNotice>();
+  for (const part of msg.parts) {
+    if (typeof part !== "object" || part === null || !("type" in part)) continue;
+    const t = (part as { type: unknown }).type;
+    if (t !== "data-integration-disconnected") continue;
+    const data = (part as { data?: unknown }).data;
+    if (typeof data !== "object" || data === null) continue;
+    const integrations = (data as { integrations?: unknown }).integrations;
+    if (!Array.isArray(integrations)) continue;
+    for (const item of integrations) {
+      if (typeof item !== "object" || item === null) continue;
+      const serverId = (item as { serverId?: unknown }).serverId;
+      const message = (item as { message?: unknown }).message;
+      const kind = (item as { kind?: unknown }).kind;
+      const provider = (item as { provider?: unknown }).provider;
+      if (typeof serverId !== "string" || serverId.length === 0) continue;
+      if (typeof message !== "string") continue;
+      if (typeof kind !== "string" || !INTEGRATION_KIND_VALUES.has(kind)) continue;
+      seen.set(serverId, {
+        serverId,
+        provider: typeof provider === "string" ? provider : undefined,
+        kind: kind as DisconnectedIntegrationNotice["kind"],
+        message,
+      });
+    }
+  }
+  return seen.size > 0 ? Array.from(seen.values()) : undefined;
 }

@@ -18,6 +18,7 @@
 
 import type { AgentContext, AgentPayload, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
+import type { DisconnectedIntegration } from "@atlas/mcp";
 import { type ActorRefFrom, assign, fromPromise, setup } from "xstate";
 
 // === Input/Output Types for State Machine Actors ===
@@ -38,6 +39,7 @@ export type PrepareContextOutput = {
   context: AgentContext;
   enrichedPrompt: string;
   releaseMCPTools: () => Promise<void>;
+  disconnectedIntegrations: DisconnectedIntegration[];
 };
 
 type ExecuteAgentInput = { agent: AtlasAgent; prompt: string; context: AgentContext };
@@ -68,6 +70,7 @@ interface AgentExecutionContext {
   config?: Record<string, unknown>;
   preparedContext?: AgentContext;
   releaseMCPTools?: () => Promise<void>;
+  disconnectedIntegrations?: DisconnectedIntegration[];
   result?: AgentPayload<unknown>;
   error?: Error;
   startTime?: number;
@@ -227,6 +230,12 @@ export function createAgentExecutionMachine(
           }
           return event.output.releaseMCPTools;
         },
+        disconnectedIntegrations: ({ event }) => {
+          if (event.type !== "xstate.done.actor.prepareContext") {
+            return undefined;
+          }
+          return event.output.disconnectedIntegrations;
+        },
       }),
 
       assignExecutionResult: assign({
@@ -270,6 +279,29 @@ export function createAgentExecutionMachine(
 
       logExecuting: ({ context }) => {
         logger.info("Executing agent", { agentId: context.agentId });
+      },
+
+      // Emit a single non-fatal stream event listing any MCP integrations the
+      // agent couldn't load tools from this session. The chat UI renders this
+      // as an info chip alongside the assistant message so the user knows to
+      // reconnect, instead of seeing a fatal "Something went wrong" banner.
+      emitDisconnectedIntegrations: ({ context }) => {
+        const integrations = context.disconnectedIntegrations;
+        if (!integrations || integrations.length === 0) return;
+        const stream = context.preparedContext?.stream;
+        if (!stream) return;
+        try {
+          stream.emit({
+            type: "data-integration-disconnected",
+            data: { integrations },
+          });
+        } catch (err) {
+          logger.warn("Failed to emit integration-disconnected event", {
+            agentId: context.agentId,
+            count: integrations.length,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       },
 
       logPersisting: ({ context }) => {
@@ -385,7 +417,7 @@ export function createAgentExecutionMachine(
       },
 
       executing: {
-        entry: "logExecuting",
+        entry: ["logExecuting", "emitDisconnectedIntegrations"],
         exit: "releaseMCPTools",
 
         invoke: {

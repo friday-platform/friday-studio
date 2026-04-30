@@ -9,7 +9,12 @@
  * @module
  */
 
-export type { CreateMCPToolsOptions, MCPToolsResult } from "./src/create-mcp-tools.ts";
+export type {
+  CreateMCPToolsOptions,
+  DisconnectedIntegration,
+  DisconnectedIntegrationKind,
+  MCPToolsResult,
+} from "./src/create-mcp-tools.ts";
 export { createMCPTools, MCPAuthError, MCPStartupError } from "./src/create-mcp-tools.ts";
 export type {
   ProcessRegistry,

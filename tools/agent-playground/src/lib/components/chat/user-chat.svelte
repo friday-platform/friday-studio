@@ -20,7 +20,12 @@
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
   import { extractToolCalls, flattenToolCalls } from "./extract-tool-calls.ts";
-  import { extractErrorText, hasErrorPart, hasRenderableContent } from "./message-error.ts";
+  import {
+    extractDisconnectedIntegrations,
+    extractErrorText,
+    hasErrorPart,
+    hasRenderableContent,
+  } from "./message-error.ts";
   import type { ChatMessage, ImageDisplay, ScheduleProposal, Segment, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
   import {
@@ -1005,6 +1010,7 @@
         timestamp: timestamps.get(msg.id) ?? Date.now(),
         images: extractImages(msg),
         errorText: extractErrorText(msg),
+        disconnectedIntegrations: extractDisconnectedIntegrations(msg),
         metadata: {
           agentId: typeof m.agentId === "string" ? m.agentId : undefined,
           jobName: typeof m.jobName === "string" ? m.jobName : undefined,

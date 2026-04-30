@@ -46,10 +46,25 @@ export { MCPAuthError, MCPStartupError } from "./errors.ts";
 
 import { MCPAuthError, MCPStartupError } from "./errors.ts";
 
-/** Result of creating MCP tools — tools map + cleanup callback. */
+export type DisconnectedIntegrationKind =
+  | "credential_not_found"
+  | "credential_expired"
+  | "credential_refresh_failed"
+  | "no_default_credential";
+
+/** A skipped MCP server whose credentials are unusable. Carries enough info for the UI to prompt a reconnect. */
+export interface DisconnectedIntegration {
+  serverId: string;
+  provider?: string;
+  kind: DisconnectedIntegrationKind;
+  message: string;
+}
+
+/** Result of creating MCP tools — tools map, cleanup callback, and any servers skipped due to dead credentials. */
 export interface MCPToolsResult {
   tools: Record<string, Tool>;
   dispose: () => Promise<void>;
+  disconnected: DisconnectedIntegration[];
 }
 
 /** Unwrap a RetryError so the real underlying error is surfaced. */
@@ -69,7 +84,10 @@ export interface CreateMCPToolsOptions {
 
 /**
  * Connect to MCP servers, fetch tools, return a dispose callback.
- * Throws on any server connection failure — credential errors and startup failures alike.
+ * Servers whose Link credentials are missing/expired/un-refreshable are skipped
+ * and reported in `disconnected` rather than aborting the whole batch — the
+ * caller decides how to surface them to the user. Other failures (transport,
+ * startup, etc.) still throw.
  */
 export async function createMCPTools(
   configs: Record<string, MCPServerConfig>,
@@ -78,6 +96,7 @@ export async function createMCPTools(
 ): Promise<MCPToolsResult> {
   const clients: MCPClient[] = [];
   const allTools: Record<string, Tool> = {};
+  const disconnected: DisconnectedIntegration[] = [];
   let disposed = false;
 
   const signal = options?.signal;
@@ -121,25 +140,16 @@ export async function createMCPTools(
         error instanceof LinkCredentialExpiredError ||
         error instanceof NoDefaultCredentialError
       ) {
-        // Clean up any already-connected clients before re-throwing
-        await disposeAll(clients);
-
-        // Enrich with server name if not already set
-        if (error instanceof LinkCredentialNotFoundError && !error.serverName) {
-          const enriched = new LinkCredentialNotFoundError(error.credentialId, serverId);
-          enriched.cause = error;
-          throw enriched;
-        }
-        if (error instanceof LinkCredentialExpiredError && !error.serverName) {
-          const enriched = new LinkCredentialExpiredError(
-            error.credentialId,
-            error.status,
-            serverId,
-          );
-          enriched.cause = error;
-          throw enriched;
-        }
-        throw error;
+        const entry = buildDisconnectedEntry(error, serverId, config);
+        disconnected.push(entry);
+        logger.warn(`MCP server skipped due to credential issue`, {
+          operation: "mcp_connect",
+          serverId,
+          kind: entry.kind,
+          provider: entry.provider,
+          reason: entry.message,
+        });
+        continue;
       }
 
       // Clean up any already-connected clients before throwing
@@ -177,12 +187,65 @@ export async function createMCPTools(
 
   return {
     tools: allTools,
+    disconnected,
     dispose: async () => {
       if (disposed) return;
       disposed = true;
       await disposeAll(clients);
     },
   };
+}
+
+/**
+ * Translate a credential-resolution error into a structured `DisconnectedIntegration`
+ * record. Re-builds the error with the originating `serverId` so the message
+ * names the integration the user recognises (matches the prior re-throw
+ * enrichment).
+ */
+function buildDisconnectedEntry(
+  error: LinkCredentialNotFoundError | LinkCredentialExpiredError | NoDefaultCredentialError,
+  serverId: string,
+  config: MCPServerConfig,
+): DisconnectedIntegration {
+  if (error instanceof NoDefaultCredentialError) {
+    return {
+      serverId,
+      provider: error.provider,
+      kind: "no_default_credential",
+      message: error.message,
+    };
+  }
+  if (error instanceof LinkCredentialNotFoundError) {
+    const enriched = error.serverName
+      ? error
+      : new LinkCredentialNotFoundError(error.credentialId, serverId);
+    return {
+      serverId,
+      provider: extractProviderFromConfig(config),
+      kind: "credential_not_found",
+      message: enriched.message,
+    };
+  }
+  const enriched = error.serverName
+    ? error
+    : new LinkCredentialExpiredError(error.credentialId, error.status, serverId);
+  return {
+    serverId,
+    provider: extractProviderFromConfig(config),
+    kind: error.status === "expired_no_refresh" ? "credential_expired" : "credential_refresh_failed",
+    message: enriched.message,
+  };
+}
+
+/** Best-effort: pull the first `from: "link"` provider out of the server's env config. */
+function extractProviderFromConfig(config: MCPServerConfig): string | undefined {
+  if (!config.env) return undefined;
+  for (const value of Object.values(config.env)) {
+    if (typeof value === "object" && value.from === "link" && value.provider) {
+      return value.provider;
+    }
+  }
+  return undefined;
 }
 
 /**

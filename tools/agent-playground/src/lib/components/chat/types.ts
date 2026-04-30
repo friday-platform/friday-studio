@@ -30,6 +30,23 @@ export interface ScheduleProposal {
 }
 
 /**
+ * UI-side mirror of @atlas/mcp's DisconnectedIntegration. Defined locally
+ * because the playground bundles into a static SvelteKit build and pulling in
+ * @atlas/mcp drags Node FFI deps into the browser. The shape is validated on
+ * the wire by AtlasDataEventSchemas["integration-disconnected"].
+ */
+export interface DisconnectedIntegrationNotice {
+  serverId: string;
+  provider?: string;
+  kind:
+    | "credential_not_found"
+    | "credential_expired"
+    | "credential_refresh_failed"
+    | "no_default_credential";
+  message: string;
+}
+
+/**
  * Flattened tool-call shape extracted from a message's `parts` array at
  * render time. Covers both static `tool-<name>` parts and the `dynamic-tool`
  * fallback. The chat message list renders these as inline status cards so
@@ -139,6 +156,13 @@ export interface ChatMessage {
    * leave the thinking indicator as the only feedback.
    */
   errorText?: string;
+  /**
+   * Non-fatal "this MCP integration is disconnected, reconnect to use it"
+   * notices, sourced from `data-integration-disconnected` chunks. Rendered as
+   * an info chip so the user can resolve the credential without the session
+   * being treated as failed.
+   */
+  disconnectedIntegrations?: DisconnectedIntegrationNotice[];
   /**
    * Provider/model/agent metadata stamped by workspace-chat on the
    * outgoing stream. Powers the chat-inspector Context tab's "Active
