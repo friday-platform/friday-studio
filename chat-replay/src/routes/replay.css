@@ -145,10 +145,9 @@ button {
 
 .replay-controls {
   align-items: center;
-  display: grid;
-  grid-template-columns: auto auto auto 1fr minmax(12rem, 18rem) auto auto auto;
-  gap: var(--size-2);
-  padding: var(--size-3) var(--size-4);
+  display: flex;
+  gap: var(--size-3);
+  padding: var(--size-2-5) var(--size-4);
 }
 
 .replay-controls select {
@@ -160,36 +159,52 @@ button {
   padding: var(--size-1-5) var(--size-2);
 }
 
-.replay-controls input[type="range"] {
-  accent-color: var(--color-accent);
-  inline-size: 100%;
-}
-
-.speed-control {
-  align-items: center;
-  color: var(--text-muted);
+.ctrl-transport {
   display: flex;
-  gap: var(--size-1);
-  font-size: var(--font-size-1);
-}
-
-.speed-info {
-  align-items: center;
-  display: grid;
-  gap: var(--size-1);
-  grid-template-columns: auto 1fr;
-  flex: 1;
-}
-
-.speed-step {
   flex-shrink: 0;
-  font-size: var(--font-size-3);
-  line-height: 1;
-  padding: var(--size-1) var(--size-2);
+  gap: var(--size-1);
 }
 
-.speed-control input[type="range"] {
-  inline-size: 100%;
+.ctrl-scrubber {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: var(--size-2);
+  min-inline-size: 0;
+}
+
+.ctrl-scrubber input[type="range"] {
+  accent-color: var(--color-accent);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.ctrl-pos {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: var(--font-size-1);
+  white-space: nowrap;
+}
+
+.ctrl-speed {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--size-1);
+}
+
+.ctrl-speed-label {
+  color: var(--text-muted);
+  font-size: var(--font-size-2);
+  min-inline-size: 4.5rem;
+  text-align: center;
+}
+
+.ctrl-view {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--size-1);
 }
 
 .replay-pii {
@@ -432,6 +447,17 @@ button {
   color: var(--text-muted);
   display: block;
   font-size: var(--font-size-1);
+}
+
+.timeline-delay {
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: var(--size-1);
+  opacity: 0.5;
+}
+
+.timeline-delay.is-override {
+  color: var(--color-accent);
+  opacity: 1;
 }
 
 .raw-event pre {

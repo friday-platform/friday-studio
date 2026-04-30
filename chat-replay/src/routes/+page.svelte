@@ -602,33 +602,28 @@
       </form>
 
       <section class="replay-controls" aria-label="Replay controls">
-        <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex - 1)}>Prev <span>J</span></button>
-        <button class="replay-btn" type="button" onclick={togglePlay}>{playing ? "Pause" : "Play"} <span>Space</span></button>
-        <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex + 1)}>Next <span>K</span></button>
-        <input type="range" min="0" max={Math.max(0, events.length - 1)} value={currentIndex} oninput={(event) => setIndex(event.currentTarget.valueAsNumber)} />
-        <div class="speed-control">
-          <button class="replay-btn speed-step" type="button" onclick={() => stepSpeed(false)} aria-label="Slower">− <span>Shift−</span></button>
-          <div class="speed-info">
-            <span>Speed: {speedLabel()}</span>
-            <input
-              type="range"
-              min="80"
-              max="1200"
-              step="10"
-              value={1280 - speedMs}
-              oninput={(e) => { speedMs = 1280 - e.currentTarget.valueAsNumber; handleSpeedChange(); }}
-              aria-label="Playback speed"
-            />
-          </div>
-          <button class="replay-btn speed-step" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+ <span>Shift+</span></button>
+        <div class="ctrl-transport">
+          <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex - 1)}>Prev <span>J</span></button>
+          <button class="replay-btn" type="button" onclick={togglePlay}>{playing ? "Pause" : "Play"} <span>Space</span></button>
+          <button class="replay-btn" type="button" onclick={() => setIndex(currentIndex + 1)}>Next <span>K</span></button>
         </div>
-        <span class="replay-muted">{events.length === 0 ? 0 : currentIndex + 1} / {events.length}</span>
-        <select bind:value={chatAspect} aria-label="Chat aspect ratio" onchange={handleAspectPreview}>
-          {#each ASPECT_OPTIONS as opt}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
-        <button class="replay-btn" type="button" onclick={() => (inspectorOpen = !inspectorOpen)}>{inspectorOpen ? "Hide" : "Show"} timeline/event</button>
+        <div class="ctrl-scrubber">
+          <input type="range" min="0" max={Math.max(0, events.length - 1)} value={currentIndex} oninput={(e) => setIndex(e.currentTarget.valueAsNumber)} />
+          <span class="ctrl-pos">{events.length === 0 ? 0 : currentIndex + 1} / {events.length}</span>
+        </div>
+        <div class="ctrl-speed">
+          <button class="replay-btn" type="button" onclick={() => stepSpeed(false)} aria-label="Slower">−</button>
+          <span class="ctrl-speed-label">{speedLabel()}</span>
+          <button class="replay-btn" type="button" onclick={() => stepSpeed(true)} aria-label="Faster">+</button>
+        </div>
+        <div class="ctrl-view">
+          <select bind:value={chatAspect} aria-label="Chat aspect ratio" onchange={handleAspectPreview}>
+            {#each ASPECT_OPTIONS as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+          <button class="replay-btn" type="button" onclick={() => (inspectorOpen = !inspectorOpen)}>{inspectorOpen ? "Hide" : "Show"} timeline</button>
+        </div>
       </section>
 
       <section class="replay-pii" aria-label="PII filter">
@@ -664,7 +659,13 @@
                 <div class="timeline-row-wrap" class:active={index === currentIndex} class:seen={index <= currentIndex} class:future={index > currentIndex}>
                   <button type="button" class="timeline-row" onclick={() => setIndex(index)}>
                     <span class="timeline-icon">{eventIcon(event)}</span>
-                    <span><span class="timeline-label">{event.label}</span><span class="timeline-meta">{event.workspaceId} · {event.kind}</span></span>
+                    <span>
+                      <span class="timeline-label">{event.label}</span>
+                      <span class="timeline-meta">
+                        {event.workspaceId} · {event.kind}
+                        <span class="timeline-delay" class:is-override={eventDelays[index] !== undefined}>{eventDelays[index] ?? speedMs}ms</span>
+                      </span>
+                    </span>
                   </button>
                   <input
                     type="number"
