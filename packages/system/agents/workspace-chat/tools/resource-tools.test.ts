@@ -135,8 +135,7 @@ describe("resource_read", () => {
 
     expect(adapter.query).not.toHaveBeenCalled();
     expect(result).toEqual({
-      error:
-        '"sales-data" is a read-only file. Use artifacts_get to access it, or agent_data-analyst for queries.',
+      error: '"sales-data" is a read-only file. Use artifacts_get to access it.',
     });
   });
 
@@ -220,8 +219,7 @@ describe("resource_write", () => {
 
     expect(adapter.mutate).not.toHaveBeenCalled();
     expect(result).toEqual({
-      error:
-        '"sales-data" is a read-only file. Use artifacts_get to access it, or agent_data-analyst for queries.',
+      error: '"sales-data" is a read-only file. Use artifacts_get to access it.',
     });
   });
 

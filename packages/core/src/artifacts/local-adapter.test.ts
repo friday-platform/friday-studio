@@ -6,17 +6,12 @@ import { LocalStorageAdapter } from "./local-adapter.ts";
 import { assertArtifactEqual, assertResultFail, assertResultOk } from "./test-utils/assertions.ts";
 import {
   cleanupTempFile,
-  createCalendarScheduleInput,
   createFileArtifactInput,
-  createSlackSummaryInput,
   createSummaryArtifactInput,
-  createTableArtifactInput,
   createTempCsvFile,
   createTempJsonFile,
   createTempMarkdownFile,
   createTempTextFile,
-  createWebSearchInput,
-  createWorkspacePlanInput,
 } from "./test-utils/shared-fixtures.ts";
 
 // Helper to create a unique temp KV database for each test
@@ -463,7 +458,7 @@ describe("LocalAdapter: List", () => {
     for (const item of result.data) {
       expect("data" in item).toEqual(false);
       expect(item.id).toBeDefined();
-      expect(item.type).toEqual("summary");
+      expect(item.type).toEqual("file");
       expect(item.title).toBeDefined();
     }
   });
@@ -651,18 +646,6 @@ describe("LocalAdapter: Files", () => {
     await cleanupTempFile(tempFile);
   });
 
-  it("readFileContents fails for non-file artifacts", async () => {
-    const adapter = await createTestAdapter();
-
-    const createResult = await adapter.create(createSummaryArtifactInput());
-    assertResultOk(createResult);
-
-    const readResult = await adapter.readFileContents({ id: createResult.data.id });
-
-    assertResultFail(readResult);
-    expect(readResult.error.includes("not a file artifact")).toEqual(true);
-  });
-
   it("readFileContents fails for missing file", async () => {
     const adapter = await createTestAdapter();
     const tempFile = await createTempJsonFile({ test: "data" });
@@ -729,18 +712,6 @@ describe("LocalAdapter: Binary Files", () => {
     await cleanupTempFile(tempFile);
   });
 
-  it("readBinaryContents fails for non-file artifacts", async () => {
-    const adapter = await createTestAdapter();
-
-    const createResult = await adapter.create(createSummaryArtifactInput());
-    assertResultOk(createResult);
-
-    const readResult = await adapter.readBinaryContents({ id: createResult.data.id });
-
-    assertResultFail(readResult);
-    expect(readResult.error).toContain("not a file artifact");
-  });
-
   it("readBinaryContents fails for missing artifacts", async () => {
     const adapter = await createTestAdapter();
 
@@ -756,46 +727,6 @@ describe("LocalAdapter: Binary Files", () => {
 //
 
 describe("LocalAdapter: Types", () => {
-  it("create workspace-plan artifact", async () => {
-    const adapter = await createTestAdapter();
-    const input = createWorkspacePlanInput();
-
-    const result = await adapter.create(input);
-
-    assertResultOk(result);
-    expect(result.data.type).toEqual("workspace-plan");
-  });
-
-  it("create calendar-schedule artifact", async () => {
-    const adapter = await createTestAdapter();
-    const input = createCalendarScheduleInput();
-
-    const result = await adapter.create(input);
-
-    assertResultOk(result);
-    expect(result.data.type).toEqual("calendar-schedule");
-  });
-
-  it("create summary artifact", async () => {
-    const adapter = await createTestAdapter();
-    const input = createSummaryArtifactInput();
-
-    const result = await adapter.create(input);
-
-    assertResultOk(result);
-    expect(result.data.type).toEqual("summary");
-  });
-
-  it("create slack-summary artifact", async () => {
-    const adapter = await createTestAdapter();
-    const input = createSlackSummaryInput();
-
-    const result = await adapter.create(input);
-
-    assertResultOk(result);
-    expect(result.data.type).toEqual("slack-summary");
-  });
-
   it("create file artifact", async () => {
     const adapter = await createTestAdapter();
     const tempFile = await createTempJsonFile({ test: "data" });
@@ -807,26 +738,6 @@ describe("LocalAdapter: Types", () => {
     expect(result.data.type).toEqual("file");
 
     await cleanupTempFile(tempFile);
-  });
-
-  it("create table artifact", async () => {
-    const adapter = await createTestAdapter();
-    const input = createTableArtifactInput();
-
-    const result = await adapter.create(input);
-
-    assertResultOk(result);
-    expect(result.data.type).toEqual("table");
-  });
-
-  it("create web-search artifact", async () => {
-    const adapter = await createTestAdapter();
-    const input = createWebSearchInput();
-
-    const result = await adapter.create(input);
-
-    assertResultOk(result);
-    expect(result.data.type).toEqual("web-search");
   });
 });
 

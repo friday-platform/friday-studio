@@ -441,9 +441,9 @@ describe("parseResourceEntries", () => {
           type: "artifact_ref",
           slug: "plan",
           name: "Plan",
-          description: "Workspace plan",
+          description: "Plan file",
           artifactId: "art-1",
-          artifactType: "workspace-plan",
+          artifactType: "file",
           createdAt: ts,
           updatedAt: ts,
         },
@@ -451,7 +451,7 @@ describe("parseResourceEntries", () => {
     };
     const entries = parseResourceEntries(data);
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ type: "artifact_ref", artifactType: "workspace-plan" });
+    expect(entries[0]).toMatchObject({ type: "artifact_ref", artifactType: "file" });
   });
 
   it("parses artifact_ref entries with 'unavailable' type", () => {
