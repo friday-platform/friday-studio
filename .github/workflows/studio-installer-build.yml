@@ -1,11 +1,10 @@
 name: studio-installer-build
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'apps/studio-installer/**'
+  # Manual dispatch only. Each release is a paid native-runner build; we
+  # don't want it firing on every push that touches the installer.
+  # Run via `gh workflow run studio-installer-build.yml --ref <branch>` or
+  # the Actions tab.
   workflow_dispatch:
 
 env:
