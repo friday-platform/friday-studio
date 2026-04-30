@@ -78,7 +78,7 @@ test-workspace-watcher*
 **/snapshots/
 
 # Web Client Output
-chat-replay/.svelte-kit
+tools/chat-replay/.svelte-kit/
 chat-replay/chats.snapshot.json
 
 # Vite
