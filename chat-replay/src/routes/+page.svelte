@@ -53,6 +53,8 @@
   let toggleVisible = $state(true);
   let toggleHideTimer: number | undefined;
   let eventDelays = $state<Record<number, number>>({});
+  let loadedUrls = $state<string[]>([]);
+  let timelineFilter = $state<number | null>(null);
   let speedFactor = $state(1.0);
   let useSourceTiming = $state(false);
   let mounted = $state(false);
@@ -452,7 +454,7 @@
     const title = event.chat.chat.title ?? event.chat.chat.workspaceId;
     return event.kind === "workspace" ? `Switched to ${title}` : title;
   }
-  function loadSnapshot(value: Snapshot) { stop(); snapshot = value; currentIndex = 0; loadError = null; eventDelays = {}; }
+  function loadSnapshot(value: Snapshot) { stop(); snapshot = value; currentIndex = 0; loadError = null; }
 
   function chatUrlsFromLocation(): string[] {
     const params = new URLSearchParams(window.location.search);
@@ -503,6 +505,8 @@
         chats.push({ ...parsed, _sourceUrl: chatUrl });
       }
       loadSnapshot({ capturedAt: new Date().toISOString(), chats });
+      loadedUrls = urls;
+      eventDelays = loadSavedDelays(urls);
     } catch (error) {
       loadError = error instanceof Error ? error.message : String(error);
       snapshot = { capturedAt: new Date().toISOString(), chats: [] };
@@ -556,6 +560,19 @@
   }
 
   const SETTINGS_KEY = "chat-replay-settings";
+  const DELAYS_KEY = "chat-replay-delays";
+
+  function loadSavedDelays(urls: string[]): Record<number, number> {
+    try {
+      const raw = localStorage.getItem(DELAYS_KEY);
+      if (!raw) return {};
+      const store = JSON.parse(raw) as Record<string, Record<string, number>>;
+      const key = String(stableHash([...urls].sort().join(",")));
+      const saved = store[key];
+      if (!saved) return {};
+      return Object.fromEntries(Object.entries(saved).map(([k, v]) => [Number(k), v]));
+    } catch { return {}; }
+  }
 
   $effect(() => {
     if (!mounted) return;
@@ -571,6 +588,31 @@
         useSourceTiming,
       }));
     } catch { /* ignore */ }
+  });
+
+  $effect(() => {
+    if (!mounted || loadedUrls.length === 0) return;
+    const snapshot = JSON.stringify(eventDelays); // read all props for deep tracking
+    try {
+      const raw = localStorage.getItem(DELAYS_KEY);
+      const store: Record<string, unknown> = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+      const key = String(stableHash([...loadedUrls].sort().join(",")));
+      const parsed = JSON.parse(snapshot) as Record<number, number>;
+      if (Object.keys(parsed).length === 0) { delete store[key]; }
+      else { store[key] = parsed; }
+      const storeKeys = Object.keys(store);
+      for (const k of storeKeys.slice(0, Math.max(0, storeKeys.length - 10))) delete store[k];
+      localStorage.setItem(DELAYS_KEY, JSON.stringify(store));
+    } catch { /* ignore */ }
+  });
+
+  $effect(() => {
+    if (!overlayOpen || !inspectorOpen) return;
+    currentIndex; // track navigation changes
+    void tick().then(() => {
+      document.querySelector<HTMLElement>(".timeline-row-wrap.active")
+        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
   });
 
   onMount(() => {
@@ -701,9 +743,19 @@
       {#if inspectorOpen}
         <section class="replay-inspector">
           <aside class="replay-panel">
-            <div class="replay-panel-title">Timeline</div>
+            <div class="replay-panel-title">
+              <span>Timeline</span>
+              <div class="timeline-filters">
+                {#each ([null, 500, 1000, 3000, 5000] as const) as f}
+                  <button type="button" class="timeline-filter-btn" class:active={timelineFilter === f} onclick={() => timelineFilter = f}>
+                    {f === null ? "All" : f >= 1000 ? `>${f / 1000}s` : `>${f}ms`}
+                  </button>
+                {/each}
+              </div>
+            </div>
             <div class="replay-scroll">
               {#each events as event, index}
+                {#if timelineFilter === null || effectiveDelay(index) > timelineFilter}
                 <div class="timeline-row-wrap" class:active={index === currentIndex} class:seen={index <= currentIndex} class:future={index > currentIndex}>
                   <button type="button" class="timeline-row" onclick={() => setIndex(index)}>
                     <span class="timeline-icon">{eventIcon(event)}</span>
@@ -734,6 +786,7 @@
                     }}
                   />
                 </div>
+                {/if}
               {/each}
             </div>
           </aside>
@@ -748,7 +801,7 @@
   {/if}
 
   <main class="replay-main" style={chatMainStyle}>
-    <section class="replay-panel replay-chat-panel" style={chatPanelStyle}>
+    <section class="replay-panel replay-chat-panel" class:aspect-constrained={chatAspect !== "full"} style={chatPanelStyle}>
       {#if overlayOpen}
         <div class="replay-chat-head">
           <div class="replay-chat-title">{currentChatTitle()}</div>

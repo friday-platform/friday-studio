@@ -379,13 +379,39 @@ button {
 }
 
 .replay-panel-title {
+  align-items: center;
   border-bottom: 1px solid var(--color-border-1);
   color: var(--text-muted);
+  display: flex;
   font-size: var(--font-size-1);
   font-weight: var(--font-weight-7);
+  justify-content: space-between;
   letter-spacing: 0.05em;
-  padding: var(--size-2-5) var(--size-3);
+  padding: var(--size-2) var(--size-3);
   text-transform: uppercase;
+}
+
+.timeline-filters {
+  display: flex;
+  gap: var(--size-1);
+}
+
+.timeline-filter-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-round);
+  color: var(--text-muted);
+  font-size: var(--font-size-1);
+  font-weight: var(--font-weight-4);
+  letter-spacing: normal;
+  padding: var(--size-0-5) var(--size-2);
+  text-transform: none;
+}
+
+.timeline-filter-btn.active {
+  background: var(--surface-raised);
+  border-color: var(--color-border-1);
+  color: var(--text);
 }
 
 .replay-scroll {
@@ -403,6 +429,14 @@ button {
   min-block-size: 0;
   overflow: hidden;
   position: relative;
+}
+
+.replay-chat-panel.aspect-constrained {
+  block-size: auto;
+  border: none;
+  border-radius: var(--radius-7);
+  box-shadow: 0 12px 48px color-mix(in srgb, #000 55%, transparent), 0 2px 8px color-mix(in srgb, #000 30%, transparent);
+  overflow: hidden;
 }
 
 .replay-chat-head {
