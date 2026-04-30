@@ -23,7 +23,13 @@ button {
   border-radius: var(--radius-6);
 }
 
+.overlay-toggle.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .overlay-toggle {
+  transition: opacity 0.4s ease;
   position: fixed;
   inset-block-start: var(--size-3);
   inset-inline-end: var(--size-3);

@@ -49,6 +49,14 @@
   let inspectorOpen = $state(true);
   let overlayOpen = $state(true);
   let timer: number | undefined = $state();
+  let toggleVisible = $state(true);
+  let toggleHideTimer: number | undefined;
+
+  function showToggle() {
+    toggleVisible = true;
+    if (toggleHideTimer !== undefined) window.clearTimeout(toggleHideTimer);
+    toggleHideTimer = window.setTimeout(() => { toggleVisible = false; }, 2500);
+  }
   let piiEnabled = $state(false);
   let piiCategories = $state({ email: true, phone: true, ip: true, uuid: true });
   let piiCustomTermsText = $state("");
@@ -486,8 +494,8 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="replay-shell">
-  <button class="overlay-toggle" type="button" onclick={() => (overlayOpen = true)}>
+<div class="replay-shell" onmousemove={showToggle}>
+  <button class="overlay-toggle" class:hidden={!toggleVisible && !overlayOpen} type="button" onclick={() => (overlayOpen = true)}>
     Controls <span>⌘K</span>
   </button>
 
