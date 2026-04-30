@@ -641,8 +641,14 @@
     margin-block-end: 0;
   }
 
-  .message-content.markdown-body :global(ul),
+  .message-content.markdown-body :global(ul) {
+    list-style-type: disc;
+    margin-block: 0.4em;
+    padding-inline-start: 1.4em;
+  }
+
   .message-content.markdown-body :global(ol) {
+    list-style-type: decimal;
     margin-block: 0.4em;
     padding-inline-start: 1.4em;
   }
