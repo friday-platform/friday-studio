@@ -77,6 +77,14 @@
   const workspacesQuery = createQuery(() => workspaceQueries.list());
   const workspaces = $derived(workspacesQuery.data ?? []);
 
+  // Reset the workspace selector when the user navigates to a different agent.
+  // Without this, picking "Personal" while testing agent A persists silently
+  // when the user moves to agent B — surprising and easy to miss.
+  $effect(() => {
+    agent.id;
+    selectedWorkspaceId = undefined;
+  });
+
   /** Green when no required credentials are disconnected. */
   const healthy = $derived(!credentials.some((c) => c.required && c.status === "disconnected"));
 

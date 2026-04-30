@@ -76,6 +76,10 @@ runAgentRoute.post(
     const sessionId = crypto.randomUUID();
     const encoder = new TextEncoder();
     let closed = false;
+    // Hoisted so cancel() can dispose MCP if the client disconnects mid-run.
+    // The agent subprocess itself is bounded by the executor's NATS request
+    // timeout (~3 min); the MCP connections are the heavier orphan resource.
+    let mcpResult: Awaited<ReturnType<typeof createMCPTools>> | undefined;
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -84,11 +88,9 @@ runAgentRoute.post(
           controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
         }
 
-        let mcpResult: Awaited<ReturnType<typeof createMCPTools>> | undefined;
+        const startTime = performance.now();
 
         try {
-          const startTime = performance.now();
-
           if (mcpConfigs) {
             mcpResult = await createMCPTools(mcpConfigs, logger, {
               signal: AbortSignal.timeout(30000),
@@ -131,21 +133,31 @@ runAgentRoute.post(
           } else {
             enqueue("error", { error: result.error.reason });
           }
-
-          enqueue("done", { durationMs: Math.round(performance.now() - startTime) });
         } catch (err) {
-          logger.error("agent run failed", { agentId: id, sessionId, error: err });
+          logger.error("agent run failed", { agentId: id, sessionId, workspaceId, error: err });
           enqueue("error", { error: err instanceof Error ? err.message : String(err) });
         } finally {
+          // Always emit `done` (with duration) regardless of success / error path —
+          // clients use it for timing and end-of-stream signalling.
+          enqueue("done", { durationMs: Math.round(performance.now() - startTime) });
           closed = true;
           if (mcpResult) {
             await mcpResult.dispose().catch(() => {});
+            mcpResult = undefined;
           }
           controller.close();
         }
       },
-      cancel() {
+      async cancel() {
+        // Client disconnected. Dispose MCP eagerly; the executor's finally will
+        // kill the subprocess via SIGTERM when the NATS request times out (~3 min).
+        // `disposed` flag inside createMCPTools is idempotent, so racing with the
+        // start()-side finally is safe.
         closed = true;
+        if (mcpResult) {
+          await mcpResult.dispose().catch(() => {});
+          mcpResult = undefined;
+        }
       },
     });
 
