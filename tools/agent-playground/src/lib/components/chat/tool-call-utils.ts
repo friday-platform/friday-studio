@@ -6,12 +6,21 @@ export function isInProgress(state: ToolCallDisplay["state"]): boolean {
 
 /**
  * Calls that must render outside the collapsible group.
- * connect_service: auth button needs to be reachable once the tool completes.
- * display_artifact: artifact card should be visible as soon as input arrives.
+ *
+ * `display_artifact` is state-independent so the call doesn't migrate between
+ * `regularCalls` (inside the burst) and `actionCalls` (outside) as state
+ * transitions — that migration was the source of a visible flash where the
+ * burst bar briefly showed "1 tool call · display_artifact" before the
+ * artifact card appeared underneath. The artifact card itself handles the
+ * pre-input state by rendering its loading skeleton until `artifactId` lands.
+ *
+ * `connect_service` / `connect_communicator` stay state-conditional: their
+ * interactive card is only meaningful once the tool is awaiting user input,
+ * and surfacing it earlier would render with no provider/kind to show.
  */
 export function needsUserAction(call: ToolCallDisplay): boolean {
+  if (call.toolName === "display_artifact") return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
-  if (call.toolName === "display_artifact" && call.state !== "input-streaming") return true;
   return false;
 }
 

@@ -371,8 +371,13 @@
       onConnected={() => onCredentialConnected?.(communicatorKind)}
     />
   </div>
-{:else if artifactDisplay != null}
-  <ArtifactCard artifactId={artifactDisplay.artifactId} />
+{:else if call.toolName === "display_artifact"}
+  <!-- Always render ArtifactCard for display_artifact tool calls — including
+       during input-streaming when artifactId isn't parseable yet. The card
+       sits in its loading state until artifactId lands, then fetches. This
+       avoids a flash where the call would briefly render as a generic tool
+       card before swapping to the artifact card. -->
+  <ArtifactCard artifactId={artifactDisplay?.artifactId ?? ""} />
 {:else if call.children && call.children.length > 0}
   <DelegateToolCard {call} {onCredentialConnected} {depth} />
 {:else}

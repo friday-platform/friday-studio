@@ -132,6 +132,19 @@
     return (mt.startsWith("text/") && mt !== "text/html") || mt === "application/json";
   }
 
+  function formatBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  // Approximate size from in-memory contents string when present. Server's
+  // `size_bytes` isn't on the response, but `contents` is a faithful copy of
+  // the file body for text-ish artifacts.
+  const sizeLabel = $derived(
+    contents !== undefined ? formatBytes(new Blob([contents]).size) : undefined,
+  );
+
   function previewContents(raw: string | undefined, mt: string | undefined): string {
     if (!raw) return "";
     const text =
@@ -226,6 +239,29 @@
 
   {#if openError}
     <div class="artifact-error">{openError}</div>
+  {/if}
+
+  {#if !loading && !fetchError && (localPath || sizeLabel || mimeType)}
+    <dl class="artifact-meta">
+      {#if localPath}
+        <div class="meta-row">
+          <dt>Path</dt>
+          <dd class="meta-path" title={localPath}>{localPath}</dd>
+        </div>
+      {/if}
+      {#if mimeType}
+        <div class="meta-row">
+          <dt>Type</dt>
+          <dd>{mimeType}</dd>
+        </div>
+      {/if}
+      {#if sizeLabel}
+        <div class="meta-row">
+          <dt>Size</dt>
+          <dd>{sizeLabel}</dd>
+        </div>
+      {/if}
+    </dl>
   {/if}
 </div>
 
@@ -378,5 +414,47 @@
   .artifact-error {
     color: var(--color-error, var(--red-primary));
     font-size: var(--font-size-1);
+  }
+
+  .artifact-meta {
+    border-block-start: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding-block-start: var(--size-1-5);
+  }
+
+  .meta-row {
+    display: flex;
+    gap: var(--size-2);
+    min-inline-size: 0;
+  }
+
+  .meta-row dt {
+    color: var(--text-faded);
+    flex-shrink: 0;
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    inline-size: 36px;
+    opacity: 0.6;
+    text-transform: uppercase;
+  }
+
+  .meta-row dd {
+    color: var(--text-faded);
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-0, 11px);
+    margin: 0;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .meta-path {
+    direction: rtl;
+    text-align: start;
+    unicode-bidi: plaintext;
   }
 </style>
