@@ -1,7 +1,7 @@
 # Third-Party Licenses
 
 This file lists every third-party dependency bundled into a shipped Friday
-Studio artifact (the daemon, CLI, web playground, Friday Launcher, pty-server,
+Studio artifact (the daemon, CLI, web playground, Friday Launcher,
 webhook tunnel, and Studio Installer). It is generated automatically by
 [`scripts/generate-third-party-licenses.sh`](scripts/generate-third-party-licenses.sh).
 
@@ -14,217 +14,217 @@ dependency bump.
 
 ## Go modules
 
-Bundled into: `tools/friday-launcher`, `tools/pty-server`, `tools/webhook-tunnel`.
+Bundled into: `tools/friday-launcher`, `tools/webhook-tunnel`.
 
 | Module | Version | License | Source |
 | --- | --- | --- | --- |
 | `dario.cat/mergo` | v1.0.2 | BSD-3-Clause | https://pkg.go.dev/dario.cat/mergo |
 | `fyne.io/systray` | v1.12.1-0.20260116103033-9483f6fb4738 | Apache-2.0 | https://pkg.go.dev/fyne.io/systray |
 | `github.com/adrg/xdg` | v0.5.3 | MIT | https://pkg.go.dev/github.com/adrg/xdg |
-| `github.com/alecthomas/chroma/v2` | v2.23.1 | MIT | https://pkg.go.dev/github.com/alecthomas/chroma/v2 |
-| `github.com/alicebob/gopher-json` | v0.0.0-20180125190556-5a6b3ba71ee6 | see file | https://pkg.go.dev/github.com/alicebob/gopher-json |
-| `github.com/alicebob/miniredis` | v2.5.0+incompatible | MIT | https://pkg.go.dev/github.com/alicebob/miniredis |
-| `github.com/anmitsu/go-shlex` | v0.0.0-20200514113438-38f4b401e2be | MIT | https://pkg.go.dev/github.com/anmitsu/go-shlex |
+| `github.com/alecthomas/chroma/v2` | v2.23.1 | see source | https://pkg.go.dev/github.com/alecthomas/chroma/v2 |
+| `github.com/alicebob/gopher-json` | v0.0.0-20180125190556-5a6b3ba71ee6 | see source | https://pkg.go.dev/github.com/alicebob/gopher-json |
+| `github.com/alicebob/miniredis` | v2.5.0+incompatible | see source | https://pkg.go.dev/github.com/alicebob/miniredis |
+| `github.com/anmitsu/go-shlex` | v0.0.0-20200514113438-38f4b401e2be | see source | https://pkg.go.dev/github.com/anmitsu/go-shlex |
 | `github.com/aymanbagabas/go-pty` | v0.2.2 | MIT | https://pkg.go.dev/github.com/aymanbagabas/go-pty |
-| `github.com/bahlo/generic-list-go` | v0.2.0 | BSD-3-Clause | https://pkg.go.dev/github.com/bahlo/generic-list-go |
-| `github.com/beevik/ntp` | v0.3.0 | BSD-2-Clause | https://pkg.go.dev/github.com/beevik/ntp |
-| `github.com/boltdb/bolt` | v1.3.1 | MIT | https://pkg.go.dev/github.com/boltdb/bolt |
-| `github.com/bradfitz/gomemcache` | v0.0.0-20190913173617-a41fca850d0b | Apache-2.0 | https://pkg.go.dev/github.com/bradfitz/gomemcache |
-| `github.com/buger/jsonparser` | v1.1.2 | MIT | https://pkg.go.dev/github.com/buger/jsonparser |
-| `github.com/bytedance/gopkg` | v0.1.4 | Apache-2.0 | https://pkg.go.dev/github.com/bytedance/gopkg |
-| `github.com/bytedance/sonic/loader` | v0.5.1 | Apache-2.0 | https://pkg.go.dev/github.com/bytedance/sonic/loader |
-| `github.com/bytedance/sonic` | v1.15.0 | Apache-2.0 | https://pkg.go.dev/github.com/bytedance/sonic |
+| `github.com/bahlo/generic-list-go` | v0.2.0 | see source | https://pkg.go.dev/github.com/bahlo/generic-list-go |
+| `github.com/beevik/ntp` | v0.3.0 | see source | https://pkg.go.dev/github.com/beevik/ntp |
+| `github.com/boltdb/bolt` | v1.3.1 | see source | https://pkg.go.dev/github.com/boltdb/bolt |
+| `github.com/bradfitz/gomemcache` | v0.0.0-20190913173617-a41fca850d0b | see source | https://pkg.go.dev/github.com/bradfitz/gomemcache |
+| `github.com/buger/jsonparser` | v1.1.2 | see source | https://pkg.go.dev/github.com/buger/jsonparser |
+| `github.com/bytedance/gopkg` | v0.1.4 | see source | https://pkg.go.dev/github.com/bytedance/gopkg |
+| `github.com/bytedance/sonic/loader` | v0.5.1 | see source | https://pkg.go.dev/github.com/bytedance/sonic/loader |
+| `github.com/bytedance/sonic` | v1.15.0 | see source | https://pkg.go.dev/github.com/bytedance/sonic |
 | `github.com/caarlos0/env/v11` | v11.4.0 | MIT | https://pkg.go.dev/github.com/caarlos0/env/v11 |
-| `github.com/cenkalti/backoff/v4` | v4.1.3 | MIT | https://pkg.go.dev/github.com/cenkalti/backoff/v4 |
+| `github.com/cenkalti/backoff/v4` | v4.1.3 | see source | https://pkg.go.dev/github.com/cenkalti/backoff/v4 |
 | `github.com/chzyer/logex` | v1.1.10 | see source | https://pkg.go.dev/github.com/chzyer/logex |
-| `github.com/chzyer/readline` | v0.0.0-20180603132655-2972be24d48e | MIT | https://pkg.go.dev/github.com/chzyer/readline |
-| `github.com/chzyer/test` | v0.0.0-20180213035817-a1ea475d72b1 | MIT | https://pkg.go.dev/github.com/chzyer/test |
-| `github.com/cloudflare/circl` | v1.1.0 | BSD-3-Clause | https://pkg.go.dev/github.com/cloudflare/circl |
-| `github.com/cloudwego/base64x` | v0.1.6 | Apache-2.0 | https://pkg.go.dev/github.com/cloudwego/base64x |
+| `github.com/chzyer/readline` | v0.0.0-20180603132655-2972be24d48e | see source | https://pkg.go.dev/github.com/chzyer/readline |
+| `github.com/chzyer/test` | v0.0.0-20180213035817-a1ea475d72b1 | see source | https://pkg.go.dev/github.com/chzyer/test |
+| `github.com/cloudflare/circl` | v1.1.0 | see source | https://pkg.go.dev/github.com/cloudflare/circl |
+| `github.com/cloudwego/base64x` | v0.1.6 | see source | https://pkg.go.dev/github.com/cloudwego/base64x |
 | `github.com/coder/websocket` | v1.8.14 | see file | https://pkg.go.dev/github.com/coder/websocket |
-| `github.com/coreos/go-systemd/v22` | v22.7.0 | Apache-2.0 | https://pkg.go.dev/github.com/coreos/go-systemd/v22 |
-| `github.com/cpuguy83/go-md2man/v2` | v2.0.7 | MIT | https://pkg.go.dev/github.com/cpuguy83/go-md2man/v2 |
+| `github.com/coreos/go-systemd/v22` | v22.7.0 | see source | https://pkg.go.dev/github.com/coreos/go-systemd/v22 |
+| `github.com/cpuguy83/go-md2man/v2` | v2.0.7 | see source | https://pkg.go.dev/github.com/cpuguy83/go-md2man/v2 |
 | `github.com/creack/pty` | v1.1.24 | MIT | https://pkg.go.dev/github.com/creack/pty |
 | `github.com/DATA-DOG/go-sqlmock` | v1.3.3 | BSD-2-Clause | https://pkg.go.dev/github.com/DATA-DOG/go-sqlmock |
 | `github.com/davecgh/go-spew` | v1.1.2-0.20180830191138-d8f796af33cc | ISC | https://pkg.go.dev/github.com/davecgh/go-spew |
-| `github.com/dlclark/regexp2` | v1.11.5 | MIT | https://pkg.go.dev/github.com/dlclark/regexp2 |
+| `github.com/dlclark/regexp2` | v1.11.5 | see source | https://pkg.go.dev/github.com/dlclark/regexp2 |
 | `github.com/drone/envsubst` | v1.0.3 | MIT | https://pkg.go.dev/github.com/drone/envsubst |
-| `github.com/dustin/go-humanize` | v1.0.0 | MIT | https://pkg.go.dev/github.com/dustin/go-humanize |
+| `github.com/dustin/go-humanize` | v1.0.0 | see source | https://pkg.go.dev/github.com/dustin/go-humanize |
 | `github.com/ebitengine/purego` | v0.10.0 | Apache-2.0 | https://pkg.go.dev/github.com/ebitengine/purego |
-| `github.com/f1bonacc1/glippy` | v1.1.0 | MIT | https://pkg.go.dev/github.com/f1bonacc1/glippy |
+| `github.com/f1bonacc1/glippy` | v1.1.0 | see source | https://pkg.go.dev/github.com/f1bonacc1/glippy |
 | `github.com/f1bonacc1/go-health/v2` | v2.1.6 | MIT | https://pkg.go.dev/github.com/f1bonacc1/go-health/v2 |
 | `github.com/f1bonacc1/netstat` | v1.0.2 | MIT | https://pkg.go.dev/github.com/f1bonacc1/netstat |
 | `github.com/f1bonacc1/process-compose` | v1.103.0 | Apache-2.0 | https://pkg.go.dev/github.com/f1bonacc1/process-compose |
 | `github.com/fatih/color` | v1.19.0 | MIT | https://pkg.go.dev/github.com/fatih/color |
-| `github.com/fsnotify/fsnotify` | v1.4.7 | BSD-3-Clause | https://pkg.go.dev/github.com/fsnotify/fsnotify |
-| `github.com/gabriel-vasile/mimetype` | v1.4.13 | MIT | https://pkg.go.dev/github.com/gabriel-vasile/mimetype |
+| `github.com/fsnotify/fsnotify` | v1.4.7 | see source | https://pkg.go.dev/github.com/fsnotify/fsnotify |
+| `github.com/gabriel-vasile/mimetype` | v1.4.13 | see source | https://pkg.go.dev/github.com/gabriel-vasile/mimetype |
 | `github.com/gdamore/encoding` | v1.0.1 | Apache-2.0 | https://pkg.go.dev/github.com/gdamore/encoding |
 | `github.com/gdamore/tcell/v2` | v2.13.8 | Apache-2.0 | https://pkg.go.dev/github.com/gdamore/tcell/v2 |
-| `github.com/gin-contrib/sse` | v1.1.1 | MIT | https://pkg.go.dev/github.com/gin-contrib/sse |
-| `github.com/gin-gonic/gin` | v1.12.0 | MIT | https://pkg.go.dev/github.com/gin-gonic/gin |
-| `github.com/gliderlabs/ssh` | v0.1.2-0.20181113160402-cbabf5414432 | BSD-3-Clause | https://pkg.go.dev/github.com/gliderlabs/ssh |
-| `github.com/globalsign/mgo` | v0.0.0-20181015135952-eeefdecb41b8 | BSD-2-Clause | https://pkg.go.dev/github.com/globalsign/mgo |
+| `github.com/gin-contrib/sse` | v1.1.1 | see source | https://pkg.go.dev/github.com/gin-contrib/sse |
+| `github.com/gin-gonic/gin` | v1.12.0 | see source | https://pkg.go.dev/github.com/gin-gonic/gin |
+| `github.com/gliderlabs/ssh` | v0.1.2-0.20181113160402-cbabf5414432 | see source | https://pkg.go.dev/github.com/gliderlabs/ssh |
+| `github.com/globalsign/mgo` | v0.0.0-20181015135952-eeefdecb41b8 | see source | https://pkg.go.dev/github.com/globalsign/mgo |
 | `github.com/go-chi/chi/v5` | v5.2.5 | MIT | https://pkg.go.dev/github.com/go-chi/chi/v5 |
 | `github.com/go-chi/cors` | v1.2.2 | MIT | https://pkg.go.dev/github.com/go-chi/cors |
 | `github.com/go-co-op/gocron/v2` | v2.19.1 | MIT | https://pkg.go.dev/github.com/go-co-op/gocron/v2 |
-| `github.com/go-logr/logr` | v1.4.3 | Apache-2.0 | https://pkg.go.dev/github.com/go-logr/logr |
+| `github.com/go-logr/logr` | v1.4.3 | see source | https://pkg.go.dev/github.com/go-logr/logr |
 | `github.com/go-ole/go-ole` | v1.3.0 | MIT | https://pkg.go.dev/github.com/go-ole/go-ole |
-| `github.com/go-openapi/jsonpointer` | v0.22.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/jsonpointer |
-| `github.com/go-openapi/jsonreference` | v0.21.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/jsonreference |
-| `github.com/go-openapi/spec` | v0.22.4 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/spec |
-| `github.com/go-openapi/swag/conv` | v0.25.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/swag/conv |
-| `github.com/go-openapi/swag/jsonname` | v0.25.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/swag/jsonname |
-| `github.com/go-openapi/swag/jsonutils` | v0.25.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/swag/jsonutils |
-| `github.com/go-openapi/swag/loading` | v0.25.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/swag/loading |
-| `github.com/go-openapi/swag/stringutils` | v0.25.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/swag/stringutils |
-| `github.com/go-openapi/swag/typeutils` | v0.25.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/swag/typeutils |
-| `github.com/go-openapi/swag/yamlutils` | v0.25.5 | Apache-2.0 | https://pkg.go.dev/github.com/go-openapi/swag/yamlutils |
-| `github.com/go-playground/locales` | v0.14.1 | MIT | https://pkg.go.dev/github.com/go-playground/locales |
-| `github.com/go-playground/universal-translator` | v0.18.1 | MIT | https://pkg.go.dev/github.com/go-playground/universal-translator |
-| `github.com/go-playground/validator/v10` | v10.30.2 | MIT | https://pkg.go.dev/github.com/go-playground/validator/v10 |
-| `github.com/go-redis/redis` | v6.15.5+incompatible | BSD-2-Clause | https://pkg.go.dev/github.com/go-redis/redis |
-| `github.com/go-task/slim-sprig/v3` | v3.0.0 | MIT | https://pkg.go.dev/github.com/go-task/slim-sprig/v3 |
-| `github.com/goccy/go-json` | v0.10.6 | MIT | https://pkg.go.dev/github.com/goccy/go-json |
-| `github.com/goccy/go-yaml` | v1.19.2 | MIT | https://pkg.go.dev/github.com/goccy/go-yaml |
+| `github.com/go-openapi/jsonpointer` | v0.22.5 | see source | https://pkg.go.dev/github.com/go-openapi/jsonpointer |
+| `github.com/go-openapi/jsonreference` | v0.21.5 | see source | https://pkg.go.dev/github.com/go-openapi/jsonreference |
+| `github.com/go-openapi/spec` | v0.22.4 | see source | https://pkg.go.dev/github.com/go-openapi/spec |
+| `github.com/go-openapi/swag/conv` | v0.25.5 | see source | https://pkg.go.dev/github.com/go-openapi/swag/conv |
+| `github.com/go-openapi/swag/jsonname` | v0.25.5 | see source | https://pkg.go.dev/github.com/go-openapi/swag/jsonname |
+| `github.com/go-openapi/swag/jsonutils` | v0.25.5 | see source | https://pkg.go.dev/github.com/go-openapi/swag/jsonutils |
+| `github.com/go-openapi/swag/loading` | v0.25.5 | see source | https://pkg.go.dev/github.com/go-openapi/swag/loading |
+| `github.com/go-openapi/swag/stringutils` | v0.25.5 | see source | https://pkg.go.dev/github.com/go-openapi/swag/stringutils |
+| `github.com/go-openapi/swag/typeutils` | v0.25.5 | see source | https://pkg.go.dev/github.com/go-openapi/swag/typeutils |
+| `github.com/go-openapi/swag/yamlutils` | v0.25.5 | see source | https://pkg.go.dev/github.com/go-openapi/swag/yamlutils |
+| `github.com/go-playground/locales` | v0.14.1 | see source | https://pkg.go.dev/github.com/go-playground/locales |
+| `github.com/go-playground/universal-translator` | v0.18.1 | see source | https://pkg.go.dev/github.com/go-playground/universal-translator |
+| `github.com/go-playground/validator/v10` | v10.30.2 | see source | https://pkg.go.dev/github.com/go-playground/validator/v10 |
+| `github.com/go-redis/redis` | v6.15.5+incompatible | see source | https://pkg.go.dev/github.com/go-redis/redis |
+| `github.com/go-task/slim-sprig/v3` | v3.0.0 | see source | https://pkg.go.dev/github.com/go-task/slim-sprig/v3 |
+| `github.com/goccy/go-json` | v0.10.6 | see source | https://pkg.go.dev/github.com/goccy/go-json |
+| `github.com/goccy/go-yaml` | v1.19.2 | see source | https://pkg.go.dev/github.com/goccy/go-yaml |
 | `github.com/godbus/dbus/v5` | v5.1.0 | BSD-2-Clause | https://pkg.go.dev/github.com/godbus/dbus/v5 |
-| `github.com/gojuno/minimock/v3` | v3.0.8 | MIT | https://pkg.go.dev/github.com/gojuno/minimock/v3 |
-| `github.com/golang/protobuf` | v1.2.0 | BSD-3-Clause | https://pkg.go.dev/github.com/golang/protobuf |
-| `github.com/gomodule/redigo` | v1.8.9 | Apache-2.0 | https://pkg.go.dev/github.com/gomodule/redigo |
+| `github.com/gojuno/minimock/v3` | v3.0.8 | see source | https://pkg.go.dev/github.com/gojuno/minimock/v3 |
+| `github.com/golang/protobuf` | v1.2.0 | see source | https://pkg.go.dev/github.com/golang/protobuf |
+| `github.com/gomodule/redigo` | v1.8.9 | see source | https://pkg.go.dev/github.com/gomodule/redigo |
 | `github.com/google/go-cmp` | v0.7.0 | BSD-3-Clause | https://pkg.go.dev/github.com/google/go-cmp |
-| `github.com/google/go-tpm` | v0.3.3 | Apache-2.0 | https://pkg.go.dev/github.com/google/go-tpm |
-| `github.com/google/goexpect` | v0.0.0-20191001010744-5b6988669ffa | BSD-3-Clause | https://pkg.go.dev/github.com/google/goexpect |
-| `github.com/google/goterm` | v0.0.0-20200907032337-555d40f16ae2 | BSD-3-Clause | https://pkg.go.dev/github.com/google/goterm |
-| `github.com/google/jsonschema-go` | v0.4.2 | MIT | https://pkg.go.dev/github.com/google/jsonschema-go |
-| `github.com/google/pprof` | v0.0.0-20250403155104-27863c87afa6 | Apache-2.0 | https://pkg.go.dev/github.com/google/pprof |
+| `github.com/google/go-tpm` | v0.3.3 | see source | https://pkg.go.dev/github.com/google/go-tpm |
+| `github.com/google/goexpect` | v0.0.0-20191001010744-5b6988669ffa | see source | https://pkg.go.dev/github.com/google/goexpect |
+| `github.com/google/goterm` | v0.0.0-20200907032337-555d40f16ae2 | see source | https://pkg.go.dev/github.com/google/goterm |
+| `github.com/google/jsonschema-go` | v0.4.2 | see source | https://pkg.go.dev/github.com/google/jsonschema-go |
+| `github.com/google/pprof` | v0.0.0-20250403155104-27863c87afa6 | see source | https://pkg.go.dev/github.com/google/pprof |
 | `github.com/google/uuid` | v1.6.0 | BSD-3-Clause | https://pkg.go.dev/github.com/google/uuid |
-| `github.com/gorilla/websocket` | v1.5.3 | BSD-2-Clause | https://pkg.go.dev/github.com/gorilla/websocket |
-| `github.com/hashicorp/errwrap` | v1.0.0 | MPL-2.0 | https://pkg.go.dev/github.com/hashicorp/errwrap |
-| `github.com/hashicorp/go-multierror` | v1.1.1 | MPL-2.0 | https://pkg.go.dev/github.com/hashicorp/go-multierror |
+| `github.com/gorilla/websocket` | v1.5.3 | see source | https://pkg.go.dev/github.com/gorilla/websocket |
+| `github.com/hashicorp/errwrap` | v1.0.0 | see source | https://pkg.go.dev/github.com/hashicorp/errwrap |
+| `github.com/hashicorp/go-multierror` | v1.1.1 | see source | https://pkg.go.dev/github.com/hashicorp/go-multierror |
 | `github.com/hpcloud/tail` | v1.0.0 | MIT | https://pkg.go.dev/github.com/hpcloud/tail |
-| `github.com/inconshreveable/mousetrap` | v1.1.0 | Apache-2.0 | https://pkg.go.dev/github.com/inconshreveable/mousetrap |
-| `github.com/insomniacslk/dhcp` | v0.0.0-20211209223715-7d93572ebe8e | BSD-3-Clause | https://pkg.go.dev/github.com/insomniacslk/dhcp |
-| `github.com/intel-go/cpuid` | v0.0.0-20200819041909-2aa72927c3e2 | BSD-3-Clause | https://pkg.go.dev/github.com/intel-go/cpuid |
+| `github.com/inconshreveable/mousetrap` | v1.1.0 | see source | https://pkg.go.dev/github.com/inconshreveable/mousetrap |
+| `github.com/insomniacslk/dhcp` | v0.0.0-20211209223715-7d93572ebe8e | see source | https://pkg.go.dev/github.com/insomniacslk/dhcp |
+| `github.com/intel-go/cpuid` | v0.0.0-20200819041909-2aa72927c3e2 | see source | https://pkg.go.dev/github.com/intel-go/cpuid |
 | `github.com/InVisionApp/go-logger` | v1.0.1 | MIT | https://pkg.go.dev/github.com/InVisionApp/go-logger |
-| `github.com/invopop/jsonschema` | v0.13.0 | MIT | https://pkg.go.dev/github.com/invopop/jsonschema |
-| `github.com/jessevdk/go-flags` | v1.4.0 | BSD-3-Clause | https://pkg.go.dev/github.com/jessevdk/go-flags |
-| `github.com/jezek/xgb` | v1.3.0 | BSD-3-Clause | https://pkg.go.dev/github.com/jezek/xgb |
+| `github.com/invopop/jsonschema` | v0.13.0 | see source | https://pkg.go.dev/github.com/invopop/jsonschema |
+| `github.com/jessevdk/go-flags` | v1.4.0 | see source | https://pkg.go.dev/github.com/jessevdk/go-flags |
+| `github.com/jezek/xgb` | v1.3.0 | see source | https://pkg.go.dev/github.com/jezek/xgb |
 | `github.com/joho/godotenv` | v1.5.1 | MIT | https://pkg.go.dev/github.com/joho/godotenv |
 | `github.com/jonboulle/clockwork` | v0.5.0 | Apache-2.0 | https://pkg.go.dev/github.com/jonboulle/clockwork |
-| `github.com/jsimonetti/rtnetlink` | v0.0.0-20201110080708-d2c240429e6c | MIT | https://pkg.go.dev/github.com/jsimonetti/rtnetlink |
-| `github.com/json-iterator/go` | v1.1.12 | MIT | https://pkg.go.dev/github.com/json-iterator/go |
-| `github.com/kaey/framebuffer` | v0.0.0-20140402104929-7b385489a1ff | BSD-3-Clause | https://pkg.go.dev/github.com/kaey/framebuffer |
-| `github.com/kevinburke/ssh_config` | v1.1.0 | MIT | https://pkg.go.dev/github.com/kevinburke/ssh_config |
-| `github.com/klauspost/compress` | v1.10.6 | BSD-3-Clause | https://pkg.go.dev/github.com/klauspost/compress |
-| `github.com/klauspost/cpuid/v2` | v2.3.0 | MIT | https://pkg.go.dev/github.com/klauspost/cpuid/v2 |
-| `github.com/klauspost/pgzip` | v1.2.4 | MIT | https://pkg.go.dev/github.com/klauspost/pgzip |
-| `github.com/konsorten/go-windows-terminal-sequences` | v1.0.1 | MIT | https://pkg.go.dev/github.com/konsorten/go-windows-terminal-sequences |
+| `github.com/jsimonetti/rtnetlink` | v0.0.0-20201110080708-d2c240429e6c | see source | https://pkg.go.dev/github.com/jsimonetti/rtnetlink |
+| `github.com/json-iterator/go` | v1.1.12 | see source | https://pkg.go.dev/github.com/json-iterator/go |
+| `github.com/kaey/framebuffer` | v0.0.0-20140402104929-7b385489a1ff | see source | https://pkg.go.dev/github.com/kaey/framebuffer |
+| `github.com/kevinburke/ssh_config` | v1.1.0 | see source | https://pkg.go.dev/github.com/kevinburke/ssh_config |
+| `github.com/klauspost/compress` | v1.10.6 | see source | https://pkg.go.dev/github.com/klauspost/compress |
+| `github.com/klauspost/cpuid/v2` | v2.3.0 | see source | https://pkg.go.dev/github.com/klauspost/cpuid/v2 |
+| `github.com/klauspost/pgzip` | v1.2.4 | see source | https://pkg.go.dev/github.com/klauspost/pgzip |
+| `github.com/konsorten/go-windows-terminal-sequences` | v1.0.1 | see source | https://pkg.go.dev/github.com/konsorten/go-windows-terminal-sequences |
 | `github.com/kr/pretty` | v0.3.1 | MIT | https://pkg.go.dev/github.com/kr/pretty |
-| `github.com/kr/pty` | v1.1.8 | MIT | https://pkg.go.dev/github.com/kr/pty |
+| `github.com/kr/pty` | v1.1.8 | see source | https://pkg.go.dev/github.com/kr/pty |
 | `github.com/kr/text` | v0.2.0 | MIT | https://pkg.go.dev/github.com/kr/text |
-| `github.com/KyleBanks/depth` | v1.2.1 | MIT | https://pkg.go.dev/github.com/KyleBanks/depth |
-| `github.com/leodido/go-urn` | v1.4.0 | MIT | https://pkg.go.dev/github.com/leodido/go-urn |
+| `github.com/KyleBanks/depth` | v1.2.1 | see source | https://pkg.go.dev/github.com/KyleBanks/depth |
+| `github.com/leodido/go-urn` | v1.4.0 | see source | https://pkg.go.dev/github.com/leodido/go-urn |
 | `github.com/lucasb-eyer/go-colorful` | v1.4.0 | MIT | https://pkg.go.dev/github.com/lucasb-eyer/go-colorful |
 | `github.com/lufia/plan9stats` | v0.0.0-20260330125221-c963978e514e | BSD-3-Clause | https://pkg.go.dev/github.com/lufia/plan9stats |
-| `github.com/mailru/easyjson` | v0.9.2 | MIT | https://pkg.go.dev/github.com/mailru/easyjson |
-| `github.com/mark3labs/mcp-go` | v0.46.0 | MIT | https://pkg.go.dev/github.com/mark3labs/mcp-go |
-| `github.com/Masterminds/semver/v3` | v3.4.0 | MIT | https://pkg.go.dev/github.com/Masterminds/semver/v3 |
+| `github.com/mailru/easyjson` | v0.9.2 | see source | https://pkg.go.dev/github.com/mailru/easyjson |
+| `github.com/mark3labs/mcp-go` | v0.46.0 | see source | https://pkg.go.dev/github.com/mark3labs/mcp-go |
+| `github.com/Masterminds/semver/v3` | v3.4.0 | see source | https://pkg.go.dev/github.com/Masterminds/semver/v3 |
 | `github.com/mattn/go-colorable` | v0.1.14 | MIT | https://pkg.go.dev/github.com/mattn/go-colorable |
 | `github.com/mattn/go-isatty` | v0.0.20 | MIT | https://pkg.go.dev/github.com/mattn/go-isatty |
-| `github.com/mattn/go-runewidth` | v0.0.16 | MIT | https://pkg.go.dev/github.com/mattn/go-runewidth |
-| `github.com/mattn/go-sixel` | v0.0.5 | MIT | https://pkg.go.dev/github.com/mattn/go-sixel |
-| `github.com/mattn/go-tty` | v0.0.3 | MIT | https://pkg.go.dev/github.com/mattn/go-tty |
-| `github.com/mdlayher/ethernet` | v0.0.0-20190606142754-0394541c37b7 | MIT | https://pkg.go.dev/github.com/mdlayher/ethernet |
-| `github.com/mdlayher/netlink` | v1.1.1 | MIT | https://pkg.go.dev/github.com/mdlayher/netlink |
-| `github.com/mdlayher/raw` | v0.0.0-20191009151244-50f2db8cc065 | MIT | https://pkg.go.dev/github.com/mdlayher/raw |
-| `github.com/modern-go/concurrent` | v0.0.0-20180306012644-bacd9c7ef1dd | Apache-2.0 | https://pkg.go.dev/github.com/modern-go/concurrent |
-| `github.com/modern-go/reflect2` | v1.0.2 | Apache-2.0 | https://pkg.go.dev/github.com/modern-go/reflect2 |
-| `github.com/nanmu42/limitio` | v1.0.0 | MIT | https://pkg.go.dev/github.com/nanmu42/limitio |
-| `github.com/onsi/ginkgo/v2` | v2.25.1 | MIT | https://pkg.go.dev/github.com/onsi/ginkgo/v2 |
+| `github.com/mattn/go-runewidth` | v0.0.16 | see source | https://pkg.go.dev/github.com/mattn/go-runewidth |
+| `github.com/mattn/go-sixel` | v0.0.5 | see source | https://pkg.go.dev/github.com/mattn/go-sixel |
+| `github.com/mattn/go-tty` | v0.0.3 | see source | https://pkg.go.dev/github.com/mattn/go-tty |
+| `github.com/mdlayher/ethernet` | v0.0.0-20190606142754-0394541c37b7 | see source | https://pkg.go.dev/github.com/mdlayher/ethernet |
+| `github.com/mdlayher/netlink` | v1.1.1 | see source | https://pkg.go.dev/github.com/mdlayher/netlink |
+| `github.com/mdlayher/raw` | v0.0.0-20191009151244-50f2db8cc065 | see source | https://pkg.go.dev/github.com/mdlayher/raw |
+| `github.com/modern-go/concurrent` | v0.0.0-20180306012644-bacd9c7ef1dd | see source | https://pkg.go.dev/github.com/modern-go/concurrent |
+| `github.com/modern-go/reflect2` | v1.0.2 | see source | https://pkg.go.dev/github.com/modern-go/reflect2 |
+| `github.com/nanmu42/limitio` | v1.0.0 | see source | https://pkg.go.dev/github.com/nanmu42/limitio |
+| `github.com/onsi/ginkgo/v2` | v2.25.1 | see source | https://pkg.go.dev/github.com/onsi/ginkgo/v2 |
 | `github.com/onsi/ginkgo` | v1.6.0 | MIT | https://pkg.go.dev/github.com/onsi/ginkgo |
 | `github.com/onsi/gomega` | v1.38.2 | MIT | https://pkg.go.dev/github.com/onsi/gomega |
-| `github.com/orangecms/go-framebuffer` | v0.0.0-20200613202404-a0700d90c330 | BSD-3-Clause | https://pkg.go.dev/github.com/orangecms/go-framebuffer |
-| `github.com/pborman/getopt/v2` | v2.1.0 | BSD-3-Clause | https://pkg.go.dev/github.com/pborman/getopt/v2 |
-| `github.com/pelletier/go-toml/v2` | v2.3.0 | MIT | https://pkg.go.dev/github.com/pelletier/go-toml/v2 |
-| `github.com/pierrec/lz4/v4` | v4.1.14 | BSD-3-Clause | https://pkg.go.dev/github.com/pierrec/lz4/v4 |
+| `github.com/orangecms/go-framebuffer` | v0.0.0-20200613202404-a0700d90c330 | see source | https://pkg.go.dev/github.com/orangecms/go-framebuffer |
+| `github.com/pborman/getopt/v2` | v2.1.0 | see source | https://pkg.go.dev/github.com/pborman/getopt/v2 |
+| `github.com/pelletier/go-toml/v2` | v2.3.0 | see source | https://pkg.go.dev/github.com/pelletier/go-toml/v2 |
+| `github.com/pierrec/lz4/v4` | v4.1.14 | see source | https://pkg.go.dev/github.com/pierrec/lz4/v4 |
 | `github.com/pkg/browser` | v0.0.0-20240102092130-5ac0b6a4141c | BSD-2-Clause | https://pkg.go.dev/github.com/pkg/browser |
-| `github.com/pkg/diff` | v0.0.0-20210226163009-20ebb0f2a09e | BSD-3-Clause | https://pkg.go.dev/github.com/pkg/diff |
-| `github.com/pkg/errors` | v0.9.1 | BSD-2-Clause | https://pkg.go.dev/github.com/pkg/errors |
-| `github.com/pkg/term` | v1.2.0-beta.2 | BSD-2-Clause | https://pkg.go.dev/github.com/pkg/term |
+| `github.com/pkg/diff` | v0.0.0-20210226163009-20ebb0f2a09e | see source | https://pkg.go.dev/github.com/pkg/diff |
+| `github.com/pkg/errors` | v0.9.1 | see source | https://pkg.go.dev/github.com/pkg/errors |
+| `github.com/pkg/term` | v1.2.0-beta.2 | see source | https://pkg.go.dev/github.com/pkg/term |
 | `github.com/pmezard/go-difflib` | v1.0.1-0.20181226105442-5d4384ee4fb2 | BSD-2-Clause | https://pkg.go.dev/github.com/pmezard/go-difflib |
 | `github.com/power-devops/perfstat` | v0.0.0-20240221224432-82ca36839d55 | MIT | https://pkg.go.dev/github.com/power-devops/perfstat |
-| `github.com/ProtonMail/go-crypto` | v0.0.0-20221026131551-cf6655e29de4 | BSD-3-Clause | https://pkg.go.dev/github.com/ProtonMail/go-crypto |
-| `github.com/quic-go/qpack` | v0.6.0 | MIT | https://pkg.go.dev/github.com/quic-go/qpack |
-| `github.com/quic-go/quic-go` | v0.59.0 | MIT | https://pkg.go.dev/github.com/quic-go/quic-go |
-| `github.com/rck/unit` | v0.0.3 | BSD-3-Clause | https://pkg.go.dev/github.com/rck/unit |
-| `github.com/rekby/gpt` | v0.0.0-20200219180433-a930afbc6edc | MIT | https://pkg.go.dev/github.com/rekby/gpt |
+| `github.com/ProtonMail/go-crypto` | v0.0.0-20221026131551-cf6655e29de4 | see source | https://pkg.go.dev/github.com/ProtonMail/go-crypto |
+| `github.com/quic-go/qpack` | v0.6.0 | see source | https://pkg.go.dev/github.com/quic-go/qpack |
+| `github.com/quic-go/quic-go` | v0.59.0 | see source | https://pkg.go.dev/github.com/quic-go/quic-go |
+| `github.com/rck/unit` | v0.0.3 | see source | https://pkg.go.dev/github.com/rck/unit |
+| `github.com/rekby/gpt` | v0.0.0-20200219180433-a930afbc6edc | see source | https://pkg.go.dev/github.com/rekby/gpt |
 | `github.com/rivo/tview` | v0.42.0 | MIT | https://pkg.go.dev/github.com/rivo/tview |
 | `github.com/rivo/uniseg` | v0.4.7 | MIT | https://pkg.go.dev/github.com/rivo/uniseg |
 | `github.com/robfig/cron/v3` | v3.0.1 | MIT | https://pkg.go.dev/github.com/robfig/cron/v3 |
 | `github.com/rogpeppe/go-internal` | v1.14.1 | BSD-3-Clause | https://pkg.go.dev/github.com/rogpeppe/go-internal |
-| `github.com/rs/xid` | v1.6.0 | MIT | https://pkg.go.dev/github.com/rs/xid |
+| `github.com/rs/xid` | v1.6.0 | see source | https://pkg.go.dev/github.com/rs/xid |
 | `github.com/rs/zerolog` | v1.35.1 | MIT | https://pkg.go.dev/github.com/rs/zerolog |
-| `github.com/russross/blackfriday/v2` | v2.1.0 | BSD-2-Clause | https://pkg.go.dev/github.com/russross/blackfriday/v2 |
-| `github.com/safchain/ethtool` | v0.0.0-20200218184317-f459e2d13664 | Apache-2.0 | https://pkg.go.dev/github.com/safchain/ethtool |
+| `github.com/russross/blackfriday/v2` | v2.1.0 | see source | https://pkg.go.dev/github.com/russross/blackfriday/v2 |
+| `github.com/safchain/ethtool` | v0.0.0-20200218184317-f459e2d13664 | see source | https://pkg.go.dev/github.com/safchain/ethtool |
 | `github.com/shirou/gopsutil/v4` | v4.26.3 | BSD-3-Clause | https://pkg.go.dev/github.com/shirou/gopsutil/v4 |
-| `github.com/shirou/gopsutil` | v2.18.12+incompatible | BSD-3-Clause | https://pkg.go.dev/github.com/shirou/gopsutil |
+| `github.com/shirou/gopsutil` | v2.18.12+incompatible | see source | https://pkg.go.dev/github.com/shirou/gopsutil |
 | `github.com/sirupsen/logrus` | v1.9.4 | MIT | https://pkg.go.dev/github.com/sirupsen/logrus |
-| `github.com/soniakeys/quant` | v1.0.0 | MIT | https://pkg.go.dev/github.com/soniakeys/quant |
-| `github.com/spf13/cast` | v1.10.0 | MIT | https://pkg.go.dev/github.com/spf13/cast |
-| `github.com/spf13/cobra` | v1.10.2 | Apache-2.0 | https://pkg.go.dev/github.com/spf13/cobra |
-| `github.com/spf13/pflag` | v1.0.10 | BSD-3-Clause | https://pkg.go.dev/github.com/spf13/pflag |
-| `github.com/StackExchange/wmi` | v0.0.0-20190523213315-cbe66965904d | MIT | https://pkg.go.dev/github.com/StackExchange/wmi |
-| `github.com/stoewer/go-strcase` | v1.3.1 | MIT | https://pkg.go.dev/github.com/stoewer/go-strcase |
-| `github.com/stretchr/objx` | v0.5.2 | MIT | https://pkg.go.dev/github.com/stretchr/objx |
+| `github.com/soniakeys/quant` | v1.0.0 | see source | https://pkg.go.dev/github.com/soniakeys/quant |
+| `github.com/spf13/cast` | v1.10.0 | see source | https://pkg.go.dev/github.com/spf13/cast |
+| `github.com/spf13/cobra` | v1.10.2 | see source | https://pkg.go.dev/github.com/spf13/cobra |
+| `github.com/spf13/pflag` | v1.0.10 | see source | https://pkg.go.dev/github.com/spf13/pflag |
+| `github.com/StackExchange/wmi` | v0.0.0-20190523213315-cbe66965904d | see source | https://pkg.go.dev/github.com/StackExchange/wmi |
+| `github.com/stoewer/go-strcase` | v1.3.1 | see source | https://pkg.go.dev/github.com/stoewer/go-strcase |
+| `github.com/stretchr/objx` | v0.5.2 | see source | https://pkg.go.dev/github.com/stretchr/objx |
 | `github.com/stretchr/testify` | v1.11.1 | MIT | https://pkg.go.dev/github.com/stretchr/testify |
-| `github.com/swaggo/files` | v1.0.1 | MIT | https://pkg.go.dev/github.com/swaggo/files |
-| `github.com/swaggo/gin-swagger` | v1.6.1 | MIT | https://pkg.go.dev/github.com/swaggo/gin-swagger |
-| `github.com/swaggo/swag` | v1.16.6 | MIT | https://pkg.go.dev/github.com/swaggo/swag |
+| `github.com/swaggo/files` | v1.0.1 | see source | https://pkg.go.dev/github.com/swaggo/files |
+| `github.com/swaggo/gin-swagger` | v1.6.1 | see source | https://pkg.go.dev/github.com/swaggo/gin-swagger |
+| `github.com/swaggo/swag` | v1.16.6 | see source | https://pkg.go.dev/github.com/swaggo/swag |
 | `github.com/tklauser/go-sysconf` | v0.3.16 | BSD-3-Clause | https://pkg.go.dev/github.com/tklauser/go-sysconf |
 | `github.com/tklauser/numcpus` | v0.11.0 | Apache-2.0 | https://pkg.go.dev/github.com/tklauser/numcpus |
-| `github.com/twitchyliquid64/golang-asm` | v0.15.1 | BSD-3-Clause | https://pkg.go.dev/github.com/twitchyliquid64/golang-asm |
+| `github.com/twitchyliquid64/golang-asm` | v0.15.1 | see source | https://pkg.go.dev/github.com/twitchyliquid64/golang-asm |
 | `github.com/u-root/gobusybox/src` | v0.0.0-20221229083637-46b2883a7f90 | BSD-3-Clause | https://pkg.go.dev/github.com/u-root/gobusybox/src |
-| `github.com/u-root/iscsinl` | v0.1.1-0.20210528121423-84c32645822a | BSD-3-Clause | https://pkg.go.dev/github.com/u-root/iscsinl |
-| `github.com/u-root/prompt` | v0.0.0-20221110083427-a2ad3c8339a8 | MIT | https://pkg.go.dev/github.com/u-root/prompt |
+| `github.com/u-root/iscsinl` | v0.1.1-0.20210528121423-84c32645822a | see source | https://pkg.go.dev/github.com/u-root/iscsinl |
+| `github.com/u-root/prompt` | v0.0.0-20221110083427-a2ad3c8339a8 | see source | https://pkg.go.dev/github.com/u-root/prompt |
 | `github.com/u-root/u-root` | v0.11.0 | BSD-3-Clause | https://pkg.go.dev/github.com/u-root/u-root |
-| `github.com/u-root/uio` | v0.0.0-20220204230159-dac05f7d2cb4 | BSD-3-Clause | https://pkg.go.dev/github.com/u-root/uio |
-| `github.com/ugorji/go/codec` | v1.3.1 | MIT | https://pkg.go.dev/github.com/ugorji/go/codec |
-| `github.com/ulikunitz/xz` | v0.5.8 | BSD-2-Clause | https://pkg.go.dev/github.com/ulikunitz/xz |
-| `github.com/vishvananda/netlink` | v1.1.1-0.20211118161826-650dca95af54 | Apache-2.0 | https://pkg.go.dev/github.com/vishvananda/netlink |
-| `github.com/vishvananda/netns` | v0.0.0-20210104183010-2eb08e3e575f | Apache-2.0 | https://pkg.go.dev/github.com/vishvananda/netns |
-| `github.com/vtolstov/go-ioctl` | v0.0.0-20151206205506-6be9cced4810 | MIT | https://pkg.go.dev/github.com/vtolstov/go-ioctl |
-| `github.com/wk8/go-ordered-map/v2` | v2.1.8 | Apache-2.0 | https://pkg.go.dev/github.com/wk8/go-ordered-map/v2 |
-| `github.com/yosida95/uritemplate/v3` | v3.0.2 | BSD-3-Clause | https://pkg.go.dev/github.com/yosida95/uritemplate/v3 |
-| `github.com/yuin/goldmark` | v1.4.13 | MIT | https://pkg.go.dev/github.com/yuin/goldmark |
-| `github.com/yuin/gopher-lua` | v0.0.0-20190514113301-1cd887cd7036 | MIT | https://pkg.go.dev/github.com/yuin/gopher-lua |
+| `github.com/u-root/uio` | v0.0.0-20220204230159-dac05f7d2cb4 | see source | https://pkg.go.dev/github.com/u-root/uio |
+| `github.com/ugorji/go/codec` | v1.3.1 | see source | https://pkg.go.dev/github.com/ugorji/go/codec |
+| `github.com/ulikunitz/xz` | v0.5.8 | see source | https://pkg.go.dev/github.com/ulikunitz/xz |
+| `github.com/vishvananda/netlink` | v1.1.1-0.20211118161826-650dca95af54 | see source | https://pkg.go.dev/github.com/vishvananda/netlink |
+| `github.com/vishvananda/netns` | v0.0.0-20210104183010-2eb08e3e575f | see source | https://pkg.go.dev/github.com/vishvananda/netns |
+| `github.com/vtolstov/go-ioctl` | v0.0.0-20151206205506-6be9cced4810 | see source | https://pkg.go.dev/github.com/vtolstov/go-ioctl |
+| `github.com/wk8/go-ordered-map/v2` | v2.1.8 | see source | https://pkg.go.dev/github.com/wk8/go-ordered-map/v2 |
+| `github.com/yosida95/uritemplate/v3` | v3.0.2 | see source | https://pkg.go.dev/github.com/yosida95/uritemplate/v3 |
+| `github.com/yuin/goldmark` | v1.4.13 | see source | https://pkg.go.dev/github.com/yuin/goldmark |
+| `github.com/yuin/gopher-lua` | v0.0.0-20190514113301-1cd887cd7036 | see source | https://pkg.go.dev/github.com/yuin/gopher-lua |
 | `github.com/yusufpapurcu/wmi` | v1.2.4 | MIT | https://pkg.go.dev/github.com/yusufpapurcu/wmi |
 | `github.com/zaffka/mongodb-boltdb-mock` | v0.0.0-20221014194232-b4bb03fbe3a0 | see source | https://pkg.go.dev/github.com/zaffka/mongodb-boltdb-mock |
-| `go.mongodb.org/mongo-driver/v2` | v2.5.0 | Apache-2.0 | https://pkg.go.dev/go.mongodb.org/mongo-driver/v2 |
-| `go.uber.org/automaxprocs` | v1.6.0 | MIT | https://pkg.go.dev/go.uber.org/automaxprocs |
+| `go.mongodb.org/mongo-driver/v2` | v2.5.0 | see source | https://pkg.go.dev/go.mongodb.org/mongo-driver/v2 |
+| `go.uber.org/automaxprocs` | v1.6.0 | see source | https://pkg.go.dev/go.uber.org/automaxprocs |
 | `go.uber.org/goleak` | v1.3.0 | MIT | https://pkg.go.dev/go.uber.org/goleak |
 | `go.yaml.in/yaml/v3` | v3.0.4 | Apache-2.0 | https://pkg.go.dev/go.yaml.in/yaml/v3 |
-| `golang.org/x/arch` | v0.25.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/arch |
+| `golang.org/x/arch` | v0.25.0 | see source | https://pkg.go.dev/golang.org/x/arch |
 | `golang.org/x/crypto` | v0.49.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/crypto |
-| `golang.org/x/mod` | v0.34.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/mod |
+| `golang.org/x/mod` | v0.34.0 | see source | https://pkg.go.dev/golang.org/x/mod |
 | `golang.org/x/net` | v0.52.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/net |
-| `golang.org/x/sync` | v0.20.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/sync |
+| `golang.org/x/sync` | v0.20.0 | see source | https://pkg.go.dev/golang.org/x/sync |
 | `golang.org/x/sys` | v0.43.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/sys |
 | `golang.org/x/term` | v0.41.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/term |
 | `golang.org/x/text` | v0.35.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/text |
-| `golang.org/x/tools` | v0.43.0 | BSD-3-Clause | https://pkg.go.dev/golang.org/x/tools |
-| `golang.org/x/xerrors` | v0.0.0-20220609144429-65e65417b02f | BSD-3-Clause | https://pkg.go.dev/golang.org/x/xerrors |
-| `google.golang.org/grpc` | v1.27.1 | Apache-2.0 | https://pkg.go.dev/google.golang.org/grpc |
-| `google.golang.org/protobuf` | v1.36.11 | BSD-3-Clause | https://pkg.go.dev/google.golang.org/protobuf |
+| `golang.org/x/tools` | v0.43.0 | see source | https://pkg.go.dev/golang.org/x/tools |
+| `golang.org/x/xerrors` | v0.0.0-20220609144429-65e65417b02f | see source | https://pkg.go.dev/golang.org/x/xerrors |
+| `google.golang.org/grpc` | v1.27.1 | see source | https://pkg.go.dev/google.golang.org/grpc |
+| `google.golang.org/protobuf` | v1.36.11 | see source | https://pkg.go.dev/google.golang.org/protobuf |
 | `gopkg.in/check.v1` | v1.0.0-20201130134442-10cb98267c6c | BSD-2-Clause | https://pkg.go.dev/gopkg.in/check.v1 |
 | `gopkg.in/fsnotify.v1` | v1.4.7 | BSD-3-Clause | https://pkg.go.dev/gopkg.in/fsnotify.v1 |
 | `gopkg.in/natefinch/lumberjack.v2` | v2.2.1 | MIT | https://pkg.go.dev/gopkg.in/natefinch/lumberjack.v2 |
 | `gopkg.in/tomb.v1` | v1.0.0-20141024135613-dd632973f1e7 | BSD-3-Clause | https://pkg.go.dev/gopkg.in/tomb.v1 |
-| `gopkg.in/yaml.v1` | v1.0.0-20140924161607-9f9df34309c0 | LGPL | https://pkg.go.dev/gopkg.in/yaml.v1 |
-| `gopkg.in/yaml.v2` | v2.2.8 | Apache-2.0 | https://pkg.go.dev/gopkg.in/yaml.v2 |
+| `gopkg.in/yaml.v1` | v1.0.0-20140924161607-9f9df34309c0 | see source | https://pkg.go.dev/gopkg.in/yaml.v1 |
+| `gopkg.in/yaml.v2` | v2.2.8 | see source | https://pkg.go.dev/gopkg.in/yaml.v2 |
 | `gopkg.in/yaml.v3` | v3.0.1 | Apache-2.0 | https://pkg.go.dev/gopkg.in/yaml.v3 |
 | `howett.net/plist` | v1.0.1 | BSD-3-Clause | https://pkg.go.dev/howett.net/plist |
-| `mvdan.cc/sh/v3` | v3.4.1 | BSD-3-Clause | https://pkg.go.dev/mvdan.cc/sh/v3 |
-| `pack.ag/tftp` | v1.0.1-0.20181129014014-07909dfbde3c | MIT | https://pkg.go.dev/pack.ag/tftp |
-| `src.elv.sh` | v0.16.0-rc1.0.20220116211855-fda62502ad7f | BSD-2-Clause | https://pkg.go.dev/src.elv.sh |
+| `mvdan.cc/sh/v3` | v3.4.1 | see source | https://pkg.go.dev/mvdan.cc/sh/v3 |
+| `pack.ag/tftp` | v1.0.1-0.20181129014014-07909dfbde3c | see source | https://pkg.go.dev/pack.ag/tftp |
+| `src.elv.sh` | v0.16.0-rc1.0.20220116211855-fda62502ad7f | see source | https://pkg.go.dev/src.elv.sh |
 
 ## Rust crates
 
@@ -325,6 +325,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `dtoa` | 1.0.11 | Apache-2.0 OR MIT | https://github.com/dtolnay/dtoa |
 | `dunce` | 1.0.5 | Apache-2.0 OR CC0-1.0 OR MIT-0 | https://gitlab.com/kornelski/dunce |
 | `dyn-clone` | 1.0.20 | Apache-2.0 OR MIT | https://github.com/dtolnay/dyn-clone |
+| `either` | 1.15.0 | Apache-2.0 OR MIT | https://github.com/rayon-rs/either |
 | `embed_plist` | 1.2.2 | Apache-2.0 OR MIT | https://github.com/nvzqz/embed-plist-rs |
 | `embed-resource` | 3.0.8 | MIT | https://github.com/nabijaczleweli/rust-embed-resource |
 | `endi` | 1.1.1 | MIT | https://github.com/zeenix/endi |
@@ -390,6 +391,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `hermit-abi` | 0.5.2 | Apache-2.0 OR MIT | https://github.com/hermit-os/hermit-rs |
 | `hex` | 0.4.3 | Apache-2.0 OR MIT | https://github.com/KokaKiwi/rust-hex |
 | `hmac` | 0.12.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/MACs |
+| `home` | 0.5.12 | Apache-2.0 OR MIT | https://github.com/rust-lang/cargo |
 | `html5ever` | 0.29.1 | Apache-2.0 OR MIT | https://github.com/servo/html5ever |
 | `html5ever` | 0.38.0 | Apache-2.0 OR MIT | https://github.com/servo/html5ever |
 | `http-body-util` | 0.1.3 | MIT | https://github.com/hyperium/http-body |
@@ -441,6 +443,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `libloading` | 0.7.4 | ISC | https://github.com/nagisa/rust_libloading/ |
 | `libredox` | 0.1.16 | MIT | https://gitlab.redox-os.org/redox-os/libredox.git |
 | `linux-raw-sys` | 0.12.1 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | https://github.com/sunfishcode/linux-raw-sys |
+| `linux-raw-sys` | 0.4.15 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | https://github.com/sunfishcode/linux-raw-sys |
 | `litemap` | 0.8.2 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | `lock_api` | 0.4.14 | Apache-2.0 OR MIT | https://github.com/Amanieu/parking_lot |
 | `log` | 0.4.29 | Apache-2.0 OR MIT | https://github.com/rust-lang/log |
@@ -567,6 +570,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `ring` | 0.17.14 | Apache-2.0 AND ISC | https://github.com/briansmith/ring |
 | `rustc_version` | 0.4.1 | Apache-2.0 OR MIT | https://github.com/djc/rustc-version-rs |
 | `rustc-hash` | 2.1.2 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash |
+| `rustix` | 0.38.44 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | https://github.com/bytecodealliance/rustix |
 | `rustix` | 1.1.4 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | https://github.com/bytecodealliance/rustix |
 | `rustls-pki-types` | 1.14.0 | Apache-2.0 OR MIT | https://github.com/rustls/pki-types |
 | `rustls-webpki` | 0.103.13 | ISC | https://github.com/rustls/webpki |
@@ -587,6 +591,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `serde_derive_internals` | 0.29.1 | Apache-2.0 OR MIT | https://github.com/serde-rs/serde |
 | `serde_derive` | 1.0.228 | Apache-2.0 OR MIT | https://github.com/serde-rs/serde |
 | `serde_json` | 1.0.149 | Apache-2.0 OR MIT | https://github.com/serde-rs/json |
+| `serde_norway` | 0.9.42 | Apache-2.0 OR MIT | https://github.com/cafkafk/serde-yaml |
 | `serde_repr` | 0.1.20 | Apache-2.0 OR MIT | https://github.com/dtolnay/serde-repr |
 | `serde_spanned` | 0.6.9 | Apache-2.0 OR MIT | https://github.com/toml-rs/toml |
 | `serde_spanned` | 1.1.1 | Apache-2.0 OR MIT | https://github.com/toml-rs/toml |
@@ -690,6 +695,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `unicode-ident` | 1.0.24 | (Apache-2.0 OR MIT) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident |
 | `unicode-segmentation` | 1.13.2 | Apache-2.0 OR MIT | https://github.com/unicode-rs/unicode-segmentation |
 | `unicode-xid` | 0.2.6 | Apache-2.0 OR MIT | https://github.com/unicode-rs/unicode-xid |
+| `unsafe-libyaml-norway` | 0.2.15 | MIT | https://github.com/cafkafk/unsafe-libyaml-norway |
 | `untrusted` | 0.9.0 | ISC | https://github.com/briansmith/untrusted |
 | `url` | 2.5.8 | Apache-2.0 OR MIT | https://github.com/servo/rust-url |
 | `urlpattern` | 0.3.0 | MIT | https://github.com/denoland/rust-urlpattern |
@@ -725,6 +731,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `webview2-com-macros` | 0.8.1 | MIT | https://github.com/wravery/webview2-rs |
 | `webview2-com-sys` | 0.38.2 | MIT | https://github.com/wravery/webview2-rs |
 | `webview2-com` | 0.38.2 | MIT | https://github.com/wravery/webview2-rs |
+| `which` | 6.0.3 | MIT | https://github.com/harryfei/which-rs.git |
 | `winapi-i686-pc-windows-gnu` | 0.4.0 | Apache-2.0 OR MIT | https://github.com/retep998/winapi-rs |
 | `winapi-util` | 0.1.11 | MIT OR Unlicense | https://github.com/BurntSushi/winapi-util |
 | `winapi-x86_64-pc-windows-gnu` | 0.4.0 | Apache-2.0 OR MIT | https://github.com/retep998/winapi-rs |
@@ -790,6 +797,7 @@ Bundled into: `apps/studio-installer` (Tauri installer binary).
 | `winnow` | 0.7.15 | MIT | https://github.com/winnow-rs/winnow |
 | `winnow` | 1.0.2 | MIT | https://github.com/winnow-rs/winnow |
 | `winreg` | 0.55.0 | MIT | https://github.com/gentoo90/winreg-rs |
+| `winsafe` | 0.0.19 | MIT | https://github.com/rodrigocfd/winsafe |
 | `wit-bindgen-core` | 0.51.0 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | https://github.com/bytecodealliance/wit-bindgen |
 | `wit-bindgen-rust-macro` | 0.51.0 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | https://github.com/bytecodealliance/wit-bindgen |
 | `wit-bindgen-rust` | 0.51.0 | Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT | https://github.com/bytecodealliance/wit-bindgen |
@@ -853,66 +861,8 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@anthropic-ai/claude-agent-sdk-win32-x64` | 0.2.121 | https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk-win32-x64 |
 | `@anthropic-ai/claude-agent-sdk` | 0.2.121 | https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk |
 | `@anthropic-ai/sdk` | 0.81.0 | https://www.npmjs.com/package/@anthropic-ai/sdk |
-| `@aws-crypto/crc32` | 5.2.0 | https://www.npmjs.com/package/@aws-crypto/crc32 |
-| `@aws-crypto/crc32c` | 5.2.0 | https://www.npmjs.com/package/@aws-crypto/crc32c |
-| `@aws-crypto/sha1-browser` | 5.2.0 | https://www.npmjs.com/package/@aws-crypto/sha1-browser |
-| `@aws-crypto/sha256-browser` | 5.2.0 | https://www.npmjs.com/package/@aws-crypto/sha256-browser |
-| `@aws-crypto/sha256-js` | 5.2.0 | https://www.npmjs.com/package/@aws-crypto/sha256-js |
-| `@aws-crypto/supports-web-crypto` | 5.2.0 | https://www.npmjs.com/package/@aws-crypto/supports-web-crypto |
-| `@aws-crypto/util` | 5.2.0 | https://www.npmjs.com/package/@aws-crypto/util |
-| `@aws-sdk/client-s3` | 3.1038.0 | https://www.npmjs.com/package/@aws-sdk/client-s3 |
-| `@aws-sdk/client-sts` | 3.1038.0 | https://www.npmjs.com/package/@aws-sdk/client-sts |
-| `@aws-sdk/core` | 3.974.6 | https://www.npmjs.com/package/@aws-sdk/core |
-| `@aws-sdk/crc64-nvme` | 3.972.7 | https://www.npmjs.com/package/@aws-sdk/crc64-nvme |
-| `@aws-sdk/credential-provider-env` | 3.972.32 | https://www.npmjs.com/package/@aws-sdk/credential-provider-env |
-| `@aws-sdk/credential-provider-http` | 3.972.34 | https://www.npmjs.com/package/@aws-sdk/credential-provider-http |
-| `@aws-sdk/credential-provider-ini` | 3.972.36 | https://www.npmjs.com/package/@aws-sdk/credential-provider-ini |
-| `@aws-sdk/credential-provider-login` | 3.972.36 | https://www.npmjs.com/package/@aws-sdk/credential-provider-login |
-| `@aws-sdk/credential-provider-node` | 3.972.37 | https://www.npmjs.com/package/@aws-sdk/credential-provider-node |
-| `@aws-sdk/credential-provider-process` | 3.972.32 | https://www.npmjs.com/package/@aws-sdk/credential-provider-process |
-| `@aws-sdk/credential-provider-sso` | 3.972.36 | https://www.npmjs.com/package/@aws-sdk/credential-provider-sso |
-| `@aws-sdk/credential-provider-web-identity` | 3.972.36 | https://www.npmjs.com/package/@aws-sdk/credential-provider-web-identity |
-| `@aws-sdk/ec2-metadata-service` | 3.1038.0 | https://www.npmjs.com/package/@aws-sdk/ec2-metadata-service |
-| `@aws-sdk/middleware-bucket-endpoint` | 3.972.10 | https://www.npmjs.com/package/@aws-sdk/middleware-bucket-endpoint |
-| `@aws-sdk/middleware-expect-continue` | 3.972.10 | https://www.npmjs.com/package/@aws-sdk/middleware-expect-continue |
-| `@aws-sdk/middleware-flexible-checksums` | 3.974.14 | https://www.npmjs.com/package/@aws-sdk/middleware-flexible-checksums |
-| `@aws-sdk/middleware-host-header` | 3.972.10 | https://www.npmjs.com/package/@aws-sdk/middleware-host-header |
-| `@aws-sdk/middleware-location-constraint` | 3.972.10 | https://www.npmjs.com/package/@aws-sdk/middleware-location-constraint |
-| `@aws-sdk/middleware-logger` | 3.972.10 | https://www.npmjs.com/package/@aws-sdk/middleware-logger |
-| `@aws-sdk/middleware-recursion-detection` | 3.972.11 | https://www.npmjs.com/package/@aws-sdk/middleware-recursion-detection |
-| `@aws-sdk/middleware-sdk-s3` | 3.972.35 | https://www.npmjs.com/package/@aws-sdk/middleware-sdk-s3 |
-| `@aws-sdk/middleware-ssec` | 3.972.10 | https://www.npmjs.com/package/@aws-sdk/middleware-ssec |
-| `@aws-sdk/middleware-user-agent` | 3.972.36 | https://www.npmjs.com/package/@aws-sdk/middleware-user-agent |
-| `@aws-sdk/nested-clients` | 3.997.4 | https://www.npmjs.com/package/@aws-sdk/nested-clients |
-| `@aws-sdk/region-config-resolver` | 3.972.13 | https://www.npmjs.com/package/@aws-sdk/region-config-resolver |
-| `@aws-sdk/signature-v4-multi-region` | 3.996.23 | https://www.npmjs.com/package/@aws-sdk/signature-v4-multi-region |
-| `@aws-sdk/token-providers` | 3.1038.0 | https://www.npmjs.com/package/@aws-sdk/token-providers |
-| `@aws-sdk/types` | 3.973.8 | https://www.npmjs.com/package/@aws-sdk/types |
-| `@aws-sdk/util-arn-parser` | 3.972.3 | https://www.npmjs.com/package/@aws-sdk/util-arn-parser |
-| `@aws-sdk/util-endpoints` | 3.996.8 | https://www.npmjs.com/package/@aws-sdk/util-endpoints |
-| `@aws-sdk/util-locate-window` | 3.965.5 | https://www.npmjs.com/package/@aws-sdk/util-locate-window |
-| `@aws-sdk/util-user-agent-browser` | 3.972.10 | https://www.npmjs.com/package/@aws-sdk/util-user-agent-browser |
-| `@aws-sdk/util-user-agent-node` | 3.973.22 | https://www.npmjs.com/package/@aws-sdk/util-user-agent-node |
-| `@aws-sdk/xml-builder` | 3.972.21 | https://www.npmjs.com/package/@aws-sdk/xml-builder |
-| `@aws/lambda-invoke-store` | 0.2.4 | https://www.npmjs.com/package/@aws/lambda-invoke-store |
-| `@azure/abort-controller` | 2.1.2 | https://www.npmjs.com/package/@azure/abort-controller |
-| `@azure/core-auth` | 1.10.1 | https://www.npmjs.com/package/@azure/core-auth |
-| `@azure/core-client` | 1.10.1 | https://www.npmjs.com/package/@azure/core-client |
-| `@azure/core-http-compat` | 2.4.0 | https://www.npmjs.com/package/@azure/core-http-compat |
-| `@azure/core-lro` | 2.7.2 | https://www.npmjs.com/package/@azure/core-lro |
-| `@azure/core-paging` | 1.6.2 | https://www.npmjs.com/package/@azure/core-paging |
-| `@azure/core-rest-pipeline` | 1.23.0 | https://www.npmjs.com/package/@azure/core-rest-pipeline |
-| `@azure/core-tracing` | 1.3.1 | https://www.npmjs.com/package/@azure/core-tracing |
-| `@azure/core-util` | 1.13.1 | https://www.npmjs.com/package/@azure/core-util |
-| `@azure/core-xml` | 1.5.1 | https://www.npmjs.com/package/@azure/core-xml |
-| `@azure/identity` | 4.13.1 | https://www.npmjs.com/package/@azure/identity |
-| `@azure/logger` | 1.3.0 | https://www.npmjs.com/package/@azure/logger |
-| `@azure/msal-browser` | 5.8.0 | https://www.npmjs.com/package/@azure/msal-browser |
 | `@azure/msal-common` | 15.17.0 | https://www.npmjs.com/package/@azure/msal-common |
-| `@azure/msal-common` | 16.5.1 | https://www.npmjs.com/package/@azure/msal-common |
 | `@azure/msal-node` | 3.8.10 | https://www.npmjs.com/package/@azure/msal-node |
-| `@azure/msal-node` | 5.1.4 | https://www.npmjs.com/package/@azure/msal-node |
-| `@azure/storage-blob` | 12.26.0 | https://www.npmjs.com/package/@azure/storage-blob |
 | `@babel/code-frame` | 7.29.0 | https://www.npmjs.com/package/@babel/code-frame |
 | `@babel/generator` | 7.29.1 | https://www.npmjs.com/package/@babel/generator |
 | `@babel/helper-globals` | 7.28.0 | https://www.npmjs.com/package/@babel/helper-globals |
@@ -953,8 +903,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@codemirror/state` | 6.6.0 | https://www.npmjs.com/package/@codemirror/state |
 | `@codemirror/view` | 6.41.1 | https://www.npmjs.com/package/@codemirror/view |
 | `@coderabbitai/bitbucket` | 1.1.4 | https://www.npmjs.com/package/@coderabbitai/bitbucket |
-| `@colors/colors` | 1.6.0 | https://www.npmjs.com/package/@colors/colors |
-| `@dabh/diagnostics` | 2.0.8 | https://www.npmjs.com/package/@dabh/diagnostics |
 | `@deno/kv-darwin-arm64` | 0.13.0 | https://www.npmjs.com/package/@deno/kv-darwin-arm64 |
 | `@deno/kv-darwin-x64` | 0.13.0 | https://www.npmjs.com/package/@deno/kv-darwin-x64 |
 | `@deno/kv-linux-x64-gnu` | 0.13.0 | https://www.npmjs.com/package/@deno/kv-linux-x64-gnu |
@@ -1043,8 +991,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@jsr/std__media-types` | 1.1.0 | https://www.npmjs.com/package/@jsr/std__media-types |
 | `@jsr/std__path` | 0.217.0 | https://www.npmjs.com/package/@jsr/std__path |
 | `@jsr/std__path` | 1.1.4 | https://www.npmjs.com/package/@jsr/std__path |
-| `@jsr/std__regexp` | 1.0.2 | https://www.npmjs.com/package/@jsr/std__regexp |
-| `@jsr/std__text` | 1.0.18 | https://www.npmjs.com/package/@jsr/std__text |
 | `@jsr/std__yaml` | 1.1.0 | https://www.npmjs.com/package/@jsr/std__yaml |
 | `@lezer/common` | 1.5.2 | https://www.npmjs.com/package/@lezer/common |
 | `@lezer/css` | 1.3.3 | https://www.npmjs.com/package/@lezer/css |
@@ -1070,32 +1016,9 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@noble/ciphers` | 2.2.0 | https://www.npmjs.com/package/@noble/ciphers |
 | `@noble/hashes` | 1.4.0 | https://www.npmjs.com/package/@noble/hashes |
 | `@noble/hashes` | 2.2.0 | https://www.npmjs.com/package/@noble/hashes |
-| `@nodable/entities` | 2.1.0 | https://www.npmjs.com/package/@nodable/entities |
 | `@nodelib/fs.scandir` | 2.1.5 | https://www.npmjs.com/package/@nodelib/fs.scandir |
 | `@nodelib/fs.stat` | 2.0.5 | https://www.npmjs.com/package/@nodelib/fs.stat |
 | `@nodelib/fs.walk` | 1.2.8 | https://www.npmjs.com/package/@nodelib/fs.walk |
-| `@octokit/auth-app` | 7.2.2 | https://www.npmjs.com/package/@octokit/auth-app |
-| `@octokit/auth-app` | 8.2.0 | https://www.npmjs.com/package/@octokit/auth-app |
-| `@octokit/auth-oauth-app` | 8.1.4 | https://www.npmjs.com/package/@octokit/auth-oauth-app |
-| `@octokit/auth-oauth-app` | 9.0.3 | https://www.npmjs.com/package/@octokit/auth-oauth-app |
-| `@octokit/auth-oauth-device` | 7.1.5 | https://www.npmjs.com/package/@octokit/auth-oauth-device |
-| `@octokit/auth-oauth-device` | 8.0.3 | https://www.npmjs.com/package/@octokit/auth-oauth-device |
-| `@octokit/auth-oauth-user` | 5.1.6 | https://www.npmjs.com/package/@octokit/auth-oauth-user |
-| `@octokit/auth-oauth-user` | 6.0.2 | https://www.npmjs.com/package/@octokit/auth-oauth-user |
-| `@octokit/endpoint` | 10.1.4 | https://www.npmjs.com/package/@octokit/endpoint |
-| `@octokit/endpoint` | 11.0.3 | https://www.npmjs.com/package/@octokit/endpoint |
-| `@octokit/oauth-authorization-url` | 7.1.1 | https://www.npmjs.com/package/@octokit/oauth-authorization-url |
-| `@octokit/oauth-authorization-url` | 8.0.0 | https://www.npmjs.com/package/@octokit/oauth-authorization-url |
-| `@octokit/oauth-methods` | 5.1.5 | https://www.npmjs.com/package/@octokit/oauth-methods |
-| `@octokit/oauth-methods` | 6.0.2 | https://www.npmjs.com/package/@octokit/oauth-methods |
-| `@octokit/openapi-types` | 25.1.0 | https://www.npmjs.com/package/@octokit/openapi-types |
-| `@octokit/openapi-types` | 27.0.0 | https://www.npmjs.com/package/@octokit/openapi-types |
-| `@octokit/request-error` | 6.1.8 | https://www.npmjs.com/package/@octokit/request-error |
-| `@octokit/request-error` | 7.1.0 | https://www.npmjs.com/package/@octokit/request-error |
-| `@octokit/request` | 10.0.8 | https://www.npmjs.com/package/@octokit/request |
-| `@octokit/request` | 9.2.4 | https://www.npmjs.com/package/@octokit/request |
-| `@octokit/types` | 14.1.0 | https://www.npmjs.com/package/@octokit/types |
-| `@octokit/types` | 16.0.0 | https://www.npmjs.com/package/@octokit/types |
 | `@opentelemetry/api-logs` | 0.215.0 | https://www.npmjs.com/package/@opentelemetry/api-logs |
 | `@opentelemetry/api` | 1.9.0 | https://www.npmjs.com/package/@opentelemetry/api |
 | `@opentelemetry/api` | 1.9.1 | https://www.npmjs.com/package/@opentelemetry/api |
@@ -1198,60 +1121,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@slack/logger` | 4.0.1 | https://www.npmjs.com/package/@slack/logger |
 | `@slack/types` | 2.20.1 | https://www.npmjs.com/package/@slack/types |
 | `@slack/web-api` | 7.15.1 | https://www.npmjs.com/package/@slack/web-api |
-| `@smithy/chunked-blob-reader-native` | 4.2.3 | https://www.npmjs.com/package/@smithy/chunked-blob-reader-native |
-| `@smithy/chunked-blob-reader` | 5.2.2 | https://www.npmjs.com/package/@smithy/chunked-blob-reader |
-| `@smithy/config-resolver` | 4.4.17 | https://www.npmjs.com/package/@smithy/config-resolver |
-| `@smithy/core` | 3.23.17 | https://www.npmjs.com/package/@smithy/core |
-| `@smithy/credential-provider-imds` | 4.2.14 | https://www.npmjs.com/package/@smithy/credential-provider-imds |
-| `@smithy/eventstream-codec` | 4.2.14 | https://www.npmjs.com/package/@smithy/eventstream-codec |
-| `@smithy/eventstream-serde-browser` | 4.2.14 | https://www.npmjs.com/package/@smithy/eventstream-serde-browser |
-| `@smithy/eventstream-serde-config-resolver` | 4.3.14 | https://www.npmjs.com/package/@smithy/eventstream-serde-config-resolver |
-| `@smithy/eventstream-serde-node` | 4.2.14 | https://www.npmjs.com/package/@smithy/eventstream-serde-node |
-| `@smithy/eventstream-serde-universal` | 4.2.14 | https://www.npmjs.com/package/@smithy/eventstream-serde-universal |
-| `@smithy/fetch-http-handler` | 5.3.17 | https://www.npmjs.com/package/@smithy/fetch-http-handler |
-| `@smithy/hash-blob-browser` | 4.2.15 | https://www.npmjs.com/package/@smithy/hash-blob-browser |
-| `@smithy/hash-node` | 4.2.14 | https://www.npmjs.com/package/@smithy/hash-node |
-| `@smithy/hash-stream-node` | 4.2.14 | https://www.npmjs.com/package/@smithy/hash-stream-node |
-| `@smithy/invalid-dependency` | 4.2.14 | https://www.npmjs.com/package/@smithy/invalid-dependency |
-| `@smithy/is-array-buffer` | 2.2.0 | https://www.npmjs.com/package/@smithy/is-array-buffer |
-| `@smithy/is-array-buffer` | 4.2.2 | https://www.npmjs.com/package/@smithy/is-array-buffer |
-| `@smithy/md5-js` | 4.2.14 | https://www.npmjs.com/package/@smithy/md5-js |
-| `@smithy/middleware-content-length` | 4.2.14 | https://www.npmjs.com/package/@smithy/middleware-content-length |
-| `@smithy/middleware-endpoint` | 4.4.32 | https://www.npmjs.com/package/@smithy/middleware-endpoint |
-| `@smithy/middleware-retry` | 4.5.6 | https://www.npmjs.com/package/@smithy/middleware-retry |
-| `@smithy/middleware-serde` | 4.2.20 | https://www.npmjs.com/package/@smithy/middleware-serde |
-| `@smithy/middleware-stack` | 4.2.14 | https://www.npmjs.com/package/@smithy/middleware-stack |
-| `@smithy/node-config-provider` | 4.3.14 | https://www.npmjs.com/package/@smithy/node-config-provider |
-| `@smithy/node-http-handler` | 4.6.1 | https://www.npmjs.com/package/@smithy/node-http-handler |
-| `@smithy/property-provider` | 4.2.14 | https://www.npmjs.com/package/@smithy/property-provider |
-| `@smithy/protocol-http` | 5.3.14 | https://www.npmjs.com/package/@smithy/protocol-http |
-| `@smithy/querystring-builder` | 4.2.14 | https://www.npmjs.com/package/@smithy/querystring-builder |
-| `@smithy/querystring-parser` | 4.2.14 | https://www.npmjs.com/package/@smithy/querystring-parser |
-| `@smithy/service-error-classification` | 4.3.1 | https://www.npmjs.com/package/@smithy/service-error-classification |
-| `@smithy/shared-ini-file-loader` | 4.4.9 | https://www.npmjs.com/package/@smithy/shared-ini-file-loader |
-| `@smithy/signature-v4` | 5.3.14 | https://www.npmjs.com/package/@smithy/signature-v4 |
-| `@smithy/smithy-client` | 4.12.13 | https://www.npmjs.com/package/@smithy/smithy-client |
-| `@smithy/types` | 4.14.1 | https://www.npmjs.com/package/@smithy/types |
-| `@smithy/url-parser` | 4.2.14 | https://www.npmjs.com/package/@smithy/url-parser |
-| `@smithy/util-base64` | 4.3.2 | https://www.npmjs.com/package/@smithy/util-base64 |
-| `@smithy/util-body-length-browser` | 4.2.2 | https://www.npmjs.com/package/@smithy/util-body-length-browser |
-| `@smithy/util-body-length-node` | 4.2.3 | https://www.npmjs.com/package/@smithy/util-body-length-node |
-| `@smithy/util-buffer-from` | 2.2.0 | https://www.npmjs.com/package/@smithy/util-buffer-from |
-| `@smithy/util-buffer-from` | 4.2.2 | https://www.npmjs.com/package/@smithy/util-buffer-from |
-| `@smithy/util-config-provider` | 4.2.2 | https://www.npmjs.com/package/@smithy/util-config-provider |
-| `@smithy/util-defaults-mode-browser` | 4.3.49 | https://www.npmjs.com/package/@smithy/util-defaults-mode-browser |
-| `@smithy/util-defaults-mode-node` | 4.2.54 | https://www.npmjs.com/package/@smithy/util-defaults-mode-node |
-| `@smithy/util-endpoints` | 3.4.2 | https://www.npmjs.com/package/@smithy/util-endpoints |
-| `@smithy/util-hex-encoding` | 4.2.2 | https://www.npmjs.com/package/@smithy/util-hex-encoding |
-| `@smithy/util-middleware` | 4.2.14 | https://www.npmjs.com/package/@smithy/util-middleware |
-| `@smithy/util-retry` | 4.3.5 | https://www.npmjs.com/package/@smithy/util-retry |
-| `@smithy/util-stream` | 4.5.25 | https://www.npmjs.com/package/@smithy/util-stream |
-| `@smithy/util-uri-escape` | 4.2.2 | https://www.npmjs.com/package/@smithy/util-uri-escape |
-| `@smithy/util-utf8` | 2.3.0 | https://www.npmjs.com/package/@smithy/util-utf8 |
-| `@smithy/util-utf8` | 4.2.2 | https://www.npmjs.com/package/@smithy/util-utf8 |
-| `@smithy/util-waiter` | 4.3.0 | https://www.npmjs.com/package/@smithy/util-waiter |
-| `@smithy/uuid` | 1.1.2 | https://www.npmjs.com/package/@smithy/uuid |
-| `@so-ric/colorspace` | 1.1.6 | https://www.npmjs.com/package/@so-ric/colorspace |
 | `@standard-community/standard-json` | 0.3.5 | https://www.npmjs.com/package/@standard-community/standard-json |
 | `@standard-community/standard-openapi` | 0.2.9 | https://www.npmjs.com/package/@standard-community/standard-openapi |
 | `@standard-schema/spec` | 1.1.0 | https://www.npmjs.com/package/@standard-schema/spec |
@@ -1285,7 +1154,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@tauri-apps/cli-win32-x64-msvc` | 2.10.1 | https://www.npmjs.com/package/@tauri-apps/cli-win32-x64-msvc |
 | `@tauri-apps/cli` | 2.10.1 | https://www.npmjs.com/package/@tauri-apps/cli |
 | `@tauri-apps/plugin-opener` | 2.5.3 | https://www.npmjs.com/package/@tauri-apps/plugin-opener |
-| `@techteamer/ocsp` | 1.0.1 | https://www.npmjs.com/package/@techteamer/ocsp |
 | `@tokenizer/inflate` | 0.4.1 | https://www.npmjs.com/package/@tokenizer/inflate |
 | `@tokenizer/token` | 0.3.0 | https://www.npmjs.com/package/@tokenizer/token |
 | `@total-typescript/ts-reset` | 0.6.1 | https://www.npmjs.com/package/@total-typescript/ts-reset |
@@ -1311,7 +1179,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@types/proper-lockfile` | 4.1.4 | https://www.npmjs.com/package/@types/proper-lockfile |
 | `@types/react` | 19.2.14 | https://www.npmjs.com/package/@types/react |
 | `@types/retry` | 0.12.0 | https://www.npmjs.com/package/@types/retry |
-| `@types/triple-beam` | 1.3.5 | https://www.npmjs.com/package/@types/triple-beam |
 | `@types/trusted-types` | 2.0.7 | https://www.npmjs.com/package/@types/trusted-types |
 | `@types/turndown` | 5.0.6 | https://www.npmjs.com/package/@types/turndown |
 | `@types/unist` | 3.0.3 | https://www.npmjs.com/package/@types/unist |
@@ -1327,7 +1194,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@typescript-eslint/typescript-estree` | 8.59.1 | https://www.npmjs.com/package/@typescript-eslint/typescript-estree |
 | `@typescript-eslint/utils` | 8.59.1 | https://www.npmjs.com/package/@typescript-eslint/utils |
 | `@typescript-eslint/visitor-keys` | 8.59.1 | https://www.npmjs.com/package/@typescript-eslint/visitor-keys |
-| `@typespec/ts-http-runtime` | 0.3.5 | https://www.npmjs.com/package/@typespec/ts-http-runtime |
 | `@ungap/structured-clone` | 1.3.0 | https://www.npmjs.com/package/@ungap/structured-clone |
 | `@vercel/oidc` | 3.2.0 | https://www.npmjs.com/package/@vercel/oidc |
 | `@vitest/coverage-v8` | 4.1.5 | https://www.npmjs.com/package/@vitest/coverage-v8 |
@@ -1360,13 +1226,9 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `ansi-styles` | 6.2.3 | https://www.npmjs.com/package/ansi-styles |
 | `argparse` | 2.0.1 | https://www.npmjs.com/package/argparse |
 | `aria-query` | 5.3.1 | https://www.npmjs.com/package/aria-query |
-| `asn1.js-rfc2560` | 5.0.1 | https://www.npmjs.com/package/asn1.js-rfc2560 |
-| `asn1.js-rfc5280` | 3.0.0 | https://www.npmjs.com/package/asn1.js-rfc5280 |
-| `asn1.js` | 5.4.1 | https://www.npmjs.com/package/asn1.js |
 | `asn1js` | 3.0.10 | https://www.npmjs.com/package/asn1js |
 | `assertion-error` | 2.0.1 | https://www.npmjs.com/package/assertion-error |
 | `ast-v8-to-istanbul` | 1.0.0 | https://www.npmjs.com/package/ast-v8-to-istanbul |
-| `async` | 3.2.6 | https://www.npmjs.com/package/async |
 | `asynckit` | 0.4.0 | https://www.npmjs.com/package/asynckit |
 | `auto-bind` | 5.0.1 | https://www.npmjs.com/package/auto-bind |
 | `axios` | 1.15.2 | https://www.npmjs.com/package/axios |
@@ -1374,19 +1236,13 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `bail` | 2.0.2 | https://www.npmjs.com/package/bail |
 | `balanced-match` | 1.0.2 | https://www.npmjs.com/package/balanced-match |
 | `balanced-match` | 4.0.4 | https://www.npmjs.com/package/balanced-match |
-| `base64-js` | 1.5.1 | https://www.npmjs.com/package/base64-js |
-| `big-integer` | 1.6.52 | https://www.npmjs.com/package/big-integer |
-| `bignumber.js` | 9.3.1 | https://www.npmjs.com/package/bignumber.js |
-| `bn.js` | 4.12.3 | https://www.npmjs.com/package/bn.js |
 | `body-parser` | 2.2.2 | https://www.npmjs.com/package/body-parser |
+| `boolbase` | 1.0.0 | https://www.npmjs.com/package/boolbase |
 | `bottleneck` | 2.19.5 | https://www.npmjs.com/package/bottleneck |
-| `bowser` | 2.14.1 | https://www.npmjs.com/package/bowser |
 | `brace-expansion` | 2.1.0 | https://www.npmjs.com/package/brace-expansion |
 | `brace-expansion` | 5.0.5 | https://www.npmjs.com/package/brace-expansion |
 | `braces` | 3.0.3 | https://www.npmjs.com/package/braces |
-| `browser-request` | 0.3.3 | https://www.npmjs.com/package/browser-request |
 | `buffer-equal-constant-time` | 1.0.1 | https://www.npmjs.com/package/buffer-equal-constant-time |
-| `bundle-name` | 4.1.0 | https://www.npmjs.com/package/bundle-name |
 | `bytes` | 3.1.2 | https://www.npmjs.com/package/bytes |
 | `bytestreamjs` | 2.0.1 | https://www.npmjs.com/package/bytestreamjs |
 | `call-bind-apply-helpers` | 1.0.2 | https://www.npmjs.com/package/call-bind-apply-helpers |
@@ -1415,11 +1271,7 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `code-excerpt` | 4.0.0 | https://www.npmjs.com/package/code-excerpt |
 | `codemirror` | 6.0.2 | https://www.npmjs.com/package/codemirror |
 | `color-convert` | 2.0.1 | https://www.npmjs.com/package/color-convert |
-| `color-convert` | 3.1.3 | https://www.npmjs.com/package/color-convert |
 | `color-name` | 1.1.4 | https://www.npmjs.com/package/color-name |
-| `color-name` | 2.1.0 | https://www.npmjs.com/package/color-name |
-| `color-string` | 2.1.4 | https://www.npmjs.com/package/color-string |
-| `color` | 5.0.3 | https://www.npmjs.com/package/color |
 | `colorette` | 1.4.0 | https://www.npmjs.com/package/colorette |
 | `colorette` | 2.0.20 | https://www.npmjs.com/package/colorette |
 | `combined-stream` | 1.0.8 | https://www.npmjs.com/package/combined-stream |
@@ -1439,17 +1291,15 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `crelt` | 1.0.6 | https://www.npmjs.com/package/crelt |
 | `cron-parser` | 5.5.0 | https://www.npmjs.com/package/cron-parser |
 | `cross-spawn` | 7.0.6 | https://www.npmjs.com/package/cross-spawn |
+| `css-select` | 5.2.2 | https://www.npmjs.com/package/css-select |
+| `css-what` | 6.2.2 | https://www.npmjs.com/package/css-what |
 | `cssesc` | 3.0.0 | https://www.npmjs.com/package/cssesc |
 | `csstype` | 3.2.3 | https://www.npmjs.com/package/csstype |
-| `data-uri-to-buffer` | 4.0.1 | https://www.npmjs.com/package/data-uri-to-buffer |
 | `debug` | 4.4.3 | https://www.npmjs.com/package/debug |
 | `decode-named-character-reference` | 1.3.0 | https://www.npmjs.com/package/decode-named-character-reference |
 | `dedent-js` | 1.0.1 | https://www.npmjs.com/package/dedent-js |
 | `deep-is` | 0.1.4 | https://www.npmjs.com/package/deep-is |
 | `deepmerge` | 4.3.1 | https://www.npmjs.com/package/deepmerge |
-| `default-browser-id` | 5.0.1 | https://www.npmjs.com/package/default-browser-id |
-| `default-browser` | 5.5.0 | https://www.npmjs.com/package/default-browser |
-| `define-lazy-prop` | 3.0.0 | https://www.npmjs.com/package/define-lazy-prop |
 | `delayed-stream` | 1.0.0 | https://www.npmjs.com/package/delayed-stream |
 | `depd` | 2.0.0 | https://www.npmjs.com/package/depd |
 | `dequal` | 2.0.3 | https://www.npmjs.com/package/dequal |
@@ -1460,14 +1310,17 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `discord-api-types` | 0.38.47 | https://www.npmjs.com/package/discord-api-types |
 | `discord-interactions` | 4.4.0 | https://www.npmjs.com/package/discord-interactions |
 | `discord.js` | 14.26.3 | https://www.npmjs.com/package/discord.js |
+| `dom-serializer` | 2.0.0 | https://www.npmjs.com/package/dom-serializer |
+| `domelementtype` | 2.3.0 | https://www.npmjs.com/package/domelementtype |
+| `domhandler` | 5.0.3 | https://www.npmjs.com/package/domhandler |
 | `dompurify` | 3.4.1 | https://www.npmjs.com/package/dompurify |
+| `domutils` | 3.2.2 | https://www.npmjs.com/package/domutils |
 | `dotenv` | 17.4.2 | https://www.npmjs.com/package/dotenv |
 | `dunder-proto` | 1.0.1 | https://www.npmjs.com/package/dunder-proto |
 | `ecdsa-sig-formatter` | 1.0.11 | https://www.npmjs.com/package/ecdsa-sig-formatter |
 | `ee-first` | 1.1.1 | https://www.npmjs.com/package/ee-first |
 | `emoji-regex` | 10.6.0 | https://www.npmjs.com/package/emoji-regex |
 | `emoji-regex` | 8.0.0 | https://www.npmjs.com/package/emoji-regex |
-| `enabled` | 2.0.0 | https://www.npmjs.com/package/enabled |
 | `encodeurl` | 2.0.0 | https://www.npmjs.com/package/encodeurl |
 | `entities` | 4.5.0 | https://www.npmjs.com/package/entities |
 | `entities` | 7.0.1 | https://www.npmjs.com/package/entities |
@@ -1505,29 +1358,20 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `etag` | 1.8.1 | https://www.npmjs.com/package/etag |
 | `eventemitter3` | 4.0.7 | https://www.npmjs.com/package/eventemitter3 |
 | `eventemitter3` | 5.0.4 | https://www.npmjs.com/package/eventemitter3 |
-| `events` | 3.3.0 | https://www.npmjs.com/package/events |
 | `eventsource-parser` | 3.0.8 | https://www.npmjs.com/package/eventsource-parser |
 | `eventsource` | 3.0.7 | https://www.npmjs.com/package/eventsource |
-| `expand-tilde` | 2.0.2 | https://www.npmjs.com/package/expand-tilde |
 | `expect-type` | 1.3.0 | https://www.npmjs.com/package/expect-type |
 | `express-rate-limit` | 8.4.1 | https://www.npmjs.com/package/express-rate-limit |
 | `express` | 5.2.1 | https://www.npmjs.com/package/express |
 | `extend` | 3.0.2 | https://www.npmjs.com/package/extend |
-| `fast-content-type-parse` | 2.0.1 | https://www.npmjs.com/package/fast-content-type-parse |
-| `fast-content-type-parse` | 3.0.0 | https://www.npmjs.com/package/fast-content-type-parse |
 | `fast-deep-equal` | 3.1.3 | https://www.npmjs.com/package/fast-deep-equal |
 | `fast-glob` | 3.3.3 | https://www.npmjs.com/package/fast-glob |
 | `fast-json-stable-stringify` | 2.1.0 | https://www.npmjs.com/package/fast-json-stable-stringify |
 | `fast-levenshtein` | 2.0.6 | https://www.npmjs.com/package/fast-levenshtein |
 | `fast-uri` | 3.1.0 | https://www.npmjs.com/package/fast-uri |
-| `fast-xml-builder` | 1.1.5 | https://www.npmjs.com/package/fast-xml-builder |
-| `fast-xml-parser` | 5.7.2 | https://www.npmjs.com/package/fast-xml-parser |
-| `fastest-levenshtein` | 1.0.16 | https://www.npmjs.com/package/fastest-levenshtein |
 | `fastq` | 1.20.1 | https://www.npmjs.com/package/fastq |
 | `fd-package-json` | 2.0.0 | https://www.npmjs.com/package/fd-package-json |
 | `fdir` | 6.5.0 | https://www.npmjs.com/package/fdir |
-| `fecha` | 4.2.3 | https://www.npmjs.com/package/fecha |
-| `fetch-blob` | 3.2.0 | https://www.npmjs.com/package/fetch-blob |
 | `figures` | 6.1.0 | https://www.npmjs.com/package/figures |
 | `file-entry-cache` | 8.0.0 | https://www.npmjs.com/package/file-entry-cache |
 | `file-type` | 22.0.1 | https://www.npmjs.com/package/file-type |
@@ -1536,19 +1380,14 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `find-up` | 5.0.0 | https://www.npmjs.com/package/find-up |
 | `flat-cache` | 4.0.1 | https://www.npmjs.com/package/flat-cache |
 | `flatted` | 3.4.2 | https://www.npmjs.com/package/flatted |
-| `fn.name` | 1.1.0 | https://www.npmjs.com/package/fn.name |
 | `focus-trap` | 7.8.0 | https://www.npmjs.com/package/focus-trap |
 | `follow-redirects` | 1.16.0 | https://www.npmjs.com/package/follow-redirects |
 | `form-data` | 4.0.5 | https://www.npmjs.com/package/form-data |
 | `formatly` | 0.3.0 | https://www.npmjs.com/package/formatly |
-| `formdata-polyfill` | 4.0.10 | https://www.npmjs.com/package/formdata-polyfill |
 | `forwarded` | 0.2.0 | https://www.npmjs.com/package/forwarded |
 | `fresh` | 2.0.0 | https://www.npmjs.com/package/fresh |
 | `fsevents` | 2.3.3 | https://www.npmjs.com/package/fsevents |
 | `function-bind` | 1.1.2 | https://www.npmjs.com/package/function-bind |
-| `gaxios` | 7.1.4 | https://www.npmjs.com/package/gaxios |
-| `gcp-metadata` | 8.1.2 | https://www.npmjs.com/package/gcp-metadata |
-| `generic-pool` | 3.9.0 | https://www.npmjs.com/package/generic-pool |
 | `get-caller-file` | 2.0.5 | https://www.npmjs.com/package/get-caller-file |
 | `get-east-asian-width` | 1.5.0 | https://www.npmjs.com/package/get-east-asian-width |
 | `get-intrinsic` | 1.3.0 | https://www.npmjs.com/package/get-intrinsic |
@@ -1558,8 +1397,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `glob-parent` | 6.0.2 | https://www.npmjs.com/package/glob-parent |
 | `globals` | 16.5.0 | https://www.npmjs.com/package/globals |
 | `globals` | 17.5.0 | https://www.npmjs.com/package/globals |
-| `google-auth-library` | 10.6.2 | https://www.npmjs.com/package/google-auth-library |
-| `google-logging-utils` | 1.1.3 | https://www.npmjs.com/package/google-logging-utils |
 | `gopd` | 1.2.0 | https://www.npmjs.com/package/gopd |
 | `graceful-fs` | 4.2.11 | https://www.npmjs.com/package/graceful-fs |
 | `gunshi` | 0.29.4 | https://www.npmjs.com/package/gunshi |
@@ -1570,14 +1407,13 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `hasown` | 2.0.3 | https://www.npmjs.com/package/hasown |
 | `hast-util-to-html` | 9.0.5 | https://www.npmjs.com/package/hast-util-to-html |
 | `hast-util-whitespace` | 3.0.0 | https://www.npmjs.com/package/hast-util-whitespace |
-| `homedir-polyfill` | 1.0.3 | https://www.npmjs.com/package/homedir-polyfill |
+| `he` | 1.2.0 | https://www.npmjs.com/package/he |
 | `hono-openapi` | 1.3.0 | https://www.npmjs.com/package/hono-openapi |
 | `hono-rate-limiter` | 0.4.2 | https://www.npmjs.com/package/hono-rate-limiter |
 | `hono` | 4.12.15 | https://www.npmjs.com/package/hono |
 | `html-escaper` | 2.0.2 | https://www.npmjs.com/package/html-escaper |
 | `html-void-elements` | 3.0.0 | https://www.npmjs.com/package/html-void-elements |
 | `http-errors` | 2.0.1 | https://www.npmjs.com/package/http-errors |
-| `http-proxy-agent` | 7.0.2 | https://www.npmjs.com/package/http-proxy-agent |
 | `https-proxy-agent` | 7.0.6 | https://www.npmjs.com/package/https-proxy-agent |
 | `iconv-lite` | 0.7.2 | https://www.npmjs.com/package/iconv-lite |
 | `ieee754` | 1.2.1 | https://www.npmjs.com/package/ieee754 |
@@ -1592,23 +1428,18 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `ink` | 7.0.1 | https://www.npmjs.com/package/ink |
 | `ip-address` | 10.1.0 | https://www.npmjs.com/package/ip-address |
 | `ipaddr.js` | 1.9.1 | https://www.npmjs.com/package/ipaddr.js |
-| `is-docker` | 2.2.1 | https://www.npmjs.com/package/is-docker |
-| `is-docker` | 3.0.0 | https://www.npmjs.com/package/is-docker |
 | `is-electron` | 2.2.2 | https://www.npmjs.com/package/is-electron |
 | `is-extglob` | 2.1.1 | https://www.npmjs.com/package/is-extglob |
 | `is-fullwidth-code-point` | 3.0.0 | https://www.npmjs.com/package/is-fullwidth-code-point |
 | `is-fullwidth-code-point` | 5.1.0 | https://www.npmjs.com/package/is-fullwidth-code-point |
 | `is-glob` | 4.0.3 | https://www.npmjs.com/package/is-glob |
 | `is-in-ci` | 2.0.0 | https://www.npmjs.com/package/is-in-ci |
-| `is-inside-container` | 1.0.0 | https://www.npmjs.com/package/is-inside-container |
 | `is-number` | 7.0.0 | https://www.npmjs.com/package/is-number |
 | `is-plain-obj` | 4.1.0 | https://www.npmjs.com/package/is-plain-obj |
 | `is-promise` | 4.0.0 | https://www.npmjs.com/package/is-promise |
 | `is-reference` | 3.0.3 | https://www.npmjs.com/package/is-reference |
 | `is-stream` | 2.0.1 | https://www.npmjs.com/package/is-stream |
 | `is-unicode-supported` | 2.1.0 | https://www.npmjs.com/package/is-unicode-supported |
-| `is-wsl` | 2.2.0 | https://www.npmjs.com/package/is-wsl |
-| `is-wsl` | 3.1.1 | https://www.npmjs.com/package/is-wsl |
 | `isarray` | 1.0.0 | https://www.npmjs.com/package/isarray |
 | `isexe` | 2.0.0 | https://www.npmjs.com/package/isexe |
 | `istanbul-lib-coverage` | 3.2.2 | https://www.npmjs.com/package/istanbul-lib-coverage |
@@ -1623,7 +1454,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `js-tokens` | 4.0.0 | https://www.npmjs.com/package/js-tokens |
 | `js-yaml` | 4.1.1 | https://www.npmjs.com/package/js-yaml |
 | `jsesc` | 3.1.0 | https://www.npmjs.com/package/jsesc |
-| `json-bigint` | 1.0.0 | https://www.npmjs.com/package/json-bigint |
 | `json-buffer` | 3.0.1 | https://www.npmjs.com/package/json-buffer |
 | `json-schema-to-ts` | 3.1.1 | https://www.npmjs.com/package/json-schema-to-ts |
 | `json-schema-traverse` | 0.4.1 | https://www.npmjs.com/package/json-schema-traverse |
@@ -1631,7 +1461,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `json-schema-typed` | 8.0.2 | https://www.npmjs.com/package/json-schema-typed |
 | `json-schema` | 0.4.0 | https://www.npmjs.com/package/json-schema |
 | `json-stable-stringify-without-jsonify` | 1.0.1 | https://www.npmjs.com/package/json-stable-stringify-without-jsonify |
-| `json-with-bigint` | 3.5.8 | https://www.npmjs.com/package/json-with-bigint |
 | `jsonrepair` | 3.14.0 | https://www.npmjs.com/package/jsonrepair |
 | `jsonwebtoken` | 9.0.3 | https://www.npmjs.com/package/jsonwebtoken |
 | `jszip` | 3.10.1 | https://www.npmjs.com/package/jszip |
@@ -1643,7 +1472,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `kleur` | 4.1.5 | https://www.npmjs.com/package/kleur |
 | `knip` | 6.7.0 | https://www.npmjs.com/package/knip |
 | `known-css-properties` | 0.37.0 | https://www.npmjs.com/package/known-css-properties |
-| `kuler` | 2.0.0 | https://www.npmjs.com/package/kuler |
 | `levn` | 0.4.1 | https://www.npmjs.com/package/levn |
 | `lie` | 3.3.0 | https://www.npmjs.com/package/lie |
 | `lilconfig` | 2.1.0 | https://www.npmjs.com/package/lilconfig |
@@ -1665,7 +1493,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `lodash.snakecase` | 4.1.1 | https://www.npmjs.com/package/lodash.snakecase |
 | `lodash` | 4.18.1 | https://www.npmjs.com/package/lodash |
 | `log-update` | 6.1.0 | https://www.npmjs.com/package/log-update |
-| `logform` | 2.7.0 | https://www.npmjs.com/package/logform |
 | `long` | 5.3.2 | https://www.npmjs.com/package/long |
 | `longest-streak` | 3.1.0 | https://www.npmjs.com/package/longest-streak |
 | `lru-cache` | 11.3.5 | https://www.npmjs.com/package/lru-cache |
@@ -1731,14 +1558,11 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `mime-types` | 3.0.2 | https://www.npmjs.com/package/mime-types |
 | `mimic-fn` | 2.1.0 | https://www.npmjs.com/package/mimic-fn |
 | `mimic-function` | 5.0.1 | https://www.npmjs.com/package/mimic-function |
-| `minimalistic-assert` | 1.0.1 | https://www.npmjs.com/package/minimalistic-assert |
 | `minimatch` | 10.2.5 | https://www.npmjs.com/package/minimatch |
 | `minimatch` | 5.1.9 | https://www.npmjs.com/package/minimatch |
 | `minimist` | 1.2.8 | https://www.npmjs.com/package/minimist |
 | `minipass` | 7.1.3 | https://www.npmjs.com/package/minipass |
 | `minizlib` | 3.1.0 | https://www.npmjs.com/package/minizlib |
-| `moment-timezone` | 0.5.48 | https://www.npmjs.com/package/moment-timezone |
-| `moment` | 2.30.1 | https://www.npmjs.com/package/moment |
 | `mri` | 1.2.0 | https://www.npmjs.com/package/mri |
 | `mrmime` | 2.0.1 | https://www.npmjs.com/package/mrmime |
 | `ms` | 2.1.3 | https://www.npmjs.com/package/ms |
@@ -1748,22 +1572,19 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `natural-compare` | 1.4.0 | https://www.npmjs.com/package/natural-compare |
 | `negotiator` | 1.0.0 | https://www.npmjs.com/package/negotiator |
 | `nkeys.js` | 1.1.0 | https://www.npmjs.com/package/nkeys.js |
-| `node-domexception` | 1.0.0 | https://www.npmjs.com/package/node-domexception |
 | `node-fetch` | 2.7.0 | https://www.npmjs.com/package/node-fetch |
-| `node-fetch` | 3.3.2 | https://www.npmjs.com/package/node-fetch |
+| `node-html-parser` | 7.1.0 | https://www.npmjs.com/package/node-html-parser |
+| `nth-check` | 2.1.1 | https://www.npmjs.com/package/nth-check |
 | `oauth4webapi` | 3.8.6 | https://www.npmjs.com/package/oauth4webapi |
 | `object-assign` | 4.1.1 | https://www.npmjs.com/package/object-assign |
 | `object-inspect` | 1.13.4 | https://www.npmjs.com/package/object-inspect |
 | `obug` | 2.1.1 | https://www.npmjs.com/package/obug |
 | `on-finished` | 2.4.1 | https://www.npmjs.com/package/on-finished |
 | `once` | 1.4.0 | https://www.npmjs.com/package/once |
-| `one-time` | 1.0.0 | https://www.npmjs.com/package/one-time |
 | `onetime` | 5.1.2 | https://www.npmjs.com/package/onetime |
 | `onetime` | 7.0.0 | https://www.npmjs.com/package/onetime |
 | `oniguruma-parser` | 0.12.2 | https://www.npmjs.com/package/oniguruma-parser |
 | `oniguruma-to-es` | 4.3.6 | https://www.npmjs.com/package/oniguruma-to-es |
-| `open` | 10.2.0 | https://www.npmjs.com/package/open |
-| `open` | 7.4.2 | https://www.npmjs.com/package/open |
 | `openapi-fetch` | 0.14.1 | https://www.npmjs.com/package/openapi-fetch |
 | `openapi-fetch` | 0.15.2 | https://www.npmjs.com/package/openapi-fetch |
 | `openapi-fetch` | 0.17.0 | https://www.npmjs.com/package/openapi-fetch |
@@ -1786,11 +1607,9 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `papaparse` | 5.5.3 | https://www.npmjs.com/package/papaparse |
 | `parallel-web` | 0.4.1 | https://www.npmjs.com/package/parallel-web |
 | `parse-json` | 8.3.0 | https://www.npmjs.com/package/parse-json |
-| `parse-passwd` | 1.0.0 | https://www.npmjs.com/package/parse-passwd |
 | `parseurl` | 1.3.3 | https://www.npmjs.com/package/parseurl |
 | `patch-console` | 2.0.0 | https://www.npmjs.com/package/patch-console |
 | `path-exists` | 4.0.0 | https://www.npmjs.com/package/path-exists |
-| `path-expression-matcher` | 1.5.0 | https://www.npmjs.com/package/path-expression-matcher |
 | `path-key` | 3.1.1 | https://www.npmjs.com/package/path-key |
 | `path-to-regexp` | 8.4.2 | https://www.npmjs.com/package/path-to-regexp |
 | `pathe` | 2.0.3 | https://www.npmjs.com/package/pathe |
@@ -1828,7 +1647,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `react-reconciler` | 0.33.0 | https://www.npmjs.com/package/react-reconciler |
 | `react` | 19.2.5 | https://www.npmjs.com/package/react |
 | `readable-stream` | 2.3.8 | https://www.npmjs.com/package/readable-stream |
-| `readable-stream` | 3.6.2 | https://www.npmjs.com/package/readable-stream |
 | `readdirp` | 4.1.2 | https://www.npmjs.com/package/readdirp |
 | `readdirp` | 5.0.0 | https://www.npmjs.com/package/readdirp |
 | `reflect-metadata` | 0.2.2 | https://www.npmjs.com/package/reflect-metadata |
@@ -1844,19 +1662,16 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `resolve-pkg-maps` | 1.0.0 | https://www.npmjs.com/package/resolve-pkg-maps |
 | `restore-cursor` | 4.0.0 | https://www.npmjs.com/package/restore-cursor |
 | `restore-cursor` | 5.1.0 | https://www.npmjs.com/package/restore-cursor |
-| `restty` | 0.1.35 | https://www.npmjs.com/package/restty |
 | `retry` | 0.12.0 | https://www.npmjs.com/package/retry |
 | `retry` | 0.13.1 | https://www.npmjs.com/package/retry |
 | `reusify` | 1.1.0 | https://www.npmjs.com/package/reusify |
 | `rfdc` | 1.4.1 | https://www.npmjs.com/package/rfdc |
 | `rollup` | 4.60.2 | https://www.npmjs.com/package/rollup |
 | `router` | 2.2.0 | https://www.npmjs.com/package/router |
-| `run-applescript` | 7.1.0 | https://www.npmjs.com/package/run-applescript |
 | `run-parallel` | 1.2.0 | https://www.npmjs.com/package/run-parallel |
 | `rxjs` | 7.8.2 | https://www.npmjs.com/package/rxjs |
 | `sade` | 1.8.1 | https://www.npmjs.com/package/sade |
 | `safe-buffer` | 5.1.2 | https://www.npmjs.com/package/safe-buffer |
-| `safe-stable-stringify` | 2.5.0 | https://www.npmjs.com/package/safe-stable-stringify |
 | `safer-buffer` | 2.1.2 | https://www.npmjs.com/package/safer-buffer |
 | `scheduler` | 0.27.0 | https://www.npmjs.com/package/scheduler |
 | `scule` | 1.3.0 | https://www.npmjs.com/package/scule |
@@ -1877,16 +1692,13 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `siginfo` | 2.0.0 | https://www.npmjs.com/package/siginfo |
 | `signal-exit` | 3.0.7 | https://www.npmjs.com/package/signal-exit |
 | `signal-exit` | 4.1.0 | https://www.npmjs.com/package/signal-exit |
-| `simple-lru-cache` | 0.0.2 | https://www.npmjs.com/package/simple-lru-cache |
 | `sirv` | 3.0.2 | https://www.npmjs.com/package/sirv |
 | `slice-ansi` | 7.1.2 | https://www.npmjs.com/package/slice-ansi |
 | `slice-ansi` | 8.0.0 | https://www.npmjs.com/package/slice-ansi |
 | `slice-ansi` | 9.0.0 | https://www.npmjs.com/package/slice-ansi |
 | `smol-toml` | 1.6.1 | https://www.npmjs.com/package/smol-toml |
-| `snowflake-sdk` | 2.4.0 | https://www.npmjs.com/package/snowflake-sdk |
 | `source-map-js` | 1.2.1 | https://www.npmjs.com/package/source-map-js |
 | `space-separated-tokens` | 2.0.2 | https://www.npmjs.com/package/space-separated-tokens |
-| `stack-trace` | 0.0.10 | https://www.npmjs.com/package/stack-trace |
 | `stack-utils` | 2.0.6 | https://www.npmjs.com/package/stack-utils |
 | `stackback` | 0.0.2 | https://www.npmjs.com/package/stackback |
 | `statuses` | 2.0.2 | https://www.npmjs.com/package/statuses |
@@ -1900,7 +1712,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `strip-ansi` | 6.0.1 | https://www.npmjs.com/package/strip-ansi |
 | `strip-ansi` | 7.2.0 | https://www.npmjs.com/package/strip-ansi |
 | `strip-json-comments` | 5.0.3 | https://www.npmjs.com/package/strip-json-comments |
-| `strnum` | 2.2.3 | https://www.npmjs.com/package/strnum |
 | `strtok3` | 10.3.5 | https://www.npmjs.com/package/strtok3 |
 | `style-mod` | 4.1.3 | https://www.npmjs.com/package/style-mod |
 | `supports-color` | 10.2.2 | https://www.npmjs.com/package/supports-color |
@@ -1914,22 +1725,17 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `tagged-tag` | 1.0.0 | https://www.npmjs.com/package/tagged-tag |
 | `tar` | 7.5.13 | https://www.npmjs.com/package/tar |
 | `terminal-size` | 4.0.1 | https://www.npmjs.com/package/terminal-size |
-| `text-hex` | 1.0.0 | https://www.npmjs.com/package/text-hex |
-| `text-shaper` | 0.1.22 | https://www.npmjs.com/package/text-shaper |
 | `tinybench` | 2.9.0 | https://www.npmjs.com/package/tinybench |
 | `tinyexec` | 1.1.1 | https://www.npmjs.com/package/tinyexec |
 | `tinyglobby` | 0.2.16 | https://www.npmjs.com/package/tinyglobby |
 | `tinyrainbow` | 3.1.0 | https://www.npmjs.com/package/tinyrainbow |
 | `to-regex-range` | 5.0.1 | https://www.npmjs.com/package/to-regex-range |
-| `toad-cache` | 3.7.0 | https://www.npmjs.com/package/toad-cache |
 | `toidentifier` | 1.0.1 | https://www.npmjs.com/package/toidentifier |
 | `token-types` | 6.1.2 | https://www.npmjs.com/package/token-types |
-| `toml` | 3.0.0 | https://www.npmjs.com/package/toml |
 | `totalist` | 3.0.1 | https://www.npmjs.com/package/totalist |
 | `tr46` | 0.0.3 | https://www.npmjs.com/package/tr46 |
 | `tree-kill` | 1.2.2 | https://www.npmjs.com/package/tree-kill |
 | `trim-lines` | 3.0.1 | https://www.npmjs.com/package/trim-lines |
-| `triple-beam` | 1.4.1 | https://www.npmjs.com/package/triple-beam |
 | `trough` | 2.2.0 | https://www.npmjs.com/package/trough |
 | `ts-algebra` | 2.0.0 | https://www.npmjs.com/package/ts-algebra |
 | `ts-api-utils` | 2.5.0 | https://www.npmjs.com/package/ts-api-utils |
@@ -1956,8 +1762,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `unist-util-stringify-position` | 4.0.0 | https://www.npmjs.com/package/unist-util-stringify-position |
 | `unist-util-visit-parents` | 6.0.2 | https://www.npmjs.com/package/unist-util-visit-parents |
 | `unist-util-visit` | 5.1.0 | https://www.npmjs.com/package/unist-util-visit |
-| `universal-github-app-jwt` | 2.2.2 | https://www.npmjs.com/package/universal-github-app-jwt |
-| `universal-user-agent` | 7.0.3 | https://www.npmjs.com/package/universal-user-agent |
 | `unpipe` | 1.0.0 | https://www.npmjs.com/package/unpipe |
 | `uri-js-replace` | 1.0.1 | https://www.npmjs.com/package/uri-js-replace |
 | `uri-js` | 4.4.1 | https://www.npmjs.com/package/uri-js |
@@ -1971,22 +1775,18 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `vitest` | 4.1.5 | https://www.npmjs.com/package/vitest |
 | `w3c-keyname` | 2.2.8 | https://www.npmjs.com/package/w3c-keyname |
 | `walk-up-path` | 4.0.0 | https://www.npmjs.com/package/walk-up-path |
-| `web-streams-polyfill` | 3.3.3 | https://www.npmjs.com/package/web-streams-polyfill |
 | `webidl-conversions` | 3.0.1 | https://www.npmjs.com/package/webidl-conversions |
 | `whatwg-mimetype` | 3.0.0 | https://www.npmjs.com/package/whatwg-mimetype |
 | `whatwg-url` | 5.0.0 | https://www.npmjs.com/package/whatwg-url |
 | `which` | 2.0.2 | https://www.npmjs.com/package/which |
 | `why-is-node-running` | 2.3.0 | https://www.npmjs.com/package/why-is-node-running |
 | `widest-line` | 6.0.0 | https://www.npmjs.com/package/widest-line |
-| `winston-transport` | 4.9.0 | https://www.npmjs.com/package/winston-transport |
-| `winston` | 3.19.0 | https://www.npmjs.com/package/winston |
 | `word-wrap` | 1.2.5 | https://www.npmjs.com/package/word-wrap |
 | `wrap-ansi` | 10.0.0 | https://www.npmjs.com/package/wrap-ansi |
 | `wrap-ansi` | 7.0.0 | https://www.npmjs.com/package/wrap-ansi |
 | `wrap-ansi` | 9.0.2 | https://www.npmjs.com/package/wrap-ansi |
 | `wrappy` | 1.0.2 | https://www.npmjs.com/package/wrappy |
 | `ws` | 8.20.0 | https://www.npmjs.com/package/ws |
-| `wsl-utils` | 0.1.0 | https://www.npmjs.com/package/wsl-utils |
 | `xstate` | 5.31.0 | https://www.npmjs.com/package/xstate |
 | `y18n` | 5.0.8 | https://www.npmjs.com/package/y18n |
 | `yallist` | 4.0.0 | https://www.npmjs.com/package/yallist |
@@ -2018,11 +1818,9 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@std/media-types` | 1.1.0 | https://jsr.io/@std/media-types |
 | `@std/path` | 1.0.9 | https://jsr.io/@std/path |
 | `@std/path` | 1.1.4 | https://jsr.io/@std/path |
-| `@std/regexp` | 1.0.2 | https://jsr.io/@std/regexp |
 | `@std/streams` | 1.1.0 | https://jsr.io/@std/streams |
 | `@std/tar` | 0.1.10 | https://jsr.io/@std/tar |
 | `@std/testing` | 1.0.18 | https://jsr.io/@std/testing |
-| `@std/text` | 1.0.18 | https://jsr.io/@std/text |
 | `@std/yaml` | 1.1.0 | https://jsr.io/@std/yaml |
 
 ## How to retrieve full license text
@@ -2039,4 +1837,4 @@ Release artifacts (Tauri installer, compiled Go binaries) bundle their full
 license texts under their respective resources directories per the Apache-2.0,
 MIT, and BSD attribution requirements.
 
-Generated: 2026-04-28
+Generated: 2026-04-30

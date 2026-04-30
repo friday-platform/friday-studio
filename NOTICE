@@ -61,3 +61,29 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+r-efi
+--------------------------------------------------------------------------------
+
+Source:    https://github.com/r-efi/r-efi
+Available: Apache-2.0 OR LGPL-2.1-or-later OR MIT
+Elected:   Apache-2.0
+
+Pulled in transitively by the Studio Installer (Rust / Tauri) build. Friday
+Studio elects the Apache-2.0 license; the full text is available at
+https://www.apache.org/licenses/LICENSE-2.0.
+
+--------------------------------------------------------------------------------
+Servo / Stylo MPL-2.0 components
+--------------------------------------------------------------------------------
+
+The Studio Installer (Rust / Tauri) bundles several MPL-2.0-licensed crates
+maintained by the Servo project, including (but not limited to) `cssparser`,
+`cssparser-macros`, `dtoa-short`, `option-ext`, and `selectors`. The complete,
+versioned list is in THIRD_PARTY_LICENSES.md.
+
+The MPL-2.0 source for these crates is available from each crate's upstream
+repository as listed in THIRD_PARTY_LICENSES.md. Modifications, if any, are
+preserved in this repository's git history. The full text of MPL-2.0 is
+available at https://www.mozilla.org/en-US/MPL/2.0/.
