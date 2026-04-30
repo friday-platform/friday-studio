@@ -1,4 +1,5 @@
 <script lang="ts">
+import { invoke } from "@tauri-apps/api/core";
 import { advanceStep, stopRunningLauncher } from "../lib/installer.ts";
 import { type InstallMode, store } from "../lib/store.svelte.ts";
 
@@ -17,7 +18,15 @@ let stopError = $state<string | null>(null);
 async function openStudio(): Promise<void> {
   // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
   const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl("http://localhost:5200");
+  // playground_url() resolves FRIDAY_PORT_PLAYGROUND from ~/.friday/local/.env
+  // — installs with a port override land on the right URL.
+  let url = "http://localhost:15200";
+  try {
+    url = await invoke<string>("playground_url");
+  } catch {
+    // Fall back to the installer's default port.
+  }
+  await openUrl(url);
 }
 
 // Update / re-install path: if the previous launcher is still

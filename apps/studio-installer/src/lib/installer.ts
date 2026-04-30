@@ -138,9 +138,26 @@ async function launchByOpening(): Promise<void> {
   try {
     // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
     const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl("http://localhost:5200");
+    await openUrl(await resolvePlaygroundUrl());
   } catch {
     // ignore — browser might already be open
+  }
+}
+
+/**
+ * Returns the URL the wizard should open to land on the local
+ * playground, honoring FRIDAY_PORT_PLAYGROUND from ~/.friday/local/.env.
+ * Centralises the lookup so every "open studio" entry point lands on
+ * the same URL — pre-fix, three call sites hardcoded :5200 and broke
+ * any install with a port override.
+ */
+async function resolvePlaygroundUrl(): Promise<string> {
+  try {
+    return await invoke<string>("playground_url");
+  } catch {
+    // Tauri command unavailable (test env etc.) — fall back to the
+    // installer's default port.
+    return "http://localhost:15200";
   }
 }
 
@@ -510,7 +527,7 @@ export async function createAppBundleIfDarwin(installDir: string, version: strin
 export async function openPlaygroundAndExit(): Promise<void> {
   try {
     const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl("http://localhost:5200");
+    await openUrl(await resolvePlaygroundUrl());
   } catch {
     // ignore — browser might already be open or plugin unavailable
   }

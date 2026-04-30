@@ -75,6 +75,30 @@ pub fn env_file_location() -> Result<String, String> {
     Ok(env_file_path()?.display().to_string())
 }
 
+/// Returns the URL the wizard should open in the user's browser to
+/// land on the local playground. Reads FRIDAY_PORT_PLAYGROUND from
+/// ~/.friday/local/.env (which the wizard itself writes during the
+/// API Keys step) and falls back to 15200 if the file is missing or
+/// the key is unset. Centralised so every "open studio" entry point
+/// (Welcome, launchByOpening, openPlaygroundAndExit) lands on the
+/// same URL — pre-fix, all three hardcoded :5200 and broke any
+/// install with a port override.
+#[tauri::command]
+pub fn playground_url() -> Result<String, String> {
+    let port = match fs::read_to_string(env_file_path()?) {
+        Ok(content) => parse_env_lines(&content)
+            .into_iter()
+            .find_map(|(k, v)| match k {
+                Some(key) if key == "FRIDAY_PORT_PLAYGROUND" => Some(v.trim().to_string()),
+                _ => None,
+            })
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "15200".to_string()),
+        Err(_) => "15200".to_string(),
+    };
+    Ok(format!("http://localhost:{port}"))
+}
+
 #[tauri::command]
 pub fn write_env_file(
     anthropic_key: Option<String>,
