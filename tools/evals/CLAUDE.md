@@ -92,8 +92,6 @@ deno task evals compare --before <tag> --after <tag>  # Compare two runs
 
 - Eval names use path-style: `"email/refusal/prompt-injection"`
 - `loadCredentials()` at module top level, not inside eval callbacks
-- Use `setupFakeCredentials()` when you need env vars for routing but not real
-  API calls
 - Scoring uses `createScore(name, value, reason)` — value must be `[0, 1]`
 - `llmJudge()` for semantic scoring when rule-based isn't enough
 - Case interfaces extend `BaseEvalCase` — domain-specific fields go on the
