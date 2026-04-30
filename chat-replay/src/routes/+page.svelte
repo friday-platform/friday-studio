@@ -49,10 +49,58 @@
   let inspectorOpen = $state(true);
   let overlayOpen = $state(true);
   let timer: number | undefined = $state();
+  let piiEnabled = $state(false);
+  let piiCategories = $state({ email: true, phone: true, ip: true, uuid: true });
 
   const events = $derived(buildEvents(snapshot));
   const currentEvent = $derived(events[currentIndex]);
   const visibleMessages = $derived(buildVisibleMessages(snapshot, currentIndex));
+
+  // --- PII filter ---
+
+  const FAKE_FIRST = ["alice", "bob", "charlie", "diana", "evan", "fiona", "george", "helen", "ivan", "julia", "kai", "lena"];
+  const FAKE_LAST = ["smith", "jones", "chen", "patel", "nguyen", "kim", "garcia", "mueller", "santos", "okonkwo"];
+  const FAKE_DOMAINS = ["example.com", "test.org", "sample.net", "demo.io", "placeholder.dev"];
+
+  function stableHash(str: string): number {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }
+
+  function fakeEmail(original: string): string {
+    const h = stableHash(original);
+    return `${FAKE_FIRST[h % FAKE_FIRST.length]}.${FAKE_LAST[(h >> 4) % FAKE_LAST.length]}@${FAKE_DOMAINS[(h >> 8) % FAKE_DOMAINS.length]}`;
+  }
+
+  function fakePhone(original: string): string {
+    const h = stableHash(original);
+    const area = 200 + (h % 800);
+    const mid = String(100 + ((h >> 4) % 900)).padStart(3, "0");
+    const last = String(1000 + ((h >> 8) % 9000)).padStart(4, "0");
+    return `(${area}) ${mid}-${last}`;
+  }
+
+  function fakeIp(original: string): string {
+    const h = stableHash(original);
+    return `203.0.113.${(h % 254) + 1}`;
+  }
+
+  function fakeUuid(original: string): string {
+    const h = stableHash(original);
+    const hex = (n: number, len: number) => (n >>> 0).toString(16).padStart(len, "0").slice(0, len);
+    return `${hex(h, 8)}-${hex(h >> 4, 4)}-4${hex(h >> 8, 3)}-${["8", "9", "a", "b"][h & 3]}${hex(h >> 12, 3)}-${hex(h, 12)}`;
+  }
+
+  function filterText(text: string): string {
+    if (!piiEnabled) return text;
+    let s = text;
+    if (piiCategories.uuid) s = s.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, fakeUuid);
+    if (piiCategories.email) s = s.replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, fakeEmail);
+    if (piiCategories.ip) s = s.replace(/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g, fakeIp);
+    if (piiCategories.phone) s = s.replace(/(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/g, fakePhone);
+    return s;
+  }
 
   function buildEvents(value: Snapshot): ReplayEvent[] {
     const result: ReplayEvent[] = [];
@@ -81,11 +129,11 @@
 
   function eventDetail(part: unknown): string {
     if (!isObject(part)) return "";
-    if (typeof part.text === "string") return part.text;
+    if (typeof part.text === "string") return filterText(part.text);
     if (part.type === "data-nested-chunk" || part.type === "data-delegate-chunk") return nestedLabel(part);
-    if ("output" in part) return summarize(part.output);
-    if ("input" in part) return summarize(part.input);
-    if ("data" in part) return summarize(part.data);
+    if ("output" in part) return filterText(summarize(part.output));
+    if ("input" in part) return filterText(summarize(part.input));
+    if ("data" in part) return filterText(summarize(part.data));
     return "";
   }
 
@@ -155,11 +203,11 @@
       const type = part.type;
       if (type === "text" && typeof part.text === "string") {
         flushBurst();
-        textBuffer += part.text;
+        textBuffer += filterText(part.text);
         continue;
       }
       if (type === "reasoning" || type === "reasoning-delta") {
-        const delta = type === "reasoning" ? stringValue(part.text, "") : stringValue(part.delta, "");
+        const delta = filterText(type === "reasoning" ? stringValue(part.text, "") : stringValue(part.delta, ""));
         if (toolBuffer.length > 0) reasoningBuffer += delta;
         else textBuffer += delta;
         continue;
@@ -408,6 +456,19 @@
         <button type="button" onclick={() => (inspectorOpen = !inspectorOpen)}>{inspectorOpen ? "Hide" : "Show"} timeline/event</button>
       </section>
 
+      <section class="replay-pii" aria-label="PII filter">
+        <label class="pii-master">
+          <input type="checkbox" bind:checked={piiEnabled} />
+          PII filter
+        </label>
+        {#if piiEnabled}
+          <label><input type="checkbox" bind:checked={piiCategories.email} /> Emails</label>
+          <label><input type="checkbox" bind:checked={piiCategories.phone} /> Phones</label>
+          <label><input type="checkbox" bind:checked={piiCategories.ip} /> IPs</label>
+          <label><input type="checkbox" bind:checked={piiCategories.uuid} /> UUIDs</label>
+        {/if}
+      </section>
+
       {#if inspectorOpen}
         <section class="replay-inspector">
           <aside class="replay-panel">
@@ -424,7 +485,7 @@
 
           <aside class="replay-panel raw-event">
             <div class="replay-panel-title">Current raw event</div>
-            <div class="replay-scroll"><pre>{JSON.stringify(currentEvent ?? {}, null, 2)}</pre></div>
+            <div class="replay-scroll"><pre>{filterText(JSON.stringify(currentEvent ?? {}, null, 2))}</pre></div>
           </aside>
         </section>
       {/if}

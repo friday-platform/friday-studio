@@ -56,7 +56,7 @@ button {
   inset-inline: var(--size-4);
   max-block-size: calc(100dvh - var(--size-8));
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: var(--size-3);
   overflow: auto;
   background: var(--surface);
@@ -152,6 +152,25 @@ button {
 
 .speed-control input[type="range"] {
   inline-size: 100%;
+}
+
+.replay-pii {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2) var(--size-3);
+  font-size: var(--font-size-2);
+}
+
+.replay-pii label {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: var(--size-1);
+}
+
+.replay-pii .pii-master {
+  font-weight: var(--font-weight-6);
 }
 
 .replay-main {
