@@ -57,8 +57,7 @@ async function runTool(idx: number): Promise<void> {
     // Tauri's invoke() rejects with the Result::Err string verbatim for
     // commands typed Result<T, String>. Fall back for non-string shapes
     // so the UI never renders "[object Object]".
-    const msg =
-      typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+    const msg = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
     console.warn(`${tool.command} failed (non-fatal):`, err);
     tools[idx].status = "failed";
     tools[idx].error = msg;
