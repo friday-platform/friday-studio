@@ -110,19 +110,44 @@ function transformSkillMd(upstream: string, version: string, sha: string): strin
 }
 
 async function resolveTagSha(version: string): Promise<string> {
-  // GitHub's tag reference API. Lightweight (no clone) and the response
-  // is the exact commit SHA the tag points at.
+  // `git ls-remote` over HTTPS — no auth needed, no API rate limit.
+  // Falls through to the GitHub API if git isn't available (rare in this
+  // repo; we ship deno+go but git is a hard dep for cloning anyway).
   const tag = `v${version}`;
-  const url = `https://api.github.com/repos/${SDK_REPO}/git/refs/tags/${tag}`;
-  const response = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
-  if (!response.ok) {
-    throw new Error(`Resolving tag ${tag} failed: ${response.status} ${response.statusText}`);
+  const remoteUrl = `https://github.com/${SDK_REPO}`;
+
+  try {
+    const cmd = new Deno.Command("git", {
+      args: ["ls-remote", remoteUrl, `refs/tags/${tag}`],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const { code, stdout, stderr } = await cmd.output();
+    if (code !== 0) {
+      throw new Error(`git ls-remote exited ${code}: ${new TextDecoder().decode(stderr)}`);
+    }
+    const line = new TextDecoder().decode(stdout).trim().split("\n")[0];
+    if (!line) throw new Error(`Tag ${tag} not found at ${remoteUrl}`);
+    const [sha] = line.split(/\s+/);
+    if (!/^[0-9a-f]{40}$/.test(sha)) {
+      throw new Error(`Unexpected ls-remote output for ${tag}: ${line}`);
+    }
+    return sha;
+  } catch (err) {
+    // GitHub REST fallback — useful only if git is missing. Anonymous
+    // requests hit a 60/hr rate limit, so this isn't a great primary
+    // path — it's a last resort.
+    const url = `https://api.github.com/repos/${SDK_REPO}/git/refs/tags/${tag}`;
+    const response = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
+    if (!response.ok) {
+      throw new Error(
+        `Resolving tag ${tag}: git ls-remote failed (${err instanceof Error ? err.message : String(err)}); ` +
+          `GitHub API also failed (${response.status} ${response.statusText}).`,
+      );
+    }
+    const json = (await response.json()) as { object: { sha: string; type: string } };
+    return json.object.sha;
   }
-  const json = (await response.json()) as { object: { sha: string; type: string } };
-  // Annotated tags wrap a commit; lightweight tags point at the commit
-  // directly. The fields differ but both expose `object.sha`. For our
-  // pin-recording purposes either is fine.
-  return json.object.sha;
 }
 
 async function writeFile(path: string, content: string): Promise<void> {
