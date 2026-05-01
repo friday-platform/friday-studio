@@ -1,9 +1,11 @@
 # Agent types — worked examples
 
-Three authorable agent types: `atlas`, `user`, `llm`. Pick in that order.
-`atlas` is zero-config and platform-managed; `user` is for mechanical work
-that doesn't pay the LLM-loop tax; `llm` is the fallback when no bundled
-agent fits and the work is open-ended.
+Three authorable agent types: `atlas`, `llm`, `user`. Pick deliberately:
+`atlas` when a bundled agent's `constraints` cover the user's intent
+end-to-end; `llm` for everything else open-ended (the default —
+classifying, summarizing, scoring, choosing among options); `user`
+ONLY when each call's decision is mechanical (regex/schema/routing —
+never LLM judgment).
 
 A fourth type — `system` — exists in the schema but is server-internal
 (used by the platform's own workspaces). Not authorable from chat. Don't
@@ -85,15 +87,19 @@ jobs:
 
 ## `user` — registered Python or TS SDK code agent
 
-**Use when:** the work is mechanical or deterministic — parsing PDFs,
-filtering CSVs, mutating SQLite, calling a fixed HTTP endpoint with a
-known payload. Reach for `user` when the LLM-loop tax dominates the
-value of running an LLM, or when the task needs libraries the LLM
-can't reach (Pandas, PIL, custom compiled code).
+**Use when:** each call's decision is mechanical — regex match, schema
+validation, fixed routing table, deterministic format conversion.
+Parsing PDFs, filtering CSVs, mutating SQLite, calling a fixed HTTP
+endpoint with a known payload. **If the agent body would call
+`ctx.llm.generate` to decide anything, this is the wrong type — use
+`llm` instead.**
 
-The agent itself is built out-of-band with the `atlas agent build`
-toolchain — see the `writing-friday-python-agents` skill. The workspace
-config only references the registered `agent` id.
+The agent itself is authored out-of-band — write a Python file using
+the `friday-agent-sdk` and register it with the daemon via
+`POST /api/agents/register` (JSON body `{"entrypoint": "<abs path>"}`).
+See the `writing-friday-python-agents` skill for the full authoring
+flow. Once registered, the workspace config references the agent's
+declared id.
 
 **Shape.**
 
@@ -101,7 +107,7 @@ config only references the registered `agent` id.
 agents:
   csv-parser:
     type: user
-    agent: csv-parser              # id from `atlas agent build` output
+    agent: csv-parser              # id from the @agent decorator in agent.py
     description: >-
       Pure-Python parser. Reads an uploaded CSV, validates schema,
       writes rows to SQLite. No LLM call.

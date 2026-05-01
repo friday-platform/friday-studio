@@ -12,15 +12,15 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 
 **Reachability model.** Signals trigger jobs. Jobs run agents. Agents call MCP tools and read/write memory. Nothing else triggers anything else. An agent declared without a wrapping job is unreachable. Memory is accessed by agents, not signals or jobs directly.
 
-**Agent types — pick in this order.**
+**Agent types — pick deliberately.**
 
 | Type | When | Example |
 |---|---|---|
 | `atlas` | A bundled platform agent fits the task **and its `constraints` allow it** | `type: atlas, agent: "web"` |
-| `user` | Mechanical / deterministic work, custom Python or TS SDK agent | `type: user, agent: "csv-parser"` |
-| `llm` | Open-ended reasoning with no bundled fit | `type: llm, config: { prompt, tools }` |
+| `llm` | Default for open-ended work — classifying, summarizing, scoring, choosing among options. Use when in doubt. | `type: llm, config: { prompt, tools }` |
+| `user` | ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the agent body would call `ctx.llm.generate` to decide anything, this is wrong — use `llm`. | `type: user, agent: "csv-parser"` |
 
-**Decision rule.** Check `atlas` first via `list_capabilities`. Then `user`. `llm` is the fallback, not the default.
+**Decision rule.** Call `list_capabilities` first. If a bundled agent's `constraints` cover the user's intent end-to-end, pick `atlas`. Otherwise default to `llm` with the right MCP tools wired. Reach for `user` only when you can name the deterministic decision the agent body makes — never as a fallback. If the user names a type explicitly (`use an llm agent`), respect it.
 
 **Bundled vs MCP-as-tool.** Bundled when the work is open-ended within a domain (you want a sub-agent that reasons). MCP server when the work is deterministic / single-call (you want a tool). A `web` bundled agent that browses, scrapes, and summarises beats `playwright-mcp` wired into a `type: llm` agent every time the work is open-ended; a single `slack_post_message` call is cleanest as an MCP tool.
 
@@ -318,8 +318,8 @@ A common pattern: the user and chat prove out a flow interactively using real MC
 The cheat-sheet table covers the decision rule. These are worked examples for each authorable type.
 
 - **`atlas` (bundled platform agent).** Browse + scrape + summarise the top headlines from Hacker News → `type: atlas, agent: "web"`. Send a daily email summary → `type: atlas, agent: "email"`. Post a daily standup to Slack → `type: atlas, agent: "slack"`. The bundled agent already knows the domain — you supply intent in `prompt`, not mechanics.
-- **`user` (Python or TS SDK agent).** A parser that extracts structured fields from 10,000 PDFs and writes to SQLite → `user` (Python). A tile renderer using PIL → `user`. Reach for `user` when the work is mechanical, the LLM-loop tax dominates, or the task needs libraries unavailable to the LLM (Pandas, PIL, custom compiled code). Python-agent authoring is an out-of-flow step the user kicks off explicitly — see the `writing-friday-python-agents` skill.
-- **`llm` (inline LLM with prompt + tools).** A triage agent that reads an email and classifies "urgent / tracking / ignore" with no bundled fit → `type: llm`. Use `llm` when the logic is "figure out what to do" *and* no bundled agent covers the domain. If a bundled agent covers the domain, prefer `atlas` even when the work is reasoning-heavy.
+- **`llm` (inline LLM with prompt + tools).** Default for open-ended work — classifying, summarizing, scoring, choosing among options. Email triage → `type: llm` with gmail MCP tools. PR summarization → `type: llm` with github MCP tools. If the agent's job is "decide what to do given this input," it's `llm`.
+- **`user` (Python or TS SDK agent).** ONLY when each call's decision is mechanical — regex match, schema validation, fixed routing table, deterministic format conversion. A CSV-row parser that extracts fixed fields → `user`. A tile renderer using PIL → `user`. **If the agent body would call `ctx.llm.generate` to decide anything, this is the wrong type — use `llm`.** Python-agent authoring is an out-of-flow step the user kicks off explicitly — see the `writing-friday-python-agents` skill.
 - **Hybrid.** A map-builder that calls an LLM for design but Python for tile rendering — one `llm` agent delegates to one `user` agent for the render step.
 
 ---
