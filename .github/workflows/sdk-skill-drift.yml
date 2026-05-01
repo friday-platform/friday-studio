@@ -1,4 +1,4 @@
-name: SDK skill drift
+name: SDK pin & skill drift
 
 # Fails if the vendored writing-friday-python-agents skill drifts from
 # upstream at the FRIDAY_AGENT_SDK_VERSION pinned in
@@ -16,6 +16,9 @@ on:
       - "packages/system/skills/writing-friday-python-agents/**"
       - "scripts/sync-sdk-skill.ts"
       - ".github/workflows/sdk-skill-drift.yml"
+      - "Dockerfile"
+      - "apps/studio-installer/src-tauri/src/commands/prewarm_agent_sdk.rs"
+      - "scripts/check-sdk-pin-sync.ts"
   merge_group:
 
 concurrency:
@@ -36,6 +39,9 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.7.4
+
+      - name: Verify SDK version pins are in sync
+        run: deno run --allow-read scripts/check-sdk-pin-sync.ts
 
       - name: Verify vendored skill matches upstream pinned tag
         run: deno run -A scripts/sync-sdk-skill.ts --check
