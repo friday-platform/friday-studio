@@ -162,7 +162,11 @@ export type SessionStreamEvent = z.infer<typeof SessionStreamEventSchema>;
 // ---------------------------------------------------------------------------
 
 export const EphemeralChunkSchema = z.object({
-  stepNumber: z.number(),
+  // Optional: bundled-agent chunks carry the FSM step they belong to so the
+  // reducer can attach UI deltas to the right block. User-agent SDKs publish
+  // without it (the agent subprocess doesn't know its FSM step) — the reducer
+  // falls back to the currently-running block.
+  stepNumber: z.number().optional(),
   chunk: z.custom<AtlasUIMessageChunk>((val) => val != null && typeof val === "object"),
 });
 export type EphemeralChunk = z.infer<typeof EphemeralChunkSchema>;

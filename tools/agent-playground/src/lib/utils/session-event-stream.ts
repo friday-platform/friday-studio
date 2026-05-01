@@ -99,10 +99,15 @@ async function* parseTypedSSEStream(
   for await (const message of parseSSEStream(body)) {
     const json: unknown = JSON.parse(message.data);
 
+    // safeParse: unknown event shapes (e.g. an old user-agent SDK still
+    // publishing `data-tool-progress` on the durable subject) must not break
+    // the lifecycle stream. Skip what we can't recognize and keep going.
     if (message.event === "ephemeral") {
-      yield EphemeralChunkSchema.parse(json);
+      const result = EphemeralChunkSchema.safeParse(json);
+      if (result.success) yield result.data;
     } else {
-      yield SessionStreamEventSchema.parse(json);
+      const result = SessionStreamEventSchema.safeParse(json);
+      if (result.success) yield result.data;
     }
   }
 }

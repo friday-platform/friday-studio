@@ -382,8 +382,9 @@ describe("EphemeralChunkSchema", () => {
     expect(result.chunk).toEqual(chunk);
   });
 
-  test("rejects missing stepNumber", () => {
-    expect(() => EphemeralChunkSchema.parse({ chunk: { type: "text", text: "hi" } })).toThrow();
+  test("accepts missing stepNumber (user-agent SDK publishes don't include it)", () => {
+    const result = EphemeralChunkSchema.parse({ chunk: { type: "text", text: "hi" } });
+    expect(result.stepNumber).toBeUndefined();
   });
 
   test("rejects missing chunk", () => {
