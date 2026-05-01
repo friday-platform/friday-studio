@@ -377,9 +377,8 @@ func onReady() {
 	// HTTP server itself stays up across Restart-all and only closes
 	// in performShutdown's last step.
 	// pollCancel is stored in the package-level healthPollCancel
-	// and called from performShutdown; gosec G118 doesn't trace
-	// through the package-var assignment, hence the nolint.
-	pollCtx, pollCancel := context.WithCancel(context.Background()) //nolint:gosec // G118: cancel stored in healthPollCancel
+	// and called from performShutdown.
+	pollCtx, pollCancel := context.WithCancel(context.Background())
 	healthPollCancel = pollCancel
 	go runHealthPoll(pollCtx, sup, healthCache)
 
