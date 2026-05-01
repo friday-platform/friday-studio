@@ -417,7 +417,19 @@ export interface AgentRegistry {
 
   getUserAgentSummary(
     id: string,
-  ): { id: string; displayName?: string; description?: string; version?: string } | undefined;
+  ):
+    | {
+        id: string;
+        displayName?: string;
+        description?: string;
+        version?: string;
+        summary?: string;
+        constraints?: string;
+        expertise?: { examples: string[] };
+        inputSchema?: Record<string, unknown>;
+        outputSchema?: Record<string, unknown>;
+      }
+    | undefined;
 
   registerAgent(agent: AtlasAgent): Promise<void>;
 

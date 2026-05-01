@@ -55,7 +55,7 @@ function parseArgs(args: string[]): CliOptions {
 async function readPinnedSdkVersion(): Promise<string> {
   const content = await Deno.readTextFile(LAUNCHER_PATHS_GO);
   const match = content.match(/^const bundledAgentSDKVersion\s*=\s*"([^"]+)"/m);
-  if (!match) {
+  if (!match || !match[1]) {
     throw new Error(
       `Could not find bundledAgentSDKVersion in ${LAUNCHER_PATHS_GO}. ` +
         "Re-check the constant name — it's the source of truth for the pinned SDK version.",
@@ -129,7 +129,7 @@ async function resolveTagSha(version: string): Promise<string> {
     const line = new TextDecoder().decode(stdout).trim().split("\n")[0];
     if (!line) throw new Error(`Tag ${tag} not found at ${remoteUrl}`);
     const [sha] = line.split(/\s+/);
-    if (!/^[0-9a-f]{40}$/.test(sha)) {
+    if (!sha || !/^[0-9a-f]{40}$/.test(sha)) {
       throw new Error(`Unexpected ls-remote output for ${tag}: ${line}`);
     }
     return sha;
