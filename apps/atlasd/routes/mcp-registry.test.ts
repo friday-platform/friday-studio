@@ -50,15 +50,6 @@ const mockCreateMCPTools =
 
 vi.mock("@atlas/mcp", () => ({
   createMCPTools: (...args: Parameters<typeof mockCreateMCPTools>) => mockCreateMCPTools(...args),
-  MCPAuthError: class extends Error {
-    readonly serverId: string;
-    readonly url: string;
-    constructor(serverId: string, url: string, message: string) {
-      super(`MCP server "${serverId}" authentication failed (${url}): ${message}`);
-      this.serverId = serverId;
-      this.url = url;
-    }
-  },
 }));
 
 // Mock streamText from ai for test-chat tests

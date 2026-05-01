@@ -17,8 +17,11 @@ export class MCPTimeoutError extends Error {
     public readonly serverId: string,
     public readonly phase: "reachable" | "list_tools" | "call_tool",
     public readonly timeoutMs: number,
+    public readonly actualDurationMs: number,
   ) {
-    super(`MCP ${phase} timed out for ${serverId} after ${timeoutMs}ms`);
+    super(
+      `MCP ${phase} timed out for ${serverId} after ${actualDurationMs}ms (limit ${timeoutMs}ms)`,
+    );
     this.name = "MCPTimeoutError";
   }
 }

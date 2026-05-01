@@ -799,6 +799,7 @@ describe("createMCPTools", () => {
           serverId: "server-slow",
           phase: "list_tools",
           timeoutMs: 20_000,
+          durationMs: expect.any(Number),
         }),
       );
     });

@@ -40,7 +40,7 @@ const LIST_TOOLS_TIMEOUT_MS = 20_000;
 /** Hard ceiling for a single MCP tool invocation. */
 const CALL_TOOL_TIMEOUT_MS = 15 * 60 * 1_000;
 
-export { MCPAuthError, MCPStartupError, MCPTimeoutError } from "./errors.ts";
+export { MCPStartupError, MCPTimeoutError } from "./errors.ts";
 
 import { MCPTimeoutError } from "./errors.ts";
 
@@ -69,11 +69,12 @@ export interface MCPToolsResult {
 function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
-  makeError: () => Error,
+  makeError: (actualDurationMs: number) => Error,
 ): Promise<T> {
+  const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(makeError()), timeoutMs);
+    timer = setTimeout(() => reject(makeError(Date.now() - startedAt)), timeoutMs);
   });
   return Promise.race([promise.finally(() => clearTimeout(timer)), timeoutPromise]);
 }
@@ -86,7 +87,7 @@ function wrapToolWithTimeout(tool: Tool, serverId: string): Tool {
       return withTimeout(
         tool.execute!(args, opts),
         CALL_TOOL_TIMEOUT_MS,
-        () => new MCPTimeoutError(serverId, "call_tool", CALL_TOOL_TIMEOUT_MS),
+        (actualDurationMs) => new MCPTimeoutError(serverId, "call_tool", CALL_TOOL_TIMEOUT_MS, actualDurationMs),
       );
     },
   };
@@ -199,7 +200,7 @@ export async function createMCPTools(
           serverId: error.serverId,
           phase: error.phase,
           timeoutMs: error.timeoutMs,
-          durationMs: error.timeoutMs,
+          durationMs: error.actualDurationMs,
         });
       } else {
         const message = error instanceof Error ? error.message : String(error);
@@ -332,7 +333,7 @@ function connectServerWithTimeout(
   return withTimeout(
     connectServer(config, resolvedEnv, serverId, logger),
     LIST_TOOLS_TIMEOUT_MS,
-    () => new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS),
+    (actualDurationMs) => new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS, actualDurationMs),
   );
 }
 
@@ -458,7 +459,7 @@ async function isReachable(
     const res = await withTimeout(
       fetchImpl(url, { method: "GET" }),
       REACHABLE_TIMEOUT_MS,
-      () => new MCPTimeoutError(serverId, "reachable", REACHABLE_TIMEOUT_MS),
+      (actualDurationMs) => new MCPTimeoutError(serverId, "reachable", REACHABLE_TIMEOUT_MS, actualDurationMs),
     );
     return { ok: true, status: res.status };
   } catch (err) {
@@ -468,7 +469,7 @@ async function isReachable(
         serverId: err.serverId,
         phase: err.phase,
         timeoutMs: err.timeoutMs,
-        durationMs: err.timeoutMs,
+        durationMs: err.actualDurationMs,
       });
     }
     return { ok: false };
