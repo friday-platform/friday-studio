@@ -1,0 +1,6 @@
+{
+  "name": "@atlas/cron",
+  "version": "1.0.0",
+  "exports": "./mod.ts",
+  "compilerOptions": { "strict": true, "lib": ["deno.window", "deno.unstable"] }
+}

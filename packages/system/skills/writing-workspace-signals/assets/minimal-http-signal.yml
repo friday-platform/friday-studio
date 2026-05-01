@@ -1,0 +1,11 @@
+# Minimal valid HTTP signal — no payload, immediate trigger.
+#
+# The Run dialog fires this immediately with no form fields.
+# Use for jobs that need no external input (e.g., "triage my inbox now").
+
+signals:
+  my-trigger:
+    description: "One-line description of what this signal does"
+    provider: http
+    config:
+      path: /my-trigger

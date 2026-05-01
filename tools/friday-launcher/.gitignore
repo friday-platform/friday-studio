@@ -1,0 +1,5 @@
+# Build output — the launcher compiles to a binary named after the
+# directory (`friday-launcher`). Never commit it; CI builds the real
+# release artifacts via scripts/build-studio.ts.
+/friday-launcher
+/friday-launcher.exe

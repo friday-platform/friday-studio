@@ -1,0 +1,26 @@
+# HTTP signal with JSON Schema payload — form fields in the Run dialog.
+#
+# The Run dialog renders input fields from schema.properties.
+# Every property should have a type and description.
+# The required array marks fields that cannot be left empty.
+
+signals:
+  my-trigger:
+    description: "One-line description of what this signal does"
+    provider: http
+    config:
+      path: /my-trigger
+    schema:
+      type: object
+      properties:
+        target_id:
+          type: string
+          description: "Identifier of the item to process"
+        mode:
+          type: string
+          description: "Processing mode (e.g., fast, thorough)"
+        dry_run:
+          type: boolean
+          description: "If true, preview changes without applying them"
+      required:
+        - target_id

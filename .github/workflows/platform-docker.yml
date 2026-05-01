@@ -1,0 +1,90 @@
+name: platform-docker
+
+on:
+  workflow_dispatch:
+
+env:
+  GAR_LOCATION: us-west2
+  PROJECT_ID: "1039443489466"
+  PROJECT_NAME: friday-platform
+  REPOSITORY: releases
+  IMAGE: platform
+
+jobs:
+  build-publish:
+    name: Build and Publish Platform Image
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.PROJECT_NAME }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github-actions/providers/atlas-github"
+          service_account: github-ci@friday-platform.iam.gserviceaccount.com
+
+      - name: Configure Docker for GAR
+        run: gcloud auth configure-docker "${{ env.GAR_LOCATION }}-docker.pkg.dev" --quiet
+
+      - name: Determine next version
+        id: version
+        run: |
+          # List existing tags, extract 0.0.X versions, find the highest patch number
+          TAGS=$(gcloud artifacts tags list \
+            --project="${{ env.PROJECT_NAME }}" \
+            --location="${{ env.GAR_LOCATION }}" \
+            --repository="${{ env.REPOSITORY }}" \
+            --package="${{ env.IMAGE }}" \
+            --format="value(name)" 2>/dev/null || true)
+
+          LATEST_PATCH=-1
+          for tag in $TAGS; do
+            if [[ "$tag" =~ ^0\.0\.([0-9]+)$ ]]; then
+              PATCH="${BASH_REMATCH[1]}"
+              if (( PATCH > LATEST_PATCH )); then
+                LATEST_PATCH=$PATCH
+              fi
+            fi
+          done
+
+          NEXT_PATCH=$(( LATEST_PATCH + 1 ))
+          VERSION="0.0.${NEXT_PATCH}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Next version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            REVISION=${{ github.sha }}
+          tags: |
+            ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### Platform Image Published"
+            echo ""
+            echo "| Tag | Image |"
+            echo "|-----|-------|"
+            echo "| \`${{ steps.version.outputs.version }}\` | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ steps.version.outputs.version }}\` |"
+            echo "| \`${{ github.sha }}\` | \`${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_NAME }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}\` |"
+            echo ""
+            echo "> To promote to \`latest\`, run: \`./scripts/promote-latest.sh ${{ steps.version.outputs.version }}\` (or use the git SHA)"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,148 @@
+/**
+ * Agent configuration schemas with tagged unions
+ */
+
+import { AtlasAgentConfigSchema, LinkCredentialRefSchema } from "@atlas/agent-sdk";
+import { z } from "zod";
+import { DurationSchema, ErrorConfigSchema, SuccessConfigSchema } from "./base.ts";
+
+// ==============================================================================
+// BASE AGENT SCHEMA
+// ==============================================================================
+
+const BaseAgentConfigSchema = z.strictObject({
+  description: z.string().describe("Agent purpose/description"),
+});
+
+// ==============================================================================
+// LLM AGENT
+// ==============================================================================
+
+const LLMToolChoiceSchema = z.union([z.literal("auto"), z.literal("required"), z.literal("none")]);
+
+export const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
+  type: z.literal("llm"),
+  config: z.strictObject({
+    // Provider and model
+    provider: z.string().describe("Inference provider (e.g., 'anthropic')"),
+    model: z.string().describe("Model identifier (e.g., 'claude-sonnet-4-6')"),
+
+    // Single prompt string
+    prompt: z.string().describe("System prompt for the agent"),
+
+    // LLM parameters
+    temperature: z.coerce
+      .number()
+      .min(0)
+      .max(2)
+      .optional()
+      .default(0.3)
+      .describe("LLM temperature"),
+    max_tokens: z.coerce.number().int().positive().optional(),
+    max_steps: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Max steps for multi-step tool calling"),
+
+    // Tool configuration
+    tool_choice: LLMToolChoiceSchema.optional(),
+    tools: z.array(z.string()).optional().describe("Available tools (simple array)"),
+
+    // Provider-specific options
+    provider_options: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("Provider-specific options passed directly to the LLM SDK"),
+
+    // Success/error handlers
+    success: SuccessConfigSchema.optional(),
+    error: ErrorConfigSchema.optional(),
+
+    // Error handling
+    max_retries: z.coerce.number().int().min(0).optional(),
+    timeout: DurationSchema.optional(),
+  }),
+});
+
+// ==============================================================================
+// SYSTEM AGENT
+// ==============================================================================
+
+// Specific schema based on conversation agent usage
+const SystemAgentConfigObjectSchema = z
+  .strictObject({
+    // LLM Configuration
+    model: z.string().optional().describe("LLM model to use"),
+    temperature: z.coerce
+      .number()
+      .min(0)
+      .max(2)
+      .optional()
+      .default(0.3)
+      .describe("LLM temperature"),
+    max_tokens: z.coerce.number().min(1).optional().describe("Maximum tokens for LLM response"),
+
+    // Tools Configuration
+    tools: z.array(z.string()).optional().describe("Array of tool names available to the agent"),
+
+    // Reasoning Configuration
+    use_reasoning: z.boolean().optional().describe("Enable reasoning capabilities"),
+    max_reasoning_steps: z.coerce
+      .number()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe("Maximum reasoning steps"),
+
+    // Prompt Configuration
+    prompt: z.string().describe("System prompt for the agent").optional(),
+  })
+  .describe("System agent configuration");
+
+export const SystemAgentConfigSchema = BaseAgentConfigSchema.extend({
+  type: z.literal("system"),
+  agent: z.string().describe("System agent identifier"),
+  config: SystemAgentConfigObjectSchema.optional(),
+});
+
+// ==============================================================================
+// USER AGENT (code agents built with `atlas agent build`)
+// ==============================================================================
+
+export const UserAgentConfigSchema = BaseAgentConfigSchema.extend({
+  type: z.literal("user"),
+  agent: z.string().describe("User agent ID (matches build output)"),
+  prompt: z.string().optional().describe("Additional workspace context"),
+  env: z
+    .record(z.string(), z.union([z.string(), LinkCredentialRefSchema]))
+    .optional()
+    .meta({ description: "Environment variables for the agent" }),
+});
+
+export type UserAgentConfig = z.infer<typeof UserAgentConfigSchema>;
+
+// ==============================================================================
+// DISCRIMINATED UNION
+// ==============================================================================
+
+/**
+ * Agent configuration with tagged union on type
+ */
+export const WorkspaceAgentConfigSchema = z.discriminatedUnion("type", [
+  LLMAgentConfigSchema,
+  SystemAgentConfigSchema,
+  AtlasAgentConfigSchema,
+  UserAgentConfigSchema,
+]);
+
+export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
+
+// Export schemas for runtime validation
+export { SystemAgentConfigObjectSchema };
+
+// Type guards for agent types
+export type LLMAgentConfig = z.infer<typeof LLMAgentConfigSchema>;
+export type SystemAgentConfig = z.infer<typeof SystemAgentConfigSchema>;
+export type SystemAgentConfigObject = z.infer<typeof SystemAgentConfigObjectSchema>;

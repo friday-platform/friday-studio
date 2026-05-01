@@ -1,0 +1,119 @@
+/*
+ * Color tokens.
+ *
+ * Two layers:
+ *   1. Primitives — the raw palette (--grey-100, --slate-300, --cream-800,
+ *      --blue-300, etc.). These are scale values, not meant for direct use.
+ *   2. Semantic tokens — what components actually consume: --surface,
+ *      --surface-dark, --surface-bright, --border, --border-bright, --text,
+ *      --text-bright, --text-faded, and the accents --yellow-primary,
+ *      --red-primary, --blue-primary, --green-primary.
+ *
+ * Always reach for the semantic token. If you write `color: var(--text)`,
+ * the value swaps automatically with the user's light/dark preference and
+ * upgrades to wide-gamut color on capable displays. If you write
+ * `color: var(--slate-400)` directly, you bypass both — and the day we
+ * retune the palette, your component goes with it.
+ *
+ * Each token has a sRGB value (works everywhere) and a wide-gamut override
+ * for displays that can show it; the browser picks automatically.
+ */
+
+:root {
+  /* Grey — neutrals (true greys + values whose tint is too subtle to call) */
+  --grey-100: rgb(20 20 20);
+  --grey-200: rgb(27 28 29);
+  --grey-300: rgb(37 37 37);
+  --grey-400: rgb(40 41 42);
+  --grey-500: rgb(49 49 49);
+  --grey-600: rgb(134 134 131);
+  --grey-900: rgb(255 255 255);
+
+  /* Slate — clearly cool */
+  --slate-200: rgb(24 28 47);
+  --slate-300: rgb(70 73 89);
+  --slate-500: rgb(116 119 130);
+
+  /* Cream — clearly warm */
+  --cream-700: rgb(199 198 191);
+  --cream-800: rgb(231 229 229);
+  --cream-850: rgb(242 240 232);
+  --cream-900: rgb(244 242 241);
+
+  /* Accents — -300 (light-mode variant, darker) / -600 (dark-mode variant, lighter).
+     Steps are normalized across hues for API consistency, not strict luminance binning. */
+  --yellow-300: rgb(255 182 12);
+  --yellow-600: rgb(254 210 67);
+
+  --red-300: rgb(204 44 0);
+  --red-600: rgb(255 96 68);
+
+  --blue-300: rgb(2 64 135);
+  --blue-600: rgb(54 197 240);
+
+  --green-300: rgb(15 164 40);
+  --green-600: rgb(59 232 146);
+}
+
+@media (color-gamut: p3) {
+  :root {
+    --grey-100: color(display-p3 0.08 0.08 0.08);
+    --grey-200: color(display-p3 0.1059 0.1098 0.1137);
+    --grey-300: color(display-p3 0.1451 0.1451 0.1451);
+    --grey-400: color(display-p3 0.1569 0.1608 0.1647);
+    --grey-500: color(display-p3 0.1922 0.1922 0.1922);
+    --grey-600: color(display-p3 0.5259 0.5259 0.5141);
+    --grey-900: color(display-p3 1 1 1);
+
+    --slate-200: color(display-p3 0.0941 0.1098 0.1843);
+    --slate-300: color(display-p3 0.2745 0.2863 0.349);
+    --slate-500: color(display-p3 0.4549 0.4667 0.5098);
+
+    --cream-700: color(display-p3 0.7804 0.7765 0.749);
+    --cream-800: color(display-p3 0.9059 0.898 0.898);
+    --cream-850: color(display-p3 0.949 0.9412 0.9098);
+    --cream-900: color(display-p3 0.9569 0.949 0.9451);
+
+    --yellow-300: color(display-p3 1 0.7137 0.0471);
+    --yellow-600: color(display-p3 0.9961 0.8235 0.2627);
+
+    --red-300: color(display-p3 0.8 0.1736 0);
+    --red-600: color(display-p3 1 0.3782 0.2685);
+
+    --blue-300: color(display-p3 0.0078 0.251 0.5294);
+    --blue-600: color(display-p3 0.2118 0.7725 0.9412);
+
+    --green-300: color(display-p3 0.0607 0.6426 0.1577);
+    --green-600: color(display-p3 0.2314 0.9098 0.5725);
+  }
+}
+
+/* ─── Semantic tokens ─────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces */
+  --surface-dark: light-dark(var(--cream-900), var(--grey-100));
+  --surface: light-dark(var(--grey-900), var(--grey-200));
+  --surface-bright: light-dark(var(--cream-900), var(--grey-400));
+
+  /* Highlights */
+  --highlight: light-dark(var(--cream-800), var(--grey-200));
+  --highlight-bright: light-dark(var(--cream-800), var(--grey-400));
+
+  /* Borders */
+  --border: light-dark(var(--cream-800), var(--grey-300));
+  --border-bright: light-dark(var(--cream-800), var(--grey-500));
+
+  /* Text */
+  --text-bright: light-dark(var(--slate-200), var(--cream-850));
+  --text: light-dark(var(--slate-300), var(--cream-700));
+  --text-faded: light-dark(var(--slate-500), var(--grey-600));
+
+  /* Accents */
+  --yellow-primary: light-dark(var(--yellow-300), var(--yellow-600));
+  --red-primary: light-dark(var(--red-300), var(--red-600));
+  --blue-primary: light-dark(var(--blue-300), var(--blue-600));
+  --green-primary: light-dark(var(--green-300), var(--green-600));
+}

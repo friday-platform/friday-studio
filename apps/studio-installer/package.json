@@ -1,0 +1,21 @@
+{
+  "name": "@atlas/studio-installer",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "preview": "vite preview",
+    "vite:dev": "vite dev",
+    "vite:build": "vite build"
+  },
+  "dependencies": { "@tauri-apps/api": "2.10.1", "@tauri-apps/plugin-opener": "2.5.3" },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "~6.2.4",
+    "@tauri-apps/cli": "2.10.1",
+    "svelte": "^5.55.5",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.2"
+  }
+}

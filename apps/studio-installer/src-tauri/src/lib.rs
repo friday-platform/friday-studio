@@ -1,0 +1,65 @@
+// Public so integration tests under tests/ can call commands directly
+// (specifically launch_studio in tests/launcher_handoff.rs).
+pub mod commands;
+
+use commands::{
+    check_running::check_running_processes,
+    create_app_bundle::create_app_bundle,
+    delete_partial::delete_partial,
+    download::download_file,
+    ensure_agent_browser_chrome::ensure_agent_browser_chrome,
+    ensure_claude_code::ensure_claude_code,
+    download_checkpoint::{check_download_complete, mark_download_complete},
+    env_file::{env_file_has_provider_key, env_file_location, playground_url, write_env_file},
+    exit_installer::exit_installer,
+    extract::extract_archive,
+    fetch_manifest::fetch_manifest,
+    installed_marker::{read_installed, write_installed},
+    launch::launch_studio,
+    platform::{bin_dir, current_platform, install_dir},
+    prewarm_agent_sdk::prewarm_agent_sdk,
+    stop_running_launcher::stop_running_launcher,
+    verify::verify_sha256,
+    wait_health::{extend_wait_deadline, wait_for_services, WaitDeadlineState},
+};
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_os::init())
+        // WaitDeadlineState carries the active wait-healthy
+        // deadline so extend_wait_deadline can push it out without
+        // re-spawning the whole stream. State is per-app-instance.
+        .manage(WaitDeadlineState::default())
+        .invoke_handler(tauri::generate_handler![
+            download_file,
+            delete_partial,
+            mark_download_complete,
+            check_download_complete,
+            verify_sha256,
+            extract_archive,
+            check_running_processes,
+            create_app_bundle,
+            ensure_agent_browser_chrome,
+            ensure_claude_code,
+            fetch_manifest,
+            write_installed,
+            read_installed,
+            write_env_file,
+            env_file_has_provider_key,
+            env_file_location,
+            playground_url,
+            exit_installer,
+            stop_running_launcher,
+            launch_studio,
+            current_platform,
+            install_dir,
+            bin_dir,
+            prewarm_agent_sdk,
+            wait_for_services,
+            extend_wait_deadline,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

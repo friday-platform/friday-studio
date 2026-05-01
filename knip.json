@@ -1,0 +1,131 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "workspaces": {
+    ".": { "entry": ["reset.d.ts!"], "project": ["*.ts!"] },
+    "packages/activity": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/agent-sdk": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/bundled-agents": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/client": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/config": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/core": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/cron": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+
+    "packages/discord": { "entry": ["mod.ts!"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/fs-watch": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/fsm-engine": {
+      "entry": ["tests/**/*.test.ts"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/hallucination": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/llm": { "entry": ["src/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/logger": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/mcp": { "entry": ["src/**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/mcp-server": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/notifications": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/openapi-client": {
+      "project": ["**/*.{ts,tsx,js,jsx}!"],
+      "entry": ["scripts/build.ts!"]
+    },
+    "packages/signals": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/slack": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/skills": {
+      "entry": ["tests/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/storage": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
+    "packages/system": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/utils": { "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "packages/workspace": {
+      "entry": ["src/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "apps/link": {
+      "entry": ["src/**/*.test.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!", "tests/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "apps/atlas-cli": {
+      "entry": [
+        "src/cli.tsx!",
+        "src/otel-bootstrap.ts!",
+        "src/commands/*.ts!",
+        "src/commands/*/index.ts!"
+      ],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!"]
+    },
+    "apps/atlasd": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "tools/evals": {
+      "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"]
+    },
+    "packages/ui": {
+      "entry": ["src/routes/**/*.svelte!"],
+      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.js!"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
+    },
+    "tools/agent-playground": {
+      "entry": [
+        "cli.ts!",
+        "mod.ts!",
+        "static-server.ts!",
+        "src/routes/**/*.svelte!",
+        "src/**/*.test.ts"
+      ],
+      "ignore": ["src/lib/cheatsheet-commands.ts", "src/lib/components/shared/cheatsheet.svelte"],
+      "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.ts!", "*.js!"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
+    },
+    "tools/chat-replay": {
+      "entry": ["src/routes/**/*.svelte!"],
+      "project": ["src/routes/**/*.{ts,svelte}!"],
+      "ignore": ["src/lib/**"],
+      "paths": {
+        "$lib": ["./src/lib"],
+        "$lib/*": ["./src/lib/*"],
+        "$app": ["../../node_modules/@sveltejs/kit/src/runtime/app"],
+        "$app/*": ["../../node_modules/@sveltejs/kit/src/runtime/app/*"]
+      }
+    }
+  },
+  "ignoreDependencies": ["@types/deno", "@anthropic-ai/claude-agent-sdk"],
+  "ignoreBinaries": ["svelte-kit", "svelte-package", "prettier"],
+  "ignoreExportsUsedInFile": { "interface": true, "type": true, "function": true, "class": true },
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "devDependencies": "warn",
+    "unlisted": "error",
+    "binaries": "error",
+    "unresolved": "warn",
+    "exports": "error",
+    "types": "error",
+    "nsExports": "warn",
+    "nsTypes": "warn",
+    "duplicates": "warn",
+    "enumMembers": "warn"
+  }
+}

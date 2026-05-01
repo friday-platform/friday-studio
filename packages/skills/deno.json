@@ -1,0 +1,14 @@
+{
+  "name": "@atlas/skills",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./archive": "./src/archive.ts",
+    "./schemas": "./src/schemas.ts"
+  },
+  "imports": {
+    "@atlas/config": "../config/mod.ts",
+    "@atlas/logger": "../logger/mod.ts",
+    "@std/yaml": "jsr:@std/yaml@^1"
+  }
+}

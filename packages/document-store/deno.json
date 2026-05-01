@@ -1,0 +1,1 @@
+{ "name": "@atlas/document-store", "version": "1.0.0", "exports": "./mod.ts" }

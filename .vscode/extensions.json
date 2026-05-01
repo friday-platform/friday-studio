@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "biomejs.biome",
+    "denoland.vscode-deno",
+    "esbenp.prettier-vscode",
+    "svelte.svelte-vscode"
+  ]
+}

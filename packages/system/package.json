@@ -1,0 +1,33 @@
+{
+  "name": "@atlas/system",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "./workspaces": "./workspaces/mod.ts",
+    "./agents": "./agents/mod.ts",
+    "./agent-types": "./agent-types/mod.ts",
+    "./skills/bootstrap": "./skills/bootstrap.ts"
+  },
+  "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/bundled-agents": "workspace:*",
+    "@atlas/client": "workspace:*",
+    "@atlas/config": "workspace:*",
+    "@atlas/core": "workspace:*",
+    "@atlas/ledger": "workspace:*",
+    "@atlas/llm": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/mcp": "workspace:*",
+    "@atlas/oapi-client": "workspace:*",
+    "@atlas/resources": "workspace:*",
+    "@atlas/skills": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "@atlas/workspace-builder": "workspace:*",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
+    "@worker-tools/html-rewriter": "^0.1.0-pre.17",
+    "ai": "^6.0.168",
+    "turndown": "7.2.4",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": { "vitest": "^4.1.0" }
+}

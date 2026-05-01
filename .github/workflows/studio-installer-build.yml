@@ -1,0 +1,341 @@
+name: studio-installer-build
+
+on:
+  # Manual dispatch only. Each release is a paid native-runner build; we
+  # don't want it firing on every push that touches the installer.
+  # Run via `gh workflow run studio-installer-build.yml --ref <branch>` or
+  # the Actions tab.
+  workflow_dispatch:
+
+env:
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  version:
+    name: Determine release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compute next semver patch from published manifest
+        id: compute
+        run: |
+          set -euo pipefail
+          MANIFEST_URL="https://download.fridayplatform.io/installer/manifest.json"
+          # Single source of truth: the published manifest. If it doesn't exist
+          # (first-ever build), seed from 0.0.0 so the first published version
+          # is 0.0.1. After that, every build is a patch bump from whatever's
+          # currently published — no file in the repo controls the version.
+          PREV=$(curl -sf "$MANIFEST_URL" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
+          if [ -z "$PREV" ]; then
+            PREV="0.0.0"
+            echo "No published manifest; bootstrapping from $PREV"
+          fi
+          MAJOR=$(echo "$PREV" | cut -d. -f1)
+          MINOR=$(echo "$PREV" | cut -d. -f2)
+          PATCH=$(echo "$PREV" | cut -d. -f3 | sed 's/[^0-9].*//')
+          NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "Bumping ${PREV} -> ${NEXT}"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm
+            os: macos-latest-xlarge
+            target: aarch64-apple-darwin
+            bundle_ext: dmg
+          - platform: macos-intel
+            os: macos-latest-large
+            target: x86_64-apple-darwin
+            bundle_ext: dmg
+          - platform: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle_ext: exe
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/studio-installer/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/studio-installer/src-tauri
+          cache-on-failure: true
+
+      - name: Import Apple Developer ID certificate (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+          security create-keychain -p "" build.keychain
+          security import /tmp/certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          security list-keychain -d user -s build.keychain
+          rm /tmp/certificate.p12
+
+      - name: Create self-signed certificate (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Subject "CN=Friday Studio, O=Tempest Labs, C=US" `
+            -Type CodeSigning `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -HashAlgorithm SHA256 `
+            -NotAfter (Get-Date).AddYears(1)
+          $pfxPath = "$env:RUNNER_TEMP\selfsigned.pfx"
+          $pwd = ConvertTo-SecureString -String "selfsigned" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
+          echo "WIN_CERT_PATH=$pfxPath" >> $env:GITHUB_ENV
+          echo "WIN_CERT_PASSWORD=selfsigned" >> $env:GITHUB_ENV
+          echo "WIN_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+
+      - name: Install npm dependencies
+        shell: bash
+        run: |
+          # Run from / so npm finds no parent workspace package.json
+          cd / && npm ci --prefix "$GITHUB_WORKSPACE/apps/studio-installer"
+
+      - name: Build Tauri app (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        working-directory: apps/studio-installer
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: npm run build -- --target ${{ matrix.target }} --bundles app,dmg
+
+      - name: Build Tauri app (Windows)
+        if: matrix.bundle_ext == 'exe'
+        working-directory: apps/studio-installer
+        run: npm run build -- --target ${{ matrix.target }}
+
+      - name: Locate .app + .dmg bundles (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        id: mac-artifact
+        shell: bash
+        run: |
+          app=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name "*.app" | head -1)
+          dmg=$(find apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/dmg -maxdepth 1 -name "*.dmg" | head -1)
+          # Version goes in the filename so each release becomes a new URL —
+          # otherwise the CDN's immutable cache pins the first build forever.
+          # Version is computed by the upstream `version` job and threaded
+          # through here as RELEASE_VERSION (also written into tauri.conf.json).
+          # We rename the .dmg to a stable, version-bearing name for the
+          # public URL; the .app inside is signed/notarized as-is.
+          renamed_dmg="$(dirname "$dmg")/FridayStudioInstaller_${RELEASE_VERSION}_${{ matrix.target }}.dmg"
+          mv "$dmg" "$renamed_dmg"
+          {
+            echo "app_path=$app"
+            echo "app_name=$(basename "$app")"
+            echo "dmg_path=$renamed_dmg"
+            echo "dmg_name=$(basename "$renamed_dmg")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Strip Applications symlink from .dmg (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        env:
+          DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
+        # The Friday Studio Installer DMG is meant to be double-clicked
+        # (the wizard does the install), not drag-to-Applications. Tauri's
+        # bundler unconditionally adds an /Applications symlink and exposes
+        # no flag to skip it — strip it post-bundle. Must run BEFORE
+        # notarization so notarytool inspects the final DMG bytes.
+        run: bash apps/studio-installer/scripts/strip-dmg-applications-symlink.sh "$DMG_PATH"
+
+      - name: Locate NSIS installer (Windows)
+        if: matrix.bundle_ext == 'exe'
+        id: win-artifact
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem "apps/studio-installer/src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*-setup.exe" | Select-Object -First 1
+          "path=$($f.FullName)" >> $env:GITHUB_OUTPUT
+          # The on-disk Tauri filename embeds tauri.conf.json's static version
+          # ("Friday Studio Installer_0.1.0_x64-setup.exe"), which would
+          # collide across releases at the URL layer. Rename for upload only —
+          # the binary on disk is unchanged.
+          "name=FridayStudioInstaller_${env:RELEASE_VERSION}_x64-setup.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Sign NSIS installer (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign `
+            /fd SHA256 `
+            /f "$env:WIN_CERT_PATH" `
+            /p "$env:WIN_CERT_PASSWORD" `
+            /t http://timestamp.digicert.com `
+            "${{ steps.win-artifact.outputs.path }}"
+
+      - name: Notarize and staple .dmg (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        env:
+          APPLE_API_KEY_PATH: /tmp/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+          DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
+        run: |
+          echo "${{ secrets.APPLE_API_KEY }}" > "$APPLE_API_KEY_PATH"
+          # notarytool accepts .dmg natively — no need to wrap in a zip.
+          # The .app inside the .dmg was already signed by Tauri's bundler
+          # using APPLE_SIGNING_IDENTITY; submitting the dmg notarizes the
+          # whole disk image (and Apple verifies the embedded .app's
+          # signatures during notarization).
+          xcrun notarytool submit "$DMG_PATH" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
+            --issuer "${{ secrets.APPLE_API_ISSUER }}" \
+            --wait
+          # Staple the notarization ticket to the .dmg so Gatekeeper can
+          # verify offline. Stapling .dmg also covers the .app inside —
+          # users dragging the .app to /Applications still get a stapled
+          # bundle, no double-staple needed.
+          xcrun stapler staple "$DMG_PATH"
+          rm "$APPLE_API_KEY_PATH"
+
+      - name: Upload GitHub artifact (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-${{ matrix.platform }}
+          path: ${{ steps.mac-artifact.outputs.dmg_path }}
+          retention-days: 30
+
+      - name: Upload GitHub artifact (Windows)
+        if: matrix.bundle_ext == 'exe'
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-${{ matrix.platform }}
+          path: ${{ steps.win-artifact.outputs.path }}
+          retention-days: 30
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload to GCS + emit manifest entry (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        env:
+          DMG_NAME: ${{ steps.mac-artifact.outputs.dmg_name }}
+          DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
+        run: |
+          # Versioned upload — kept forever, served as immutable by studio-artifact.
+          gsutil cp "$DMG_PATH" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$DMG_NAME"
+          # Per-platform entry for the publish-manifest job to assemble later.
+          mkdir -p manifest-entries
+          encoded_name=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$DMG_NAME")
+          sha=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+          size=$(stat -f %z "$DMG_PATH")
+          printf '{"url":"https://download.fridayplatform.io/installer/%s/%s","sha256":"%s","size":%s}\n' \
+            "${{ matrix.platform }}" "$encoded_name" "$sha" "$size" \
+            > "manifest-entries/${{ matrix.platform }}.json"
+
+      - name: Upload to GCS + emit manifest entry (Windows)
+        if: matrix.bundle_ext == 'exe'
+        shell: pwsh
+        env:
+          EXE_NAME: ${{ steps.win-artifact.outputs.name }}
+          EXE_PATH: ${{ steps.win-artifact.outputs.path }}
+        run: |
+          gsutil cp "$env:EXE_PATH" `
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$env:EXE_NAME"
+          New-Item -ItemType Directory -Force -Path manifest-entries | Out-Null
+          $encoded = [System.Uri]::EscapeDataString($env:EXE_NAME)
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $env:EXE_PATH).Hash.ToLower()
+          $size = (Get-Item $env:EXE_PATH).Length
+          $entry = @{ url = "https://download.fridayplatform.io/installer/${{ matrix.platform }}/$encoded"; sha256 = $hash; size = $size }
+          $entry | ConvertTo-Json -Compress | Set-Content -NoNewline -Path "manifest-entries/${{ matrix.platform }}.json"
+
+      - name: Upload manifest entry artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-entry-${{ matrix.platform }}
+          path: manifest-entries/${{ matrix.platform }}.json
+          retention-days: 1
+
+  publish-manifest:
+    name: Publish installer/manifest.json
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Download all manifest entries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: manifest-entry-*
+          path: entries
+          merge-multiple: true
+
+      - name: Compose manifest
+        id: compose
+        run: |
+          # Combine per-platform entries into the schema the studio-installer's
+          # fetch_manifest.rs already understands: { version, platforms{...} }.
+          # Version comes from the upstream `version` job (semver patch bump
+          # over the previously-published manifest).
+          python3 - <<'PY' "$RELEASE_VERSION" entries > manifest.json
+          import json, os, sys
+          version, dirpath = sys.argv[1], sys.argv[2]
+          platforms = {}
+          for fname in sorted(os.listdir(dirpath)):
+              if not fname.endswith(".json"):
+                  continue
+              platform = fname[:-len(".json")]
+              with open(os.path.join(dirpath, fname)) as f:
+                  platforms[platform] = json.load(f)
+          json.dump({"version": version, "platforms": platforms}, sys.stdout, indent=2)
+          PY
+          cat manifest.json
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload manifest to GCS
+        run: |
+          gsutil -h "Content-Type:application/json" cp manifest.json \
+            "gs://${{ env.GCS_BUCKET }}/installer/manifest.json"

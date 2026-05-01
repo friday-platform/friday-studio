@@ -1,0 +1,56 @@
+name: SDK pin & skill drift
+
+# Two checks against the FRIDAY_AGENT_SDK_VERSION pin in
+# tools/friday-launcher/paths.go:
+#
+#   1. SDK version pin sync across launcher/Dockerfile/installer —
+#      hard fail. Pin drift means different SDK versions get spawned
+#      depending on the entry path, which is a real bug.
+#
+#   2. Vendored writing-friday-python-agents skill vs upstream content
+#      at the pinned tag — warn-only. Drift here means somebody edited
+#      the local copy without upstreaming. Re-run scripts/sync-sdk-skill.ts
+#      (no flag) to refresh, or push the change upstream and rebump.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/friday-launcher/paths.go"
+      - "packages/system/skills/writing-friday-python-agents/**"
+      - "scripts/sync-sdk-skill.ts"
+      - ".github/workflows/sdk-skill-drift.yml"
+      - "Dockerfile"
+      - "apps/studio-installer/src-tauri/src/commands/prewarm_agent_sdk.rs"
+      - "scripts/check-sdk-pin-sync.ts"
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.7.4
+
+      - name: Verify SDK version pins are in sync
+        run: deno run --allow-read scripts/check-sdk-pin-sync.ts
+
+      - name: Check vendored skill against upstream pinned tag (warn-only)
+        run: |
+          if ! deno run -A scripts/sync-sdk-skill.ts --check; then
+            echo "::warning title=Vendored skill drift::writing-friday-python-agents/SKILL.md has drifted from friday-platform/agent-sdk at the pinned tag. Re-vendor with: deno run -A scripts/sync-sdk-skill.ts (or upstream the change and re-bump)."
+          fi

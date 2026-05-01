@@ -1,0 +1,21 @@
+{
+  "name": "@atlas/workspace",
+  "version": "1.0.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./bash-tool": "./src/bash-tool.ts",
+    "./agent-executor-utils": "./src/agent-executor-utils.ts",
+    "./manager": "./src/manager.ts",
+    "./signal-to-stream": "./src/signal-to-stream.ts",
+    "./storage": "./src/storage.ts",
+    "./types": "./src/types.ts",
+    "./agent-builder": "./src/agent-builder.ts"
+  },
+  "imports": {
+    "@atlas/adapters-md": "../adapters-md/mod.ts",
+    "@atlas/activity/titles": "../activity/src/title-utils.ts",
+    "@atlas/activity/title-generator": "../activity/src/title-generator.ts",
+    "@atlas/core/mount-context-registry": "../core/src/mount-context-registry.ts",
+    "@atlas/memory": "../memory/src/bootstrap.ts"
+  }
+}

@@ -1,0 +1,66 @@
+name: Update Deno lockfile for Dependabot PRs
+
+# Triggered as pull_request_target so the workflow runs with secrets, then
+# checks out and pushes via DEPENDABOT_PAT (a classic PAT with `repo` scope,
+# stored in 1Password as "GitHub PAT — dependabot-lockfile-sync").
+#
+# Why a PAT and not GITHUB_TOKEN: pushes made with GITHUB_TOKEN are
+# deliberately suppressed by GitHub from triggering downstream workflow
+# events (anti-recursion). That meant Test/Lint/Typecheck never re-ran on
+# the PR after the lockfile sync. A PAT push counts as a real user push and
+# triggers the full CI matrix on the PR.
+#
+# The `github.actor == 'dependabot[bot]'` gate is what makes this safe —
+# we never run untrusted PR code, only checkout + `deno install` + commit.
+on:
+  pull_request_target:
+    paths:
+      - "**/package.json"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  update-lockfile:
+    # Defense in depth:
+    #   1. Only run on the canonical repo — forks never see DEPENDABOT_PAT.
+    #   2. Only run when the PR's head repo matches base — blocks fork PRs
+    #      even if they somehow trip github.actor (they can't, but belt+braces).
+    #   3. Only run when github.actor is dependabot[bot] — github.actor is set
+    #      by GitHub from the triggering identity and cannot be spoofed by PR
+    #      contents.
+    if: >-
+      github.repository == 'friday-platform/friday-studio'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.DEPENDABOT_PAT }}
+          fetch-depth: 0
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.7.4
+
+      - name: Update lockfile
+        run: deno install
+
+      - name: Commit lockfile changes
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "chore: update deno.lock [dependabot skip]"
+          file_pattern: "deno.lock"
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
+          push_options: "--force-with-lease"

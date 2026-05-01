@@ -1,0 +1,8 @@
+{
+  "name": "@atlas/fs-watch",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": { "@atlas/logger": "workspace:*", "@std/async": "npm:@jsr/std__async@^1.0.14" }
+}

@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable"],
+    "types": ["./reset.d.ts", "./types/deno-compat.d.ts"],
+    "noImplicitAny": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@atlas/*": [
+        "packages/*/mod.ts",
+        "packages/*/src/index.ts",
+        "apps/*/mod.ts",
+        "apps/*/src/index.ts"
+      ]
+    }
+  },
+  "include": ["src/**/*", "packages/**/*", "apps/**/*", "tools/**/*"],
+  "exclude": ["node_modules", "dist", "build", ".git", "opensrc"]
+}

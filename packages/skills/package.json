@@ -1,0 +1,21 @@
+{
+  "name": "@atlas/skills",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./archive": "./src/archive.ts",
+    "./schemas": "./src/schemas.ts"
+  },
+  "dependencies": {
+    "@atlas/config": "workspace:*",
+    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
+    "ai": "^6.0.168",
+    "nanoid": "^5.1.6",
+    "markdown-it": "^14.1.1",
+    "tar": "^7.5.13",
+    "ulid": "^3.0.2",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": { "vitest": "^4.1.0" }
+}

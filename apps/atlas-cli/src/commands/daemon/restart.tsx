@@ -1,0 +1,144 @@
+import process from "node:process";
+import { client, parseResult } from "@atlas/client/v2";
+import { sleep, stringifyError } from "@atlas/utils";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import type { YargsInstance } from "../../utils/yargs.ts";
+
+interface RestartArgs {
+  port?: number;
+  hostname?: string;
+  maxWorkspaces?: number;
+  idleTimeout?: number;
+  force?: boolean;
+}
+
+export const command = "restart";
+export const desc = "Restart the Atlas daemon";
+
+export function builder(y: YargsInstance) {
+  return y
+    .option("port", {
+      type: "number",
+      alias: "p",
+      describe: "Port to run the daemon on",
+      default: 8080,
+    })
+    .option("hostname", { type: "string", describe: "Hostname to bind to", default: "localhost" })
+    .option("max-workspaces", {
+      type: "number",
+      describe: "Maximum number of concurrent workspace runtimes",
+      default: 10,
+    })
+    .option("idle-timeout", {
+      type: "number",
+      describe: "Idle timeout for workspace runtimes in seconds",
+      default: 300,
+    })
+    .option("force", {
+      type: "boolean",
+      alias: "f",
+      describe: "Force restart even if workspaces are active",
+      default: false,
+    })
+    .example("$0 daemon restart", "Restart daemon with same settings")
+    .example("$0 daemon restart --force", "Force restart daemon")
+    .example("$0 daemon restart --max-workspaces 20", "Restart with higher workspace limit");
+}
+
+export const handler = async (argv: RestartArgs): Promise<void> => {
+  try {
+    const port = argv.port || 8080;
+
+    // First try to stop the daemon if it's running
+    infoOutput("Checking daemon status...");
+
+    let wasRunning = false;
+    const res = await parseResult(client.daemon.status.$get());
+    // Daemon not running, that's fine
+    if (!res.ok) {
+      return;
+    }
+    const status = res.data;
+    wasRunning = true;
+
+    // Check for active workspaces
+    if (status.activeWorkspaces > 0 && !argv.force) {
+      errorOutput(
+        `Daemon has ${status.activeWorkspaces} active workspace(s). ` +
+          `Use --force to restart anyway or wait for workspaces to become idle.`,
+      );
+      infoOutput(`Active workspaces: ${status.workspaces.join(", ")}`);
+      process.exit(1);
+    }
+
+    // Stop the daemon
+    infoOutput("Stopping existing daemon...");
+
+    await client.daemon.shutdown.$post();
+    await sleep(3000);
+
+    // Verify daemon is stopped
+    if (wasRunning) {
+      const stillRunning = await parseResult(client.health.index.$get());
+      if (stillRunning.ok) {
+        errorOutput("Failed to stop existing daemon");
+        process.exit(1);
+      } else {
+        successOutput("Existing daemon stopped successfully");
+        process.exit(0);
+      }
+    } else {
+      infoOutput("No existing daemon found");
+    }
+
+    // Start new daemon
+    infoOutput("Starting new daemon...");
+
+    const cmd = new Deno.Command(Deno.execPath(), {
+      args: [
+        "run",
+        "--allow-all",
+        "--unstable-kv",
+        "--unstable-broadcast-channel",
+        "--unstable-worker-options",
+        "--env-file",
+        Deno.mainModule,
+        "daemon",
+        "start",
+        "--detached",
+        "--port",
+        port.toString(),
+        "--hostname",
+        argv.hostname || "localhost",
+        "--max-workspaces",
+        (argv.maxWorkspaces || 10).toString(),
+        "--idle-timeout",
+        (argv.idleTimeout || 300).toString(),
+      ],
+      env: process.env as Record<string, string>,
+    });
+
+    const { success, stderr } = await cmd.output();
+
+    if (!success) {
+      const errorText = new TextDecoder().decode(stderr);
+      errorOutput(`Failed to start daemon: ${errorText}`);
+      process.exit(1);
+    }
+
+    // Wait a moment and verify it's running
+    await sleep(3000);
+
+    const isRunning = await parseResult(client.health.index.$get());
+    if (isRunning.ok) {
+      successOutput(`Atlas daemon restarted successfully on port ${port}`);
+      process.exit(0);
+    } else {
+      errorOutput("Daemon failed to start after restart");
+      process.exit(1);
+    }
+  } catch (error) {
+    errorOutput(stringifyError(error));
+    process.exit(1);
+  }
+};

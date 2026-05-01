@@ -1,0 +1,57 @@
+[package]
+name = "studio-installer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "studio_installer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.10.3", features = [] }
+tauri-plugin-opener = "2.5.3"
+tauri-plugin-os = "2.3.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["rustls-tls", "stream", "json", "blocking"], default-features = false }
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+dirs = "5"
+hex = "0.4"
+# Mirrors exec.LookPath for our claude discovery so the wizard
+# agrees with the launcher about whether claude is already
+# installed.
+which = "6"
+futures-util = "0.3"
+flate2 = "1"
+tar = "0.4"
+zip = "0.6"
+# Pure-Rust zstd decoder. Avoids vendoring libzstd C lib + cross-compile
+# pain. The studio bundle ships as .tar.zst (tar+zstd) for ~10–15% size
+# win over tar.gz; ruzstd handles the decompression at install time.
+ruzstd = "0.7"
+# YAML round-trip used by env_file.rs to manage ~/.friday/local/friday.yml
+# selectively (only the `models:` key — preserves any `server:` /
+# `tools:` / etc. the user or Settings UI authored). Mirrors the
+# daemon-side @std/yaml usage in apps/atlasd/routes/config.ts.
+# serde_norway is the actively-maintained fork of the deprecated
+# serde_yaml; chosen over serde_yml after RustSec flagged serde_yml +
+# its libyml dep as unsound and unmaintained (GHSA-hhw4-xg65-fp2x +
+# GHSA-gfxp-f68g-8x78). serde_norway uses unsafe-libyaml-norway which
+# is actively maintained.
+serde_norway = "0.9"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
+[dev-dependencies]
+# Used by ensure_agent_browser_chrome's is_cold_install tests for
+# isolated tempdirs.
+tempfile = "3"
+
+[profile.release]
+opt-level = "s"
+strip = true

@@ -1,0 +1,371 @@
+name: studio-build
+
+on:
+  # Manual dispatch only. Each release is a paid native-runner build; we
+  # don't want it firing on every push to a heavy-traffic source path.
+  # Run via `gh workflow run studio-build.yml --ref <branch>` or the
+  # Actions tab.
+  workflow_dispatch:
+
+env:
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  version:
+    name: Determine release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compute next semver patch from published manifest
+        id: compute
+        run: |
+          set -euo pipefail
+          MANIFEST_URL="https://download.fridayplatform.io/studio/manifest.json"
+          # Single source of truth: the published platform manifest. First-ever
+          # build seeds from 0.0.0 so the first published version is 0.0.1.
+          PREV=$(curl -sf "$MANIFEST_URL" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
+          if [ -z "$PREV" ]; then
+            PREV="0.0.0"
+            echo "No published manifest; bootstrapping from $PREV"
+          fi
+          MAJOR=$(echo "$PREV" | cut -d. -f1)
+          MINOR=$(echo "$PREV" | cut -d. -f2)
+          PATCH=$(echo "$PREV" | cut -d. -f3 | sed 's/[^0-9].*//')
+          NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "Bumping ${PREV} -> ${NEXT}"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm
+            os: macos-latest-xlarge
+            target: aarch64-apple-darwin
+            archive_ext: tar.zst
+          # macos-intel temporarily disabled while iterating on
+          # friday-launcher integration — cross-codesign+notarize on the
+          # ARM runner adds ~30min per build with no incremental value
+          # for the QA cycle. Re-enable before merging by uncommenting.
+          # - platform: macos-intel
+          #   os: macos-latest-xlarge
+          #   target: x86_64-apple-darwin
+          #   archive_ext: tar.zst
+          - platform: windows
+            os: windows-2025-8-cores
+            target: x86_64-pc-windows-msvc
+            archive_ext: zip
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Setup Node.js (playground vite build)
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Setup Go (friday-launcher build)
+        # 1.26 required by tools/friday-launcher/go.mod (process-compose
+        # v1.103.0 declares go 1.26). Atlas root go.mod is on 1.25.4 but
+        # 1.26 toolchain compiles 1.25 syntax fine. Cannot use
+        # go-version-file: go.mod (would pick up the older 1.25.4).
+        # cache: true so the process-compose dep tree (gin/swag/tcell/
+        # tview/gopsutil — ~200MB) survives across runs.
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/friday-launcher/go.sum
+
+      - name: Install JS deps (Deno workspace)
+        # `deno install` materializes node_modules so the SvelteKit static
+        # build (npm run build) below can find vite + plugins.
+        run: deno install
+
+      - name: Generate svelte-kit tsconfigs (workspace)
+        # `npm install` runs `prepare: svelte-kit sync` for each SvelteKit
+        # package and generates `.svelte-kit/tsconfig.json`, which is what
+        # `packages/ui/tsconfig.json` extends. `deno install` skips lifecycle
+        # scripts, so without an explicit sync step the playground vite build
+        # fails with `failed to resolve "extends":"./.svelte-kit/tsconfig.json"`.
+        shell: bash
+        run: |
+          cd packages/ui && npx svelte-kit sync
+          cd ../../tools/agent-playground && npx svelte-kit sync
+
+      - name: Build playground static UI
+        working-directory: tools/agent-playground
+        run: npm run build
+
+      - name: Import Apple Developer ID certificate (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$APPLE_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+          security create-keychain -p "" build.keychain
+          security import /tmp/certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          security list-keychain -d user -s build.keychain
+          rm /tmp/certificate.p12
+
+      - name: Compile + bundle + archive (build-studio.ts)
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno run -A scripts/build-studio.ts \
+            --target "${{ matrix.target }}" \
+            --version "${RELEASE_VERSION}"
+
+      - name: Codesign Mach-O binaries (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          STAGING="dist/${{ matrix.target }}/staging"
+          # Sign every Mach-O binary in staging with Hardened Runtime so
+          # notarization passes. atlas/link/playground/webhook-tunnel run JIT
+          # (V8) so they need entitlements for unsigned-executable-memory.
+          ENTITLEMENTS="$(mktemp -t entitlements.plist).plist"
+          cat > "$ENTITLEMENTS" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+            <dict>
+              <key>com.apple.security.cs.allow-jit</key><true/>
+              <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+              <key>com.apple.security.cs.disable-library-validation</key><true/>
+            </dict>
+          </plist>
+          PLIST
+          # Sign in parallel — Apple's TSA roundtrip dominates each call,
+          # and serial signing of 6 ~250MB binaries took ~25min on the
+          # Intel runner (vs 12s on M2 ARM where TSA was responsive). With
+          # & + wait the whole step finishes in roughly the slowest single
+          # binary's time.
+          PIDS=()
+          # Binary paths match the staging output of build-studio.ts —
+          # Stack 3 split-destination layout puts every supervised
+          # binary under <staging>/bin/, with friday-launcher alone at
+          # the top level (the macOS .app's entry point). Keep this
+          # list in sync with DENO_BINARIES + GO_BINARIES + EXTERNAL_CLIS
+          # in scripts/build-studio.ts.
+          for f in \
+              "bin/friday" \
+              "bin/link" \
+              "bin/playground" \
+              "bin/webhook-tunnel" \
+              "friday-launcher" \
+              "bin/gh" \
+              "bin/cloudflared"; do
+            (
+              # `gtimeout` (coreutils) caps each codesign call at 5 min.
+              # Apple's TSA can hang for hours under load; without a
+              # bounded wait, the whole job sits idle and burns runner
+              # minutes. 5 min is generous — even slow TSA roundtrips
+              # finish in ~30s normally. brew install coreutils is the
+              # standard way to get gtimeout on macOS runners; fall back
+              # to plain codesign if not available so legacy CI hosts
+              # still work.
+              if command -v gtimeout >/dev/null; then
+                gtimeout 300 codesign --force --options runtime --timestamp \
+                  --entitlements "$ENTITLEMENTS" \
+                  --sign "$APPLE_SIGNING_IDENTITY" \
+                  "$STAGING/$f" \
+                  && codesign --verify --strict --verbose=2 "$STAGING/$f"
+              else
+                codesign --force --options runtime --timestamp \
+                  --entitlements "$ENTITLEMENTS" \
+                  --sign "$APPLE_SIGNING_IDENTITY" \
+                  "$STAGING/$f" \
+                  && codesign --verify --strict --verbose=2 "$STAGING/$f"
+              fi
+            ) &
+            PIDS+=($!)
+          done
+          # Fail loudly if any background sign returned non-zero. Without
+          # this `wait` the loop exits 0 and we ship unsigned binaries.
+          fail=0
+          for pid in "${PIDS[@]}"; do
+            wait "$pid" || fail=1
+          done
+          [ "$fail" -eq 0 ] || exit 1
+
+      - name: Notarize archive (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_API_KEY_PATH: /tmp/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
+        run: |
+          set -euo pipefail
+          STAGING="dist/${{ matrix.target }}/staging"
+          # Re-build the archive now that binaries are signed
+          # (build-studio.ts made an unsigned one earlier; re-tar from the
+          # same staging dir). Use tar.zst with parallel zstd matching
+          # build-studio.ts's archiveStaging so the published artifact
+          # actually carries the smaller compression. The installer's
+          # extract.rs handles .tar.zst via the ruzstd crate.
+          ARCHIVE="dist/friday-studio_${RELEASE_VERSION}_${{ matrix.target }}.tar.zst"
+          tar --use-compress-program='zstd -T0 -19' -cf "$ARCHIVE" -C "$STAGING" .
+
+          # notarytool accepts zip/dmg/pkg — wrap the tar.gz for submission only.
+          NOTARY_ZIP="$(mktemp -d)/notary.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$ARCHIVE" "$NOTARY_ZIP"
+
+          echo "${{ secrets.APPLE_API_KEY }}" > "$APPLE_API_KEY_PATH"
+          xcrun notarytool submit "$NOTARY_ZIP" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "${{ secrets.APPLE_API_KEY_ID }}" \
+            --issuer "${{ secrets.APPLE_API_ISSUER }}" \
+            --wait
+          rm -f "$APPLE_API_KEY_PATH" "$NOTARY_ZIP"
+
+          # Recompute sha256 + size after re-tarring with signed binaries and
+          # rewrite the manifest entry build-studio.ts emitted earlier.
+          SHA=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+          SIZE=$(stat -f %z "$ARCHIVE")
+          NAME=$(basename "$ARCHIVE")
+          ENTRY="dist/friday-studio_${RELEASE_VERSION}_${{ matrix.target }}.json"
+          PLATFORM_KEY="${{ matrix.platform }}"
+          python3 -c "import json; \
+            entry = {'$PLATFORM_KEY': {'url': 'https://download.fridayplatform.io/studio/$NAME', \
+              'sha256': '$SHA', 'size': $SIZE}}; \
+            open('$ENTRY','w').write(json.dumps(entry, indent=2))"
+          echo "${PLATFORM_KEY}: ${SHA} (${SIZE} bytes)"
+          cp "$ARCHIVE.sha256.tmp" "$ARCHIVE.sha256" 2>/dev/null || \
+            printf '%s  %s\n' "$SHA" "$NAME" > "$ARCHIVE.sha256"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload artifact to GCS
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="dist/friday-studio_${RELEASE_VERSION}_${{ matrix.target }}.${{ matrix.archive_ext }}"
+          NAME=$(basename "$ARCHIVE")
+          # Versioned filename — kept forever, served as immutable by studio-artifact.
+          gsutil cp "$ARCHIVE" "gs://${{ env.GCS_BUCKET }}/studio/$NAME"
+          # Sidecar checksum file alongside the archive so curl-only clients
+          # can verify without parsing the manifest.
+          if [ -f "$ARCHIVE.sha256" ]; then
+            gsutil cp "$ARCHIVE.sha256" "gs://${{ env.GCS_BUCKET }}/studio/$NAME.sha256"
+          fi
+
+      - name: Upload manifest entry artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-manifest-entry-${{ matrix.platform }}
+          path: dist/friday-studio_${{ env.RELEASE_VERSION }}_${{ matrix.target }}.json
+          retention-days: 1
+
+  publish-manifest:
+    name: Publish studio/manifest.json
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Download all manifest entries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: studio-manifest-entry-*
+          path: entries
+          merge-multiple: true
+
+      - name: Compose manifest
+        run: |
+          set -euo pipefail
+          # Each per-platform JSON contains a single { "<platform>": {...} }
+          # object. Merge them into { version, platforms: {...} } — same
+          # schema as installer/manifest.json so fetch_manifest.rs deserializes
+          # both with one Manifest struct.
+          python3 - <<'PY' "$RELEASE_VERSION" entries > manifest.json
+          import json, os, sys
+          version, dirpath = sys.argv[1], sys.argv[2]
+          platforms = {}
+          for fname in sorted(os.listdir(dirpath)):
+              if not fname.endswith(".json"):
+                  continue
+              with open(os.path.join(dirpath, fname)) as f:
+                  platforms.update(json.load(f))
+          json.dump({"version": version, "platforms": platforms}, sys.stdout, indent=2)
+          PY
+          cat manifest.json
+          # Sanity: refuse to publish if any of the three expected platforms
+          # is missing — a half-broken manifest would 404 for some users.
+          python3 -c "
+          import json, sys
+          m = json.load(open('manifest.json'))
+          # macos-intel temporarily out of the matrix (see build job) —
+          # restore to {'macos-arm', 'macos-intel', 'windows'} when
+          # re-enabling macos-intel before merge.
+          want = {'macos-arm', 'windows'}
+          got = set(m['platforms'].keys())
+          missing = want - got
+          if missing:
+              print(f'ERROR: missing platforms: {missing}', file=sys.stderr)
+              sys.exit(1)
+          "
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Upload manifest to GCS
+        run: |
+          # Atomicity is provided by the workflow ordering: artifacts are
+          # uploaded in the build job (before this), then the manifest is
+          # uploaded last. A CDN that fetches the manifest after this step
+          # always sees URLs that resolve.
+          #
+          # Cache-Control: no-cache forces GCS's anonymous edge CDN to
+          # revalidate every fetch — the bucket default of max-age=3600
+          # caused installers to keep downloading the old version for an
+          # hour after publish on 2026-04-27 (v0.0.7 → v0.0.8 cutover).
+          # Manifests must always reflect the current truth; tarball
+          # objects are immutable so they keep the bucket-default cache.
+          gsutil -h "Content-Type:application/json" \
+                 -h "Cache-Control:no-cache, max-age=0, must-revalidate" \
+                 cp manifest.json \
+            "gs://${{ env.GCS_BUCKET }}/studio/manifest.json"

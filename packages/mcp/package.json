@@ -1,0 +1,16 @@
+{
+  "name": "@atlas/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": {
+    "@ai-sdk/mcp": "^1.0.36",
+    "@atlas/config": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@std/async": "npm:@jsr/std__async@^1.0.14",
+    "@modelcontextprotocol/sdk": "~1.28.0",
+    "ai": "^6.0.168"
+  },
+  "devDependencies": { "vitest": "^4.1.0", "zod": "^4.3.5" }
+}

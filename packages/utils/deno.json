@@ -1,0 +1,14 @@
+{
+  "name": "@atlas/utils",
+  "version": "1.0.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./cortex-http": "./src/cortex-http.ts",
+    "./fs.server": "./src/fs.ts",
+    "./paths.server": "./src/paths.ts",
+    "./release-channel": "./src/release-channel.ts",
+    "./telemetry.server": "./src/telemetry.ts",
+    "./sse": "./src/sse.ts",
+    "./temp.server": "./src/temp.server.ts"
+  }
+}

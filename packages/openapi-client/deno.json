@@ -1,0 +1,6 @@
+{
+  "name": "@atlas/oapi-client",
+  "version": "1.0.0",
+  "exports": "./mod.ts",
+  "tasks": { "generate": "deno run -A scripts/build.ts" }
+}

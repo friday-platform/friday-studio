@@ -1,0 +1,188 @@
+version: 2
+updates:
+  # Keep GitHub Actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    open-pull-requests-limit: 10
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    rebase-strategy: "auto"
+
+  # Deno/JSR dependencies in deno.json are handled by .github/workflows/update-deno-deps.yml
+  # using Deno's native `deno outdated` command (available in Deno 2.x+)
+  # GitHub Dependabot doesn't have native support for Deno's deno.json yet
+
+  # Keep npm dependencies up to date (root workspace)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    versioning-strategy: "increase"
+    open-pull-requests-limit: 10
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"
+    rebase-strategy: "auto"
+    groups:
+      std-packages:
+        patterns:
+          - "@jsr/std__*"
+      atlas-workspace:
+        patterns:
+          - "@atlas/*"
+      opentelemetry:
+        patterns:
+          - "@opentelemetry/*"
+    ignore:
+      # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
+      # Docker images — rolldown-binding.linux-x64-musl.node not found.
+      # Also requires vite-plugin-svelte v7 migration. Block until resolved.
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      # vite-plugin-svelte v7 requires Vite 8 (Rolldown) — hard API deps on
+      # optimizeDeps.rolldownOptions and transformWithOxc. Pinned to ~6.2.4 until
+      # Vite 8 reaches stable. See PR #2164 for context.
+      - dependency-name: "@sveltejs/vite-plugin-svelte"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 6 has new strictness defaults that fail the Deno typecheck
+      # and svelte-check across the monorepo. Hold majors until we deliberately
+      # do a TS 6 migration.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
+      # type inference in `server.registerPrompt(...)` — every destructured
+      # binding becomes implicit-any (TS7031), breaking ~100 typecheck sites
+      # in packages/mcp-server. Pinned to ~1.28.x until upstream fixes typing.
+      - dependency-name: "@modelcontextprotocol/sdk"
+        versions: [">= 1.29.0"]
+      # undici 8.x calls webidl.util.markAsUncloneable, which Deno's webidl
+      # shim doesn't expose — daemon crashes on startup loading CacheStorage.
+      # Hold majors until Deno catches up. See PR #89 for context.
+      - dependency-name: "undici"
+        update-types: ["version-update:semver-major"]
+
+  # Keep Docker dependencies up to date
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+    # Block denoland/deno >= 2.7.5
+    # See: https://github.com/denoland/deno/issues/32821
+    ignore:
+      - dependency-name: "denoland/deno"
+        versions: [">= 2.7.5, < 2.8.0"]
+
+  # Keep Docker image npm dependencies up to date (Claude Code CLI)
+  - package-ecosystem: "npm"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "claude-code"
+    rebase-strategy: "auto"
+
+  # Keep Go dependencies up to date (root go.mod)
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    open-pull-requests-limit: 10
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "go"
+    rebase-strategy: "auto"
+    groups:
+      k8s:
+        patterns:
+          - "k8s.io/*"
+      opentelemetry:
+        patterns:
+          - "go.opentelemetry.io/*"
+          - "github.com/open-telemetry/*"
+
+  # Keep Docker dependencies up to date (for link service)
+  - package-ecosystem: "docker"
+    directory: "/apps/link"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    rebase-strategy: "auto"
+    # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
+    # See: https://github.com/denoland/deno/issues/32821
+    ignore:
+      - dependency-name: "denoland/deno"
+        versions: [">= 2.7.5, < 2.8.0"]
+
+  # Keep npm dependencies up to date (for link service)
+  - package-ecosystem: "npm"
+    directory: "/apps/link"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    versioning-strategy: "increase"
+    open-pull-requests-limit: 5
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "link"
+    rebase-strategy: "auto"
+    ignore:
+      # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
+      # type inference. Pinned to ~1.28.x until upstream fixes typing.
+      - dependency-name: "@modelcontextprotocol/sdk"
+        versions: [">= 1.29.0"]

@@ -1,0 +1,12 @@
+# Schedule signal — cron-triggered automation.
+#
+# schedule: cron expression (e.g., "0 9 * * *" for daily at 9am)
+# timezone: IANA timezone name (defaults to UTC if omitted)
+
+signals:
+  my-schedule:
+    description: "One-line description of what this signal does"
+    provider: schedule
+    config:
+      schedule: "0 9 * * *"
+      timezone: "America/Los_Angeles"

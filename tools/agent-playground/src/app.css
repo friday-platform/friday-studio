@@ -1,0 +1,245 @@
+/* Accent colors for markdown — maps blue family to accent variables */
+:root {
+  --accent-1: light-dark(hsl(216 20% 95%), hsl(210 9% 9%));
+  --accent-2: hsl(212 97% 49%);
+  --accent-3: light-dark(hsl(212 97% 27%), hsl(212 96% 78%));
+
+  /* Extended syntax highlighting palette (not in @atlas/ui tokens) */
+  --brown-3: light-dark(hsl(35 49% 21%), hsl(34 49% 61%));
+  --red-3: light-dark(hsl(24 96% 33%), hsl(24 96% 78%));
+  --green-3: light-dark(hsl(99 78% 20%), hsl(100 79% 78%));
+
+  /* Editor text opacity variants — based on --color-text for each mode */
+  --editor-muted: light-dark(hsl(230 32% 14% / 0.5), hsl(40 12% 95% / 0.4));
+  --editor-dimmed: light-dark(hsl(230 32% 14% / 0.7), hsl(40 12% 95% / 0.55));
+}
+
+/* Reset */
+
+a,
+hr {
+  color: inherit;
+}
+progress,
+sub,
+sup {
+  vertical-align: baseline;
+}
+blockquote,
+body,
+dd,
+dl,
+fieldset,
+figure,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+hr,
+menu,
+ol,
+p,
+pre,
+ul {
+  margin: 0;
+}
+dialog,
+fieldset,
+legend,
+menu,
+ol,
+ul {
+  padding: 0;
+}
+*,
+::after,
+::before {
+  border-color: currentColor;
+  border-style: solid;
+  border-width: 0;
+  box-sizing: border-box;
+}
+::after,
+::before {
+  --tw-content: "";
+}
+:host,
+html {
+  -moz-tab-size: 4;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  font-family:
+    ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+  font-feature-settings: normal;
+  font-variation-settings: normal;
+  line-height: 1.5;
+  tab-size: 4;
+}
+body {
+  line-height: inherit;
+}
+hr {
+  border-top-width: 1px;
+  height: 0;
+}
+abbr:where([title]) {
+  text-decoration: underline dotted;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+a {
+  text-decoration: inherit;
+}
+b,
+strong {
+  font-weight: bolder;
+}
+code,
+kbd,
+pre,
+samp {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-feature-settings: normal;
+  font-size: 1em;
+  font-variation-settings: normal;
+}
+small {
+  font-size: 80%;
+}
+sub,
+sup {
+  font-size: 75%;
+  line-height: 0;
+  position: relative;
+}
+sub {
+  bottom: -0.25em;
+}
+sup {
+  top: -0.5em;
+}
+table {
+  border-collapse: collapse;
+  border-color: inherit;
+  text-indent: 0;
+}
+button,
+input,
+optgroup,
+select,
+textarea {
+  color: inherit;
+  font-family: inherit;
+  font-feature-settings: inherit;
+  font-size: 100%;
+  font-variation-settings: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  margin: 0;
+  padding: 0;
+}
+button,
+select {
+  text-transform: none;
+}
+button,
+input:where([type="button"]),
+input:where([type="reset"]),
+input:where([type="submit"]) {
+  -webkit-appearance: button;
+  background-color: transparent;
+  background-image: none;
+}
+:-moz-focusring {
+  outline: auto;
+}
+:-moz-ui-invalid {
+  box-shadow: none;
+}
+::-webkit-inner-spin-button,
+::-webkit-outer-spin-button {
+  height: auto;
+}
+[type="search"] {
+  -webkit-appearance: textfield;
+  outline-offset: -2px;
+}
+::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+::-webkit-file-upload-button {
+  -webkit-appearance: button;
+  font: inherit;
+}
+summary {
+  display: list-item;
+}
+menu,
+ol,
+ul {
+  list-style: none;
+}
+textarea {
+  resize: vertical;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+  opacity: 1;
+}
+:disabled {
+  cursor: default;
+}
+audio,
+canvas,
+embed,
+iframe,
+img,
+object,
+svg,
+video {
+  display: block;
+  vertical-align: middle;
+}
+img,
+video {
+  height: auto;
+  max-width: 100%;
+}
+[hidden] {
+  display: none;
+}
+
+/* Global base styles */
+
+html {
+  color-scheme: light dark;
+  overscroll-behavior: none;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--surface-dark);
+  block-size: 100dvh;
+  color: var(--text);
+  cursor: default;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-3);
+}
+
+a, button {
+  color: var(--text-bright);
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@atlas/config",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./mod.ts",
+    "./server": "./src/filesystem-atlas-source.ts",
+    "./entry-actions": "./src/entry-actions.ts",
+    "./mutations": "./src/mutations/index.ts",
+    "./workspace-agents": "./src/mutations/workspace-agents.ts",
+    "./testing": "./src/mutations/test-fixtures.ts",
+    "./map-session-status": "./src/map-session-status.ts",
+    "./pipeline-utils": "./src/pipeline-utils.ts",
+    "./integrations": "./src/mutations/integrations.ts",
+    "./data-contracts": "./src/data-contracts.ts",
+    "./signal-details": "./src/signal-details.ts",
+    "./agent-job-usage": "./src/agent-job-usage.ts",
+    "./job-agents": "./src/job-agents.ts",
+    "./topology": "./src/topology.ts"
+  },
+  "main": "./mod.ts",
+  "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/fsm-engine": "workspace:*",
+    "@atlas/schemas": "workspace:*",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
+    "cron-parser": "^5.5.0",
+    "immer": "^11.1.4",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": { "vitest": "^4.1.0" }
+}

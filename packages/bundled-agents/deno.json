@@ -1,0 +1,10 @@
+{
+  "name": "@atlas/bundled-agents",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts",
+    "./shared-schemas": "./src/shared-schemas.ts"
+  },
+  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13", "@std/async": "jsr:@std/async@^1.0.15" }
+}

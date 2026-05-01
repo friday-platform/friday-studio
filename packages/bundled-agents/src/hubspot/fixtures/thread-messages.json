@@ -1,0 +1,78 @@
+{
+  "results": [
+    {
+      "id": "13001c5e5ff0434eb9d8699ba0f88f7c",
+      "conversationsThreadId": "99000000001",
+      "createdAt": "2026-03-31T15:30:08.207Z",
+      "createdBy": "A-100000001",
+      "client": { "clientType": "HUBSPOT" },
+      "senders": [{ "actorId": "A-100000001" }],
+      "recipients": [],
+      "archived": false,
+      "text": "Just adding test comment!",
+      "richText": "<div style=\"\" dir=\"auto\" data-top-level=\"true\"><p style=\"margin:0;\">Just adding test comment!</p></div>",
+      "attachments": [],
+      "type": "COMMENT"
+    },
+    {
+      "id": "e04f8ac70e5d471e84fb45f3e437b6e8",
+      "conversationsThreadId": "99000000001",
+      "createdAt": "2026-03-30T19:16:23.399Z",
+      "createdBy": "A-100000002",
+      "client": { "clientType": "HUBSPOT" },
+      "senders": [{ "actorId": "A-100000002" }],
+      "recipients": [],
+      "archived": false,
+      "text": "Hello test image",
+      "richText": "<div style=\"\" dir=\"auto\" data-top-level=\"true\"><p style=\"margin:0;\"><br class=\"hs-trailingbreak\"></p><img src=\"https://api-na2.hubspot.com/filemanager/api/v2/files/200000000001/signed-url-redirect?portalId=00000000\" width=\"400\" height=\"711.1111111111111\"><p style=\"margin:0;\">Hello test image</p></div>",
+      "attachments": [],
+      "type": "COMMENT"
+    },
+    {
+      "id": "e16be9df-bbe6-48d0-b9d3-e3fb6df15671",
+      "conversationsThreadId": "99000000001",
+      "createdAt": "2026-03-27T21:18:39.870Z",
+      "createdBy": "S-hubspot",
+      "client": { "clientType": "SYSTEM" },
+      "senders": [{ "actorId": "S-hubspot" }],
+      "recipients": [],
+      "archived": false,
+      "newStatus": "OPEN",
+      "type": "THREAD_STATUS_CHANGE"
+    },
+    {
+      "id": "83d27135-caba-4c5c-bca3-2322fd2cc06f",
+      "conversationsThreadId": "99000000001",
+      "createdAt": "2026-03-27T21:18:05Z",
+      "updatedAt": "2026-03-27T21:18:38.932Z",
+      "createdBy": "V-100000000001",
+      "client": { "clientType": "HUBSPOT" },
+      "senders": [
+        {
+          "actorId": "V-100000000001",
+          "name": "Test User",
+          "senderField": "FROM",
+          "deliveryIdentifier": { "type": "HS_EMAIL_ADDRESS", "value": "user@example.com" }
+        }
+      ],
+      "recipients": [
+        {
+          "name": "John Doe",
+          "recipientField": "TO",
+          "deliveryIdentifier": { "type": "HS_EMAIL_ADDRESS", "value": "doe@example.com" }
+        }
+      ],
+      "archived": false,
+      "text": "hello this is a ticket test for workspace",
+      "richText": "<div dir=\"ltr\">\n hello this is a ticket test for workspace \n</div>",
+      "attachments": [],
+      "subject": "another test for a workspace",
+      "truncationStatus": "NOT_TRUNCATED",
+      "status": { "statusType": "RECEIVED" },
+      "direction": "INCOMING",
+      "channelId": "1002",
+      "channelAccountId": "500000000001",
+      "type": "MESSAGE"
+    }
+  ]
+}

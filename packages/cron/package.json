@@ -1,0 +1,13 @@
+{
+  "name": "@atlas/cron",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./mod.ts",
+  "exports": { ".": "./mod.ts" },
+  "dependencies": {
+    "@atlas/storage": "workspace:*",
+    "@atlas/workspace": "workspace:*",
+    "cron-parser": "^5.5.0"
+  },
+  "devDependencies": { "@atlas/logger": "workspace:*", "vitest": "^4.1.0" }
+}

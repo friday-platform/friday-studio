@@ -1,0 +1,82 @@
+name: "Stale Branch Cleanup"
+
+on:
+  schedule:
+    # Run daily at 10:00 AM PST (18:00 UTC during standard time, 17:00 UTC during daylight saving)
+    # Using UTC time that corresponds to 10 AM PST/PDT
+    - cron: '0 18 * * *'
+
+  # Allow manual trigger for testing and immediate cleanup
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run in dry-run mode (no actual deletions)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      max-deletions:
+        description: 'Maximum number of branches to delete in a single run'
+        required: false
+        default: '20'
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+
+jobs:
+  stale-branches:
+    name: Clean up stale branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Clean up stale branches
+        uses: crs-k/stale-branches@v9.0.0
+        with:
+          # Mark branches as stale after 90 days of inactivity
+          days-before-stale: 90
+
+          # Delete branches 120 days after last commit (30 days after marking as stale)
+          days-before-delete: 120
+
+          # Safety: Don't delete branches that have diverged from main
+          # This protects branches with unique work even if they're old
+          compare-branches: "save"
+
+          # Check for open pull requests and don't delete branches with active PRs
+          pr-check: true
+
+          # Labels for stale branch issues
+          stale-branch-label: "stale-branch"
+
+          # Maximum number of issues to create per run (prevents spam)
+          max-issues: ${{ github.event.inputs.max-deletions || '20' }}
+
+          # Dry run mode for testing (set via workflow_dispatch or for initial rollout)
+          dry-run: ${{ github.event.inputs.dry-run || 'false' }}
+
+          # GitHub token with appropriate permissions
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary Report
+        if: always()
+        run: |
+          {
+            echo "## Stale Branch Cleanup Summary"
+            echo ""
+            echo "**Run Configuration:**"
+            echo "- Stale after: 90 days"
+            echo "- Delete after: 120 days"
+            echo "- Dry run: ${{ github.event.inputs.dry-run || 'false' }}"
+            echo "- Max deletions: ${{ github.event.inputs.max-deletions || '20' }}"
+            echo ""
+            echo "Check the action logs above for detailed information about processed branches."
+          } >> "$GITHUB_STEP_SUMMARY"

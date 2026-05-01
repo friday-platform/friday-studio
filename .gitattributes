@@ -1,0 +1,8 @@
+# Auto-generated files should be marked as such for GitHub's linguist
+packages/openapi-client/src/atlasd-types.gen.d.ts linguist-generated=true
+tools/evals/bun.lock linguist-generated=true
+tools/evals/agents/data-analyst/ad_data_anonymized.csv linguist-generated=true linguist-vendored=true diff=false
+deno.lock linguist-generated=true
+
+# Use bd merge for beads JSONL files
+.beads/issues.jsonl merge=beads

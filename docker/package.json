@@ -1,0 +1,7 @@
+{
+  "name": "atlas-docker-deps",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dependencies for Atlas Docker image - managed by Dependabot",
+  "dependencies": { "@anthropic-ai/claude-code": "2.1.121" }
+}

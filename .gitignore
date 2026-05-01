@@ -1,0 +1,104 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Atlas local data
+.atlas/
+.local-dev/
+
+# Per-user platform config loaded from process.cwd() at daemon startup —
+# holds model preferences, MCP creds, rate limits.
+friday.yml
+
+# User agent development (keep the README, ignore agent subdirectories
+# except the curated set of FAST-built / hand-bootstrapped Python agents
+# that are checked in as canonical examples).
+/agents/*/
+!/agents/README.md
+!/agents/skill-publisher/
+!/agents/reflector/
+!/agents/task-router/
+!/agents/session-summarizer/
+!/agents/reflection-aggregator/
+!/agents/workspace-creator/
+!/agents/multi-session-reflector/
+!/agents/autopilot-planner/
+!/agents/orphan-agent-auditor/
+!/agents/skill-author/
+!/agents/autopilot-dispatcher/
+!/agents/autopilot-status-watcher/
+!/agents/route-probe-validator/
+
+# Python build artifacts (componentize-py compiles wasm; pycache is dev-only)
+__pycache__/
+*.pyc
+
+# Deno
+.deno/
+coverage/
+
+# Node modules (from npm imports)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.code-workspace
+
+# Logs
+*.log
+
+# AI-related files
+tasks
+plans
+.claude/projects/
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+.serena
+
+lgtm/
+build/
+
+# Go binaries
+*.test
+
+# Go coverage
+cover.out
+
+# Test directories
+test-workspace-watcher*
+
+# Eval snapshots
+**/snapshots/
+
+# Web Client Output
+tools/chat-replay/.svelte-kit/
+chat-replay/chats.snapshot.json
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+.vite/
+dist/
+.playwright-mcp/
+
+# Temp files
+temp/
+tmp/
+.beads/
+
+# bv (beads viewer) local config and caches
+.bv/
+
+# opensrc - source code for packages
+opensrc/
+
+# friday-launcher build artifact (use go build -o /tmp/...)
+tools/friday-launcher/friday-launcher
+/friday-launcher

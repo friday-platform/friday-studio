@@ -1,0 +1,29 @@
+{
+  "name": "@atlas/fsm-engine",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./mod.ts",
+    "./schema": "./schema.ts",
+    "./types": "./types.ts",
+    "./mcp-tools": "./mcp-tools/index.ts"
+  },
+  "main": "./mod.ts",
+  "dependencies": {
+    "@ai-sdk/provider": "^3.0.8",
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/ledger": "workspace:*",
+    "@atlas/hallucination": "workspace:*",
+    "@atlas/llm": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/mcp": "workspace:*",
+    "@atlas/resources": "workspace:*",
+    "@atlas/skills": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "@modelcontextprotocol/sdk": "~1.28.0",
+    "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
+    "ai": "npm:ai@^6.0.141",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": { "vitest": "^4.1.0" }
+}

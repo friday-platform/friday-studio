@@ -1,0 +1,12 @@
+{
+  "name": "@atlas/fsm-engine",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./schema": "./schema.ts",
+    "./types": "./types.ts",
+    "./mcp-tools": "./mcp-tools/index.ts",
+    "./workspace-meta": "./workspace-meta.ts"
+  },
+  "imports": { "@atlas/ledger": "../../apps/ledger/src/index.ts" }
+}

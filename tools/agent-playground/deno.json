@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
+  "name": "@atlas/agent-playground",
+  "exports": "./mod.ts",
+  "version": "0.1.0",
+  "imports": { "hono/client": "npm:hono@4.12.15/client" },
+  "tasks": {
+    "fmt": "npx prettier --write .",
+    "fmt:check": "npx prettier --check .",
+    "eslint": "npx eslint .",
+    "eslint:fix": "npx eslint --fix ."
+  }
+}

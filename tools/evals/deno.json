@@ -1,0 +1,6 @@
+{
+  "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
+  "name": "@atlas/evals",
+  "exports": "./mod.ts",
+  "version": "0.1.0"
+}

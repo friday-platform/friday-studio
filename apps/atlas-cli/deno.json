@@ -1,0 +1,1 @@
+{ "name": "@atlas/cli", "version": "1.0.0", "exports": "./src/cli.ts" }

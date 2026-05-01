@@ -1,0 +1,32 @@
+# Complete working example — personal knowledge base, narrative-memory backed.
+#
+# Every workspace already has a `notes` narrative memory corpus that the chat
+# runtime auto-injects into the agent's system prompt on every turn and that
+# the platform exposes via `memory_save`, `memory_read`, and `memory_remove`. Use those.
+#
+# Do NOT reach for user-authored SQLite for plain "save a note / recall by
+# question" use cases. SQLite adds an MCP dependency (`uvx mcp-server-sqlite`),
+# a DB path to author (easy to hallucinate), schema-bootstrap SQL, and removes
+# the auto-inject that makes narrative memory usable at zero cost. Reserve
+# SQLite for genuinely relational data the user explicitly asked for
+# (structured logs, tables with joins, etc.).
+#
+# No agents block needed — workspace-chat handles KB interactions automatically
+# using memory_save / memory_read via the `notes` corpus below.
+# Before submitting: rename `workspace.name`; everything else is safe to ship as-is.
+
+version: "1.0"
+workspace:
+  name: knowledge-base
+  description: >-
+    Personal knowledge base — drop URLs, notes, and freeform text, then ask
+    plain-English questions to retrieve them. Everything persists in the
+    workspace's `notes` narrative memory and auto-injects into the agent
+    on every turn.
+
+memory:
+  own:
+    - name: notes
+      type: long_term
+      strategy: narrative
+  mounts: []

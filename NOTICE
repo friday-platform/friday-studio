@@ -1,0 +1,133 @@
+Friday Studio
+Copyright (c) 2024-2026 Tempest Labs, Inc.
+
+This product includes software developed by third parties.
+
+Friday Studio ships several artifacts, each of which bundles a different set of
+upstream dependencies:
+
+  - Atlas daemon, CLI, and web playground (Deno + npm + JSR packages)
+  - Friday Launcher, pty-server, webhook-tunnel (Go modules)
+  - Studio Installer (Rust crates via Cargo / Tauri)
+
+The complete inventory of every third-party dependency, its version, license,
+and source URL is generated from the project's lockfiles and recorded in
+THIRD_PARTY_LICENSES.md at the root of this repository.
+
+Run `bash scripts/generate-third-party-licenses.sh` to regenerate the inventory
+after a dependency bump.
+
+Release artifacts (the macOS / Windows installers and the compiled Go binaries)
+include a copy of THIRD_PARTY_LICENSES.md alongside the executable, satisfying
+the attribution requirements of MIT, BSD, Apache-2.0, MPL-2.0, and ISC license
+families. The full text of any individual license can be retrieved from the
+locations described in the "How to retrieve full license text" section of
+THIRD_PARTY_LICENSES.md.
+
+================================================================================
+Specific notices
+================================================================================
+
+The following dependencies require a notice that goes beyond the standard
+SPDX/source-URL listing in THIRD_PARTY_LICENSES.md — for example, because we
+have made an explicit license election from a dual-licensed package, or because
+the upstream license text mandates verbatim inclusion.
+
+--------------------------------------------------------------------------------
+jszip
+--------------------------------------------------------------------------------
+
+Source:    https://github.com/Stuk/jszip
+Available: MIT OR GPL-3.0-or-later
+Elected:   MIT
+
+Copyright (c) 2009-2016 Stuart Knightley, David Duponchel, Franz Buchinger,
+                        Antonio Afonso
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+r-efi (and r-efi 6.x)
+--------------------------------------------------------------------------------
+
+Source:    https://github.com/r-efi/r-efi
+Versions:  5.3.0, 6.0.0 (see THIRD_PARTY_LICENSES.md)
+Available: Apache-2.0 OR LGPL-2.1-or-later OR MIT
+Elected:   Apache-2.0
+
+Pulled in transitively by the Studio Installer (Rust / Tauri) build. As
+permitted by the upstream tri-license, Friday Studio (Tempest Labs, Inc.)
+elects the **Apache License, Version 2.0** for its use and redistribution
+of `r-efi` in all bundled artifacts. The full text of Apache-2.0 is available
+at https://www.apache.org/licenses/LICENSE-2.0.
+
+The LGPL-2.1-or-later and MIT options are not exercised by Friday Studio.
+Downstream recipients remain free, under the upstream tri-license, to elect
+a different option for their own use of unmodified upstream `r-efi`.
+
+--------------------------------------------------------------------------------
+MPL-2.0 components (Servo / Stylo and others) — MPL §3.2 source notice
+--------------------------------------------------------------------------------
+
+The Studio Installer (Rust / Tauri) and other shipped artifacts bundle
+several files licensed under the Mozilla Public License, Version 2.0
+("MPL-2.0"), pulled in transitively by upstream dependencies. The
+complete, versioned list of MPL-2.0 files distributed with Friday Studio
+is recorded in `THIRD_PARTY_LICENSES.md`, and includes (but is not
+limited to):
+
+  - `cssparser`            (https://github.com/servo/rust-cssparser)
+  - `cssparser-macros`     (https://github.com/servo/rust-cssparser)
+  - `dtoa-short`           (https://github.com/upsuper/dtoa-short)
+  - `option-ext`           (https://sr.ht/~soc/option-ext/)
+  - `selectors`            (https://github.com/servo/servo)
+
+In compliance with **MPL-2.0 Section 3.2 (Distribution of Executable
+Form)**, Friday Studio (Tempest Labs, Inc.) makes the Source Code Form
+of every MPL-2.0 covered file in the form distributed by Friday Studio
+available to recipients of any binary distribution, at no charge, by
+the following means:
+
+  1. **Unmodified upstream source.** Friday Studio does not modify any
+     MPL-2.0 covered file. The Source Code Form is the exact upstream
+     release at the version pinned in `Cargo.lock`. It can be obtained
+     from the upstream repository URLs listed in
+     `THIRD_PARTY_LICENSES.md`, or from `crates.io` at the recorded
+     version, e.g.:
+
+         cargo download cssparser@<version>
+         # or fetch the .crate from
+         # https://crates.io/api/v1/crates/<name>/<version>/download
+
+  2. **Should Friday Studio ever modify an MPL-2.0 covered file**, the
+     modified Source Code Form will be made available in this
+     repository under a path mirroring the upstream crate name (e.g.
+     `vendor/<crate>/`) at the same git revision as the binary release,
+     and the modification will be recorded both in this NOTICE file and
+     in `THIRD_PARTY_LICENSES.md`. As of the current release, no such
+     modifications exist.
+
+  3. **Recipient request.** Anyone receiving a Friday Studio binary may
+     also request the corresponding MPL-2.0 Source Code Form at no
+     charge by emailing legal@tempest.team; we will respond with a
+     download link or archive within a reasonable time.
+
+The Source Code Form remains under MPL-2.0 in all of the above; this
+notice does not affect any recipient's MPL-2.0 rights. The full text of
+MPL-2.0 is available at https://www.mozilla.org/en-US/MPL/2.0/.

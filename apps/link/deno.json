@@ -1,0 +1,30 @@
+{
+  "name": "@atlas/link",
+  "version": "0.0.1",
+  "exports": "./src/index.ts",
+  "tasks": {
+    "start": "deno run --env-file --allow-all src/index.ts",
+    "dev": "LINK_DEV_MODE=true deno run --watch --env-file=$HOME/.atlas/link.env --allow-all src/index.ts"
+  },
+  "imports": {
+    "@atlas/core/kv": "../../packages/core/src/kv.ts",
+    "@atlas/logger": "../../packages/logger/mod.ts",
+    "@atlas/utils": "../../packages/utils/mod.ts",
+    "@atlas/utils/paths.server": "../../packages/utils/src/paths.ts",
+    "@deno/kv": "npm:@deno/kv@^0.13.0",
+    "@db/sqlite": "jsr:@db/sqlite@0.13",
+    "@std/async": "jsr:@std/async@^1.0.15",
+    "@std/dotenv": "jsr:@std/dotenv@^0.225.5",
+    "zod": "npm:zod@^4.2.1",
+    "hono": "npm:hono@^4.11.1",
+    "hono/client": "npm:hono@^4.10.4/client",
+    "postgres": "npm:postgres@^3.4.7",
+    "nanoid": "npm:nanoid@^5.1.6",
+    "oauth4webapi": "npm:oauth4webapi@^3.8.3",
+    "@hono/zod-validator": "npm:@hono/zod-validator@^0.7.5",
+    "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@~1.28.0",
+    "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
+    "jose": "npm:jose@^6.1.3",
+    "@hubspot/api-client": "npm:@hubspot/api-client@^13.4.0"
+  }
+}

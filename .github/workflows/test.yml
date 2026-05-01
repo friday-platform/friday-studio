@@ -1,0 +1,99 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.7.4
+
+      - name: Cache Deno dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ hashFiles('deno.lock') }}
+          restore-keys: deno-
+
+      - name: Install dependencies
+        run: deno install --frozen
+
+      - name: Generate SvelteKit types
+        run: deno task --recursive sync
+
+      - name: Install nats-server
+        env:
+          NATS_VERSION: v2.12.8
+        run: |
+          curl -fsSL "https://github.com/nats-io/nats-server/releases/download/${NATS_VERSION}/nats-server-${NATS_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /tmp "nats-server-${NATS_VERSION}-linux-amd64/nats-server"
+          sudo mv /tmp/nats-server /usr/local/bin/nats-server
+          nats-server --version
+
+      - name: Start daemon for integration tests
+        env:
+          LITELLM_API_KEY: ci-placeholder
+        run: |
+          # Start daemon in background
+          deno task start daemon start --port 8080 &
+          DAEMON_PID=$!
+          echo "DAEMON_PID=$DAEMON_PID" >> "$GITHUB_ENV"
+
+          # Wait for daemon to be ready (max 30 seconds)
+          echo "Waiting for daemon to be ready..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
+              echo "Daemon is ready!"
+              curl -s http://127.0.0.1:8080/health | jq .
+              exit 0
+            fi
+            echo "Attempt $i/30 - daemon not ready yet..."
+            sleep 1
+          done
+          echo "Daemon failed to start"
+          exit 1
+
+      - name: Run tests
+        run: deno task test
+
+      - name: Stop daemon
+        if: always()
+        run: |
+          if [ -n "$DAEMON_PID" ]; then
+            kill "$DAEMON_PID" 2>/dev/null || true
+          fi
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: |
+            *.log
+            *.txt
+          retention-days: 1

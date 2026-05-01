@@ -1,0 +1,12 @@
+{
+  "editor.defaultFormatter": "biomejs.biome",
+  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[json]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[markdown]": { "editor.defaultFormatter": "denoland.vscode-deno" },
+  "editor.codeActionsOnSave": { "source.organizeImports.biome": "explicit" },
+  "eslint.workingDirectories": [
+    { "directory": "tools/agent-playground", "changeProcessCWD": true }
+  ],
+  "eslint.validate": ["javascript", "typescript", "svelte"]
+}

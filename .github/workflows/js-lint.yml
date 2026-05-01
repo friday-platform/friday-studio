@@ -1,0 +1,72 @@
+name: Lint JS
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  biome-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.7.4
+
+      - name: Cache Deno dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ hashFiles('deno.lock') }}
+          restore-keys: deno-
+
+      - name: Install dependencies
+        run: deno install --frozen
+
+      - name: Run Biome check
+        run: deno task lint:check
+
+      - name: Check for trailing whitespace
+        run: |
+          # Find files with trailing whitespace (excluding binary files and certain paths)
+          if git grep -I -n '[[:space:]]$' -- \
+            ':!*.lock' \
+            ':!*.svg' \
+            ':!*.ico' \
+            ':!*.png' \
+            ':!*.jpg' \
+            ':!*.woff*' \
+            ':!*.ttf' \
+            ':!*.snap' \
+            ':!node_modules' \
+            ':!dist' \
+            ':!.git'; then
+            echo "Error: Found trailing whitespace in the files above"
+            exit 1
+          fi
