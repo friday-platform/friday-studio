@@ -31,6 +31,20 @@ func TestCurrentAutostartBundleID_AbsentReturnsEmpty(t *testing.T) {
 	}
 }
 
+// TestIsAutostartStale_AbsentReturnsFalse pins Decision #36: a
+// missing plist means the user toggled "Start at login" off via
+// the tray, and the launcher must NOT silently re-enable it on
+// next start. Before this guard the staleness-repair branch in
+// autostartSelfRegister rewrote the plist on every launcher start
+// because "" != launcherBundleID, wiping the user's preference.
+// Mirrors autostart_windows.go's `registered != ""` check.
+func TestIsAutostartStale_AbsentReturnsFalse(t *testing.T) {
+	withFakePlist(t)
+	if isAutostartStale() {
+		t.Error("isAutostartStale() = true with no plist on disk, want false (user-disabled autostart must stay disabled)")
+	}
+}
+
 // TestCurrentAutostartBundleID_MalformedXMLReturnsEmpty: pre-flight
 // migration safety — a hand-edited or corrupted plist must not
 // crash the launcher. plist.Unmarshal failures collapse to "" so

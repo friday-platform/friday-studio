@@ -281,21 +281,13 @@ func homeDir() string {
 // anyway and uses taskkill /F.
 const signalSIGTERM = 15
 
-// stopOrder is the REVERSE-dependency order; processes are stopped in
-// this order so that consumers (e.g. playground) go down before the
-// services they depend on.
-var stopOrder = []string{
-	"playground",
-	"webhook-tunnel",
-	"friday",
-	"link",
-	"nats-server",
-}
-
 // startOrder is the dependency order; processes are started in this
-// order so that producers come up first. nats-server must come up
-// before `friday` so atlasd's NatsManager tcpProbe finds an external
-// NATS on :4222 and reuses it instead of trying to spawn its own.
+// order so that producers come up first. Also drives RestartAll
+// (Supervisor.RestartAll iterates this slice calling RestartProcess
+// on each so foundational services come back first). nats-server
+// must come up before `friday` so atlasd's NatsManager tcpProbe
+// finds an external NATS on :4222 and reuses it instead of trying
+// to spawn its own.
 var startOrder = []string{
 	"nats-server",
 	"friday",

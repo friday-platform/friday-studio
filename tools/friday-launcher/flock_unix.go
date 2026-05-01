@@ -26,7 +26,7 @@ func acquirePidLock() (*pidFileLock, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if err := syscall.Flock(int(f.Fd()), //nolint:gosec // G115: Fd() returns an OS handle, bounded
+	if err := syscall.Flock(int(f.Fd()),
 		syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
 		if err == syscall.EWOULDBLOCK {
