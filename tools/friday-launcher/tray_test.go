@@ -93,9 +93,12 @@ func TestComputeBucket_PendingDuringColdStartAmber(t *testing.T) {
 }
 
 // TestComputeBucket_FailedPastGraceRed: once the launcher has been
-// up for 30s, a failed service flips the bucket red. The grace
-// window is the only thing that suppressed red earlier; past it,
-// the user needs to know something needs attention.
+// up past bucketFailGraceWindow, a failed service flips the bucket
+// red. The grace window is the only thing that suppressed red
+// earlier; past it, the user needs to know something needs
+// attention. Boundary uses +5s of slack so a slow CI runner
+// preempting between Add() and time.Since() doesn't flip past →
+// within and false-fail.
 func TestComputeBucket_FailedPastGraceRed(t *testing.T) {
 	var sd atomic.Bool
 	cache := NewHealthCache(&sd)
@@ -103,8 +106,7 @@ func TestComputeBucket_FailedPastGraceRed(t *testing.T) {
 		runningReady("a"),
 		failed("b", 5),
 	))
-	// startedAt = 31s ago → past the cold-start grace.
-	sup := newTestSupervisor(time.Now().Add(-31*time.Second), false)
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
 
 	tc := newTrayController(sup, &sd, cache)
 	if got := tc.computeBucket(); got != bucketRed {
@@ -113,19 +115,96 @@ func TestComputeBucket_FailedPastGraceRed(t *testing.T) {
 }
 
 // TestComputeBucket_NotReadyPastGraceAmber: services in 'starting'
-// (Running but probe NotReady) past the 30s grace stay amber, NOT
-// red. We only flip red on terminal-failed, never on slow-but-
-// eventually-healthy. Otherwise a slow Mac would see red bucket
-// during normal startup.
+// (Running but probe NotReady) past the cold-start grace stay
+// amber, NOT red. We only flip red on terminal-failed, never on
+// slow-but-eventually-healthy. Otherwise a slow Mac would see red
+// bucket during normal startup.
 func TestComputeBucket_NotReadyPastGraceAmber(t *testing.T) {
 	var sd atomic.Bool
 	cache := NewHealthCache(&sd)
 	cache.Update(makeStates(runningNotReady("a")))
-	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
 
 	tc := newTrayController(sup, &sd, cache)
 	if got := tc.computeBucket(); got != bucketAmber {
 		t.Errorf("computeBucket = %v, want amber (slow but not failed)", got)
+	}
+}
+
+// TestComputeBucket_FailedDuringActiveRestartAmber: while a tray-
+// initiated RestartAll is in flight, AnyFailed reflects the stop
+// pass tearing children down — that's expected, not a real failure,
+// so the bucket must NOT flip red. Otherwise the menubar shows
+// " Error" for the few seconds children take to come back up,
+// which is exactly the user-visible bug we're fixing here.
+func TestComputeBucket_FailedDuringActiveRestartAmber(t *testing.T) {
+	var sd atomic.Bool
+	cache := NewHealthCache(&sd)
+	cache.Update(makeStates(
+		runningReady("a"),
+		failed("b", 5),
+	))
+	// startedAt past the cold-start grace, so without restart-grace
+	// this would render red. inRestart=true must override to amber.
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
+	sup.inRestart.Store(true)
+
+	tc := newTrayController(sup, &sd, cache)
+	if got := tc.computeBucket(); got != bucketAmber {
+		t.Errorf("computeBucket = %v, want amber (active restart)", got)
+	}
+}
+
+// TestComputeBucket_FailedWithinRestartGraceAmber: for the
+// restartGraceWindow seconds AFTER RestartAll returns, AnyFailed
+// stays amber too — process-compose flips children to running
+// before readiness probes pass, so AnyFailed lingers briefly.
+func TestComputeBucket_FailedWithinRestartGraceAmber(t *testing.T) {
+	var sd atomic.Bool
+	cache := NewHealthCache(&sd)
+	cache.Update(makeStates(
+		runningReady("a"),
+		failed("b", 5),
+	))
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
+	// Restart completed 5s ago → still inside the grace window.
+	sup.lastRestartEndNano.Store(time.Now().Add(-5 * time.Second).UnixNano())
+
+	tc := newTrayController(sup, &sd, cache)
+	if got := tc.computeBucket(); got != bucketAmber {
+		t.Errorf("computeBucket = %v, want amber (post-restart grace)", got)
+	}
+}
+
+// TestComputeBucket_FailedAfterRestartGraceRed: once the post-
+// restart grace expires, a still-failed service flips red as
+// usual. The grace is forgiveness for transient stop+start churn,
+// not a permanent suppression. Boundary uses +5s of slack so a
+// slow CI runner preempting between Add() and time.Since() doesn't
+// flip past → within-grace and false-fail.
+func TestComputeBucket_FailedAfterRestartGraceRed(t *testing.T) {
+	var sd atomic.Bool
+	cache := NewHealthCache(&sd)
+	cache.Update(makeStates(
+		runningReady("a"),
+		failed("b", 5),
+	))
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 10*time.Second)), false)
+	sup.lastRestartEndNano.Store(time.Now().Add(-(restartGraceWindow + 5*time.Second)).UnixNano())
+
+	tc := newTrayController(sup, &sd, cache)
+	if got := tc.computeBucket(); got != bucketRed {
+		t.Errorf("computeBucket = %v, want red (grace expired)", got)
+	}
+}
+
+// TestRestartGraceActive_NoRestartYet: before any RestartAll runs
+// (lastRestartEndNano == 0), grace is inactive — otherwise every
+// fresh launcher would silently swallow real failures forever.
+func TestRestartGraceActive_NoRestartYet(t *testing.T) {
+	sup := newTestSupervisor(time.Now(), false)
+	if sup.RestartGraceActive() {
+		t.Error("RestartGraceActive() = true with no restart yet, want false")
 	}
 }
 
