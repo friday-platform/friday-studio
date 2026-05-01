@@ -1,6 +1,6 @@
 ---
 name: writing-friday-agents
-description: "Dispatcher for authoring Friday user agents (`type: \"user\"`). Use when authoring or debugging an existing user agent and you need the language-specific guide. For Python (the only currently-supported language), load `@friday/writing-friday-python-agents` instead — that skill is the source of truth, vendored from the friday-agent-sdk repo. This dispatcher exists to keep cross-references stable while we add other-language SDKs."
+description: "Dispatcher for authoring Friday user agents (type:\"user\"). Use when authoring or debugging an existing user agent and you need the language-specific guide. For Python (the only currently-supported language), load @friday/writing-friday-python-agents instead — that skill is the source of truth, vendored from the friday-agent-sdk repo. This dispatcher exists to keep cross-references stable while we add other-language SDKs."
 user-invocable: false
 ---
 

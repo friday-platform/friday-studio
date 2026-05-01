@@ -106,7 +106,7 @@ const AVAILABLE_SKILLS_SECTION = `<available_skills>
 <instruction>Load skills with load_skill when task matches.</instruction>
 <skill name="@friday/workspace-api">Create, list, update, delete, and clean up workspaces via the daemon HTTP API. Use when the user asks to create, edit, delete, or list workspaces.</skill>
 <skill name="@friday/writing-friday-agents">Dispatcher for authoring Friday user agents. Routes to the language-specific guide (currently writing-friday-python-agents).</skill>
-<skill name="@friday/writing-friday-python-agents">Authoring guide for Python user agents (type:"user") via friday-agent-sdk. Load when an agent.py exists in scope, when imports from friday_agent_sdk are present, when an @agent decorator is being authored, or when upsert_agent was just called with type:user. Do NOT load to decide whether to author a user agent.</skill>
+<skill name="@friday/writing-friday-python-agents">Authoring guide for Python user agents (type:user) via friday-agent-sdk. Load when an agent.py exists in scope, when imports from friday_agent_sdk are present, when an at-agent decorator is being authored, or when upsert_agent was just called with type:user. Do NOT load to decide whether to author a user agent.</skill>
 </available_skills>`;
 
 const SYSTEM_PROMPT = [WORKSPACE_CHAT_PROMPT, WORKSPACE_SECTION, AVAILABLE_SKILLS_SECTION].join(

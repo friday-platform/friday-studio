@@ -39,18 +39,21 @@ const SKILL_FILES = [
   "references/examples.md",
 ] as const;
 
+// Tightened description, no `<` or `>` — packages/config/src/skills.ts
+// rejects angle brackets in skill descriptions (XML-injection guard).
+// Reference workspace-chat's agent_types rules by name, not by tag.
 const TIGHTENED_DESCRIPTION_HEADER = `---
 name: writing-friday-python-agents
 description: >
-  Authoring guide for Python user agents (\`type: "user"\`) on the Friday
+  Authoring guide for Python user agents (type:"user") on the Friday
   platform via the friday-agent-sdk. Covers the @agent decorator,
   AgentContext capabilities (ctx.llm, ctx.http, ctx.tools, ctx.stream),
   structured input parsing, result types, and the NATS subprocess
   execution model. Load when an agent.py exists in scope, when imports
   from friday_agent_sdk are present, when an @agent decorator is being
   authored or modified, or when upsert_agent was just called with
-  type:user. Do NOT load to decide *whether* to author a user agent —
-  that decision belongs in workspace-chat's <agent_types> rules.`;
+  type:user. Do NOT load to decide whether to author a user agent —
+  that decision belongs in the workspace-chat agent_types rules.`;
 
 interface CliOptions {
   check: boolean;
