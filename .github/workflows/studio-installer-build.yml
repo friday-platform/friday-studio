@@ -161,6 +161,17 @@ jobs:
             echo "dmg_name=$(basename "$renamed_dmg")"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Strip Applications symlink from .dmg (macOS)
+        if: matrix.bundle_ext == 'dmg'
+        env:
+          DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
+        # The Friday Studio Installer DMG is meant to be double-clicked
+        # (the wizard does the install), not drag-to-Applications. Tauri's
+        # bundler unconditionally adds an /Applications symlink and exposes
+        # no flag to skip it — strip it post-bundle. Must run BEFORE
+        # notarization so notarytool inspects the final DMG bytes.
+        run: bash apps/studio-installer/scripts/strip-dmg-applications-symlink.sh "$DMG_PATH"
+
       - name: Locate NSIS installer (Windows)
         if: matrix.bundle_ext == 'exe'
         id: win-artifact
