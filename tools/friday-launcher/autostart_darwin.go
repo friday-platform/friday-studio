@@ -110,10 +110,16 @@ func currentAutostartBundleID() string {
 // be rewritten. Cross-platform contract — see autostart_linux.go +
 // autostart_windows.go for the per-OS interpretation.
 //
-// Darwin: stale iff the registered bundle ID differs from
-// launcherBundleID (covers both the v0.0.8-format plist and a
-// future bundle-ID rename).
+// Darwin: stale iff a plist is present AND its registered bundle
+// ID differs from launcherBundleID (covers both the v0.0.8-format
+// plist and a future bundle-ID rename). An absent plist is NOT
+// stale — it means the user toggled "Start at login" off via the
+// tray, and Decision #36 says a deliberately-disabled autostart
+// stays disabled. Without the registered != "" guard, the
+// autostartSelfRegister staleness-repair pass would silently
+// re-enable autostart on every launcher start, ignoring the
+// user's preference. Mirrors autostart_windows.go's check.
 func isAutostartStale() bool {
 	registered := currentAutostartBundleID()
-	return registered != launcherBundleID
+	return registered != "" && registered != launcherBundleID
 }
