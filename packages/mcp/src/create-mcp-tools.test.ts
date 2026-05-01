@@ -381,8 +381,6 @@ describe("createMCPTools", () => {
     expect(result.disconnected[0]?.message).toContain("my-github-server");
   });
 
-
-
   it("keeps already-connected clients alive when a later server has a credential error", async () => {
     const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
@@ -502,8 +500,6 @@ describe("createMCPTools", () => {
     expect(closeA).toHaveBeenCalledTimes(1);
     expect(closeB).toHaveBeenCalledTimes(1);
   });
-
-
 
   it("warns on tool name collision when two servers export same tool", async () => {
     mockCreateMCPClient
@@ -705,7 +701,9 @@ describe("createMCPTools", () => {
     expect(result.tools).toHaveProperty("strava_get-activity");
     expect(result.tools).toHaveProperty("strava_list-activities");
     expect(result.tools["strava_get-activity"]).toMatchObject({ description: "Fetch an activity" });
-    expect(result.tools["strava_list-activities"]).toMatchObject({ description: "List activities" });
+    expect(result.tools["strava_list-activities"]).toMatchObject({
+      description: "List activities",
+    });
 
     await result.dispose();
   });
@@ -786,7 +784,9 @@ describe("createMCPTools", () => {
       const promise = createMCPTools(configs, fakeLogger);
 
       // Advance past the 20s listTools timeout (async variant flushes microtasks)
-      await (vi as unknown as { advanceTimersByTimeAsync: (ms: number) => Promise<void> }).advanceTimersByTimeAsync(21_000);
+      await (
+        vi as unknown as { advanceTimersByTimeAsync: (ms: number) => Promise<void> }
+      ).advanceTimersByTimeAsync(21_000);
 
       const result = await promise;
 
@@ -807,9 +807,9 @@ describe("createMCPTools", () => {
       const hangExecute = vi.fn().mockImplementation(() => new Promise(() => {}));
 
       mockCreateMCPClient.mockResolvedValue({
-        tools: vi.fn().mockResolvedValue({
-          "hang-tool": { description: "hangs", execute: hangExecute },
-        }),
+        tools: vi
+          .fn()
+          .mockResolvedValue({ "hang-tool": { description: "hangs", execute: hangExecute } }),
         close: vi.fn().mockResolvedValue(undefined),
       });
 

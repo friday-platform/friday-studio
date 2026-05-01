@@ -75,17 +75,14 @@ function withTimeout<T>(
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(makeError()), timeoutMs);
   });
-  return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
-    timeoutPromise,
-  ]);
+  return Promise.race([promise.finally(() => clearTimeout(timer)), timeoutPromise]);
 }
 
 /** Add the 15-minute hard ceiling to a single tool's execute. */
 function wrapToolWithTimeout(tool: Tool, serverId: string): Tool {
   return {
     ...tool,
-    execute: async (args, opts) => {
+    execute: (args, opts) => {
       return withTimeout(
         tool.execute!(args, opts),
         CALL_TOOL_TIMEOUT_MS,
@@ -128,37 +125,28 @@ export async function createMCPTools(
   }
 
   const results = await Promise.allSettled(
-    Object.entries(configs).map(
-      async ([serverId, config]): Promise<ServerConnectResult> => {
-        try {
-          const resolvedEnv = config.env
-            ? await resolveEnvValues(config.env, logger)
-            : {};
-          const connected = await connectServerWithTimeout(
-            config,
-            resolvedEnv,
-            serverId,
-            logger,
-          );
-          const filtered = filterTools(connected.tools, config.tools);
-          const prefixed = options?.toolPrefix
-            ? prefixToolKeys(filtered, options.toolPrefix)
-            : filtered;
-          return { status: "success", serverId, client: connected.client, tools: prefixed };
-        } catch (error) {
-          if (
-            error instanceof LinkCredentialNotFoundError ||
-            error instanceof LinkCredentialExpiredError ||
-            error instanceof NoDefaultCredentialError
-          ) {
-            const entry = buildDisconnectedEntry(error, serverId, config);
-            return { status: "disconnected", entry };
-          }
-
-          return { status: "failed", serverId, error };
+    Object.entries(configs).map(async ([serverId, config]): Promise<ServerConnectResult> => {
+      try {
+        const resolvedEnv = config.env ? await resolveEnvValues(config.env, logger) : {};
+        const connected = await connectServerWithTimeout(config, resolvedEnv, serverId, logger);
+        const filtered = filterTools(connected.tools, config.tools);
+        const prefixed = options?.toolPrefix
+          ? prefixToolKeys(filtered, options.toolPrefix)
+          : filtered;
+        return { status: "success", serverId, client: connected.client, tools: prefixed };
+      } catch (error) {
+        if (
+          error instanceof LinkCredentialNotFoundError ||
+          error instanceof LinkCredentialExpiredError ||
+          error instanceof NoDefaultCredentialError
+        ) {
+          const entry = buildDisconnectedEntry(error, serverId, config);
+          return { status: "disconnected", entry };
         }
-      },
-    ),
+
+        return { status: "failed", serverId, error };
+      }
+    }),
   );
 
   // If the parent signal aborted while connections were in flight, clean up
@@ -169,7 +157,11 @@ export async function createMCPTools(
         (r): r is PromiseFulfilledResult<ServerConnectResult> =>
           r.status === "fulfilled" && r.value.status === "success",
       )
-      .map((r) => (r as PromiseFulfilledResult<Extract<ServerConnectResult, { status: "success" }>>).value.client);
+      .map(
+        (r) =>
+          (r as PromiseFulfilledResult<Extract<ServerConnectResult, { status: "success" }>>).value
+            .client,
+      );
     await disposeAll(connectedClients);
     throw signal.reason ?? new Error("Aborted");
   }
@@ -230,14 +222,11 @@ export async function createMCPTools(
 
     const clobbered = Object.keys(wrappedTools).filter((name) => name in allTools);
     if (clobbered.length > 0) {
-      logger.warn(
-        `MCP tool name collision: server "${value.serverId}" overwrites existing tools`,
-        {
-          operation: "mcp_connect",
-          serverId: value.serverId,
-          clobberedTools: clobbered,
-        },
-      );
+      logger.warn(`MCP tool name collision: server "${value.serverId}" overwrites existing tools`, {
+        operation: "mcp_connect",
+        serverId: value.serverId,
+        clobberedTools: clobbered,
+      });
     }
     Object.assign(allTools, wrappedTools);
     clients.push(value.client);
@@ -269,10 +258,7 @@ export async function createMCPTools(
  * enrichment).
  */
 function buildDisconnectedEntry(
-  error:
-    | LinkCredentialNotFoundError
-    | LinkCredentialExpiredError
-    | NoDefaultCredentialError,
+  error: LinkCredentialNotFoundError | LinkCredentialExpiredError | NoDefaultCredentialError,
   serverId: string,
   config: MCPServerConfig,
 ): DisconnectedIntegration {
@@ -302,9 +288,7 @@ function buildDisconnectedEntry(
     serverId,
     provider: extractProviderFromConfig(config),
     kind:
-      error.status === "expired_no_refresh"
-        ? "credential_expired"
-        : "credential_refresh_failed",
+      error.status === "expired_no_refresh" ? "credential_expired" : "credential_refresh_failed",
     message: enriched.message,
   };
 }
@@ -339,7 +323,7 @@ interface ConnectedServer {
  * Connect a single MCP server with a hard timeout on the full handshake +
  * listTools sequence. No retry — a hung server is not a transient failure.
  */
-async function connectServerWithTimeout(
+function connectServerWithTimeout(
   config: MCPServerConfig,
   resolvedEnv: Record<string, string>,
   serverId: string,
@@ -452,10 +436,7 @@ async function connectStdio(
     throw err;
   }
 
-  logger.debug(`MCP stdio connected for "${serverId}"`, {
-    operation: "mcp_connect",
-    serverId,
-  });
+  logger.debug(`MCP stdio connected for "${serverId}"`, { operation: "mcp_connect", serverId });
 
   return { client, tools };
 }
@@ -605,11 +586,7 @@ async function connectHttpClient(
     throw err;
   }
 
-  logger.debug(`MCP HTTP connected for "${serverId}"`, {
-    operation: "mcp_connect",
-    serverId,
-    url,
-  });
+  logger.debug(`MCP HTTP connected for "${serverId}"`, { operation: "mcp_connect", serverId, url });
 
   return { client, tools };
 }
@@ -649,10 +626,7 @@ function filterTools(
 }
 
 /** Prefix every key in a tools map with `{prefix}_`. Descriptions are unmodified. */
-function prefixToolKeys(
-  tools: Record<string, Tool>,
-  prefix: string,
-): Record<string, Tool> {
+function prefixToolKeys(tools: Record<string, Tool>, prefix: string): Record<string, Tool> {
   const prefixed: Record<string, Tool> = {};
   for (const [name, tool] of Object.entries(tools)) {
     prefixed[`${prefix}_${name}`] = tool;
