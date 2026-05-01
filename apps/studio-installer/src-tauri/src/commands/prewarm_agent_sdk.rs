@@ -26,19 +26,38 @@
 //
 // Pinned-version source-of-truth:
 //   tools/friday-launcher/paths.go bundledAgentSDKVersion. The
-//   constant below must match. We keep them as separate constants
-//   rather than reading from a shared file because the installer
-//   ships independently of the launcher binary; mismatched versions
-//   would just mean the launcher and installer pre-warm slightly
-//   different wheels (no functional break, just one extra cold start
-//   on first launcher-driven spawn).
+//   constant below must match this and Dockerfile's
+//   ENV FRIDAY_AGENT_SDK_VERSION. Enforced pre-merge by
+//   scripts/check-sdk-pin-sync.ts (CI + lint-staged on the three pin
+//   files). The runtime is still drift-tolerant — launcher re-warms
+//   on first spawn if the installer pre-warmed a different version —
+//   but pre-merge enforcement keeps every fresh-install user from
+//   paying that 5–30s cold-start cost.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::Stdio;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use tokio::time::timeout;
 
-/// Pinned PyPI version. MUST match
-/// tools/friday-launcher/paths.go::bundledAgentSDKVersion.
+/// Pinned PyPI version. MUST match all of:
+///   - tools/friday-launcher/paths.go::bundledAgentSDKVersion
+///   - Dockerfile::ENV FRIDAY_AGENT_SDK_VERSION
+///
+/// Enforced by scripts/check-sdk-pin-sync.ts in CI and via lint-staged
+/// in the husky pre-commit hook for the three pin files.
 const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.4";
+
+/// Wall-clock cap on the uv pre-warm. uv's network ops (cpython
+/// download + PyPI fetch) finish in 5–30s on a healthy connection.
+/// 90s gives slow-but-functional networks a chance while bounding the
+/// failure mode where PyPI is unreachable (corporate proxy / captive
+/// portal / DNS hang). On timeout we kill the child and surface ✗ so
+/// the install proceeds; the launcher will re-warm at first agent
+/// spawn (also bounded by uv's own network timeouts).
+const PREWARM_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(serde::Serialize)]
 pub struct PrewarmResult {
@@ -56,16 +75,12 @@ pub struct PrewarmResult {
 }
 
 #[tauri::command]
-pub async fn prewarm_agent_sdk(install_dir: String) -> Result<PrewarmResult, String> {
+pub async fn prewarm_agent_sdk(
+    app: AppHandle,
+    install_dir: String,
+) -> Result<PrewarmResult, String> {
     let install_path = PathBuf::from(&install_dir);
-    let uv_path = locate_uv(&install_path);
-
-    let Some(uv) = uv_path else {
-        // No bundled uv. We don't fail the install — the install
-        // archive layout could legitimately omit uv on some platforms
-        // we add later, and the launcher's spawn-resolution falls
-        // through to bare python3. Surface as "not warmed" and let
-        // the JS side decide whether to flag it.
+    let Some(uv) = locate_uv(&install_path) else {
         return Ok(PrewarmResult {
             uv_path: String::new(),
             sdk_version: BUNDLED_AGENT_SDK_VERSION.to_string(),
@@ -73,10 +88,6 @@ pub async fn prewarm_agent_sdk(install_dir: String) -> Result<PrewarmResult, Str
         });
     };
 
-    // Resolve <friday-home>/uv/{python,cache} so uv writes there
-    // instead of XDG defaults. Mirrors the launcher's fridayEnv()
-    // emission of UV_PYTHON_INSTALL_DIR + UV_CACHE_DIR — keep these
-    // aligned or the runtime cache misses the warmed wheels.
     let friday_home = friday_home_dir()?;
     let uv_python_dir = friday_home.join("uv").join("python");
     let uv_cache_dir = friday_home.join("uv").join("cache");
@@ -86,7 +97,7 @@ pub async fn prewarm_agent_sdk(install_dir: String) -> Result<PrewarmResult, Str
 
     let with_arg = format!("friday-agent-sdk=={BUNDLED_AGENT_SDK_VERSION}");
 
-    let output = Command::new(&uv)
+    let mut child = Command::new(&uv)
         .args([
             "run",
             "--python",
@@ -99,15 +110,56 @@ pub async fn prewarm_agent_sdk(install_dir: String) -> Result<PrewarmResult, Str
         ])
         .env("UV_PYTHON_INSTALL_DIR", &uv_python_dir)
         .env("UV_CACHE_DIR", &uv_cache_dir)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
         .map_err(|e| format!("spawn uv: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "uv pre-warm failed (status {}): {stderr}",
-            output.status
-        ));
+    // Drain both pipes concurrently so 30s of uv work shows as 30s of
+    // visible activity in the UI sub-line. uv writes most progress to
+    // stderr ("Resolved 14 packages in 234ms", "Installed friday-agent-
+    // sdk==0.1.4"); we drain stdout too in case future uv versions
+    // change that. Tasks finish naturally when pipes close on child exit.
+    let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+
+    let app_out = app.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_out.emit("prewarm:progress", line);
+        }
+    });
+    let app_err = app.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_err.emit("prewarm:progress", line);
+        }
+    });
+
+    // Wait with timeout. On timeout, kill the child (cross-platform via
+    // tokio::process::Child::kill — sends SIGKILL on unix, TerminateProcess
+    // on Windows). kill_on_drop(true) above is a belt-and-suspenders for
+    // panic / cancel paths.
+    let status = match timeout(PREWARM_TIMEOUT, child.wait()).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return Err(format!("uv wait: {e}")),
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(format!(
+                "uv pre-warm timed out after {}s",
+                PREWARM_TIMEOUT.as_secs()
+            ));
+        }
+    };
+
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+
+    if !status.success() {
+        return Err(format!("uv pre-warm failed (status {status})"));
     }
 
     Ok(PrewarmResult {
@@ -134,11 +186,21 @@ fn locate_uv(install_dir: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Resolve the daemon's home directory (canonical: ~/.friday/local).
-/// Uses the same logic as the launcher's friendlyHome() and the daemon's
-/// getFridayHome() — pinned here rather than shared because the installer
-/// is a separate Rust binary.
+/// Resolve the friday home directory exactly the way the launcher does.
+/// Mirrors tools/friday-launcher/paths.go::friendlyHome() —
+/// FRIDAY_LAUNCHER_HOME wins; otherwise ~/.friday/local. NO ~/.atlas
+/// fallback (that's a daemon-side concern, not a launcher one).
+///
+/// Note: the launcher *emits* FRIDAY_HOME=<resolved> to its child
+/// processes (project.go:62). We must NOT read FRIDAY_HOME here — that
+/// would only ever be set inside a launcher-spawned process, never in
+/// the installer's parent shell.
 fn friday_home_dir() -> Result<PathBuf, String> {
+    if let Ok(v) = std::env::var("FRIDAY_LAUNCHER_HOME") {
+        if !v.is_empty() {
+            return Ok(PathBuf::from(v));
+        }
+    }
     let home = dirs::home_dir().ok_or("could not resolve user home dir")?;
     Ok(home.join(".friday").join("local"))
 }
@@ -164,5 +226,23 @@ mod tests {
         let tmp = tempfile::tempdir().expect("create tmp");
         std::fs::create_dir_all(tmp.path().join("bin")).unwrap();
         assert_eq!(locate_uv(tmp.path()), None);
+    }
+
+    #[test]
+    fn friday_home_honors_launcher_env_override() {
+        let tmp = tempfile::tempdir().expect("create tmp");
+        let override_path = tmp.path().to_path_buf();
+
+        // Snapshot + restore the env var to avoid leaking state to other
+        // tests if cargo test runs them in parallel within the same process.
+        let prior = std::env::var("FRIDAY_LAUNCHER_HOME").ok();
+        std::env::set_var("FRIDAY_LAUNCHER_HOME", &override_path);
+
+        assert_eq!(friday_home_dir().unwrap(), override_path);
+
+        match prior {
+            Some(v) => std::env::set_var("FRIDAY_LAUNCHER_HOME", v),
+            None => std::env::remove_var("FRIDAY_LAUNCHER_HOME"),
+        }
     }
 }
