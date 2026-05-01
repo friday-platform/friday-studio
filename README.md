@@ -17,6 +17,7 @@ execute with MCP tool access.
 | [Deno](https://deno.com/) | `2.7.0+` | Runs the daemon, CLI, and TypeScript packages |
 | [Go](https://go.dev/) | `1.26+` | Builds the Go services under `tools/` (pty-server, webhook-tunnel, friday-launcher) |
 | [Node.js](https://nodejs.org/) | `24+` | Needed for `npx`, Vite, and the web playground |
+| [uv](https://docs.astral.sh/uv/) | `0.11+` | Provisions the managed Python that user agents run under (auto-installed by `setup-dev-env.sh` if absent) |
 | [git](https://git-scm.com/) | any recent | — |
 | Docker (optional) | any recent | Alternative path: run the full stack with `docker compose up` |
 
@@ -107,6 +108,36 @@ deno task dev:playground
 
 Open http://localhost:5200.
 
+## Local development
+
+Working in-tree (running the daemon out of the repo, not via the desktop
+installer) needs a one-time setup so the daemon's user-agent spawn path
+finds a managed Python with the SDK installed:
+
+```bash
+bash scripts/setup-dev-env.sh
+```
+
+Idempotent. Safe to re-run after every `friday-agent-sdk` version bump.
+
+What it does:
+
+1. Verifies `uv` is on PATH (installs from astral.sh if not).
+2. Writes the env vars the daemon needs (`FRIDAY_UV_PATH`,
+   `UV_PYTHON_INSTALL_DIR`, `UV_CACHE_DIR`, `FRIDAY_AGENT_SDK_VERSION`)
+   into the daemon's envfile (`~/.atlas/.env` or `~/.friday/local/.env`,
+   matching whichever home holds your live state).
+3. Pre-warms the uv cache — Python 3.12 + the pinned `friday-agent-sdk`
+   wheel — so the first user-agent spawn doesn't pay the download as
+   cold-start latency.
+4. Uninstalls any stale editable `friday-agent-sdk` installs from system
+   Pythons that would otherwise shadow the uv-managed copy.
+
+Restart your daemon after running it so the new env vars take effect.
+
+The desktop installer handles the same setup automatically; this script is
+for in-tree development only.
+
 ## Commands
 
 ```bash
@@ -159,6 +190,65 @@ tools/
 
 Config: `friday.yml` (platform-wide) · `workspace.yml` (per-workspace) ·
 [`CONTRIBUTING.md`](CONTRIBUTING.md) (dev guidelines + code style)
+
+## Python user agents
+
+A workspace agent declared `type: "user"` is a Python file the daemon spawns
+as a subprocess. The agent code calls capabilities (LLM, HTTP, MCP tools,
+streaming) over NATS through the [`friday-agent-sdk`](https://pypi.org/project/friday-agent-sdk/)
+package — no provider keys, no MCP plumbing in your code.
+
+Minimal agent:
+
+```python
+from friday_agent_sdk import AgentContext, agent, ok
+
+@agent(id="hello", version="1.0.0", description="Reverses input.")
+def execute(prompt: str, ctx: AgentContext):
+    return ok({"reversed": prompt[::-1]})
+
+if __name__ == "__main__":
+    from friday_agent_sdk import run
+    run()
+```
+
+Register and run:
+
+```bash
+curl -X POST http://localhost:8080/api/agents/register \
+  -H "Content-Type: application/json" \
+  -d '{"entrypoint":"/abs/path/to/agent.py"}'
+
+curl -X POST "http://localhost:8080/api/agents/hello/run?workspaceId=user" \
+  -H "Content-Type: application/json" \
+  -d '{"input":"hello"}'
+```
+
+The daemon spawns `uv run --python 3.12 --with friday-agent-sdk==<pinned> agent.py`
+under the hood — the version is pinned in
+[`tools/friday-launcher/paths.go`](tools/friday-launcher/paths.go)
+(`bundledAgentSDKVersion`) and threaded through to the daemon via the
+launcher (or `setup-dev-env.sh` for in-tree work). Bumping the SDK is a
+deliberate change in three pin sites: that constant, the same value in the
+[`Dockerfile`](Dockerfile), and `BUNDLED_AGENT_SDK_VERSION` in
+[`apps/studio-installer/src-tauri/src/commands/prewarm_agent_sdk.rs`](apps/studio-installer/src-tauri/src/commands/prewarm_agent_sdk.rs).
+
+**Rule of thumb:** use `type: "user"` only when each call's decision is
+mechanical (regex / schema / fixed routing). For any LLM-judgment work
+(classifying, summarizing, choosing among options), use `type: "llm"` with
+MCP tools — that's faster to author and easier to maintain.
+
+Reference:
+
+- **SDK:** [`friday-platform/agent-sdk`](https://github.com/friday-platform/agent-sdk)
+  · authoring guide vendored at
+  [`packages/system/skills/writing-friday-python-agents`](packages/system/skills/writing-friday-python-agents/SKILL.md)
+- **Memory access from agents:** narrative is the only supported strategy
+  today — see
+  [`packages/system/skills/writing-to-memory`](packages/system/skills/writing-to-memory/SKILL.md)
+- **Spawn resolution:**
+  [`apps/atlasd/src/agent-spawn.ts`](apps/atlasd/src/agent-spawn.ts) —
+  three-tier fallback (uv-run → `FRIDAY_AGENT_PYTHON` → bare `python3`)
 
 ## AI Workflow
 

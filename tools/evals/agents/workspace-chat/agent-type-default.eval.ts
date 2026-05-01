@@ -84,8 +84,8 @@ const WORKSPACE_API_SKILL = await readFile(
   "utf8",
 );
 
-const WRITING_FRIDAY_AGENTS_SKILL = await readFile(
-  resolve(ROOT, "packages/system/skills/writing-friday-agents/SKILL.md"),
+const WRITING_FRIDAY_PYTHON_AGENTS_SKILL = await readFile(
+  resolve(ROOT, "packages/system/skills/writing-friday-python-agents/SKILL.md"),
   "utf8",
 );
 
@@ -100,7 +100,7 @@ const WORKSPACE_SECTION = `<workspace id="ws-eval" name="eval-workspace">
 const AVAILABLE_SKILLS_SECTION = `<available_skills>
 <instruction>Load skills with load_skill when task matches.</instruction>
 <skill name="@friday/workspace-api">Create, list, update, delete, and clean up workspaces via the daemon HTTP API. Use when the user asks to create, edit, delete, or list workspaces.</skill>
-<skill name="@friday/writing-friday-agents">Write, edit, or debug a Friday agent using the friday_agent_sdk Python SDK. Use when creating a new Python user agent.</skill>
+<skill name="@friday/writing-friday-python-agents">Authoring guide for Python user agents (type:user) via friday-agent-sdk. Load when an agent.py exists in scope, when imports from friday_agent_sdk are present, when an at-agent decorator is being authored, or when upsert_agent was just called with type:user. Do NOT load to decide whether to author a user agent.</skill>
 </available_skills>`;
 
 const SYSTEM_PROMPT = [WORKSPACE_CHAT_PROMPT, WORKSPACE_SECTION, AVAILABLE_SKILLS_SECTION].join(
@@ -202,8 +202,12 @@ const UPSERT_AGENT_DESCRIPTION =
   "layered on the agent's bundled behavior — describe the user's intent, not the mechanics.\n" +
   '- `type: "user"` — registered Python/TS SDK code agent. Shape: ' +
   "`{ type, agent, prompt?, env? }`. " +
-  "Use when the work is mechanical (parsing, transforming, deterministic routing) " +
-  "or when LLM-loop cost dominates the value. See `writing-friday-agents` skill.\n\n" +
+  "Use ONLY when the per-call decision is mechanical: regex/schema validation, " +
+  "deterministic routing table, format conversion, fixed dispatch. " +
+  "If the agent calls `ctx.llm.generate` to make any decision (classifying, " +
+  'summarizing, choosing among options, scoring confidence), use `type: "llm"` ' +
+  "instead — the LLM judgment belongs in an inline llm agent with MCP tools, " +
+  "not buried inside Python. See `writing-friday-python-agents` skill.\n\n" +
   "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
   "Pass `workspaceId` to target a workspace other than the current session.";
 
@@ -284,11 +288,11 @@ function buildToolset(captures: CapturedToolCalls) {
             instructions: WORKSPACE_API_SKILL,
           } as const;
         }
-        if (name === "@friday/writing-friday-agents") {
+        if (name === "@friday/writing-friday-python-agents") {
           return {
-            name: "@friday/writing-friday-agents",
-            description: "Python agent authoring guide.",
-            instructions: WRITING_FRIDAY_AGENTS_SKILL,
+            name: "@friday/writing-friday-python-agents",
+            description: "Python user agent authoring guide.",
+            instructions: WRITING_FRIDAY_PYTHON_AGENTS_SKILL,
           } as const;
         }
         return { error: `Skill "${name}" not found.` } as const;
@@ -547,6 +551,23 @@ const cases: AgentTypeCase[] = [
     forbiddenTypes: new Set(["atlas"]),
     forbiddenAtlasAgents: new Set(["claude-code"]),
     forbidUserAgentRegistration: false,
+  },
+  {
+    // Explicit-instruction case: real user prompt where Eric said "use llm
+    // agents" and the model still emitted `type: user`. The prompt's
+    // `<agent_types>` rule says explicit type instructions must be respected
+    // unless structurally impossible — this case fails any session that
+    // overrides the user's choice.
+    id: "explicit-llm-override",
+    name: "user explicitly names type: llm — must respect it",
+    input:
+      "Build me a workspace that pulls my latest 5 unread emails and lets me triage them " +
+      "with letter options (Archive, Keep, Delete). Use llm agents for this — I do not want " +
+      "Python user agents.",
+    expectedType: "llm",
+    forbiddenTypes: new Set(["user"]),
+    requiredMcpServers: new Set(["google-gmail"]),
+    forbidUserAgentRegistration: true,
   },
 ];
 

@@ -12,6 +12,7 @@ pub mod fetch_manifest;
 pub mod installed_marker;
 pub mod launch;
 pub mod platform;
+pub mod prewarm_agent_sdk;
 pub mod startup;
 pub mod stop_running_launcher;
 pub mod verify;

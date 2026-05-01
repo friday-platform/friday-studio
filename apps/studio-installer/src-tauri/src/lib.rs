@@ -17,6 +17,7 @@ use commands::{
     installed_marker::{read_installed, write_installed},
     launch::launch_studio,
     platform::{bin_dir, current_platform, install_dir},
+    prewarm_agent_sdk::prewarm_agent_sdk,
     startup::create_startup_script,
     stop_running_launcher::stop_running_launcher,
     verify::verify_sha256,
@@ -57,6 +58,7 @@ pub fn run() {
             current_platform,
             install_dir,
             bin_dir,
+            prewarm_agent_sdk,
             wait_for_services,
             extend_wait_deadline,
         ])

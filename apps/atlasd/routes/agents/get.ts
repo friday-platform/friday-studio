@@ -70,7 +70,11 @@ getAgent.get(
           displayName: summary.displayName,
           description: summary.description ?? "",
           version: summary.version ?? "0.0.0",
-          expertise: { examples: [] },
+          expertise: summary.expertise ?? { examples: [] },
+          summary: summary.summary,
+          constraints: summary.constraints,
+          inputSchema: summary.inputSchema,
+          outputSchema: summary.outputSchema,
         });
       }
 

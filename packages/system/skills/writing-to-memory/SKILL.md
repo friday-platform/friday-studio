@@ -6,6 +6,16 @@ user-invocable: false
 
 # Writing to Memory
 
+## Narrative is the only supported strategy in Friday today
+
+The schema (`workspace.ts:54`) lists four memory strategies — `narrative | retrieval | dedup | kv` — but **only `narrative` is actually wired into the Friday runtime**. The other three are Phase 1b placeholders: the `MdMemoryAdapter` (`packages/adapters-md/src/md-memory-adapter.ts:50`) throws on any non-narrative `store()` call, `memory_save`/`memory_read` error out, and nothing auto-injects.
+
+If a user asks for "vector search over my notes" or "dedup these incoming events" or "KV-style lookup", **don't author a store with the matching strategy** — it won't work. Surface the limitation instead.
+
+For everything narrative actually covers — preferences, standing instructions, durable facts, working notes, anything you want the agent to remember and reference next turn — declare a narrative store and you're done. The default for `upsert_memory_own` is narrative; you rarely need to set it explicitly.
+
+The rest of this skill is about narrative stores.
+
 ## How memory is injected
 
 At the start of every turn, the 20 most recent entries from each narrative store are injected into your system prompt as:
@@ -69,7 +79,7 @@ Anything over ~500 chars (result sets, reports, structured data, analyses) must 
 
 **Step 1 — write to a file, then create an artifact:**
 ```
-write_file(path="/tmp/q1-analysis.md", content=<full content>)
+fs_write_file(path="/tmp/q1-analysis.md", content=<full content>)
 artifacts_create(
   data={type:"file", version:1, data:{path:"/tmp/q1-analysis.md"}},
   title="Q1 email analysis",
@@ -77,6 +87,10 @@ artifacts_create(
 )
 → { artifactId: "art_abc123" }
 ```
+
+`fs_write_file` works in every execution context (workspace-chat, FSM LLM steps, `type: "user"`/`"llm"` agents) and accepts arbitrary host paths. **`write_file` is workspace-chat only** and writes to the session scratch dir (`<friday-home>/scratch/{sessionId}/`) — fine for ephemeral content but not what `artifacts_create` expects when you pass an arbitrary path.
+
+**`artifacts_create` requires the file to already exist on disk.** The storage adapter calls `stat(path)` and rejects with `400 "File not found"` if step 1 was skipped. Always write the file first, even if you only have the content as a string.
 
 **Step 2 — save a terse reference to memory:**
 ```

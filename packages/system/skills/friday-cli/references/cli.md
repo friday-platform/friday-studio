@@ -180,12 +180,20 @@ Alias: `agent show`, `agent get`
 
 Full agent config as JSON (type, prompt, model, tools, integrations).
 
-### `agent register`
-`agent register <dir> [--entry-point agent]`
+### Registering a Python user agent
 
-Registers an SDK agent (a NATS client). Copies source files to `~/.friday/local/agents/`
-and reloads the registry. No compilation step — the agent process is spawned per
-invocation and communicates via NATS request/reply.
+There is no `atlas agent register` CLI subcommand — register via the daemon's HTTP API directly:
+
+```bash
+curl -X POST http://localhost:8080/api/agents/register \
+  -H 'Content-Type: application/json' \
+  -d '{"entrypoint": "/abs/path/to/your-agent/agent.py"}'
+```
+
+The daemon spawns the entry point with `FRIDAY_VALIDATE_ID`, collects metadata over NATS,
+copies the source directory to `~/.friday/local/agents/{id}@{version}/`, and reloads the
+registry. No compilation step — the agent process is spawned per invocation and communicates
+via NATS request/reply. See the `writing-friday-python-agents` skill for the full authoring flow.
 
 ### `agent exec`
 `agent exec <agent> -i <input> [--url http://localhost:5200] [--env K=V,K2=V2] [--json] [--stream]`

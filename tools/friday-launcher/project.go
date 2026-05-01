@@ -110,6 +110,23 @@ func fridayEnv(binDir string) []string {
 			env = append(env, "FRIDAY_"+strings.ToUpper(name)+"_PATH="+bin)
 		}
 	}
+	// Pin uv's caches under <friday-home>/uv/ so managed Python interpreters
+	// and wheel cache stay scoped to Friday rather than leaking into
+	// ~/.local/share/uv (uv's XDG default). The daemon's user-agent spawn
+	// path consumes these via FRIDAY_UV_PATH + uv run --with friday-agent-sdk
+	// (apps/atlasd/src/agent-spawn.ts).
+	if home := friendlyHome(); home != "" {
+		env = append(env,
+			"UV_PYTHON_INSTALL_DIR="+filepath.Join(home, "uv", "python"),
+			"UV_CACHE_DIR="+filepath.Join(home, "uv", "cache"),
+		)
+	}
+	// Pin the friday-agent-sdk PyPI version. The daemon spawns user agents
+	// with `uv run --with friday-agent-sdk==<this>`, so bumping is a single
+	// constant change in the launcher build, not per-agent. Kept here
+	// (not in .env) because the version is a launcher-build artifact —
+	// it pairs with the launcher binary the user installed.
+	env = append(env, "FRIDAY_AGENT_SDK_VERSION="+bundledAgentSDKVersion)
 	// Bundled Node distribution. Windows zip lays node.exe / npx.cmd flat
 	// at the runtime root; macOS tarball nests under bin/. node-runtime/
 	// is the directory the build-studio.ts EXTERNAL_BUNDLES entry stages

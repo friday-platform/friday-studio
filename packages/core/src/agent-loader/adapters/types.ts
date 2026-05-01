@@ -67,4 +67,16 @@ export interface AgentSummary {
   description?: string;
   /** Agent version */
   version?: string;
+  /** Short selection blurb — surfaced when the model is choosing a delegate. */
+  summary?: string;
+  /** What the agent will refuse / cannot do. Drives delegate routing. */
+  constraints?: string;
+  /** Concrete tasks the agent handles well, used by the planner. */
+  expertise?: { examples: string[] };
+  /** Env vars the agent expects (declared via @agent decorator). */
+  environment?: Record<string, unknown>;
+  /** JSON Schema describing the prompt-input contract. */
+  inputSchema?: Record<string, unknown>;
+  /** JSON Schema describing the result-output contract. */
+  outputSchema?: Record<string, unknown>;
 }

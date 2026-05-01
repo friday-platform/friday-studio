@@ -164,7 +164,7 @@ Mount: `/api/agents`.
 
 - `GET /` — list. Query `limit` (1-500).
 - `GET /:id` — metadata (id, displayName, description, version, expertise, input/outputSchema).
-- `POST /register` — multipart `files` + optional `entry_point`. Registers agent source, writes to agents dir, reloads registry. **Authoring: use the `writing-friday-agents` skill.**
+- `POST /register` — multipart `files` + optional `entry_point`. Registers agent source, writes to agents dir, reloads registry. **Authoring: use the `writing-friday-python-agents` skill.**
 
 ## Skills
 

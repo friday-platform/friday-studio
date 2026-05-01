@@ -19,6 +19,7 @@
     "jsr:@std/internal@^1.0.12": "1.0.13",
     "jsr:@std/internal@^1.0.13": "1.0.13",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
+    "jsr:@std/path@*": "1.1.4",
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@1.0": "1.0.9",
     "jsr:@std/path@^1.1.4": "1.1.4",

@@ -21,18 +21,12 @@ import { serializeAgentContext } from "@atlas/workspace/agent-executor-utils";
 import type { NatsConnection } from "nats";
 import { StringCodec } from "nats";
 
+import { buildAgentSpawnArgs } from "./agent-spawn.ts";
 import type { CapabilityHandlerRegistry } from "./capability-handlers.ts";
 
 const sc = StringCodec();
 const DEFAULT_TIMEOUT_MS = 180_000;
 const READY_TIMEOUT_MS = 30_000;
-
-function buildSpawnArgs(agentPath: string): [string, string[]] {
-  if (agentPath.endsWith(".py")) return ["python3", [agentPath]];
-  if (agentPath.endsWith(".ts"))
-    return ["deno", ["run", "--allow-net", "--allow-env", "--allow-read", agentPath]];
-  return [agentPath, []];
-}
 
 export class ProcessAgentExecutor {
   constructor(
@@ -83,7 +77,7 @@ export class ProcessAgentExecutor {
     })();
 
     // 4. Spawn agent subprocess (polyglot: infer runtime from file extension)
-    const [cmd, args] = buildSpawnArgs(agentPath);
+    const [cmd, args] = buildAgentSpawnArgs(agentPath);
     const proc = spawn(cmd, args, {
       env: {
         ...process.env,

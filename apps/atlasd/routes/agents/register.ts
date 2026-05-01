@@ -17,12 +17,19 @@ import { createLogger } from "@atlas/logger";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { StringCodec } from "nats";
 import { z } from "zod";
+import { buildAgentSpawnArgs } from "../../src/agent-spawn.ts";
 import { daemonFactory } from "../../src/factory.ts";
 
 const logger = createLogger({ name: "agent-register-api" });
 const sc = StringCodec();
 
-const VALIDATE_TIMEOUT_MS = 15_000;
+// First-spawn uv-run cold-cache: 5-30s for the CPython 3.12 download +
+// friday-agent-sdk wheel fetch. Warm-cache spawn is 50-100ms. 60s gives
+// the first-ever register on a machine that bypassed the installer
+// pre-warm (apps/studio-installer/.../prewarm_agent_sdk.rs) and the
+// dev script (scripts/setup-dev-env.sh) enough room to materialize the
+// runtime, while still failing fast for actually-broken agents.
+const VALIDATE_TIMEOUT_MS = 60_000;
 
 /** Shape the agent SDK publishes to agents.validate.{id} */
 const AgentValidateResponseSchema = z.object({
@@ -33,16 +40,18 @@ const AgentValidateResponseSchema = z.object({
   llm: AgentLLMConfigSchema.optional(),
   mcp: z.record(z.string(), MCPServerConfigSchema).optional(),
   useWorkspaceSkills: z.boolean().optional(),
+  // Authoring metadata added in friday-agent-sdk 0.1.0+. The SDK publishes
+  // these on validate; the read path in routes/agents/get.ts surfaces them
+  // back. Keeping all six optional so older SDKs still register cleanly.
+  summary: z.string().optional(),
+  constraints: z.string().optional(),
+  expertise: z.object({ examples: z.array(z.string()) }).optional(),
+  environment: z.record(z.string(), z.unknown()).optional(),
+  inputSchema: z.record(z.string(), z.unknown()).optional(),
+  outputSchema: z.record(z.string(), z.unknown()).optional(),
 });
 
 const RegisterRequestSchema = z.object({ entrypoint: z.string().min(1) });
-
-function buildSpawnArgs(entrypointPath: string): [string, string[]] {
-  if (entrypointPath.endsWith(".py")) return ["python3", [entrypointPath]];
-  if (entrypointPath.endsWith(".ts"))
-    return ["deno", ["run", "--allow-net", "--allow-env", "--allow-read", entrypointPath]];
-  return [entrypointPath, []];
-}
 
 async function sha256File(filePath: string): Promise<string> {
   const content = await readFile(filePath);
@@ -75,7 +84,7 @@ registerAgentRoute.post("/register", async (c) => {
   // Subscribe BEFORE spawning to avoid race (agent may publish and exit fast)
   const sub = nc.subscribe(`agents.validate.${registerId}`, { max: 1 });
 
-  const [cmd, args] = buildSpawnArgs(entrypointPath);
+  const [cmd, args] = buildAgentSpawnArgs(entrypointPath);
   const proc = spawn(cmd, args, {
     env: { ...process.env, FRIDAY_VALIDATE_ID: registerId, NATS_URL: "nats://localhost:4222" },
     stdio: "pipe",
@@ -155,6 +164,12 @@ registerAgentRoute.post("/register", async (c) => {
     if (metadata.mcp !== undefined) metadataObj.mcp = metadata.mcp;
     if (metadata.useWorkspaceSkills !== undefined)
       metadataObj.useWorkspaceSkills = metadata.useWorkspaceSkills;
+    if (metadata.summary !== undefined) metadataObj.summary = metadata.summary;
+    if (metadata.constraints !== undefined) metadataObj.constraints = metadata.constraints;
+    if (metadata.expertise !== undefined) metadataObj.expertise = metadata.expertise;
+    if (metadata.environment !== undefined) metadataObj.environment = metadata.environment;
+    if (metadata.inputSchema !== undefined) metadataObj.inputSchema = metadata.inputSchema;
+    if (metadata.outputSchema !== undefined) metadataObj.outputSchema = metadata.outputSchema;
     if (hash !== undefined) metadataObj.hash = hash;
 
     await writeFile(join(tmpDir, "metadata.json"), JSON.stringify(metadataObj, null, 2));

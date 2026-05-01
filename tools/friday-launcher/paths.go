@@ -18,6 +18,14 @@ const launchAgentLabel = "ai.hellofriday.studio"
 // LaunchServices treating the LaunchAgent as the .app's daemon.
 const launcherBundleID = "ai.hellofriday.studio-launcher"
 
+// bundledAgentSDKVersion pins the friday-agent-sdk PyPI version that
+// the daemon spawns user agents against (apps/atlasd/src/agent-spawn.ts
+// reads this via FRIDAY_AGENT_SDK_VERSION). Bumping is a deliberate
+// launcher-release coordinated bump: we test this launcher's daemon
+// against the SDK version named here. PyPI:
+// https://pypi.org/project/friday-agent-sdk/
+const bundledAgentSDKVersion = "0.1.4"
+
 func friendlyHome() string {
 	if v := os.Getenv("FRIDAY_LAUNCHER_HOME"); v != "" {
 		return v

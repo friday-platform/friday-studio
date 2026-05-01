@@ -220,8 +220,12 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         "layered on the agent's bundled behavior — describe the user's intent, not the mechanics.\n" +
         '- `type: "user"` — registered Python/TS SDK code agent. Shape: ' +
         "`{ type, agent, prompt?, env? }`. " +
-        "Use when the work is mechanical (parsing, transforming, deterministic routing) " +
-        "or when LLM-loop cost dominates the value. See `writing-friday-agents` skill.\n\n" +
+        "Use ONLY when the per-call decision is mechanical: regex/schema validation, " +
+        "deterministic routing table, format conversion, fixed dispatch. " +
+        "If the agent calls `ctx.llm.generate` to make any decision (classifying, " +
+        'summarizing, choosing among options, scoring confidence), use `type: "llm"` ' +
+        "instead — the LLM judgment belongs in an inline llm agent with MCP tools, " +
+        "not buried inside Python. See `writing-friday-python-agents` skill.\n\n" +
         "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
         "Pass `workspaceId` to target a workspace other than the current session.",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
@@ -276,7 +280,9 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
       description:
         "Upsert a memory store (own entry) into the current workspace. " +
         "Pass `id` as the store name (e.g. 'notes', 'findings'). " +
-        "The `config` shape: `{ type: 'short_term' | 'long_term' | 'scratchpad', strategy?: 'narrative' | 'retrieval' | 'dedup' | 'kv' }`. " +
+        "The `config` shape: `{ type: 'short_term' | 'long_term' | 'scratchpad', strategy?: 'narrative' }`. " +
+        "**Strategy: `narrative` is the only strategy Friday supports today.** Omit the field or pass `'narrative'` explicitly — both work. " +
+        "The schema technically accepts `'retrieval' | 'dedup' | 'kv'` (Phase 1b), but those backends are not wired into the runtime: writes throw at the adapter layer, `memory_save`/`memory_read` error out, and entries never auto-inject. Do NOT use them. If a user asks for vector search, dedup queues, or key-value lookup, surface the limitation — don't author a store that won't work. " +
         "Every workspace has default own stores: `notes` (short_term/narrative) and `memory` (long_term/narrative). " +
         "Upserting an existing name replaces it; a new name appends to `memory.own`. " +
         "If a draft exists, the entry is staged there; otherwise it writes directly to workspace.yml. " +

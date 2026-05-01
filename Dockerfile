@@ -128,19 +128,31 @@ RUN apt-get update && \
     ln -s /usr/local/lib/claude-code/bin/claude.exe /usr/local/bin/claude && \
     rm -rf /tmp/docker-deps
 
-# Agent build toolchain — componentize-py + jco for server-side Python→WASM builds
-# Python 3 is needed by componentize-py; jco is an npm global
+# Python + uv for user agents and MCP server spawning. User agents are .py
+# files spawned by the daemon as native subprocesses; they import
+# friday_agent_sdk and talk to the host over NATS.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 python3-pip python3-venv && \
     rm -rf /var/lib/apt/lists/* && \
-    pip3 install --no-cache-dir --break-system-packages componentize-py==0.22.0 uv && \
-    npm install -g @bytecodealliance/jco@1.16.1
+    pip3 install --no-cache-dir --break-system-packages uv
 
-# NOTE: the Python `friday_agent_sdk` package + WIT definitions live in a
-# separate repo (friday-platform/agent-sdk). The componentize-py and jco
-# toolchain installed below can compile Python agents only when the SDK is
-# mounted into /opt/friday-agent-sdk at runtime (e.g. via `-v
-# /path/to/agent-sdk/packages/python:/opt/friday-agent-sdk:ro`).
+# Pin friday-agent-sdk version + scope uv's caches under /data/atlas/uv/.
+# The daemon spawns user agents via `uv run --with friday-agent-sdk==<this>`
+# (apps/atlasd/src/agent-spawn.ts); the launcher provides the same env in
+# desktop installs (tools/friday-launcher/paths.go bundledAgentSDKVersion).
+# When bumping, keep both in sync — same constant, two places.
+ENV FRIDAY_AGENT_SDK_VERSION=0.1.4 \
+    UV_PYTHON_INSTALL_DIR=/data/atlas/uv/python \
+    UV_CACHE_DIR=/data/atlas/uv/cache \
+    FRIDAY_UV_PATH=/usr/local/bin/uv
+
+# Pre-warm uv's caches at image build so the first user-agent spawn doesn't
+# pay the ~80MB Python download + SDK wheel fetch as cold-start latency.
+# The empty `import` invocation triggers full provisioning; we also create
+# the cache dirs first so uv writes there instead of $HOME defaults.
+RUN mkdir -p "$UV_PYTHON_INSTALL_DIR" "$UV_CACHE_DIR" && \
+    uv run --python 3.12 --with "friday-agent-sdk==${FRIDAY_AGENT_SDK_VERSION}" \
+        python -c "import friday_agent_sdk"
 
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared

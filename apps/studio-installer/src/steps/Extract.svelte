@@ -16,6 +16,9 @@ interface Tool {
    * "binary not found" at first agent run, and the user can re-run the
    * installer to retry. */
   command: string;
+  /** Optional args passed as the second argument to invoke(). Defaults to
+   * none for argless commands. */
+  args?: () => Promise<Record<string, unknown>>;
   status: ToolStatus;
 }
 
@@ -25,13 +28,23 @@ let phase = $state<Phase>("extracting");
 let tools = $state<Tool[]>([
   { display: "Claude Code", command: "ensure_claude_code", status: "pending" },
   { display: "agent-browser", command: "ensure_agent_browser_chrome", status: "pending" },
+  {
+    // Pre-warms uv's caches (Python 3.12 + friday-agent-sdk wheel) so the
+    // first user-agent spawn after install doesn't pay the ~80MB Python
+    // download as cold-start latency. Idempotent — re-runs hit warm caches.
+    display: "Python runtime",
+    command: "prewarm_agent_sdk",
+    args: async () => ({ installDir: await installDir() }),
+    status: "pending",
+  },
 ]);
 
 async function runTool(idx: number): Promise<void> {
   const tool = tools[idx];
   if (!tool) return;
   try {
-    await invoke(tool.command);
+    const args = tool.args ? await tool.args() : undefined;
+    await invoke(tool.command, args);
     tools[idx].status = "success";
   } catch (err) {
     console.warn(`${tool.command} failed (non-fatal):`, err);
