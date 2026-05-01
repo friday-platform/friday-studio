@@ -232,8 +232,10 @@ func (t *trayController) tick() {
 //  2. SupervisorExited (the runner.Run() returned unexpectedly)
 //     trumps everything else (red).
 //  3. AllHealthy → green.
-//  4. AnyFailed past the cold-start grace → red.
-//  5. Otherwise amber (pending / starting / cold-start grace).
+//  4. AnyFailed past the cold-start grace AND no active restart
+//     grace → red.
+//  5. Otherwise amber (pending / starting / cold-start grace /
+//     restart grace).
 func (t *trayController) computeBucket() trayBucket {
 	if t.shuttingDown.Load() {
 		return bucketGrey
@@ -249,8 +251,15 @@ func (t *trayController) computeBucket() trayBucket {
 	if t.healthCache.AllHealthy() {
 		return bucketGreen
 	}
+	// AnyFailed flips to red only outside both the cold-start grace
+	// and the post-restart grace. Without the restart-grace check a
+	// user-initiated tray Restart would paint " Error" for the few
+	// seconds children take to stop + come back up — process-compose
+	// reports them as not-running during that window, which the
+	// cache surfaces as failed.
 	if t.healthCache.AnyFailed() &&
-		time.Since(t.sup.StartedAt()) >= 30*time.Second {
+		time.Since(t.sup.StartedAt()) >= 30*time.Second &&
+		!t.sup.RestartGraceActive() {
 		return bucketRed
 	}
 	return bucketAmber

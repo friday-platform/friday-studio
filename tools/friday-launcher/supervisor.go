@@ -22,6 +22,17 @@ type Supervisor struct {
 	startedAt time.Time
 
 	restartMu sync.Mutex // serializes Restart-all paths
+
+	// inRestart is true between RestartAll's stop pass and the
+	// completion of its start pass. lastRestartEndNano is the unix-
+	// nano timestamp at which the most recent RestartAll returned;
+	// zero before the first restart. Together they drive the post-
+	// restart grace window in RestartGraceActive — the tray uses it
+	// to suppress the red "Error" badge while children are stopping
+	// + coming back up. Atomics so the tray-poll goroutine can read
+	// without taking restartMu.
+	inRestart          atomic.Bool
+	lastRestartEndNano atomic.Int64
 }
 
 // NewSupervisor builds the project + ProjectOpts and instantiates the
@@ -83,9 +94,20 @@ func (s *Supervisor) Shutdown() error {
 // RestartAll runs the two-pass restart in stopOrder then startOrder.
 // Serialized via restartMu so concurrent menu clicks don't race.
 // Returns the first error encountered (other passes still run).
+//
+// Sets inRestart for the duration and stamps lastRestartEndNano on
+// completion. RestartGraceActive consults both so the tray can
+// suppress the red bucket while children are stopping + restarting
+// + waiting for readiness probes.
 func (s *Supervisor) RestartAll() error {
 	s.restartMu.Lock()
 	defer s.restartMu.Unlock()
+
+	s.inRestart.Store(true)
+	defer func() {
+		s.lastRestartEndNano.Store(time.Now().UnixNano())
+		s.inRestart.Store(false)
+	}()
 
 	var firstErr error
 	for _, name := range stopOrder {
@@ -128,3 +150,27 @@ func isNotRunningErr(err error) bool {
 // StartedAt returns when the supervisor was created (used by the tray
 // for the cold-start grace window).
 func (s *Supervisor) StartedAt() time.Time { return s.startedAt }
+
+// restartGraceWindow is how long after a RestartAll the tray treats
+// "AnyFailed" as still-recovering rather than red. Same magnitude
+// as the cold-start grace (30s) so a user-initiated restart gets
+// the same forgiveness as a fresh launcher boot — children stop,
+// readiness probes go un-ready, then come back over a few seconds.
+const restartGraceWindow = 30 * time.Second
+
+// RestartGraceActive reports whether the tray should treat the
+// current health snapshot through the lens of a recent restart
+// (i.e. "AnyFailed" is expected, don't paint red). True while a
+// RestartAll is in flight, and for restartGraceWindow after it
+// returns. Decouples from StartedAt so subsequent restarts get
+// their own grace, not just the cold-start one.
+func (s *Supervisor) RestartGraceActive() bool {
+	if s.inRestart.Load() {
+		return true
+	}
+	endNano := s.lastRestartEndNano.Load()
+	if endNano == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, endNano)) < restartGraceWindow
+}

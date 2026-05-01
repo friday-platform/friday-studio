@@ -129,6 +129,82 @@ func TestComputeBucket_NotReadyPastGraceAmber(t *testing.T) {
 	}
 }
 
+// TestComputeBucket_FailedDuringActiveRestartAmber: while a tray-
+// initiated RestartAll is in flight, AnyFailed reflects the stop
+// pass tearing children down — that's expected, not a real failure,
+// so the bucket must NOT flip red. Otherwise the menubar shows
+// " Error" for the few seconds children take to come back up,
+// which is exactly the user-visible bug we're fixing here.
+func TestComputeBucket_FailedDuringActiveRestartAmber(t *testing.T) {
+	var sd atomic.Bool
+	cache := NewHealthCache(&sd)
+	cache.Update(makeStates(
+		runningReady("a"),
+		failed("b", 5),
+	))
+	// startedAt = 60s ago → past the cold-start grace, so without
+	// restart-grace this would render red.
+	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
+	sup.inRestart.Store(true)
+
+	tc := newTrayController(sup, &sd, cache)
+	if got := tc.computeBucket(); got != bucketAmber {
+		t.Errorf("computeBucket = %v, want amber (active restart)", got)
+	}
+}
+
+// TestComputeBucket_FailedWithinRestartGraceAmber: for the
+// restartGraceWindow seconds AFTER RestartAll returns, AnyFailed
+// stays amber too — process-compose flips children to running
+// before readiness probes pass, so AnyFailed lingers briefly.
+func TestComputeBucket_FailedWithinRestartGraceAmber(t *testing.T) {
+	var sd atomic.Bool
+	cache := NewHealthCache(&sd)
+	cache.Update(makeStates(
+		runningReady("a"),
+		failed("b", 5),
+	))
+	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
+	// Restart completed 5s ago → still inside the 30s grace.
+	sup.lastRestartEndNano.Store(time.Now().Add(-5 * time.Second).UnixNano())
+
+	tc := newTrayController(sup, &sd, cache)
+	if got := tc.computeBucket(); got != bucketAmber {
+		t.Errorf("computeBucket = %v, want amber (post-restart grace)", got)
+	}
+}
+
+// TestComputeBucket_FailedAfterRestartGraceRed: once the post-
+// restart grace expires, a still-failed service flips red as
+// usual. The grace is forgiveness for transient stop+start churn,
+// not a permanent suppression.
+func TestComputeBucket_FailedAfterRestartGraceRed(t *testing.T) {
+	var sd atomic.Bool
+	cache := NewHealthCache(&sd)
+	cache.Update(makeStates(
+		runningReady("a"),
+		failed("b", 5),
+	))
+	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
+	// Restart completed restartGraceWindow+1s ago → past the grace.
+	sup.lastRestartEndNano.Store(time.Now().Add(-(restartGraceWindow + time.Second)).UnixNano())
+
+	tc := newTrayController(sup, &sd, cache)
+	if got := tc.computeBucket(); got != bucketRed {
+		t.Errorf("computeBucket = %v, want red (grace expired)", got)
+	}
+}
+
+// TestRestartGraceActive_NoRestartYet: before any RestartAll runs
+// (lastRestartEndNano == 0), grace is inactive — otherwise every
+// fresh launcher would silently swallow real failures forever.
+func TestRestartGraceActive_NoRestartYet(t *testing.T) {
+	sup := newTestSupervisor(time.Now(), false)
+	if sup.RestartGraceActive() {
+		t.Error("RestartGraceActive() = true with no restart yet, want false")
+	}
+}
+
 // TestComputeBucket_NilCacheAmber: defensive — if computeBucket
 // runs before the cache is wired (shouldn't happen post-onReady,
 // but the goroutine ordering isn't deterministic), render amber
