@@ -53,7 +53,6 @@
     "npm:@deno/kv@0.13": "0.13.0",
     "npm:@eslint/compat@^2.0.5": "2.0.5_eslint@10.2.1",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.2.1",
-    "npm:@faker-js/faker@^10.4.0": "10.4.0",
     "npm:@hono/mcp@~0.2.5": "0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.15__ajv@8.20.0__express@5.2.1_hono@4.12.15_zod@4.3.6",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_@standard-schema+spec@1.1.0_hono@4.12.15",
     "npm:@hono/zod-validator@0.7.6": "0.7.6_hono@4.12.15_zod@4.3.6",
@@ -64,7 +63,6 @@
     "npm:@ianvs/prettier-plugin-sort-imports@^4.7.1": "4.7.1_prettier@3.8.3",
     "npm:@inkjs/ui@2": "2.0.0_ink@7.0.1__@types+react@19.2.14__react@19.2.5_@types+react@19.2.14_react@19.2.5",
     "npm:@jsr/db__sqlite@0.12": "0.12.0",
-    "npm:@jsr/std__assert@^1.0.14": "1.0.19",
     "npm:@jsr/std__async@1.0.15": "1.0.15",
     "npm:@jsr/std__async@^1.0.14": "1.0.15",
     "npm:@jsr/std__async@^1.0.15": "1.0.15",
@@ -1057,9 +1055,6 @@
         "levn"
       ]
     },
-    "@faker-js/faker@10.4.0": {
-      "integrity": "sha512-sDBWI3yLy8EcDzgobvJTWq1MJYzAkQdpjXuPukga9wXonhpMRvd1Izuo2Qgwey2OiEoRIBr35RMU9HJRoOHzpw=="
-    },
     "@floating-ui/core@1.7.5": {
       "integrity": "sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==",
       "dependencies": [
@@ -1226,13 +1221,6 @@
       ],
       "tarball": "https://npm.jsr.io/~/11/@jsr/std__assert/0.217.0.tgz"
     },
-    "@jsr/std__assert@1.0.19": {
-      "integrity": "sha512-pEj6RPkGbqlgRmyKwATp4cUs6+ijxtdrv3bq8v1d2I2CEcMEyPaO8cVKro61wGRDH4cNg8Zx6haztvK/9m7gkA==",
-      "dependencies": [
-        "@jsr/std__internal"
-      ],
-      "tarball": "https://npm.jsr.io/~/11/@jsr/std__assert/1.0.19.tgz"
-    },
     "@jsr/std__async@1.0.15": {
       "integrity": "sha512-GW6tMWwF79kKKVths4SWcju1cFykhcE+jiV6/k2IOW45611ji+Yomm0MZuW7JR4Oug+GXF0POrsAiSqL8k/9PQ==",
       "tarball": "https://npm.jsr.io/~/11/@jsr/std__async/1.0.15.tgz"
@@ -1276,7 +1264,7 @@
     "@jsr/std__path@0.217.0": {
       "integrity": "sha512-KoqEpZX9CE8zyyr4+X6AROOGYv95AysnJni2E5g9pqG+IGUUuNjOC3yRTvHnsB5tJ6uQs6DwET5chIdUPcylIQ==",
       "dependencies": [
-        "@jsr/std__assert@0.217.0"
+        "@jsr/std__assert"
       ],
       "tarball": "https://npm.jsr.io/~/11/@jsr/std__path/0.217.0.tgz"
     },
@@ -6538,19 +6526,13 @@
         }
       },
       "tools/evals": {
-        "dependencies": [
-          "jsr:@std/assert@1"
-        ],
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.8",
-            "npm:@faker-js/faker@^10.4.0",
             "npm:@jsr/db__sqlite@0.12",
-            "npm:@jsr/std__assert@^1.0.14",
             "npm:ai@^6.0.168",
             "npm:dotenv@17.4.2",
             "npm:gunshi@~0.29.4",
-            "npm:papaparse@^5.5.3",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]

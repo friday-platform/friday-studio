@@ -189,9 +189,3 @@ models:
   labels: "groq:openai/gpt-oss-120b"
   # classifier / planner / conversational fall back to anthropic defaults
 ```
-
-## Worked file (comprehensive)
-
-A full working example with comments on every choice lives in the source
-repo at `docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml` — read that if you need
-to see the platform and workspace blocks composed together in one file.

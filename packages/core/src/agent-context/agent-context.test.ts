@@ -584,7 +584,7 @@ describe("buildAgentContext credential error propagation", () => {
 
     expect(Object.keys(context.tools)).toContain("healthy_tool");
     expect(disconnectedIntegrations).toHaveLength(1);
-    expect(disconnectedIntegrations[0].kind).toBe("credential_expired");
+    expect(disconnectedIntegrations[0]?.kind).toBe("credential_expired");
   });
 
   it("swallows non-credential errors and returns empty tools", async () => {
