@@ -1,5 +1,6 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { onMount } from "svelte";
 import { advanceStep, createAppBundleIfDarwin, installDir, runExtract } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
@@ -25,6 +26,7 @@ interface Tool {
 type Phase = "extracting" | "tools";
 
 let phase = $state<Phase>("extracting");
+let prewarmProgress = $state<string>("");
 let tools = $state<Tool[]>([
   { display: "Claude Code", command: "ensure_claude_code", status: "pending" },
   { display: "agent-browser", command: "ensure_agent_browser_chrome", status: "pending" },
@@ -65,6 +67,10 @@ function pipClass(status: ToolStatus): string {
 }
 
 onMount(async () => {
+  const unlisten: UnlistenFn = await listen<string>("prewarm:progress", (e) => {
+    prewarmProgress = e.payload;
+  });
+
   const src = store.downloadPath;
   // Single source of truth for the install path lives in Rust
   // (commands/platform.rs::install_dir → ~/.friday/local). Keep all
@@ -77,16 +83,14 @@ onMount(async () => {
     // the launcher and the user can re-launch after they Quit.
     // Non-fatal if it fails — see createAppBundleIfDarwin.
     await createAppBundleIfDarwin(dest, store.availableVersion);
-    // Flip to the per-tool checklist phase. Each tool runs sequentially
-    // so the row pips show one-at-a-time motion the user can map to
-    // network activity. Failures are non-fatal: agent-browser failing
-    // only degrades the web agent's `browse` tool — `search` and
-    // `fetch` (HTTP-based) keep working. Claude Code failing surfaces
-    // at first agent invocation rather than blocking install.
+    // Tools run in parallel. Each pip animates independently while its
+    // tool resolves. Failures are non-fatal — the row pip flips to ✗,
+    // the daemon surfaces a clear 'binary not found' at first agent
+    // run, and the user can re-run the installer to retry.
     phase = "tools";
-    for (let i = 0; i < tools.length; i++) {
-      await runTool(i);
-    }
+    // Run all tools concurrently. Each pip animates independently; allSettled
+    // never throws so the install always proceeds to advanceStep().
+    await Promise.allSettled(tools.map((_, i) => runTool(i)));
     // Persist the install marker so the wizard's mode detection on
     // the next run sees mode==="current" / "update" instead of
     // re-treating the install as "fresh". Without this, every run
@@ -99,8 +103,10 @@ onMount(async () => {
       console.warn("write_installed failed (non-fatal):", err);
     }
     advanceStep();
+    return unlisten;
   } catch {
     // store.error is already set by runExtract
+    return unlisten;
   }
 });
 </script>
@@ -129,6 +135,11 @@ onMount(async () => {
             </span>
             <span class="row-name">{tool.display}</span>
           </div>
+          {#if tool.command === "prewarm_agent_sdk" && tool.status === "pending" && prewarmProgress}
+            <div class="row-progress" aria-live="polite" aria-atomic="true">
+              {prewarmProgress}
+            </div>
+          {/if}
         {/each}
       </div>
     {:else}
@@ -256,6 +267,17 @@ onMount(async () => {
 
   .row-name {
     flex: 1;
+  }
+
+  .row-progress {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    padding: 0 12px 0 42px; /* indent under the pip glyph */
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono, monospace);
   }
 
   .pip {
