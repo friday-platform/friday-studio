@@ -217,6 +217,23 @@ func (t *trayController) tick() {
 	}
 }
 
+// bucketFailGraceWindow is how long the tray forgives transient
+// AnyFailed before flipping red. Two callers consult it:
+//   - computeBucket compares it against time.Since(StartedAt()) for
+//     the cold-start grace.
+//   - Supervisor.RestartGraceActive() (supervisor.go) uses the same
+//     value as the post-restart grace window so a user-initiated
+//     Restart gets equivalent forgiveness.
+//
+// Sized to cover the readiness probe budget configured in
+// project.go: InitialDelay=2s + FailureThreshold=30 × PeriodSeconds=2s
+// = 62s worst case before process-compose itself declares a service
+// unhealthy. The previous 30s magnitude was inherited from before
+// the readiness budget was widened to 62s and would paint red for
+// any service that legitimately took >30s to first-pass readiness
+// (which the friday daemon does on cold start).
+const bucketFailGraceWindow = 90 * time.Second
+
 // computeBucket implements the Tray Color Matrix using the health
 // cache as the single source of truth (Decision #4 + #18). The
 // previous heuristic (state.IsReady() over ProcessesState) suffered
@@ -258,7 +275,7 @@ func (t *trayController) computeBucket() trayBucket {
 	// reports them as not-running during that window, which the
 	// cache surfaces as failed.
 	if t.healthCache.AnyFailed() &&
-		time.Since(t.sup.StartedAt()) >= 30*time.Second &&
+		time.Since(t.sup.StartedAt()) >= bucketFailGraceWindow &&
 		!t.sup.RestartGraceActive() {
 		return bucketRed
 	}

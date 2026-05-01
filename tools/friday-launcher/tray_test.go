@@ -93,9 +93,12 @@ func TestComputeBucket_PendingDuringColdStartAmber(t *testing.T) {
 }
 
 // TestComputeBucket_FailedPastGraceRed: once the launcher has been
-// up for 30s, a failed service flips the bucket red. The grace
-// window is the only thing that suppressed red earlier; past it,
-// the user needs to know something needs attention.
+// up past bucketFailGraceWindow, a failed service flips the bucket
+// red. The grace window is the only thing that suppressed red
+// earlier; past it, the user needs to know something needs
+// attention. Boundary uses +5s of slack so a slow CI runner
+// preempting between Add() and time.Since() doesn't flip past →
+// within and false-fail.
 func TestComputeBucket_FailedPastGraceRed(t *testing.T) {
 	var sd atomic.Bool
 	cache := NewHealthCache(&sd)
@@ -103,8 +106,7 @@ func TestComputeBucket_FailedPastGraceRed(t *testing.T) {
 		runningReady("a"),
 		failed("b", 5),
 	))
-	// startedAt = 31s ago → past the cold-start grace.
-	sup := newTestSupervisor(time.Now().Add(-31*time.Second), false)
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
 
 	tc := newTrayController(sup, &sd, cache)
 	if got := tc.computeBucket(); got != bucketRed {
@@ -113,15 +115,15 @@ func TestComputeBucket_FailedPastGraceRed(t *testing.T) {
 }
 
 // TestComputeBucket_NotReadyPastGraceAmber: services in 'starting'
-// (Running but probe NotReady) past the 30s grace stay amber, NOT
-// red. We only flip red on terminal-failed, never on slow-but-
-// eventually-healthy. Otherwise a slow Mac would see red bucket
-// during normal startup.
+// (Running but probe NotReady) past the cold-start grace stay
+// amber, NOT red. We only flip red on terminal-failed, never on
+// slow-but-eventually-healthy. Otherwise a slow Mac would see red
+// bucket during normal startup.
 func TestComputeBucket_NotReadyPastGraceAmber(t *testing.T) {
 	var sd atomic.Bool
 	cache := NewHealthCache(&sd)
 	cache.Update(makeStates(runningNotReady("a")))
-	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
 
 	tc := newTrayController(sup, &sd, cache)
 	if got := tc.computeBucket(); got != bucketAmber {
@@ -142,9 +144,9 @@ func TestComputeBucket_FailedDuringActiveRestartAmber(t *testing.T) {
 		runningReady("a"),
 		failed("b", 5),
 	))
-	// startedAt = 60s ago → past the cold-start grace, so without
-	// restart-grace this would render red.
-	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
+	// startedAt past the cold-start grace, so without restart-grace
+	// this would render red. inRestart=true must override to amber.
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
 	sup.inRestart.Store(true)
 
 	tc := newTrayController(sup, &sd, cache)
@@ -164,8 +166,8 @@ func TestComputeBucket_FailedWithinRestartGraceAmber(t *testing.T) {
 		runningReady("a"),
 		failed("b", 5),
 	))
-	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
-	// Restart completed 5s ago → still inside the 30s grace.
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 5*time.Second)), false)
+	// Restart completed 5s ago → still inside the grace window.
 	sup.lastRestartEndNano.Store(time.Now().Add(-5 * time.Second).UnixNano())
 
 	tc := newTrayController(sup, &sd, cache)
@@ -177,7 +179,9 @@ func TestComputeBucket_FailedWithinRestartGraceAmber(t *testing.T) {
 // TestComputeBucket_FailedAfterRestartGraceRed: once the post-
 // restart grace expires, a still-failed service flips red as
 // usual. The grace is forgiveness for transient stop+start churn,
-// not a permanent suppression.
+// not a permanent suppression. Boundary uses +5s of slack so a
+// slow CI runner preempting between Add() and time.Since() doesn't
+// flip past → within-grace and false-fail.
 func TestComputeBucket_FailedAfterRestartGraceRed(t *testing.T) {
 	var sd atomic.Bool
 	cache := NewHealthCache(&sd)
@@ -185,9 +189,8 @@ func TestComputeBucket_FailedAfterRestartGraceRed(t *testing.T) {
 		runningReady("a"),
 		failed("b", 5),
 	))
-	sup := newTestSupervisor(time.Now().Add(-60*time.Second), false)
-	// Restart completed restartGraceWindow+1s ago → past the grace.
-	sup.lastRestartEndNano.Store(time.Now().Add(-(restartGraceWindow + time.Second)).UnixNano())
+	sup := newTestSupervisor(time.Now().Add(-(bucketFailGraceWindow + 10*time.Second)), false)
+	sup.lastRestartEndNano.Store(time.Now().Add(-(restartGraceWindow + 5*time.Second)).UnixNano())
 
 	tc := newTrayController(sup, &sd, cache)
 	if got := tc.computeBucket(); got != bucketRed {
