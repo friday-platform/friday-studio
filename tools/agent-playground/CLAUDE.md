@@ -25,6 +25,7 @@ API routes live in `src/lib/server/router.ts`. Route groups:
 - `routes/agents.ts` — bundled agent metadata
 - `routes/execute.ts` — bundled agent execution (SSE)
 - `routes/mcp.ts` — MCP server discovery and tool listing
+- `routes/updates.ts` — Studio version check (`GET /`, `POST /check`)
 - `routes/workspace.ts` — workspace parse, execute (SSE), runs
 
 Workspace pipeline logic in `src/lib/server/lib/workspace/`:
@@ -54,6 +55,21 @@ inference.
 - Components use Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`)
 - Design tokens from `@atlas/ui/tokens.css`
 - Use `makeClient(fetch)` in load functions, `getClient()` in browser code
+
+## Update-check env vars
+
+Read by `src/lib/server/lib/update-checker.ts` for local iteration on the
+update banner / Settings panel without rebuilding the installer or hitting
+the live CDN:
+
+- `FRIDAY_UPDATE_VERSION_OVERRIDE` — pretend Studio is running this version
+  (top of the resolution chain; wins over the `.studio-version` sidecar).
+- `FRIDAY_UPDATE_MANIFEST_URL` — point the checker at a fixture server
+  (e.g. `http://localhost:9999/studio/manifest.json`) instead of
+  `https://download.fridayplatform.io/studio/manifest.json`.
+- `FRIDAY_UPDATE_FORCE` — at startup only, treat the persisted
+  `lastCheckedAt` as null so the warm-up schedules a fresh check 30s..5min
+  after boot. Does NOT bypass the `POST /api/updates/check` 10s rate limit.
 
 ## Gotchas
 
