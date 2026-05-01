@@ -108,8 +108,8 @@ export function createAssignWorkspaceSkillTool(
  * Create the `unassign_workspace_skill` tool.
  *
  * Removes a skill from a workspace. After unassignment, the skill will no
- * longer appear in `<available_skills>` for this workspace unless it is globally
- * unassigned (visible to all workspaces). Idempotent.
+ * longer appear in `<available_skills>` for this workspace unless it is still
+ * visible in the global catalog. Idempotent.
  */
 export function createUnassignWorkspaceSkillTool(
   defaultWorkspaceId: string,
@@ -119,7 +119,7 @@ export function createUnassignWorkspaceSkillTool(
     unassign_workspace_skill: tool({
       description:
         "Remove a skill from this workspace. After unassignment, the skill will no longer " +
-        "appear in <available_skills> for this workspace unless it is globally unassigned.",
+        "appear in <available_skills> for this workspace unless it is still visible in the global catalog.",
       inputSchema: UnassignSkillInput,
       execute: async ({ skillRef, workspaceId }) => {
         const targetWorkspaceId = workspaceId ?? defaultWorkspaceId;

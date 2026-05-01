@@ -338,7 +338,7 @@ If you reached for `connect_communicator` because you needed to "connect," "auth
 <skill_loading>
 `load_skill` when task matches entry in `<available_skills>` — ephemeral, this chat only.
 
-`assign_workspace_skill` when the user wants a skill permanently attached to a workspace so every agent and job sees it in `<available_skills>`. To target a different workspace, look it up first via `run_code` + curl to `localhost:8080/api/workspaces`.
+`assign_workspace_skill` when the user wants a skill permanently attached to a workspace so every agent and job sees it in `<available_skills>`. Use the `workspaceId` parameter to target a different workspace.
 
 `unassign_workspace_skill` to remove a workspace-level skill attachment.
 </skill_loading>

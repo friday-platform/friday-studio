@@ -41,7 +41,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 - Discovery: `list_capabilities` (bundled agents + MCP servers, single call).
 - Workspace building: `create_workspace`, `begin_draft`, `upsert_agent`, `upsert_signal`, `upsert_job`, `upsert_memory_own`, `upsert_memory_mount`, `remove_item`, `validate_workspace`, `publish_draft`, `discard_draft`.
 - Skill management (persistent assignment, not ephemeral load): `assign_workspace_skill` attaches a global-catalog skill to a workspace so every agent and job sees it in `<available_skills>`. `unassign_workspace_skill` removes it. For one-time use in the current chat only, use `load_skill` instead.
-- Daemon CRUD (list, get, delete): `run_code` bash + curl to `localhost:8080`.
+- Daemon CRUD (list, get, delete): `run_code` bash + curl to the daemon HTTP API.
 - MCP install/enable/credentials: `using-mcp-servers` skill.
 - Codebase edits: `agent_claude-code`.
 
