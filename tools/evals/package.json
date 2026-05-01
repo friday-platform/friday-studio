@@ -10,12 +10,9 @@
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "@faker-js/faker": "^10.4.0",
-    "@std/assert": "npm:@jsr/std__assert@^1.0.14",
     "ai": "^6.0.168",
     "dotenv": "17.4.2",
     "gunshi": "^0.29.4",
-    "papaparse": "^5.5.3",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "zod": "^4.3.5"
   },

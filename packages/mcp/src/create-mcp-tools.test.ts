@@ -203,8 +203,8 @@ describe("createMCPTools", () => {
     const result = await createMCPTools(configs, fakeLogger);
 
     expect(result.disconnected).toHaveLength(2);
-    expect(result.disconnected[0].kind).toBe("credential_refresh_failed");
-    expect(result.disconnected[1].kind).toBe("credential_expired");
+    expect(result.disconnected[0]?.kind).toBe("credential_refresh_failed");
+    expect(result.disconnected[1]?.kind).toBe("credential_expired");
   });
 
   it("applies allow filter to server tools", async () => {
@@ -353,8 +353,8 @@ describe("createMCPTools", () => {
     const result = await createMCPTools(configs, fakeLogger);
 
     expect(result.disconnected).toHaveLength(1);
-    expect(result.disconnected[0].serverId).toBe("my-slack-server");
-    expect(result.disconnected[0].message).toContain("my-slack-server");
+    expect(result.disconnected[0]?.serverId).toBe("my-slack-server");
+    expect(result.disconnected[0]?.message).toContain("my-slack-server");
   });
 
   it("disconnected entry surfaces the LinkCredentialExpired refresh status", async () => {
@@ -376,7 +376,7 @@ describe("createMCPTools", () => {
       serverId: "my-github-server",
       kind: "credential_refresh_failed",
     });
-    expect(result.disconnected[0].message).toContain("my-github-server");
+    expect(result.disconnected[0]?.message).toContain("my-github-server");
   });
 
   it("retries stdio connection that fails then succeeds", async () => {
@@ -485,7 +485,7 @@ describe("createMCPTools", () => {
 
     expect(result.tools).toHaveProperty("tool-a");
     expect(result.disconnected).toHaveLength(1);
-    expect(result.disconnected[0].serverId).toBe("server-b");
+    expect(result.disconnected[0]?.serverId).toBe("server-b");
     // Server A's client stays alive — only dispose() should close it
     expect(closeA).not.toHaveBeenCalled();
     await result.dispose();
@@ -722,9 +722,9 @@ describe("createMCPTools", () => {
     expect(result.disconnected).toHaveLength(1);
     // serverId still reflects the loop key, but the message keeps the original
     // serverName the error was constructed with — no double-enrichment.
-    expect(result.disconnected[0].serverId).toBe("different-server");
-    expect(result.disconnected[0].message).toContain("original-server");
-    expect(result.disconnected[0].message).not.toContain("different-server");
+    expect(result.disconnected[0]?.serverId).toBe("different-server");
+    expect(result.disconnected[0]?.message).toContain("original-server");
+    expect(result.disconnected[0]?.message).not.toContain("different-server");
   });
 
   it("cleans up already-connected clients when signal is aborted before next server", async () => {

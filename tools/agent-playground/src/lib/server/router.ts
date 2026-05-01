@@ -4,6 +4,7 @@ import { discoverRoute } from "./routes/discover.ts";
 import { executeRoute } from "./routes/execute.ts";
 import { mcpRoute } from "./routes/mcp.ts";
 import { shellRoute } from "./routes/shell.ts";
+import { updatesRoute } from "./routes/updates.ts";
 import { workspaceRoute } from "./routes/workspace.ts";
 
 const api = new Hono()
@@ -14,6 +15,7 @@ const api = new Hono()
   .route("/execute", executeRoute)
   .route("/mcp", mcpRoute)
   .route("/shell", shellRoute)
+  .route("/updates", updatesRoute)
   .route("/workspace", workspaceRoute);
 
 export { api };
