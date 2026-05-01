@@ -48,7 +48,7 @@ use tokio::time::timeout;
 ///
 /// Enforced by scripts/check-sdk-pin-sync.ts in CI and via lint-staged
 /// in the husky pre-commit hook for the three pin files.
-const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.4";
+const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.5";
 
 /// Wall-clock cap on the uv pre-warm. uv's network ops (cpython
 /// download + PyPI fetch) finish in 5–30s on a healthy connection.

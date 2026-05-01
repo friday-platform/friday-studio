@@ -4,7 +4,9 @@
  *
  * Execution model:
  *   1. Register session context in CapabilityHandlerRegistry
- *   2. Subscribe to sessions.{sessionId}.events to forward stream events
+ *   2. Subscribe to agents.{sessionId}.stream to forward stream events
+ *      (private subprocess→host channel; SDK >= 0.1.5 publishes here so
+ *      chunks never reach the durable sessions.*.events JetStream bus)
  *   3. Subscribe to agents.{sessionId}.ready (before spawn to avoid race)
  *   4. Spawn: runtime agentPath (inherits full env + NATS_URL + FRIDAY_SESSION_ID)
  *   5. Wait for agents.{sessionId}.ready — agent publishes this after subscribing
@@ -53,8 +55,14 @@ export class ProcessAgentExecutor {
       abortSignal: undefined,
     });
 
-    // 2. Subscribe to stream events from the agent
-    const streamSub = this.nc.subscribe(`sessions.${sessionId}.events`);
+    // 2. Subscribe to stream events from the agent on the private subprocess→host
+    //    subject. Was sessions.{id}.events; that subject is bound to the SESSIONS
+    //    JetStream stream, so SDK chunks corrupted the durable lifecycle replay
+    //    that drives the session-detail page. agents.{id}.stream is core NATS,
+    //    not bound to any JetStream filter — chunks reach the host's
+    //    streamEmitter pipeline (and from there .ephemeral / chat-UI) without
+    //    polluting the durable bus. Coordinated with friday-agent-sdk >= 0.1.5.
+    const streamSub = this.nc.subscribe(`agents.${sessionId}.stream`);
     const streamForward = (async () => {
       for await (const msg of streamSub) {
         try {

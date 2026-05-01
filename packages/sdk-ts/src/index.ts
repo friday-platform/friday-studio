@@ -4,7 +4,7 @@
  * Agents speak the same NATS protocol as the Python SDK:
  *   - Capability back-channel: `caps.{sessionId}.{capability}`
  *   - Execution request:       `agents.{sessionId}.execute` (request/reply)
- *   - Stream events:           `sessions.{sessionId}.events` (publish)
+ *   - Stream events:           `agents.{sessionId}.stream` (publish)
  *
  * Usage:
  *   ```ts

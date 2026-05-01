@@ -179,12 +179,12 @@ describe("buildContext capabilities", () => {
     expect(result).toMatchObject({ result: "ok" });
   });
 
-  test("stream.emit publishes to sessions.{sessionId}.events", () => {
+  test("stream.emit publishes to agents.{sessionId}.stream", () => {
     const nc = mockNats();
     const ctx = buildContext(makeRaw(), nc, "sess-s");
 
     ctx.stream.emit("step:output", { text: "hello" });
 
-    expect(nc.publish).toHaveBeenCalledWith("sessions.sess-s.events", expect.any(Uint8Array));
+    expect(nc.publish).toHaveBeenCalledWith("agents.sess-s.stream", expect.any(Uint8Array));
   });
 });

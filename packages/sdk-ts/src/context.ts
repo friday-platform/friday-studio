@@ -118,7 +118,7 @@ export function buildContext(
     stream: {
       emit(eventType, payload) {
         const chunk = JSON.stringify({ type: eventType, data: payload });
-        nc.publish(`sessions.${sessionId}.events`, sc.encode(chunk));
+        nc.publish(`agents.${sessionId}.stream`, sc.encode(chunk));
       },
     },
   };
