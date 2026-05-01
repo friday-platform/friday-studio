@@ -88,7 +88,11 @@ echo "  4/4  detach and re-compress UDRW → UDZO"
 hdiutil detach "$MOUNT" -quiet
 # zlib-level=9 matches Tauri's default compression so the resulting DMG
 # size is comparable to (or slightly smaller than) the original.
-hdiutil convert "$RW" -format UDZO -imagekey zlib-level=9 -o "$DMG.tmp" -quiet
-mv "$DMG.tmp" "$DMG"
+#
+# Write to $WORK/stripped.dmg (inside our temp dir) rather than alongside
+# the input — hdiutil unconditionally appends ".dmg" to -o when the path
+# doesn't already end in .dmg, which would break a "$DMG.tmp" → mv pattern.
+hdiutil convert "$RW" -format UDZO -imagekey zlib-level=9 -o "$WORK/stripped.dmg" -quiet
+mv "$WORK/stripped.dmg" "$DMG"
 
 echo "✓ Done: $DMG"
