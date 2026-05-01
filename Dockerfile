@@ -136,6 +136,24 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     pip3 install --no-cache-dir --break-system-packages uv
 
+# Pin friday-agent-sdk version + scope uv's caches under /data/atlas/uv/.
+# The daemon spawns user agents via `uv run --with friday-agent-sdk==<this>`
+# (apps/atlasd/src/agent-spawn.ts); the launcher provides the same env in
+# desktop installs (tools/friday-launcher/paths.go bundledAgentSDKVersion).
+# When bumping, keep both in sync — same constant, two places.
+ENV FRIDAY_AGENT_SDK_VERSION=0.1.1 \
+    UV_PYTHON_INSTALL_DIR=/data/atlas/uv/python \
+    UV_CACHE_DIR=/data/atlas/uv/cache \
+    FRIDAY_UV_PATH=/usr/local/bin/uv
+
+# Pre-warm uv's caches at image build so the first user-agent spawn doesn't
+# pay the ~80MB Python download + SDK wheel fetch as cold-start latency.
+# The empty `import` invocation triggers full provisioning; we also create
+# the cache dirs first so uv writes there instead of $HOME defaults.
+RUN mkdir -p "$UV_PYTHON_INSTALL_DIR" "$UV_CACHE_DIR" && \
+    uv run --python 3.12 --with "friday-agent-sdk==${FRIDAY_AGENT_SDK_VERSION}" \
+        python -c "import friday_agent_sdk"
+
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 

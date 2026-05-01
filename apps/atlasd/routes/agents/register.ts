@@ -17,6 +17,7 @@ import { createLogger } from "@atlas/logger";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { StringCodec } from "nats";
 import { z } from "zod";
+import { buildAgentSpawnArgs } from "../../src/agent-spawn.ts";
 import { daemonFactory } from "../../src/factory.ts";
 
 const logger = createLogger({ name: "agent-register-api" });
@@ -45,16 +46,6 @@ const AgentValidateResponseSchema = z.object({
 });
 
 const RegisterRequestSchema = z.object({ entrypoint: z.string().min(1) });
-
-function buildSpawnArgs(entrypointPath: string): [string, string[]] {
-  if (entrypointPath.endsWith(".py")) {
-    const py = process.env.FRIDAY_AGENT_PYTHON ?? "python3";
-    return [py, [entrypointPath]];
-  }
-  if (entrypointPath.endsWith(".ts"))
-    return ["deno", ["run", "--allow-net", "--allow-env", "--allow-read", entrypointPath]];
-  return [entrypointPath, []];
-}
 
 async function sha256File(filePath: string): Promise<string> {
   const content = await readFile(filePath);
@@ -87,7 +78,7 @@ registerAgentRoute.post("/register", async (c) => {
   // Subscribe BEFORE spawning to avoid race (agent may publish and exit fast)
   const sub = nc.subscribe(`agents.validate.${registerId}`, { max: 1 });
 
-  const [cmd, args] = buildSpawnArgs(entrypointPath);
+  const [cmd, args] = buildAgentSpawnArgs(entrypointPath);
   const proc = spawn(cmd, args, {
     env: { ...process.env, FRIDAY_VALIDATE_ID: registerId, NATS_URL: "nats://localhost:4222" },
     stdio: "pipe",

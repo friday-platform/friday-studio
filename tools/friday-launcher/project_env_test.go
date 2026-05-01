@@ -93,6 +93,40 @@ func TestFridayEnv_OmitsAgentBrowserPathWhenAbsent(t *testing.T) {
 	}
 }
 
+// TestFridayEnv_EmitsAgentSDKVersion asserts the launcher pins the
+// friday-agent-sdk PyPI version in the daemon's env. Coordinated with
+// apps/atlasd/src/agent-spawn.ts — the daemon spawns user agents via
+// `uv run --with friday-agent-sdk==<this>` when both this var and
+// FRIDAY_UV_PATH are set. Bumping is a deliberate launcher-release
+// step; this test pins that the value flows through.
+func TestFridayEnv_EmitsAgentSDKVersion(t *testing.T) {
+	env := fridayEnv(t.TempDir())
+	want := "FRIDAY_AGENT_SDK_VERSION=" + bundledAgentSDKVersion
+	if !slices.Contains(env, want) {
+		t.Errorf("fridayEnv missing %q. got=%v", want, env)
+	}
+}
+
+// TestFridayEnv_PinsUvCachesUnderFridayHome asserts uv's managed Python
+// interpreter dir and wheel cache are scoped to <friday-home>/uv/
+// rather than uv's XDG default (~/.local/share/uv, ~/.cache/uv). Keeps
+// everything Friday provisions inside the user's Friday data dir.
+func TestFridayEnv_PinsUvCachesUnderFridayHome(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("FRIDAY_LAUNCHER_HOME", filepath.Join(tmpHome, ".friday", "local"))
+
+	env := fridayEnv(t.TempDir())
+	wantPython := "UV_PYTHON_INSTALL_DIR=" + filepath.Join(tmpHome, ".friday", "local", "uv", "python")
+	wantCache := "UV_CACHE_DIR=" + filepath.Join(tmpHome, ".friday", "local", "uv", "cache")
+
+	if !slices.Contains(env, wantPython) {
+		t.Errorf("fridayEnv missing %q. got=%v", wantPython, env)
+	}
+	if !slices.Contains(env, wantCache) {
+		t.Errorf("fridayEnv missing %q. got=%v", wantCache, env)
+	}
+}
+
 // TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides closes the
 // gap that made FRIDAY_PORT_PLAYGROUND=15200 in ~/.friday/local/.env
 // silently ignored: portOverride() reads via os.Getenv, but pre-fix
