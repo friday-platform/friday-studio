@@ -128,19 +128,13 @@ RUN apt-get update && \
     ln -s /usr/local/lib/claude-code/bin/claude.exe /usr/local/bin/claude && \
     rm -rf /tmp/docker-deps
 
-# Agent build toolchain — componentize-py + jco for server-side Python→WASM builds
-# Python 3 is needed by componentize-py; jco is an npm global
+# Python + uv for user agents and MCP server spawning. User agents are .py
+# files spawned by the daemon as native subprocesses; they import
+# friday_agent_sdk and talk to the host over NATS.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 python3-pip python3-venv && \
     rm -rf /var/lib/apt/lists/* && \
-    pip3 install --no-cache-dir --break-system-packages componentize-py==0.22.0 uv && \
-    npm install -g @bytecodealliance/jco@1.16.1
-
-# NOTE: the Python `friday_agent_sdk` package + WIT definitions live in a
-# separate repo (friday-platform/agent-sdk). The componentize-py and jco
-# toolchain installed below can compile Python agents only when the SDK is
-# mounted into /opt/friday-agent-sdk at runtime (e.g. via `-v
-# /path/to/agent-sdk/packages/python:/opt/friday-agent-sdk:ro`).
+    pip3 install --no-cache-dir --break-system-packages uv
 
 # cloudflared for webhook tunnel (multi-arch: amd64 + arm64)
 COPY --from=cloudflare/cloudflared:2026.3.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
