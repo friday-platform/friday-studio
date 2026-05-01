@@ -36,9 +36,11 @@ const SITES = [
 const versions = await Promise.all(
   SITES.map(async (s) => {
     const content = await Deno.readTextFile(s.path);
-    const m = content.match(s.pattern);
-    if (!m) throw new Error(`could not find pin in ${s.name} (${s.path})`);
-    return { site: s.name, version: m[1]! };
+    const version = content.match(s.pattern)?.[1];
+    if (!version) {
+      throw new Error(`could not find pin in ${s.name} (${s.path})`);
+    }
+    return { site: s.name, version };
   }),
 );
 
