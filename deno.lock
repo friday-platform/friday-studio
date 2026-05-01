@@ -19,6 +19,7 @@
     "jsr:@std/internal@^1.0.12": "1.0.13",
     "jsr:@std/internal@^1.0.13": "1.0.13",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
+    "jsr:@std/path@*": "1.1.4",
     "jsr:@std/path@1": "1.1.4",
     "jsr:@std/path@1.0": "1.0.9",
     "jsr:@std/path@^1.1.4": "1.1.4",
@@ -53,7 +54,7 @@
     "npm:@eslint/compat@^2.0.5": "2.0.5_eslint@10.2.1",
     "npm:@eslint/js@^10.0.1": "10.0.1_eslint@10.2.1",
     "npm:@faker-js/faker@^10.4.0": "10.4.0",
-    "npm:@hono/mcp@~0.2.5": "0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.15__ajv@8.20.0__express@5.2.1_hono@4.12.15_hono-rate-limiter@0.4.2__hono@4.12.15_zod@4.3.6",
+    "npm:@hono/mcp@~0.2.5": "0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.15__ajv@8.20.0__express@5.2.1_hono@4.12.15_zod@4.3.6",
     "npm:@hono/standard-validator@~0.2.2": "0.2.2_@standard-schema+spec@1.1.0_hono@4.12.15",
     "npm:@hono/zod-validator@0.7.6": "0.7.6_hono@4.12.15_zod@4.3.6",
     "npm:@hono/zod-validator@~0.7.5": "0.7.6_hono@4.12.15_zod@4.3.6",
@@ -72,7 +73,6 @@
     "npm:@jsr/std__encoding@^1.0.10": "1.0.10",
     "npm:@jsr/std__media-types@^1.1.0": "1.1.0",
     "npm:@jsr/std__path@^1.1.4": "1.1.4",
-    "npm:@jsr/std__text@^1.0.16": "1.0.18",
     "npm:@jsr/std__yaml@^1.0.10": "1.1.0",
     "npm:@jsr/std__yaml@^1.0.9": "1.1.0",
     "npm:@lezer/common@^1.5.2": "1.5.2",
@@ -105,7 +105,7 @@
     "npm:@types/proper-lockfile@^4.1.4": "4.1.4",
     "npm:@types/react@^19.2.14": "19.2.14",
     "npm:@types/turndown@^5.0.6": "5.0.6",
-    "npm:@vitest/coverage-v8@4.1.5": "4.1.5_vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__@vitest+coverage-v8@4.1.5__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.3___picomatch@4.0.4__yaml@2.8.3_@opentelemetry+api@1.9.1_@types+node@25.6.0_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
+    "npm:@vitest/coverage-v8@4.1.5": "4.1.5_vitest@4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
     "npm:@worker-tools/html-rewriter@0.1.0-pre.19": "0.1.0-pre.19",
     "npm:@worker-tools/html-rewriter@~0.1.0-pre.17": "0.1.0-pre.19",
     "npm:@xmldom/xmldom@~0.9.10": "0.9.10",
@@ -177,9 +177,9 @@
     "npm:ulid@^3.0.2": "3.0.2",
     "npm:undici@^7.25.0": "7.25.0",
     "npm:vite@^7.3.2": "7.3.2_@types+node@25.6.0_yaml@2.8.3_picomatch@4.0.4",
-    "npm:vitest@*": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5__vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.3___picomatch@4.0.4__yaml@2.8.3_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
-    "npm:vitest@^4.1.0": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5__vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.3___picomatch@4.0.4__yaml@2.8.3_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
-    "npm:vitest@^4.1.5": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5__vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.3___picomatch@4.0.4__yaml@2.8.3_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
+    "npm:vitest@*": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
+    "npm:vitest@^4.1.0": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
+    "npm:vitest@^4.1.5": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3",
     "npm:xstate@^5.31.0": "5.31.0",
     "npm:yaml@^2.8.3": "2.8.3",
     "npm:yargs@18": "18.0.0",
@@ -1076,7 +1076,7 @@
     "@floating-ui/utils@0.2.11": {
       "integrity": "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="
     },
-    "@hono/mcp@0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.15__ajv@8.20.0__express@5.2.1_hono@4.12.15_hono-rate-limiter@0.4.2__hono@4.12.15_zod@4.3.6": {
+    "@hono/mcp@0.2.5_@modelcontextprotocol+sdk@1.28.0__zod@4.3.6__hono@4.12.15__ajv@8.20.0__express@5.2.1_hono@4.12.15_zod@4.3.6": {
       "integrity": "sha512-JsaJes7VlNvUrUQ9j2b9C13xjFLvyKQY515aWtsdJ9cwhBmWz5od2yUCbDu7cX38GeADmlLmpu4BKNNAV6G27w==",
       "dependencies": [
         "@modelcontextprotocol/sdk@1.28.0_zod@4.3.6_hono@4.12.15_ajv@8.20.0_express@5.2.1",
@@ -1286,17 +1286,6 @@
         "@jsr/std__internal"
       ],
       "tarball": "https://npm.jsr.io/~/11/@jsr/std__path/1.1.4.tgz"
-    },
-    "@jsr/std__regexp@1.0.2": {
-      "integrity": "sha512-wvJnzBWsPW4YLdAhCSggh4NyNia/qtzsuJr0kSYuqUBtvOU/RsI/WKB5lu7ehlzuZ5Sy+efr0ACyogCCZmw0YQ==",
-      "tarball": "https://npm.jsr.io/~/11/@jsr/std__regexp/1.0.2.tgz"
-    },
-    "@jsr/std__text@1.0.18": {
-      "integrity": "sha512-ZgjGQ7XjefwYuGyvkEoj1PpUHjw9pW4VgA7icGEo1hl+rdcOS9V6GyiOAzq8SsPNcFWbMJOtVuwqEs0vqk+q9w==",
-      "dependencies": [
-        "@jsr/std__regexp"
-      ],
-      "tarball": "https://npm.jsr.io/~/11/@jsr/std__text/1.0.18.tgz"
     },
     "@jsr/std__yaml@1.1.0": {
       "integrity": "sha512-KZ7wDOJuH1JHN4DoO3+dK87YFsYmtYZiB64jpLKtBP8ATGRjGbbxMVgGgvoRCA+PnXTutZXtvaSUG7iuFeWm9w==",
@@ -2461,7 +2450,7 @@
     "@vercel/oidc@3.2.0": {
       "integrity": "sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug=="
     },
-    "@vitest/coverage-v8@4.1.5_vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__@vitest+coverage-v8@4.1.5__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.3___picomatch@4.0.4__yaml@2.8.3_@opentelemetry+api@1.9.1_@types+node@25.6.0_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3": {
+    "@vitest/coverage-v8@4.1.5_vitest@4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3": {
       "integrity": "sha512-38C0/Ddb7HcRG0Z4/DUem8x57d2p9jYgp18mkaYswEOQBGsI1CG4f/hjm0ZCeaJfWhSZ4k7jgs29V1Zom7Ki9A==",
       "dependencies": [
         "@bcoe/v8-coverage",
@@ -5785,7 +5774,7 @@
         "vite"
       ]
     },
-    "vitest@4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5__vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.3___picomatch@4.0.4__yaml@2.8.3_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3": {
+    "vitest@4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.3__picomatch@4.0.4_yaml@2.8.3": {
       "integrity": "sha512-9Xx1v3/ih3m9hN+SbfkUyy0JAs72ap3r7joc87XL6jwF0jGg6mFBvQ1SrwaX+h8BlkX6Hz9shdd1uo6AF+ZGpg==",
       "dependencies": [
         "@opentelemetry/api@1.9.1",
@@ -6037,7 +6026,6 @@
             "npm:@hono/mcp@~0.2.5",
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@~0.7.6",
-            "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__async@^1.0.15",
             "npm:@jsr/std__path@^1.1.4",
             "npm:@jsr/std__yaml@^1.0.10",
@@ -6192,8 +6180,6 @@
             "npm:@coderabbitai/bitbucket@^1.1.4",
             "npm:@hubspot/api-client@^13.4.0",
             "npm:@jsr/db__sqlite@0.12",
-            "npm:@jsr/std__encoding@^1.0.10",
-            "npm:@jsr/std__media-types@^1.1.0",
             "npm:@types/markdown-it@^14.1.2",
             "npm:ai@^6.0.168",
             "npm:chat@4.26.0",
@@ -6233,7 +6219,6 @@
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.8",
             "npm:@deno/kv@0.13",
-            "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
@@ -6435,7 +6420,6 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@jsr/std__text@^1.0.16",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@worker-tools/html-rewriter@~0.1.0-pre.17",
             "npm:ai@^6.0.168",
