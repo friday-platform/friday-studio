@@ -36,7 +36,6 @@ class AtlasLoggerV2 extends BaseLogger {
     } catch {
       // Continue if file writing fails
     }
-
   }
 
   private formatLogEntry(level: LogLevel, message: string, context: LogContext): LogEntry {

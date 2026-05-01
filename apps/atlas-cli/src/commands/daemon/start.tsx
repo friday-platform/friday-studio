@@ -4,7 +4,6 @@ import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { extractTempestUserId, fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
-import { getVersionInfo } from "@atlas/utils";
 import { exists } from "@atlas/utils/fs.server";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { makeTempDir } from "@atlas/utils/temp.server";
