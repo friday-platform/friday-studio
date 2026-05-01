@@ -21,12 +21,6 @@ vi.mock("@atlas/storage", () => ({
   },
 }));
 
-// Mock analytics
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ emit: vi.fn(), track: vi.fn(), flush: vi.fn() }),
-  EventNames: { WORKSPACE_CREATED: "workspace.created" },
-}));
-
 // Mock credential resolver
 const mockResolveCredentialsByProvider = vi.hoisted(() => vi.fn());
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());

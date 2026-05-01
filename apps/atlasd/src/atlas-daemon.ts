@@ -4,7 +4,6 @@ import process, { env } from "node:process";
 import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/activity";
 import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { createAnalyticsClient } from "@atlas/analytics";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
   AtlasAgentsMCPServer,
@@ -391,7 +390,7 @@ export class AtlasDaemon {
       signalId: string,
       signalData,
     ) => {
-      // Inject workspace owner's userId for analytics before publishing
+      // Inject workspace owner's userId before publishing
       let enrichedSignalData = signalData;
       if (!signalData.userId) {
         const manager = this.getWorkspaceManager();
@@ -2239,15 +2238,6 @@ export class AtlasDaemon {
       } catch (error) {
         logger.error("Error shutting down HTTP server", { error });
       }
-    }
-
-    // Flush analytics events before exit
-    try {
-      const analytics = createAnalyticsClient();
-      await analytics.shutdown();
-      logger.info("Analytics provider shutdown complete");
-    } catch (error) {
-      logger.error("Error shutting down analytics provider", { error });
     }
 
     // Flush Sentry events before exit

@@ -22,7 +22,6 @@ import {
   type ResolvedWorkspaceMemory,
   type StoreMountBinding,
 } from "@atlas/agent-sdk";
-import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   expandAgentActions,
   type GlobalSkillRefConfig,
@@ -356,7 +355,7 @@ interface SessionResult {
   completedAt?: Date;
   artifacts: IWorkspaceArtifact[];
   error?: Error;
-  /** User ID from signal data, used for analytics */
+  /** User ID from signal data */
   userId?: string;
   /** Captured FSM events (state transitions and action executions) for batch persistence */
   collectedFsmEvents?: FSMEvent[];
@@ -364,8 +363,6 @@ interface SessionResult {
   engineDocuments?: FSMDocument[];
   finalState?: string;
 }
-
-const analytics = createAnalyticsClient();
 
 /**
  * Pull a printable string out of an agent block's `output: unknown`. Agents
@@ -457,22 +454,6 @@ export class WorkspaceRuntime {
 
   // Fully-resolved memory surface (own + mounts + global access), built after initialize()
   private _resolvedMemory: ResolvedWorkspaceMemory | undefined;
-
-  // Track emitted jobs to prevent duplicate analytics events on hot-reload
-  private emittedJobs = new Set<string>();
-
-  /** Emit job.defined analytics event (once per job, prevents duplicates on hot-reload) */
-  private emitJobDefined(jobName: string): void {
-    if (this.createdByUserId && !this.emittedJobs.has(jobName)) {
-      this.emittedJobs.add(jobName);
-      analytics.emit({
-        eventName: EventNames.JOB_DEFINED,
-        userId: this.createdByUserId,
-        workspaceId: this.workspace.id,
-        jobName,
-      });
-    }
-  }
 
   /** Tracks jobs we've already warned about to avoid log spam on hot-reload. */
   private warnedJobs = new Set<string>();
@@ -639,8 +620,6 @@ export class WorkspaceRuntime {
         concurrency: "isolated",
       });
 
-      this.emitJobDefined("handle-chat");
-
       logger.debug("Auto-injected handle-chat job for workspace direct chat", {
         workspaceId: this.workspace.id,
       });
@@ -687,8 +666,6 @@ export class WorkspaceRuntime {
         maxSteps: jobSpec.config?.max_steps,
       });
 
-      this.emitJobDefined(jobName);
-
       // D.1: declarative `jobs.*.skills` field — warn when refs don't match
       // the catalog or when zero matching DB rows exist (no scoping API
       // sync). Best-effort; failures don't block job registration.
@@ -724,8 +701,6 @@ export class WorkspaceRuntime {
       const signals = Object.keys(this.config.workspace.signals || {});
 
       this.jobs.set(jobName, { name: jobName, fsmPath: fsmFile, signals });
-
-      this.emitJobDefined(jobName);
 
       logger.debug("Registered standalone FSM job", { jobName, fsmPath: fsmFile, signals });
     }
@@ -1142,7 +1117,6 @@ export class WorkspaceRuntime {
         "atlas.job.name": job.name,
       },
       async (otelSpan) => {
-        // Extract userId from signal data for analytics
         const userId = typeof signal.data?.userId === "string" ? signal.data.userId : undefined;
         const session: SessionResult = {
           id: sessionId,
@@ -1169,16 +1143,6 @@ export class WorkspaceRuntime {
           isTriggerSignal,
           jobName: job.name,
         });
-
-        if (userId) {
-          analytics.emit({
-            eventName: EventNames.SESSION_STARTED,
-            userId,
-            workspaceId: this.workspace.id,
-            sessionId: session.id,
-            jobName: job.name,
-          });
-        }
 
         const rawPlannedSteps = extractPlannedSteps(engine.definition);
         const plannedSteps =
@@ -2589,36 +2553,7 @@ export class WorkspaceRuntime {
       sessionId: sessionResult.id,
       status,
       userId: userId ?? "NOT_SET",
-      willEmitAnalytics: Boolean(
-        userId &&
-          (status === WorkspaceSessionStatus.COMPLETED || status === WorkspaceSessionStatus.FAILED),
-      ),
     });
-
-    if (
-      userId &&
-      (status === WorkspaceSessionStatus.COMPLETED || status === WorkspaceSessionStatus.FAILED)
-    ) {
-      const eventName =
-        status === WorkspaceSessionStatus.COMPLETED
-          ? EventNames.SESSION_COMPLETED
-          : EventNames.SESSION_FAILED;
-      const jobName = this.sessions.get(sessionResult.id)?.jobName;
-
-      logger.debug("Emitting session analytics", {
-        eventName,
-        userId,
-        sessionId: sessionResult.id,
-        jobName,
-      });
-      analytics.emit({
-        eventName,
-        userId,
-        workspaceId: sessionResult.workspaceId,
-        sessionId: sessionResult.id,
-        jobName,
-      });
-    }
 
     // Snapshot the job's FSM documents BEFORE `onSessionFinished` fires.
     // That callback (atlas-daemon's `destroyWorkspaceRuntime`) calls

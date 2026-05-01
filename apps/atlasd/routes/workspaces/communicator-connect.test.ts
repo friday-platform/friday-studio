@@ -15,11 +15,6 @@ import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ emit: vi.fn(), track: vi.fn(), flush: vi.fn() }),
-  EventNames: { WORKSPACE_CREATED: "workspace.created" },
-}));
-
 vi.mock("../me/adapter.ts", () => ({ getCurrentUser: vi.fn().mockResolvedValue({ ok: false }) }));
 
 const mockDeriveConnectionId = vi.hoisted(() =>

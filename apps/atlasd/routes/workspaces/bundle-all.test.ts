@@ -14,11 +14,6 @@ vi.mock("@atlas/storage", () => ({
   FilesystemWorkspaceCreationAdapter: vi.fn(),
 }));
 
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ track: vi.fn(), flush: vi.fn() }),
-  EventNames: {},
-}));
-
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());
 vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@atlas/core/mcp-registry/credential-resolver")>()),

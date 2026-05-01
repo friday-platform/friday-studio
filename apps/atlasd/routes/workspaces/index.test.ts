@@ -18,11 +18,6 @@ import {
   workspacesRoutes,
 } from "./index.ts";
 
-// Mock external dependencies that route handlers import
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ emit: vi.fn() }),
-  EventNames: { WORKSPACE_CREATED: "workspace.created" },
-}));
 vi.mock("../me/adapter.ts", () => ({ getCurrentUser: vi.fn().mockResolvedValue({ ok: false }) }));
 
 function createTestApp() {

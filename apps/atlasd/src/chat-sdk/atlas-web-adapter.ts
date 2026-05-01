@@ -12,7 +12,6 @@ import {
   normalizeToUIMessages,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
-import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import { logger } from "@atlas/logger";
 import type {
   Adapter,
@@ -29,8 +28,6 @@ import type {
 import { Message, parseMarkdown, stringifyMarkdown } from "chat";
 import { z } from "zod";
 import type { StreamRegistry } from "../stream-registry.ts";
-
-const analytics = createAnalyticsClient();
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -110,11 +107,9 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
 
   private chat: ChatInstance | null = null;
   private readonly streamRegistry: StreamRegistry;
-  private readonly workspaceId: string;
 
   constructor(opts: { streamRegistry: StreamRegistry; workspaceId: string; userName?: string }) {
     this.streamRegistry = opts.streamRegistry;
-    this.workspaceId = opts.workspaceId;
     this.userName = opts.userName ?? "Friday";
   }
 
@@ -214,13 +209,6 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     const messageText = joinTextParts(uiMessage);
     const userId = request.headers.get("X-Atlas-User-Id") ?? "default-user";
     const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;
-
-    analytics.emit({
-      eventName: EventNames.CONVERSATION_STARTED,
-      userId,
-      workspaceId: this.workspaceId,
-      conversationId: chatId,
-    });
 
     // Create the buffer BEFORE dispatching so we don't lose early events.
     // Capture the buffer reference so the delayed finishStream only closes

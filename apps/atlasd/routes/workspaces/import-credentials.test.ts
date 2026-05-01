@@ -32,12 +32,6 @@ vi.mock("@atlas/storage", () => ({
   },
 }));
 
-// Mock analytics
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ emit: vi.fn(), track: vi.fn(), flush: vi.fn() }),
-  EventNames: { WORKSPACE_CREATED: "workspace.created" },
-}));
-
 // Mock getCurrentUser
 vi.mock("../me/adapter.ts", () => ({
   getCurrentUser: vi.fn().mockResolvedValue({ ok: true, data: { id: "user-1" } }),

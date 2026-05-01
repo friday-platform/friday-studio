@@ -4,11 +4,6 @@ import { StreamRegistry } from "../stream-registry.ts";
 import type { WebChatPayload } from "./atlas-web-adapter.ts";
 import { AtlasWebAdapter } from "./atlas-web-adapter.ts";
 
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ emit: vi.fn() }),
-  EventNames: { CONVERSATION_STARTED: "conversation.started" },
-}));
-
 /** Mock ChatInstance — processMessage is fire-and-forget. */
 function createMockChat() {
   return {

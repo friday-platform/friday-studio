@@ -61,10 +61,6 @@ async function parseJson<T>(res: Response, schema: z.ZodType<T>): Promise<T> {
 // Module mocks — external dependencies the route handlers import
 // ---------------------------------------------------------------------------
 
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ emit: vi.fn() }),
-  EventNames: { WORKSPACE_CREATED: "workspace.created" },
-}));
 vi.mock("../me/adapter.ts", () => ({ getCurrentUser: vi.fn().mockResolvedValue({ ok: false }) }));
 
 const mockDeleteArtifact = vi.hoisted(() => vi.fn());

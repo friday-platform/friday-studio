@@ -17,11 +17,6 @@ import { z } from "zod";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
 
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ track: vi.fn(), flush: vi.fn() }),
-  EventNames: {},
-}));
-
 vi.mock("@atlas/storage", () => ({
   storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
   FilesystemWorkspaceCreationAdapter: class {

@@ -15,7 +15,6 @@
   "dependencies": {
     "@atlas/adapters-md": "workspace:*",
     "@atlas/agent-sdk": "workspace:*",
-    "@atlas/analytics": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/document-store": "workspace:*",

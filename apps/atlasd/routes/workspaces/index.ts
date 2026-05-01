@@ -1,7 +1,6 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
-import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   exportAll,
   exportGlobalSkills,
@@ -96,8 +95,6 @@ import {
   createWorkspaceFromConfigSchema,
   updateWorkspaceConfigSchema,
 } from "./schemas.ts";
-
-const analytics = createAnalyticsClient();
 
 /**
  * Daemon-backed validation context for `validateWorkspaceConfig`.
@@ -694,7 +691,7 @@ const workspacesRoutes = daemonFactory
 
         await workspaceAdapter.writeWorkspaceFiles(workspacePath, yamlConfig, { ephemeral });
 
-        // Get current user for analytics and metadata
+        // Get current user for metadata
         const userResult = await getCurrentUser();
         const userId = userResult.ok ? userResult.data?.id : undefined;
 
@@ -719,15 +716,6 @@ const workspacesRoutes = daemonFactory
             metadata: { ...workspace.metadata, requires_setup: true },
           });
           workspace.metadata = { ...workspace.metadata, requires_setup: true };
-        }
-
-        // Emit workspace.created analytics event for new workspaces
-        if (created && userId) {
-          analytics.emit({
-            eventName: EventNames.WORKSPACE_CREATED,
-            userId,
-            workspaceId: workspace.id,
-          });
         }
 
         // Provision resources declared in the imported config
@@ -788,7 +776,7 @@ const workspacesRoutes = daemonFactory
     try {
       const { path, name, description } = c.req.valid("json");
 
-      // Get current user for analytics and metadata
+      // Get current user for metadata
       const userResult = await getCurrentUser();
       const userId = userResult.ok ? userResult.data?.id : undefined;
 
@@ -799,11 +787,6 @@ const workspacesRoutes = daemonFactory
         description,
         createdBy: userId,
       });
-
-      // Emit workspace.created analytics event for new workspaces
-      if (created && userId) {
-        analytics.emit({ eventName: EventNames.WORKSPACE_CREATED, userId, workspaceId: entry.id });
-      }
 
       // Convert to API response format
       const workspaceInfo = {

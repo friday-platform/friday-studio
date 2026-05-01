@@ -3,7 +3,6 @@ import { copyFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import process from "node:process";
-import { createAnalyticsClient, EventNames } from "@atlas/analytics";
 import {
   type ArtifactDataInput,
   type ArtifactWithContents,
@@ -41,10 +40,8 @@ import { fileTypeFromFile } from "file-type";
 import JSZip from "jszip";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
-import { getCurrentUserId } from "./me/adapter.ts";
 
 const logger = createLogger({ name: "artifacts-upload" });
-const analytics = createAnalyticsClient();
 
 /** Reverse map: MIME type -> canonical extension (first match wins). */
 const MIME_TO_EXTENSION = new Map<string, string>();
@@ -398,17 +395,6 @@ export async function streamToFile(
 // Shared artifact creation (used by single-upload and chunked-upload)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function emitArtifactCreatedEvent(artifactId: string, artifactType: string, chatId?: string) {
-  const userId = await getCurrentUserId();
-  if (userId) {
-    analytics.emit({
-      eventName: EventNames.ARTIFACT_CREATED,
-      userId,
-      attributes: { artifactId, artifactType, chatId },
-    });
-  }
-}
-
 /** Convert file on disk and persist as artifact via ArtifactStorage.create. */
 export async function createArtifactFromFile(opts: {
   filePath: string;
@@ -460,8 +446,6 @@ export async function createArtifactFromFile(opts: {
       });
     });
   }
-
-  await emitArtifactCreatedEvent(result.data.id, converted.data.type, chatId);
 
   // Fire-and-forget: LLM summary for converted documents
   if (converted.markdown) {
@@ -598,17 +582,6 @@ const artifactsApp = daemonFactory
 
     if (!result.ok) {
       return c.json({ error: result.error }, 400);
-    }
-
-    // Emit analytics event
-    const userId = await getCurrentUserId();
-    if (userId) {
-      analytics.emit({
-        eventName: EventNames.ARTIFACT_CREATED,
-        userId,
-        workspaceId: result.data.workspaceId,
-        attributes: { artifactId: result.data.id, artifactType: result.data.data.type },
-      });
     }
 
     return c.json({ artifact: result.data }, 201);

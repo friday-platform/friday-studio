@@ -7,10 +7,6 @@ vi.mock("@atlas/storage", () => ({
   storeWorkspaceHistory: vi.fn(),
   FilesystemWorkspaceCreationAdapter: vi.fn(),
 }));
-vi.mock("@atlas/analytics", () => ({
-  createAnalyticsClient: () => ({ track: vi.fn(), flush: vi.fn() }),
-  EventNames: {},
-}));
 vi.mock("../me/adapter.ts", () => ({ getCurrentUser: vi.fn() }));
 
 const mockProvision = vi.hoisted(() => vi.fn<() => Promise<ResourceMetadata>>());
