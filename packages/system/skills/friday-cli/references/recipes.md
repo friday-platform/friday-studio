@@ -161,9 +161,13 @@ Register via HTTP (no build step — agent process is spawned per invocation):
 
 ```bash
 curl -X POST http://localhost:8080/api/agents/register \
-  -F "files=@agents/my-new-agent/agent.py" \
-  -F "entry_point=agent"
+  -H 'Content-Type: application/json' \
+  -d '{"entrypoint": "/abs/path/to/agents/my-new-agent/agent.py"}'
 ```
+
+`entrypoint` must be an absolute path. The daemon spawns it with `FRIDAY_VALIDATE_ID`,
+collects metadata over NATS, and installs the source under
+`~/.friday/local/agents/{id}@{version}/`.
 
 ## Update env vars in daemon config
 
