@@ -25,8 +25,8 @@ import {
   isAPIErrorCause,
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
+  LLM_AGENT_ALLOWED_PLATFORM_TOOLS,
   NoDefaultCredentialError,
-  SCOPE_INJECTED_PLATFORM_TOOLS,
   UserConfigurationError,
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
@@ -81,11 +81,18 @@ import type {
 
 /**
  * Platform tools exposed to FSM LLM steps.
- * Aliases the shared SCOPE_INJECTED_PLATFORM_TOOLS allowlist — same minimal
- * set is used to wrap user-agent and LLM/atlas-agent platform tools so the
- * scope-injection contract is uniform across every agent execution path.
+ *
+ * Mirrors the allowlist used by `runtime.executeCodeAgent` and
+ * `routes/agents/run.ts` so all three LLM-agent execution paths see the
+ * same surface (fs_*, bash, csv, library_*, plus the scope-injected
+ * subset for memory/artifacts/state/webfetch). Pre-fix this aliased
+ * SCOPE_INJECTED_PLATFORM_TOOLS instead, which silently stripped
+ * fs_write_file etc. from FSM LLM steps and broke the canonical
+ * "write-file-then-artifacts_create" pattern documented in the
+ * writing-to-memory skill. The wrap step below still uses the narrower
+ * SCOPE_INJECTED set — only that subset needs workspace-id injection.
  */
-const PLATFORM_TOOL_ALLOWLIST = SCOPE_INJECTED_PLATFORM_TOOLS;
+const PLATFORM_TOOL_ALLOWLIST = LLM_AGENT_ALLOWED_PLATFORM_TOOLS;
 
 const FSMStateSchema = z.object({ state: z.string() });
 
