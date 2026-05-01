@@ -14,9 +14,6 @@ vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   StreamableHTTPClientTransport: MockHTTPTransport,
 }));
 
-// Strip retry backoff — retry logic is @std/async's responsibility, not ours.
-vi.mock("@std/async/retry", () => ({ retry: (fn: () => Promise<unknown>) => fn() }));
-
 // Import after mocks
 const { connectHttp, MCPStartupError } = await import("./create-mcp-tools.ts");
 const { sharedMCPProcesses } = await import("./process-registry.ts");

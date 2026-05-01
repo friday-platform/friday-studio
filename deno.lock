@@ -6301,7 +6301,6 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/mcp@^1.0.36",
-            "npm:@jsr/std__async@^1.0.14",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:ai@^6.0.168",
             "npm:vitest@^4.1.0",

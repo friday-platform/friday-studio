@@ -83,10 +83,9 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         disconnectedCount: disconnectedIntegrations.length,
       });
     } catch (error) {
-      // Credential errors are now handled per-server inside createMCPTools and
-      // surfaced via `disconnected`; only non-credential failures (transport,
-      // startup, etc.) still throw. Continue with empty tools so the agent can
-      // at least respond rather than aborting the session.
+      // Unexpected fatal error (e.g. signal abort). Per-server transport,
+      // startup, and timeout failures are silently dropped inside
+      // createMCPTools so the chat continues with whatever connected.
       agentLogger.error("Failed to pre-fetch tools", { error });
       allTools = {};
     }

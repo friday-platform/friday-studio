@@ -23,7 +23,7 @@ import {
 } from "@atlas/core/mcp-registry/translator";
 import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
 import { createLogger } from "@atlas/logger";
-import { createMCPTools, MCPAuthError } from "@atlas/mcp";
+import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
 import { RetryError } from "@std/async/retry";
 import { stepCountIs, streamText } from "ai";
@@ -75,10 +75,6 @@ function classifyProbeError(error: unknown): {
       return { error: inner.message, phase: "dns" };
     }
     return { error: inner.message, phase: "connect" };
-  }
-
-  if (inner instanceof MCPAuthError) {
-    return { error: inner.message, phase: "auth" };
   }
 
   if (inner instanceof Error) {

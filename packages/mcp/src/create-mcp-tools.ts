@@ -24,27 +24,25 @@ import {
 } from "@atlas/core/mcp-registry/credential-resolver";
 import type { Logger } from "@atlas/logger";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import {
-  StreamableHTTPClientTransport,
-  StreamableHTTPError,
-} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { RetryError, type RetryOptions, retry } from "@std/async/retry";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool } from "ai";
 import { type PidFileWriter, sharedMCPProcesses } from "./process-registry.ts";
 
 /** ai doesn't export the MCPClient type, so we infer it. */
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
 
-const RETRY_OPTIONS: RetryOptions = {
-  maxAttempts: 3,
-  multiplier: 1, // constant backoff
-  minTimeout: 1000,
-  maxTimeout: 3000,
-};
+/** Hard timeout for the HTTP reachability probe. */
+const REACHABLE_TIMEOUT_MS = 4_000;
 
-export { MCPAuthError, MCPStartupError } from "./errors.ts";
+/** Hard timeout for `createMCPClient` handshake + `listTools` per server. */
+const LIST_TOOLS_TIMEOUT_MS = 20_000;
 
-import { MCPAuthError, MCPStartupError } from "./errors.ts";
+/** Hard ceiling for a single MCP tool invocation. */
+const CALL_TOOL_TIMEOUT_MS = 15 * 60 * 1_000;
+
+export { MCPStartupError, MCPTimeoutError } from "./errors.ts";
+
+import { MCPTimeoutError } from "./errors.ts";
 
 export type DisconnectedIntegrationKind =
   | "credential_not_found"
@@ -67,12 +65,33 @@ export interface MCPToolsResult {
   disconnected: DisconnectedIntegration[];
 }
 
-/** Unwrap a RetryError so the real underlying error is surfaced. */
-function unwrapError(error: unknown): unknown {
-  if (error instanceof RetryError && error.cause) {
-    return error.cause;
-  }
-  return error;
+/** Race a promise against a timeout, clearing the timer when the promise settles. */
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  makeError: (actualDurationMs: number) => Error,
+): Promise<T> {
+  const startedAt = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(makeError(Date.now() - startedAt)), timeoutMs);
+  });
+  return Promise.race([promise.finally(() => clearTimeout(timer)), timeoutPromise]);
+}
+
+/** Add the 15-minute hard ceiling to a single tool's execute. */
+function wrapToolWithTimeout(tool: Tool, serverId: string): Tool {
+  return {
+    ...tool,
+    execute: (args, opts) => {
+      return withTimeout(
+        tool.execute!(args, opts),
+        CALL_TOOL_TIMEOUT_MS,
+        (actualDurationMs) =>
+          new MCPTimeoutError(serverId, "call_tool", CALL_TOOL_TIMEOUT_MS, actualDurationMs),
+      );
+    },
+  };
 }
 
 export interface CreateMCPToolsOptions {
@@ -82,108 +101,146 @@ export interface CreateMCPToolsOptions {
   toolPrefix?: string;
 }
 
+/** Internal result of attempting to connect a single server. */
+type ServerConnectResult =
+  | { status: "success"; serverId: string; client: MCPClient; tools: Record<string, Tool> }
+  | { status: "disconnected"; entry: DisconnectedIntegration }
+  | { status: "failed"; serverId: string; error: unknown };
+
 /**
- * Connect to MCP servers, fetch tools, return a dispose callback.
+ * Connect to MCP servers in parallel, fetch tools, return a dispose callback.
+ *
  * Servers whose Link credentials are missing/expired/un-refreshable are skipped
- * and reported in `disconnected` rather than aborting the whole batch — the
- * caller decides how to surface them to the user. Other failures (transport,
- * startup, etc.) still throw.
+ * and reported in `disconnected`. All other failures (transport, startup,
+ * timeout) silently drop that server — the chat continues with whatever
+ * servers connected. Every timeout emits a structured `warn` log.
  */
 export async function createMCPTools(
   configs: Record<string, MCPServerConfig>,
   logger: Logger,
   options?: CreateMCPToolsOptions,
 ): Promise<MCPToolsResult> {
+  const signal = options?.signal;
+
+  if (signal?.aborted) {
+    throw signal.reason ?? new Error("Aborted");
+  }
+
+  const results = await Promise.allSettled(
+    Object.entries(configs).map(async ([serverId, config]): Promise<ServerConnectResult> => {
+      try {
+        const resolvedEnv = config.env ? await resolveEnvValues(config.env, logger) : {};
+        const connected = await connectServerWithTimeout(config, resolvedEnv, serverId, logger);
+        const filtered = filterTools(connected.tools, config.tools);
+        const prefixed = options?.toolPrefix
+          ? prefixToolKeys(filtered, options.toolPrefix)
+          : filtered;
+        return { status: "success", serverId, client: connected.client, tools: prefixed };
+      } catch (error) {
+        if (
+          error instanceof LinkCredentialNotFoundError ||
+          error instanceof LinkCredentialExpiredError ||
+          error instanceof NoDefaultCredentialError
+        ) {
+          const entry = buildDisconnectedEntry(error, serverId, config);
+          return { status: "disconnected", entry };
+        }
+
+        return { status: "failed", serverId, error };
+      }
+    }),
+  );
+
+  // If the parent signal aborted while connections were in flight, clean up
+  // anything that managed to connect and re-throw.
+  if (signal?.aborted) {
+    const connectedClients = results
+      .filter(
+        (r): r is PromiseFulfilledResult<ServerConnectResult> =>
+          r.status === "fulfilled" && r.value.status === "success",
+      )
+      .map(
+        (r) =>
+          (r as PromiseFulfilledResult<Extract<ServerConnectResult, { status: "success" }>>).value
+            .client,
+      );
+    await disposeAll(connectedClients);
+    throw signal.reason ?? new Error("Aborted");
+  }
+
   const clients: MCPClient[] = [];
   const allTools: Record<string, Tool> = {};
   const disconnected: DisconnectedIntegration[] = [];
-  let disposed = false;
 
-  const signal = options?.signal;
-
-  for (const [serverId, config] of Object.entries(configs)) {
-    if (signal?.aborted) {
+  for (const result of results) {
+    if (result.status === "rejected") {
+      // Defensive: shouldn't happen since each mapper catches its own errors.
       await disposeAll(clients);
-      throw signal.reason ?? new Error("Aborted");
+      throw result.reason;
     }
 
-    try {
-      const resolvedEnv = config.env ? await resolveEnvValues(config.env, logger) : {};
+    const value = result.value;
 
-      const connected = await connectServer(config, resolvedEnv, serverId, logger);
-      clients.push(connected.client);
-
-      const filtered = filterTools(connected.tools, config.tools);
-      const prefixed = options?.toolPrefix
-        ? prefixToolKeys(filtered, options.toolPrefix)
-        : filtered;
-
-      const clobbered = Object.keys(prefixed).filter((name) => name in allTools);
-      if (clobbered.length > 0) {
-        logger.warn(`MCP tool name collision: server "${serverId}" overwrites existing tools`, {
-          operation: "mcp_connect",
-          serverId,
-          clobberedTools: clobbered,
-        });
-      }
-
-      Object.assign(allTools, prefixed);
-
-      logger.info(`Connected MCP server: ${serverId}`, {
+    if (value.status === "disconnected") {
+      disconnected.push(value.entry);
+      logger.warn(`MCP server skipped due to credential issue`, {
         operation: "mcp_connect",
-        serverId,
-        toolCount: Object.keys(filtered).length,
+        serverId: value.entry.serverId,
+        kind: value.entry.kind,
+        provider: value.entry.provider,
+        reason: value.entry.message,
       });
-    } catch (error) {
-      if (
-        error instanceof LinkCredentialNotFoundError ||
-        error instanceof LinkCredentialExpiredError ||
-        error instanceof NoDefaultCredentialError
-      ) {
-        const entry = buildDisconnectedEntry(error, serverId, config);
-        disconnected.push(entry);
-        logger.warn(`MCP server skipped due to credential issue`, {
-          operation: "mcp_connect",
-          serverId,
-          kind: entry.kind,
-          provider: entry.provider,
-          reason: entry.message,
-        });
-        continue;
-      }
-
-      // Clean up any already-connected clients before throwing
-      await disposeAll(clients);
-
-      if (error instanceof MCPStartupError) {
-        throw error;
-      }
-
-      const actualError = unwrapError(error);
-
-      // HTTP 401 from the transport is an auth failure, not a connection failure.
-      if (
-        config.transport.type === "http" &&
-        actualError instanceof StreamableHTTPError &&
-        actualError.code === 401
-      ) {
-        throw new MCPAuthError(serverId, config.transport.url, actualError.message);
-      }
-
-      const command =
-        config.transport.type === "stdio"
-          ? `${config.transport.command} ${(config.transport.args ?? []).join(" ")}`.trim()
-          : config.transport.url;
-      const reason = actualError instanceof Error ? actualError.message : String(actualError);
-      // Omit the generic install hint when the reason already contains specific
-      // process output (e.g. ENOENT from a bad root path) — it's misleading there.
-      const hint =
-        reason.includes("\n") || reason.includes("ENOENT") || reason.includes("Error:")
-          ? ""
-          : " Check that the command is installed and available in the container.";
-      throw new Error(`MCP server "${serverId}" failed to start (${command}): ${reason}.${hint}`);
+      continue;
     }
+
+    if (value.status === "failed") {
+      const error = value.error;
+      if (error instanceof MCPTimeoutError) {
+        logger.warn("MCP operation timed out", {
+          operation: "mcp_timeout",
+          serverId: error.serverId,
+          phase: error.phase,
+          timeoutMs: error.timeoutMs,
+          durationMs: error.actualDurationMs,
+        });
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn("MCP server skipped due to connection error", {
+          operation: "mcp_connect",
+          serverId: value.serverId,
+          error: message,
+        });
+      }
+      continue;
+    }
+
+    // status === "success"
+    const wrappedTools = Object.fromEntries(
+      Object.entries(value.tools).map(([name, tool]) => [
+        name,
+        wrapToolWithTimeout(tool, value.serverId),
+      ]),
+    );
+
+    const clobbered = Object.keys(wrappedTools).filter((name) => name in allTools);
+    if (clobbered.length > 0) {
+      logger.warn(`MCP tool name collision: server "${value.serverId}" overwrites existing tools`, {
+        operation: "mcp_connect",
+        serverId: value.serverId,
+        clobberedTools: clobbered,
+      });
+    }
+    Object.assign(allTools, wrappedTools);
+    clients.push(value.client);
+
+    logger.info(`Connected MCP server`, {
+      operation: "mcp_connect",
+      serverId: value.serverId,
+      toolCount: Object.keys(wrappedTools).length,
+    });
   }
+
+  let disposed = false;
 
   return {
     tools: allTools,
@@ -265,9 +322,24 @@ interface ConnectedServer {
 }
 
 /**
- * Connect a single MCP server with retry and fetch tools.
- * Both stdio and HTTP retry the full connect + tools() sequence.
+ * Connect a single MCP server with a hard timeout on the full handshake +
+ * listTools sequence. No retry — a hung server is not a transient failure.
  */
+function connectServerWithTimeout(
+  config: MCPServerConfig,
+  resolvedEnv: Record<string, string>,
+  serverId: string,
+  logger: Logger,
+): Promise<ConnectedServer> {
+  return withTimeout(
+    connectServer(config, resolvedEnv, serverId, logger),
+    LIST_TOOLS_TIMEOUT_MS,
+    (actualDurationMs) =>
+      new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS, actualDurationMs),
+  );
+}
+
+/** Connect a single MCP server (stdio or HTTP). */
 async function connectServer(
   config: MCPServerConfig,
   resolvedEnv: Record<string, string>,
@@ -317,69 +389,59 @@ async function connectStdio(
   );
   const mergedEnv = { ...parentEnv, ...resolvedEnv };
 
-  let attempt = 0;
-  return await retry(async () => {
-    attempt++;
-    logger.debug(`MCP stdio connection attempt ${attempt} for "${serverId}"`, {
-      operation: "mcp_connect",
-      serverId,
+  logger.debug(`MCP stdio connection attempt for "${serverId}"`, {
+    operation: "mcp_connect",
+    serverId,
+    command,
+    args: expandedArgs,
+  });
+
+  // Capture subprocess stderr so startup errors (e.g. ENOENT on a root path)
+  // are included in the thrown error instead of silently dropped.
+  const stderrChunks: Buffer[] = [];
+  const stderrCapture = new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      stderrChunks.push(chunk);
+      callback();
+    },
+  });
+
+  const client = await createMCPClient({
+    transport: new StdioMCPTransport({
       command,
       args: expandedArgs,
-      attempt,
-    });
+      env: mergedEnv,
+      stderr: stderrCapture,
+    }),
+  });
 
-    // Capture subprocess stderr so startup errors (e.g. ENOENT on a root path)
-    // are included in the thrown error instead of silently dropped.
-    const stderrChunks: Buffer[] = [];
-    const stderrCapture = new Writable({
-      write(chunk: Buffer, _encoding, callback) {
-        stderrChunks.push(chunk);
-        callback();
-      },
-    });
-
-    const client = await createMCPClient({
-      transport: new StdioMCPTransport({
-        command,
-        args: expandedArgs,
-        env: mergedEnv,
-        stderr: stderrCapture,
-      }),
-    });
-
-    // Verify the subprocess is actually responding AND capture tools in one call.
-    // createMCPClient can succeed for stdio even when the server isn't ready yet.
-    let tools: Record<string, Tool>;
-    try {
-      tools = await client.tools();
-    } catch (err) {
-      // Close the client to kill the orphaned subprocess before retry
-      await client.close().catch(() => {});
-      const stderrOutput = Buffer.concat(stderrChunks).toString("utf8").trim();
-      logger.debug(`MCP stdio tools() failed on attempt ${attempt} for "${serverId}"`, {
-        operation: "mcp_connect",
-        serverId,
-        attempt,
-        error: err instanceof Error ? err.message : String(err),
-        stderrOutput: stderrOutput || undefined,
-      });
-      // Prepend subprocess stderr to the error message so callers see the
-      // actual failure reason (e.g. "ENOENT: no such file or directory")
-      // rather than just the generic "Connection closed" from the transport.
-      if (stderrOutput && err instanceof Error) {
-        err.message = `${stderrOutput} (${err.message})`;
-      }
-      throw err;
-    }
-
-    logger.debug(`MCP stdio connected on attempt ${attempt} for "${serverId}"`, {
+  // Verify the subprocess is actually responding AND capture tools in one call.
+  // createMCPClient can succeed for stdio even when the server isn't ready yet.
+  let tools: Record<string, Tool>;
+  try {
+    tools = await client.tools();
+  } catch (err) {
+    // Close the client to kill the orphaned subprocess before re-throwing
+    await client.close().catch(() => {});
+    const stderrOutput = Buffer.concat(stderrChunks).toString("utf8").trim();
+    logger.debug(`MCP stdio tools() failed for "${serverId}"`, {
       operation: "mcp_connect",
       serverId,
-      attempt,
+      error: err instanceof Error ? err.message : String(err),
+      stderrOutput: stderrOutput || undefined,
     });
+    // Prepend subprocess stderr to the error message so callers see the
+    // actual failure reason (e.g. "ENOENT: no such file or directory")
+    // rather than just the generic "Connection closed" from the transport.
+    if (stderrOutput && err instanceof Error) {
+      err.message = `${stderrOutput} (${err.message})`;
+    }
+    throw err;
+  }
 
-    return { client, tools };
-  }, RETRY_OPTIONS);
+  logger.debug(`MCP stdio connected for "${serverId}"`, { operation: "mcp_connect", serverId });
+
+  return { client, tools };
 }
 
 /**
@@ -392,11 +454,27 @@ async function connectStdio(
 async function isReachable(
   url: string,
   fetchImpl: typeof fetch,
+  serverId: string,
+  logger: Logger,
 ): Promise<{ ok: boolean; status?: number }> {
   try {
-    const res = await fetchImpl(url, { method: "GET" });
+    const res = await withTimeout(
+      fetchImpl(url, { method: "GET" }),
+      REACHABLE_TIMEOUT_MS,
+      (actualDurationMs) =>
+        new MCPTimeoutError(serverId, "reachable", REACHABLE_TIMEOUT_MS, actualDurationMs),
+    );
     return { ok: true, status: res.status };
-  } catch {
+  } catch (err) {
+    if (err instanceof MCPTimeoutError) {
+      logger.warn("MCP operation timed out", {
+        operation: "mcp_timeout",
+        serverId: err.serverId,
+        phase: err.phase,
+        timeoutMs: err.timeoutMs,
+        durationMs: err.actualDurationMs,
+      });
+    }
     return { ok: false };
   }
 }
@@ -421,7 +499,7 @@ export async function connectHttp(
   const headers = buildAuthHeaders(auth, resolvedEnv);
 
   // If already reachable, connect directly — no spawn needed.
-  const reachable = await isReachable(url, _fetch);
+  const reachable = await isReachable(url, _fetch, serverId, logger);
   logger.debug(`MCP HTTP reachable check for "${serverId}"`, {
     operation: "mcp_connect",
     serverId,
@@ -486,46 +564,35 @@ async function connectHttpClient(
   serverId: string,
   logger: Logger,
 ): Promise<ConnectedServer> {
-  let attempt = 0;
-  return await retry(async () => {
-    attempt++;
-    logger.debug(`MCP HTTP connection attempt ${attempt} for "${serverId}"`, {
+  logger.debug(`MCP HTTP connection attempt for "${serverId}"`, {
+    operation: "mcp_connect",
+    serverId,
+    url,
+  });
+
+  const httpTransport = new StreamableHTTPClientTransport(new URL(url), {
+    requestInit: { headers },
+  });
+
+  const client = await createMCPClient({ transport: httpTransport });
+
+  let tools: Record<string, Tool>;
+  try {
+    tools = await client.tools();
+  } catch (err) {
+    logger.debug(`MCP HTTP tools() failed for "${serverId}"`, {
       operation: "mcp_connect",
       serverId,
       url,
-      attempt,
+      error: err instanceof Error ? err.message : String(err),
     });
+    await client.close().catch(() => {});
+    throw err;
+  }
 
-    const httpTransport = new StreamableHTTPClientTransport(new URL(url), {
-      requestInit: { headers },
-    });
+  logger.debug(`MCP HTTP connected for "${serverId}"`, { operation: "mcp_connect", serverId, url });
 
-    const client = await createMCPClient({ transport: httpTransport });
-
-    let tools: Record<string, Tool>;
-    try {
-      tools = await client.tools();
-    } catch (err) {
-      logger.debug(`MCP HTTP tools() failed on attempt ${attempt} for "${serverId}"`, {
-        operation: "mcp_connect",
-        serverId,
-        url,
-        attempt,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      await client.close().catch(() => {});
-      throw err;
-    }
-
-    logger.debug(`MCP HTTP connected on attempt ${attempt} for "${serverId}"`, {
-      operation: "mcp_connect",
-      serverId,
-      url,
-      attempt,
-    });
-
-    return { client, tools };
-  }, RETRY_OPTIONS);
+  return { client, tools };
 }
 
 /** Build bearer auth headers from config + resolved env. */

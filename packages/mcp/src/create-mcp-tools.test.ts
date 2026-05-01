@@ -45,36 +45,8 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
   return { ...actual, resolveEnvValues: mockResolveEnvValues };
 });
 
-// Strip retry backoff delays — retry logic is @std/async's responsibility, not ours.
-vi.mock("@std/async/retry", () => {
-  class RetryError extends Error {
-    constructor(
-      public override readonly cause: unknown,
-      public readonly attempts: number,
-    ) {
-      super(`Retrying exceeded the maxAttempts (${attempts}).`);
-      this.name = "RetryError";
-    }
-  }
-  return {
-    RetryError,
-    retry: async (fn: () => Promise<unknown>, opts?: { maxAttempts?: number }) => {
-      const maxAttempts = opts?.maxAttempts ?? 3;
-      let lastError: unknown;
-      for (let i = 0; i < maxAttempts; i++) {
-        try {
-          return await fn();
-        } catch (err) {
-          lastError = err;
-        }
-      }
-      throw new RetryError(lastError, maxAttempts);
-    },
-  };
-});
-
 // Import after mocks
-const { createMCPTools } = await import("./create-mcp-tools.ts");
+const { createMCPTools, MCPTimeoutError } = await import("./create-mcp-tools.ts");
 
 // Fake logger
 const fakeLogger = {
@@ -120,18 +92,20 @@ describe("createMCPTools", () => {
     expect(mockClose).toHaveBeenCalledTimes(1);
   });
 
-  it("throws when a server fails to connect instead of continuing", async () => {
+  it("skips server that fails to connect and returns empty tools", async () => {
     mockCreateMCPClient.mockRejectedValue(new Error("spawn failed"));
 
     const configs: Record<string, MCPServerConfig> = {
       "broken-server": { transport: { type: "stdio", command: "nonexistent", args: [] } },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain("broken-server");
-    expect((error as Error).message).toContain("nonexistent");
-    expect((error as Error).message).toContain("spawn failed");
+    const result = await createMCPTools(configs, fakeLogger);
+    expect(Object.keys(result.tools)).toHaveLength(0);
+    expect(result.disconnected).toHaveLength(0);
+    expect(fakeLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("connection error"),
+      expect.anything(),
+    );
   });
 
   it("skips server with LinkCredentialNotFoundError and continues", async () => {
@@ -379,88 +353,6 @@ describe("createMCPTools", () => {
     expect(result.disconnected[0]?.message).toContain("my-github-server");
   });
 
-  it("retries stdio connection that fails then succeeds", async () => {
-    const fakeTool = { description: "retry tool" };
-    let attempt = 0;
-    mockCreateMCPClient.mockImplementation(() => {
-      attempt++;
-      if (attempt === 1) {
-        return Promise.reject(new Error("ECONNREFUSED"));
-      }
-      return Promise.resolve({
-        tools: vi.fn().mockResolvedValue({ "retry-tool": fakeTool }),
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-    });
-
-    const configs: Record<string, MCPServerConfig> = {
-      "flaky-server": { transport: { type: "stdio", command: "echo", args: [] } },
-    };
-
-    const result = await createMCPTools(configs, fakeLogger);
-
-    expect(result.tools).toHaveProperty("retry-tool");
-    expect(mockCreateMCPClient).toHaveBeenCalledTimes(2);
-  });
-
-  it("retries when stdio tools() verification fails", async () => {
-    let attempt = 0;
-    mockCreateMCPClient.mockImplementation(() => {
-      attempt++;
-      if (attempt === 1) {
-        // Client connects but tools() fails (server not ready)
-        return Promise.resolve({
-          tools: vi.fn().mockRejectedValue(new Error("not ready")),
-          close: vi.fn().mockResolvedValue(undefined),
-        });
-      }
-      return Promise.resolve({
-        tools: vi.fn().mockResolvedValue({ "verified-tool": { description: "ok" } }),
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-    });
-
-    const configs: Record<string, MCPServerConfig> = {
-      "slow-server": { transport: { type: "stdio", command: "echo", args: [] } },
-    };
-
-    const result = await createMCPTools(configs, fakeLogger);
-
-    expect(result.tools).toHaveProperty("verified-tool");
-    // First attempt: createMCPClient + tools() fail → retry
-    // Second attempt: createMCPClient + tools() succeed
-    expect(mockCreateMCPClient).toHaveBeenCalledTimes(2);
-  });
-
-  it("closes leaked client when stdio tools() verification fails before retry", async () => {
-    const failedClose = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-    let attempt = 0;
-    mockCreateMCPClient.mockImplementation(() => {
-      attempt++;
-      if (attempt === 1) {
-        // Client connects but tools() fails — subprocess should be closed
-        return Promise.resolve({
-          tools: vi.fn().mockRejectedValue(new Error("not ready")),
-          close: failedClose,
-        });
-      }
-      return Promise.resolve({
-        tools: vi.fn().mockResolvedValue({ "ok-tool": { description: "ok" } }),
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-    });
-
-    const configs: Record<string, MCPServerConfig> = {
-      "flaky-server": { transport: { type: "stdio", command: "echo", args: [] } },
-    };
-
-    const result = await createMCPTools(configs, fakeLogger);
-
-    expect(result.tools).toHaveProperty("ok-tool");
-    // The failed client from attempt 1 must have been closed
-    expect(failedClose).toHaveBeenCalledTimes(1);
-  });
-
   it("keeps already-connected clients alive when a later server has a credential error", async () => {
     const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
@@ -492,21 +384,23 @@ describe("createMCPTools", () => {
     expect(closeA).toHaveBeenCalledTimes(1);
   });
 
-  it("throws and includes URL when HTTP server fails to connect", async () => {
+  it("skips HTTP server that fails to connect", async () => {
     mockCreateMCPClient.mockRejectedValue(new Error("connection refused"));
 
     const configs: Record<string, MCPServerConfig> = {
       "broken-http": { transport: { type: "http", url: "https://mcp.example.com" } },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain("broken-http");
-    expect((error as Error).message).toContain("https://mcp.example.com");
-    expect((error as Error).message).toContain("connection refused");
+    const result = await createMCPTools(configs, fakeLogger);
+    expect(Object.keys(result.tools)).toHaveLength(0);
+    expect(result.disconnected).toHaveLength(0);
+    expect(fakeLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("connection error"),
+      expect.anything(),
+    );
   });
 
-  it("throws MCPAuthError when HTTP server returns 401", async () => {
+  it("skips HTTP server that returns 401", async () => {
     const { StreamableHTTPError } = await import(
       "@modelcontextprotocol/sdk/client/streamableHttp.js"
     );
@@ -516,14 +410,16 @@ describe("createMCPTools", () => {
       "auth-http": { transport: { type: "http", url: "https://mcp.example.com" } },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf((await import("./create-mcp-tools.ts")).MCPAuthError);
-    expect((error as Error).message).toContain("auth-http");
-    expect((error as Error).message).toContain("https://mcp.example.com");
-    expect((error as Error).message).toContain("invalid token");
+    const result = await createMCPTools(configs, fakeLogger);
+    expect(Object.keys(result.tools)).toHaveLength(0);
+    expect(result.disconnected).toHaveLength(0);
+    expect(fakeLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("connection error"),
+      expect.anything(),
+    );
   });
 
-  it("cleans up already-connected clients when a later server fails", async () => {
+  it("keeps already-connected clients when another server fails", async () => {
     const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
     // Server A connects successfully
@@ -532,7 +428,7 @@ describe("createMCPTools", () => {
         tools: vi.fn().mockResolvedValue({ "tool-a": { description: "from A" } }),
         close: closeA,
       })
-      // Server B fails after retries
+      // Server B fails
       .mockRejectedValue(new Error("spawn failed"));
 
     const configs: Record<string, MCPServerConfig> = {
@@ -540,10 +436,12 @@ describe("createMCPTools", () => {
       "server-b": { transport: { type: "stdio", command: "nonexistent", args: [] } },
     };
 
-    const error = await createMCPTools(configs, fakeLogger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain("server-b");
-    // Server A's client must have been cleaned up before throwing
+    const result = await createMCPTools(configs, fakeLogger);
+    expect(result.tools).toHaveProperty("tool-a");
+    expect(Object.keys(result.tools)).toHaveLength(1);
+    // Server A stays alive — only dispose() should close it
+    expect(closeA).not.toHaveBeenCalled();
+    await result.dispose();
     expect(closeA).toHaveBeenCalledTimes(1);
   });
 
@@ -575,33 +473,6 @@ describe("createMCPTools", () => {
     expect(closeB).toHaveBeenCalledTimes(1);
   });
 
-  it("retries HTTP connection when tools() fails transiently", async () => {
-    let attempt = 0;
-    mockCreateMCPClient.mockImplementation(() => {
-      attempt++;
-      if (attempt === 1) {
-        // HTTP client connects but tools() fails (cold start)
-        return Promise.resolve({
-          tools: vi.fn().mockRejectedValue(new Error("service unavailable")),
-          close: vi.fn().mockResolvedValue(undefined),
-        });
-      }
-      return Promise.resolve({
-        tools: vi.fn().mockResolvedValue({ "http-retry-tool": { description: "ok" } }),
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-    });
-
-    const configs: Record<string, MCPServerConfig> = {
-      "flaky-http": { transport: { type: "http", url: "https://mcp.example.com" } },
-    };
-
-    const result = await createMCPTools(configs, fakeLogger);
-
-    expect(result.tools).toHaveProperty("http-retry-tool");
-    expect(mockCreateMCPClient).toHaveBeenCalledTimes(2);
-  });
-
   it("warns on tool name collision when two servers export same tool", async () => {
     mockCreateMCPClient
       .mockResolvedValueOnce({
@@ -631,7 +502,7 @@ describe("createMCPTools", () => {
     const result = await createMCPTools(configs, fakeLogger);
 
     // Later server wins
-    expect(result.tools["shared-tool"]).toEqual({ description: "from B" });
+    expect(result.tools["shared-tool"]).toMatchObject({ description: "from B" });
     expect(result.tools).toHaveProperty("unique-a");
     expect(result.tools).toHaveProperty("unique-b");
     // Collision warning was logged for server-b
@@ -727,13 +598,11 @@ describe("createMCPTools", () => {
     expect(result.disconnected[0]?.message).not.toContain("different-server");
   });
 
-  it("cleans up already-connected clients when signal is aborted before next server", async () => {
+  it("disposes all connected clients when signal aborts mid-connect", async () => {
     const closeA = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     const controller = new AbortController();
 
-    // Server A connects; abort before server B starts
     mockCreateMCPClient.mockImplementation(() => {
-      // Abort after the first server connects
       controller.abort(new Error("cancelled"));
       return Promise.resolve({
         tools: vi.fn().mockResolvedValue({ "tool-a": { description: "from A" } }),
@@ -751,10 +620,9 @@ describe("createMCPTools", () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe("cancelled");
-    // Server A's client must have been cleaned up
-    expect(closeA).toHaveBeenCalledTimes(1);
-    // Server B should never have been attempted
-    expect(mockCreateMCPClient).toHaveBeenCalledTimes(1);
+    // Both parallel mappers created a client; both get disposed in cleanup
+    expect(closeA).toHaveBeenCalledTimes(2);
+    expect(mockCreateMCPClient).toHaveBeenCalledTimes(2);
   });
 
   it("dispose awaits close() — does not resolve before cleanup finishes", async () => {
@@ -804,8 +672,10 @@ describe("createMCPTools", () => {
 
     expect(result.tools).toHaveProperty("strava_get-activity");
     expect(result.tools).toHaveProperty("strava_list-activities");
-    expect(result.tools["strava_get-activity"]).toEqual({ description: "Fetch an activity" });
-    expect(result.tools["strava_list-activities"]).toEqual({ description: "List activities" });
+    expect(result.tools["strava_get-activity"]).toMatchObject({ description: "Fetch an activity" });
+    expect(result.tools["strava_list-activities"]).toMatchObject({
+      description: "List activities",
+    });
 
     await result.dispose();
   });
@@ -855,6 +725,82 @@ describe("createMCPTools", () => {
 
     await resultA.dispose();
     await resultB.dispose();
+  });
+
+  describe("timeout behaviour", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("listTools timeout isolates the slow server", async () => {
+      // Fast server returns immediately
+      mockCreateMCPClient.mockResolvedValueOnce({
+        tools: vi.fn().mockResolvedValue({ "fast-tool": { description: "fast" } }),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+      // Slow server: createMCPClient resolves, but tools() hangs forever
+      mockCreateMCPClient.mockResolvedValueOnce({
+        tools: vi.fn().mockImplementation(() => new Promise(() => {})),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const configs: Record<string, MCPServerConfig> = {
+        "server-fast": { transport: { type: "stdio", command: "echo", args: [] } },
+        "server-slow": { transport: { type: "stdio", command: "echo", args: [] } },
+      };
+
+      const promise = createMCPTools(configs, fakeLogger);
+
+      // Advance past the 20s listTools timeout (async variant flushes microtasks)
+      await (
+        vi as unknown as { advanceTimersByTimeAsync: (ms: number) => Promise<void> }
+      ).advanceTimersByTimeAsync(21_000);
+
+      const result = await promise;
+
+      expect(result.tools).toHaveProperty("fast-tool");
+      expect(result.tools).not.toHaveProperty("slow-tool");
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        "MCP operation timed out",
+        expect.objectContaining({
+          operation: "mcp_timeout",
+          serverId: "server-slow",
+          phase: "list_tools",
+          timeoutMs: 20_000,
+          durationMs: expect.any(Number),
+        }),
+      );
+    });
+
+    it("callTool timeout enforces the 15min ceiling", async () => {
+      const hangExecute = vi.fn().mockImplementation(() => new Promise(() => {}));
+
+      mockCreateMCPClient.mockResolvedValue({
+        tools: vi
+          .fn()
+          .mockResolvedValue({ "hang-tool": { description: "hangs", execute: hangExecute } }),
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const configs: Record<string, MCPServerConfig> = {
+        hang: { transport: { type: "stdio", command: "echo", args: [] } },
+      };
+
+      const result = await createMCPTools(configs, fakeLogger);
+      expect(result.tools).toHaveProperty("hang-tool");
+
+      const tool = result.tools["hang-tool"]!;
+      const executePromise = tool.execute!({}, { toolCallId: "tc_1", messages: [] });
+
+      // Advance past the 15-minute ceiling
+      vi.advanceTimersByTime(15 * 60 * 1_000 + 1_000);
+
+      await expect(executePromise).rejects.toBeInstanceOf(MCPTimeoutError);
+    });
   });
 
   describe("stdio arg placeholder expansion", () => {

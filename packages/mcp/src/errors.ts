@@ -11,14 +11,17 @@ export class MCPStartupError extends Error {
   }
 }
 
-/** Error thrown when an MCP HTTP server rejects authentication (401). */
-export class MCPAuthError extends Error {
+/** Error thrown when an MCP operation exceeds its hard timeout. */
+export class MCPTimeoutError extends Error {
   constructor(
     public readonly serverId: string,
-    public readonly url: string,
-    message: string,
+    public readonly phase: "reachable" | "list_tools" | "call_tool",
+    public readonly timeoutMs: number,
+    public readonly actualDurationMs: number,
   ) {
-    super(`MCP server "${serverId}" authentication failed (${url}): ${message}`);
-    this.name = "MCPAuthError";
+    super(
+      `MCP ${phase} timed out for ${serverId} after ${actualDurationMs}ms (limit ${timeoutMs}ms)`,
+    );
+    this.name = "MCPTimeoutError";
   }
 }
