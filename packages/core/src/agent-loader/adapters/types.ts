@@ -79,4 +79,6 @@ export interface AgentSummary {
   inputSchema?: Record<string, unknown>;
   /** JSON Schema describing the result-output contract. */
   outputSchema?: Record<string, unknown>;
+  /** Absolute path to the agent's source directory on disk (user agents only). */
+  sourceLocation?: string;
 }

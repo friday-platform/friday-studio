@@ -186,6 +186,10 @@ export const AgentMetadataSchema = z.object({
     .any()
     .optional()
     .meta({ description: "Optional output schema for structured output" }),
+  sourceLocation: z
+    .string()
+    .optional()
+    .meta({ description: "Absolute path to agent source directory (user agents only)" }),
 });
 
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
@@ -428,6 +432,7 @@ export interface AgentRegistry {
         expertise?: { examples: string[] };
         inputSchema?: Record<string, unknown>;
         outputSchema?: Record<string, unknown>;
+        sourceLocation?: string;
       }
     | undefined;
 

@@ -328,9 +328,14 @@ curl -X POST http://localhost:8080/api/agents/register \
 
 `entrypoint` must be an absolute path. The daemon spawns it with
 `FRIDAY_VALIDATE_ID`, collects metadata over NATS, copies the source directory
-to `~/.friday/local/agents/{id}@{version}/`, and reloads the registry. No
-compilation step — the agent process is spawned per invocation and
-communicates with the host via NATS request/reply.
+into the agents registry (under `{FRIDAY_HOME}/agents/{id}@{version}/` — the
+home dir is mid-migration from `~/.atlas` to `~/.friday/local`), and reloads
+the registry. No compilation step — the agent process is spawned per
+invocation and communicates with the host via NATS request/reply.
+
+The register response returns `agent.path` (the install dir). To look up the
+source path of an existing agent, query `GET /api/agents/:id` and read
+`sourceLocation` rather than constructing the path from a constant.
 
 The Friday daemon listens on `localhost:8080` by default (configurable via
 the `FRIDAY_PORT` env var or the `--port` flag if you started the daemon
