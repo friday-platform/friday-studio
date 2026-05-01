@@ -6,6 +6,16 @@ user-invocable: false
 
 # Writing to Memory
 
+## Narrative is the only supported strategy in Friday today
+
+The schema (`workspace.ts:54`) lists four memory strategies — `narrative | retrieval | dedup | kv` — but **only `narrative` is actually wired into the Friday runtime**. The other three are Phase 1b placeholders: the `MdMemoryAdapter` (`packages/adapters-md/src/md-memory-adapter.ts:50`) throws on any non-narrative `store()` call, `memory_save`/`memory_read` error out, and nothing auto-injects.
+
+If a user asks for "vector search over my notes" or "dedup these incoming events" or "KV-style lookup", **don't author a store with the matching strategy** — it won't work. Surface the limitation instead.
+
+For everything narrative actually covers — preferences, standing instructions, durable facts, working notes, anything you want the agent to remember and reference next turn — declare a narrative store and you're done. The default for `upsert_memory_own` is narrative; you rarely need to set it explicitly.
+
+The rest of this skill is about narrative stores.
+
 ## How memory is injected
 
 At the start of every turn, the 20 most recent entries from each narrative store are injected into your system prompt as:
