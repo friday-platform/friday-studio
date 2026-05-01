@@ -58,7 +58,7 @@ describe("validateWorkspaceConfig", () => {
     expect(report).toEqual({ status: "ok", issues: [] });
   });
 
-  it("catches Yena's hallucinated npm package — the primary bug this whole thing exists for", async () => {
+  it("catches a hallucinated npm package — the primary bug this whole thing exists for", async () => {
     // Regression: @joshuarileydev/sqlite-mcp-server does not exist on npm;
     // workspace was accepted and only failed at runtime MCP spawn.
     const config = makeConfig({
@@ -221,7 +221,7 @@ describe("validateWorkspaceConfig", () => {
   });
 
   it("catches a structurally-malformed FSM — Friday's common hallucination", async () => {
-    // Regression: Yena end-to-end QA. Friday authored a workspace with
+    // Regression: end-to-end QA of a knowledge-base workspace. Friday authored a workspace with
     // FSM states like `{type: "action", action: {...}, next: "done"}` —
     // plausible-looking but not the real schema. Workspace imported fine,
     // lint said ok, and the first signal dispatch 500'd with a Zod error
@@ -405,7 +405,7 @@ describe("validateWorkspaceConfig", () => {
   });
 
   describe("unreachable_agent (chat ↔ jobs contract)", () => {
-    // Yena's workspace regression: `agents.kb-agent` declared with SQLite
+    // Regression: a workspace where `agents.kb-agent` declared with SQLite
     // tools, but no job wraps it. Chat can't reach agents directly, so the
     // SQLite tools were silently ignored and the "save" fell back to
     // memory_save. The user said "disaster." This rule catches it at

@@ -69,7 +69,7 @@ describe("npm resolver", () => {
       await expect(resolver.check("mcp-server-sqlite-npx")).resolves.toEqual({ ok: true });
     });
 
-    it("returns not_found for 404 — the Yena bug", async () => {
+    it("returns not_found for 404 — regression for the hallucinated npm package bug", async () => {
       // Regression for the specific hallucination that led here.
       const resolver = createNpmResolver(
         stubFetch({

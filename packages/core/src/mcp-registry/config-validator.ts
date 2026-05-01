@@ -4,7 +4,7 @@
  * Runs at `POST /api/workspaces/create`, `PUT /api/workspaces/:id/config`, and
  * `POST /api/workspaces/:id/lint`. Catches the class of bug where an LLM
  * invents a reference (npm package, agent id, signal name, skill ref, model
- * id, memory store) that looks plausible but doesn't resolve — Yena's
+ * id, memory store) that looks plausible but doesn't resolve — a
  * knowledge-base workspace referenced `@joshuarileydev/sqlite-mcp-server`,
  * which doesn't exist on npm, and we only discovered that at runtime when
  * the MCP subprocess spawn failed.

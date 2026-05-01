@@ -3,7 +3,7 @@ import { interpolatePromptPlaceholders } from "../fsm-engine.ts";
 
 /**
  * Regression for the Mustache-style placeholder failure discovered in the
- * "Yena KB with SQLite" QA: the workspace-chat meta-agent correctly called
+ * knowledge-base with SQLite QA: the workspace-chat meta-agent correctly called
  * the save_entry job tool, the FSM ran, and the agent action failed because
  * its prompt referenced `{{inputs.content}}` / `{{inputs.title}}` and the
  * engine passed the literal template through to the LLM unrendered. The LLM

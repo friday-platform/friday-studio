@@ -15,7 +15,7 @@ describe("compileExecutionToFsm", () => {
   it("produces a valid FSM for a single-agent sequential job", () => {
     const fsm = compileExecutionToFsm("save_entry", baseJob());
 
-    // Regression for the primary bug: Yena's knowledge-base workspace used
+    // Regression for the primary bug: a knowledge-base workspace used
     // this exact shape (one trigger, one agent) and the runtime silently
     // skipped it, returning 404 when Friday dispatched `save`.
     const parsed = FSMDefinitionSchema.parse(fsm);
