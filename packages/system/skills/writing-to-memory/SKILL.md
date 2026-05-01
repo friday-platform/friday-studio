@@ -79,7 +79,7 @@ Anything over ~500 chars (result sets, reports, structured data, analyses) must 
 
 **Step 1 — write to a file, then create an artifact:**
 ```
-write_file(path="/tmp/q1-analysis.md", content=<full content>)
+fs_write_file(path="/tmp/q1-analysis.md", content=<full content>)
 artifacts_create(
   data={type:"file", version:1, data:{path:"/tmp/q1-analysis.md"}},
   title="Q1 email analysis",
@@ -87,6 +87,10 @@ artifacts_create(
 )
 → { artifactId: "art_abc123" }
 ```
+
+`fs_write_file` works in every execution context (workspace-chat, FSM LLM steps, `type: "user"`/`"llm"` agents) and accepts arbitrary host paths. **`write_file` is workspace-chat only** and writes to the session scratch dir (`<friday-home>/scratch/{sessionId}/`) — fine for ephemeral content but not what `artifacts_create` expects when you pass an arbitrary path.
+
+**`artifacts_create` requires the file to already exist on disk.** The storage adapter calls `stat(path)` and rejects with `400 "File not found"` if step 1 was skipped. Always write the file first, even if you only have the content as a string.
 
 **Step 2 — save a terse reference to memory:**
 ```
