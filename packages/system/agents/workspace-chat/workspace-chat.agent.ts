@@ -63,6 +63,10 @@ import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
+import {
+  createAssignWorkspaceSkillTool,
+  createUnassignWorkspaceSkillTool,
+} from "./tools/skill-tools.ts";
 import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
 import { createWebFetchTool } from "./tools/web-fetch.ts";
 import { createWebSearchTool } from "./tools/web-search.ts";
@@ -644,6 +648,10 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const enableMcpServerTool = createEnableMcpServerTool(workspaceId, logger);
         const disableMcpServerTool = createDisableMcpServerTool(workspaceId, logger);
 
+        // Workspace skill management tools
+        const assignSkillTool = createAssignWorkspaceSkillTool(workspaceId, logger);
+        const unassignSkillTool = createUnassignWorkspaceSkillTool(workspaceId, logger);
+
         // Job tools — pass session.streamId so nested job sessions inherit
         // the chat thread ID. The daemon's broadcast hook reads it to skip
         // the originating chat communicator (no echo back to Discord/Slack/etc).
@@ -784,6 +792,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...enableMcpServerTool,
           ...disableMcpServerTool,
           ...listMcpToolsTool,
+          ...assignSkillTool,
+          ...unassignSkillTool,
           delegate: delegateTool,
           load_skill: loadSkillTool,
         };

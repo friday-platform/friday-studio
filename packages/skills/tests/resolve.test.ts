@@ -22,16 +22,17 @@ function makeSummary(overrides: Partial<SkillSummary> & { skillId: string }): Sk
 
 function createMockSkillAdapter(
   overrides: Partial<{
-    listUnassigned: SkillStorageAdapter["listUnassigned"];
+    list: SkillStorageAdapter["list"];
     listAssigned: SkillStorageAdapter["listAssigned"];
     listAssignmentsForJob: SkillStorageAdapter["listAssignmentsForJob"];
+    listJobOnlySkillIds: SkillStorageAdapter["listJobOnlySkillIds"];
   }> = {},
 ): SkillStorageAdapter {
   return {
-    listUnassigned:
-      overrides.listUnassigned ??
+    list:
+      overrides.list ??
       vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: true, data: [] }),
     listAssigned:
       overrides.listAssigned ??
@@ -43,13 +44,17 @@ function createMockSkillAdapter(
       vi
         .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
         .mockResolvedValue({ ok: true, data: [] }),
+    listJobOnlySkillIds:
+      overrides.listJobOnlySkillIds ??
+      vi
+        .fn<() => ReturnType<SkillStorageAdapter["listJobOnlySkillIds"]>>()
+        .mockResolvedValue({ ok: true, data: [] }),
     // Unused methods
     create: vi.fn(),
     publish: vi.fn(),
     get: vi.fn(),
     getById: vi.fn(),
     getBySkillId: vi.fn(),
-    list: vi.fn(),
     listVersions: vi.fn(),
     deleteVersion: vi.fn(),
     setDisabled: vi.fn(),
@@ -72,8 +77,8 @@ describe("resolveVisibleSkills", () => {
   it("returns unassigned skills when no assignments exist", async () => {
     const skill = makeSummary({ skillId: "sk-global" });
     const skills = createMockSkillAdapter({
-      listUnassigned: vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: true, data: [skill] }),
     });
 
@@ -87,8 +92,8 @@ describe("resolveVisibleSkills", () => {
     const assigned = makeSummary({ skillId: "sk-2" });
 
     const skills = createMockSkillAdapter({
-      listUnassigned: vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: true, data: [unassigned] }),
       listAssigned: vi
         .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
@@ -101,12 +106,12 @@ describe("resolveVisibleSkills", () => {
     expect(result.map((s) => s.skillId)).toEqual(["sk-1", "sk-2"]);
   });
 
-  it("still returns assigned skills when listUnassigned fails", async () => {
+  it("still returns assigned skills when list fails", async () => {
     const assigned = makeSummary({ skillId: "sk-assigned" });
 
     const skills = createMockSkillAdapter({
-      listUnassigned: vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: false, error: "db error" }),
       listAssigned: vi
         .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
@@ -122,8 +127,8 @@ describe("resolveVisibleSkills", () => {
     const unassigned = makeSummary({ skillId: "sk-global" });
 
     const skills = createMockSkillAdapter({
-      listUnassigned: vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: true, data: [unassigned] }),
       listAssigned: vi
         .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
@@ -139,8 +144,8 @@ describe("resolveVisibleSkills", () => {
     const skill = makeSummary({ skillId: "sk-overlap" });
 
     const skills = createMockSkillAdapter({
-      listUnassigned: vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: true, data: [skill] }),
       listAssigned: vi
         .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
@@ -174,8 +179,8 @@ describe("resolveVisibleSkills", () => {
     const jobSkill = makeSummary({ skillId: "sk-job" });
 
     const skills = createMockSkillAdapter({
-      listUnassigned: vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: true, data: [globalSkill] }),
       listAssigned: vi
         .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
@@ -194,8 +199,8 @@ describe("resolveVisibleSkills", () => {
     const shared = makeSummary({ skillId: "sk-shared" });
 
     const skills = createMockSkillAdapter({
-      listUnassigned: vi
-        .fn<() => ReturnType<SkillStorageAdapter["listUnassigned"]>>()
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
         .mockResolvedValue({ ok: true, data: [] }),
       listAssigned: vi
         .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()

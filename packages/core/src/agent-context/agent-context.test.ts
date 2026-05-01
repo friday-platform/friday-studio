@@ -97,9 +97,12 @@ describe("buildAgentContext skill injection", () => {
     globalThis.fetch = mockWorkspaceConfigFetch();
 
     // Wire SkillStorage delegates that resolveVisibleSkills + agent-context use
-    vi.spyOn(SkillStorage, "listUnassigned").mockImplementation(() => tempAdapter.listUnassigned());
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
     vi.spyOn(SkillStorage, "listAssigned").mockImplementation((wsId) =>
       tempAdapter.listAssigned(wsId),
+    );
+    vi.spyOn(SkillStorage, "listJobOnlySkillIds").mockImplementation(() =>
+      tempAdapter.listJobOnlySkillIds(),
     );
     vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
   });
@@ -366,7 +369,7 @@ describe("buildAgentContext skill injection", () => {
   it("handles failed global skill fetch gracefully", async () => {
     const workspaceId = "ws-skill-error";
 
-    // Publish a skill so listUnassigned returns it, then make get() fail
+    // Publish a skill so list returns it, then make get() fail
     await tempAdapter.publish("atlas", "broken-skill", "user-1", {
       description: "A broken skill",
       instructions: "Will fail to load",
