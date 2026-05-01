@@ -9,11 +9,16 @@
   import favicon from "$lib/assets/favicon.png";
   import Sidebar from "$lib/components/shared/sidebar.svelte";
   import CommandPalette from "$lib/components/shared/command-palette.svelte";
+  import UpdateBanner from "$lib/components/shared/update-banner.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
+  import { loadUpdateStatus } from "$lib/update-status.svelte";
 
   const { children } = $props();
 
-  if (browser) startHealthPolling();
+  if (browser) {
+    startHealthPolling();
+    void loadUpdateStatus();
+  }
 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { enabled: browser, refetchOnReconnect: true } },
@@ -62,13 +67,16 @@
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
-  <div class="app-shell">
-    <Sidebar />
-    <main>
-      <div class="app-content">
-        {@render children?.()}
-      </div>
-    </main>
+  <div class="app-root">
+    <UpdateBanner />
+    <div class="app-shell">
+      <Sidebar />
+      <main>
+        <div class="app-content">
+          {@render children?.()}
+        </div>
+      </main>
+    </div>
   </div>
 
   {#if paletteOpen}
@@ -79,11 +87,20 @@
 <NotificationPortal />
 
 <style>
-  .app-shell {
+  .app-root {
     background-color: var(--surface-dark);
     block-size: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    background-color: var(--surface-dark);
     display: grid;
+    flex: 1 1 auto;
     grid-template-columns: var(--size-56) 1fr;
+    min-block-size: 0;
     overflow: hidden;
 
     @media (min-width: 1920px) {

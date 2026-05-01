@@ -26,6 +26,13 @@
   import { externalTunnelUrl } from "$lib/daemon-url";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { workspaceQueries } from "$lib/queries";
+  import {
+    checkInFlight,
+    checkNow,
+    justChecked,
+    refreshFromServer,
+    updateStatus,
+  } from "$lib/update-status.svelte";
   import { z } from "zod";
 
   const TunnelStatusSchema = z.object({ url: z.string().nullable() });
@@ -594,8 +601,22 @@
   $effect(() => {
     void (async () => {
       await loadEnv();
-      await Promise.all([loadModels(), loadCatalog(), loadTunnel()]);
+      await Promise.all([loadModels(), loadCatalog(), loadTunnel(), refreshFromServer()]);
     })();
+  });
+
+  function daysSince(iso: string | null): number | null {
+    if (iso === null) return null;
+    const ms = Date.now() - new Date(iso).getTime();
+    if (Number.isNaN(ms) || ms < 0) return null;
+    return Math.floor(ms / (24 * 60 * 60 * 1000));
+  }
+
+  const updateLastSuccessDays = $derived(daysSince(updateStatus.lastSuccessAt));
+  const updateButtonLabel = $derived.by(() => {
+    if (checkInFlight.value && !justChecked.value) return "Checking…";
+    if (justChecked.value) return "Last checked: just now";
+    return "Check for updates";
   });
 
   // ─── Backup & restore ──────────────────────────────────────────────
@@ -770,6 +791,71 @@
   <PageLayout.Body>
     <PageLayout.Content>
       <div class="settings-root">
+        <!-- ─── Available Updates section ─────────────────────────────── -->
+        <section class="section" data-testid="available-updates">
+          <div class="section-header-row">
+            <div class="section-header">
+              <h2>Available Updates</h2>
+            </div>
+          </div>
+
+          <div class="update-row">
+            <span class="update-version">Current: <strong>{updateStatus.current}</strong></span>
+
+            {#if updateStatus.isDev}
+              <span class="update-state">
+                Development build — update check skipped
+              </span>
+            {:else if checkInFlight.value && !justChecked.value}
+              <span class="update-state">Checking…</span>
+            {:else if updateStatus.outOfDate && updateStatus.latest !== null}
+              <span class="update-version">
+                Latest: <strong>{updateStatus.latest}</strong>
+              </span>
+              <span class="update-state warn">
+                ⚠ Update available —
+                <a
+                  href="https://hellofriday.ai/download"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Download new version →
+                </a>
+              </span>
+            {:else if updateStatus.latest !== null && !updateStatus.error}
+              <span class="update-version">
+                Latest: <strong>{updateStatus.latest}</strong>
+              </span>
+              <span class="update-state ok">✓ You're up to date!</span>
+            {:else if updateStatus.latest !== null && updateStatus.error}
+              <span class="update-version">
+                Latest: <strong>{updateStatus.latest}</strong>
+                {#if updateLastSuccessDays !== null}
+                  (last successful check {updateLastSuccessDays}
+                  {updateLastSuccessDays === 1 ? "day" : "days"} ago)
+                {/if}
+              </span>
+              <span class="update-state warn">· Couldn't refresh</span>
+            {:else}
+              <span class="update-state warn">
+                Couldn't check for updates · Last successful check: never
+              </span>
+            {/if}
+          </div>
+
+          {#if !updateStatus.isDev}
+            <div class="actions">
+              <Button
+                variant="secondary"
+                onclick={() => void checkNow()}
+                disabled={checkInFlight.value}
+              >
+                {updateButtonLabel}
+              </Button>
+            </div>
+          {/if}
+        </section>
+
         <!-- ─── Models section ────────────────────────────────────────── -->
         <section class="section">
           <div class="section-header-row">
@@ -1497,5 +1583,36 @@
   }
   .muted {
     color: color-mix(in srgb, var(--color-text), transparent 55%);
+  }
+
+  .update-row {
+    align-items: center;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-1);
+    border-radius: 10px;
+    column-gap: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    font-size: 13px;
+    padding: 12px 16px;
+    row-gap: 6px;
+  }
+  .update-version strong {
+    font-family: var(--font-family-monospace);
+    font-weight: 600;
+  }
+  .update-state {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+  }
+  .update-state.ok {
+    color: var(--color-success);
+  }
+  .update-state.warn {
+    color: var(--color-warning);
+  }
+  .update-state a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 </style>
