@@ -10,9 +10,9 @@ description: >
   authored or modified, or when upsert_agent was just called with
   type:user. Do NOT load to decide whether to author a user agent —
   that decision belongs in the workspace-chat agent_types rules.
-vendored-from: friday-platform/agent-sdk@b7e268af6d17df25bedf43a2b01ed9b6f7933d68
+vendored-from: friday-platform/agent-sdk@321d5f585f0c4313f647cd43ff15b7eea1513ee0
 vendored-path: packages/python/skills/writing-friday-python-agents/
-vendored-version: 0.1.2
+vendored-version: 0.1.3
 ---
 
 <!--
@@ -141,6 +141,63 @@ def execute(prompt: str, ctx: AgentContext):
 
 `{{env.VARIABLE}}` in MCP config references agent environment variables.
 Currently only `stdio` transport is supported.
+
+### Memory — `memory_save` / `memory_read` (platform tools)
+
+The host injects platform memory tools into every agent's tool surface
+automatically — no MCP declaration needed. Most-used:
+
+```python
+# Append a single fact. The store handles persistence + ordering.
+ctx.tools.call("memory_save", {
+    "memoryName": "preferences",
+    "text": "Always archive newsletters from substack.com",
+})
+
+# Read recent entries. (The 20 most recent narrative entries are
+# auto-injected into the LLM-side system prompt every turn — Python
+# agents don't see those, so call memory_read explicitly when you need
+# durable state across runs.)
+result = ctx.tools.call("memory_read", {
+    "memoryName": "preferences",
+    "limit": 50,
+})
+```
+
+**Append semantics — one call per fact, never read-concat-write.**
+
+```python
+# ✅ Correct — one fact per call. Concurrent writers compose cleanly.
+for fact in new_preferences:
+    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
+
+# ❌ Wrong — read-concat-write. Concurrent writers clobber each other,
+#    fights the platform's append/dedup logic, and the next run starts
+#    from a stale snapshot.
+existing = ctx.tools.call("memory_read", {"memoryName": "preferences"})
+combined = existing["text"] + "\n" + "\n".join(new_preferences)
+ctx.tools.call("memory_save", {"memoryName": "preferences", "text": combined})
+```
+
+**Footgun: `ToolCallError` on validation failure.** `ctx.tools.call`
+raises if the store isn't declared in `workspace.yml`, if the entry
+exceeds size limits, or if the host rejects the write. Never swallow
+with bare `except Exception` — that silently drops writes. Surface
+the error through `err()` or let it propagate.
+
+```python
+from friday_agent_sdk import ToolCallError
+
+try:
+    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
+except ToolCallError as e:
+    return err(f"memory_save failed: {e}")
+```
+
+**Stores must use the `narrative` strategy.** Friday's runtime today
+only implements narrative storage; stores declared with other strategies
+(`retrieval`, `dedup`, `kv`) exist in the schema but throw at write time.
+If you're authoring a workspace, just use narrative.
 
 ### ctx.stream — Progress Events
 

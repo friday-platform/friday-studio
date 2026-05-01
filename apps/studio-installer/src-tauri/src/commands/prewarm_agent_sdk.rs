@@ -38,7 +38,7 @@ use std::process::Command;
 
 /// Pinned PyPI version. MUST match
 /// tools/friday-launcher/paths.go::bundledAgentSDKVersion.
-const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.2";
+const BUNDLED_AGENT_SDK_VERSION: &str = "0.1.3";
 
 #[derive(serde::Serialize)]
 pub struct PrewarmResult {
