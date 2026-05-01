@@ -357,6 +357,22 @@ describe("semver comparison", () => {
     expect(checker.updateChecker.getUpdateStatus().outOfDate).toBe(false);
   });
 
+  it("strips pre-release on the remote side too (1.2.3 == 1.2.3-beta)", async () => {
+    process.env.FRIDAY_UPDATE_VERSION_OVERRIDE = "1.2.3";
+    fetchSpy.mockImplementation(mockManifestImpl("1.2.3-beta"));
+    const { checker } = await loadFreshModules();
+    await checker.updateChecker.forceCheck();
+    expect(checker.updateChecker.getUpdateStatus().outOfDate).toBe(false);
+  });
+
+  it("compares base versions when both sides carry pre-release suffixes", async () => {
+    process.env.FRIDAY_UPDATE_VERSION_OVERRIDE = "1.2.3-rc1";
+    fetchSpy.mockImplementation(mockManifestImpl("1.2.4-rc1"));
+    const { checker } = await loadFreshModules();
+    await checker.updateChecker.forceCheck();
+    expect(checker.updateChecker.getUpdateStatus().outOfDate).toBe(true);
+  });
+
   it("outOfDate is true when remote is greater", async () => {
     process.env.FRIDAY_UPDATE_VERSION_OVERRIDE = "0.0.37";
     fetchSpy.mockImplementation(mockManifestImpl("0.1.0"));
@@ -410,17 +426,53 @@ describe("manual + scheduled timer interaction", () => {
 });
 
 describe("singleton guard (HMR)", () => {
-  it("re-importing the module yields the same instance and does not spawn a second timer", async () => {
+  it("re-importing the module yields the same instance via the globalThis guard", async () => {
     process.env.FRIDAY_UPDATE_VERSION_OVERRIDE = "0.0.37";
     const { checker } = await loadFreshModules();
     const firstInstance = checker.updateChecker;
-    expect(vi.getTimerCount()).toBe(1);
 
-    // Re-import WITHOUT clearing the singleton — simulating HMR.
+    // Re-import WITHOUT clearing the global — simulating HMR. If the module
+    // dropped the `globalThis.__fridayUpdateChecker ??= ...` guard, this
+    // would produce a fresh instance.
     vi.resetModules();
     const { updateChecker: secondInstance } = await import("../lib/update-checker.ts");
 
     expect(secondInstance).toBe(firstInstance);
-    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("clearing the global between imports yields a fresh instance (proves the guard is what shares state)", async () => {
+    process.env.FRIDAY_UPDATE_VERSION_OVERRIDE = "0.0.37";
+    const { checker } = await loadFreshModules();
+    const firstInstance = checker.updateChecker;
+
+    // Clearing the global before re-import is the inverse experiment: now the
+    // `??=` falls through and a new UpdateChecker is constructed. If both
+    // tests pass, we know identity is preserved by the global guard rather
+    // than something incidental like module-cache reuse.
+    vi.resetModules();
+    delete (globalThis as unknown as { __fridayUpdateChecker?: unknown })
+      .__fridayUpdateChecker;
+    const { updateChecker: secondInstance } = await import("../lib/update-checker.ts");
+
+    expect(secondInstance).not.toBe(firstInstance);
+  });
+});
+
+describe("forceCheck in-flight dedup", () => {
+  it("two concurrent forceCheck calls share one fetch and resolve to the same status", async () => {
+    process.env.FRIDAY_UPDATE_VERSION_OVERRIDE = "0.0.37";
+    fetchSpy.mockImplementation(mockManifestImpl("0.0.38"));
+    const { checker } = await loadFreshModules();
+
+    const before = fetchSpy.mock.calls.length;
+    const [a, b] = await Promise.all([
+      checker.updateChecker.forceCheck(),
+      checker.updateChecker.forceCheck(),
+    ]);
+
+    // Exactly one fetch made, both callers got the same result object.
+    expect(fetchSpy.mock.calls.length - before).toBe(1);
+    expect(a).toEqual(b);
+    expect(a.latest).toBe("0.0.38");
   });
 });

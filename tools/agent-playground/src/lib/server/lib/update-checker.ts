@@ -54,6 +54,14 @@ function compareSemver(a: string, b: string): number {
   return aPat - bPat;
 }
 
+function defaultSidecarDir(): string | null {
+  // Deno globals are absent under pure Node (e.g. a future linter or codemod
+  // importing this module). Returning null falls through to dev mode rather
+  // than crashing module load.
+  if (typeof Deno === "undefined") return null;
+  return dirname(Deno.execPath());
+}
+
 function readStudioVersion(): { version: string; isDev: boolean } {
   const override = process.env.FRIDAY_UPDATE_VERSION_OVERRIDE;
   if (override && override.trim().length > 0) {
@@ -61,13 +69,15 @@ function readStudioVersion(): { version: string; isDev: boolean } {
   }
   // FRIDAY_UPDATE_SIDECAR_DIR is an internal test-only override —
   // production reads the sidecar from dirname(Deno.execPath()).
-  const sidecarDir = process.env.FRIDAY_UPDATE_SIDECAR_DIR ?? dirname(Deno.execPath());
-  try {
-    const sidecarPath = join(sidecarDir, ".studio-version");
-    const version = readFileSync(sidecarPath, "utf8").trim();
-    if (version) return { version, isDev: false };
-  } catch {
-    // Missing sidecar → dev mode.
+  const sidecarDir = process.env.FRIDAY_UPDATE_SIDECAR_DIR ?? defaultSidecarDir();
+  if (sidecarDir !== null) {
+    try {
+      const sidecarPath = join(sidecarDir, ".studio-version");
+      const version = readFileSync(sidecarPath, "utf8").trim();
+      if (version) return { version, isDev: false };
+    } catch {
+      // Missing sidecar → dev mode.
+    }
   }
   return { version: "0.0.0-dev", isDev: true };
 }
