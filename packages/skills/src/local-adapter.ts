@@ -509,29 +509,6 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
 
   // ─── SCOPED LISTING ─────────────────────────────────────────────────────────
 
-  /** Skills with no assignments — visible to every workspace. */
-  async listUnassigned(): Promise<Result<SkillSummary[], string>> {
-    const db = await this.getDb();
-    const rows = db
-      .prepare(`
-        SELECT s.id, s.skill_id, s.namespace, s.name, s.description, s.disabled, s.version as latestVersion, s.created_at, s.frontmatter
-        FROM skills s
-        INNER JOIN (
-          SELECT skill_id, MAX(version) as max_version
-          FROM skills
-          GROUP BY skill_id
-        ) latest ON s.skill_id = latest.skill_id AND s.version = latest.max_version
-        LEFT JOIN skill_assignments sa ON s.skill_id = sa.skill_id
-        WHERE s.name IS NOT NULL
-          AND s.description != ''
-          AND s.disabled = 0
-          AND sa.skill_id IS NULL
-        ORDER BY s.namespace, s.name
-      `)
-      .all() as SkillRow[];
-    return success(rows.map(rowToSummary));
-  }
-
   async listAssigned(workspaceId: string): Promise<Result<SkillSummary[], string>> {
     const db = await this.getDb();
     // Workspace-level only — job-level rows (job_name IS NOT NULL) are

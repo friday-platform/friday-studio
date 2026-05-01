@@ -22,7 +22,6 @@ vi.mock("@atlas/skills", async (importOriginal) => {
     ...actual,
     SkillStorage: {
       list: empty,
-      listUnassigned: empty,
       listAssigned: empty,
       listAssignmentsForJob: empty,
     },

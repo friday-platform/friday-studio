@@ -11,7 +11,7 @@ export interface ResolveVisibleSkillsOptions {
    *
    * Additive only: a job never *loses* access to workspace-level or global
    * skills because it has a job-level layer. Runtime visible set is:
-   *   global_unassigned ∪ workspace_assigned ∪ job_assigned(workspace, jobName)
+   *   all_catalog_skills ∪ workspace_assigned ∪ job_assigned(workspace, jobName)
    */
   jobName?: string;
 }
@@ -20,15 +20,14 @@ export interface ResolveVisibleSkillsOptions {
  * Resolve the full set of skills visible to a workspace (and optionally a
  * specific job inside it):
  *
- *   (skills with no assignments)
+ *   (all non-disabled named skills in the catalog)
  *   ∪ (skills assigned workspace-level to this workspace)
  *   ∪ (skills assigned at the job level, when options.jobName is set)
  *
- * Skills with no `skill_assignments` rows are global; workspace-level rows
- * (`job_name IS NULL`) are visible to every job in the workspace; job-level
- * rows are visible *only* to the specified job.
- *
- * Deduplicates by skillId so a skill assigned at multiple layers appears once.
+ * The assignment table is additive and organizational — assigning a skill to
+ * one workspace does not remove it from others. Disabled skills are excluded
+ * globally. Deduplicates by skillId so a skill assigned at multiple layers
+ * appears once.
  */
 export async function resolveVisibleSkills(
   workspaceId: string,
@@ -37,16 +36,16 @@ export async function resolveVisibleSkills(
 ): Promise<SkillSummary[]> {
   const { jobName } = options;
 
-  const [unassignedResult, directResult, jobResult] = await Promise.all([
-    skills.listUnassigned(),
+  const [allResult, directResult, jobResult] = await Promise.all([
+    skills.list(),
     skills.listAssigned(workspaceId),
     jobName
       ? skills.listAssignmentsForJob(workspaceId, jobName)
       : Promise.resolve({ ok: true as const, data: [] as SkillSummary[] }),
   ]);
 
-  if (!unassignedResult.ok) {
-    logger.warn("Failed to list unassigned skills", { error: unassignedResult.error, workspaceId });
+  if (!allResult.ok) {
+    logger.warn("Failed to list all skills", { error: allResult.error, workspaceId });
   }
   if (!directResult.ok) {
     logger.warn("Failed to list assigned skills", { error: directResult.error, workspaceId });
@@ -59,13 +58,13 @@ export async function resolveVisibleSkills(
     });
   }
 
-  const unassigned = unassignedResult.ok ? unassignedResult.data : [];
+  const all = allResult.ok ? allResult.data : [];
   const direct = directResult.ok ? directResult.data : [];
   const jobAssigned = jobResult.ok ? jobResult.data : [];
 
   const seen = new Set<string>();
   const result: SkillSummary[] = [];
-  for (const skill of [...unassigned, ...direct, ...jobAssigned]) {
+  for (const skill of [...all, ...direct, ...jobAssigned]) {
     if (!seen.has(skill.skillId)) {
       seen.add(skill.skillId);
       result.push(skill);

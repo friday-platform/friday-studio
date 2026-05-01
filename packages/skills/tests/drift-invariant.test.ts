@@ -37,7 +37,7 @@ describe("F.1 drift invariant — prompt ≡ tool", () => {
     // The load-skill tool always hits the lazy SkillStorage singleton — wire
     // it to this test's adapter so defense-in-depth checks see the same data
     // the resolver does.
-    vi.spyOn(SkillStorage, "listUnassigned").mockImplementation(() => adapter.listUnassigned());
+    vi.spyOn(SkillStorage, "list").mockImplementation(() => adapter.list());
     vi.spyOn(SkillStorage, "listAssigned").mockImplementation((wsId) => adapter.listAssigned(wsId));
     vi.spyOn(SkillStorage, "listAssignmentsForJob").mockImplementation((ws, job) =>
       adapter.listAssignmentsForJob(ws, job),
