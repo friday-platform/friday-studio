@@ -231,9 +231,9 @@ The autopilot/self-modification loop uses this surface heavily. See
 - Deploy and register an SDK agent
 
 **For authoring SDK agents** (NATS clients): use the sibling
-`writing-friday-agents` skill. The Python SDK (`friday_agent_sdk`) is the
+`writing-friday-python-agents` skill. The Python SDK (`friday_agent_sdk`) is the
 current reference implementation. This skill covers deploy + register;
-`writing-friday-agents` covers the source.
+`writing-friday-python-agents` covers the source.
 
 ## Output formats — the `--json` and `--human` convention
 
@@ -282,6 +282,6 @@ image.
 - `references/http.md` — every HTTP route with request/response shape and side effects
 - `references/recipes.md` — end-to-end recipes for the autopilot/self-mod flywheel
 - `references/session-and-logs.md` — SessionView shape, aiSummary, SSE event types, log structure — the "did it work?" surface
-- `writing-friday-agents` skill — authoring SDK agents (NATS clients)
+- `writing-friday-python-agents` skill — authoring SDK agents (NATS clients)
 - `debugging-friday` skill — log forensics, GCS, multi-hop correlation
 - Project docs: `docs/STUDIO_QUICKSTART.md`, `docs/product-map.md`

@@ -84,11 +84,6 @@ const WORKSPACE_API_SKILL = await readFile(
   "utf8",
 );
 
-const WRITING_FRIDAY_AGENTS_SKILL = await readFile(
-  resolve(ROOT, "packages/system/skills/writing-friday-agents/SKILL.md"),
-  "utf8",
-);
-
 const WRITING_FRIDAY_PYTHON_AGENTS_SKILL = await readFile(
   resolve(ROOT, "packages/system/skills/writing-friday-python-agents/SKILL.md"),
   "utf8",
@@ -105,7 +100,6 @@ const WORKSPACE_SECTION = `<workspace id="ws-eval" name="eval-workspace">
 const AVAILABLE_SKILLS_SECTION = `<available_skills>
 <instruction>Load skills with load_skill when task matches.</instruction>
 <skill name="@friday/workspace-api">Create, list, update, delete, and clean up workspaces via the daemon HTTP API. Use when the user asks to create, edit, delete, or list workspaces.</skill>
-<skill name="@friday/writing-friday-agents">Dispatcher for authoring Friday user agents. Routes to the language-specific guide (currently writing-friday-python-agents).</skill>
 <skill name="@friday/writing-friday-python-agents">Authoring guide for Python user agents (type:user) via friday-agent-sdk. Load when an agent.py exists in scope, when imports from friday_agent_sdk are present, when an at-agent decorator is being authored, or when upsert_agent was just called with type:user. Do NOT load to decide whether to author a user agent.</skill>
 </available_skills>`;
 
@@ -213,7 +207,7 @@ const UPSERT_AGENT_DESCRIPTION =
   "If the agent calls `ctx.llm.generate` to make any decision (classifying, " +
   'summarizing, choosing among options, scoring confidence), use `type: "llm"` ' +
   "instead — the LLM judgment belongs in an inline llm agent with MCP tools, " +
-  "not buried inside Python. See `writing-friday-agents` skill.\n\n" +
+  "not buried inside Python. See `writing-friday-python-agents` skill.\n\n" +
   "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
   "Pass `workspaceId` to target a workspace other than the current session.";
 
@@ -292,13 +286,6 @@ function buildToolset(captures: CapturedToolCalls) {
             name: "@friday/workspace-api",
             description: "Workspace authoring guide.",
             instructions: WORKSPACE_API_SKILL,
-          } as const;
-        }
-        if (name === "@friday/writing-friday-agents") {
-          return {
-            name: "@friday/writing-friday-agents",
-            description: "User-agent dispatcher.",
-            instructions: WRITING_FRIDAY_AGENTS_SKILL,
           } as const;
         }
         if (name === "@friday/writing-friday-python-agents") {

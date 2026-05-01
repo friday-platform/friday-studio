@@ -92,7 +92,7 @@ value of running an LLM, or when the task needs libraries the LLM
 can't reach (Pandas, PIL, custom compiled code).
 
 The agent itself is built out-of-band with the `atlas agent build`
-toolchain — see the `writing-friday-agents` skill. The workspace
+toolchain — see the `writing-friday-python-agents` skill. The workspace
 config only references the registered `agent` id.
 
 **Shape.**

@@ -218,7 +218,7 @@ const UPSERT_AGENT_DESCRIPTION =
   '- `type: "user"` — registered Python/TS SDK code agent. Shape: ' +
   "`{ type, agent, prompt?, env? }`. " +
   "Use when the work is mechanical (parsing, transforming, deterministic routing) " +
-  "or when LLM-loop cost dominates the value. See `writing-friday-agents` skill.\n\n" +
+  "or when LLM-loop cost dominates the value. See `writing-friday-python-agents` skill.\n\n" +
   "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
   "Pass `workspaceId` to target a workspace other than the current session.";
 

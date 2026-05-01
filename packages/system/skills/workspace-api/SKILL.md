@@ -195,7 +195,7 @@ To abandon a draft: `discard_draft`.
 
 **For MCP server questions (install vs enable, credentials, catalog search):** load the `using-mcp-servers` skill. `workspace-api` does not cover MCP scope.
 
-**For broken Python/TS agent code (workspace YAML validates clean but the job fails at runtime):** load `@friday/writing-friday-agents`. Fix the agent source via `write_file` + re-register via the daemon API. Once you can name the specific fix, stop diagnosing and apply it — don't keep investigating because something else might also be broken.
+**For broken Python/TS agent code (workspace YAML validates clean but the job fails at runtime):** load `@friday/writing-friday-python-agents`. Fix the agent source via `write_file` + re-register via the daemon API. Once you can name the specific fix, stop diagnosing and apply it — don't keep investigating because something else might also be broken.
 
 **For codebase exploration or multi-file edits:** `agent_claude-code` is the right tool.
 
@@ -318,7 +318,7 @@ A common pattern: the user and chat prove out a flow interactively using real MC
 The cheat-sheet table covers the decision rule. These are worked examples for each authorable type.
 
 - **`atlas` (bundled platform agent).** Browse + scrape + summarise the top headlines from Hacker News → `type: atlas, agent: "web"`. Send a daily email summary → `type: atlas, agent: "email"`. Post a daily standup to Slack → `type: atlas, agent: "slack"`. The bundled agent already knows the domain — you supply intent in `prompt`, not mechanics.
-- **`user` (Python or TS SDK agent).** A parser that extracts structured fields from 10,000 PDFs and writes to SQLite → `user` (Python). A tile renderer using PIL → `user`. Reach for `user` when the work is mechanical, the LLM-loop tax dominates, or the task needs libraries unavailable to the LLM (Pandas, PIL, custom compiled code). Python-agent authoring is an out-of-flow step the user kicks off explicitly — see the `writing-friday-agents` skill.
+- **`user` (Python or TS SDK agent).** A parser that extracts structured fields from 10,000 PDFs and writes to SQLite → `user` (Python). A tile renderer using PIL → `user`. Reach for `user` when the work is mechanical, the LLM-loop tax dominates, or the task needs libraries unavailable to the LLM (Pandas, PIL, custom compiled code). Python-agent authoring is an out-of-flow step the user kicks off explicitly — see the `writing-friday-python-agents` skill.
 - **`llm` (inline LLM with prompt + tools).** A triage agent that reads an email and classifies "urgent / tracking / ignore" with no bundled fit → `type: llm`. Use `llm` when the logic is "figure out what to do" *and* no bundled agent covers the domain. If a bundled agent covers the domain, prefer `atlas` even when the work is reasoning-heavy.
 - **Hybrid.** A map-builder that calls an LLM for design but Python for tile rendering — one `llm` agent delegates to one `user` agent for the render step.
 
@@ -381,5 +381,5 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 - `writing-workspace-jobs` skill — FSM job authoring: trigger wiring, MCP tool naming, state-machine shapes, validation error decoder, runtime anti-patterns. Load before creating or editing any `fsm:` job.
 - `writing-workspace-signals` skill — Signal authoring: JSON Schema payloads, provider configs, HTTP path collisions, cron validation, runtime payload checks. Load before creating or editing any signal that accepts parameters or needs a webhook endpoint.
 - `using-mcp-servers` skill — MCP catalog, install/enable/disable, credentials, delegation.
-- `writing-friday-agents` skill — authoring and registering Python/TS SDK agents.
+- `writing-friday-python-agents` skill — authoring and registering Python/TS SDK agents.
 - `friday-cli` skill — daemon lifecycle, signal triggering, session streaming, log forensics.

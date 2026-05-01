@@ -225,7 +225,7 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         "If the agent calls `ctx.llm.generate` to make any decision (classifying, " +
         'summarizing, choosing among options, scoring confidence), use `type: "llm"` ' +
         "instead — the LLM judgment belongs in an inline llm agent with MCP tools, " +
-        "not buried inside Python. See `writing-friday-agents` skill.\n\n" +
+        "not buried inside Python. See `writing-friday-python-agents` skill.\n\n" +
         "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
         "Pass `workspaceId` to target a workspace other than the current session.",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),

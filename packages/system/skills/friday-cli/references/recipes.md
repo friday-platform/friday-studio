@@ -155,7 +155,7 @@ An SDK agent is a NATS client — any language that can connect to NATS and spea
 the request/reply protocol. The Python SDK (`friday_agent_sdk`) is the current
 reference implementation.
 
-**Full authoring workflow: use the `writing-friday-agents` skill.**
+**Full authoring workflow: use the `writing-friday-python-agents` skill.**
 
 Register via HTTP (no build step — agent process is spawned per invocation):
 

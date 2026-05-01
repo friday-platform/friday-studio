@@ -184,7 +184,7 @@ No read-verify-read. No incremental edits. No bash loop to verify intermediate s
 
 Agent registration goes through `upsert_agent` only. Never `curl /api/agents/register` from `run_code`, never multipart uploads, never bash workarounds. If `upsert_agent` returns an error, fix the input shape and retry — do not shell out. The workspace-design flow is the only path that produces a valid registered agent; raw-curl registration skips the validation that makes the workspace useful.
 
-Diagnosis rule: once you can name the specific fix, stop investigating and execute it. Don't keep diagnosing because something else might also be broken. If the workspace YAML validates clean but the job fails at runtime, the broken thing is likely agent code — tell the user, then load `@friday/writing-friday-agents` and fix via `write_file` + re-register. After registering a new version, exercise it via `POST /api/agents/:id/run?workspaceId=…` with at least one fixture before declaring it fixed — registered ≠ working.
+Diagnosis rule: once you can name the specific fix, stop investigating and execute it. Don't keep diagnosing because something else might also be broken. If the workspace YAML validates clean but the job fails at runtime, the broken thing is likely agent code — tell the user, then load `@friday/writing-friday-python-agents` and fix via `write_file` + re-register. After registering a new version, exercise it via `POST /api/agents/:id/run?workspaceId=…` with at least one fixture before declaring it fixed — registered ≠ working.
 </workspace_modification>
 
 <response_style>
