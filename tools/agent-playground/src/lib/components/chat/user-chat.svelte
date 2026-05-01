@@ -6,12 +6,6 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { workspaceQueries } from "$lib/queries";
-  import {
-    buildBacklogEntry,
-    expandScheduleInput,
-    parseScheduleCommand,
-    submitBacklogEntry,
-  } from "$lib/scheduling/fast-task-scheduler";
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
@@ -26,7 +20,7 @@
     hasErrorPart,
     hasRenderableContent,
   } from "./message-error.ts";
-  import type { ChatMessage, ImageDisplay, ScheduleProposal, Segment, ToolCallDisplay } from "./types";
+  import type { ChatMessage, ImageDisplay, Segment, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
   import {
     accumulateValidationAttempts,
@@ -118,10 +112,6 @@
    *   { id, message, datetime? }
    *
    * The Chat instance owns message state, streaming, and error handling.
-   * The component only adds a parallel `localEvents` channel for the
-   * `/schedule` slash-command flow (task briefs expanded via smallLLM and
-   * submitted to the FAST autopilot backlog) — that UX is playground-only
-   * and never round-trips through the chat agent.
    *
    */
   const CHAT_API = $derived(`/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat`);
@@ -139,14 +129,6 @@
   /** Set when resumeStream returns 204 and the last loaded message was unanswered. */
   let wasInterrupted = $state(false);
 
-  /**
-   * Parallel "local event stream" for playground-specific UI that doesn't
-   * originate from the Chat instance: `/schedule` proposal cards, confirm/
-   * cancel toasts, and expansion progress messages. Rendered after
-   * `chat.messages` in the message list so proposals always appear at the
-   * bottom of the thread while they're live.
-   */
-  let localEvents: ChatMessage[] = $state([]);
   let error: string | null = $state(null);
 
 
@@ -316,7 +298,6 @@
     const _trackChat = chatId; // explicit dependency on chatId prop
     void _trackChat;
 
-    localEvents = [];
     initialMessages = [];
     error = null;
     wasInterrupted = false;
@@ -968,9 +949,7 @@
   }
 
   /**
-   * Derive the unified display list: real chat turns from the AI SDK plus
-   * playground-local events (schedule proposals, system toasts). Chat
-   * messages come first (ordered by AI SDK), local events tail at the end.
+   * Derive the unified display list of chat turns from the AI SDK.
    *
    * **Phantom-assistant filter**: our `AtlasWebAdapter` emits `data-session-
    * start` as the first stream chunk, BEFORE AI SDK's `start` chunk. AI SDK's
@@ -988,7 +967,7 @@
    * up with a live status card before the first text-delta arrives.
    */
   const displayedMessages: ChatMessage[] = $derived.by(() => {
-    if (!chat) return [...localEvents];
+    if (!chat) return [];
     const rawMessages = chat.messages.filter((msg) => {
       if (msg.role !== "assistant") return true;
       return hasRenderableContent(msg);
@@ -1019,99 +998,8 @@
         },
       };
     });
-    return [...chatMsgs, ...localEvents];
+    return chatMsgs;
   });
-
-  /**
-   * `/schedule <nl prompt>` — expand via smallLLM into a full FAST task
-   * brief, show a proposal card, and only POST to the backlog on confirm.
-   * Lives entirely in `localEvents`; never touches the chat agent.
-   */
-  async function handleScheduleCommand(input: string): Promise<void> {
-    localEvents = [
-      ...localEvents,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        segments: [{ type: "text", content: `/schedule ${input}` }],
-        timestamp: Date.now(),
-      },
-    ];
-
-    const thinkingId = crypto.randomUUID();
-    localEvents = [
-      ...localEvents,
-      { id: thinkingId, role: "system", segments: [{ type: "text", content: "Expanding task brief..." }], timestamp: Date.now() },
-    ];
-
-    try {
-      const proposal = await expandScheduleInput(input);
-      localEvents = localEvents
-        .filter((m) => m.id !== thinkingId)
-        .concat({
-          id: crypto.randomUUID(),
-          role: "system",
-          segments: [],
-          timestamp: Date.now(),
-          scheduleProposal: proposal,
-        });
-    } catch (err) {
-      localEvents = localEvents.filter((m) => m.id !== thinkingId);
-      const msg = err instanceof Error ? err.message : String(err);
-      error = `Schedule expansion failed: ${msg}`;
-      console.error("Schedule expansion error", { error: msg });
-    }
-  }
-
-  /**
-   * Confirm / cancel handler wired to schedule proposal cards in the
-   * message list. Confirm submits the backlog entry; cancel just dismisses
-   * the card and leaves a breadcrumb system toast.
-   */
-  async function handleScheduleAction(
-    action: "confirm" | "cancel",
-    messageId: string,
-    proposal?: ScheduleProposal,
-  ): Promise<void> {
-    if (action === "cancel") {
-      localEvents = localEvents
-        .filter((m) => m.id !== messageId)
-        .concat({
-          id: crypto.randomUUID(),
-          role: "system",
-          segments: [{ type: "text", content: "Scheduling cancelled" }],
-          timestamp: Date.now(),
-        });
-      return;
-    }
-
-    if (action === "confirm" && proposal) {
-      localEvents = localEvents.filter((m) => m.id !== messageId);
-
-      try {
-        const entry = buildBacklogEntry(proposal);
-        const result = await submitBacklogEntry(entry);
-
-        if (result.ok) {
-          localEvents = [
-            ...localEvents,
-            {
-              id: crypto.randomUUID(),
-              role: "system",
-              segments: [{ type: "text", content: `Queued FAST task ${result.taskId} at priority ${result.priority}` }],
-              timestamp: Date.now(),
-            },
-          ];
-        } else {
-          error = result.error ?? "Failed to queue task";
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        error = `Failed to queue task: ${msg}`;
-        console.error("Schedule submit error", { error: msg });
-      }
-    }
-  }
 
   /** Navigate to a fresh chat. The loader generates the new chatId. */
   function startNewChat() {
@@ -1125,14 +1013,6 @@
   }
 
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
-    // Intercept /schedule slash-command before it reaches the chat agent.
-    // Run even during streaming — it's a client-only flow.
-    const scheduleCmd = parseScheduleCommand(text);
-    if (scheduleCmd) {
-      void handleScheduleCommand(scheduleCmd.input);
-      return;
-    }
-
     if (!chat) return;
     error = null;
     wasInterrupted = false;
@@ -1302,7 +1182,6 @@
 
       <ChatMessageList
         messages={displayedMessages}
-        onScheduleAction={handleScheduleAction}
         onCredentialConnected={handleCredentialConnected}
         {thinking}
         {validationAttemptsBySession}

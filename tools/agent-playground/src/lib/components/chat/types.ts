@@ -9,25 +9,14 @@
  * errors). The types here are just the thin wrappers used by:
  *
  *   1. `ChatMessage` — render-time shape for the message list, which
- *      flattens AtlasUIMessage's `parts` array into a single text string
- *      and carries an optional schedule-proposal side-channel.
- *   2. `ScheduleProposal` — payload shown in the confirm/cancel card when
- *      the user types `/schedule <nl>`.
- *   3. `GetChatResponseSchema` — Zod shape of the rehydrate endpoint so the
+ *      flattens AtlasUIMessage's `parts` array into a single text string.
+ *   2. `GetChatResponseSchema` — Zod shape of the rehydrate endpoint so the
  *      component can recover from a page reload.
  *
  * @module
  */
 
 import { z } from "zod";
-
-export interface ScheduleProposal {
-  taskId: string;
-  text: string;
-  taskBrief: string;
-  priority: number;
-  kind: "feature" | "improvement" | "bugfix";
-}
 
 /**
  * UI-side mirror of @atlas/mcp's DisconnectedIntegration. Defined locally
@@ -146,7 +135,6 @@ export interface ChatMessage {
    */
   segments: Segment[];
   timestamp: number;
-  scheduleProposal?: ScheduleProposal;
   /** Image attachments from the user (data URLs from drag-drop / paste). */
   images?: ImageDisplay[];
   /**

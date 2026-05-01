@@ -1,8 +1,7 @@
 <script lang="ts">
   import { DropdownMenu, markdownToHTML } from "@atlas/ui";
   import { tick, untrack } from "svelte";
-  import type { ChatMessage, ImageDisplay, ScheduleProposal, ToolCallDisplay } from "./types";
-  import ScheduleProposalCard from "./schedule-proposal-card.svelte";
+  import type { ChatMessage, ImageDisplay, ToolCallDisplay } from "./types";
   import ToolCallCard from "./tool-call-card.svelte";
   import { isError, isInProgress, needsUserAction } from "./tool-call-utils";
   import { IconSmall } from "@atlas/ui";
@@ -35,11 +34,6 @@
 
   interface Props {
     messages: ChatMessage[];
-    onScheduleAction?: (
-      action: "confirm" | "cancel",
-      messageId: string,
-      proposal?: ScheduleProposal,
-    ) => void;
     /** Called when the user successfully connects a credential via an inline connect_service card. */
     onCredentialConnected?: (provider: string) => void;
     /**
@@ -60,7 +54,6 @@
 
   const {
     messages,
-    onScheduleAction,
     onCredentialConnected,
     thinking = false,
     validationAttemptsBySession,
@@ -280,21 +273,12 @@
 
 <div class="message-list" bind:this={containerEl} onscroll={handleScroll}>
   {#each messages as message (message.id)}
-    {#if message.scheduleProposal}
-      <div class="message system" style="align-self: center; max-inline-size: 90%;">
-        <ScheduleProposalCard
-          proposal={message.scheduleProposal}
-          onconfirm={(p) => onScheduleAction?.("confirm", message.id, p)}
-          oncancel={() => onScheduleAction?.("cancel", message.id)}
-        />
-      </div>
-    {:else}
-      <div
-        class="message"
-        class:user={message.role === "user"}
-        class:assistant={message.role === "assistant"}
-        class:system={message.role === "system"}
-      >
+    <div
+      class="message"
+      class:user={message.role === "user"}
+      class:assistant={message.role === "assistant"}
+      class:system={message.role === "system"}
+    >
         {#if message.role === "system"}
           {@const text = message.segments
             .filter((s): s is { type: "text"; content: string } => s.type === "text")
@@ -477,9 +461,8 @@
               {/snippet}
             </DropdownMenu.Root>
           </div>
-        {/if}
-      </div>
-    {/if}
+      {/if}
+    </div>
   {/each}
 
   {#if thinking}
