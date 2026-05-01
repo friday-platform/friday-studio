@@ -710,6 +710,10 @@ async function main(): Promise<void> {
     console.log("[build-studio] --skip-compile set, skipping deno + go compile");
   }
 
+  // Sidecar read at playground startup via dirname(Deno.execPath()) to
+  // distinguish release builds from `deno task playground` (no sidecar → dev).
+  await Deno.writeTextFile(join(binStaging, ".studio-version"), `${opts.version}\n`);
+
   if (!opts.skipExternal) {
     for (const cli of EXTERNAL_CLIS) {
       await bundleExternalCli(opts.target, cli, binStaging, scratchDir);
