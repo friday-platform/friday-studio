@@ -582,13 +582,13 @@ func TestAutostartSelfRegister(t *testing.T) {
 		t.Fatalf("plist not written: %v", err)
 	}
 	// Stack 3: ProgramArguments is the bundle-ID variant
-	// `["/usr/bin/open", "-b", "ai.hellofriday.studio-launcher", ...]`
-	// rather than a raw exe path. Decision #29.
+	// `["/usr/bin/open", "-b", "<launcherBundleID>", ...]` rather
+	// than a raw exe path. Decision #29.
 	if !strings.Contains(string(data), "<string>/usr/bin/open</string>") {
 		t.Errorf("plist missing /usr/bin/open\n--- plist ---\n%s", string(data))
 	}
-	if !strings.Contains(string(data), "<string>ai.hellofriday.studio-launcher</string>") {
-		t.Errorf("plist missing bundle id\n--- plist ---\n%s", string(data))
+	if !strings.Contains(string(data), "<string>"+launcherBundleID+"</string>") {
+		t.Errorf("plist missing bundle id %q\n--- plist ---\n%s", launcherBundleID, string(data))
 	}
 	if !strings.Contains(string(data), "<string>--no-browser</string>") {
 		t.Error("plist missing --no-browser arg")
@@ -665,13 +665,19 @@ func TestAutostartStalenessRepair(t *testing.T) {
 	})
 	// Poll for the plist to be repaired. Stack 3 plists target the
 	// bundle ID rather than a raw path, so success is "stale path
-	// gone AND bundle ID present" rather than "launcher path
-	// present" (the launcher binary path is no longer in the
-	// plist).
+	// gone AND `open -b <bundleID>` shape present" rather than
+	// "launcher path present" (the launcher binary path is no
+	// longer in the plist). The `-b` token uniquely identifies the
+	// new shape — the stale plist's ProgramArguments don't contain
+	// it, while the bundle-ID string alone also appears in the
+	// plist's <Label>, so it's not a discriminator on its own.
 	for range 60 {
 		data, err := os.ReadFile(plistPath)
-		if err == nil && !strings.Contains(string(data), stalePath) &&
-			strings.Contains(string(data), "ai.hellofriday.studio-launcher") {
+		s := string(data)
+		if err == nil && !strings.Contains(s, stalePath) &&
+			strings.Contains(s, "<string>/usr/bin/open</string>") &&
+			strings.Contains(s, "<string>-b</string>") &&
+			strings.Contains(s, "<string>"+launcherBundleID+"</string>") {
 			return // success
 		}
 		time.Sleep(100 * time.Millisecond)
