@@ -10,11 +10,24 @@ import (
 	"github.com/f1bonacc1/process-compose/src/types"
 )
 
+// processRunner is the minimum subset of *app.ProjectRunner that
+// Supervisor consumes. Pulled out as an interface so unit tests can
+// inject a fake runner that records calls without spinning up real
+// process-compose subprocesses. *app.ProjectRunner satisfies this
+// implicitly (Go structural typing); production code passes one in
+// via NewSupervisor.
+type processRunner interface {
+	Run() error
+	RestartProcess(name string) error
+	ShutDownProject() error
+	GetProcessesState() (*types.ProcessesState, error)
+}
+
 // Supervisor wraps a process-compose ProjectRunner with the launcher's
 // own state (started flag, supervisorExited watchdog, restart-all
 // serialization).
 type Supervisor struct {
-	runner *app.ProjectRunner
+	runner processRunner
 
 	supervisorExited atomic.Bool
 	shuttingDown     *atomic.Bool
@@ -163,11 +176,13 @@ func isNotRunningErr(err error) bool {
 func (s *Supervisor) StartedAt() time.Time { return s.startedAt }
 
 // restartGraceWindow is how long after a RestartAll the tray treats
-// "AnyFailed" as still-recovering rather than red. Same magnitude
-// as the cold-start grace (30s) so a user-initiated restart gets
-// the same forgiveness as a fresh launcher boot — children stop,
-// readiness probes go un-ready, then come back over a few seconds.
-const restartGraceWindow = 30 * time.Second
+// "AnyFailed" as still-recovering rather than red. Set equal to
+// bucketFailGraceWindow so a user-initiated restart gets the same
+// forgiveness as a fresh launcher boot — children stop, readiness
+// probes go un-ready, then come back over the readiness budget
+// (project.go: 2s + 30 retries × 2s = 62s worst case for the slow
+// process; the 90s window covers that with VM/slow-disk slack).
+const restartGraceWindow = bucketFailGraceWindow
 
 // RestartGraceActive reports whether the tray should treat the
 // current health snapshot through the lens of a recent restart
