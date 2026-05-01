@@ -25,6 +25,7 @@ function createMockSkillAdapter(
     list: SkillStorageAdapter["list"];
     listAssigned: SkillStorageAdapter["listAssigned"];
     listAssignmentsForJob: SkillStorageAdapter["listAssignmentsForJob"];
+    listJobOnlySkillIds: SkillStorageAdapter["listJobOnlySkillIds"];
   }> = {},
 ): SkillStorageAdapter {
   return {
@@ -42,6 +43,11 @@ function createMockSkillAdapter(
       overrides.listAssignmentsForJob ??
       vi
         .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
+        .mockResolvedValue({ ok: true, data: [] }),
+    listJobOnlySkillIds:
+      overrides.listJobOnlySkillIds ??
+      vi
+        .fn<() => ReturnType<SkillStorageAdapter["listJobOnlySkillIds"]>>()
         .mockResolvedValue({ ok: true, data: [] }),
     // Unused methods
     create: vi.fn(),

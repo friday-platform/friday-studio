@@ -411,6 +411,9 @@ export class CortexSkillAdapter implements SkillStorageAdapter {
   listAssignmentsForJob(): Promise<Result<SkillSummary[], string>> {
     return Promise.resolve(success([]));
   }
+  listJobOnlySkillIds(): Promise<Result<string[], string>> {
+    return Promise.resolve(success([]));
+  }
 
   // ---------------------------------------------------------------------------
   // Private helpers

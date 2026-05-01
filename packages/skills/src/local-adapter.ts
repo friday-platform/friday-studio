@@ -600,6 +600,20 @@ export class LocalSkillAdapter implements SkillStorageAdapter {
     }
   }
 
+  async listJobOnlySkillIds(): Promise<Result<string[], string>> {
+    const db = await this.getDb();
+    const rows = db
+      .prepare(`
+        SELECT DISTINCT skill_id FROM skill_assignments
+        WHERE job_name IS NOT NULL
+          AND skill_id NOT IN (
+            SELECT skill_id FROM skill_assignments WHERE job_name IS NULL
+          )
+      `)
+      .all() as { skill_id: string }[];
+    return success(rows.map((r) => r.skill_id));
+  }
+
   async listAssignmentsForJob(
     workspaceId: string,
     jobName: string,

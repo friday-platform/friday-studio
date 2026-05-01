@@ -101,6 +101,9 @@ describe("buildAgentContext skill injection", () => {
     vi.spyOn(SkillStorage, "listAssigned").mockImplementation((wsId) =>
       tempAdapter.listAssigned(wsId),
     );
+    vi.spyOn(SkillStorage, "listJobOnlySkillIds").mockImplementation(() =>
+      tempAdapter.listJobOnlySkillIds(),
+    );
     vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
   });
 

@@ -249,6 +249,7 @@ describe("createLoadSkillTool — workspace scoping", () => {
       ok: true,
       data: opts.jobAssigned ?? [],
     });
+    vi.spyOn(SkillStorage, "listJobOnlySkillIds").mockResolvedValue({ ok: true, data: [] });
   }
 
   it("loads an unassigned (global) skill in any workspace", async () => {

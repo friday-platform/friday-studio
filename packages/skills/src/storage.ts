@@ -52,6 +52,14 @@ export interface SkillStorageAdapter {
     workspaceId: string,
     jobName: string,
   ): Promise<Result<SkillSummary[], string>>;
+  /**
+   * Skill IDs that exist *only* as job-level assignments (no workspace-level
+   * row anywhere). These are scoped private to their owning (workspace, job)
+   * and must be excluded from the otherwise-global catalog pool used by
+   * `resolveVisibleSkills`. Without this filter, a skill assigned only to
+   * (ws-1, job-a) would leak into ws-2 / job-b via the catalog.
+   */
+  listJobOnlySkillIds(): Promise<Result<string[], string>>;
 }
 
 function createSkillStorageAdapter(): SkillStorageAdapter {
@@ -108,4 +116,5 @@ export const SkillStorage: SkillStorageAdapter = {
   assignToJob: (...args) => getStorage().assignToJob(...args),
   unassignFromJob: (...args) => getStorage().unassignFromJob(...args),
   listAssignmentsForJob: (...args) => getStorage().listAssignmentsForJob(...args),
+  listJobOnlySkillIds: (...args) => getStorage().listJobOnlySkillIds(...args),
 };

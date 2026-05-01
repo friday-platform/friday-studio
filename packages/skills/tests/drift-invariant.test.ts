@@ -42,6 +42,9 @@ describe("F.1 drift invariant — prompt ≡ tool", () => {
     vi.spyOn(SkillStorage, "listAssignmentsForJob").mockImplementation((ws, job) =>
       adapter.listAssignmentsForJob(ws, job),
     );
+    vi.spyOn(SkillStorage, "listJobOnlySkillIds").mockImplementation(() =>
+      adapter.listJobOnlySkillIds(),
+    );
     vi.spyOn(SkillStorage, "get").mockImplementation((ns, name, version) =>
       adapter.get(ns, name, version),
     );

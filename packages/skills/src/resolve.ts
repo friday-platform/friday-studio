@@ -20,14 +20,17 @@ export interface ResolveVisibleSkillsOptions {
  * Resolve the full set of skills visible to a workspace (and optionally a
  * specific job inside it):
  *
- *   (all non-disabled named skills in the catalog)
+ *   (all non-disabled named skills in the catalog, minus job-only-scoped)
  *   ∪ (skills assigned workspace-level to this workspace)
  *   ∪ (skills assigned at the job level, when options.jobName is set)
  *
- * The assignment table is additive and organizational — assigning a skill to
- * one workspace does not remove it from others. Disabled skills are excluded
- * globally. Deduplicates by skillId so a skill assigned at multiple layers
- * appears once.
+ * The assignment table is additive and organizational at the workspace
+ * level — assigning a skill to one workspace does not remove it from
+ * others. Job-level assignments are different: they make a skill private
+ * to its owning (workspace, job) pairs, so a skill that exists *only* as
+ * job-level rows is filtered out of the catalog pool and surfaced only
+ * through the matching `listAssignmentsForJob`. Disabled skills are
+ * excluded globally. Deduplicates by skillId.
  */
 export async function resolveVisibleSkills(
   workspaceId: string,
@@ -36,12 +39,13 @@ export async function resolveVisibleSkills(
 ): Promise<SkillSummary[]> {
   const { jobName } = options;
 
-  const [allResult, directResult, jobResult] = await Promise.all([
+  const [allResult, directResult, jobResult, jobOnlyResult] = await Promise.all([
     skills.list(),
     skills.listAssigned(workspaceId),
     jobName
       ? skills.listAssignmentsForJob(workspaceId, jobName)
       : Promise.resolve({ ok: true as const, data: [] as SkillSummary[] }),
+    skills.listJobOnlySkillIds(),
   ]);
 
   if (!allResult.ok) {
@@ -57,8 +61,15 @@ export async function resolveVisibleSkills(
       jobName,
     });
   }
+  if (!jobOnlyResult.ok) {
+    logger.warn("Failed to list job-only skill ids", {
+      error: jobOnlyResult.error,
+      workspaceId,
+    });
+  }
 
-  const all = allResult.ok ? allResult.data : [];
+  const jobOnlyIds = new Set(jobOnlyResult.ok ? jobOnlyResult.data : []);
+  const all = (allResult.ok ? allResult.data : []).filter((s) => !jobOnlyIds.has(s.skillId));
   const direct = directResult.ok ? directResult.data : [];
   const jobAssigned = jobResult.ok ? jobResult.data : [];
 
