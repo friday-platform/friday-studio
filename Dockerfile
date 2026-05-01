@@ -141,7 +141,7 @@ RUN apt-get update && \
 # (apps/atlasd/src/agent-spawn.ts); the launcher provides the same env in
 # desktop installs (tools/friday-launcher/paths.go bundledAgentSDKVersion).
 # When bumping, keep both in sync — same constant, two places.
-ENV FRIDAY_AGENT_SDK_VERSION=0.1.1 \
+ENV FRIDAY_AGENT_SDK_VERSION=0.1.2 \
     UV_PYTHON_INSTALL_DIR=/data/atlas/uv/python \
     UV_CACHE_DIR=/data/atlas/uv/cache \
     FRIDAY_UV_PATH=/usr/local/bin/uv
