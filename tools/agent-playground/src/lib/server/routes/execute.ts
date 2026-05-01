@@ -10,7 +10,12 @@ import { parseSSEEvents } from "@atlas/utils/sse";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-const DAEMON_BASE_URL = "http://localhost:8080";
+// Match the resolution used by static-server.ts and routes/discover.ts —
+// the launcher exports FRIDAYD_URL in .env at the configured FRIDAY_PORT_FRIDAY
+// (which is 18080 in FAST/LINK_DEV mode, not 8080). Without this read, the
+// playground binary running on a non-default port silently posts user-agent
+// runs to :8080 and reports "Connection refused".
+const DAEMON_BASE_URL = process.env.FRIDAYD_URL ?? "http://localhost:8080";
 import { PlaygroundContextAdapter } from "../lib/context.ts";
 import { createSSEStream } from "../lib/sse.ts";
 import { userAgentExists } from "../lib/user-agents.ts";
