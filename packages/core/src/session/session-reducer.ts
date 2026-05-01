@@ -233,7 +233,13 @@ function reduceStepSkipped(
 }
 
 function reduceEphemeral(view: SessionView, event: EphemeralChunk): SessionView {
-  const idx = view.agentBlocks.findIndex((b) => b.stepNumber === event.stepNumber);
+  // Match on stepNumber when the publisher provided it; otherwise (user-agent
+  // SDK publishes have no stepNumber — the agent subprocess doesn't know its
+  // FSM step) attach to the currently-running block.
+  const idx =
+    event.stepNumber != null
+      ? view.agentBlocks.findIndex((b) => b.stepNumber === event.stepNumber)
+      : view.agentBlocks.findIndex((b) => b.status === "running");
   if (idx === -1) {
     // No matching block — silently ignore
     return view;

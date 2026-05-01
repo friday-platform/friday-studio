@@ -676,6 +676,23 @@ describe("EphemeralChunk", () => {
     expect(view.agentBlocks).toHaveLength(0);
   });
 
+  test("attaches to running block when stepNumber is omitted", () => {
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "user-agent" }));
+
+    // User-agent SDK publishes don't include stepNumber — the agent subprocess
+    // doesn't know its FSM step. The reducer should fall back to the running
+    // block instead of dropping the chunk.
+    const noStep: EphemeralChunk = {
+      chunk: { type: "data-tool-progress", data: { toolName: "agent", content: "working..." } },
+    } as EphemeralChunk;
+    view = reduceSessionEvent(view, noStep);
+
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.ephemeral).toHaveLength(1);
+  });
+
   test("skips pending blocks (stepNumber undefined !== number)", () => {
     let view = reduceSessionEvent(
       initialSessionView(),
