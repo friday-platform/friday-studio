@@ -202,8 +202,12 @@ const UPSERT_AGENT_DESCRIPTION =
   "layered on the agent's bundled behavior — describe the user's intent, not the mechanics.\n" +
   '- `type: "user"` — registered Python/TS SDK code agent. Shape: ' +
   "`{ type, agent, prompt?, env? }`. " +
-  "Use when the work is mechanical (parsing, transforming, deterministic routing) " +
-  "or when LLM-loop cost dominates the value. See `writing-friday-agents` skill.\n\n" +
+  "Use ONLY when the per-call decision is mechanical: regex/schema validation, " +
+  "deterministic routing table, format conversion, fixed dispatch. " +
+  "If the agent calls `ctx.llm.generate` to make any decision (classifying, " +
+  'summarizing, choosing among options, scoring confidence), use `type: "llm"` ' +
+  "instead — the LLM judgment belongs in an inline llm agent with MCP tools, " +
+  "not buried inside Python. See `writing-friday-agents` skill.\n\n" +
   "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
   "Pass `workspaceId` to target a workspace other than the current session.";
 
@@ -547,6 +551,23 @@ const cases: AgentTypeCase[] = [
     forbiddenTypes: new Set(["atlas"]),
     forbiddenAtlasAgents: new Set(["claude-code"]),
     forbidUserAgentRegistration: false,
+  },
+  {
+    // Explicit-instruction case: real user prompt where Eric said "use llm
+    // agents" and the model still emitted `type: user`. The prompt's
+    // `<agent_types>` rule says explicit type instructions must be respected
+    // unless structurally impossible — this case fails any session that
+    // overrides the user's choice.
+    id: "explicit-llm-override",
+    name: "user explicitly names type: llm — must respect it",
+    input:
+      "Build me a workspace that pulls my latest 5 unread emails and lets me triage them " +
+      "with letter options (Archive, Keep, Delete). Use llm agents for this — I do not want " +
+      "Python user agents.",
+    expectedType: "llm",
+    forbiddenTypes: new Set(["user"]),
+    requiredMcpServers: new Set(["google-gmail"]),
+    forbidUserAgentRegistration: true,
   },
 ];
 

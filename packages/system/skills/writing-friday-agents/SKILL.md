@@ -1,6 +1,6 @@
 ---
 name: writing-friday-agents
-description: "Write, edit, or debug a Friday agent using the `friday_agent_sdk` Python SDK. Use when creating a new agent, adding LLM/HTTP/MCP capabilities, fixing agent errors, or any work mentioning `@agent`, `AgentContext`, `ctx.llm` / `ctx.http` / `ctx.tools` / `ctx.stream`, `ok()`/`err()`, `parse_input`/`parse_operation`, or the agent `run()` entry point. Use even when the user says \"write a Python function that does X\" inside an `agents/` directory or any Friday agent project. Friday agents run as Python subprocesses with no direct LLM, HTTP, or MCP access — authoring patterns are non-obvious. Consult this skill before writing code."
+description: "Write, edit, or debug an existing Friday user-agent (`type: \"user\"`) using the `friday_agent_sdk` Python SDK. Load when an `agent.py` already exists in scope, when imports from `friday_agent_sdk` are present, when an `@agent` decorator is being authored or modified, or when `upsert_agent` was just called with `type: \"user\"`. Do NOT load to decide *whether* to author a user agent — that decision belongs in workspace-chat's `<agent_types>` rules; user agents are only for mechanical per-call work, never LLM-judgment work."
 user-invocable: false
 ---
 

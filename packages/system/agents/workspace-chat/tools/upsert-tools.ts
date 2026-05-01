@@ -220,8 +220,12 @@ export function createBoundUpsertTools(logger: Logger, workspaceId: string): Atl
         "layered on the agent's bundled behavior — describe the user's intent, not the mechanics.\n" +
         '- `type: "user"` — registered Python/TS SDK code agent. Shape: ' +
         "`{ type, agent, prompt?, env? }`. " +
-        "Use when the work is mechanical (parsing, transforming, deterministic routing) " +
-        "or when LLM-loop cost dominates the value. See `writing-friday-agents` skill.\n\n" +
+        "Use ONLY when the per-call decision is mechanical: regex/schema validation, " +
+        "deterministic routing table, format conversion, fixed dispatch. " +
+        "If the agent calls `ctx.llm.generate` to make any decision (classifying, " +
+        'summarizing, choosing among options, scoring confidence), use `type: "llm"` ' +
+        "instead — the LLM judgment belongs in an inline llm agent with MCP tools, " +
+        "not buried inside Python. See `writing-friday-agents` skill.\n\n" +
         "Returns `{ ok, diff, structural_issues }` so you can confirm what changed before publishing. " +
         "Pass `workspaceId` to target a workspace other than the current session.",
       inputSchema: jsonSchema(UPSERT_INPUT_SCHEMA),
