@@ -39,9 +39,20 @@ const SKILL_FILES = [
   "references/examples.md",
 ] as const;
 
-// Tightened description, no `<` or `>` — packages/config/src/skills.ts
-// rejects angle brackets in skill descriptions (XML-injection guard).
-// Reference workspace-chat's agent_types rules by name, not by tag.
+// TEMPORARY description override — drop once SDK >= 0.1.2 ships.
+//
+// friday-agent-sdk 0.1.1's SKILL.md description is too aggressive for
+// workspace-chat ("load this skill if the context suggests they're
+// building something that will run as a Friday agent") — it biases
+// the model toward authoring user agents when the type-selection
+// decision should already be made. The tightened version below is
+// staged upstream in /Users/kenneth/friday/agent-sdk and will land in
+// the next SDK release; this override keeps friday-studio's vendored
+// copy correct in the interim.
+//
+// Removal: once `bundledAgentSDKVersion` (tools/friday-launcher/paths.go)
+// is bumped to 0.1.2+, replace this transform with a verbatim
+// passthrough — upstream becomes the source of truth.
 const TIGHTENED_DESCRIPTION_HEADER = `---
 name: writing-friday-python-agents
 description: >
@@ -89,23 +100,22 @@ async function fetchUpstream(version: string, fileRelPath: string): Promise<stri
 }
 
 /**
- * The vendored copy carries:
- *   - Tightened trigger `description` (looser upstream version biases
- *     workspace-chat too aggressively toward Python user agents).
- *   - `vendored-from:` and `vendored-path:` frontmatter pinning the
- *     exact upstream commit + path.
- *   - A `<!-- ... -->` HTML comment under the frontmatter linking back
- *     to scripts/sync-sdk-skill.ts.
+ * Replace upstream frontmatter with the tightened-description header
+ * (see TIGHTENED_DESCRIPTION_HEADER above for why), append vendored-*
+ * provenance fields, and prepend a "don't edit in place" comment.
  *
- * Everything below the first `---\n\n` separator is verbatim upstream.
+ * Body and reference files are passthrough-verbatim — upstream is the
+ * source of truth for those. Only the description is patched, and only
+ * until SDK >= 0.1.2 ships with the corrected description upstream.
  */
 function transformSkillMd(upstream: string, version: string, sha: string): string {
-  // Strip upstream frontmatter — we replace it entirely.
-  const frontmatterEnd = upstream.indexOf("\n---\n", 4);
+  const FRONTMATTER_DELIM = "\n---\n";
+  const frontmatterEnd = upstream.indexOf(FRONTMATTER_DELIM, 4);
   if (frontmatterEnd === -1) {
     throw new Error("Upstream SKILL.md is missing frontmatter — refusing to vendor.");
   }
-  const body = upstream.slice(frontmatterEnd + "\n---\n".length).trimStart();
+  const body = upstream.slice(frontmatterEnd + FRONTMATTER_DELIM.length).trimStart();
+
   return [
     TIGHTENED_DESCRIPTION_HEADER,
     `vendored-from: ${SDK_REPO}@${sha}`,
