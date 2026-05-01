@@ -142,6 +142,43 @@ Key fields:
 - `inputFrom: <doc-id>` — feeds prior step output into next agent task
 - `emit` with `event: DONE` — signals engine to transition
 
+## Returning data to the caller
+
+`outputTo` does double duty. Inside a multi-step FSM it chains a step's output into the next step's `inputFrom` (above). It is **also the only mechanism for surfacing data back to whoever fired the signal** — the synchronous signal response (`POST /api/workspaces/:id/signals/:id`) returns docs collected from `engine.documents` as `output: [{ id, type, data }]`. No `outputTo` → no doc → caller sees `output: []` even on `status: completed`.
+
+There is no separate `outputs:` block on a job that pipes the FSM result to the caller. The schema has an `outputs:` field but it's a memory-write declaration (`{ memory, entryKind }`) — unrelated.
+
+**Single-step jobs that need to return data:** put `outputTo` on the entry action even when the state is `type: final`. Entry actions still execute on entering a final state, and the doc is captured before session completion.
+
+```yaml
+fsm:
+  initial: idle
+  states:
+    idle:
+      on: { run-search: { target: search } }
+    search:
+      entry:
+        - type: agent
+          agentId: search-agent
+          outputTo: search-result          # required for output to reach caller
+          prompt: "{{inputs.query}}"
+      type: final                           # entry runs THEN state finalizes
+```
+
+Caller sees:
+
+```json
+{
+  "status": "completed",
+  "sessionId": "...",
+  "output": [
+    { "id": "search-result", "type": "AgentResult", "data": { ... } }
+  ]
+}
+```
+
+**Verify after publish.** Fire the signal once with a fixture payload (`POST /api/workspaces/:id/signals/:signalId` with a JSON body) and confirm `output` is non-empty before declaring the workspace done. `output: []` means the data never reached the caller — almost always a missing `outputTo`.
+
 ## Multi-input steps
 
 Step needs multiple prior outputs? Pass `inputFrom` as array. Engine concatenates each doc labeled by id (`<id>:\n<data>`) with blank lines between. Agent receives combined text as task.

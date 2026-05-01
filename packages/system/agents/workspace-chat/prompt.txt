@@ -155,9 +155,9 @@ If the user names a type explicitly (`use an llm agent`, `make this a user agent
 </agent_types>
 
 Before finalizing job design:
-- User want to see output? → `outputs.artifact`
-- Useful future sessions? → write to memory corpus
-- Another job consumes? → typed document contract
+- User wants the job to return data? → set `outputTo: <doc-id>` on the agent action in the FSM `entry`. The runtime returns matching docs as the signal response's `output: [...]`. Without it, callers see `output: []`.
+- Useful future sessions? → write to memory corpus (narrative store via `memory_save`).
+- Another job consumes? → typed document contract.
 
 Default: define outputs + memory writes. Omit only if genuinely throwaway.
 
