@@ -73,7 +73,6 @@ getAgent.get(
           expertise: summary.expertise ?? { examples: [] },
           summary: summary.summary,
           constraints: summary.constraints,
-          environment: summary.environment,
           inputSchema: summary.inputSchema,
           outputSchema: summary.outputSchema,
         });

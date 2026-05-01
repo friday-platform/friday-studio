@@ -23,7 +23,13 @@ import { daemonFactory } from "../../src/factory.ts";
 const logger = createLogger({ name: "agent-register-api" });
 const sc = StringCodec();
 
-const VALIDATE_TIMEOUT_MS = 15_000;
+// First-spawn uv-run cold-cache: 5-30s for the CPython 3.12 download +
+// friday-agent-sdk wheel fetch. Warm-cache spawn is 50-100ms. 60s gives
+// the first-ever register on a machine that bypassed the installer
+// pre-warm (apps/studio-installer/.../prewarm_agent_sdk.rs) and the
+// dev script (scripts/setup-dev-env.sh) enough room to materialize the
+// runtime, while still failing fast for actually-broken agents.
+const VALIDATE_TIMEOUT_MS = 60_000;
 
 /** Shape the agent SDK publishes to agents.validate.{id} */
 const AgentValidateResponseSchema = z.object({
