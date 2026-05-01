@@ -91,14 +91,34 @@ func (s *Supervisor) Shutdown() error {
 	return s.runner.ShutDownProject()
 }
 
-// RestartAll runs the two-pass restart in stopOrder then startOrder.
-// Serialized via restartMu so concurrent menu clicks don't race.
-// Returns the first error encountered (other passes still run).
+// RestartAll restarts every supervised process by calling
+// runner.RestartProcess(name) in startOrder (dependency order so
+// foundational services come back first).
 //
+// Why per-process RestartProcess and not the older two-pass
+// "StopProcess everything then StartProcess everything":
+// process-compose's runner.Run loop terminates with "Project
+// completed" when runProcCount hits 0 AND no entries are present in
+// the runner's restartCalls map (process_runner.go:151-180 in
+// process-compose v1.103.0). The old two-pass shape never touched
+// restartCalls, so the moment between the last StopProcess and the
+// first StartProcess satisfied both conditions: Run() returned,
+// runAndWatch latched supervisorExited=true, and the tray painted
+// red forever even though StartProcess immediately brought all
+// children back up. RestartProcess registers an entry in
+// restartCalls for the duration of each call, so pendingRestarts > 0
+// blocks the project-completed branch — Run() stays in its loop.
+//
+// As a bonus the new shape keeps four of five services running at
+// any moment (sequential restart vs. all-down-then-all-up), so a
+// user-initiated Restart no longer has a window where every port is
+// closed.
+//
+// Serialized via restartMu so concurrent menu clicks don't race.
+// Returns the first error encountered (other restarts still run).
 // Sets inRestart for the duration and stamps lastRestartEndNano on
-// completion. RestartGraceActive consults both so the tray can
-// suppress the red bucket while children are stopping + restarting
-// + waiting for readiness probes.
+// completion — RestartGraceActive consults both so the tray can
+// suppress the red bucket while children are coming back.
 func (s *Supervisor) RestartAll() error {
 	s.restartMu.Lock()
 	defer s.restartMu.Unlock()
@@ -110,25 +130,16 @@ func (s *Supervisor) RestartAll() error {
 	}()
 
 	var firstErr error
-	for _, name := range stopOrder {
-		// StopProcess blocks for up to ShutDownParams.ShutDownTimeout
-		// seconds (we set 10), then SIGKILLs and returns. If the
-		// process is not currently running (e.g. crashed and not yet
-		// restarted) StopProcess returns "process is not running"
-		// which we treat as success for the restart-all path.
-		if err := s.runner.StopProcess(name); err != nil &&
+	for _, name := range startOrder {
+		if err := s.runner.RestartProcess(name); err != nil &&
 			firstErr == nil {
-			// Don't propagate "not running" — that's expected for
-			// processes that crashed and haven't been restarted yet.
+			// "not running" is non-fatal: a crashed-and-not-yet-
+			// restarted child returns it, and RestartProcess's
+			// follow-up runProcess will still spawn a fresh
+			// instance via the project config.
 			if !isNotRunningErr(err) {
 				firstErr = err
 			}
-		}
-	}
-	for _, name := range startOrder {
-		if err := s.runner.StartProcess(name); err != nil &&
-			firstErr == nil {
-			firstErr = err
 		}
 	}
 	return firstErr
