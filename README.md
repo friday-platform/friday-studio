@@ -157,10 +157,8 @@ tools/
   webhook-tunnel/     # Cloudflare tunnel → daemon webhook forwarder (Go)
 ```
 
-Config: `friday.yml` (platform-wide — see
-[`docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml`](docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml))
-· `workspace.yml` (per-workspace) · [`CONTRIBUTING.md`](CONTRIBUTING.md) (dev
-guidelines + code style)
+Config: `friday.yml` (platform-wide) · `workspace.yml` (per-workspace) ·
+[`CONTRIBUTING.md`](CONTRIBUTING.md) (dev guidelines + code style)
 
 ## AI Workflow
 
