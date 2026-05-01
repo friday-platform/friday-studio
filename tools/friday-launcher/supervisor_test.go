@@ -65,10 +65,12 @@ func (f *fakeRunner) calls() []string {
 	return append([]string(nil), f.restartCalls...)
 }
 
-// waitFor polls cond every 10ms up to timeout. Used to wait on
-// goroutine progress without sleeping unconditionally.
-func waitFor(timeout time.Duration, cond func() bool) bool {
-	deadline := time.Now().Add(timeout)
+// waitFor polls cond every 10ms up to one second. Used to wait on
+// goroutine progress without sleeping unconditionally. One second
+// is enough for goroutine handoffs in unit tests; longer waits
+// indicate a real bug.
+func waitFor(cond func() bool) bool {
+	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return true
@@ -110,7 +112,7 @@ func TestSupervisorRestartAllUsesRestartProcess(t *testing.T) {
 		sup.runAndWatch()
 		close(runAndWatchDone)
 	}()
-	if !waitFor(time.Second, func() bool { return fake.runStarted.Load() }) {
+	if !waitFor(func() bool { return fake.runStarted.Load() }) {
 		t.Fatal("fakeRunner.Run() did not start within 1s")
 	}
 
@@ -160,7 +162,7 @@ func TestSupervisorRestartAllPropagatesError(t *testing.T) {
 		sup.runAndWatch()
 		close(runAndWatchDone)
 	}()
-	if !waitFor(time.Second, func() bool { return fake.runStarted.Load() }) {
+	if !waitFor(func() bool { return fake.runStarted.Load() }) {
 		t.Fatal("fakeRunner.Run() did not start within 1s")
 	}
 
@@ -207,7 +209,7 @@ func TestSupervisorRestartGraceLifecycleAroundRestartAll(t *testing.T) {
 		sup.runAndWatch()
 		close(runAndWatchDone)
 	}()
-	if !waitFor(time.Second, func() bool { return fake.runStarted.Load() }) {
+	if !waitFor(func() bool { return fake.runStarted.Load() }) {
 		t.Fatal("fakeRunner.Run() did not start within 1s")
 	}
 
@@ -221,7 +223,7 @@ func TestSupervisorRestartGraceLifecycleAroundRestartAll(t *testing.T) {
 	// inRestart is set at the top of RestartAll, before any
 	// RestartProcess call. Wait for it to flip — that's the
 	// "RestartAll is in-flight" signal.
-	if !waitFor(time.Second, func() bool { return sup.RestartGraceActive() }) {
+	if !waitFor(func() bool { return sup.RestartGraceActive() }) {
 		t.Fatal("RestartGraceActive didn't flip true within 1s of RestartAll start")
 	}
 
