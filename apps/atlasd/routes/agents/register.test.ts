@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import process from "node:process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -171,6 +172,29 @@ describe("POST /register", () => {
     expect(mockSpawn).toHaveBeenCalledWith("python3", ["/agents/agent.py"], expect.anything());
   });
 
+  it("honors FRIDAY_AGENT_PYTHON for .py entrypoints", async () => {
+    const app = makeApp({ id: "py-agent", version: "1.0.0", description: "Python agent" });
+
+    const original = process.env.FRIDAY_AGENT_PYTHON;
+    process.env.FRIDAY_AGENT_PYTHON = "/opt/friday/agent-runtime/bin/python";
+    try {
+      await app.request("/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entrypoint: "/agents/agent.py" }),
+      });
+    } finally {
+      if (original === undefined) delete process.env.FRIDAY_AGENT_PYTHON;
+      else process.env.FRIDAY_AGENT_PYTHON = original;
+    }
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "/opt/friday/agent-runtime/bin/python",
+      ["/agents/agent.py"],
+      expect.anything(),
+    );
+  });
+
   it("spawns deno for .ts entrypoints", async () => {
     const app = makeApp({ id: "ts-agent", version: "1.0.0", description: "TS agent" });
 
@@ -229,5 +253,71 @@ describe("POST /register", () => {
     });
 
     expect(mockKill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  it("persists the six new metadata fields the SDK publishes (>= 0.1.0)", async () => {
+    const fs = await import("node:fs/promises");
+    const writeFileMock = vi.mocked(fs.writeFile);
+    writeFileMock.mockClear();
+
+    // Validate response with all six new fields the SDK now publishes.
+    const validatePayload = {
+      id: "rich-agent",
+      version: "1.0.0",
+      description: "Agent with full metadata",
+      summary: "One-liner for UI",
+      constraints: "Read-only; never mutates state",
+      expertise: { examples: ["summarize PR", "extract action items"] },
+      environment: { required: ["MY_TOKEN"] },
+      inputSchema: { type: "object", properties: { task: { type: "string" } } },
+      outputSchema: { type: "object", properties: { reply: { type: "string" } } },
+    };
+
+    const app = makeApp(validatePayload);
+    const response = await app.request("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entrypoint: "/agents/agent.py" }),
+    });
+
+    expect(response.status).toBe(200);
+
+    // Find the writeFile call that wrote metadata.json (not source files)
+    const metaCall = writeFileMock.mock.calls.find(
+      (c) => typeof c[0] === "string" && c[0].endsWith("metadata.json"),
+    );
+    expect(metaCall).toBeDefined();
+    const persisted = JSON.parse(metaCall![1] as string);
+
+    expect(persisted).toMatchObject({
+      id: "rich-agent",
+      version: "1.0.0",
+      description: "Agent with full metadata",
+      summary: "One-liner for UI",
+      constraints: "Read-only; never mutates state",
+      expertise: { examples: ["summarize PR", "extract action items"] },
+      environment: { required: ["MY_TOKEN"] },
+      inputSchema: { type: "object", properties: { task: { type: "string" } } },
+      outputSchema: { type: "object", properties: { reply: { type: "string" } } },
+    });
+  });
+
+  it("registers cleanly when SDK omits the new optional metadata fields", async () => {
+    // Validates older SDKs (pre-0.1.0) still register successfully.
+    const app = makeApp({
+      id: "minimal-agent",
+      version: "1.0.0",
+      description: "Bare-minimum metadata",
+    });
+
+    const response = await app.request("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entrypoint: "/agents/agent.py" }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = SuccessResponseSchema.parse(await response.json());
+    expect(body.agent.id).toBe("minimal-agent");
   });
 });

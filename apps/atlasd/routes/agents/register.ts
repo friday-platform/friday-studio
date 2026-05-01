@@ -33,12 +33,24 @@ const AgentValidateResponseSchema = z.object({
   llm: AgentLLMConfigSchema.optional(),
   mcp: z.record(z.string(), MCPServerConfigSchema).optional(),
   useWorkspaceSkills: z.boolean().optional(),
+  // Authoring metadata added in friday-agent-sdk 0.1.0+. The SDK publishes
+  // these on validate; the read path in routes/agents/get.ts surfaces them
+  // back. Keeping all six optional so older SDKs still register cleanly.
+  summary: z.string().optional(),
+  constraints: z.string().optional(),
+  expertise: z.object({ examples: z.array(z.string()) }).optional(),
+  environment: z.record(z.string(), z.unknown()).optional(),
+  inputSchema: z.record(z.string(), z.unknown()).optional(),
+  outputSchema: z.record(z.string(), z.unknown()).optional(),
 });
 
 const RegisterRequestSchema = z.object({ entrypoint: z.string().min(1) });
 
 function buildSpawnArgs(entrypointPath: string): [string, string[]] {
-  if (entrypointPath.endsWith(".py")) return ["python3", [entrypointPath]];
+  if (entrypointPath.endsWith(".py")) {
+    const py = process.env.FRIDAY_AGENT_PYTHON ?? "python3";
+    return [py, [entrypointPath]];
+  }
   if (entrypointPath.endsWith(".ts"))
     return ["deno", ["run", "--allow-net", "--allow-env", "--allow-read", entrypointPath]];
   return [entrypointPath, []];
@@ -155,6 +167,12 @@ registerAgentRoute.post("/register", async (c) => {
     if (metadata.mcp !== undefined) metadataObj.mcp = metadata.mcp;
     if (metadata.useWorkspaceSkills !== undefined)
       metadataObj.useWorkspaceSkills = metadata.useWorkspaceSkills;
+    if (metadata.summary !== undefined) metadataObj.summary = metadata.summary;
+    if (metadata.constraints !== undefined) metadataObj.constraints = metadata.constraints;
+    if (metadata.expertise !== undefined) metadataObj.expertise = metadata.expertise;
+    if (metadata.environment !== undefined) metadataObj.environment = metadata.environment;
+    if (metadata.inputSchema !== undefined) metadataObj.inputSchema = metadata.inputSchema;
+    if (metadata.outputSchema !== undefined) metadataObj.outputSchema = metadata.outputSchema;
     if (hash !== undefined) metadataObj.hash = hash;
 
     await writeFile(join(tmpDir, "metadata.json"), JSON.stringify(metadataObj, null, 2));

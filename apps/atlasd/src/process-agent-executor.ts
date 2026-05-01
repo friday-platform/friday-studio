@@ -28,7 +28,10 @@ const DEFAULT_TIMEOUT_MS = 180_000;
 const READY_TIMEOUT_MS = 30_000;
 
 function buildSpawnArgs(agentPath: string): [string, string[]] {
-  if (agentPath.endsWith(".py")) return ["python3", [agentPath]];
+  if (agentPath.endsWith(".py")) {
+    const py = process.env.FRIDAY_AGENT_PYTHON ?? "python3";
+    return [py, [agentPath]];
+  }
   if (agentPath.endsWith(".ts"))
     return ["deno", ["run", "--allow-net", "--allow-env", "--allow-read", agentPath]];
   return [agentPath, []];

@@ -25,6 +25,14 @@ const AgentMetadataFileSchema = z.object({
   useWorkspaceSkills: z.boolean().optional(),
   entrypoint: z.string().optional(),
   hash: z.string().optional(),
+  // Authoring metadata added in friday-agent-sdk 0.1.0+. All optional so
+  // older sidecars (pre-field-set) still parse cleanly.
+  summary: z.string().optional(),
+  constraints: z.string().optional(),
+  expertise: z.object({ examples: z.array(z.string()) }).optional(),
+  environment: z.record(z.string(), z.unknown()).optional(),
+  inputSchema: z.record(z.string(), z.unknown()).optional(),
+  outputSchema: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**
@@ -91,6 +99,12 @@ export class UserAdapter implements AgentAdapter {
           displayName: metadata.displayName,
           description: metadata.description,
           version: metadata.version,
+          summary: metadata.summary,
+          constraints: metadata.constraints,
+          expertise: metadata.expertise,
+          environment: metadata.environment,
+          inputSchema: metadata.inputSchema,
+          outputSchema: metadata.outputSchema,
         });
       } catch (error) {
         this.logger.warn("Skipping agent with unreadable metadata", { path: entry.path, error });
