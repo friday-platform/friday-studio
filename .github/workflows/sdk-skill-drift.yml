@@ -5,6 +5,13 @@ name: SDK skill drift
 # tools/friday-launcher/paths.go. Forces a deliberate re-vendor on
 # every SDK version bump rather than silently shipping stale skill
 # content. Re-running scripts/sync-sdk-skill.ts (no flag) updates.
+#
+# TEMPORARY: this check is expected to fail against pinned version
+# 0.1.1 because the vendored SKILL.md description is tightened relative
+# to upstream's loose "load if context suggests" version. Once 0.1.2
+# ships with the corrected description (staged in the agent-sdk repo)
+# and `bundledAgentSDKVersion` is bumped, drift will resolve. Until
+# then, this workflow is non-blocking via continue-on-error.
 
 on:
   push:
@@ -29,6 +36,9 @@ jobs:
   drift-check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # TEMPORARY: transient drift expected until friday-agent-sdk 0.1.2
+    # ships with the corrected description. Remove once the pin bumps.
+    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v6

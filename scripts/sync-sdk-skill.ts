@@ -39,32 +39,10 @@ const SKILL_FILES = [
   "references/examples.md",
 ] as const;
 
-// TEMPORARY description override — drop once SDK >= 0.1.2 ships.
-//
-// friday-agent-sdk 0.1.1's SKILL.md description is too aggressive for
-// workspace-chat ("load this skill if the context suggests they're
-// building something that will run as a Friday agent") — it biases
-// the model toward authoring user agents when the type-selection
-// decision should already be made. The tightened version below is
-// staged upstream in /Users/kenneth/friday/agent-sdk and will land in
-// the next SDK release; this override keeps friday-studio's vendored
-// copy correct in the interim.
-//
-// Removal: once `bundledAgentSDKVersion` (tools/friday-launcher/paths.go)
-// is bumped to 0.1.2+, replace this transform with a verbatim
-// passthrough — upstream becomes the source of truth.
-const TIGHTENED_DESCRIPTION_HEADER = `---
-name: writing-friday-python-agents
-description: >
-  Authoring guide for Python user agents (type:"user") on the Friday
-  platform via the friday-agent-sdk. Covers the @agent decorator,
-  AgentContext capabilities (ctx.llm, ctx.http, ctx.tools, ctx.stream),
-  structured input parsing, result types, and the NATS subprocess
-  execution model. Load when an agent.py exists in scope, when imports
-  from friday_agent_sdk are present, when an @agent decorator is being
-  authored or modified, or when upsert_agent was just called with
-  type:user. Do NOT load to decide whether to author a user agent —
-  that decision belongs in the workspace-chat agent_types rules.`;
+// Constraint to remember when bumping upstream: friday-studio's skill
+// parser (packages/config/src/skills.ts) rejects `<` and `>` in
+// descriptions to prevent XML injection. Keep the upstream description
+// angle-bracket-free.
 
 interface CliOptions {
   check: boolean;
@@ -100,13 +78,10 @@ async function fetchUpstream(version: string, fileRelPath: string): Promise<stri
 }
 
 /**
- * Replace upstream frontmatter with the tightened-description header
- * (see TIGHTENED_DESCRIPTION_HEADER above for why), append vendored-*
- * provenance fields, and prepend a "don't edit in place" comment.
- *
- * Body and reference files are passthrough-verbatim — upstream is the
- * source of truth for those. Only the description is patched, and only
- * until SDK >= 0.1.2 ships with the corrected description upstream.
+ * Splice vendored-from / vendored-path / vendored-version into the
+ * upstream frontmatter and prepend a "don't edit in place" comment.
+ * Description, body, and reference files are passthrough-verbatim —
+ * upstream is the sole source of truth for content.
  */
 function transformSkillMd(upstream: string, version: string, sha: string): string {
   const FRONTMATTER_DELIM = "\n---\n";
@@ -114,10 +89,11 @@ function transformSkillMd(upstream: string, version: string, sha: string): strin
   if (frontmatterEnd === -1) {
     throw new Error("Upstream SKILL.md is missing frontmatter — refusing to vendor.");
   }
+  const upstreamFrontmatter = upstream.slice(0, frontmatterEnd);
   const body = upstream.slice(frontmatterEnd + FRONTMATTER_DELIM.length).trimStart();
 
   return [
-    TIGHTENED_DESCRIPTION_HEADER,
+    upstreamFrontmatter,
     `vendored-from: ${SDK_REPO}@${sha}`,
     `vendored-path: ${SDK_SKILL_PATH}/`,
     `vendored-version: ${version}`,
