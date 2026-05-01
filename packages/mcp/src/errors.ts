@@ -25,15 +25,3 @@ export class MCPTimeoutError extends Error {
     this.name = "MCPTimeoutError";
   }
 }
-
-/** Error thrown when an MCP HTTP server rejects authentication (401). */
-export class MCPAuthError extends Error {
-  constructor(
-    public readonly serverId: string,
-    public readonly url: string,
-    message: string,
-  ) {
-    super(`MCP server "${serverId}" authentication failed (${url}): ${message}`);
-    this.name = "MCPAuthError";
-  }
-}

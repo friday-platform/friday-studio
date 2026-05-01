@@ -87,7 +87,8 @@ function wrapToolWithTimeout(tool: Tool, serverId: string): Tool {
       return withTimeout(
         tool.execute!(args, opts),
         CALL_TOOL_TIMEOUT_MS,
-        (actualDurationMs) => new MCPTimeoutError(serverId, "call_tool", CALL_TOOL_TIMEOUT_MS, actualDurationMs),
+        (actualDurationMs) =>
+          new MCPTimeoutError(serverId, "call_tool", CALL_TOOL_TIMEOUT_MS, actualDurationMs),
       );
     },
   };
@@ -333,7 +334,8 @@ function connectServerWithTimeout(
   return withTimeout(
     connectServer(config, resolvedEnv, serverId, logger),
     LIST_TOOLS_TIMEOUT_MS,
-    (actualDurationMs) => new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS, actualDurationMs),
+    (actualDurationMs) =>
+      new MCPTimeoutError(serverId, "list_tools", LIST_TOOLS_TIMEOUT_MS, actualDurationMs),
   );
 }
 
@@ -459,7 +461,8 @@ async function isReachable(
     const res = await withTimeout(
       fetchImpl(url, { method: "GET" }),
       REACHABLE_TIMEOUT_MS,
-      (actualDurationMs) => new MCPTimeoutError(serverId, "reachable", REACHABLE_TIMEOUT_MS, actualDurationMs),
+      (actualDurationMs) =>
+        new MCPTimeoutError(serverId, "reachable", REACHABLE_TIMEOUT_MS, actualDurationMs),
     );
     return { ok: true, status: res.status };
   } catch (err) {

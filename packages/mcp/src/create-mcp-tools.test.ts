@@ -45,34 +45,6 @@ vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) =
   return { ...actual, resolveEnvValues: mockResolveEnvValues };
 });
 
-// Strip retry backoff delays — retry logic is @std/async's responsibility, not ours.
-vi.mock("@std/async/retry", () => {
-  class RetryError extends Error {
-    constructor(
-      public override readonly cause: unknown,
-      public readonly attempts: number,
-    ) {
-      super(`Retrying exceeded the maxAttempts (${attempts}).`);
-      this.name = "RetryError";
-    }
-  }
-  return {
-    RetryError,
-    retry: async (fn: () => Promise<unknown>, opts?: { maxAttempts?: number }) => {
-      const maxAttempts = opts?.maxAttempts ?? 3;
-      let lastError: unknown;
-      for (let i = 0; i < maxAttempts; i++) {
-        try {
-          return await fn();
-        } catch (err) {
-          lastError = err;
-        }
-      }
-      throw new RetryError(lastError, maxAttempts);
-    },
-  };
-});
-
 // Import after mocks
 const { createMCPTools, MCPTimeoutError } = await import("./create-mcp-tools.ts");
 
