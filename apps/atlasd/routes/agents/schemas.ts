@@ -10,6 +10,7 @@ export const agentMetadataSchema = z.object({
   category: z.enum(["system", "bundled", "sdk", "yaml"]),
   expertise: z.object({ examples: z.array(z.string()) }).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  sourceLocation: z.string().optional(),
 });
 
 export const agentListResponseSchema = z.object({

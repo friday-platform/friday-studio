@@ -182,9 +182,14 @@ Exact sequence — no more, no less:
 
 No read-verify-read. No incremental edits. No bash loop to verify intermediate state. One read, one write, one verify — then report.
 
-Agent registration goes through `upsert_agent` only. Never `curl /api/agents/register` from `run_code`, never multipart uploads, never bash workarounds. If `upsert_agent` returns an error, fix the input shape and retry — do not shell out. The workspace-design flow is the only path that produces a valid registered agent; raw-curl registration skips the validation that makes the workspace useful.
+Two steps for shipping a user agent — don't conflate:
 
-Diagnosis rule: once you can name the specific fix, stop investigating and execute it. Don't keep diagnosing because something else might also be broken. If the workspace YAML validates clean but the job fails at runtime, the broken thing is likely agent code — tell the user, then load `@friday/writing-friday-python-agents` and fix via `fs_write_file` (NOT `write_file` — agent source lives at `~/.friday/local/agents/{id}@{version}/agent.py`, outside the scratch sandbox) + re-register via `POST /api/agents/register` with the JSON `{entrypoint: "<abs path>"}`. After registering a new version, exercise it via `POST /api/agents/:id/run?workspaceId=…` with at least one fixture before declaring it fixed — registered ≠ working.
+1. **Publish source code** → `POST /api/agents/register` with `{entrypoint: "<abs path>"}` via `run_code` bash. JSON entrypoint only — multipart is rejected (400), no CLI shortcut. This is the only path that copies `agent.py` into the registry. Response includes `agent.path` (install dir).
+2. **Wire into workspace** → `upsert_agent`. Edits `workspace.yml` agents list; does not touch source code. For `type: "user"`, the `agent` field is an id reference — must already be registered via step 1.
+
+New agent → both. Edit to existing source → step 1 only; the workspace re-resolves to the latest registered semver (no version pin in `workspace.yml`).
+
+Diagnosis rule: once you can name the specific fix, stop investigating and execute it. Workspace YAML validates clean but job fails at runtime → broken thing is likely agent code. Load `@friday/writing-friday-python-agents`, find the source, edit, re-register. **Find the source path via `GET /api/agents/:id` → `sourceLocation`** — never construct it from a constant; the registry's home dir is migrating between layouts. Edit with `fs_write_file` (not `write_file` — sandbox-scoped). After registering, run a fixture via `POST /api/agents/:id/run?workspaceId=…` before declaring fixed — registered ≠ working.
 </workspace_modification>
 
 <response_style>

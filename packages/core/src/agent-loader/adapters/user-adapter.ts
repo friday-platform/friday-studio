@@ -105,6 +105,7 @@ export class UserAdapter implements AgentAdapter {
           environment: metadata.environment,
           inputSchema: metadata.inputSchema,
           outputSchema: metadata.outputSchema,
+          sourceLocation: entry.path,
         });
       } catch (error) {
         this.logger.warn("Skipping agent with unreadable metadata", { path: entry.path, error });

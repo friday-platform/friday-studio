@@ -75,6 +75,7 @@ getAgent.get(
           constraints: summary.constraints,
           inputSchema: summary.inputSchema,
           outputSchema: summary.outputSchema,
+          sourceLocation: summary.sourceLocation,
         });
       }
 
