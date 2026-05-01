@@ -19,7 +19,11 @@ import { createScore } from "../../lib/scoring.ts";
 
 await loadCredentials();
 
-const DAEMON_URL = process.env.FRIDAY_DAEMON_URL || "http://localhost:8080";
+// FRIDAYD_URL is the canonical name (set by friday-launcher);
+// FRIDAY_DAEMON_URL kept as legacy alias to match the resolution chain in
+// packages/openapi-client/src/utils.ts:50.
+const DAEMON_URL =
+  process.env.FRIDAYD_URL || process.env.FRIDAY_DAEMON_URL || "http://localhost:8080";
 const FIXTURES_DIR = join(import.meta.dirname ?? ".", "fixtures");
 
 const adapter = new AgentContextAdapter();

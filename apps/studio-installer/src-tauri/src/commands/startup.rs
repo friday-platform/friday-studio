@@ -14,6 +14,19 @@ export FRIDAY_HOME="$HOME/.friday/local"
 
 mkdir -p "$FRIDAY_HOME/pids"
 
+# Source the launcher's .env so health probes hit the right ports when the
+# user has FAST/LINK_DEV overrides (FRIDAY_PORT_FRIDAY=18080, etc.). LaunchAgent
+# starts this script in a clean env, so without this we'd silently poll :8080
+# while atlas listens on a different port and time out for 30s on every login.
+if [ -f "$FRIDAY_HOME/.env" ]; then
+  set -a
+  . "$FRIDAY_HOME/.env"
+  set +a
+fi
+PORT_FRIDAY="${{FRIDAY_PORT_FRIDAY:-8080}}"
+PORT_LINK="${{FRIDAY_PORT_LINK:-3100}}"
+PORT_PLAYGROUND="${{FRIDAY_PORT_PLAYGROUND:-5200}}"
+
 # Phase 1 — backends
 nohup "{install_dir}/atlas" >> "$FRIDAY_HOME/atlas.log" 2>&1 &
 echo $! > "$FRIDAY_HOME/pids/atlas.pid"
@@ -23,12 +36,12 @@ echo $! > "$FRIDAY_HOME/pids/link.pid"
 
 # Wait for backends
 for i in $(seq 1 30); do
-  curl -sf http://localhost:8080/health > /dev/null 2>&1 && break
+  curl -sf "http://localhost:$PORT_FRIDAY/health" > /dev/null 2>&1 && break
   sleep 1
 done
 
 for i in $(seq 1 30); do
-  curl -sf http://localhost:3100/health > /dev/null 2>&1 && break
+  curl -sf "http://localhost:$PORT_LINK/health" > /dev/null 2>&1 && break
   sleep 1
 done
 
@@ -41,11 +54,11 @@ echo $! > "$FRIDAY_HOME/pids/webhook-tunnel.pid"
 
 # Wait for Studio port
 for i in $(seq 1 30); do
-  nc -z localhost 5200 2>/dev/null && break
+  nc -z localhost "$PORT_PLAYGROUND" 2>/dev/null && break
   sleep 1
 done
 
-open "http://localhost:5200"
+open "http://localhost:$PORT_PLAYGROUND"
 "#,
         install_dir = install_dir
     )
@@ -58,6 +71,21 @@ fn generate_windows_script(install_dir: &str) -> String {
 set FRIDAY_HOME=%USERPROFILE%\.friday\local
 mkdir "%FRIDAY_HOME%\pids" 2>nul
 
+REM Load the launcher's .env so health probes hit the right ports when the
+REM user has FAST/LINK_DEV overrides (FRIDAY_PORT_FRIDAY=18080, etc.). The
+REM scheduled task starts this script in a clean env, so without this we'd
+REM silently poll :8080 while atlas listens on a different port.
+set "PORT_FRIDAY=8080"
+set "PORT_LINK=3100"
+set "PORT_PLAYGROUND=5200"
+if exist "%FRIDAY_HOME%\.env" (
+    for /f "usebackq tokens=1,2 delims==" %%a in ("%FRIDAY_HOME%\.env") do (
+        if "%%a"=="FRIDAY_PORT_FRIDAY" set "PORT_FRIDAY=%%b"
+        if "%%a"=="FRIDAY_PORT_LINK" set "PORT_LINK=%%b"
+        if "%%a"=="FRIDAY_PORT_PLAYGROUND" set "PORT_PLAYGROUND=%%b"
+    )
+)
+
 REM Phase 1 — backends
 start /B "" "{install_dir}\atlas.exe" >> "%FRIDAY_HOME%\atlas.log" 2>&1
 for /f %%i in ('powershell -command "Get-Process -Name atlas | Select-Object -Last 1 -ExpandProperty Id"') do echo %%i > "%FRIDAY_HOME%\pids\atlas.pid"
@@ -67,14 +95,14 @@ for /f %%i in ('powershell -command "Get-Process -Name link | Select-Object -Las
 
 REM Wait for backends
 :wait_atlas
-powershell -command "try {{ Invoke-WebRequest -Uri http://localhost:8080/health -UseBasicParsing -ErrorAction Stop | Out-Null; exit 0 }} catch {{ exit 1 }}"
+powershell -command "try {{ Invoke-WebRequest -Uri http://localhost:%PORT_FRIDAY%/health -UseBasicParsing -ErrorAction Stop | Out-Null; exit 0 }} catch {{ exit 1 }}"
 if errorlevel 1 (
     timeout /t 1 /nobreak > nul
     goto wait_atlas
 )
 
 :wait_link
-powershell -command "try {{ Invoke-WebRequest -Uri http://localhost:3100/health -UseBasicParsing -ErrorAction Stop | Out-Null; exit 0 }} catch {{ exit 1 }}"
+powershell -command "try {{ Invoke-WebRequest -Uri http://localhost:%PORT_LINK%/health -UseBasicParsing -ErrorAction Stop | Out-Null; exit 0 }} catch {{ exit 1 }}"
 if errorlevel 1 (
     timeout /t 1 /nobreak > nul
     goto wait_link
@@ -86,13 +114,13 @@ start /B "" "{install_dir}\webhook-tunnel.exe" >> "%FRIDAY_HOME%\webhook-tunnel.
 
 REM Wait for Studio port and open browser
 :wait_studio
-powershell -command "(New-Object System.Net.Sockets.TcpClient).Connect('localhost', 5200)"
+powershell -command "(New-Object System.Net.Sockets.TcpClient).Connect('localhost', %PORT_PLAYGROUND%)"
 if errorlevel 1 (
     timeout /t 1 /nobreak > nul
     goto wait_studio
 )
 
-start "" "http://localhost:5200"
+start "" "http://localhost:%PORT_PLAYGROUND%"
 "#,
         install_dir = install_dir
     )
