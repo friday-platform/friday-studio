@@ -36,14 +36,14 @@ type Supervisor struct {
 
 	restartMu sync.Mutex // serializes Restart-all paths
 
-	// inRestart is true between RestartAll's stop pass and the
-	// completion of its start pass. lastRestartEndNano is the unix-
-	// nano timestamp at which the most recent RestartAll returned;
-	// zero before the first restart. Together they drive the post-
-	// restart grace window in RestartGraceActive — the tray uses it
-	// to suppress the red "Error" badge while children are stopping
-	// + coming back up. Atomics so the tray-poll goroutine can read
-	// without taking restartMu.
+	// inRestart is true from the start of RestartAll until it
+	// returns. lastRestartEndNano is the unix-nano timestamp at
+	// which the most recent RestartAll returned; zero before the
+	// first restart. Together they drive the post-restart grace
+	// window in RestartGraceActive — the tray uses it to suppress
+	// the red "Error" badge while children are restarting and
+	// re-passing readiness probes. Atomics so the tray-poll
+	// goroutine can read without taking restartMu.
 	inRestart          atomic.Bool
 	lastRestartEndNano atomic.Int64
 }
