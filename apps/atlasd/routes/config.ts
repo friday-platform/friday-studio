@@ -397,7 +397,7 @@ configRoutes.put(
 
       // YAML key order follows object insertion order — put the load-order-
       // significant keys first, then everything else, so the file diff is
-      // readable.
+      // readable and matches docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml.
       const ordered: Record<string, unknown> = {};
       ordered.version = next.version;
       ordered.workspace = next.workspace;

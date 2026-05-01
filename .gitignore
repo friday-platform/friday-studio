@@ -9,7 +9,8 @@
 .local-dev/
 
 # Per-user platform config loaded from process.cwd() at daemon startup —
-# holds model preferences, MCP creds, rate limits.
+# holds model preferences, MCP creds, rate limits. Shared reference lives
+# at docs/COMPREHENSIVE_FRIDAY_EXAMPLE.yml.
 friday.yml
 
 # User agent development (keep the README, ignore agent subdirectories
