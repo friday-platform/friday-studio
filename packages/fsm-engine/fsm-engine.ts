@@ -26,7 +26,9 @@ import {
   LinkCredentialExpiredError,
   LinkCredentialNotFoundError,
   NoDefaultCredentialError,
+  SCOPE_INJECTED_PLATFORM_TOOLS,
   UserConfigurationError,
+  wrapPlatformToolsWithScope,
 } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
@@ -79,22 +81,11 @@ import type {
 
 /**
  * Platform tools exposed to FSM LLM steps.
- * Minimal set — runs without per-invocation user consent.
+ * Aliases the shared SCOPE_INJECTED_PLATFORM_TOOLS allowlist — same minimal
+ * set is used to wrap user-agent and LLM/atlas-agent platform tools so the
+ * scope-injection contract is uniform across every agent execution path.
  */
-const PLATFORM_TOOL_ALLOWLIST = new Set([
-  "webfetch",
-  "artifacts_create",
-  "artifacts_get",
-  "artifacts_update",
-  "state_append",
-  "state_filter",
-  "state_lookup",
-  // Memory — adapter-agnostic; validated against workspace.yml memory.own / mounts
-  // in the tool handler, so FSM jobs can only write stores the workspace declares.
-  "memory_save",
-  "memory_read",
-  "memory_remove",
-]);
+const PLATFORM_TOOL_ALLOWLIST = SCOPE_INJECTED_PLATFORM_TOOLS;
 
 const FSMStateSchema = z.object({ state: z.string() });
 
@@ -1969,29 +1960,17 @@ export class FSMEngine {
     // Filter: platform tools must be in allowlist, non-platform tools pass through.
     // Allowlisted platform tools get workspaceId auto-injected from engine scope
     // so workspace.yml never needs to reference workspace identity.
-    const scopeWorkspaceId = this.options.scope.workspaceId;
-    const scopeWorkspaceName = this.options.scope.workspaceName;
+    const filtered: Record<string, Tool> = {};
     for (const [name, mcpTool] of Object.entries(mcpResult.tools)) {
       if (!PLATFORM_TOOL_NAMES.has(name) || PLATFORM_TOOL_ALLOWLIST.has(name)) {
-        if (PLATFORM_TOOL_ALLOWLIST.has(name) && mcpTool.execute) {
-          const origExecute = mcpTool.execute;
-          tools[name] = {
-            ...mcpTool,
-            execute: (args, opts) =>
-              origExecute(
-                {
-                  ...args,
-                  workspaceId: scopeWorkspaceId,
-                  ...(scopeWorkspaceName && { workspaceName: scopeWorkspaceName }),
-                },
-                opts,
-              ),
-          };
-        } else {
-          tools[name] = mcpTool;
-        }
+        filtered[name] = mcpTool;
       }
     }
+    const wrapped = wrapPlatformToolsWithScope(filtered, {
+      workspaceId: this.options.scope.workspaceId,
+      workspaceName: this.options.scope.workspaceName,
+    });
+    Object.assign(tools, wrapped);
 
     return { tools, dispose };
   }

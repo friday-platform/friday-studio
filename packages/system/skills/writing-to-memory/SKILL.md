@@ -90,9 +90,26 @@ This keeps the injection window lean while making large results durable across s
 
 ## Availability
 
-`memory_save`, `memory_read`, `memory_remove`, and the artifact tools are available in all execution contexts:
+`memory_save`, `memory_read`, `memory_remove`, the `state_*` tools, the
+`artifacts_*` tools, and `webfetch` are wired into every execution context with
+`workspaceId` auto-injected from the runtime scope. You never pass
+`workspaceId` — the runtime overrides it (defense in depth: a foreign
+workspaceId in args is replaced before the tool runs).
 
-- Workspace-chat and delegated sub-agents
-- `type: "llm"` workspace agents
-- FSM jobs (LLM action steps)
-- `type: "user"` SDK agents (via the `atlas-platform` MCP server)
+| Context | Tool surface | Call shape |
+|---|---|---|
+| Workspace-chat / conversation | direct tool call | `memory_save({ memoryName, text })` |
+| `type: "llm"` workspace agents | LLM tool call | `memory_save({ memoryName, text })` |
+| `type: "atlas"` SDK agents | `tools.execute(...)` | `{ memoryName, text }` |
+| FSM LLM action steps | LLM tool call | `memory_save({ memoryName, text })` |
+| `type: "user"` Python/TS agents | `ctx.tools.call(name, args)` | `ctx.tools.call("memory_save", { memoryName, text })` |
+
+Stores must be declared in `workspace.yml` under `memory.own` (or reachable
+via an `rw` mount). Undeclared stores are rejected with the list of declared
+ones.
+
+**User-agent footgun:** `ctx.tools.call(...)` raises `ToolCallError` on
+validation failure (e.g. store not declared, narrative-only constraint).
+*Never* swallow with `except Exception` — surface the error via `err()` or
+fall through to your own retry. The autopilot family of bugs all started
+with a swallowed `ToolCallError` masking a silent write loss.

@@ -19,6 +19,7 @@ import {
   type MCPServerConfig,
   type MemoryAdapter,
   type NarrativeStore,
+  PLATFORM_TOOL_NAMES,
   type ResolvedWorkspaceMemory,
   type StoreMountBinding,
 } from "@atlas/agent-sdk";
@@ -39,6 +40,7 @@ import {
   extractPlannedSteps,
   hasUnusableCredentialCause,
   isAgentAction,
+  LLM_AGENT_ALLOWED_PLATFORM_TOOLS,
   mapActionToStepComplete,
   mapActionToStepStart,
   mapFsmEventToSessionEvent,
@@ -51,6 +53,7 @@ import {
   UserConfigurationError,
   WorkspaceSessionStatus,
   type WorkspaceSessionStatusType,
+  wrapPlatformToolsWithScope,
 } from "@atlas/core";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
@@ -2069,9 +2072,30 @@ export class WorkspaceRuntime {
       }
     }
 
-    const { tools: mcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
+    const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
 
-    // Inject built-in bash tool so code agents can shell out
+    // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
+    // agents see (memory, artifacts, state, fs, library, csv, bash, webfetch,
+    // workspace_signal_trigger, convert_task_to_workspace). Workspace-management
+    // tools (workspace_delete, session_describe, etc.) stay blocked.
+    // External MCP server tools pass through unfiltered.
+    const filteredTools: typeof rawMcpTools = {};
+    for (const [name, tool] of Object.entries(rawMcpTools)) {
+      if (!PLATFORM_TOOL_NAMES.has(name) || LLM_AGENT_ALLOWED_PLATFORM_TOOLS.has(name)) {
+        filteredTools[name] = tool;
+      }
+    }
+    // Wrap allowlisted scope-injected tools (memory/artifacts/state/webfetch)
+    // so workspaceId/workspaceName flow from the runtime scope. Tools that
+    // aren't in SCOPE_INJECTED_PLATFORM_TOOLS pass through untouched (e.g.
+    // csv, fs_*, library_*, bash from atlas-platform).
+    const mcpTools = wrapPlatformToolsWithScope(filteredTools, {
+      workspaceId: opts.workspaceId,
+      workspaceName: this.workspace.name,
+    });
+
+    // Inject built-in bash tool so code agents can shell out (overrides
+    // atlas-platform's bash entry — local bash has different privilege scope).
     mcpTools.bash = createBashTool();
 
     // Inject workDir for claude-code agents that discover skills from disk

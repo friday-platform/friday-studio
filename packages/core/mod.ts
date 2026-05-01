@@ -7,6 +7,12 @@
 // Workspace functionality moved to @atlas/workspace package
 
 export { findServerReferences } from "@atlas/config/mutations";
+export type { ToolScope } from "./src/agent-conversion/agent-tool-filters.ts";
+export {
+  LLM_AGENT_ALLOWED_PLATFORM_TOOLS,
+  SCOPE_INJECTED_PLATFORM_TOOLS,
+  wrapPlatformToolsWithScope,
+} from "./src/agent-conversion/agent-tool-filters.ts";
 // Export LLM agent conversion types and functions
 export type { LLMOutput } from "./src/agent-conversion/from-llm.ts";
 export {

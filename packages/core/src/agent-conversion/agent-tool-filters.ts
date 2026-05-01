@@ -1,19 +1,81 @@
-import type { AtlasTools } from "@atlas/agent-sdk";
+import type { AtlasTool, AtlasTools } from "@atlas/agent-sdk";
 import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
 import type { Logger } from "@atlas/logger";
 
 export { PLATFORM_TOOL_NAMES };
 
 /**
- * Platform tools that workspace LLM agents are allowed to use.
- * Subset of PLATFORM_TOOL_NAMES — tools NOT in this set are blocked.
- * External MCP server tools always pass through regardless of this list.
+ * Platform tools whose execute calls get workspaceId/workspaceName auto-injected
+ * from the engine scope. Workspace identity is supplied by the runtime, so
+ * callers (LLM tool calls, hand-written agent code) never need to know
+ * workspaceId. Caller-supplied workspaceId is overridden — defense in depth.
  *
- * Keep in sync with:
- * - packages/fsm-engine/fsm-engine.ts (PLATFORM_TOOL_ALLOWLIST)
- * - packages/system/agents/conversation/conversation.agent.ts (ALLOWED_TOOLS)
+ * Memory tools are validated against workspace.yml memory.own / mounts in the
+ * tool handler, so workspace agents can only write stores their workspace
+ * declares.
  */
-const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
+export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
+  "webfetch",
+  "artifacts_create",
+  "artifacts_get",
+  "artifacts_update",
+  "state_append",
+  "state_filter",
+  "state_lookup",
+  "memory_save",
+  "memory_read",
+  "memory_remove",
+]);
+
+export interface ToolScope {
+  workspaceId: string;
+  workspaceName?: string;
+}
+
+/**
+ * Wrap allowlisted platform tools so their execute calls receive workspaceId
+ * (and optionally workspaceName) from the runtime scope. Non-platform tools
+ * and platform tools outside the allowlist pass through unwrapped.
+ *
+ * Caller-supplied workspaceId is overridden — defense in depth: the LLM (or
+ * agent code) cannot smuggle a foreign workspaceId past the runtime.
+ */
+export function wrapPlatformToolsWithScope(
+  tools: AtlasTools,
+  scope: ToolScope,
+  allowlist: ReadonlySet<string> = SCOPE_INJECTED_PLATFORM_TOOLS,
+): AtlasTools {
+  const out: AtlasTools = {};
+  for (const [name, tool] of Object.entries(tools)) {
+    if (!allowlist.has(name) || !tool.execute) {
+      out[name] = tool;
+      continue;
+    }
+    const origExecute = tool.execute as NonNullable<AtlasTool["execute"]>;
+    out[name] = {
+      ...tool,
+      execute: ((args, opts) =>
+        origExecute(
+          {
+            ...(args as Record<string, unknown>),
+            workspaceId: scope.workspaceId,
+            ...(scope.workspaceName && { workspaceName: scope.workspaceName }),
+          },
+          opts,
+        )) as AtlasTool["execute"],
+    };
+  }
+  return out;
+}
+
+/**
+ * Platform tools that workspace LLM agents and `type: user` SDK agents are
+ * allowed to use. Subset of PLATFORM_TOOL_NAMES — tools NOT in this set are
+ * blocked. External MCP server tools always pass through regardless of this
+ * list. Workspace-management tools (workspace_delete, session_describe, etc.)
+ * are intentionally excluded so a workspace agent can't escape its own scope.
+ */
+export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   // Library (read/write)
   "library_list",
   "library_get",
@@ -41,6 +103,10 @@ const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   "memory_save",
   "memory_read",
   "memory_remove",
+  // State — workspace-scoped ephemeral storage (same security profile as memory)
+  "state_append",
+  "state_filter",
+  "state_lookup",
   // Workspace (limited)
   "convert_task_to_workspace",
   "workspace_signal_trigger",

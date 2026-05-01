@@ -1,6 +1,11 @@
 import type { AtlasTool, AtlasTools } from "@atlas/agent-sdk";
 import { describe, expect, it, vi } from "vitest";
-import { filterWorkspaceAgentTools, PLATFORM_TOOL_NAMES } from "./agent-tool-filters.ts";
+import {
+  filterWorkspaceAgentTools,
+  PLATFORM_TOOL_NAMES,
+  SCOPE_INJECTED_PLATFORM_TOOLS,
+  wrapPlatformToolsWithScope,
+} from "./agent-tool-filters.ts";
 
 const stubLogger = {
   debug: vi.fn(),
@@ -90,5 +95,102 @@ describe("filterWorkspaceAgentTools", () => {
     expect(PLATFORM_TOOL_NAMES.has("workspace_list")).toBe(true);
     expect(PLATFORM_TOOL_NAMES.has("bash")).toBe(true);
     expect(PLATFORM_TOOL_NAMES.has("webfetch")).toBe(true);
+  });
+});
+
+describe("wrapPlatformToolsWithScope", () => {
+  function makeExecutableTool(name: string, capture: { args?: unknown }): AtlasTool {
+    return {
+      description: name,
+      inputSchema: { type: "object", properties: {} },
+      execute: (args: unknown) => {
+        capture.args = args;
+        return Promise.resolve({ ok: true });
+      },
+    } as unknown as AtlasTool;
+  }
+
+  it("injects workspaceId on allowlisted platform tools", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = { memory_save: makeExecutableTool("memory_save", capture) };
+
+    const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "young_kale" });
+    await wrapped.memory_save?.execute?.(
+      { memoryName: "notes", text: "hi" },
+      { toolCallId: "t1", messages: [] },
+    );
+
+    expect(capture.args).toEqual({ memoryName: "notes", text: "hi", workspaceId: "young_kale" });
+  });
+
+  it("injects workspaceName when provided", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = { state_append: makeExecutableTool("state_append", capture) };
+
+    const wrapped = wrapPlatformToolsWithScope(tools, {
+      workspaceId: "ws_1",
+      workspaceName: "Inbox Zero",
+    });
+    await wrapped.state_append?.execute?.(
+      { key: "k", entry: "e" },
+      { toolCallId: "t1", messages: [] },
+    );
+
+    expect(capture.args).toEqual({
+      key: "k",
+      entry: "e",
+      workspaceId: "ws_1",
+      workspaceName: "Inbox Zero",
+    });
+  });
+
+  it("overrides caller-supplied workspaceId (defense in depth)", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = { memory_read: makeExecutableTool("memory_read", capture) };
+
+    const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "real_ws" });
+    await wrapped.memory_read?.execute?.(
+      { memoryName: "notes", workspaceId: "spoofed_ws" },
+      { toolCallId: "t1", messages: [] },
+    );
+
+    expect((capture.args as { workspaceId: string }).workspaceId).toBe("real_ws");
+  });
+
+  it("does not wrap non-allowlisted platform tools", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = {
+      // bash is in PLATFORM_TOOL_NAMES but NOT in SCOPE_INJECTED_PLATFORM_TOOLS
+      bash: makeExecutableTool("bash", capture),
+    };
+
+    const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "ws_1" });
+    await wrapped.bash?.execute?.({ cmd: "ls" }, { toolCallId: "t1", messages: [] });
+
+    expect(capture.args).toEqual({ cmd: "ls" });
+  });
+
+  it("passes external MCP tools through untouched", async () => {
+    const capture: { args?: unknown } = {};
+    const tools: AtlasTools = {
+      github_create_issue: makeExecutableTool("github_create_issue", capture),
+    };
+
+    const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId: "ws_1" });
+    await wrapped.github_create_issue?.execute?.(
+      { title: "bug" },
+      { toolCallId: "t1", messages: [] },
+    );
+
+    expect(capture.args).toEqual({ title: "bug" });
+  });
+
+  it("SCOPE_INJECTED_PLATFORM_TOOLS contains memory + artifacts + state + webfetch", () => {
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_save")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_read")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_remove")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("state_append")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("webfetch")).toBe(true);
   });
 });

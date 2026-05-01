@@ -22,6 +22,7 @@ import {
 } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { wrapPlatformToolsWithScope } from "../agent-conversion/agent-tool-filters.ts";
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { takeMountContext } from "../mount-context-registry.ts";
 import { MCPStreamEmitter } from "../streaming/stream-emitters.ts";
@@ -68,6 +69,7 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     try {
       const fetched = await fetchAllTools(
         sessionData.workspaceId,
+        sessionData.workspaceName,
         agent.mcpConfig,
         logger,
         overrides?.abortSignal,
@@ -244,9 +246,15 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
  * Discovers all workspace, registry, and static servers via discoverMCPServers,
  * applies agent-level overrides, and injects atlas-platform. Delegates to
  * createMCPTools for the actual tool instantiation.
+ *
+ * Allowlisted platform tools (memory, artifacts, state, webfetch) get
+ * workspaceId/workspaceName auto-injected from the session scope so callers
+ * (LLM tool calls, atlas/system handler code) never need to pass workspace
+ * identity. Same wrap that FSM LLM steps and user agents apply.
  */
 async function fetchAllTools(
   workspaceId: string,
+  workspaceName: string | undefined,
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   logger: Logger,
   signal?: AbortSignal,
@@ -312,5 +320,6 @@ async function fetchAllTools(
   const { tools, dispose, disconnected } = await createMCPTools(allServerConfigs, logger, {
     signal,
   });
-  return { tools, release: dispose, disconnected };
+  const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId, workspaceName });
+  return { tools: wrapped, release: dispose, disconnected };
 }

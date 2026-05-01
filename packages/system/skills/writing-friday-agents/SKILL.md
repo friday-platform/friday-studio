@@ -111,6 +111,9 @@ Key points: `stream.intent` fires before any blocking work; tool listing and LLM
 | Web scraping / page fetch | `ctx.http.fetch` — try first; add MCP browser server only when JS rendering is required | `capabilities.md` |
 | Progress to user | `ctx.stream.intent` / `ctx.stream.progress` | `capabilities.md` |
 | API tokens/secrets | `ctx.env["MY_TOKEN"]` + `environment=` decorator | `capabilities.md` |
+| Persist across runs (memory) | `ctx.tools.call("memory_save", { memoryName, text })` — no `workspaceId` field; runtime injects it | `writing-to-memory` skill |
+| Read prior memory | `ctx.tools.call("memory_read", { memoryName })` | `writing-to-memory` skill |
+| Save artifacts | `ctx.tools.call("artifacts_create", { path, title, summary })` | `writing-to-memory` skill |
 
 Reaching for `requests`, `httpx`, `anthropic`, `openai` — stop. Route through `ctx`.
 
@@ -152,6 +155,8 @@ Wrap capability calls — `LlmError`, `HttpError`, `ToolCallError` — and retur
 10. **Not checking `isError` before using MCP results.** Auth failures and MCP errors return `{"isError": True, "content": [...error text...]}` — this is NOT raised as `ToolCallError`. Always check `result.get("isError")` first or you'll silently process an error message as real data.
 11. **Using `list_mcp_tools` names verbatim in `ctx.tools.call`.** `list_mcp_tools` returns prefixed names (`google-gmail/search_gmail_messages`) — the prefix is correct for `type: llm` agent `config.tools`. Strip it for Python agents: `ctx.tools.call("search_gmail_messages", ...)` not `ctx.tools.call("google-gmail/search_gmail_messages", ...)`.
 12. **Treating "registered" as "working".** A successful `POST /api/agents/register` only confirms the `@agent` decorator parsed and the NATS handshake succeeded — nothing about the actual handler ran. Skipping the validation invoke means the first failure surfaces during a real user invocation against real data, and you've corrupted the user's mental model of the workspace. Always exercise via `POST /api/agents/:id/run` with at least one fixture before wiring into a job. See `references/validating.md`.
+13. **Swallowing `ToolCallError` from platform tools.** `ctx.tools.call("memory_save", ...)` raises `ToolCallError` on schema validation failure (e.g. store not declared in `workspace.yml`, narrative-only constraint). Wrapping that call in `except Exception: pass` (or even `except Exception as e: ctx.stream.progress(...)`) loses the write silently — the agent reports `ok` and the user only notices weeks later when the memory store is empty. Catch `ToolCallError` *narrowly* and propagate via `err()`, or don't catch at all.
+14. **Passing `workspaceId` to platform tools.** `memory_save`, `memory_read`, `memory_remove`, `state_*`, `artifacts_*`, and `webfetch` get `workspaceId` (and `workspaceName`) injected from the runtime scope. Don't try to thread it from `ctx.session.workspaceId` into args — the runtime overrides it anyway. `ctx.tools.call("memory_save", { "memoryName": "notes", "text": "..." })`.
 
 ## Registering an agent with Friday
 

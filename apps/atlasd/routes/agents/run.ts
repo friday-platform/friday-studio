@@ -11,7 +11,8 @@
  */
 
 import { join } from "node:path";
-import type { MCPServerConfig } from "@atlas/agent-sdk";
+import { type MCPServerConfig, PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
+import { LLM_AGENT_ALLOWED_PLATFORM_TOOLS, wrapPlatformToolsWithScope } from "@atlas/core";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
@@ -63,6 +64,7 @@ runAgentRoute.post(
     // mcp + atlas-platform). Validate the workspace exists upfront so we fail
     // before opening the SSE stream.
     let mcpConfigs: Record<string, MCPServerConfig> | undefined;
+    let workspaceName: string | undefined;
     if (workspaceId) {
       const manager = c.get("app").daemon.getWorkspaceManager();
       const merged = await manager.getWorkspaceConfig(workspaceId);
@@ -70,6 +72,7 @@ runAgentRoute.post(
         return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
       }
       mcpConfigs = buildMcpConfigs(merged.workspace, agentSource.metadata.mcp);
+      workspaceName = merged.workspace.workspace?.name;
     }
 
     const agentPath = join(agentSource.metadata.sourceLocation, agentSource.metadata.entrypoint);
@@ -95,7 +98,22 @@ runAgentRoute.post(
             mcpResult = await createMCPTools(mcpConfigs, logger, {
               signal: AbortSignal.timeout(30000),
             });
-            // Match runtime.ts: code agents get a built-in bash tool.
+            // Match runtime.ts: filter platform tools to LLM_AGENT_ALLOWED
+            // (same surface workspace LLM agents see; blocks workspace mgmt),
+            // then wrap so workspaceId/workspaceName flow from the runtime —
+            // agents call `memory_save({ memoryName, text })` without ever
+            // touching workspaceId. Production fidelity vs runtime.ts.
+            const filtered: typeof mcpResult.tools = {};
+            for (const [name, tool] of Object.entries(mcpResult.tools)) {
+              if (!PLATFORM_TOOL_NAMES.has(name) || LLM_AGENT_ALLOWED_PLATFORM_TOOLS.has(name)) {
+                filtered[name] = tool;
+              }
+            }
+            mcpResult.tools = wrapPlatformToolsWithScope(filtered, {
+              workspaceId: workspaceId!,
+              workspaceName,
+            });
+            // Override atlas-platform's bash with local createBashTool().
             mcpResult.tools.bash = createBashTool();
           }
 
