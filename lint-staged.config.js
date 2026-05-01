@@ -83,4 +83,9 @@ export default {
     const args = [...normal.map((f) => `"${f}"`), ...parenDirs.map((d) => `"${d}"`)];
     return [`deno lint --fix ${args.join(" ")}`];
   },
+  // Catches the case where someone bumps one of the three SDK version
+  // pins without bumping the others. Cheaper than catching it in CI —
+  // fires the moment the user `git commit`s.
+  "{tools/friday-launcher/paths.go,Dockerfile,apps/studio-installer/src-tauri/src/commands/prewarm_agent_sdk.rs}":
+    () => "deno run --allow-read scripts/check-sdk-pin-sync.ts",
 };

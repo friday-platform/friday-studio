@@ -1,6 +1,7 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { onMount } from "svelte";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { onDestroy, onMount } from "svelte";
 import { advanceStep, createAppBundleIfDarwin, installDir, runExtract } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
 
@@ -20,11 +21,17 @@ interface Tool {
    * none for argless commands. */
   args?: () => Promise<Record<string, unknown>>;
   status: ToolStatus;
+  /** Error string from the most recent failed run. Set in runTool's catch
+   * branch and surfaced under the row when status === "failed", so the user
+   * sees *why* a tool flipped to ✗ — load-bearing for prewarm_agent_sdk's
+   * 90s timeout, which is otherwise silent except for a console.warn. */
+  error?: string;
 }
 
 type Phase = "extracting" | "tools";
 
 let phase = $state<Phase>("extracting");
+let prewarmProgress = $state<string>("");
 let tools = $state<Tool[]>([
   { display: "Claude Code", command: "ensure_claude_code", status: "pending" },
   { display: "agent-browser", command: "ensure_agent_browser_chrome", status: "pending" },
@@ -47,8 +54,13 @@ async function runTool(idx: number): Promise<void> {
     await invoke(tool.command, args);
     tools[idx].status = "success";
   } catch (err) {
+    // Tauri's invoke() rejects with the Result::Err string verbatim for
+    // commands typed Result<T, String>. Fall back for non-string shapes
+    // so the UI never renders "[object Object]".
+    const msg = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
     console.warn(`${tool.command} failed (non-fatal):`, err);
     tools[idx].status = "failed";
+    tools[idx].error = msg;
   }
 }
 
@@ -64,7 +76,17 @@ function pipClass(status: ToolStatus): string {
   return "pip pip-spinner";
 }
 
+// Hoisted so onDestroy can reach it. An async onMount returns
+// Promise<UnlistenFn>, which Svelte 5 silently ignores for cleanup —
+// returning unlisten from inside the async block would leak the listener.
+// onDestroy gets a synchronous closure and runs reliably on unmount.
+let unlisten: UnlistenFn | undefined;
+
 onMount(async () => {
+  unlisten = await listen<string>("prewarm:progress", (e) => {
+    prewarmProgress = e.payload;
+  });
+
   const src = store.downloadPath;
   // Single source of truth for the install path lives in Rust
   // (commands/platform.rs::install_dir → ~/.friday/local). Keep all
@@ -77,16 +99,14 @@ onMount(async () => {
     // the launcher and the user can re-launch after they Quit.
     // Non-fatal if it fails — see createAppBundleIfDarwin.
     await createAppBundleIfDarwin(dest, store.availableVersion);
-    // Flip to the per-tool checklist phase. Each tool runs sequentially
-    // so the row pips show one-at-a-time motion the user can map to
-    // network activity. Failures are non-fatal: agent-browser failing
-    // only degrades the web agent's `browse` tool — `search` and
-    // `fetch` (HTTP-based) keep working. Claude Code failing surfaces
-    // at first agent invocation rather than blocking install.
+    // Tools run in parallel. Each pip animates independently while its
+    // tool resolves. Failures are non-fatal — the row pip flips to ✗,
+    // the daemon surfaces a clear 'binary not found' at first agent
+    // run, and the user can re-run the installer to retry.
     phase = "tools";
-    for (let i = 0; i < tools.length; i++) {
-      await runTool(i);
-    }
+    // Run all tools concurrently. Each pip animates independently; allSettled
+    // never throws so the install always proceeds to advanceStep().
+    await Promise.allSettled(tools.map((_, i) => runTool(i)));
     // Persist the install marker so the wizard's mode detection on
     // the next run sees mode==="current" / "update" instead of
     // re-treating the install as "fresh". Without this, every run
@@ -102,6 +122,10 @@ onMount(async () => {
   } catch {
     // store.error is already set by runExtract
   }
+});
+
+onDestroy(() => {
+  unlisten?.();
 });
 </script>
 
@@ -129,6 +153,16 @@ onMount(async () => {
             </span>
             <span class="row-name">{tool.display}</span>
           </div>
+          {#if tool.command === "prewarm_agent_sdk" && tool.status === "pending" && prewarmProgress}
+            <div class="row-progress" aria-live="polite" aria-atomic="true">
+              {prewarmProgress}
+            </div>
+          {/if}
+          {#if tool.status === "failed" && tool.error}
+            <div class="row-error" role="alert">
+              {tool.error}
+            </div>
+          {/if}
         {/each}
       </div>
     {:else}
@@ -256,6 +290,30 @@ onMount(async () => {
 
   .row-name {
     flex: 1;
+  }
+
+  .row-progress {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    padding: 0 12px 0 42px; /* indent under the pip glyph */
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono, monospace);
+  }
+
+  /* Error sub-line shown when a tool flips to ✗. role="alert" gives a
+     stronger announcement than the progress sub-line's polite live region
+     so VoiceOver / NVDA / Narrator surface the failure reason promptly. */
+  .row-error {
+    font-size: 11px;
+    color: var(--color-error);
+    padding: 0 12px 0 42px;
+    max-width: 320px;
+    word-break: break-word;
+    line-height: 1.4;
+    font-family: var(--font-mono, monospace);
   }
 
   .pip {
