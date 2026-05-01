@@ -14,18 +14,28 @@ export FRIDAY_HOME="$HOME/.friday/local"
 
 mkdir -p "$FRIDAY_HOME/pids"
 
-# Source the launcher's .env so health probes hit the right ports when the
+# Read the launcher's .env so health probes hit the right ports when the
 # user has FAST/LINK_DEV overrides (FRIDAY_PORT_FRIDAY=18080, etc.). LaunchAgent
 # starts this script in a clean env, so without this we'd silently poll :8080
 # while atlas listens on a different port and time out for 30s on every login.
+#
+# Use awk rather than `. .env` (dot-source) — the launcher writes .env values
+# unquoted, so a user-pasted secret containing $ or backticks would be expanded
+# at every login. awk reads the file as plain strings; no shell metacharacters
+# are interpreted. We only extract the three port keys; other vars (atlas etc.
+# read .env themselves on startup, so the script doesn't need to re-export).
+read_env_value() {{
+  awk -F= -v k="$1" '$1==k{{print substr($0, length(k)+2); exit}}' "$FRIDAY_HOME/.env" 2>/dev/null | tr -d '\r'
+}}
+
 if [ -f "$FRIDAY_HOME/.env" ]; then
-  set -a
-  . "$FRIDAY_HOME/.env"
-  set +a
+  PORT_FRIDAY=$(read_env_value FRIDAY_PORT_FRIDAY)
+  PORT_LINK=$(read_env_value FRIDAY_PORT_LINK)
+  PORT_PLAYGROUND=$(read_env_value FRIDAY_PORT_PLAYGROUND)
 fi
-PORT_FRIDAY="${{FRIDAY_PORT_FRIDAY:-8080}}"
-PORT_LINK="${{FRIDAY_PORT_LINK:-3100}}"
-PORT_PLAYGROUND="${{FRIDAY_PORT_PLAYGROUND:-5200}}"
+PORT_FRIDAY="${{PORT_FRIDAY:-8080}}"
+PORT_LINK="${{PORT_LINK:-3100}}"
+PORT_PLAYGROUND="${{PORT_PLAYGROUND:-5200}}"
 
 # Phase 1 — backends
 nohup "{install_dir}/atlas" >> "$FRIDAY_HOME/atlas.log" 2>&1 &
@@ -75,11 +85,17 @@ REM Load the launcher's .env so health probes hit the right ports when the
 REM user has FAST/LINK_DEV overrides (FRIDAY_PORT_FRIDAY=18080, etc.). The
 REM scheduled task starts this script in a clean env, so without this we'd
 REM silently poll :8080 while atlas listens on a different port.
+REM
+REM `tokens=1,*` (not `1,2`) captures everything after the first `=` in %%b,
+REM so URL-shaped values aren't truncated at internal `=` characters. cmd.exe's
+REM `for /f` reads the file as plain text — no shell expansion of the contents
+REM — but we only consume the three known FRIDAY_PORT_* keys to keep the
+REM blast radius bounded if .env grows new vars later.
 set "PORT_FRIDAY=8080"
 set "PORT_LINK=3100"
 set "PORT_PLAYGROUND=5200"
 if exist "%FRIDAY_HOME%\.env" (
-    for /f "usebackq tokens=1,2 delims==" %%a in ("%FRIDAY_HOME%\.env") do (
+    for /f "usebackq tokens=1,* delims==" %%a in ("%FRIDAY_HOME%\.env") do (
         if "%%a"=="FRIDAY_PORT_FRIDAY" set "PORT_FRIDAY=%%b"
         if "%%a"=="FRIDAY_PORT_LINK" set "PORT_LINK=%%b"
         if "%%a"=="FRIDAY_PORT_PLAYGROUND" set "PORT_PLAYGROUND=%%b"
