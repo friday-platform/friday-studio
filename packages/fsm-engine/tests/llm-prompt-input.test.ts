@@ -20,11 +20,7 @@ vi.mock("@atlas/skills", async (importOriginal) => {
   const empty = () => Promise.resolve({ ok: true, data: [] });
   return {
     ...actual,
-    SkillStorage: {
-      list: empty,
-      listAssigned: empty,
-      listAssignmentsForJob: empty,
-    },
+    SkillStorage: { list: empty, listAssigned: empty, listAssignmentsForJob: empty },
   };
 });
 

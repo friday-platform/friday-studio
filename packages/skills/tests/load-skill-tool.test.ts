@@ -240,10 +240,7 @@ describe("createLoadSkillTool — workspace scoping", () => {
     assigned?: (typeof SUMMARY)[];
     jobAssigned?: (typeof SUMMARY)[];
   }) {
-    vi.spyOn(SkillStorage, "list").mockResolvedValue({
-      ok: true,
-      data: opts.all ?? [],
-    });
+    vi.spyOn(SkillStorage, "list").mockResolvedValue({ ok: true, data: opts.all ?? [] });
     vi.spyOn(SkillStorage, "listAssigned").mockResolvedValue({
       ok: true,
       data: opts.assigned ?? [],

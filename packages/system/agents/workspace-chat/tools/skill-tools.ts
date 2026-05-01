@@ -90,7 +90,10 @@ export function createAssignWorkspaceSkillTool(
           return { success: false as const, error: assignResult.error };
         }
 
-        logger.info("assign_workspace_skill succeeded", { skillRef, workspaceId: targetWorkspaceId });
+        logger.info("assign_workspace_skill succeeded", {
+          skillRef,
+          workspaceId: targetWorkspaceId,
+        });
         return {
           success: true as const,
           skill: { ref: skillRef },
@@ -120,7 +123,10 @@ export function createUnassignWorkspaceSkillTool(
       inputSchema: UnassignSkillInput,
       execute: async ({ skillRef, workspaceId }) => {
         const targetWorkspaceId = workspaceId ?? defaultWorkspaceId;
-        logger.info("unassign_workspace_skill invoked", { skillRef, workspaceId: targetWorkspaceId });
+        logger.info("unassign_workspace_skill invoked", {
+          skillRef,
+          workspaceId: targetWorkspaceId,
+        });
 
         let namespace: string;
         let name: string;
@@ -164,7 +170,10 @@ export function createUnassignWorkspaceSkillTool(
           return { success: false as const, error: unassignResult.error };
         }
 
-        logger.info("unassign_workspace_skill succeeded", { skillRef, workspaceId: targetWorkspaceId });
+        logger.info("unassign_workspace_skill succeeded", {
+          skillRef,
+          workspaceId: targetWorkspaceId,
+        });
         return {
           success: true as const,
           message: `Skill "${skillRef}" has been removed from workspace "${targetWorkspaceId}".`,

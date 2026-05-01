@@ -1,10 +1,7 @@
 import type { Logger } from "@atlas/logger";
 import { SkillStorage } from "@atlas/skills";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createAssignWorkspaceSkillTool,
-  createUnassignWorkspaceSkillTool,
-} from "./skill-tools.ts";
+import { createAssignWorkspaceSkillTool, createUnassignWorkspaceSkillTool } from "./skill-tools.ts";
 
 // =============================================================================
 // Helpers

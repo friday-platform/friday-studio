@@ -63,13 +63,13 @@ import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
-import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
-import { createWebFetchTool } from "./tools/web-fetch.ts";
-import { createWebSearchTool } from "./tools/web-search.ts";
 import {
   createAssignWorkspaceSkillTool,
   createUnassignWorkspaceSkillTool,
 } from "./tools/skill-tools.ts";
+import { createBoundUpsertTools } from "./tools/upsert-tools.ts";
+import { createWebFetchTool } from "./tools/web-fetch.ts";
+import { createWebSearchTool } from "./tools/web-search.ts";
 import { createBoundWorkspaceOpsTools, createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
