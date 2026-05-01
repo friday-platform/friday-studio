@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -144,31 +143,11 @@ func (s *Supervisor) RestartAll() error {
 
 	var firstErr error
 	for _, name := range startOrder {
-		if err := s.runner.RestartProcess(name); err != nil &&
-			firstErr == nil {
-			// "not running" is non-fatal: a crashed-and-not-yet-
-			// restarted child returns it, and RestartProcess's
-			// follow-up runProcess will still spawn a fresh
-			// instance via the project config.
-			if !isNotRunningErr(err) {
-				firstErr = err
-			}
+		if err := s.runner.RestartProcess(name); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
 	return firstErr
-}
-
-// isNotRunningErr returns true if err is process-compose's
-// "process X is not running" error from StopProcess. Treated as
-// non-fatal during restart-all (process crashed and will be restarted
-// by RestartPolicyAlways anyway).
-func isNotRunningErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "is not running") ||
-		strings.Contains(msg, "does not exist")
 }
 
 // StartedAt returns when the supervisor was created (used by the tray

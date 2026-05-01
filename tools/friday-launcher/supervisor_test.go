@@ -259,9 +259,9 @@ func (b *blockingFakeRunner) RestartProcess(name string) error {
 	return b.fakeRunner.RestartProcess(name)
 }
 
-// errFakeRestart is the synthetic error TestSupervisorRestartAllPropagatesError
-// surfaces from RestartProcess. Distinct from "not running" so the
-// isNotRunningErr branch doesn't swallow it.
+// errFakeRestart is the synthetic error
+// TestSupervisorRestartAllPropagatesError surfaces from
+// RestartProcess so we can verify RestartAll propagates it.
 var errFakeRestart = &fakeRestartError{}
 
 type fakeRestartError struct{}
