@@ -84,8 +84,6 @@
   },
   "allowScripts": [
     "npm:@launchql/protobufjs@7.2.6",
-    "npm:@sentry/cli@2.58.4",
-    "npm:@sentry/cli@2.58.5",
     "npm:better-sqlite3@12.6.2",
     "npm:esbuild@0.27.1",
     "npm:esbuild@0.27.2",

@@ -1,11 +1,6 @@
 import fs from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
-import {
-  captureException,
-  captureMessage,
-  isInitialized as isSentryInitialized,
-} from "@atlas/sentry";
 import { DetailedError } from "hono/client";
 import { BaseLogger } from "./base-logger.ts";
 import { executeWrite } from "./file-write-coordinator.ts";
@@ -42,19 +37,6 @@ class AtlasLoggerV2 extends BaseLogger {
       // Continue if file writing fails
     }
 
-    // Send errors to Sentry
-    if ((level === "error" || level === "fatal") && isSentryInitialized()) {
-      try {
-        const error = finalContext.error;
-        if (error instanceof Error) {
-          captureException(error, finalContext);
-        } else {
-          captureMessage(message, level, finalContext);
-        }
-      } catch {
-        // Ignore Sentry failures
-      }
-    }
   }
 
   private formatLogEntry(level: LogLevel, message: string, context: LogContext): LogEntry {

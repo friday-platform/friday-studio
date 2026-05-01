@@ -4,7 +4,6 @@ import process from "node:process";
 import type { ActivityStorageAdapter } from "@atlas/activity";
 import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import { logger } from "@atlas/logger";
-import { flush as flushSentry, initSentry } from "@atlas/sentry";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { getConnInfo } from "hono/deno";
 import { HTTPException } from "hono/http-exception";
@@ -174,8 +173,6 @@ async function shutdown(signal: string, adapter: ResourceStorageAdapter): Promis
     await adapter.destroy();
     logger.info("Adapter destroyed");
 
-    await flushSentry();
-
     clearTimeout(shutdownTimeout);
     logger.info("Shutdown complete");
     process.exit(0);
@@ -187,8 +184,6 @@ async function shutdown(signal: string, adapter: ResourceStorageAdapter): Promis
 }
 
 if (import.meta.main) {
-  initSentry();
-
   const dbPath = config.sqlitePath ?? join(getFridayHome(), "ledger.db");
   const sqliteAdapter = await createSQLiteAdapter(dbPath);
   await sqliteAdapter.init();

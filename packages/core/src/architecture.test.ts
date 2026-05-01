@@ -20,9 +20,8 @@ describe("architecture", () => {
   // `@atlas/core` exports session-event types and reducers consumed by the
   // browser bundle (agent-playground). The bare `@atlas/hallucination` entry
   // re-exports `validate` and `createFSMOutputValidator` — which transitively
-  // import `@atlas/logger` → `@atlas/sentry/init.ts` → `node:process`. A single
-  // runtime import from the barrel drags Sentry's Node-only init into the
-  // client. Always use the `@atlas/hallucination/verdict` subpath here.
+  // import `@atlas/logger` → `node:process`. Always use the
+  // @atlas/hallucination/verdict` subpath here.
   it("must not import @atlas/hallucination via the bare-package entry", () => {
     const pattern = /from\s+["']@atlas\/hallucination["']/;
     const violations: string[] = [];
@@ -39,7 +38,7 @@ describe("architecture", () => {
     expect(
       violations,
       "@atlas/core code reaches the client bundle. The bare @atlas/hallucination " +
-        "entry pulls @atlas/logger → @atlas/sentry → node:process. " +
+        "entry pulls @atlas/logger → node:process. " +
         "Use @atlas/hallucination/verdict for schemas/types instead.\n" +
         "Violations:\n" +
         violations.join("\n"),

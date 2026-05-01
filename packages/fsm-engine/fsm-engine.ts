@@ -865,7 +865,6 @@ export class FSMEngine {
           ? `state ${failedState}`
           : `state ${failedState} (entered via ${sig.type} from ${fromState})`;
 
-      // Budget exceeded is expected when workspace hits spending limit - don't spam Sentry
       if (isAPIErrorCause(errorCause) && errorCause.code === "BUDGET_EXCEEDED") {
         logger.warn(`FSM error in ${transitionDescriptor}, signal ${sig.type}: budget exceeded`, {
           error,

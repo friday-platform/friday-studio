@@ -6,7 +6,6 @@ WORKDIR /app
 
 COPY packages/utils/ ./packages/utils/
 COPY packages/logger/ ./packages/logger/
-COPY packages/sentry/ ./packages/sentry/
 COPY apps/link/deno.json ./apps/link/
 COPY apps/link/src/ ./apps/link/src/
 

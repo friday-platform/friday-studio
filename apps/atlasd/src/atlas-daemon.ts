@@ -22,7 +22,6 @@ import { logger } from "@atlas/logger";
 import { sharedMCPProcesses } from "@atlas/mcp";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
-import { flush as flushSentry } from "@atlas/sentry";
 import type { LibraryStorageAdapter } from "@atlas/storage";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
@@ -2239,9 +2238,6 @@ export class AtlasDaemon {
         logger.error("Error shutting down HTTP server", { error });
       }
     }
-
-    // Flush Sentry events before exit
-    await flushSentry(2000);
 
     logger.info("Atlas daemon shutdown complete");
   }

@@ -4,7 +4,6 @@ import process from "node:process";
 import { client, parseResult } from "@atlas/client/v2";
 import { extractTempestUserId, fetchCredentials, setToEnv } from "@atlas/core/credentials";
 import { logger } from "@atlas/logger";
-import { captureException, initSentry } from "@atlas/sentry";
 import { getVersionInfo } from "@atlas/utils";
 import { exists } from "@atlas/utils/fs.server";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -310,16 +309,6 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     await reExecWithOtel(atlasKey);
   }
 
-  // Set Sentry environment based on build type if not explicitly configured.
-  // Compiled binary defaults to "production", source code defaults to "local".
-  if (!process.env.SENTRY_ENVIRONMENT) {
-    const { isCompiled } = getVersionInfo();
-    process.env.SENTRY_ENVIRONMENT = isCompiled ? "production" : "local";
-  }
-
-  // Initialize Sentry early for error tracking
-  initSentry();
-
   try {
     // Validate port
     if (argv.port && (argv.port < 1 || argv.port > 65535)) {
@@ -534,7 +523,6 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       await startForeground(argv);
     }
   } catch (error) {
-    captureException(error);
     errorOutput(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -644,7 +632,6 @@ async function startForeground(argv: StartArgs): Promise<void> {
   globalThis.addEventListener("unhandledrejection", (event) => {
     event.preventDefault();
     logger.error("Unhandled promise rejection", { error: event.reason });
-    captureException(event.reason);
   });
 
   // Handle graceful shutdown

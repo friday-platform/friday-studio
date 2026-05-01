@@ -1108,8 +1108,6 @@ Deno binaries. Inventory is taken from `deno.lock`.
 | `@sapphire/snowflake` | 3.5.5 | https://www.npmjs.com/package/@sapphire/snowflake |
 | `@scure/base` | 2.2.0 | https://www.npmjs.com/package/@scure/base |
 | `@sendgrid/helpers` | 8.0.0 | https://www.npmjs.com/package/@sendgrid/helpers |
-| `@sentry/core` | 10.50.0 | https://www.npmjs.com/package/@sentry/core |
-| `@sentry/deno` | 10.50.0 | https://www.npmjs.com/package/@sentry/deno |
 | `@shikijs/core` | 4.0.2 | https://www.npmjs.com/package/@shikijs/core |
 | `@shikijs/engine-javascript` | 4.0.2 | https://www.npmjs.com/package/@shikijs/engine-javascript |
 | `@shikijs/engine-oniguruma` | 4.0.2 | https://www.npmjs.com/package/@shikijs/engine-oniguruma |

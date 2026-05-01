@@ -41,7 +41,6 @@
       "project": ["**/*.{ts,tsx,js,jsx}!"],
       "entry": ["scripts/build.ts!"]
     },
-    "packages/sentry": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/signals": { "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/slack": { "entry": ["src/**/*.test.ts"], "project": ["src/**/*.{ts,tsx,js,jsx}!"] },
     "packages/skills": {

@@ -2,7 +2,6 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { logger } from "@atlas/logger";
-import { flush as flushSentry, initSentry } from "@atlas/sentry";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { getConnInfo } from "hono/deno";
 import { HTTPException } from "hono/http-exception";
@@ -251,8 +250,6 @@ async function shutdown(signal: string): Promise<void> {
       logger.info("Postgres pool closed");
     }
 
-    await flushSentry();
-
     clearTimeout(shutdownTimeout);
     logger.info("Shutdown complete");
     process.exit(0);
@@ -320,7 +317,6 @@ export {
 export type { Credential, CredentialSummary, OAuthCredential } from "./types.ts";
 
 if (import.meta.main) {
-  initSentry();
   logger.info("Link service starting", { port: config.port });
 
   Deno.addSignalListener("SIGINT", () => shutdown("SIGINT"));

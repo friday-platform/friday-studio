@@ -5,14 +5,13 @@
  * Symbol.for("opentelemetry.js.api.1") with its TracerProvider, ContextManager,
  * etc. at process startup, before any JS runs.
  *
- * However, @sentry/deno calls trace.disable() during init, which deletes the
- * trace field from the global. And the npm @opentelemetry/api package (loaded
- * through node_modules by transitive deps like @opentelemetry/sdk-logs) can
- * also lose Deno's pre-populated fields via registerGlobal() reassignment.
+ * However, the npm @opentelemetry/api package (loaded through node_modules by
+ * transitive deps like @opentelemetry/sdk-logs) can also lose Deno's
+ * pre-populated fields via registerGlobal() reassignment.
  *
  * Fix: replace the OTEL global object with a Proxy that silently ignores
  * delete operations and property overwrites on Deno's original fields. This
- * lets Sentry and other packages think they succeeded while preserving Deno's
+ * lets other packages think they succeeded while preserving Deno's
  * TracerProvider for custom span creation.
  *
  * Usage: deno run ... apps/atlas-cli/src/otel-bootstrap.ts <args>
@@ -32,7 +31,7 @@ if (otel?.trace) {
   const proxy = new Proxy(otel, {
     deleteProperty(_target, prop) {
       if (preserved.has(prop)) {
-        // Silently "succeed" without actually deleting — Sentry calls
+        // Silently "succeed" without actually deleting — Packges call
         // unregisterGlobal("trace") which does `delete api.trace`
         return true;
       }

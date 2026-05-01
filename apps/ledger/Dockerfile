@@ -7,7 +7,6 @@ WORKDIR /app
 COPY packages/activity/ ./packages/activity/
 COPY packages/utils/ ./packages/utils/
 COPY packages/logger/ ./packages/logger/
-COPY packages/sentry/ ./packages/sentry/
 COPY apps/ledger/deno.json ./apps/ledger/
 COPY apps/ledger/src/ ./apps/ledger/src/
 

@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@atlas/logger": "workspace:*",
-    "@atlas/sentry": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@hono/zod-validator": "0.7.6",

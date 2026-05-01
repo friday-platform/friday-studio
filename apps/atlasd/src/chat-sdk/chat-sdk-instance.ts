@@ -893,7 +893,7 @@ export function createMessageHandler(
       // Surface adapter-side post failures (e.g. Meta Graph API errors).
       // Without this the stream silently swallows the error and the user
       // sees no reply on their platform. Keep the first handful of stack
-      // frames so Sentry can group by call site; the adapter's own error
+      // frames to group by call site; the adapter's own error
       // message carries the provider-specific code (e.g. fbtrace_id on
       // Meta, Slack error types) — docs/integrations/<provider>/README.md
       // maps common codes to fixes.

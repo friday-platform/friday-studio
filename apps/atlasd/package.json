@@ -10,7 +10,6 @@
     "@atlas/bundle": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/config": "workspace:*",
-    "@atlas/sentry": "workspace:*",
     "@atlas/core": "workspace:*",
     "@atlas/ledger": "workspace:*",
     "@atlas/cron": "workspace:*",
