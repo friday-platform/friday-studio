@@ -40,9 +40,10 @@ export const registerCommand = define({
     // FRIDAYD_URL is the canonical name (set by friday-launcher's .env load
     // — see tools/friday-launcher/project.go). FRIDAY_DAEMON_URL kept as a
     // legacy alias to match the resolution chain in
-    // packages/openapi-client/src/utils.ts:50.
+    // packages/openapi-client/src/utils.ts:50. `||` (not `??`) so an
+    // explicitly-empty FRIDAYD_URL still falls through to the alias / default.
     const daemonUrl =
-      process.env.FRIDAYD_URL ?? process.env.FRIDAY_DAEMON_URL ?? "http://localhost:8080";
+      process.env.FRIDAYD_URL || process.env.FRIDAY_DAEMON_URL || "http://localhost:8080";
 
     let response: Response;
     try {

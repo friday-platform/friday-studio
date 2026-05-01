@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import process from "node:process";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import { enterTraceScope, type TraceEntry } from "@atlas/llm";
