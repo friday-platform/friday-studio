@@ -62,10 +62,7 @@ export async function resolveVisibleSkills(
     });
   }
   if (!jobOnlyResult.ok) {
-    logger.warn("Failed to list job-only skill ids", {
-      error: jobOnlyResult.error,
-      workspaceId,
-    });
+    logger.warn("Failed to list job-only skill ids", { error: jobOnlyResult.error, workspaceId });
   }
 
   const jobOnlyIds = new Set(jobOnlyResult.ok ? jobOnlyResult.data : []);
