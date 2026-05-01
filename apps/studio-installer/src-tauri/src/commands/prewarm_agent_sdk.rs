@@ -148,6 +148,12 @@ pub async fn prewarm_agent_sdk(
         Ok(Err(e)) => return Err(format!("uv wait: {e}")),
         Err(_) => {
             let _ = child.kill().await;
+            // Abort the readers so they don't emit one final
+            // `prewarm:progress` event after we've already returned ✗.
+            // Cosmetic — the row is already failed by the time any late
+            // event fires — but tightens the mental model.
+            stdout_task.abort();
+            stderr_task.abort();
             return Err(format!(
                 "uv pre-warm timed out after {}s",
                 PREWARM_TIMEOUT.as_secs()

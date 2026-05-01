@@ -1,7 +1,7 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { onMount } from "svelte";
+import { onDestroy, onMount } from "svelte";
 import { advanceStep, createAppBundleIfDarwin, installDir, runExtract } from "../lib/installer.ts";
 import { store } from "../lib/store.svelte.ts";
 
@@ -21,6 +21,11 @@ interface Tool {
    * none for argless commands. */
   args?: () => Promise<Record<string, unknown>>;
   status: ToolStatus;
+  /** Error string from the most recent failed run. Set in runTool's catch
+   * branch and surfaced under the row when status === "failed", so the user
+   * sees *why* a tool flipped to ✗ — load-bearing for prewarm_agent_sdk's
+   * 90s timeout, which is otherwise silent except for a console.warn. */
+  error?: string;
 }
 
 type Phase = "extracting" | "tools";
@@ -49,8 +54,14 @@ async function runTool(idx: number): Promise<void> {
     await invoke(tool.command, args);
     tools[idx].status = "success";
   } catch (err) {
+    // Tauri's invoke() rejects with the Result::Err string verbatim for
+    // commands typed Result<T, String>. Fall back for non-string shapes
+    // so the UI never renders "[object Object]".
+    const msg =
+      typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
     console.warn(`${tool.command} failed (non-fatal):`, err);
     tools[idx].status = "failed";
+    tools[idx].error = msg;
   }
 }
 
@@ -66,8 +77,14 @@ function pipClass(status: ToolStatus): string {
   return "pip pip-spinner";
 }
 
+// Hoisted so onDestroy can reach it. An async onMount returns
+// Promise<UnlistenFn>, which Svelte 5 silently ignores for cleanup —
+// returning unlisten from inside the async block would leak the listener.
+// onDestroy gets a synchronous closure and runs reliably on unmount.
+let unlisten: UnlistenFn | undefined;
+
 onMount(async () => {
-  const unlisten: UnlistenFn = await listen<string>("prewarm:progress", (e) => {
+  unlisten = await listen<string>("prewarm:progress", (e) => {
     prewarmProgress = e.payload;
   });
 
@@ -103,11 +120,13 @@ onMount(async () => {
       console.warn("write_installed failed (non-fatal):", err);
     }
     advanceStep();
-    return unlisten;
   } catch {
     // store.error is already set by runExtract
-    return unlisten;
   }
+});
+
+onDestroy(() => {
+  unlisten?.();
 });
 </script>
 
@@ -138,6 +157,11 @@ onMount(async () => {
           {#if tool.command === "prewarm_agent_sdk" && tool.status === "pending" && prewarmProgress}
             <div class="row-progress" aria-live="polite" aria-atomic="true">
               {prewarmProgress}
+            </div>
+          {/if}
+          {#if tool.status === "failed" && tool.error}
+            <div class="row-error" role="alert">
+              {tool.error}
             </div>
           {/if}
         {/each}
@@ -277,6 +301,19 @@ onMount(async () => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--font-mono, monospace);
+  }
+
+  /* Error sub-line shown when a tool flips to ✗. role="alert" gives a
+     stronger announcement than the progress sub-line's polite live region
+     so VoiceOver / NVDA / Narrator surface the failure reason promptly. */
+  .row-error {
+    font-size: 11px;
+    color: var(--color-error);
+    padding: 0 12px 0 42px;
+    max-width: 320px;
+    word-break: break-word;
+    line-height: 1.4;
     font-family: var(--font-mono, monospace);
   }
 
