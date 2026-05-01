@@ -1,4 +1,4 @@
-# Friday
+# Friday Studio
 
 AI agent orchestration platform. Workspaces run autonomous agents triggered by
 signals (HTTP, cron).
