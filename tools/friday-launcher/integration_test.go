@@ -507,44 +507,6 @@ func TestOrphanCleanup(t *testing.T) {
 	}
 }
 
-// TestRestartAllOrder verifies that calling Supervisor.RestartAll
-// triggers StopProcess in stopOrder then StartProcess in startOrder.
-//
-// This test exercises the in-process Supervisor wrapper directly
-// (no external launcher process) so we can observe call ordering
-// via the supervised stubs' log entries.
-func TestRestartAllOrder(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test")
-	}
-	expectedStopOrder := []string{
-		"playground", "webhook-tunnel", "friday", "link", "nats-server",
-	}
-	expectedStartOrder := []string{
-		"nats-server", "friday", "link", "webhook-tunnel", "playground",
-	}
-	if !slicesEqual(stopOrder, expectedStopOrder) {
-		t.Errorf("stopOrder mismatch:\n want %q\n  got %q",
-			expectedStopOrder, stopOrder)
-	}
-	if !slicesEqual(startOrder, expectedStartOrder) {
-		t.Errorf("startOrder mismatch:\n want %q\n  got %q",
-			expectedStartOrder, startOrder)
-	}
-}
-
-func slicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // TestAutostartSelfRegister verifies that on first run, the LaunchAgent
 // plist is written with the launcher's own os.Executable() path. macOS
 // only — Windows uses the registry, which the launcher's Windows path

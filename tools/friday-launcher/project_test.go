@@ -136,3 +136,22 @@ func TestCommonServiceEnv_RespectsExplicitOverride(t *testing.T) {
 		t.Errorf("user's LINK_DEV_MODE=false missing from env. got=%v", got)
 	}
 }
+
+// TestStartOrderConfig pins startOrder, the dependency order
+// Supervisor.RestartAll iterates over when calling RestartProcess
+// on each supervised service. nats-server must come first so the
+// friday daemon's NatsManager tcpProbe finds an external NATS on
+// :4222 and reuses it instead of spawning its own; playground
+// comes last so it doesn't surface a spurious "backend down" UI
+// flash while its upstreams are still warming up. A reorder here
+// without a corresponding probe/dependency review can cause the
+// "Daemon unreachable" flash that the readiness budget widening
+// (Decision #?: 12s → 62s) was supposed to eliminate.
+func TestStartOrderConfig(t *testing.T) {
+	want := []string{
+		"nats-server", "friday", "link", "webhook-tunnel", "playground",
+	}
+	if !slices.Equal(startOrder, want) {
+		t.Errorf("startOrder mismatch:\n want %q\n  got %q", want, startOrder)
+	}
+}
