@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 import process from "node:process";
@@ -128,26 +128,50 @@ export class NatsManager {
     );
   }
 
-  private spawnServer(binary: string): Promise<void> {
+  private async spawnServer(binary: string): Promise<void> {
+    // max_payload defaults to 1 MB. Chat streams allow up to 8 MB per
+    // message (DEFAULT_MAX_MSG_SIZE in chat backend), and large tool
+    // outputs / image attachments easily push past 1 MB — we'd see
+    // MAX_PAYLOAD_EXCEEDED on publish when migrating legacy chat JSON
+    // files. Match the broker limit to the stream limit so anything the
+    // stream can store can also be published.
+    //
+    // We pass max_payload via a generated config file rather than a CLI
+    // flag because the `--max_payload` flag isn't accepted by all
+    // nats-server builds in the path users have (older brew versions
+    // exit with "unknown flag"); the `-c <file>` form is universal.
+    const configDir = join(getFridayHome(), "nats");
+    await mkdir(configDir, { recursive: true });
+    const configPath = join(configDir, "server.conf");
+    await writeFile(
+      configPath,
+      [
+        `port: ${NATS_PORT}`,
+        "jetstream: enabled",
+        `max_payload: ${8 * 1024 * 1024}`,
+        process.env.FRIDAY_NATS_MONITOR === "1" ? `http_port: ${NATS_MONITOR_PORT}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      "utf-8",
+    );
+
     return new Promise((resolve, reject) => {
-      // max_payload defaults to 1 MB. Chat streams allow up to 8 MB per
-      // message (DEFAULT_MAX_MSG_SIZE in chat backend), and large tool
-      // outputs / image attachments can blow past 1 MB easily — we'd
-      // see MAX_PAYLOAD_EXCEEDED on publish when migrating legacy chat
-      // JSON files. Match the broker limit to the stream limit so
-      // anything the stream can store can also be published.
-      const args = [
-        "--port",
-        String(NATS_PORT),
-        "--jetstream",
-        "--max_payload",
-        String(8 * 1024 * 1024),
-      ];
+      const args = ["-c", configPath];
       if (process.env.FRIDAY_NATS_MONITOR === "1") {
-        args.push("--http_port", String(NATS_MONITOR_PORT));
         logger.info(`NATS monitoring enabled at http://localhost:${NATS_MONITOR_PORT}`);
       }
       this.proc = spawn(binary, args, { stdio: "pipe" });
+
+      // Tail nats-server stderr so its startup errors aren't silent. The
+      // last few lines of stderr are appended to whatever rejection
+      // message we emit, so the user sees "unknown flag" / "address in
+      // use" / similar instead of a bare timeout.
+      let stderrTail = "";
+      this.proc.stderr?.on("data", (chunk: unknown) => {
+        const s = typeof chunk === "string" ? chunk : String(chunk);
+        stderrTail = (stderrTail + s).slice(-2000);
+      });
 
       // Reject immediately on exec-level failures (binary not executable, etc.)
       this.proc.once("error", (err) =>
@@ -157,7 +181,11 @@ export class NatsManager {
       // If the process exits before we poll ready it almost certainly failed
       this.proc.once("exit", (code) => {
         if (code !== 0 && code !== null) {
-          reject(new Error(`nats-server exited with code ${code}`));
+          reject(
+            new Error(
+              `nats-server exited with code ${code}${stderrTail ? `\n--- nats-server stderr ---\n${stderrTail}` : ""}`,
+            ),
+          );
         }
       });
 
