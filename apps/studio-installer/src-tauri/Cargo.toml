@@ -45,7 +45,7 @@ ruzstd = "0.7"
 serde_norway = "0.9"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [dev-dependencies]
 # Used by ensure_agent_browser_chrome's is_cold_install tests for
