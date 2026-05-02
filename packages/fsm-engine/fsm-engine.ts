@@ -1841,7 +1841,39 @@ export class FSMEngine {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
 
-    const mcpServerIds = toolNames;
+    // `action.tools` accepts three entry shapes:
+    //   "serverId/toolName" — qualified, strict per-tool allowlist for that server
+    //   "serverId"          — bare server ID, all tools from that server
+    //   "toolName"          — bare tool name (legacy); resolved against any
+    //                         configured server that exposes it
+    //
+    // Per-server allowlist tracks which names are permitted from each server.
+    // A server mapped to "all" exposes every tool it provides; a server mapped
+    // to a Set is restricted to those names. Bare tool names get added to a
+    // global pool that's matched by name regardless of source server.
+    const knownServer = (id: string) => Boolean(this.options.mcpServerConfigs?.[id]);
+    const serverAllow = new Map<string, "all" | Set<string>>();
+    const bareToolNames = new Set<string>();
+    for (const entry of toolNames) {
+      const slash = entry.indexOf("/");
+      if (slash > 0) {
+        const sid = entry.slice(0, slash);
+        const tn = entry.slice(slash + 1);
+        const cur = serverAllow.get(sid);
+        if (cur === "all") continue;
+        if (cur instanceof Set) {
+          cur.add(tn);
+        } else {
+          serverAllow.set(sid, new Set([tn]));
+        }
+      } else if (knownServer(entry)) {
+        serverAllow.set(entry, "all");
+      } else {
+        bareToolNames.add(entry);
+      }
+    }
+    const hasBareToolName = bareToolNames.size > 0;
+    const hasNameAllowlist = hasBareToolName || [...serverAllow.values()].some((v) => v !== "all");
 
     // MCP tools: always include atlas-platform for ambient capabilities (webfetch,
     // artifacts) even when the action only uses FSM-defined tools. The connection
@@ -1850,25 +1882,16 @@ export class FSMEngine {
     const effectiveConfigs: Record<string, MCPServerConfig> = {
       "atlas-platform": getAtlasPlatformServerConfig(),
     };
-    // `action.tools` is historically ambiguous: workspace-authored LLM actions
-    // (including those expanded from `type: agent` via expandAgentActions)
-    // put **tool names** here (e.g. "write_query"), while FSM-in-workspaces
-    // authored directly put **server IDs** (e.g. "sqlite"). The ID-based
-    // lookup below handles the latter. For the former, we load every
-    // workspace-configured MCP server so the tool names resolve against
-    // whichever server exposes them — the post-load filter at line 1998
-    // already blocks non-allowlisted platform tools from leaking in. Without
-    // this, Friday-generated KB workspaces spawn the sqlite MCP server
-    // successfully but the LLM step sees zero sqlite tools because the
-    // filter above never matched a server ID to "write_query" and silently
-    // dropped sqlite from `effectiveConfigs`.
-    const hasLikelyToolNames = mcpServerIds.some((name) => !this.options.mcpServerConfigs?.[name]);
-    if (hasLikelyToolNames && this.options.mcpServerConfigs) {
+    // Server selection. Bare tool names can come from any server, so we have
+    // to load all of them and rely on the post-filter to scope down. Without
+    // any bare names we connect only to servers explicitly referenced — both
+    // qualified (`serverId/toolName`) and bare server IDs.
+    if (hasBareToolName && this.options.mcpServerConfigs) {
       for (const [id, config] of Object.entries(this.options.mcpServerConfigs)) {
         if (id !== "atlas-platform") effectiveConfigs[id] = config;
       }
     } else {
-      for (const id of mcpServerIds) {
+      for (const id of serverAllow.keys()) {
         const config = this.options.mcpServerConfigs?.[id];
         if (config && id !== "atlas-platform") {
           effectiveConfigs[id] = config;
@@ -1905,7 +1928,41 @@ export class FSMEngine {
         filtered[name] = mcpTool;
       }
     }
-    const wrapped = wrapPlatformToolsWithScope(filtered, {
+
+    // Per-agent tools whitelist, applied per-server using the attribution
+    // index from createMCPTools. A server mapped to "all" passes every tool
+    // through; a server mapped to a Set keeps only those names; bare tool
+    // names are matched globally regardless of source server. Without this,
+    // an agent declaring `tools: [google-calendar/list_calendars]` would
+    // still see every other server's tools (e.g. `send_gmail_message`) —
+    // the source of the daily-memo "fetcher agents send their own emails"
+    // bug.
+    let scoped: Record<string, Tool> = filtered;
+    if (hasNameAllowlist) {
+      scoped = {};
+      for (const [serverId, names] of Object.entries(mcpResult.toolsByServer)) {
+        if (serverId === "atlas-platform") {
+          // Platform tools were already filtered above by PLATFORM_TOOL_ALLOWLIST.
+          // Don't re-filter here — they're ambient, not subject to the agent's
+          // workspace MCP whitelist.
+          for (const name of names) if (filtered[name]) scoped[name] = filtered[name];
+          continue;
+        }
+        const allow = serverAllow.get(serverId);
+        for (const name of names) {
+          if (!filtered[name]) continue; // dropped by platform-allowlist filter
+          if (allow === "all") {
+            scoped[name] = filtered[name];
+          } else if (allow instanceof Set && allow.has(name)) {
+            scoped[name] = filtered[name];
+          } else if (bareToolNames.has(name)) {
+            scoped[name] = filtered[name];
+          }
+        }
+      }
+    }
+
+    const wrapped = wrapPlatformToolsWithScope(scoped, {
       workspaceId: this.options.scope.workspaceId,
       workspaceName: this.options.scope.workspaceName,
     });

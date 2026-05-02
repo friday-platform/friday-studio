@@ -1271,22 +1271,19 @@ const workspacesRoutes = daemonFactory
             await manager.updateWorkspaceStatus(workspace.id, workspace.status, { name: ymlName });
           }
 
-          const runtime = ctx.getWorkspaceRuntime(workspace.id);
-          if (runtime) {
-            await ctx.destroyWorkspaceRuntime(workspace.id);
-            return c.json({
-              success: true,
-              workspace,
-              runtimeReloaded: true,
-              runtimeDestroyed: true,
-            });
-          }
-
+          // We do NOT call destroyWorkspaceRuntime here, even on success. The
+          // file watcher detects the workspace.yml write and routes the change
+          // through WorkspaceManager.handleWatcherChange, which defers the
+          // runtime swap until any active session or in-flight execution
+          // finishes (handleWorkspaceConfigChange → stopRuntimeIfActive). When
+          // the chat agent itself triggers the update, that deferral is what
+          // keeps the chat alive — the prior implementation tore down the
+          // runtime synchronously and killed the conversation mid-stream.
           return c.json({
             success: true,
             workspace,
-            runtimeReloaded: false,
-            message: "No active runtime",
+            runtimeReloaded: ctx.getWorkspaceRuntime(workspace.id) !== undefined,
+            message: "Config written; runtime reload deferred to file-watcher path",
           });
         } catch (updateError) {
           return c.json(

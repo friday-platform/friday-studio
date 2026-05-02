@@ -142,50 +142,49 @@ recreating:
 deno task atlas workspace add -p ./workspaces/my-thing
 ```
 
-## Update workspaces in-place — never delete + recreate
+## Update workspaces in-place — use the workspace-api skill, never delete + recreate
 
-**Rule:** when a workspace needs changes, mutate its `workspace.yml` via the
-partial-config endpoints. Do not `DELETE /api/workspaces/:id` followed by a
-`POST /api/workspaces/create`.
+**Rule:** when a workspace needs changes, use the `@friday/workspace-api` skill's
+typed tools (`upsert_agent`, `upsert_signal`, `upsert_job`, `begin_draft` /
+`publish_draft`, etc.). Do not curl partial-config endpoints from chat. Do not
+`POST /api/workspaces/:id/update` (it tears down the runtime — including the
+one your chat is running in). Do not `DELETE` + `POST /create`.
 
-**Why:**
-- Delete + recreate loses runtime state (sessions, chats, memory entries,
-  scratchpad notes).
-- The new workspace gets a different runtime ID (random, e.g.
-  `grilled_xylem` → `fuzzy_plum`). Anything hardcoded against the old ID
-  (autopilot cron targets, cross-workspace references, memory paths)
-  silently breaks.
-- Active sessions are terminated.
+**Why typed tools, not curl:**
+- They handle draft-vs-live mode automatically.
+- They return structured `{ok, diff, structural_issues}` so a single call
+  shows you what changed and what's broken.
+- They accept the natural shape (full agent config) — the partial REST
+  surface accepts only `{prompt?, model?, tools?}` and rejects everything
+  else with a generic 400.
+- They don't tear down anything: edits hot-reload via the next signal.
 
-In-place updates destroy only the active runtime (which reboots cleanly on the
-next signal) and preserve workspace identity + durable state.
+**Why never `/update`:**
+- It calls `destroyWorkspaceRuntime` on a successful write.
+- Mid-chat, that destroys the runtime your chat is running in → MCP
+  transports close, your stream errors, the next message hits a half-rebuilt
+  pipeline. Self-immolation.
 
-**The partial-update surface (all mutate workspace.yml directly):**
+**Why never `DELETE` + recreate:**
+- Loses durable state (sessions, chats, memory, scratchpad).
+- New workspace gets a different runtime ID (random, e.g.
+  `grilled_xylem` → `fuzzy_plum`). Hardcoded references break silently.
 
-| Change | Method + path |
+**Tool choice cheatsheet:**
+
+| Change | Tool |
 |---|---|
-| Add signal | `POST /api/workspaces/:id/config/signals` — body `{signalId, signal: WorkspaceSignalConfig}` |
-| Replace signal | `PUT /api/workspaces/:id/config/signals/:signalId` — body `WorkspaceSignalConfig` |
-| Patch signal (schedule, timezone) | `PATCH /api/workspaces/:id/config/signals/:signalId` — body `SignalConfigPatchSchema` |
-| Delete signal | `DELETE /api/workspaces/:id/config/signals/:signalId?force=true` |
-| Update agent prompt/model/tools | `PUT /api/workspaces/:id/config/agents/:agentId` — body `{prompt?, model?, tools?}` |
-| Swap credential reference | `PUT /api/workspaces/:id/config/credentials/:path` — body `{credentialId}` |
-| Update workspace metadata (name, color) | `PATCH /api/workspaces/:id/metadata` |
+| Edit an agent's prompt / model / tools | `upsert_agent({id, config: <full agent config>})` |
+| Add or replace a signal | `upsert_signal({id, config})` |
+| Patch a signal's schedule / timezone | `upsert_signal({id, config: <full signal config with edit>})` |
+| Delete a signal | `remove_item({kind: "signal", id})` |
+| Add or replace a job | `upsert_job({id, config})` |
+| Multi-entity edits | `begin_draft` → upserts → `validate_workspace` → `publish_draft` |
+| Workspace metadata (name, color) | `PATCH /api/workspaces/:id/metadata` (still safe — does not touch runtime) |
+| Skill scoping | `POST /api/skills/scoping/:skillId/assignments` |
 
-**What the partial-update surface can NOT do in-place:**
-- **Add a new agent** — agents are FSM-wired; `POST /agents` returns 405. To
-  add a new agent you must update the FSM states (see fallback below).
-- **Add or remove jobs** — no dedicated endpoint.
-- **Edit FSM states / documentTypes / transitions** — no dedicated endpoint.
-- **Add or remove skills from a workspace's `skills:` list** — use skill
-  scoping (`POST /api/skills/scoping/:skillId/assignments`) instead, which is
-  the runtime source of truth for which skills a workspace sees.
-
-**Fallback for changes the partial surface can't cover:** edit
-`workspace.yml` on disk, then `POST /api/workspaces/:id/config` with
-`{"config": <parsed yaml>, "backup": true}`. This is a full replacement (still
-destroys the runtime, preserves the workspace ID + state). Always back up.
-Never use `DELETE` + `create` as a shortcut.
+The raw partial REST surface (`PUT /config/agents/:id`, etc.) still exists for
+external automation — but from chat, always use the tools above.
 
 ## Guardrails
 
@@ -200,7 +199,7 @@ Reversible vs sticky ops:
 
 **Sticky — verify before firing:**
 - `POST /api/workspaces/create` — writes a directory; dup name → 409
-- `POST /api/workspaces/:id/config` — full replacement; destroys active runtime
+- `POST /api/workspaces/:id/update` — **destroys the active runtime**; never call from chat (use `upsert_*` / `publish_draft` instead)
 - `PUT /signals/:id`, `PATCH /signals/:id` — persists to workspace.yml
 - `DELETE /api/workspaces/:id` — removes the directory entirely (system
   workspaces rejected with 403; userland workspaces just vanish)

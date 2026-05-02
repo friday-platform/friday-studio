@@ -496,7 +496,12 @@ export class AtlasDaemon {
               failureCount: (workspace?.metadata?.failureCount ?? 0) + 1,
             },
           });
-          await this.destroyWorkspaceRuntime(envelope.workspaceId);
+          // Note: we used to destroyWorkspaceRuntime here on signal failure.
+          // That assumed a corrupted runtime is the most likely cause of a
+          // signal failure, but in practice signal failures are usually
+          // transient (network, MCP timeout, LLM error) and tearing down the
+          // runtime forces an expensive cold restart on the next trigger.
+          // Idle timeout / explicit shutdown handle genuine cleanup.
         } catch (statusError) {
           logger.error("Failed to update workspace status after signal failure", {
             workspaceId: envelope.workspaceId,
@@ -1387,11 +1392,15 @@ export class AtlasDaemon {
                 }
 
                 if (!hasActiveSessions && !hasActiveExecutions) {
-                  // Apply any deferred workspace.yml changes BEFORE destroying
-                  // the runtime — handleWorkspaceConfigChange itself will
-                  // tear it down and re-load from the (now updated) config.
-                  // Order matters: if we destroyed first, processPending
-                  // would see no runtime and fall through.
+                  // Apply any deferred workspace.yml changes. If a deferred
+                  // change exists, processPendingWatcherChange routes through
+                  // handleWorkspaceConfigChange → stopRuntimeIfActive →
+                  // destroyWorkspaceRuntime, so the runtime gets rebuilt from
+                  // the new config on the next signal. If no deferred change
+                  // exists, we DO NOT tear down the runtime — keep MCP
+                  // connections warm; idle timeout handles eventual cleanup.
+                  // The prior unconditional destroy here was the source of
+                  // per-chat-turn create/destroy churn.
                   try {
                     await mgr.processPendingWatcherChange(workspaceId);
                   } catch (err) {
@@ -1400,7 +1409,7 @@ export class AtlasDaemon {
                       error: err,
                     });
                   }
-                  await this.destroyWorkspaceRuntime(workspaceId);
+                  this.resetIdleTimeout(workspaceId);
                 } else {
                   // Still active sessions or agent executions; let idle timeout handle cleanup
                   this.resetIdleTimeout(workspaceId);

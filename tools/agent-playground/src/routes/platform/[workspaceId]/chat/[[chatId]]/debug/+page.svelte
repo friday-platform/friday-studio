@@ -1,0 +1,347 @@
+<script lang="ts">
+  import type { PageData } from "./$types";
+
+  interface Props {
+    data: PageData;
+  }
+  const { data }: Props = $props();
+
+  function fmtTs(s: string | undefined): string {
+    if (!s) return "";
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? s : d.toISOString().replace("T", " ").replace("Z", "");
+  }
+
+  function partKind(p: Record<string, unknown>): string {
+    return typeof p.type === "string" ? p.type : "unknown";
+  }
+
+  function isToolPart(p: Record<string, unknown>): boolean {
+    return typeof p.type === "string" && p.type.startsWith("tool-");
+  }
+
+  function shortJson(value: unknown, max = 600): string {
+    let s: string;
+    try {
+      s = JSON.stringify(value, null, 2);
+    } catch {
+      s = String(value);
+    }
+    return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more chars)` : s;
+  }
+
+  function fullJson(value: unknown): string {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+
+  function getSessionIdFromPart(p: Record<string, unknown>): string | null {
+    const out = p.output as Record<string, unknown> | undefined;
+    if (out && typeof out.sessionId === "string") return out.sessionId;
+    return null;
+  }
+
+  let expanded = $state<Record<string, boolean>>({});
+  function toggle(key: string) {
+    expanded = { ...expanded, [key]: !expanded[key] };
+  }
+</script>
+
+<svelte:head>
+  <title>chat debug · {data.chat.id}</title>
+</svelte:head>
+
+<div class="page">
+  <header>
+    <h1>chat debug</h1>
+    <div class="meta">
+      <code>{data.chat.id}</code> · workspace <code>{data.workspaceId}</code> ·
+      {data.messages.length} messages ·
+      created {fmtTs(data.chat.createdAt)} · updated {fmtTs(data.chat.updatedAt)}
+      {#if data.chat.title}
+        · <em>{data.chat.title}</em>
+      {/if}
+    </div>
+    <div class="links">
+      <a href="/platform/{data.workspaceId}/chat/{data.chat.id}">← back to chat</a>
+    </div>
+  </header>
+
+  <section>
+    <h2>messages</h2>
+    {#each data.messages as m, i (m.id)}
+      {@const ts =
+        (m.metadata?.startTimestamp as string | undefined) ??
+        (m.metadata?.timestamp as string | undefined)}
+      <article class="message" class:assistant={m.role === "assistant"} class:user={m.role === "user"}>
+        <header>
+          <span class="role">[{i}] {m.role}</span>
+          <span class="ts">{fmtTs(ts)}</span>
+          <code class="msgid">{m.id}</code>
+        </header>
+
+        {#if m.metadata && Object.keys(m.metadata).length > 0}
+          <details class="metadata">
+            <summary>metadata</summary>
+            <pre>{fullJson(m.metadata)}</pre>
+          </details>
+        {/if}
+
+        {#each m.parts as p, pi}
+          {@const sid = getSessionIdFromPart(p)}
+          <div class="part" class:tool={isToolPart(p)} class:error={p.state === "output-error"}>
+            <div class="part-head">
+              <code class="kind">{partKind(p)}</code>
+              {#if p.state}<code class="state">{p.state}</code>{/if}
+              {#if p.toolCallId}<code class="callid">{p.toolCallId}</code>{/if}
+              {#if p.errorText}<span class="err">{p.errorText}</span>{/if}
+              {#if sid}
+                <a href="#session-{sid}" class="session-link">→ sub-session {sid.slice(0, 8)}</a>
+              {/if}
+            </div>
+
+            {#if p.type === "text"}
+              <pre class="text">{p.text}</pre>
+            {:else if isToolPart(p)}
+              {@const inputKey = `${m.id}:${pi}:input`}
+              {@const outputKey = `${m.id}:${pi}:output`}
+              <div class="kv">
+                <button type="button" onclick={() => toggle(inputKey)}>
+                  input {expanded[inputKey] ? "▼" : "▶"}
+                </button>
+                <pre class="dump">{expanded[inputKey] ? fullJson(p.input) : shortJson(p.input)}</pre>
+              </div>
+              {#if p.output !== undefined}
+                <div class="kv">
+                  <button type="button" onclick={() => toggle(outputKey)}>
+                    output {expanded[outputKey] ? "▼" : "▶"}
+                  </button>
+                  <pre class="dump">{expanded[outputKey] ? fullJson(p.output) : shortJson(p.output)}</pre>
+                </div>
+              {/if}
+            {:else}
+              {@const dumpKey = `${m.id}:${pi}:dump`}
+              <div class="kv">
+                <button type="button" onclick={() => toggle(dumpKey)}>
+                  raw {expanded[dumpKey] ? "▼" : "▶"}
+                </button>
+                <pre class="dump">{expanded[dumpKey] ? fullJson(p) : shortJson(p)}</pre>
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </article>
+    {/each}
+  </section>
+
+  {#if Object.keys(data.sessions).length > 0}
+    <section>
+      <h2>sub-sessions</h2>
+      <p class="hint">
+        Sessions referenced from tool-call outputs above. Click "raw" to see the full SessionView
+        (events, agent blocks, durations).
+      </p>
+      {#each Object.entries(data.sessions) as [sid, view]}
+        <article class="session" id="session-{sid}">
+          <header>
+            <code>{sid}</code>
+            {#if (view as any).error}
+              <span class="err">unavailable: {(view as any).error}</span>
+            {:else}
+              {#if (view as any).jobName}<span class="job">{(view as any).jobName}</span>{/if}
+              {#if (view as any).status}<code class="state">{(view as any).status}</code>{/if}
+              {#if (view as any).durationMs}<span>{(view as any).durationMs}ms</span>{/if}
+            {/if}
+          </header>
+
+          {#if !(view as any).error}
+            {@const v = view as any}
+            {#if v.agentBlocks?.length}
+              <details>
+                <summary>{v.agentBlocks.length} agent step{v.agentBlocks.length === 1 ? "" : "s"}</summary>
+                <ol class="steps">
+                  {#each v.agentBlocks as b, bi}
+                    <li>
+                      <header>
+                        <strong>step {bi + 1}: {b.agentName ?? "?"}</strong>
+                        {#if b.status}<code class="state">{b.status}</code>{/if}
+                        {#if b.durationMs}<span>{b.durationMs}ms</span>{/if}
+                      </header>
+                      {#if b.toolCalls?.length}
+                        <ul class="tools">
+                          {#each b.toolCalls as tc}
+                            <li>
+                              <code>{tc.toolName}</code>
+                              <pre class="dump">{shortJson(tc.args, 200)}</pre>
+                            </li>
+                          {/each}
+                        </ul>
+                      {/if}
+                    </li>
+                  {/each}
+                </ol>
+              </details>
+            {/if}
+
+            {@const dumpKey = `session:${sid}:dump`}
+            <div class="kv">
+              <button type="button" onclick={() => toggle(dumpKey)}>
+                raw view {expanded[dumpKey] ? "▼" : "▶"}
+              </button>
+              <pre class="dump">{expanded[dumpKey] ? fullJson(view) : shortJson(view)}</pre>
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </section>
+  {/if}
+</div>
+
+<style>
+  .page {
+    padding: var(--size-4);
+    max-width: 1200px;
+    margin: 0 auto;
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: var(--font-size-1, 13px);
+  }
+  h1 {
+    margin: 0 0 var(--size-2);
+    font-size: var(--font-size-3, 18px);
+  }
+  h2 {
+    margin: var(--size-4) 0 var(--size-2);
+    font-size: var(--font-size-2, 15px);
+  }
+  .meta,
+  .links {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    margin-bottom: var(--size-1);
+  }
+  .links a {
+    color: var(--color-link, #4a9eff);
+  }
+  article {
+    border: 1px solid color-mix(in srgb, var(--color-text), transparent 80%);
+    border-radius: 4px;
+    padding: var(--size-2);
+    margin-bottom: var(--size-2);
+  }
+  .message.assistant {
+    background: color-mix(in srgb, var(--color-link, #4a9eff), transparent 95%);
+  }
+  .message.user {
+    background: color-mix(in srgb, var(--color-text), transparent 95%);
+  }
+  article > header {
+    display: flex;
+    gap: var(--size-2);
+    align-items: baseline;
+    margin-bottom: var(--size-1);
+    flex-wrap: wrap;
+  }
+  .role {
+    font-weight: bold;
+  }
+  .ts,
+  .msgid {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-size: 0.92em;
+  }
+  .metadata pre {
+    font-size: 0.85em;
+  }
+  .part {
+    border-left: 2px solid color-mix(in srgb, var(--color-text), transparent 80%);
+    padding: var(--size-1) var(--size-2);
+    margin-top: var(--size-1);
+  }
+  .part.tool {
+    border-left-color: var(--color-link, #4a9eff);
+  }
+  .part.error {
+    border-left-color: var(--color-error, #e44);
+  }
+  .part-head {
+    display: flex;
+    gap: var(--size-2);
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+  .kind {
+    font-weight: bold;
+  }
+  .state {
+    background: color-mix(in srgb, var(--color-text), transparent 90%);
+    padding: 0 0.4em;
+    border-radius: 3px;
+  }
+  .err {
+    color: var(--color-error, #e44);
+  }
+  .session-link {
+    color: var(--color-link, #4a9eff);
+    margin-left: auto;
+  }
+  pre.text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: var(--size-1) 0 0;
+    font-size: 0.95em;
+  }
+  pre.dump {
+    background: color-mix(in srgb, var(--color-text), transparent 92%);
+    padding: var(--size-1);
+    border-radius: 3px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.85em;
+    margin: 4px 0;
+    max-height: 600px;
+    overflow-y: auto;
+  }
+  .kv button {
+    font: inherit;
+    background: none;
+    border: none;
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    cursor: pointer;
+    padding: 0;
+    margin-top: 4px;
+  }
+  .kv button:hover {
+    color: var(--color-text);
+  }
+  details {
+    margin-top: var(--size-1);
+  }
+  summary {
+    cursor: pointer;
+  }
+  .steps {
+    margin: var(--size-1) 0;
+    padding-left: var(--size-3);
+  }
+  .steps li {
+    margin-bottom: var(--size-1);
+  }
+  .tools {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 0;
+  }
+  .tools li {
+    margin: 4px 0;
+  }
+  .hint {
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    font-style: italic;
+  }
+  .job {
+    color: var(--color-link, #4a9eff);
+  }
+</style>

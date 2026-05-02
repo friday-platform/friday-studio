@@ -61,6 +61,14 @@ export interface DisconnectedIntegration {
 /** Result of creating MCP tools — tools map, cleanup callback, and any servers skipped due to dead credentials. */
 export interface MCPToolsResult {
   tools: Record<string, Tool>;
+  /**
+   * Per-server tool name index. Same merge order as `tools`, so a tool name
+   * present in `tools` is also present here under the server that won the
+   * collision. Callers that need per-server filtering (e.g. enforcing a
+   * per-agent `tools:` whitelist) read this; callers that only need the
+   * flat tool map ignore it.
+   */
+  toolsByServer: Record<string, string[]>;
   dispose: () => Promise<void>;
   disconnected: DisconnectedIntegration[];
 }
@@ -170,6 +178,7 @@ export async function createMCPTools(
 
   const clients: MCPClient[] = [];
   const allTools: Record<string, Tool> = {};
+  const toolsByServer: Record<string, string[]> = {};
   const disconnected: DisconnectedIntegration[] = [];
 
   for (const result of results) {
@@ -231,6 +240,7 @@ export async function createMCPTools(
       });
     }
     Object.assign(allTools, wrappedTools);
+    toolsByServer[value.serverId] = Object.keys(wrappedTools);
     clients.push(value.client);
 
     logger.info(`Connected MCP server`, {
@@ -244,6 +254,7 @@ export async function createMCPTools(
 
   return {
     tools: allTools,
+    toolsByServer,
     disconnected,
     dispose: async () => {
       if (disposed) return;
