@@ -24,7 +24,7 @@ hex = "0.4"
 # Mirrors exec.LookPath for our claude discovery so the wizard
 # agrees with the launcher about whether claude is already
 # installed.
-which = "6"
+which = "8"
 futures-util = "0.3"
 flate2 = "1"
 tar = "0.4"
