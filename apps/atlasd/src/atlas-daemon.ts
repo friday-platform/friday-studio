@@ -15,6 +15,7 @@ import {
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
+import { initChatStorage } from "@atlas/core/chat/storage";
 import { CronManager } from "@atlas/cron";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
@@ -74,6 +75,7 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
+import { migrateLegacyChats } from "./chat-migration.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
 import { broadcastJobOutput } from "./chat-sdk/broadcast.ts";
 import {
@@ -331,6 +333,13 @@ export class AtlasDaemon {
 
     // Ensure the SESSIONS JetStream stream exists (durable session event store)
     await this.ensureSessionsStream(nc);
+
+    // Wire chat storage to JetStream + ensure CHATS KV bucket exists, then
+    // migrate any legacy file-based chats in the background.
+    initChatStorage(nc);
+    migrateLegacyChats(nc).catch((err: unknown) => {
+      logger.warn("Chat migration failed", { error: String(err) });
+    });
 
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
