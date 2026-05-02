@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://docs.hellofriday.ai
+    about: Read the docs before opening an issue — many questions are answered there.
+  - name: Workspace examples
+    url: https://github.com/friday-platform/friday-studio-examples
+    about: Ready-to-import workspaces — use these as a starting point.
+  - name: Security disclosure
+    url: https://github.com/friday-platform/friday-studio/security/policy
+    about: Report a vulnerability privately — please don't open a public issue.
