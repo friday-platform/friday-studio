@@ -71,8 +71,14 @@
   /** Edit page is full-screen editor — no sidebar. */
   const isEdit = $derived(page.route.id === "/platform/[workspaceId]/edit");
 
-  /** Chat page is full-width — no sidebar. */
-  const isChat = $derived(page.route.id?.startsWith("/platform/[workspaceId]/chat") ?? false);
+  /** Chat page is full-width — no sidebar. The chat page manages its own
+   * scroll, so we disable layout scrolling for it. Sub-routes under /chat
+   * (like /chat/[[chatId]]/debug) want normal layout scroll, so we match
+   * the chat route id exactly rather than via startsWith. */
+  const isChat = $derived(page.route.id === "/platform/[workspaceId]/chat/[[chatId]]");
+
+  /** Debug view for a chat — no sidebar (full-width dump), but normal page scroll. */
+  const isChatDebug = $derived(page.route.id === "/platform/[workspaceId]/chat/[[chatId]]/debug");
 
   /** Agents page renders its own sidebar content (agent index). */
   const isAgents = $derived(page.route.id === "/platform/[workspaceId]/agents");
@@ -137,7 +143,7 @@
   <Page.Content scrollable={!isChat} padded={false}>
     {@render children?.()}
   </Page.Content>
-  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat}
+  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug}
     <Page.Sidebar>
       {#if isAgents}
         <AgentIndexSidebar agents={workspaceAgents} {providerStatus} />
