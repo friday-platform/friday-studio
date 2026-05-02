@@ -194,8 +194,15 @@ export class CronManager {
   }
 
   /**
-   * Check all timers and execute any that are due
-   * This method runs every CHECK_INTERVAL_MS to ensure reliable execution
+   * Check all timers and execute any that are due. Runs every CHECK_INTERVAL_MS.
+   *
+   * **Missed-tick behavior is "coalesce to one":** if the daemon was down past
+   * multiple scheduled fires, the next check fires the timer exactly once and
+   * advances `nextExecution` from the current clock. Idempotent jobs (sweeps,
+   * autopilots, fetch-latest) absorb this fine. Counting jobs and time-window
+   * jobs (e.g. "9am batch") lose their missed window and wait until the next
+   * scheduled fire. This is documented as expected behavior — see G1.5 in
+   * plans/2026-05-01-stateless-friday.md.
    */
   private checkTimers(): void {
     const now = Date.now();

@@ -480,6 +480,10 @@ export class AtlasDaemon {
     this.sessionHistoryAdapter = new LocalSessionHistoryAdapter(
       join(getFridayHome(), "sessions-v2"),
     );
+    // Recover any sessions whose previous daemon process died mid-flight.
+    this.sessionHistoryAdapter.markInterruptedSessions().catch((err: unknown) => {
+      logger.warn("Failed to mark interrupted sessions on startup", { error: String(err) });
+    });
     this.sessionStreamRegistry = new SessionStreamRegistry(nc);
     this.sessionStreamRegistry.start();
 
