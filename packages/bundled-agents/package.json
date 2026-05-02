@@ -17,7 +17,7 @@
     "@atlas/schemas": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
-    "@chat-adapter/slack": "4.26.0",
+    "@chat-adapter/slack": "4.27.0",
     "chat": "4.27.0",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@coderabbitai/bitbucket": "^1.1.4",

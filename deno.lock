@@ -40,10 +40,10 @@
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.121": "0.2.121_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.13",
     "npm:@chat-adapter/discord@4.27.0": "4.27.0",
-    "npm:@chat-adapter/slack@4.26.0": "4.26.0",
-    "npm:@chat-adapter/teams@4.26.0": "4.26.0",
-    "npm:@chat-adapter/telegram@4.26.0": "4.26.0",
-    "npm:@chat-adapter/whatsapp@4.26.0": "4.26.0",
+    "npm:@chat-adapter/slack@4.27.0": "4.27.0",
+    "npm:@chat-adapter/teams@4.27.0": "4.27.0",
+    "npm:@chat-adapter/telegram@4.27.0": "4.27.0",
+    "npm:@chat-adapter/whatsapp@4.27.0": "4.27.0",
     "npm:@codemirror/lang-markdown@^6.5.0": "6.5.0",
     "npm:@codemirror/lang-yaml@^6.1.3": "6.1.3",
     "npm:@codemirror/language@^6.12.3": "6.12.3",
@@ -602,56 +602,51 @@
     "@chat-adapter/discord@4.27.0": {
       "integrity": "sha512-9ldbe3f+8AV1XXbeuuu0lup30FBTS+7MnANMY25Q4mhLmQcbUD5l26Ngjy02GOOzQEKQuHEniUtPeEnJ5fSyNg==",
       "dependencies": [
-        "@chat-adapter/shared@4.27.0",
-        "chat@4.27.0",
+        "@chat-adapter/shared",
+        "chat",
         "discord-api-types@0.37.120",
         "discord-interactions",
         "discord.js"
       ]
     },
-    "@chat-adapter/shared@4.26.0": {
-      "integrity": "sha512-YD0MGktFXrArUqTBsyPfL5vkdD1WBS58PAWO0oVrMQAMmPxpAXfWGjBtZCkf3y8R8Svb0uVuVXiMZSForaEnMQ==",
-      "dependencies": [
-        "chat@4.26.0"
-      ]
-    },
     "@chat-adapter/shared@4.27.0": {
       "integrity": "sha512-Wz+YZ8Mp2/qcxxJ+rU0ofZQSEtOF/4toEh7wbA+q+uLlPrLue+7hImWluJpQUZqGjSwsUoXhjSNwgFv3hz20aQ==",
       "dependencies": [
-        "chat@4.27.0"
+        "chat"
       ]
     },
-    "@chat-adapter/slack@4.26.0": {
-      "integrity": "sha512-NNN47rURI6qpJf4rRK8xyeumjPTAXr7YSU4/FnViU8cFV/vKYFR4xZTzlFMVWNrYi9SmSwasUjcBmQznigK54Q==",
+    "@chat-adapter/slack@4.27.0": {
+      "integrity": "sha512-Hx9tahCY/gA6EDydGdXcaz5r28sJOAAwnUP/j48Wv9U4LylsT4hXtLBoSmxb8gRvom2FypxD9Ry/SwzPnwnpBw==",
       "dependencies": [
-        "@chat-adapter/shared@4.26.0",
+        "@chat-adapter/shared",
+        "@slack/socket-mode",
         "@slack/web-api",
-        "chat@4.26.0"
+        "chat"
       ]
     },
-    "@chat-adapter/teams@4.26.0": {
-      "integrity": "sha512-Hg7TzN7Y/G/PcJr7VWKnv26XBDjP8+KDoe1gp62BAN7Y2MXCPdhsZLSR3cWQ5AH7nw0oz3vPZ38UilWUIhCxFg==",
+    "@chat-adapter/teams@4.27.0": {
+      "integrity": "sha512-k4+4Mcoa+YAXjOtHi61lIB+CSUaHPFgAr3CSf05u7BZoPtWUAKattToaklF4CIsalsFs6vcS6dgQ+UtMzhNEFg==",
       "dependencies": [
-        "@chat-adapter/shared@4.26.0",
+        "@chat-adapter/shared",
         "@microsoft/teams.api",
         "@microsoft/teams.apps",
         "@microsoft/teams.cards",
         "@microsoft/teams.graph-endpoints",
-        "chat@4.26.0"
+        "chat"
       ]
     },
-    "@chat-adapter/telegram@4.26.0": {
-      "integrity": "sha512-PE2HoCQ4648VNKZTuHFanQNoYzM/niNoSbDyYlPq6VOoB5qsoo1ctR8TERyl1EfPBNexWZpSWYrrnQPr15LUfA==",
+    "@chat-adapter/telegram@4.27.0": {
+      "integrity": "sha512-taRZAPw5Sw7G4BtsGCIV5QqaXrKUlmLWoX04NZxGUC0Gn7MuYPwh7P7wMk04LvQ2lZfhjVCr22UlvayloUPSfg==",
       "dependencies": [
-        "@chat-adapter/shared@4.26.0",
-        "chat@4.26.0"
+        "@chat-adapter/shared",
+        "chat"
       ]
     },
-    "@chat-adapter/whatsapp@4.26.0": {
-      "integrity": "sha512-4wfWUjIMZRsbKLonQc+U2rIAaG5wDr8agpDmltaUVoHwwRUhnRuf2TX3PpfjJD8qLeHYdY9e7s9f+L4h5IRiuw==",
+    "@chat-adapter/whatsapp@4.27.0": {
+      "integrity": "sha512-bI1NmzobQLnKVR/iiO0EgUkS32YWfI0kMGCKPl2at6cXVVambONF7lTZ4P97eceuC06LVbZTaKTrW6HhB078XA==",
       "dependencies": [
-        "@chat-adapter/shared@4.26.0",
-        "chat@4.26.0"
+        "@chat-adapter/shared",
+        "chat"
       ]
     },
     "@codemirror/autocomplete@6.20.1": {
@@ -1381,8 +1376,8 @@
         "svelte"
       ]
     },
-    "@microsoft/teams.api@2.0.8": {
-      "integrity": "sha512-N13idaRZNnfL7aefzsn2rhPtujqke1QVM81bNWq1XeK+5yeXod3aLTmBY701DEKkZUXiSG0AogvzkNwVnBw4+g==",
+    "@microsoft/teams.api@2.0.9": {
+      "integrity": "sha512-U8Bv7Ok/zZa4FdwS6xbB2Wts2gYyC3+f2gFPm9chMkYa7O2doFw+7AZXSiUEBY2p5IlvD4RwKEoaXuBeuDqwfQ==",
       "dependencies": [
         "@microsoft/teams.cards",
         "@microsoft/teams.common",
@@ -1390,8 +1385,8 @@
         "qs"
       ]
     },
-    "@microsoft/teams.apps@2.0.8": {
-      "integrity": "sha512-6YBOxnQSoEPu841zMa1SDBdwH3gsuzrz0LCONuaGOHJ3Kmv2S+7ih1DqEx4Ak3iAYHeCvxnWGqjcYSBhgeiuMQ==",
+    "@microsoft/teams.apps@2.0.9": {
+      "integrity": "sha512-aSJNdxFlEnKYH3FfQ5Z8JwoMmFwvJ5WB7fPPabio+K0W4g4hAjWt3JPSjvN/k4J2LajRPMYWzbTWUgmh3LubLw==",
       "dependencies": [
         "@azure/msal-node",
         "@microsoft/teams.api",
@@ -1405,20 +1400,20 @@
         "reflect-metadata"
       ]
     },
-    "@microsoft/teams.cards@2.0.8": {
-      "integrity": "sha512-WrGAgkDKqhvFhnsKPwFeKTkhAXu/fbySxq5+uIOqY1ffdgiEdEoj6c0cjyQJy0HJ9B5u/0SQ4hO2KUc6jlZSZw=="
+    "@microsoft/teams.cards@2.0.9": {
+      "integrity": "sha512-YYec0ATVI3jG98UMReTUsT+y8BfoB7JF3kTDzX8Co/iJOV9GGQ86jT+hgYUBK3Vc+avvoimWT8poJu7Clwz2Sg=="
     },
-    "@microsoft/teams.common@2.0.8": {
-      "integrity": "sha512-nkolOYX9qCpfK2uitiuAYm3EvMleHer5P3OCx3IBOp2gxkkFvNNOcOIDXuPZ6BtiENt47FPn4fYMMgJrawCHcA==",
+    "@microsoft/teams.common@2.0.9": {
+      "integrity": "sha512-vgMgZv9uc1v4f3gUlY/+6tjm+0vWMO8Nxrw9pCCvR7Y4+au075vBTDq0mPiq4uT/S1786hEegdny2c+3U1ECCA==",
       "dependencies": [
         "axios"
       ]
     },
-    "@microsoft/teams.graph-endpoints@2.0.8": {
-      "integrity": "sha512-KjDhMWn8ZcwTjDOw1hL0By/HvHEXe5+Bzy8tmEOsqPGUc/1HfwtBZAYsr8FUVBSBe0CObLYs2Pkh0wiHqWNNPw=="
+    "@microsoft/teams.graph-endpoints@2.0.9": {
+      "integrity": "sha512-SpV6p8J3BiUnzOKHfHQS6K/p1L56mJBb5MHVpK40qZe9zUooAkr3u1oZEbWm4dASIeJwEC74GIF+pvp/yZ6mxg=="
     },
-    "@microsoft/teams.graph@2.0.8": {
-      "integrity": "sha512-M/skUNJFD+lIVNa+ng0iy8t3sFmki6NOiWpGwnWOBAKFgTYBTJVtPfWm6SNdGFTCUsV9rjep4s9S5zTKUg2HJg==",
+    "@microsoft/teams.graph@2.0.9": {
+      "integrity": "sha512-AZDAfiGdAzA1cNh84z5p7kSqGHakOPgkoNd1sWM7Hg09jzmwh1F5TuMXLS0CKZjOOBtovXw84cqL5Pdmprq6yA==",
       "dependencies": [
         "@microsoft/teams.common",
         "qs"
@@ -1961,6 +1956,17 @@
       "integrity": "sha512-6cmdPrV/RYfd2U0mDGiMK8S7OJqpCTm7enMLRR3edccsPX8j7zXTLnaEF4fhxxJJTAIOil6+qZrnUPTuaLvwrQ==",
       "dependencies": [
         "@types/node"
+      ]
+    },
+    "@slack/socket-mode@2.0.7": {
+      "integrity": "sha512-qYy07je71WnEHgRwmw12DlAnZLi5HXmdlI2WUzUK2LH/rYXQpP6uEg462S5CwfE8FoCKUdIigHtYnOOfzZH1lQ==",
+      "dependencies": [
+        "@slack/logger",
+        "@slack/web-api",
+        "@types/node",
+        "@types/ws",
+        "eventemitter3@5.0.4",
+        "ws"
       ]
     },
     "@slack/types@2.20.1": {
@@ -2779,18 +2785,6 @@
     },
     "character-entities@2.0.2": {
       "integrity": "sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ=="
-    },
-    "chat@4.26.0": {
-      "integrity": "sha512-QToDnIEGpyb8yQA6YLMHOSRK30YVk4RtsyFyuWFYyB2c4jQlyIrSWtwVK7qyvmvqzQp9uDwCdJRAhS8GtCHAGQ==",
-      "dependencies": [
-        "@workflow/serde",
-        "mdast-util-to-string",
-        "remark-gfm",
-        "remark-parse",
-        "remark-stringify",
-        "remend",
-        "unified"
-      ]
     },
     "chat@4.27.0": {
       "integrity": "sha512-PrL4k263DSIlckhX8eHLT84RdTSznOBxCCfaDc5JVJtWaS0lJkCNctm/g3gIrI41AcDHcpc/3WDoUHVrbh0W4w==",
@@ -6041,10 +6035,10 @@
         "packageJson": {
           "dependencies": [
             "npm:@chat-adapter/discord@4.27.0",
-            "npm:@chat-adapter/slack@4.26.0",
-            "npm:@chat-adapter/teams@4.26.0",
-            "npm:@chat-adapter/telegram@4.26.0",
-            "npm:@chat-adapter/whatsapp@4.26.0",
+            "npm:@chat-adapter/slack@4.27.0",
+            "npm:@chat-adapter/teams@4.27.0",
+            "npm:@chat-adapter/telegram@4.27.0",
+            "npm:@chat-adapter/whatsapp@4.27.0",
             "npm:@hono/mcp@~0.2.5",
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@~0.7.6",
@@ -6198,7 +6192,7 @@
             "npm:@ai-sdk/groq@3.0.35",
             "npm:@ai-sdk/provider@^3.0.8",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.121",
-            "npm:@chat-adapter/slack@4.26.0",
+            "npm:@chat-adapter/slack@4.27.0",
             "npm:@coderabbitai/bitbucket@^1.1.4",
             "npm:@hubspot/api-client@^13.4.0",
             "npm:@jsr/db__sqlite@0.12",
