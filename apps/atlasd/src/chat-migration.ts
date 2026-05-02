@@ -98,6 +98,7 @@ async function migrateOneFile(
     });
   }
 
+  let skipped = 0;
   for (const m of messages) {
     const md = (m.metadata ?? {}) as { startTimestamp?: string; timestamp?: string };
     const ts = md.startTimestamp ?? md.timestamp ?? new Date().toISOString();
@@ -105,18 +106,40 @@ async function migrateOneFile(
     const h = natsHeaders();
     h.set("Friday-Schema-Version", SCHEMA_VERSION);
     h.set("Friday-Message-Id", m.id);
-    await js.publish(chatSubject(workspaceId, chatId), enc.encode(JSON.stringify(envelope)), {
-      headers: h,
-      msgID: m.id,
-    });
+    try {
+      await js.publish(chatSubject(workspaceId, chatId), enc.encode(JSON.stringify(envelope)), {
+        headers: h,
+        msgID: m.id,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // Oversized individual messages can't be put on the broker even with
+      // max_payload bumped to 8 MB. Skipping one message is better than
+      // failing the whole chat and leaving it stuck in the legacy file
+      // forever — the rest of the conversation is still useful. Log
+      // loudly so the user can find what's missing if they care.
+      if (/MAX_PAYLOAD_EXCEEDED|payload exceeded|too large/i.test(errMsg)) {
+        logger.warn("Skipping oversized message during chat migration", {
+          chatId,
+          workspaceId,
+          messageId: m.id,
+          envelopeBytes: JSON.stringify(envelope).length,
+        });
+        skipped++;
+        continue;
+      }
+      throw err;
+    }
   }
 
-  // Verify the stream count matches what we sent. Mismatch = abort and leave
-  // the legacy file in place so a retry can pick it up.
+  // Verify the stream count matches what we sent (minus oversized skips).
+  // Mismatch = abort and leave the legacy file in place so a retry can pick
+  // it up.
   const info = await jsm.streams.info(sName);
-  if (Number(info.state.messages) !== messages.length) {
+  const expected = messages.length - skipped;
+  if (Number(info.state.messages) !== expected) {
     throw new Error(
-      `Migration count mismatch for ${chatId}: stream has ${info.state.messages}, expected ${messages.length}`,
+      `Migration count mismatch for ${chatId}: stream has ${info.state.messages}, expected ${expected} (${skipped} oversized message(s) skipped)`,
     );
   }
 
@@ -137,7 +160,12 @@ async function migrateOneFile(
   // Move the legacy file aside rather than rm — if a future migration code
   // change discovers the move was wrong, it's recoverable.
   await rm(filePath);
-  logger.info("Migrated chat", { chatId, workspaceId, messages: messages.length });
+  logger.info("Migrated chat", {
+    chatId,
+    workspaceId,
+    messages: messages.length - skipped,
+    skipped,
+  });
 }
 
 /**

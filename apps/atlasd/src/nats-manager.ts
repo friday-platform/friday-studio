@@ -130,7 +130,19 @@ export class NatsManager {
 
   private spawnServer(binary: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const args = ["--port", String(NATS_PORT), "--jetstream"];
+      // max_payload defaults to 1 MB. Chat streams allow up to 8 MB per
+      // message (DEFAULT_MAX_MSG_SIZE in chat backend), and large tool
+      // outputs / image attachments can blow past 1 MB easily — we'd
+      // see MAX_PAYLOAD_EXCEEDED on publish when migrating legacy chat
+      // JSON files. Match the broker limit to the stream limit so
+      // anything the stream can store can also be published.
+      const args = [
+        "--port",
+        String(NATS_PORT),
+        "--jetstream",
+        "--max_payload",
+        String(8 * 1024 * 1024),
+      ];
       if (process.env.FRIDAY_NATS_MONITOR === "1") {
         args.push("--http_port", String(NATS_MONITOR_PORT));
         logger.info(`NATS monitoring enabled at http://localhost:${NATS_MONITOR_PORT}`);
