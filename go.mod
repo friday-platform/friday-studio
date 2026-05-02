@@ -5,7 +5,7 @@ go 1.26
 require (
 	fyne.io/systray v1.12.1-0.20260116103033-9483f6fb4738
 	github.com/aymanbagabas/go-pty v0.2.2
-	github.com/caarlos0/env/v11 v11.4.0
+	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coder/websocket v1.8.14
 	github.com/f1bonacc1/process-compose v1.103.0
 	github.com/go-chi/chi/v5 v5.2.5
