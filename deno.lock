@@ -34,7 +34,7 @@
     "npm:@ai-sdk/groq@3.0.35": "3.0.35_zod@4.3.6",
     "npm:@ai-sdk/groq@^3.0.35": "3.0.35_zod@4.3.6",
     "npm:@ai-sdk/mcp@^1.0.36": "1.0.36_zod@4.3.6",
-    "npm:@ai-sdk/openai@^3.0.53": "3.0.53_zod@4.3.6",
+    "npm:@ai-sdk/openai@^3.0.58": "3.0.58_zod@4.3.6",
     "npm:@ai-sdk/provider@^3.0.8": "3.0.10",
     "npm:@ai-sdk/svelte@^4.0.174": "4.0.174_svelte@5.55.5__acorn@8.16.0_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.121": "0.2.121_zod@4.3.6",
@@ -343,11 +343,11 @@
         "zod"
       ]
     },
-    "@ai-sdk/openai@3.0.53_zod@4.3.6": {
-      "integrity": "sha512-Wld+Rbc05KaUn08uBt06eEuwcgalcIFtIl32Yp+GxuZXUQwOb6YeAuq+C6da4ch6BurFoqEaLemJVwjBb7x+PQ==",
+    "@ai-sdk/openai@3.0.58_zod@4.3.6": {
+      "integrity": "sha512-2+5xGMROmrBboJuoOwqLL3b/o3i56+NRdxXDNVAiTyYjLiBj6KzembeuyuBT217be1X+zkEfAqD1H0irJlGIyw==",
       "dependencies": [
-        "@ai-sdk/provider@3.0.8",
-        "@ai-sdk/provider-utils@4.0.23_zod@4.3.6",
+        "@ai-sdk/provider@3.0.10",
+        "@ai-sdk/provider-utils@4.0.26_zod@4.3.6",
         "zod"
       ]
     },
@@ -6304,7 +6304,7 @@
             "npm:@ai-sdk/anthropic@^3.0.74",
             "npm:@ai-sdk/google@^3.0.64",
             "npm:@ai-sdk/groq@^3.0.35",
-            "npm:@ai-sdk/openai@^3.0.53",
+            "npm:@ai-sdk/openai@^3.0.58",
             "npm:@ai-sdk/provider@^3.0.8",
             "npm:@anthropic-ai/claude-agent-sdk@~0.2.121",
             "npm:@jsr/std__collections@^1.1.3",
