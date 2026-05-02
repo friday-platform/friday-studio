@@ -84,6 +84,31 @@ describe("publishSignal + SignalConsumer", () => {
     expect(attempts).toBeGreaterThanOrEqual(3);
   });
 
+  it("dedups identical dedupId within the duplicate_window", async () => {
+    const dispatched: string[] = [];
+    const consumer = new SignalConsumer(
+      nc,
+      (env) => {
+        dispatched.push(env.signalId);
+        return Promise.resolve();
+      },
+      { name: `test-${crypto.randomUUID()}`, expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    const dedupId = `dedup-${crypto.randomUUID()}`;
+    await publishSignal(nc, { workspaceId: "ws-dedup", signalId: "once", dedupId });
+    await publishSignal(nc, { workspaceId: "ws-dedup", signalId: "once", dedupId });
+    await publishSignal(nc, { workspaceId: "ws-dedup", signalId: "once", dedupId });
+
+    await waitFor(() => dispatched.length >= 1, 3000);
+    // Give the broker a moment to redeliver if dedup somehow misses.
+    await new Promise((r) => setTimeout(r, 500));
+    await consumer.destroy();
+
+    expect(dispatched).toEqual(["once"]);
+  });
+
   it("processes a burst of published signals in arrival order", async () => {
     const seen: string[] = [];
     const consumer = new SignalConsumer(

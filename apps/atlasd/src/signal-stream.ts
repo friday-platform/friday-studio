@@ -23,6 +23,7 @@ import {
   headers as natsHeaders,
   RetentionPolicy,
   StorageType,
+  type Subscription,
 } from "nats";
 import { z } from "zod";
 
@@ -30,6 +31,7 @@ const STREAM_NAME = "SIGNALS";
 const SCHEMA_VERSION = "1";
 const DEFAULT_MAX_MSG_SIZE = 1 * 1024 * 1024;
 const DEFAULT_MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000; // 7 days
+const DEFAULT_DUPLICATE_WINDOW_NS = 5 * 60 * 1_000_000_000; // 5 min — covers cron-tick double-fires
 // WorkQueue streams require DeliverPolicy.All — messages are dropped from the
 // stream once acked, so "from now on" or "from sequence" deliver policies are
 // rejected by the broker.
@@ -76,6 +78,7 @@ export async function ensureSignalsStream(nc: NatsConnection): Promise<void> {
     storage: StorageType.File,
     max_msg_size: DEFAULT_MAX_MSG_SIZE,
     max_age: DEFAULT_MAX_AGE_NS,
+    duplicate_window: DEFAULT_DUPLICATE_WINDOW_NS,
   });
   logger.info("Created SIGNALS JetStream stream");
 }
@@ -93,18 +96,25 @@ export interface PublishSignalOpts {
  * Publish a signal envelope onto the SIGNALS stream. Returns the broker's
  * publish sequence (not a sessionId — sessions are assigned by the consumer
  * worker when it actually runs the cascade).
+ *
+ * Sets `msgID` so retries within the stream's duplicate_window dedupe at
+ * the broker. Callers that need a stable id across retries (e.g. cron
+ * ticks that may fire twice) should pass `dedupId`; otherwise we derive
+ * one from (workspaceId, signalId, publishedAt) which is stable for a
+ * given publish call.
  */
 export async function publishSignal(
   nc: NatsConnection,
-  opts: PublishSignalOpts,
+  opts: PublishSignalOpts & { dedupId?: string },
 ): Promise<{ seq: number }> {
+  const publishedAt = new Date().toISOString();
   const envelope: SignalEnvelope = {
     workspaceId: opts.workspaceId,
     signalId: opts.signalId,
     payload: opts.payload,
     streamId: opts.streamId,
     sourceSessionId: opts.sourceSessionId,
-    publishedAt: new Date().toISOString(),
+    publishedAt,
     traceId: opts.traceId,
   };
 
@@ -113,9 +123,10 @@ export async function publishSignal(
   if (opts.traceId) h.set("Friday-Trace-Id", opts.traceId);
 
   const subject = signalSubject(opts.workspaceId, opts.signalId);
+  const msgID = opts.dedupId ?? `${opts.workspaceId}/${opts.signalId}/${publishedAt}`;
   const ack = await nc
     .jetstream()
-    .publish(subject, enc.encode(JSON.stringify(envelope)), { headers: h });
+    .publish(subject, enc.encode(JSON.stringify(envelope)), { headers: h, msgID });
   return { seq: ack.seq };
 }
 
@@ -149,6 +160,7 @@ export interface SignalConsumerOptions {
 export class SignalConsumer {
   private running = false;
   private loop: Promise<void> | null = null;
+  private deadLetterSub: Subscription | null = null;
   private readonly name: string;
   private readonly expiresMs: number;
   private readonly batchSize: number;
@@ -184,12 +196,40 @@ export class SignalConsumer {
       logger.info("Created SIGNALS consumer", { name: this.name });
     }
 
+    this.subscribeDeadLetterAdvisory();
+
     this.running = true;
     this.loop = this.runLoop();
   }
 
+  /**
+   * Subscribe to the broker's max-deliveries advisory subject so we get a
+   * structured event when a signal is dead-lettered (rather than only the
+   * `term()` log line in handleMessage). The advisory carries `stream_seq`,
+   * `deliveries`, and the source subject — enough for an offline triage tool
+   * to correlate to the original signal.
+   */
+  private subscribeDeadLetterAdvisory(): void {
+    const subject = `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.${STREAM_NAME}.${this.name}`;
+    this.deadLetterSub = this.nc.subscribe(subject);
+    void (async () => {
+      for await (const msg of this.deadLetterSub!) {
+        try {
+          const advisory = JSON.parse(dec.decode(msg.data));
+          logger.error("SIGNAL dead-lettered (max deliveries)", { advisory });
+        } catch {
+          // Malformed advisory; ignore.
+        }
+      }
+    })();
+  }
+
   async stop(): Promise<void> {
     this.running = false;
+    if (this.deadLetterSub) {
+      this.deadLetterSub.unsubscribe();
+      this.deadLetterSub = null;
+    }
     if (this.loop) {
       try {
         await this.loop;
