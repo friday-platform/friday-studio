@@ -42,17 +42,32 @@
     }, 200);
   }
 
+  /**
+   * skills.sh search is free-text over skill names — it doesn't honour
+   * `owner/partial` as a prefix filter, and short suffixes like `c` get
+   * buried by unrelated matches. Once the user types a slash, send the
+   * owner (first segment) to skills.sh so the response is scoped to
+   * that owner, then narrow client-side by the full query prefix.
+   */
+  const segs = $derived(searchQuery.split("/").filter(Boolean));
+  const searchTerm = $derived(segs[0] ?? "");
   const suggestionsQuery = createQuery(() =>
     queryOptions({
-      queryKey: ["skillssh-search", searchQuery] as const,
+      queryKey: ["skillssh-search", searchTerm, segs.length] as const,
       queryFn:
-        searchQuery.length >= 2 && searchQuery.split("/").filter(Boolean).length < 3
-          ? () => searchSkillsSh(searchQuery, 8)
+        searchTerm.length >= 2 && segs.length < 3
+          ? () => searchSkillsSh(searchTerm, segs.length >= 2 ? 50 : 8)
           : skipToken,
       staleTime: 60_000,
     }),
   );
-  const suggestions = $derived(suggestionsQuery.data?.skills ?? []);
+  const suggestions = $derived(
+    segs.length >= 2
+      ? (suggestionsQuery.data?.skills ?? [])
+          .filter((s) => s.id.startsWith(searchQuery))
+          .slice(0, 8)
+      : (suggestionsQuery.data?.skills ?? []),
+  );
   const showSuggestions = $derived(
     focused && source.trim().length >= 2 && suggestions.length > 0,
   );
@@ -120,10 +135,8 @@
             <button
               type="button"
               class="sugg"
-              onmousedown={(e) => {
-                e.preventDefault();
-                pickSuggestion(s.id);
-              }}
+              onmousedown={(e) => e.preventDefault()}
+              onclick={() => pickSuggestion(s.id)}
             >
               <span class="sugg-name">{s.name}</span>
               <span class="sugg-src">{s.source}</span>
