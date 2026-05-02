@@ -111,6 +111,17 @@ export class WorkspaceManager {
   };
 
   /**
+   * Cache of parsed workspace configs keyed by workspaceId. Each entry pins
+   * the workspace.yml mtime that produced it; on a stat mismatch we evict
+   * and re-parse. Cuts the per-signal YAML parse + Zod validation cost from
+   * ~5–20ms to a single file stat. Bounded only by the number of workspaces
+   * the daemon has touched.
+   *
+   * Implements G3.7(b) of plans/2026-05-01-stateless-friday.md.
+   */
+  private configCache = new Map<string, { mtimeMs: number; config: MergedConfig }>();
+
+  /**
    * Pending watcher events for workspaces that had active sessions when the
    * config file changed on disk. Keyed by workspaceId. Re-applied by
    * processPendingWatcherChange when the daemon detects the workspace has
@@ -445,11 +456,30 @@ export class WorkspaceManager {
       return { atlas: null, workspace: config };
     }
 
+    const cached = this.configCache.get(workspaceId);
+    const yamlPath = join(workspace.path, "workspace.yml");
+    let mtimeMs: number | null = null;
+    try {
+      mtimeMs = (await stat(yamlPath)).mtimeMs;
+    } catch {
+      // File missing — fall through to load() which surfaces the right error.
+    }
+    if (cached && mtimeMs !== null && cached.mtimeMs === mtimeMs) {
+      return cached.config;
+    }
+
     try {
       const adapter = new FilesystemConfigAdapter(workspace.path);
       const configLoader = new ConfigLoader(adapter, workspace.path);
-      return await configLoader.load();
+      const config = await configLoader.load();
+      if (mtimeMs !== null) {
+        this.configCache.set(workspaceId, { mtimeMs, config });
+      } else {
+        this.configCache.delete(workspaceId);
+      }
+      return config;
     } catch (error) {
+      this.configCache.delete(workspaceId);
       // Missing config is expected (deleted workspace, moved directory) - log at warn level
       // Other errors (validation, IO) are unexpected - log at error level
       if (error instanceof ConfigNotFoundError) {
@@ -1076,6 +1106,7 @@ export class WorkspaceManager {
   }
 
   private async stopRuntimeIfActive(workspaceId: string): Promise<void> {
+    this.configCache.delete(workspaceId);
     // If daemon callback set, let daemon handle full cleanup (both maps)
     if (this.onRuntimeInvalidate) {
       await this.onRuntimeInvalidate(workspaceId);
