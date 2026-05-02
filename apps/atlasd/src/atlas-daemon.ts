@@ -3,6 +3,7 @@ import { join } from "node:path";
 import process, { env } from "node:process";
 import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/activity";
 import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
+import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
@@ -89,6 +90,7 @@ import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts"
 import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
+import { migrateLegacyMemory } from "./memory-migration.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
@@ -341,6 +343,11 @@ export class AtlasDaemon {
       logger.warn("Chat migration failed", { error: String(err) });
     });
 
+    // Migrate legacy markdown narrative memories to JetStream in the background.
+    migrateLegacyMemory(nc).catch((err: unknown) => {
+      logger.warn("Memory migration failed", { error: String(err) });
+    });
+
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
     this.capabilityRegistry.start(nc);
@@ -350,6 +357,7 @@ export class AtlasDaemon {
     logger.info("Creating WorkspaceManager...");
     const registry = await createRegistryStorage(StorageConfigs.defaultKV());
     this.workspaceManager = new WorkspaceManager(registry);
+    this.workspaceManager.setMemoryAdapter(new JetStreamMemoryAdapter({ nc }));
 
     // Wire up runtime invalidation callback so file watcher changes clear both maps
     this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));

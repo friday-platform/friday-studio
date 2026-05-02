@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
-import { MdMemoryAdapter } from "@atlas/adapters-md";
+import type { MemoryAdapter } from "@atlas/agent-sdk";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { MissingEnvironmentError } from "@atlas/core";
 import { logger } from "@atlas/logger";
@@ -106,6 +106,9 @@ export class WorkspaceManager {
   private signalRegistrars: WorkspaceSignalRegistrar[] = [];
   private fileWatcher: WorkspaceConfigWatcher | null = null;
   private onRuntimeInvalidate?: RuntimeInvalidateCallback;
+  private memoryAdapter?: MemoryAdapter & {
+    ensureRoot(workspaceId: string, name: string): Promise<void>;
+  };
 
   /**
    * Pending watcher events for workspaces that had active sessions when the
@@ -121,6 +124,18 @@ export class WorkspaceManager {
 
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
+  }
+
+  /**
+   * Inject the memory adapter used to seed `memory.own` directories on
+   * workspace registration. AtlasDaemon constructs a JetStreamMemoryAdapter
+   * after NATS is up and passes it in. Tests can pass a mock or omit it
+   * (seeding becomes a no-op).
+   */
+  setMemoryAdapter(
+    adapter: MemoryAdapter & { ensureRoot(workspaceId: string, name: string): Promise<void> },
+  ): void {
+    this.memoryAdapter = adapter;
   }
 
   /** Set callback for when runtime needs invalidation. Called by AtlasDaemon. */
@@ -284,10 +299,9 @@ export class WorkspaceManager {
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
 
     const ownEntries = config.workspace.memory?.own ?? [];
-    if (ownEntries.length > 0) {
+    if (ownEntries.length > 0 && this.memoryAdapter) {
       try {
-        const memoryAdapter = new MdMemoryAdapter({ root: getFridayHome() });
-        await seedMemories(memoryAdapter, entry.id, ownEntries);
+        await seedMemories(this.memoryAdapter, entry.id, ownEntries);
       } catch (error) {
         logger.warn("Failed to seed workspace memories", { workspaceId: entry.id, error });
       }
