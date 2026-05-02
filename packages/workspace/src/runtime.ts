@@ -324,7 +324,47 @@ interface WorkspaceRuntimeOptions {
   broadcastNotifier?: FSMBroadcastNotifier;
 }
 
-type JobConcurrencyPolicy = "single-flight" | "isolated";
+/**
+ * User-facing concurrency policy from workspace.yml `jobs.*.concurrency.policy`.
+ * See packages/config/src/jobs.ts for the schema and intent of each value.
+ */
+type ConcurrencyPolicyKind =
+  | "concurrent"
+  | "serialize"
+  | "skip-if-running"
+  | "coalesce"
+  | "singleton";
+
+interface ResolvedConcurrencyPolicy {
+  kind: ConcurrencyPolicyKind;
+  maxQueued?: number;
+}
+
+/**
+ * Internal isolation mode the runtime applies after policy resolution.
+ *
+ * - `single-flight`: shared engine across signals; persistent doc-store scope
+ *   `(workspaceId, jobName)`. The `serialize` / `skip-if-running` / `coalesce`
+ *   / `singleton` policies all map here today; the difference between them is
+ *   *what to do when overlap is detected* (see processSignalForJob's policy
+ *   switch). Cross-process `singleton` semantics are not enforced yet.
+ * - `isolated`: fresh engine per signal; per-session doc-store scope
+ *   `(workspaceId, jobName, sessionId)`. The `concurrent` policy maps here.
+ */
+type JobConcurrencyMode = "single-flight" | "isolated";
+
+/**
+ * Apply the new-default rule: when no `concurrency` block is declared,
+ * the runtime treats the job as `concurrent`. Existing workflow jobs that
+ * need cross-signal engine state must opt into `serialize` (or one of the
+ * other gated policies) explicitly.
+ */
+function resolveConcurrencyPolicy(
+  fromConfig: { policy?: ConcurrencyPolicyKind; max_queued?: number } | undefined,
+): ResolvedConcurrencyPolicy {
+  if (!fromConfig) return { kind: "concurrent" };
+  return { kind: fromConfig.policy ?? "concurrent", maxQueued: fromConfig.max_queued };
+}
 
 interface FSMJob {
   name: string;
@@ -337,8 +377,10 @@ interface FSMJob {
   description?: string;
   /** Max LLM tool-calling steps for FSM actions */
   maxSteps?: number;
-  /** Internal execution isolation policy. Not exposed in workspace.yml yet. */
-  concurrency?: JobConcurrencyPolicy;
+  /** Resolved concurrency policy from workspace.yml (or runtime default). */
+  policy: ResolvedConcurrencyPolicy;
+  /** Internal isolation mode derived from `policy.kind`. */
+  concurrency: JobConcurrencyMode;
 }
 
 interface ActiveSession {
@@ -620,6 +662,7 @@ export class WorkspaceRuntime {
         signals: ["chat"],
         fsmDefinition: chatFSM,
         description: "Direct chat with workspace",
+        policy: { kind: "concurrent" },
         concurrency: "isolated",
       });
 
@@ -660,6 +703,7 @@ export class WorkspaceRuntime {
 
       const signals = (jobSpec.triggers || []).map((t) => t.signal).filter(Boolean);
 
+      const policy = resolveConcurrencyPolicy(jobSpec.concurrency);
       this.jobs.set(jobName, {
         name: jobName,
         fsmPath: "", // Empty for inline FSM
@@ -667,6 +711,8 @@ export class WorkspaceRuntime {
         fsmDefinition,
         description: jobSpec.description,
         maxSteps: jobSpec.config?.max_steps,
+        policy,
+        concurrency: policy.kind === "concurrent" ? "isolated" : "single-flight",
       });
 
       // D.1: declarative `jobs.*.skills` field — warn when refs don't match
@@ -703,7 +749,14 @@ export class WorkspaceRuntime {
       // For standalone FSMs, assume they handle all signals
       const signals = Object.keys(this.config.workspace.signals || {});
 
-      this.jobs.set(jobName, { name: jobName, fsmPath: fsmFile, signals });
+      const policy: ResolvedConcurrencyPolicy = { kind: "concurrent" };
+      this.jobs.set(jobName, {
+        name: jobName,
+        fsmPath: fsmFile,
+        signals,
+        policy,
+        concurrency: "isolated",
+      });
 
       logger.debug("Registered standalone FSM job", { jobName, fsmPath: fsmFile, signals });
     }
@@ -997,7 +1050,7 @@ export class WorkspaceRuntime {
       }
     }
 
-    const policy = job.concurrency ?? "single-flight";
+    const policy = job.concurrency;
     if (policy === "single-flight") {
       await this.initializeJobEngine(job);
     }
@@ -1020,11 +1073,34 @@ export class WorkspaceRuntime {
     skipStates?: string[],
   ): Promise<SessionResult> {
     const sessionId = crypto.randomUUID();
-    const policy = job.concurrency ?? "single-flight";
+    const policy = job.concurrency;
     const activeSessionId = this.activeJobExecutions.get(job.name);
+
+    // User-facing policy from workspace.yml decides what to do on overlap
+    // for `single-flight`-mode jobs. `concurrent` (mode = isolated) bypasses
+    // this entirely; every signal gets a fresh engine and no claim is taken.
     if (policy === "single-flight" && activeSessionId) {
+      const kind = job.policy.kind;
+      if (kind === "skip-if-running") {
+        logger.info("skip-if-running: dropping new trigger; prior session still running", {
+          jobName: job.name,
+          activeSessionId,
+          newSignalId: signal.id,
+        });
+        return {
+          id: sessionId,
+          workspaceId: this.workspace.id,
+          status: WorkspaceSessionStatus.SKIPPED,
+          startedAt: new Date(),
+          completedAt: new Date(),
+          artifacts: [],
+        };
+      }
+      // serialize / coalesce / singleton currently fall back to throw-on-overlap
+      // (today's single-flight semantics). Full queue/coalesce/cross-process
+      // singleton enforcement is a follow-up.
       throw new Error(
-        `Job '${job.name}' in workspace '${this.workspace.id}' is already processing session '${activeSessionId}'`,
+        `Job '${job.name}' in workspace '${this.workspace.id}' is already processing session '${activeSessionId}' (policy=${kind})`,
       );
     }
     if (policy === "single-flight") {

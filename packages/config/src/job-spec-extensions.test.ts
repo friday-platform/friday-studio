@@ -98,3 +98,59 @@ describe("WorkspaceConfigSchema round-trip with job extension fields", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("JobSpecificationSchema concurrency", () => {
+  it("accepts each named policy", () => {
+    for (const policy of [
+      "concurrent",
+      "serialize",
+      "skip-if-running",
+      "coalesce",
+      "singleton",
+    ] as const) {
+      const result = JobSpecificationSchema.safeParse({
+        ...minimalFsmJob,
+        concurrency: { policy },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.concurrency?.policy).toBe(policy);
+    }
+  });
+
+  it("defaults policy to 'concurrent' when omitted on the inner object", () => {
+    const result = JobSpecificationSchema.safeParse({ ...minimalFsmJob, concurrency: {} });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.concurrency?.policy).toBe("concurrent");
+  });
+
+  it("rejects unknown policy", () => {
+    const result = JobSpecificationSchema.safeParse({
+      ...minimalFsmJob,
+      concurrency: { policy: "best-effort" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts max_queued for serialize", () => {
+    const result = JobSpecificationSchema.safeParse({
+      ...minimalFsmJob,
+      concurrency: { policy: "serialize", max_queued: 10 },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.concurrency?.max_queued).toBe(10);
+  });
+
+  it("rejects negative max_queued", () => {
+    const result = JobSpecificationSchema.safeParse({
+      ...minimalFsmJob,
+      concurrency: { policy: "serialize", max_queued: -1 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("omitting the field is fine — runtime applies the default", () => {
+    const result = JobSpecificationSchema.safeParse(minimalFsmJob);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.concurrency).toBeUndefined();
+  });
+});
