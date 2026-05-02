@@ -63,6 +63,7 @@ import {
   setCommunicatorMutation,
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
+import { awaitSignalCompletion } from "../../src/signal-stream.ts";
 import { getCurrentUser } from "../me/adapter.ts";
 import { applyBlueprint, loadWorkspaceBlueprint } from "./blueprint-recompile.ts";
 import {
@@ -1913,35 +1914,53 @@ const workspacesRoutes = daemonFactory
       },
     });
   })
-  // Trigger a workspace signal (JSON mode)
+  // Trigger a workspace signal (JSON mode).
+  //
+  // Publishes onto the SIGNALS JetStream stream with a correlationId, then
+  // awaits the response on signals.responses.<correlationId>. The shared
+  // SignalConsumer in the daemon (or a future cross-process worker) dispatches
+  // the cascade and publishes the result. Cascade behavior is unchanged from
+  // the legacy in-process path; the difference is durability + worker-pool
+  // dispatchability, plus skipStates is no longer plumbed through (cron / fs-
+  // watch / HTTP all converge on the same envelope shape now).
   .post(
     "/:workspaceId/signals/:signalId",
     zValidator("param", signalParamSchema),
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
-      const { payload, streamId, skipStates } = c.req.valid("json");
+      const { payload, streamId, skipStates: _skipStates } = c.req.valid("json");
       const ctx = c.get("app");
 
+      const correlationId = crypto.randomUUID();
+      const nc = ctx.daemon.getNatsConnection();
+
       try {
-        const result = await ctx.daemon.triggerWorkspaceSignal(
+        // Subscribe BEFORE publishing — a fast consumer could otherwise
+        // beat us to the response subject and we'd miss the reply.
+        const responsePromise = awaitSignalCompletion(nc, correlationId, 600_000);
+        await ctx.daemon.publishSignalToJetStream({
           workspaceId,
           signalId,
           payload,
           streamId,
-          undefined,
-          skipStates,
-        );
+          correlationId,
+        });
+        const response = await responsePromise;
+
+        if (!response.ok) {
+          throw new Error(response.error);
+        }
+        const result = response.result as {
+          sessionId: string;
+          output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+        };
         return c.json({
           message: "Signal completed",
           status: "completed" as const,
           workspaceId,
           signalId,
           sessionId: result.sessionId,
-          // Surface the FSM's final output documents (agent outputTo results,
-          // user-declared document types). Callers like the workspace-chat
-          // job tool need this to render the agent's actual answer — without
-          // it, the caller only sees a success flag with no content.
           output: result.output,
         });
       } catch (error) {

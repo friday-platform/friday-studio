@@ -2,6 +2,7 @@ import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  awaitSignalCompletion,
   ensureSignalsStream,
   publishSignal,
   SignalConsumer,
@@ -107,6 +108,52 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.destroy();
 
     expect(dispatched).toEqual(["once"]);
+  });
+
+  it("publishes the dispatch result to the response subject for correlated requests", async () => {
+    const consumer = new SignalConsumer(nc, (env) => Promise.resolve({ echoed: env.payload }), {
+      name: `test-${crypto.randomUUID()}`,
+      expiresMs: 1000,
+    });
+    await consumer.start();
+
+    const correlationId = crypto.randomUUID();
+    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
+    await publishSignal(nc, {
+      workspaceId: "ws-correl",
+      signalId: "ping",
+      payload: { hello: "world" },
+      correlationId,
+    });
+    const reply = await responsePromise;
+    await consumer.destroy();
+
+    expect(reply.ok).toBe(true);
+    if (reply.ok) {
+      expect(reply.result).toEqual({ echoed: { hello: "world" } });
+    }
+  });
+
+  it("publishes ok=false to the response subject for a failing correlated request", async () => {
+    const consumer = new SignalConsumer(nc, () => Promise.reject(new Error("dispatch boom")), {
+      name: `test-${crypto.randomUUID()}`,
+      expiresMs: 1000,
+    });
+    await consumer.start();
+
+    const correlationId = crypto.randomUUID();
+    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
+    await publishSignal(nc, { workspaceId: "ws-correl-fail", signalId: "fail", correlationId });
+    const reply = await responsePromise;
+    await consumer.destroy();
+
+    expect(reply.ok).toBe(false);
+    if (!reply.ok) expect(reply.error).toContain("dispatch boom");
+  });
+
+  it("awaitSignalCompletion times out when the consumer never replies", async () => {
+    const correlationId = crypto.randomUUID();
+    await expect(awaitSignalCompletion(nc, correlationId, 200)).rejects.toThrow(/timeout/);
   });
 
   it("processes a burst of published signals in arrival order", async () => {

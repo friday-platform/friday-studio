@@ -478,7 +478,7 @@ export class AtlasDaemon {
     //     throw so the broker NAKs and redelivers (up to maxDeliver).
     this.signalConsumer = new SignalConsumer(nc, async (envelope: SignalEnvelope) => {
       try {
-        await this.triggerWorkspaceSignal(
+        return await this.triggerWorkspaceSignal(
           envelope.workspaceId,
           envelope.signalId,
           envelope.payload,
@@ -492,8 +492,15 @@ export class AtlasDaemon {
             status: err.status,
             error: err.message,
           });
-          // ack — signal was delivered cleanly, the cascade itself failed.
-          return;
+          // Domain-level failure (not infra). For correlated callers we need
+          // to surface it as ok=false on the response subject and ack so the
+          // broker doesn't redeliver. For uncorrelated callers (cron-style)
+          // we just ack — the legacy NATS subscriber didn't redeliver these
+          // either.
+          if (envelope.correlationId) {
+            throw err;
+          }
+          return undefined;
         }
         logger.error("Failed to process signal", {
           error: err,

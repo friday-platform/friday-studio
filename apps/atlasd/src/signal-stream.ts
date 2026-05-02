@@ -58,9 +58,26 @@ export const SignalEnvelopeSchema = z.object({
   publishedAt: z.string().datetime(),
   /** Optional opaque trace id propagated across cascades. */
   traceId: z.string().optional(),
+  /**
+   * If set, the consumer publishes the dispatch result to
+   * `signals.responses.<correlationId>` so a synchronous publisher (HTTP
+   * trigger, future cross-cascade emit-and-await) can subscribe and unblock.
+   */
+  correlationId: z.string().optional(),
 });
 
 export type SignalEnvelope = z.infer<typeof SignalEnvelopeSchema>;
+
+/** Result published by SignalConsumer to the response subject. */
+export const SignalResponseSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), result: z.unknown() }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+]);
+export type SignalResponse = z.infer<typeof SignalResponseSchema>;
+
+export function signalResponseSubject(correlationId: string): string {
+  return `signals.responses.${correlationId}`;
+}
 
 export async function ensureSignalsStream(nc: NatsConnection): Promise<void> {
   const jsm = await nc.jetstreamManager();
@@ -90,6 +107,12 @@ export interface PublishSignalOpts {
   streamId?: string;
   sourceSessionId?: string;
   traceId?: string;
+  /**
+   * If set, the consumer publishes a SignalResponse to
+   * `signals.responses.<correlationId>` after dispatch. Use
+   * `awaitSignalCompletion` (or your own `nc.subscribe`) to receive it.
+   */
+  correlationId?: string;
 }
 
 /**
@@ -116,6 +139,7 @@ export async function publishSignal(
     sourceSessionId: opts.sourceSessionId,
     publishedAt,
     traceId: opts.traceId,
+    correlationId: opts.correlationId,
   };
 
   const h = natsHeaders();
@@ -132,13 +156,13 @@ export async function publishSignal(
 
 /**
  * Callback used by SignalConsumer to dispatch a received envelope to the
- * runtime. The implementation owns sessionId allocation and the actual
- * `runtime.processSignal` call.
+ * runtime. Returns a value the consumer publishes to the response subject
+ * when the envelope carries a correlationId; ignored otherwise.
  */
 export type SignalDispatcher = (
   envelope: SignalEnvelope,
   ctx: { onStreamEvent?: (chunk: AtlasUIMessageChunk) => void },
-) => Promise<void>;
+) => Promise<unknown>;
 
 export interface SignalConsumerOptions {
   /** Logical name for the durable consumer; defaults to "atlasd-signals". */
@@ -289,10 +313,30 @@ export class SignalConsumer {
     }
 
     try {
-      await this.dispatch(envelope, {});
+      const result = await this.dispatch(envelope, {});
+      if (envelope.correlationId) {
+        this.publishResponse(envelope.correlationId, { ok: true, result });
+      }
       msg.ack();
     } catch (err) {
       const info = msg.info;
+
+      // Correlated envelopes are sync-await callers (HTTP trigger). Their
+      // publisher is blocked on a single response — redelivery would mean
+      // the response arrives after the timeout. Surface the error
+      // immediately and term so we don't double-dispatch on retry.
+      if (envelope.correlationId) {
+        logger.warn("Correlated signal dispatch failed; surfacing error to publisher", {
+          subject: msg.subject,
+          seq: msg.seq,
+          correlationId: envelope.correlationId,
+          error: stringifyError(err),
+        });
+        this.publishResponse(envelope.correlationId, { ok: false, error: stringifyError(err) });
+        msg.term();
+        return;
+      }
+
       if (info.deliveryCount >= this.maxDeliver) {
         logger.error("Signal dead-lettered after max deliveries", {
           subject: msg.subject,
@@ -311,6 +355,56 @@ export class SignalConsumer {
         error: stringifyError(err),
       });
       msg.nak();
+    }
+  }
+
+  private publishResponse(correlationId: string, response: SignalResponse): void {
+    try {
+      this.nc.publish(signalResponseSubject(correlationId), enc.encode(JSON.stringify(response)));
+    } catch (err) {
+      logger.warn("Failed to publish signal response", {
+        correlationId,
+        error: stringifyError(err),
+      });
+    }
+  }
+}
+
+/**
+ * Subscribe to a correlationId's response subject and resolve with the
+ * first reply (or reject on timeout). Caller must subscribe BEFORE
+ * publishing the request envelope, otherwise a fast response could be
+ * missed.
+ */
+export async function awaitSignalCompletion(
+  nc: NatsConnection,
+  correlationId: string,
+  timeoutMs = 30_000,
+): Promise<SignalResponse> {
+  const subject = signalResponseSubject(correlationId);
+  const sub = nc.subscribe(subject, { max: 1 });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      sub.unsubscribe();
+      reject(new Error(`awaitSignalCompletion: timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    const iter = sub[Symbol.asyncIterator]();
+    const winner = await Promise.race([iter.next(), timeout]);
+    if (winner.done || !winner.value) {
+      throw new Error("awaitSignalCompletion: subscription closed without a response");
+    }
+    return SignalResponseSchema.parse(JSON.parse(dec.decode(winner.value.data)));
+  } finally {
+    if (timer) clearTimeout(timer);
+    try {
+      sub.unsubscribe();
+    } catch {
+      // Already gone
     }
   }
 }
