@@ -1760,7 +1760,7 @@ describe("MCP Registry Routes", () => {
               transport: z.object({ type: z.literal("stdio"), command: z.string() }),
               skipResolverCheck: z.literal(true),
             }),
-            requiredConfig: z.undefined().or(z.array(z.any()).length(0)).optional(),
+            requiredConfig: z.undefined().or(z.array(z.any()).length(0)),
           }),
           warning: z.string().optional(),
         })

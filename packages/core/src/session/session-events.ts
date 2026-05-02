@@ -34,7 +34,7 @@ export type SessionActionType = z.infer<typeof SessionActionTypeSchema>;
 
 export const ToolCallSummarySchema = z.object({
   toolName: z.string(),
-  args: z.unknown().optional(),
+  args: z.unknown(),
   result: z.unknown().optional(),
   durationMs: z.number().optional(),
 });
@@ -87,7 +87,7 @@ export const StepCompleteEventSchema = z.object({
   durationMs: z.number(),
   toolCalls: z.array(ToolCallSummarySchema),
   reasoning: z.string().optional(),
-  output: z.unknown().optional(),
+  output: z.unknown(),
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
   timestamp: z.string(),
