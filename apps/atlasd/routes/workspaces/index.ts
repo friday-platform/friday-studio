@@ -41,10 +41,8 @@ import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidat
 import { createDefaultResolvers } from "@atlas/core/mcp-registry/resolvers";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
-import type { ResourceMetadata, ResourceVersion } from "@atlas/ledger";
 import { createLogger, logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
-import { createLedgerClient } from "@atlas/resources";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
@@ -89,7 +87,6 @@ import {
 } from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { mapMutationError } from "./mutation-errors.ts";
-import { resourceRoutes } from "./resources.ts";
 import {
   addWorkspaceBatchSchema,
   addWorkspaceSchema,
@@ -303,129 +300,6 @@ export function extractJobIntegrations(
  * can detect and resolve them during export/import.
  */
 export { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
-
-// Zod schemas for parsing Ledger version data per resource type.
-// Ledger stores schema/data as `unknown` — parse here instead of casting.
-const ProseSchemaShape = z.object({ type: z.literal("string"), format: z.literal("markdown") });
-const DocumentSchemaShape = z.record(z.string(), z.unknown());
-const ArtifactRefDataShape = z.object({ artifact_id: z.string() });
-const ExternalRefDataShape = z.object({
-  provider: z.string(),
-  ref: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-/**
- * Reconstruct a resource declaration from Ledger metadata + version data.
- * Prose resources are stored as type "document" with a markdown schema —
- * detect by checking the schema shape.
- */
-export function toConfigResourceDeclaration(
-  metadata: ResourceMetadata,
-  version: ResourceVersion,
-): NonNullable<WorkspaceConfig["resources"]>[number] {
-  const base = { slug: metadata.slug, name: metadata.name, description: metadata.description };
-
-  switch (metadata.type) {
-    case "document": {
-      const schemaResult = DocumentSchemaShape.safeParse(version.schema);
-      const schema = schemaResult.success ? schemaResult.data : {};
-      if (ProseSchemaShape.safeParse(schema).success) {
-        return { type: "prose" as const, ...base };
-      }
-      return { type: "document" as const, ...base, schema };
-    }
-    case "artifact_ref": {
-      const parsed = ArtifactRefDataShape.safeParse(version.data);
-      return {
-        type: "artifact_ref" as const,
-        ...base,
-        artifactId: parsed.success ? parsed.data.artifact_id : "",
-      };
-    }
-    case "external_ref": {
-      const parsed = ExternalRefDataShape.safeParse(version.data);
-      if (!parsed.success) {
-        return { type: "external_ref" as const, ...base, provider: "" };
-      }
-      return {
-        type: "external_ref" as const,
-        ...base,
-        provider: parsed.data.provider,
-        ...(parsed.data.ref !== undefined && { ref: parsed.data.ref }),
-        ...(parsed.data.metadata !== undefined && { metadata: parsed.data.metadata }),
-      };
-    }
-  }
-}
-
-/**
- * Provision resources from workspace config into Ledger.
- * Maps config-level resource declarations to Ledger provision calls.
- */
-export async function provisionConfigResources(
-  workspaceId: string,
-  userId: string,
-  resources: NonNullable<WorkspaceConfig["resources"]>,
-  provisionLogger: ReturnType<typeof createLogger>,
-): Promise<string[]> {
-  const ledger = createLedgerClient();
-  const errors: string[] = [];
-
-  for (const resource of resources) {
-    try {
-      let ledgerType: "document" | "artifact_ref" | "external_ref";
-      let schema: unknown;
-      let initialData: unknown;
-
-      switch (resource.type) {
-        case "document":
-          ledgerType = "document";
-          schema = resource.schema;
-          initialData = [];
-          break;
-        case "prose":
-          ledgerType = "document";
-          schema = { type: "string", format: "markdown" };
-          initialData = "";
-          break;
-        case "artifact_ref":
-          ledgerType = "artifact_ref";
-          schema = {};
-          initialData = { artifact_id: resource.artifactId };
-          break;
-        case "external_ref":
-          ledgerType = "external_ref";
-          schema = {};
-          initialData = {
-            provider: resource.provider,
-            ...(resource.ref !== undefined && { ref: resource.ref }),
-            ...(resource.metadata !== undefined && { metadata: resource.metadata }),
-          };
-          break;
-      }
-
-      await ledger.provision(
-        workspaceId,
-        {
-          userId,
-          slug: resource.slug,
-          name: resource.name,
-          description: resource.description,
-          type: ledgerType,
-          schema,
-        },
-        initialData,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      provisionLogger.warn("Failed to provision resource", { slug: resource.slug, error: message });
-      errors.push(`${resource.slug}: ${message}`);
-    }
-  }
-
-  return errors;
-}
 
 // Create and mount routes
 const workspacesRoutes = daemonFactory
@@ -719,21 +593,9 @@ const workspacesRoutes = daemonFactory
           workspace.metadata = { ...workspace.metadata, requires_setup: true };
         }
 
-        // Provision resources declared in the imported config
-        let resourceErrors: string[] | undefined;
-        if (validatedConfig.resources && validatedConfig.resources.length > 0 && created) {
-          const importResourceLogger = createLogger({ component: "workspace-import-resources" });
-          const provisionUserId = userId ?? "local";
-          const errors = await provisionConfigResources(
-            workspace.id,
-            provisionUserId,
-            validatedConfig.resources,
-            importResourceLogger,
-          );
-          if (errors.length > 0) {
-            resourceErrors = errors;
-          }
-        }
+        // Resources subsystem was deleted (Ledger). Any incoming `resources:`
+        // block in the imported config is silently dropped — no-op in the new
+        // world. The schema parser also strips it before we get here.
 
         return c.json(
           {
@@ -752,7 +614,6 @@ const workspacesRoutes = daemonFactory
             ...(unresolvedCredentialPaths && unresolvedCredentialPaths.length > 0
               ? { unresolvedCredentials: unresolvedCredentialPaths }
               : {}),
-            ...(resourceErrors && resourceErrors.length > 0 ? { resourceErrors } : {}),
           },
           201,
         );
@@ -1087,32 +948,6 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
       }
 
-      // Fetch resource declarations from Ledger to include in the export.
-      // Resources are stored in Ledger (not workspace.yml), so we reconstruct
-      // declarations from metadata + published version data.
-      let exportResources: NonNullable<WorkspaceConfig["resources"]> | undefined;
-      try {
-        const ledger = createLedgerClient();
-        const metadataList = await ledger.listResources(workspaceId);
-        if (metadataList.length > 0) {
-          const withData = await Promise.all(
-            metadataList.map(async (meta) => {
-              const full = await ledger.getResource(workspaceId, meta.slug, { published: true });
-              return { metadata: meta, version: full?.version };
-            }),
-          );
-          exportResources = withData
-            .filter(
-              (r): r is { metadata: ResourceMetadata; version: ResourceVersion } => !!r.version,
-            )
-            .map((r) => toConfigResourceDeclaration(r.metadata, r.version));
-        }
-      } catch (resourceError) {
-        exportLogger.warn("Failed to fetch resources for export, continuing without them", {
-          error: stringifyError(resourceError),
-        });
-      }
-
       // Inject missing credential refs from bundled agent registry so they
       // appear in the exported YAML even if the user never configured them.
       const configWithAgentRefs = injectBundledAgentRefs(config.workspace);
@@ -1163,11 +998,7 @@ const workspacesRoutes = daemonFactory
 
       // Strip workspace.id - it will be regenerated on import
       const { id: _id, ...workspaceIdentity } = portableConfig.workspace;
-      const exportConfig = {
-        ...portableConfig,
-        workspace: workspaceIdentity,
-        ...(exportResources && exportResources.length > 0 && { resources: exportResources }),
-      };
+      const exportConfig = { ...portableConfig, workspace: workspaceIdentity };
 
       const yamlContent = stringify(exportConfig, { indent: 2, lineWidth: 100 });
 
@@ -2329,7 +2160,6 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  .route("/:workspaceId/resources", resourceRoutes)
   // ─── WORKSPACE SKILLS (resolved) ──────────────────────────────────────────
   .get(
     "/:workspaceId/skills",

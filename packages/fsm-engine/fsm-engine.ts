@@ -9,10 +9,6 @@ import {
   type AgentResult as AgentSDKExecutionResult,
   type ArtifactRef,
   ArtifactRefSchema,
-  createResourceLinkRefTool,
-  createResourceReadTool,
-  createResourceSaveTool,
-  createResourceWriteTool,
   type FailInput,
   FailInputSchema,
   PLATFORM_TOOL_NAMES,
@@ -33,17 +29,10 @@ import {
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
-import {
-  buildResourceGuidance,
-  enrichCatalogEntries,
-  publishDirtyDrafts,
-  toCatalogEntries,
-} from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import {
   createLoadSkillTool,
@@ -409,8 +398,6 @@ export interface FSMEngineOptions {
   validateOutput?: OutputValidator;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
-  /** Ledger storage adapter for versioned workspace resources */
-  resourceAdapter?: ResourceStorageAdapter;
   /**
    * Outbound chat broadcaster used by `notification` actions. Required only
    * when an FSM declares at least one such action — engines without it throw
@@ -1148,26 +1135,6 @@ export class FSMEngine {
               cleanupSkills = cleanup;
             }
 
-            // Inject Ledger resource tools when workspace has a resource adapter
-            if (workspaceId && this.options.resourceAdapter) {
-              baseTools.resource_read = createResourceReadTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-              baseTools.resource_write = createResourceWriteTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-              baseTools.resource_save = createResourceSaveTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-              baseTools.resource_link_ref = createResourceLinkRefTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-            }
-
             try {
               // Inject failStep tool for explicit failure signaling
               const failStepTool = tool({
@@ -1224,37 +1191,6 @@ export class FSMEngine {
                 effectivePrepareResult,
                 skills,
               );
-
-              // Append workspace resource context so LLM knows what resources are available
-              if (workspaceId && this.options.resourceAdapter) {
-                try {
-                  const metadata = await this.options.resourceAdapter.listResources(workspaceId);
-                  if (metadata.length > 0) {
-                    const catalogEntries = await toCatalogEntries(
-                      metadata,
-                      this.options.resourceAdapter,
-                      workspaceId,
-                    );
-                    const entries = this.options.artifactStorage
-                      ? await enrichCatalogEntries(catalogEntries, this.options.artifactStorage)
-                      : catalogEntries.filter((e) => e.type !== "artifact_ref");
-                    const guidance = buildResourceGuidance(entries);
-                    if (guidance) {
-                      contextPrompt += `\n\n${guidance}`;
-                    }
-                    const hasDocuments = entries.some((e) => e.type === "document");
-                    if (hasDocuments) {
-                      const skillText = await this.options.resourceAdapter.getSkill();
-                      contextPrompt += `\n\n${skillText}`;
-                    }
-                  }
-                } catch (err) {
-                  logger.warn("Failed to build resource guidance", {
-                    workspaceId,
-                    error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
 
               if (completeToolInjected) {
                 contextPrompt +=
@@ -1548,14 +1484,6 @@ export class FSMEngine {
             } finally {
               await buildResult.dispose();
               cleanupSkills?.();
-
-              // Publish dirty drafts after LLM actions that have resource tools.
-              // Agent actions are covered by runtime.ts:executeAgent(), but LLM
-              // actions execute entirely within the FSM engine and need their own
-              // publish hook to avoid orphaning drafts until session teardown.
-              if (workspaceId && this.options.resourceAdapter) {
-                await publishDirtyDrafts(this.options.resourceAdapter, workspaceId);
-              }
             }
             break;
           }

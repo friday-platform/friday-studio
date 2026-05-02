@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
-import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/activity";
+import type { ActivityStorageAdapter } from "@atlas/activity";
 import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
@@ -18,7 +18,6 @@ import {
 } from "@atlas/core";
 import { initChatStorage } from "@atlas/core/chat/storage";
 import { CronManager } from "@atlas/cron";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { sharedMCPProcesses } from "@atlas/mcp";
@@ -29,7 +28,6 @@ import {
   PlatformMCPServer,
   WebfetchArgsSchema,
 } from "@atlas/mcp-server";
-import { createLedgerClient } from "@atlas/resources/ledger-client";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createKVStorage,
@@ -194,7 +192,6 @@ export class AtlasDaemon {
   private toolWorkers: ToolWorker[] = [];
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
-  private resourceStorage: ResourceStorageAdapter | null = null;
   private activityAdapter: ActivityStorageAdapter | null = null;
   public streamRegistry!: StreamRegistry;
   public chatTurnRegistry!: ChatTurnRegistry;
@@ -266,7 +263,6 @@ export class AtlasDaemon {
       getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
       getActivityAdapter: this.getActivityAdapter.bind(this),
-      getLedgerAdapter: this.getLedgerAdapter.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
       getOrCreateChatSdkInstance: this.getOrCreateChatSdkInstance.bind(this),
       evictChatSdkInstance: this.evictChatSdkInstance.bind(this),
@@ -384,22 +380,11 @@ export class AtlasDaemon {
     const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
 
-    // Initialize Ledger client for versioned resource storage (auto-publish, resource tools)
-    if (process.env.LEDGER_URL) {
-      this.resourceStorage = createLedgerClient();
-      logger.info("Resource storage using Ledger client");
-    } else {
-      logger.info("Resource storage not configured (LEDGER_URL not set)");
-    }
-
-    // Initialize activity storage adapter
-    if (process.env.LEDGER_URL) {
-      this.activityAdapter = createActivityLedgerClient();
-      logger.info("Activity storage using Ledger client");
-    } else {
-      this.activityAdapter = new LocalActivityAdapter();
-      logger.info("Activity storage using local SQLite adapter");
-    }
+    // Activity storage uses the local SQLite adapter — Ledger was deleted
+    // (versioned resource storage was unused; activity is the only thing that
+    // talks to a per-tenant SQLite, and it works fine in-process).
+    this.activityAdapter = new LocalActivityAdapter();
+    logger.info("Activity storage using local SQLite adapter");
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");
@@ -834,14 +819,6 @@ export class AtlasDaemon {
     return this.activityAdapter;
   }
 
-  /** Get Ledger resource storage adapter */
-  public getLedgerAdapter(): ResourceStorageAdapter {
-    if (!this.resourceStorage) {
-      throw new Error("Ledger adapter not initialized (LEDGER_URL not set)");
-    }
-    return this.resourceStorage;
-  }
-
   /**
    * Get shared agent registry instance
    */
@@ -1274,7 +1251,6 @@ export class AtlasDaemon {
         {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode
-          resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
           activityStorage: this.getActivityAdapter(), // Share activity storage for feed items
           platformModels: this.getPlatformModels(),
           agentExecutor: this.processAgentExecutor ?? undefined,

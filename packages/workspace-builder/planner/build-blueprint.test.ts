@@ -203,51 +203,9 @@ describe("buildBlueprint", () => {
     });
   });
 
-  describe("resources", () => {
-    it("passes declared resources through to the blueprint", async () => {
-      const planWithResources = {
-        ...PLAN_RESULT,
-        resources: [
-          {
-            type: "document",
-            slug: "grocery_list",
-            name: "Grocery List",
-            description: "Items to buy",
-            schema: {
-              type: "object",
-              properties: { item: { type: "string" }, quantity: { type: "integer" } },
-              required: ["item"],
-            },
-          },
-        ],
-      };
-      mockGeneratePlan.mockResolvedValue(planWithResources);
-      mockClassifyAgents.mockResolvedValue(CLASSIFY_RESULT);
-      mockEnrichSignals.mockResolvedValue(PLAN_RESULT.signals);
-      mockGenerateDAGSteps.mockResolvedValue(JOBS);
-      mockEnrichAgentsWithPipelineContext.mockResolvedValue({
-        agents: PLAN_RESULT.agents,
-        entries: [],
-      });
-      mockGenerateOutputSchemas.mockResolvedValue(SCHEMA_MAP);
-      mockGeneratePrepareMappings.mockResolvedValue(MAPPINGS);
-
-      const result = await buildBlueprint("Build a meal planner", baseOpts());
-
-      expect(result.blueprint.resources).toHaveLength(1);
-      expect(result.blueprint.resources?.[0]).toEqual(
-        expect.objectContaining({ slug: "grocery_list", name: "Grocery List" }),
-      );
-    });
-
-    it("omits resources from blueprint when plan declares none", async () => {
-      setupSuccessfulPipeline();
-
-      const result = await buildBlueprint("Send me alerts", baseOpts());
-
-      expect(result.blueprint.resources).toBeUndefined();
-    });
-  });
+  // Resources subsystem (Ledger) was deleted; the planner still produces
+  // empty `resources: []` on Phase1Result for prompt-stability but they no
+  // longer surface on the blueprint. No tests here.
 
   describe("task mode", () => {
     it("produces empty signals array and uses adhoc trigger", async () => {

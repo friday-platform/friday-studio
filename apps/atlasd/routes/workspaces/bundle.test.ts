@@ -103,7 +103,6 @@ function createApp(opts: {
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),
-    getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
     exposeKernel: false,
     platformModels: createStubPlatformModels(),

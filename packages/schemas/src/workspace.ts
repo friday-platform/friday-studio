@@ -9,72 +9,7 @@
 
 import { HTTPProviderConfigSchema, ScheduleProviderConfigSchema } from "@atlas/config";
 import { z } from "zod";
-import type { ValidatedJSONSchema } from "./json-schema.ts";
 import { JSONSchemaSchema } from "./json-schema.ts";
-
-// ---------------------------------------------------------------------------
-// Slug (SQL identifier format)
-// ---------------------------------------------------------------------------
-
-/** SQL-safe identifier: lowercase letter followed by lowercase letters, digits, or underscores. */
-const ResourceSlugSchema = z.string().regex(/^[a-z][a-z0-9_]*$/);
-
-// ---------------------------------------------------------------------------
-// Resource Declarations
-// ---------------------------------------------------------------------------
-
-/** Document resource: structured data stored as JSONB array. Schema can include nested arrays/objects when domain is hierarchical. */
-export const DocumentResourceDeclarationSchema = z.strictObject({
-  type: z.literal("document"),
-  slug: ResourceSlugSchema,
-  name: z.string(),
-  description: z.string(),
-  schema: JSONSchemaSchema as z.ZodType<ValidatedJSONSchema>,
-});
-export type DocumentResourceDeclaration = z.infer<typeof DocumentResourceDeclarationSchema>;
-
-/** Prose resource: markdown string content. Schema is implicit (string, format: markdown). */
-export const ProseResourceDeclarationSchema = z.strictObject({
-  type: z.literal("prose"),
-  slug: ResourceSlugSchema,
-  name: z.string(),
-  description: z.string(),
-});
-export type ProseResourceDeclaration = z.infer<typeof ProseResourceDeclarationSchema>;
-
-/** Artifact reference: a pointer to a stored artifact (read-only). */
-export const ArtifactRefDeclarationSchema = z.strictObject({
-  type: z.literal("artifact_ref"),
-  slug: ResourceSlugSchema,
-  name: z.string(),
-  description: z.string(),
-  artifactId: z.string(),
-});
-export type ArtifactRefDeclaration = z.infer<typeof ArtifactRefDeclarationSchema>;
-
-/** External reference: a pointer to a resource managed outside the platform. */
-export const ExternalRefDeclarationSchema = z.strictObject({
-  type: z.literal("external_ref"),
-  slug: ResourceSlugSchema,
-  name: z.string(),
-  description: z.string(),
-  provider: z.enum(["google-sheets", "notion", "airtable", "github", "url"]),
-  ref: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-export type ExternalRefDeclaration = z.infer<typeof ExternalRefDeclarationSchema>;
-
-/**
- * Resource declaration: union of all resource types, discriminated on `type`.
- * Uses `z.union` instead of `z.discriminatedUnion` to avoid TS2589 with 5 variants.
- */
-export const ResourceDeclarationSchema = z.union([
-  DocumentResourceDeclarationSchema,
-  ProseResourceDeclarationSchema,
-  ArtifactRefDeclarationSchema,
-  ExternalRefDeclarationSchema,
-]);
-export type ResourceDeclaration = z.infer<typeof ResourceDeclarationSchema>;
 
 // ---------------------------------------------------------------------------
 // Signal & Agent
@@ -345,7 +280,6 @@ export const WorkspaceBlueprintSchema = z.strictObject({
   signals: z.array(SignalSchema),
   agents: z.array(AgentSchema),
   jobs: z.array(ClassifiedJobWithDAGSchema),
-  resources: z.array(ResourceDeclarationSchema).optional(),
   credentialBindings: z
     .array(CredentialBindingSchema)
     .optional()

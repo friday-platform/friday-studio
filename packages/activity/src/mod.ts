@@ -1,9 +1,7 @@
-// NOTE: This barrel is imported by the ledger Docker build, which does NOT copy
-// packages/llm/ or packages/core/. Do not re-export from title-generator.ts or
-// any module that transitively pulls @atlas/llm or @atlas/core.
+// NOTE: This barrel intentionally avoids title-generator.ts / anything that
+// transitively pulls @atlas/llm or @atlas/core, so it stays lightweight for
+// downstream consumers that only need types and the local SQLite adapter.
 
-// Ledger HTTP client
-export { createActivityLedgerClient } from "./ledger-client.ts";
 // Notifier
 export { ActivityNotifier } from "./notifier.ts";
 export type {

@@ -96,7 +96,6 @@ function createTestApp(
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
-    getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),
     daemon: {},
     streamRegistry: mockStreamRegistry,

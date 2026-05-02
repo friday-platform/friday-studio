@@ -200,36 +200,7 @@ export function validateRevisionScope(
     violations,
   );
 
-  // Resources — structural identity (type + slug)
-  const origResources = original.resources ?? [];
-  const revResources = revised.resources ?? [];
-  compareByCompositeKey(
-    origResources,
-    revResources,
-    (r) => `${r.type}::${r.slug}`,
-    "resource",
-    (a, b) => {
-      if (a.type !== b.type) {
-        violations.push(`resource "${a.slug}": type changed`);
-      }
-      // For external refs, check provider and ref are unchanged
-      if (a.type === "external_ref" && b.type === "external_ref") {
-        if (a.provider !== b.provider) {
-          violations.push(`resource "${a.slug}": provider changed`);
-        }
-        if (a.ref !== b.ref) {
-          violations.push(`resource "${a.slug}": ref changed`);
-        }
-      }
-      // For artifact refs, check artifactId is unchanged
-      if (a.type === "artifact_ref" && b.type === "artifact_ref") {
-        if (a.artifactId !== b.artifactId) {
-          violations.push(`resource "${a.slug}": artifactId changed`);
-        }
-      }
-    },
-    violations,
-  );
+  // Resources subsystem deleted — no structural-identity check needed.
 
   return { ok: violations.length === 0, violations };
 }

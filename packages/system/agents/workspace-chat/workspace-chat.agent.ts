@@ -20,8 +20,6 @@ import {
   smallLLM,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import type { ResourceEntry } from "@atlas/resources";
-import { buildResourceGuidance, createLedgerClient } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import {
@@ -35,7 +33,6 @@ import { z } from "zod";
 import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
 import {
   composeMemoryBlocks,
-  composeResources,
   composeSkills,
   composeTools,
   composeWorkspaceSections,
@@ -61,7 +58,6 @@ import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
-import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import {
   createAssignWorkspaceSkillTool,
@@ -88,55 +84,11 @@ export interface ArtifactSummary {
   summary: string;
 }
 
-/** Zod schema for parsing resource entries from the daemon API. */
-const ResourceEntrySchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("document"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("external_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    provider: z.string(),
-    ref: z.string().optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("artifact_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    artifactId: z.string(),
-    artifactType: z.enum(["file", "unavailable"]),
-    rowCount: z.number().optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
-]);
-
-const ResourcesResponseSchema = z.object({ resources: z.array(ResourceEntrySchema) });
 const ArtifactsResponseSchema = z.object({
   artifacts: z.array(
     z.object({ id: z.string(), type: z.string(), title: z.string(), summary: z.string() }),
   ),
 });
-
-/**
- * Parse resource entries from raw daemon API response.
- * Returns empty array on invalid data (graceful degradation).
- */
-export function parseResourceEntries(data: unknown): ResourceEntry[] {
-  const parsed = ResourcesResponseSchema.safeParse(data);
-  return parsed.success ? parsed.data.resources : [];
-}
 
 /**
  * Parse artifact summaries from raw daemon API response.
@@ -147,44 +99,26 @@ export function parseArtifactSummaries(data: unknown): ArtifactSummary[] {
   return parsed.success ? parsed.data.artifacts : [];
 }
 
-/**
- * Compute orphaned artifacts — those whose IDs don't appear in any artifact_ref resource entry.
- */
-export function computeOrphanedArtifacts(
-  resourceEntries: ResourceEntry[],
-  artifacts: ArtifactSummary[],
-): ArtifactSummary[] {
-  const linkedArtifactIds = new Set(
-    resourceEntries
-      .filter((e): e is ResourceEntry & { type: "artifact_ref" } => e.type === "artifact_ref")
-      .map((e) => e.artifactId),
-  );
-  return artifacts.filter((a) => !linkedArtifactIds.has(a.id));
-}
-
 export interface WorkspaceDetails {
   name: string;
   description?: string;
   agents: string[];
   jobs: Array<{ id: string; name: string; description?: string }>;
   signals: Array<{ name: string }>;
-  resourceEntries: ResourceEntry[];
-  orphanedArtifacts: ArtifactSummary[];
+  artifacts: ArtifactSummary[];
 }
 
 export async function fetchWorkspaceDetails(
   workspaceId: string,
   logger: Logger,
 ): Promise<WorkspaceDetails> {
-  const [wsResult, agentsResult, jobsResult, signalsResult, artifactsResult, resourcesResult] =
-    await Promise.all([
-      parseResult(client.workspace[":workspaceId"].$get({ param: { workspaceId } })),
-      parseResult(client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } })),
-      parseResult(client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } })),
-      parseResult(client.workspace[":workspaceId"].signals.$get({ param: { workspaceId } })),
-      parseResult(client.artifactsStorage.index.$get({ query: { workspaceId, limit: "50" } })),
-      parseResult(client.workspace[":workspaceId"].resources.$get({ param: { workspaceId } })),
-    ]);
+  const [wsResult, agentsResult, jobsResult, signalsResult, artifactsResult] = await Promise.all([
+    parseResult(client.workspace[":workspaceId"].$get({ param: { workspaceId } })),
+    parseResult(client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } })),
+    parseResult(client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } })),
+    parseResult(client.workspace[":workspaceId"].signals.$get({ param: { workspaceId } })),
+    parseResult(client.artifactsStorage.index.$get({ query: { workspaceId, limit: "50" } })),
+  ]);
 
   const name = wsResult.ok ? (wsResult.data.name ?? workspaceId) : workspaceId;
   const description = wsResult.ok ? wsResult.data.description : undefined;
@@ -233,18 +167,6 @@ export async function fetchWorkspaceDetails(
     logger.warn("Failed to fetch workspace signals", { workspaceId, error: signalsResult.error });
   }
 
-  // Parse resource entries from daemon API (graceful degradation on failure)
-  let resourceEntries: ResourceEntry[] = [];
-  if (resourcesResult.ok) {
-    resourceEntries = parseResourceEntries(resourcesResult.data);
-  } else {
-    logger.warn("Failed to fetch workspace resources", {
-      workspaceId,
-      error: resourcesResult.error,
-    });
-  }
-
-  // Parse artifacts and compute orphans (artifacts not linked to any resource entry)
   let artifacts: ArtifactSummary[] = [];
   if (artifactsResult.ok) {
     artifacts = parseArtifactSummaries(artifactsResult.data);
@@ -255,9 +177,7 @@ export async function fetchWorkspaceDetails(
     });
   }
 
-  const orphanedArtifacts = computeOrphanedArtifacts(resourceEntries, artifacts);
-
-  return { name, description, agents, jobs, signals, resourceEntries, orphanedArtifacts };
+  return { name, description, agents, jobs, signals, artifacts };
 }
 
 /**
@@ -639,9 +559,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           connect_communicator: createConnectCommunicatorTool(),
         };
 
-        // Resource adapter — shared by resource tools
-        const resourceAdapter = createLedgerClient();
-
         // load_skill
         const loadSkillResult = createLoadSkillTool({ workspaceId });
         const loadSkillTool = loadSkillResult.tool;
@@ -686,19 +603,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           writer,
           abortSignal,
         );
-
-        // Compose resources from primary + foreground workspaces
-        const mergedResources = composeResources(workspaceDetails.resourceEntries, foregrounds);
-
-        // Resource tools — only register when workspace has document resources
-        const hasDocuments = mergedResources.some((e) => e.type === "document");
-        const resourceTools = hasDocuments
-          ? createResourceChatTools(
-              resourceAdapter,
-              new Map(mergedResources.map((e) => [e.slug, e])),
-              workspaceId,
-            )
-          : {};
 
         // Ad-hoc freedom tools — modeled on Hermes + OpenClaw patterns.
         // These give the chat agent web fetch + search + code execution +
@@ -794,7 +698,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             workspaceId,
             streamId: session.streamId,
           }),
-          ...resourceTools,
           ...createMemorySaveTool(workspaceId, logger),
           ...webFetchTool,
           ...webSearchTool,
@@ -834,41 +737,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const allTools = composeTools(primaryTools, foregroundToolSets);
         allToolsRef = allTools;
 
-        // Build resource section for system prompt
+        // Surface artifacts list so the LLM knows what files are available
+        // via artifacts_get. Resources subsystem (Ledger) was deleted; the
+        // artifact catalog is the only stored-output surface now.
         const resourceSectionParts: string[] = [];
-
-        if (hasDocuments) {
-          resourceSectionParts.push(`<resources>
-Use resource_read/resource_write for direct document operations — faster than delegate or job tools.
-For external services, use the matching \`agent_*\` specialist or \`delegate\`. For artifact data, use artifacts_get.
-</resources>`);
-        }
-
-        const resourceGuidance = buildResourceGuidance(mergedResources, {
-          availableTools: RESOURCE_CHAT_TOOL_NAMES,
-        });
-        if (resourceGuidance) {
-          resourceSectionParts.push(resourceGuidance);
-        }
-
-        if (workspaceDetails.orphanedArtifacts.length > 0) {
-          const orphanLines = workspaceDetails.orphanedArtifacts.map(
+        if (workspaceDetails.artifacts.length > 0) {
+          const artifactLines = workspaceDetails.artifacts.map(
             (a) => `- ${a.id} (${a.type}): ${a.title} - ${a.summary}`,
           );
-          resourceSectionParts.push(`Files (access via artifacts_get):\n${orphanLines.join("\n")}`);
+          resourceSectionParts.push(
+            `Files (access via artifacts_get):\n${artifactLines.join("\n")}`,
+          );
         }
-
-        if (hasDocuments) {
-          try {
-            const skillText = await resourceAdapter.getSkill(RESOURCE_CHAT_TOOL_NAMES);
-            if (skillText) {
-              resourceSectionParts.push(skillText);
-            }
-          } catch (err) {
-            logger.warn("Failed to fetch resource skill text", { error: err });
-          }
-        }
-
         const resourceSection =
           resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
 
@@ -908,7 +788,7 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
           agentCount: workspaceDetails.agents.length,
           jobCount: workspaceDetails.jobs.length,
           signalCount: workspaceDetails.signals.length,
-          resourceCount: workspaceDetails.resourceEntries.length,
+          artifactCount: workspaceDetails.artifacts.length,
           integrations: linkSummary ? linkSummary.credentials.length : "unavailable",
           userIdentity: userIdentitySection ? "available" : "unavailable",
         });

@@ -5713,6 +5713,7 @@
     },
     "uuid@8.3.2": {
       "integrity": "sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==",
+      "deprecated": true,
       "bin": true
     },
     "vary@1.1.2": {
@@ -6031,25 +6032,6 @@
           ]
         }
       },
-      "apps/ledger": {
-        "dependencies": [
-          "jsr:@db/sqlite@0.13",
-          "jsr:@std/dotenv@~0.225.5",
-          "npm:@hono/zod-validator@~0.7.5",
-          "npm:hono@^4.11.1",
-          "npm:ulid@^3.0.2",
-          "npm:zod@^4.2.1"
-        ],
-        "packageJson": {
-          "dependencies": [
-            "npm:@hono/zod-validator@0.7.6",
-            "npm:@jsr/db__sqlite@0.12",
-            "npm:hono@4.12.15",
-            "npm:vitest@^4.1.0",
-            "npm:zod@4.3.6"
-          ]
-        }
-      },
       "apps/link": {
         "dependencies": [
           "jsr:@db/sqlite@0.13",
@@ -6344,17 +6326,6 @@
             "npm:hono-openapi@^1.3.0",
             "npm:openapi-fetch@0.17",
             "npm:openapi-typescript@^7.13.0"
-          ]
-        }
-      },
-      "packages/resources": {
-        "dependencies": [
-          "npm:hono@^4.10.4"
-        ],
-        "packageJson": {
-          "dependencies": [
-            "npm:hono@4.12.15",
-            "npm:vitest@^4.1.0"
           ]
         }
       },

@@ -8,7 +8,6 @@
     "./local-adapter": "./src/local-adapter.ts"
   },
   "imports": {
-    "@atlas/ledger": "../../apps/ledger/src/index.ts",
     "@atlas/llm": "../llm/mod.ts",
     "@atlas/logger": "../logger/mod.ts",
     "@atlas/utils": "../utils/mod.ts",

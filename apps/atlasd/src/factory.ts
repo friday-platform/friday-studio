@@ -2,7 +2,6 @@ import type { ActivityStorageAdapter } from "@atlas/activity";
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import type { PlatformModels } from "@atlas/llm";
 import type { WorkspaceManager, WorkspaceRuntime } from "@atlas/workspace";
 import { cors } from "hono/cors";
@@ -38,9 +37,6 @@ export interface AppContext {
   // Runtime management methods
   getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined;
   destroyWorkspaceRuntime(workspaceId: string): Promise<void>;
-
-  // Ledger resource storage
-  getLedgerAdapter(): ResourceStorageAdapter;
 
   // Activity storage
   getActivityAdapter(): ActivityStorageAdapter;

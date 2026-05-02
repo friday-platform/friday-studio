@@ -31,13 +31,6 @@ export { createNestedChunkWriter } from "./nested-chunk-writer.ts";
 export { normalizeToUIMessages } from "./normalize-to-ui-messages.ts";
 export { createPlatformTools, PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
 export * from "./resolved-memory.ts";
-export type { ResourceToolkit } from "./resource-toolkit.ts";
-export {
-  createResourceLinkRefTool,
-  createResourceReadTool,
-  createResourceSaveTool,
-  createResourceWriteTool,
-} from "./resource-tools.ts";
 export type {
   AgentExtras,
   AgentPayload,

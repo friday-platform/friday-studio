@@ -10,42 +10,6 @@ import { WorkspaceSignalConfigSchema } from "./signals.ts";
 import { SkillEntrySchema } from "./skills.ts";
 
 // ==============================================================================
-// RESOURCE DECLARATIONS (config-level schema, strict validation at provisioning)
-// ==============================================================================
-
-const ConfigResourceDeclarationSchema = z.union([
-  z.object({
-    type: z.literal("document"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    schema: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    type: z.literal("prose"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-  }),
-  z.object({
-    type: z.literal("artifact_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    artifactId: z.string(),
-  }),
-  z.object({
-    type: z.literal("external_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    provider: z.string(),
-    ref: z.string().optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  }),
-]);
-
-// ==============================================================================
 // MEMORY SCHEMAS
 // ==============================================================================
 
@@ -146,7 +110,6 @@ export const WorkspaceConfigSchema = z.strictObject({
   communicators: z.record(z.string(), CommunicatorConfigSchema).optional(),
   jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
-  resources: z.array(ConfigResourceDeclarationSchema).optional(),
   notifications: NotificationConfigSchema.optional(),
   federation: FederationConfigSchema.optional(),
   improvement: z

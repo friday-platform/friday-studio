@@ -8,7 +8,6 @@
     "./local-adapter": "./src/local-adapter.ts"
   },
   "dependencies": {
-    "@atlas/ledger": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",

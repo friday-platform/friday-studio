@@ -80,7 +80,6 @@ import {
   validateFSMStructure,
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
@@ -89,7 +88,6 @@ import {
 import { logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
-import { publishDirtyDrafts } from "@atlas/resources";
 import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -277,8 +275,6 @@ interface WorkspaceRuntimeOptions {
     finalOutput: string | undefined;
     jobName: string;
   }) => Promise<void>;
-  /** Ledger storage adapter for versioned workspace resources (auto-publish) */
-  resourceStorage?: ResourceStorageAdapter;
   /** Activity storage adapter for creating activity feed items */
   activityStorage?: ActivityStorageAdapter;
   /** Memory adapter for bootstrap injection (feature-flagged via FRIDAY_MEMORY_BOOTSTRAP) */
@@ -882,7 +878,6 @@ export class WorkspaceRuntime {
         this.options.platformModels,
       ),
       artifactStorage: ArtifactStorage,
-      resourceAdapter: this.options.resourceStorage,
       broadcastNotifier: this.options.broadcastNotifier,
     };
 
@@ -1302,23 +1297,6 @@ export class WorkspaceRuntime {
             }
           }
         } finally {
-          // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
-          if (this.options.resourceStorage) {
-            try {
-              await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id, {
-                jobId: job.name,
-                userId: this.createdByUserId,
-                activityStorage: this.options.activityStorage,
-                platformModels: this.options.platformModels,
-              });
-            } catch (publishError) {
-              logger.warn("Auto-publish at session teardown failed", {
-                sessionId: session.id,
-                error: publishError instanceof Error ? publishError.message : String(publishError),
-              });
-            }
-          }
-
           if (onStreamEvent) {
             try {
               await onStreamEvent({
@@ -1597,7 +1575,6 @@ export class WorkspaceRuntime {
       fsmContext,
       signal, // Use actual signal instead of synthetic one
       signal._context?.abortSignal,
-      this.options.resourceStorage,
       this.workspace.id,
       ArtifactStorage,
     );
@@ -1756,11 +1733,6 @@ export class WorkspaceRuntime {
 
         // Validate agent output (hallucination detection only runs for LLM agents)
         await validateAgentOutput(agentResult, fsmContext, agentType, this.options.platformModels);
-
-        // Auto-publish dirty resource drafts after agent turn completion
-        if (this.options.resourceStorage && workspaceId) {
-          await publishDirtyDrafts(this.options.resourceStorage, workspaceId);
-        }
 
         return agentResult;
       },
