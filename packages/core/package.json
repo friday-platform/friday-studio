@@ -44,7 +44,7 @@
   "main": "./mod.ts",
   "dependencies": {
     "@deno/kv": "^0.13.0",
-    "@ai-sdk/provider": "^3.0.8",
+    "@ai-sdk/provider": "^3.0.10",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/config": "workspace:*",
