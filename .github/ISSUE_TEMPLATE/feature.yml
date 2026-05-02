@@ -1,0 +1,26 @@
+name: "Feature request"
+description: An idea for something new
+title: "[FEAT] "
+labels: ["enhancement"]
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea — we read every one of these. A rough sketch is plenty.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: The problem you're trying to solve and what would help. A rough sketch is fine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Workarounds, prior art, screenshots — optional.
+    validations:
+      required: false
