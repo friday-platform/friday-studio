@@ -102,7 +102,7 @@ updates:
     schedule:
       interval: "weekly"
       time: "04:17"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     assignees:
       - "ljagiello"
     commit-message:
@@ -124,7 +124,7 @@ updates:
     schedule:
       interval: "weekly"
       time: "04:17"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     assignees:
       - "ljagiello"
     commit-message:
@@ -160,6 +160,29 @@ updates:
         patterns:
           - "go.opentelemetry.io/*"
           - "github.com/open-telemetry/*"
+
+  # Keep Cargo (Rust) dependencies up to date for the Tauri installer
+  - package-ecosystem: "cargo"
+    directory: "/apps/studio-installer/src-tauri"
+    schedule:
+      interval: "weekly"
+      time: "04:17"
+    open-pull-requests-limit: 10
+    assignees:
+      - "ljagiello"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "cargo"
+      - "studio-installer"
+    rebase-strategy: "auto"
+    groups:
+      tauri:
+        patterns:
+          - "tauri"
+          - "tauri-*"
 
   # apps/link npm dependencies are covered by the root npm block via
   # workspaces ("./apps/*") — no separate block needed.

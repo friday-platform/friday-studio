@@ -12,7 +12,13 @@
   "bugs": { "url": "https://github.com/friday-platform/friday-studio/issues" },
   "author": "Tempest Labs, Inc.",
   "license": "BUSL-1.1",
-  "workspaces": ["./apps/*", "./packages/*", "./tools/evals", "./tools/agent-playground"],
+  "workspaces": [
+    "./apps/*",
+    "./packages/*",
+    "./tools/evals",
+    "./tools/agent-playground",
+    "./tools/chat-replay"
+  ],
   "dependencies": {
     "@atlas/activity": "workspace:*",
     "@atlas/agent-sdk": "workspace:*",
