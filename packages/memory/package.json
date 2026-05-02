@@ -4,6 +4,6 @@
   "type": "module",
   "exports": { ".": "./src/bootstrap.ts", "./discovery-to-task": "./src/discovery-to-task.ts" },
   "main": "./src/bootstrap.ts",
-  "dependencies": { "zod": "^4.3.5" },
+  "dependencies": { "zod": "^4.4.2" },
   "devDependencies": { "vitest": "^4.1.0" }
 }

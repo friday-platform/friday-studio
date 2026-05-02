@@ -15,7 +15,7 @@
     "markdown-it": "^14.1.1",
     "tar": "^7.5.13",
     "ulid": "^3.0.2",
-    "zod": "^4.3.5"
+    "zod": "^4.4.2"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }

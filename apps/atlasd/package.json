@@ -46,7 +46,7 @@
     "ai": "^6.0.174",
     "chat": "4.27.0",
     "@chat-adapter/slack": "4.26.0",
-    "zod": "^4.3.5"
+    "zod": "^4.4.2"
   },
   "devDependencies": {
     "@libpdf/core": "^0.3.4",

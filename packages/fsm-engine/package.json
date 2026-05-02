@@ -23,7 +23,7 @@
     "@modelcontextprotocol/sdk": "~1.28.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.9",
     "ai": "npm:ai@^6.0.141",
-    "zod": "^4.3.5"
+    "zod": "^4.4.2"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }

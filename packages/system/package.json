@@ -27,7 +27,7 @@
     "@worker-tools/html-rewriter": "^0.1.0-pre.17",
     "ai": "^6.0.174",
     "turndown": "7.2.4",
-    "zod": "^4.3.5"
+    "zod": "^4.4.2"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }
