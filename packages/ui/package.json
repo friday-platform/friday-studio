@@ -47,7 +47,7 @@
     "@lezer/common": "^1.5.2",
     "@lezer/markdown": "^1.6.3",
     "@melt-ui/svelte": "^0.86.6",
-    "marked": "^18.0.2",
+    "marked": "^18.0.3",
     "shiki": "^4.0.2"
   },
   "devDependencies": {
