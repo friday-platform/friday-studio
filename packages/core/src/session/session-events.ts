@@ -212,7 +212,7 @@ export const AgentBlockSchema = z.object({
   durationMs: z.number().optional(),
   toolCalls: z.array(ToolCallSummarySchema),
   reasoning: z.string().optional(),
-  output: z.unknown().optional(),
+  output: z.unknown(),
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
   ephemeral: z.array(z.custom<AtlasUIMessageChunk>(() => true)).optional(),
