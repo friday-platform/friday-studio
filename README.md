@@ -67,18 +67,22 @@ deno task atlas chat                    # list recent chats
 deno task atlas chat <chatId> --human   # readable transcript
 ```
 
-To run one of the bundled example workspaces (HTTP-triggered Claude Code
-agent):
+To run a real example workspace, clone the
+[`friday-studio-examples`](https://github.com/friday-platform/friday-studio-examples)
+repo and add one — for instance, the HTTP-triggered GitHub PR reviewer:
 
 ```bash
-deno task atlas workspace add ./examples/claude-code-smoke
-curl -X POST http://localhost:8080/webhooks/run-code \
+git clone https://github.com/friday-platform/friday-studio-examples
+deno task atlas workspace add ./friday-studio-examples/github-pr-reviewer
+curl -X POST http://localhost:8080/review-pr \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "explain this repo in two sentences"}'
+  -d '{"pr_url": "https://github.com/friday-platform/friday-studio/pull/118"}'
 ```
 
-Browse `examples/` for more — `pr-review-github`, `jira-bugfix-labeled`,
-`claude-code-with-skills`, and others — each is a self-contained
+Browse
+[`friday-studio-examples`](https://github.com/friday-platform/friday-studio-examples)
+for more — `github-digest`, `inbox-zero`, `competitive-monitor`,
+`daily-operating-memo`, and others — each is a self-contained
 `workspace.yml` you can copy and edit.
 
 ### 5. Stop the daemon
@@ -176,9 +180,6 @@ apps/
 packages/             # @atlas/* libraries — core, agent-sdk, config,
                       # fsm-engine, llm, logger, mcp, memory, skills,
                       # storage, workspace, signals, …
-examples/             # Self-contained workspace.yml examples
-                      # (claude-code-smoke, pr-review-github,
-                      # jira-bugfix-labeled, …)
 tools/
   agent-playground/   # Web client (SvelteKit) — dev tool and the
                       # production UI bundled in Friday Studio
@@ -276,7 +277,9 @@ Post-ship: `/reviewing-code` for reviewing others' PRs.
 
 ## Learn more
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components and data flow
+- [docs.hellofriday.ai](https://docs.hellofriday.ai) — full documentation
+- [`friday-studio-examples`](https://github.com/friday-platform/friday-studio-examples)
+  — ready-to-import workspace examples
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to send patches, code style, hard
   rules (CLA required)
 - [`SECURITY.md`](SECURITY.md) — vulnerability disclosure

@@ -1,0 +1,17 @@
+name: "Question"
+description: How do I…?
+title: "[Q] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Happy to help — ask away. No question is too small.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Configs, commands, what you've tried — whatever helps.
+    validations:
+      required: true

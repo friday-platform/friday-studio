@@ -48,6 +48,23 @@ updates:
       opentelemetry:
         patterns:
           - "@opentelemetry/*"
+      hono:
+        patterns:
+          - "hono"
+          - "@hono/*"
+          - "hono-*"
+      zod:
+        patterns:
+          - "zod"
+          - "zod-*"
+      chat:
+        patterns:
+          - "chat"
+          - "@chat-adapter/*"
+      ai-sdk:
+        patterns:
+          - "ai"
+          - "@ai-sdk/*"
     ignore:
       # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
       # Docker images — rolldown-binding.linux-x64-musl.node not found.
@@ -76,13 +93,16 @@ updates:
       - dependency-name: "undici"
         update-types: ["version-update:semver-major"]
 
-  # Keep Docker dependencies up to date
+  # Keep Docker dependencies up to date across all Dockerfiles
   - package-ecosystem: "docker"
-    directory: "/"
+    directories:
+      - "/"
+      - "/apps/link"
+      - "/apps/ledger"
     schedule:
       interval: "weekly"
       time: "04:17"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     assignees:
       - "ljagiello"
     commit-message:
@@ -92,7 +112,7 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    # Block denoland/deno >= 2.7.5
+    # Block denoland/deno >= 2.7.5 — OTEL regression deadlocks compiled binaries.
     # See: https://github.com/denoland/deno/issues/32821
     ignore:
       - dependency-name: "denoland/deno"
@@ -104,7 +124,7 @@ updates:
     schedule:
       interval: "weekly"
       time: "04:17"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     assignees:
       - "ljagiello"
     commit-message:
@@ -141,13 +161,13 @@ updates:
           - "go.opentelemetry.io/*"
           - "github.com/open-telemetry/*"
 
-  # Keep Docker dependencies up to date (for link service)
-  - package-ecosystem: "docker"
-    directory: "/apps/link"
+  # Keep Cargo (Rust) dependencies up to date for the Tauri installer
+  - package-ecosystem: "cargo"
+    directory: "/apps/studio-installer/src-tauri"
     schedule:
       interval: "weekly"
       time: "04:17"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     assignees:
       - "ljagiello"
     commit-message:
@@ -155,34 +175,14 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "docker"
+      - "cargo"
+      - "studio-installer"
     rebase-strategy: "auto"
-    # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
-    # See: https://github.com/denoland/deno/issues/32821
-    ignore:
-      - dependency-name: "denoland/deno"
-        versions: [">= 2.7.5, < 2.8.0"]
+    groups:
+      tauri:
+        patterns:
+          - "tauri"
+          - "tauri-*"
 
-  # Keep npm dependencies up to date (for link service)
-  - package-ecosystem: "npm"
-    directory: "/apps/link"
-    schedule:
-      interval: "weekly"
-      time: "04:17"
-    versioning-strategy: "increase"
-    open-pull-requests-limit: 5
-    assignees:
-      - "ljagiello"
-    commit-message:
-      prefix: "deps"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "npm"
-      - "link"
-    rebase-strategy: "auto"
-    ignore:
-      # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
-      # type inference. Pinned to ~1.28.x until upstream fixes typing.
-      - dependency-name: "@modelcontextprotocol/sdk"
-        versions: [">= 1.29.0"]
+  # apps/link npm dependencies are covered by the root npm block via
+  # workspaces ("./apps/*") — no separate block needed.

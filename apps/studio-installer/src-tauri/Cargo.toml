@@ -11,28 +11,28 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
-tauri = { version = "2.10.3", features = [] }
-tauri-plugin-opener = "2.5.3"
+tauri = { version = "2.11.0", features = [] }
+tauri-plugin-opener = "2.5.4"
 tauri-plugin-os = "2.3.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["rustls-tls", "stream", "json", "blocking"], default-features = false }
-sha2 = "0.10"
+sha2 = "0.11"
 tokio = { version = "1", features = ["full"] }
-dirs = "5"
+dirs = "6"
 hex = "0.4"
 # Mirrors exec.LookPath for our claude discovery so the wizard
 # agrees with the launcher about whether claude is already
 # installed.
-which = "6"
+which = "8"
 futures-util = "0.3"
 flate2 = "1"
 tar = "0.4"
-zip = "0.6"
+zip = "8.6"
 # Pure-Rust zstd decoder. Avoids vendoring libzstd C lib + cross-compile
 # pain. The studio bundle ships as .tar.zst (tar+zstd) for ~10–15% size
 # win over tar.gz; ruzstd handles the decompression at install time.
-ruzstd = "0.7"
+ruzstd = "0.8"
 # YAML round-trip used by env_file.rs to manage ~/.friday/local/friday.yml
 # selectively (only the `models:` key — preserves any `server:` /
 # `tools:` / etc. the user or Settings UI authored). Mirrors the
@@ -45,7 +45,7 @@ ruzstd = "0.7"
 serde_norway = "0.9"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [dev-dependencies]
 # Used by ensure_agent_browser_chrome's is_cold_install tests for

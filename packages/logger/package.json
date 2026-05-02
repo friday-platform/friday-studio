@@ -12,7 +12,7 @@
   "dependencies": {
     "@atlas/utils": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
-    "hono": "4.12.15",
+    "hono": "4.12.16",
     "zod": "^4.3.5"
   }
 }

@@ -1,0 +1,35 @@
+name: "Bug"
+description: Something broken or behaving unexpectedly
+title: "[BUG] "
+labels: ["bug"]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sorry you hit a bug — thanks for taking the time to tell us. Whatever you can share is helpful, even partial info.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What you saw, what you expected, and how to reproduce it if you know.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: A release tag like `0.1.1`, a commit SHA, or "latest from `main`".
+      placeholder: "0.1.1"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Anything useful — paste log output, drop screenshots, link a video.
+    validations:
+      required: false
