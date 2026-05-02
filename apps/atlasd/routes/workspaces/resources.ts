@@ -83,16 +83,24 @@ function requireParam(
  */
 const resourceRoutes = daemonFactory
   .createApp()
-  // List all resources in a workspace (enriched with type-specific fields)
+  // List all resources in a workspace (enriched with type-specific fields).
+  // The Ledger is an optional service (gated by LEDGER_URL); when not
+  // configured, the workspace simply has no published resources — the chat
+  // agent's fetchWorkspaceDetails should see an empty list, not a 500. Same
+  // semantic as "no resources yet" but without the noise.
   .get("/", async (c) => {
     const workspaceId = requireParam(c, "workspaceId");
+    const ctx = c.get("app");
+    let ledger: ReturnType<AppContext["getLedgerAdapter"]>;
     try {
-      const ctx = c.get("app");
-      const ledger = ctx.getLedgerAdapter();
+      ledger = ctx.getLedgerAdapter();
+    } catch {
+      return c.json({ resources: [] });
+    }
+    try {
       const metadata = await ledger.listResources(workspaceId);
       const catalogEntries = await toCatalogEntries(metadata, ledger, workspaceId);
       const resources = await enrichCatalogEntries(catalogEntries, ArtifactStorage);
-
       return c.json({ resources });
     } catch (error) {
       return c.json({ error: `Failed to list resources: ${stringifyError(error)}` }, 500);
