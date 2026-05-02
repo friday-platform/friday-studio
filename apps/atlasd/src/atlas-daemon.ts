@@ -96,6 +96,13 @@ import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
+import {
+  ensureSignalsStream,
+  type PublishSignalOpts,
+  publishSignal,
+  SignalConsumer,
+  type SignalEnvelope,
+} from "./signal-stream.ts";
 import { StreamRegistry } from "./stream-registry.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -180,6 +187,7 @@ export class AtlasDaemon {
   private natsManager: NatsManager | null = null;
   private capabilityRegistry: CapabilityHandlerRegistry | null = null;
   private processAgentExecutor: ProcessAgentExecutor | null = null;
+  private signalConsumer: SignalConsumer | null = null;
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private resourceStorage: ResourceStorageAdapter | null = null;
@@ -336,6 +344,12 @@ export class AtlasDaemon {
     // Ensure the SESSIONS JetStream stream exists (durable session event store)
     await this.ensureSessionsStream(nc);
 
+    // Ensure the SIGNALS JetStream stream exists. Triggers (HTTP, cron, chat,
+    // future cross-cascade emits) can publish onto this for durable, redeliver-
+    // able routing. The consumer worker is started after WorkspaceManager
+    // initializes so it can dispatch through `triggerWorkspaceSignal`.
+    await ensureSignalsStream(nc);
+
     // Wire chat storage to JetStream + ensure CHATS KV bucket exists, then
     // migrate any legacy file-based chats in the background.
     initChatStorage(nc);
@@ -454,6 +468,31 @@ export class AtlasDaemon {
 
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
+
+    // Spin up the SIGNALS consumer now that the workspace manager can satisfy
+    // dispatched envelopes. The consumer reads from the stream and calls
+    // triggerWorkspaceSignal — same in-process path the HTTP handler uses,
+    // so cross-cascade signals via JetStream behave identically to direct
+    // triggers.
+    this.signalConsumer = new SignalConsumer(nc, (envelope: SignalEnvelope) =>
+      this.triggerWorkspaceSignal(
+        envelope.workspaceId,
+        envelope.signalId,
+        envelope.payload,
+        envelope.streamId,
+      ).then(
+        () => undefined,
+        (err: unknown) => {
+          logger.warn("SIGNALS consumer dispatch failed", {
+            workspaceId: envelope.workspaceId,
+            signalId: envelope.signalId,
+            error: String(err),
+          });
+          throw err;
+        },
+      ),
+    );
+    await this.signalConsumer.start();
 
     // Bootstrap @atlas/* system skills before any workspace chat gets a chance
     // to ask for them. Idempotent — only republishes on content-hash mismatch.
@@ -1404,6 +1443,23 @@ export class AtlasDaemon {
   }
 
   /**
+   * Publish a signal envelope onto the SIGNALS JetStream stream. The local
+   * SignalConsumer (or any worker subscribed to the same durable consumer
+   * in a multi-process deployment) will pick it up and run the cascade
+   * via `triggerWorkspaceSignal`.
+   *
+   * Use this for fire-and-forget dispatch — the publish ack returns immediately
+   * with the broker sequence number; the actual session id is allocated later
+   * by whichever worker handles the message. For synchronous "trigger and
+   * await result" semantics, keep using `triggerWorkspaceSignal` directly.
+   */
+  public publishSignalToJetStream(opts: PublishSignalOpts): Promise<{ seq: number }> {
+    const nc = this.natsManager?.connection;
+    if (!nc) throw new Error("NATS not initialized — call initialize() first");
+    return publishSignal(nc, opts);
+  }
+
+  /**
    * Cached per workspace; torn down when the runtime is destroyed.
    *
    * Cost breakdown (G3.3 audit):
@@ -2154,6 +2210,17 @@ export class AtlasDaemon {
       Deno.removeSignalListener(signal, handler);
     }
     this.signalHandlers = [];
+
+    // Stop the SIGNALS consumer before tearing down runtimes so in-flight
+    // dispatches can finish against live workspaces.
+    if (this.signalConsumer) {
+      try {
+        await this.signalConsumer.stop();
+      } catch (error) {
+        logger.error("Error stopping SIGNALS consumer", { error });
+      }
+      this.signalConsumer = null;
+    }
 
     // Stop chunked upload cleanup
     shutdownChunkedUpload();
