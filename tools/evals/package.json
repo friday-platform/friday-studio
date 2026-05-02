@@ -12,7 +12,7 @@
     "@atlas/utils": "workspace:*",
     "ai": "^6.0.168",
     "dotenv": "17.4.2",
-    "gunshi": "^0.29.4",
+    "gunshi": "^0.29.5",
     "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "zod": "^4.3.5"
   },

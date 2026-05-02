@@ -17,7 +17,7 @@
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "ai": "^6.0.168",
-    "gunshi": "^0.29.4",
+    "gunshi": "^0.29.5",
     "ink": "^7.0.1",
     "js-levenshtein": "^1.1.6",
     "nanoid": "^5.1.6",
