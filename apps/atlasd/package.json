@@ -43,7 +43,7 @@
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
     "@opentelemetry/api": "^1.9.1",
-    "ai": "^6.0.168",
+    "ai": "^6.0.174",
     "chat": "4.27.0",
     "@chat-adapter/slack": "4.26.0",
     "zod": "^4.3.5"

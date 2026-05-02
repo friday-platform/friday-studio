@@ -25,7 +25,7 @@
     "@atlas/workspace-builder": "workspace:*",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "@worker-tools/html-rewriter": "^0.1.0-pre.17",
-    "ai": "^6.0.168",
+    "ai": "^6.0.174",
     "turndown": "7.2.4",
     "zod": "^4.3.5"
   },
