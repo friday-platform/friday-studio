@@ -24,6 +24,7 @@ import { logger } from "@atlas/logger";
 import { sharedMCPProcesses } from "@atlas/mcp";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { BashArgsSchema, executeBash } from "@atlas/mcp-server/tools/system/bash-handler";
+import { executeWebfetch, WebfetchArgsSchema } from "@atlas/mcp-server/tools/webfetch-handler";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
 import type { LibraryStorageAdapter } from "@atlas/storage";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -538,6 +539,9 @@ export class AtlasDaemon {
     // the worker registration site (not the MCP-side dispatcher).
     this.toolWorkers.push(
       registerToolWorker(nc, "bash", (req) => executeBash(BashArgsSchema.parse(req.args))),
+      registerToolWorker(nc, "webfetch", (req) =>
+        executeWebfetch(WebfetchArgsSchema.parse(req.args)),
+      ),
     );
 
     // Bootstrap @atlas/* system skills before any workspace chat gets a chance
