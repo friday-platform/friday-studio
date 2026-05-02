@@ -167,6 +167,81 @@ describe("ChatStorage", () => {
       expect(result.data.messages[2]?.id).toEqual(ids[2]);
     });
 
+    it("sorts messages by metadata.startTimestamp / .timestamp on read", async () => {
+      // Two assistant turns can run concurrently if the user sends a
+      // follow-up while a previous turn is still streaming. Whichever
+      // finishes first lands earlier in the file (append order), even if
+      // it started later. getChat must restore chronological order at the
+      // API boundary.
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      // Append intentionally out of chronological order:
+      //   id=A  user        timestamp     12:00:00
+      //   id=B  assistant   startedAt     12:00:01  (started first)
+      //   id=C  user        timestamp     12:00:30  (interrupt)
+      //   id=D  assistant   startedAt     12:00:32  (later turn that finished first)
+      // Append order on disk: A, C, D, B
+      const a: AtlasUIMessage = {
+        id: "A",
+        role: "user",
+        parts: [{ type: "text", text: "first" }],
+        metadata: { timestamp: "2026-05-02T12:00:00.000Z" },
+      };
+      const b: AtlasUIMessage = {
+        id: "B",
+        role: "assistant",
+        parts: [{ type: "text", text: "long reply" }],
+        metadata: {
+          startTimestamp: "2026-05-02T12:00:01.000Z",
+          endTimestamp: "2026-05-02T12:02:00.000Z",
+        },
+      };
+      const c: AtlasUIMessage = {
+        id: "C",
+        role: "user",
+        parts: [{ type: "text", text: "interrupt" }],
+        metadata: { timestamp: "2026-05-02T12:00:30.000Z" },
+      };
+      const d: AtlasUIMessage = {
+        id: "D",
+        role: "assistant",
+        parts: [{ type: "text", text: "fast reply" }],
+        metadata: {
+          startTimestamp: "2026-05-02T12:00:32.000Z",
+          endTimestamp: "2026-05-02T12:00:45.000Z",
+        },
+      };
+      // Disk order: append-completion order. D finished before B.
+      await ChatStorage.appendMessage(chatId, a);
+      await ChatStorage.appendMessage(chatId, c);
+      await ChatStorage.appendMessage(chatId, d);
+      await ChatStorage.appendMessage(chatId, b);
+
+      const result = await ChatStorage.getChat(chatId);
+      expect.assert(result.ok && result.data);
+      // Read order: chronological by start time.
+      expect(result.data.messages.map((m) => m.id)).toEqual(["A", "B", "C", "D"]);
+    });
+
+    it("preserves insertion order for messages with no timestamp metadata", async () => {
+      const chatId = crypto.randomUUID();
+      await createTestChat(chatId);
+
+      const ids = ["x", "y", "z"];
+      for (const id of ids) {
+        await ChatStorage.appendMessage(chatId, {
+          id,
+          role: "user",
+          parts: [{ type: "text", text: id }],
+        });
+      }
+
+      const result = await ChatStorage.getChat(chatId);
+      expect.assert(result.ok && result.data);
+      expect(result.data.messages.map((m) => m.id)).toEqual(ids);
+    });
+
     it("stores all messages without limit", async () => {
       const chatId = crypto.randomUUID();
       await createTestChat(chatId);

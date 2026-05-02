@@ -105,6 +105,36 @@ async function readAndValidateChat(filePath: string): Promise<Chat> {
 }
 
 /**
+ * Order messages for display by their conceptual start time.
+ *
+ * On-disk order is append-completion order (`appendMessage` writes when a
+ * turn finishes). When two assistant turns run concurrently — which can
+ * happen if the user sends a follow-up while a previous turn is still
+ * streaming — the one that finishes first lands earlier in the file, even
+ * if it started later. Sorting on read by `startTimestamp` (assistant) or
+ * `timestamp` (user) restores chronological order at the API boundary
+ * without rewriting disk data. Messages missing both fields keep their
+ * relative position via a stable sort.
+ */
+function sortMessagesByStartTime(messages: AtlasUIMessage[]): AtlasUIMessage[] {
+  const startTime = (m: AtlasUIMessage): number => {
+    const md = m.metadata;
+    const ts = md?.startTimestamp ?? md?.timestamp;
+    if (!ts) return Number.POSITIVE_INFINITY;
+    const parsed = Date.parse(ts);
+    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+  };
+  // Stable sort: indexed pairs preserve original order on ties / missing ts.
+  return messages
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      const diff = startTime(a.m) - startTime(b.m);
+      return diff !== 0 ? diff : a.i - b.i;
+    })
+    .map(({ m }) => m);
+}
+
+/**
  * Create chat if not exists, else return existing (idempotent).
  *
  * Safe for client reconnection pattern (multiple calls with same ID).
@@ -165,7 +195,7 @@ async function createChat(input: {
 async function getChat(chatId: string, workspaceId?: string): Promise<Result<Chat | null, string>> {
   try {
     const chat = await readAndValidateChat(getChatFile(chatId, workspaceId));
-    return success(chat);
+    return success({ ...chat, messages: sortMessagesByStartTime(chat.messages) });
   } catch (error) {
     if (isErrnoException(error) && error.code === "ENOENT") {
       return success(null);

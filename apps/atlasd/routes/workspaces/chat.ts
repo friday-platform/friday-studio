@@ -94,6 +94,20 @@ const workspaceChatRoutes = daemonFactory
       }
     }
 
+    // Read chatId from the request body so we can register an AbortController
+    // for this turn BEFORE forwarding to the adapter. A new POST with the same
+    // chatId aborts any in-flight controller — the FSM engine and AI SDK
+    // observe the signal and stop the prior turn so two assistant runs don't
+    // race in the same chat. The adapter retrieves the controller from the
+    // registry by chatId in `handleWebhook`.
+    const chatId =
+      typeof body === "object" && body !== null && "id" in body && typeof body.id === "string"
+        ? body.id
+        : undefined;
+    if (chatId) {
+      ctx.chatTurnRegistry.replace(chatId);
+    }
+
     const instance = await ctx.getOrCreateChatSdkInstance(workspaceId).catch((error: unknown) => {
       if (error instanceof WorkspaceNotFoundError) return null;
       throw error;
@@ -120,6 +134,11 @@ const workspaceChatRoutes = daemonFactory
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
 
+    // Abort the in-flight FSM/model call AND close the SSE buffer. Without
+    // the abort, finishStream only stops new events from being broadcast —
+    // the agent run continues server-side and may produce a partial message
+    // that gets persisted after the client thought it cancelled.
+    ctx.chatTurnRegistry.abort(chatId);
     ctx.streamRegistry.finishStream(chatId);
 
     return c.json({ success: true }, 200);

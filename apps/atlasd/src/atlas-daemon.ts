@@ -84,6 +84,7 @@ import {
   resolvePlatformCredentials,
 } from "./chat-sdk/chat-sdk-instance.ts";
 import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts";
+import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
 import { NatsManager } from "./nats-manager.ts";
@@ -180,6 +181,7 @@ export class AtlasDaemon {
   private resourceStorage: ResourceStorageAdapter | null = null;
   private activityAdapter: ActivityStorageAdapter | null = null;
   public streamRegistry!: StreamRegistry;
+  public chatTurnRegistry!: ChatTurnRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
   public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
   private chatSdkInstances = new Map<string, Promise<ChatSdkInstance>>();
@@ -257,6 +259,9 @@ export class AtlasDaemon {
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
+      },
+      get chatTurnRegistry() {
+        return this.daemon.chatTurnRegistry;
       },
       get sessionStreamRegistry() {
         return this.daemon.sessionStreamRegistry;
@@ -460,6 +465,7 @@ export class AtlasDaemon {
     // Initialize StreamRegistry
     this.streamRegistry = new StreamRegistry();
     this.streamRegistry.start();
+    this.chatTurnRegistry = new ChatTurnRegistry();
 
     // Initialize session history v2 adapter + registry
     this.sessionHistoryAdapter = new LocalSessionHistoryAdapter(
@@ -1434,14 +1440,17 @@ export class AtlasDaemon {
         | Record<string, { kind?: string } & Record<string, unknown>>
         | undefined,
       streamRegistry: this.streamRegistry,
+      chatTurnRegistry: this.chatTurnRegistry,
       exposeKernel: process.env.FRIDAY_EXPOSE_KERNEL === "1",
-      triggerFn: async (signalId, signalData, streamId, onStreamEvent) => {
+      triggerFn: async (signalId, signalData, streamId, onStreamEvent, abortSignal) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
         const session = await runtime.triggerSignalWithSession(
           signalId,
           signalData,
           streamId,
           onStreamEvent,
+          undefined,
+          abortSignal,
         );
         return { sessionId: session.id };
       },
@@ -2131,6 +2140,7 @@ export class AtlasDaemon {
 
     // Shutdown StreamRegistry
     this.streamRegistry?.shutdown();
+    this.chatTurnRegistry?.shutdown();
 
     // Shutdown SessionStreamRegistry
     this.sessionStreamRegistry?.shutdown();

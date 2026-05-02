@@ -125,6 +125,7 @@ describe("createMessageHandler", () => {
       }),
       "chat-abc",
       expect.any(Function),
+      undefined,
     );
 
     expect(thread.post).toHaveBeenCalledOnce();
@@ -289,6 +290,7 @@ describe("createMessageHandler — kernel filtering", () => {
       expect.objectContaining({ foregroundWorkspaceIds: ["fg-1", "fg-2"] }),
       "chat-kernel-1",
       expect.any(Function),
+      undefined,
     );
   });
 
@@ -320,6 +322,7 @@ describe("createMessageHandler — kernel filtering", () => {
       expect.objectContaining({ foregroundWorkspaceIds: ["fg-1", KERNEL_WORKSPACE_ID] }),
       "chat-kernel-2",
       expect.any(Function),
+      undefined,
     );
   });
 
@@ -366,6 +369,7 @@ describe("createMessageHandler — kernel filtering", () => {
       expect.objectContaining({ foregroundWorkspaceIds: [] }),
       "chat-kernel-4",
       expect.any(Function),
+      undefined,
     );
   });
 });

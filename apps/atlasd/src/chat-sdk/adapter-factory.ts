@@ -12,6 +12,7 @@ import { createTeamsAdapter } from "@chat-adapter/teams";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { Adapter } from "chat";
+import type { ChatTurnRegistry } from "../chat-turn-registry.ts";
 import type { StreamRegistry } from "../stream-registry.ts";
 import { AtlasWebAdapter } from "./atlas-web-adapter.ts";
 import { toDiscordLogger } from "./discord-logger.ts";
@@ -55,6 +56,7 @@ export interface ChatSdkAdapterConfig {
   communicators?: Record<string, CommunicatorEntry>;
   credentials?: PlatformCredentials | PlatformCredentials[];
   streamRegistry: StreamRegistry;
+  chatTurnRegistry?: ChatTurnRegistry;
 }
 
 function buildAdapter(creds: PlatformCredentials): Adapter {
@@ -91,6 +93,7 @@ export function buildChatSdkAdapters(config: ChatSdkAdapterConfig): Record<strin
   const adapters: Record<string, Adapter> = {
     atlas: new AtlasWebAdapter({
       streamRegistry: config.streamRegistry,
+      chatTurnRegistry: config.chatTurnRegistry,
       workspaceId: config.workspaceId,
     }),
   };

@@ -2343,6 +2343,7 @@ export class WorkspaceRuntime {
     streamId?: string,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
+    abortSignal?: AbortSignal,
   ): Promise<IWorkspaceSession> {
     // Top-level `streamId` arg wins over any payload.streamId. The runtime
     // reads the merged value via `signal.data.streamId` (see processSignalForJob
@@ -2359,7 +2360,7 @@ export class WorkspaceRuntime {
       timestamp: new Date(),
     };
 
-    return await this.processSignal(signal, onStreamEvent, undefined, skipStates);
+    return await this.processSignal(signal, onStreamEvent, abortSignal, skipStates);
   }
 
   /**
