@@ -38,4 +38,11 @@ export interface SessionHistoryAdapter {
    * When workspaceId is provided, filters to that workspace only.
    */
   listByWorkspace(workspaceId?: string): Promise<SessionSummary[]>;
+
+  /**
+   * Walk sessions that have events but no finalized summary and mark them
+   * "interrupted". Called on daemon startup so sessions whose process died
+   * mid-flight don't appear stuck. Returns the number of sessions marked.
+   */
+  markInterruptedSessions(): Promise<number>;
 }

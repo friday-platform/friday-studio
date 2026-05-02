@@ -306,7 +306,7 @@ export class SignalConsumer {
     let envelope: SignalEnvelope;
     try {
       envelope = SignalEnvelopeSchema.parse(JSON.parse(dec.decode(msg.data)));
-    } catch (_err) {
+    } catch (err) {
       logger.warn("Discarding malformed signal envelope", {
         seq: msg.seq,
         subject: msg.subject,

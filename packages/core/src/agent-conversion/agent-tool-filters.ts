@@ -76,13 +76,6 @@ export function wrapPlatformToolsWithScope(
  * are intentionally excluded so a workspace agent can't escape its own scope.
  */
 export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
-  // Library (read/write)
-  "library_list",
-  "library_get",
-  "library_get_stream",
-  "library_store",
-  "library_stats",
-  "library_templates",
   // Filesystem
   "fs_glob",
   "fs_grep",

@@ -31,13 +31,6 @@ export const PLATFORM_TOOL_NAMES = new Set([
   // Agent management
   "workspace_agents_list",
   "workspace_agents_describe",
-  // Library
-  "library_list",
-  "library_get",
-  "library_get_stream",
-  "library_store",
-  "library_stats",
-  "library_templates",
   // Filesystem
   "fs_glob",
   "fs_grep",

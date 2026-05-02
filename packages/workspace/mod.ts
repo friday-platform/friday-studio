@@ -40,7 +40,6 @@ export { classifySessionError, WorkspaceRuntime } from "./src/runtime.ts";
 // Storage factories and registry adapter
 export {
   createKVStorage,
-  createLibraryStorage,
   createRegistryStorage,
   RegistryStorageAdapter,
   StorageConfigs,

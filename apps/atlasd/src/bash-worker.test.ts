@@ -1,5 +1,5 @@
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
-import { BashArgsSchema, executeBash } from "@atlas/mcp-server/tools/system/bash-handler";
+import { BashArgsSchema, executeBash } from "@atlas/mcp-server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";

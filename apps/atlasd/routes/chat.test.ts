@@ -86,7 +86,6 @@ function createTestApp(
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
-    getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getLedgerAdapter: vi.fn(),
     getActivityAdapter: vi.fn(),

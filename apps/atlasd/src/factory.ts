@@ -4,7 +4,6 @@ import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
 import type { ResourceStorageAdapter } from "@atlas/ledger";
 import type { PlatformModels } from "@atlas/llm";
-import type { LibraryStorageAdapter } from "@atlas/storage";
 import type { WorkspaceManager, WorkspaceRuntime } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
@@ -39,9 +38,6 @@ export interface AppContext {
   // Runtime management methods
   getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined;
   destroyWorkspaceRuntime(workspaceId: string): Promise<void>;
-
-  // Library storage methods
-  getLibraryStorage(): LibraryStorageAdapter;
 
   // Ledger resource storage
   getLedgerAdapter(): ResourceStorageAdapter;

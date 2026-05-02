@@ -172,7 +172,6 @@ function createTestApp(overrides: Partial<ResourceStorageAdapter> = {}) {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
-    getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),

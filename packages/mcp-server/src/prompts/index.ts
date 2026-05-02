@@ -12,11 +12,6 @@ import { registerJobDescribePrompt } from "./job/describe.ts";
 
 // Import job prompts
 import { registerJobListPrompt } from "./job/list.ts";
-import { registerLibraryGetPrompt } from "./library/get.ts";
-
-// Import library prompts
-import { registerLibraryListPrompt } from "./library/list.ts";
-import { registerLibrarySearchPrompt } from "./library/search.ts";
 // Import system prompts
 import { registerSystemVersionPrompt } from "./platform/version.ts";
 import { registerSessionDescribePrompt } from "./session/describe.ts";
@@ -42,11 +37,6 @@ export function registerPrompts(server: McpServer, context: PromptContext): void
   // Job prompts
   registerJobListPrompt(server, context);
   registerJobDescribePrompt(server, context);
-
-  // Library prompts
-  registerLibraryListPrompt(server, context);
-  registerLibraryGetPrompt(server, context);
-  registerLibrarySearchPrompt(server, context);
 
   // Session prompts
   registerSessionListPrompt(server, context);

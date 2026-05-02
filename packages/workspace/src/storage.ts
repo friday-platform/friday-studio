@@ -6,7 +6,6 @@
  * storage → workspace → storage cycle.
  */
 
-import { LibraryStorageAdapter, type LibraryStorageConfig } from "@atlas/storage";
 import { createKVStorage, type KVStorageConfig } from "@atlas/storage/kv";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
@@ -23,19 +22,6 @@ export async function createRegistryStorage(
 ): Promise<RegistryStorageAdapter> {
   const storage = await createKVStorage(config);
   const adapter = new RegistryStorageAdapter(storage);
-  await adapter.initialize();
-  return adapter;
-}
-
-/**
- * Create a library storage adapter backed by KV storage.
- */
-export async function createLibraryStorage(
-  kvConfig: KVStorageConfig,
-  libraryConfig?: LibraryStorageConfig,
-): Promise<LibraryStorageAdapter> {
-  const storage = await createKVStorage(kvConfig);
-  const adapter = new LibraryStorageAdapter(storage, libraryConfig);
   await adapter.initialize();
   return adapter;
 }

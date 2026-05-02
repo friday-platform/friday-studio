@@ -25,8 +25,12 @@
 
 import process from "node:process";
 import { logger } from "@atlas/logger";
-import { BashArgsSchema, executeBash } from "@atlas/mcp-server/tools/system/bash-handler";
-import { executeWebfetch, WebfetchArgsSchema } from "@atlas/mcp-server/tools/webfetch-handler";
+import {
+  BashArgsSchema,
+  executeBash,
+  executeWebfetch,
+  WebfetchArgsSchema,
+} from "@atlas/mcp-server";
 import { connect, type NatsConnection } from "nats";
 import { registerToolWorker, type ToolHandler, type ToolWorker } from "./tool-dispatch.ts";
 

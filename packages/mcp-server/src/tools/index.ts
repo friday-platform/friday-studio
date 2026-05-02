@@ -23,13 +23,6 @@ import { registerWriteTool } from "./fs/write.ts";
 // Import job tools
 import { registerJobsDescribeTool } from "./jobs/describe.ts";
 import { registerJobsListTool } from "./jobs/list.ts";
-// Import library tools
-import { registerLibraryGetTool } from "./library/get.ts";
-import { registerLibraryGetStreamTool } from "./library/get-stream.ts";
-import { registerLibraryListTool } from "./library/list.ts";
-import { registerLibraryStatsTool } from "./library/stats.ts";
-import { registerLibraryStoreTool } from "./library/store.ts";
-import { registerLibraryTemplatesTool } from "./library/templates.ts";
 // Import memory tools
 import { registerMemoryReadTool } from "./memory/read.ts";
 import { registerMemoryRemoveTool } from "./memory/remove.ts";
@@ -82,14 +75,6 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   // Agent tools
   registerAgentsListTool(server, context);
   registerAgentsDescribeTool(server, context);
-
-  // Library tools
-  registerLibraryListTool(server, context);
-  registerLibraryGetTool(server, context);
-  registerLibraryGetStreamTool(server, context);
-  registerLibraryStoreTool(server, context);
-  registerLibraryStatsTool(server, context);
-  registerLibraryTemplatesTool(server, context);
 
   // Filesystem tools
   registerGlobTool(server);

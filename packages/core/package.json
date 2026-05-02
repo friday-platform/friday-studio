@@ -13,7 +13,6 @@
     "./artifacts/storage": "./src/artifacts/storage.ts",
     "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./errors": "./src/errors.ts",
-    "./library": "./src/library/types.ts",
     "./chat/storage": "./src/chat/storage.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./session/session-events": "./src/session/session-events.ts",

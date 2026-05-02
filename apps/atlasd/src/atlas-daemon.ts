@@ -22,15 +22,17 @@ import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { sharedMCPProcesses } from "@atlas/mcp";
-import { PlatformMCPServer } from "@atlas/mcp-server";
-import { BashArgsSchema, executeBash } from "@atlas/mcp-server/tools/system/bash-handler";
-import { executeWebfetch, WebfetchArgsSchema } from "@atlas/mcp-server/tools/webfetch-handler";
+import {
+  BashArgsSchema,
+  executeBash,
+  executeWebfetch,
+  PlatformMCPServer,
+  WebfetchArgsSchema,
+} from "@atlas/mcp-server";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
-import type { LibraryStorageAdapter } from "@atlas/storage";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createKVStorage,
-  createLibraryStorage,
   createRegistryStorage,
   StorageConfigs,
   validateMCPEnvironmentForWorkspace,
@@ -60,7 +62,6 @@ import { cronRoutes } from "../routes/cron.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
-import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
@@ -186,7 +187,6 @@ export class AtlasDaemon {
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
   private platformModels: PlatformModels | null = null;
-  private libraryStorage: LibraryStorageAdapter | null = null;
   private natsManager: NatsManager | null = null;
   private capabilityRegistry: CapabilityHandlerRegistry | null = null;
   private processAgentExecutor: ProcessAgentExecutor | null = null;
@@ -266,7 +266,6 @@ export class AtlasDaemon {
       getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
       getActivityAdapter: this.getActivityAdapter.bind(this),
-      getLibraryStorage: this.getLibraryStorage.bind(this),
       getLedgerAdapter: this.getLedgerAdapter.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
       getOrCreateChatSdkInstance: this.getOrCreateChatSdkInstance.bind(this),
@@ -378,14 +377,6 @@ export class AtlasDaemon {
 
     // Wire up runtime invalidation callback so file watcher changes clear both maps
     this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
-
-    // Initialize LibraryStorage with hybrid storage
-    logger.info("Initializing LibraryStorage...");
-    this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
-      // Use XDG-compliant default location, but allow environment override
-      contentDir: env.FRIDAY_LIBRARY_DIR,
-      organizeByDate: true,
-    });
 
     // Initialize CronManager with KV storage
     logger.info("Initializing CronManager...");
@@ -841,16 +832,6 @@ export class AtlasDaemon {
     return this.activityAdapter;
   }
 
-  /**
-   * Get library storage instance
-   */
-  public getLibraryStorage(): LibraryStorageAdapter {
-    if (!this.libraryStorage) {
-      throw new Error("Library storage not initialized");
-    }
-    return this.libraryStorage;
-  }
-
   /** Get Ledger resource storage adapter */
   public getLedgerAdapter(): ResourceStorageAdapter {
     if (!this.resourceStorage) {
@@ -921,7 +902,6 @@ export class AtlasDaemon {
     this.app.route("/api/sessions", sessionsRoutes);
     this.app.route("/api/activity", activityRoutes);
     this.app.route("/api/agents", agentsRoutes);
-    this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
     this.app.route("/api/link", linkRoutes);
@@ -2318,17 +2298,6 @@ export class AtlasDaemon {
     if (this.workspaceManager) {
       await this.workspaceManager.close();
       this.workspaceManager = null;
-    }
-
-    // Close LibraryStorage
-    if (this.libraryStorage) {
-      try {
-        await this.libraryStorage.close();
-        this.libraryStorage = null;
-        logger.info("LibraryStorage closed");
-      } catch (error) {
-        logger.error("Failed to close LibraryStorage", { error });
-      }
     }
 
     // Shutdown HTTP server

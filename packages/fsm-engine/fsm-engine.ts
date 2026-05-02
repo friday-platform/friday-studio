@@ -84,7 +84,7 @@ import type {
  *
  * Mirrors the allowlist used by `runtime.executeCodeAgent` and
  * `routes/agents/run.ts` so all three LLM-agent execution paths see the
- * same surface (fs_*, bash, csv, library_*, plus the scope-injected
+ * same surface (fs_*, bash, csv, plus the scope-injected
  * subset for memory/artifacts/state/webfetch). Pre-fix this aliased
  * SCOPE_INJECTED_PLATFORM_TOOLS instead, which silently stripped
  * fs_write_file etc. from FSM LLM steps and broke the canonical

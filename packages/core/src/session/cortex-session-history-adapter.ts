@@ -164,6 +164,14 @@ export class CortexSessionHistoryAdapter implements SessionHistoryAdapter {
     return summaries;
   }
 
+  /**
+   * No-op for Cortex: sessions are only persisted on finalization, so there
+   * is no partially-written state to reconcile on startup.
+   */
+  markInterruptedSessions(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
   // ---------------------------------------------------------------------------
   // HTTP helpers (follows CortexStorageAdapter pattern)
   // ---------------------------------------------------------------------------

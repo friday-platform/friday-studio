@@ -72,7 +72,6 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn().mockResolvedValue(undefined),
-    getLibraryStorage: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockManager,
       runtimes: new Map(),
@@ -276,7 +275,6 @@ describe("Draft file flow", () => {
       resetIdleTimeout: vi.fn(),
       getWorkspaceRuntime: vi.fn().mockReturnValue({ id: "runtime-1" }),
       destroyWorkspaceRuntime: destroySpy,
-      getLibraryStorage: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockManager,
         runtimes: new Map(),
@@ -339,7 +337,6 @@ describe("Draft file flow", () => {
       resetIdleTimeout: vi.fn(),
       getWorkspaceRuntime: vi.fn().mockReturnValue(undefined),
       destroyWorkspaceRuntime: destroySpy,
-      getLibraryStorage: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockManager,
         runtimes: new Map(),
@@ -870,7 +867,6 @@ describe("Draft file flow", () => {
       resetIdleTimeout: vi.fn(),
       getWorkspaceRuntime: vi.fn(),
       destroyWorkspaceRuntime: vi.fn().mockResolvedValue(undefined),
-      getLibraryStorage: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockManager,
         runtimes: new Map(),

@@ -97,7 +97,6 @@ function createAppMulti(opts: {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
-    getLibraryStorage: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],

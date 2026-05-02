@@ -55,7 +55,6 @@ describe("filterWorkspaceAgentTools", () => {
       "bash",
       "csv",
       "webfetch",
-      "library_list",
       "artifacts_create",
       "convert_task_to_workspace",
       "workspace_signal_trigger",
@@ -103,8 +102,8 @@ describe("allowlist/wrap-list invariant", () => {
   // Invariant: SCOPE_INJECTED ⊂ LLM_AGENT_ALLOWED. The wrap-list (tools that
   // need workspaceId injection) is a strict subset of the allow-list (tools
   // an LLM agent is permitted to call). Conflating them — using the
-  // wrap-list as the filter — silently strips fs_*, bash, csv, library_*
-  // from one or more execution paths. Past regression: fsm-engine.ts aliased
+  // wrap-list as the filter — silently strips fs_*, bash, csv from one or
+  // more execution paths. Past regression: fsm-engine.ts aliased
   // PLATFORM_TOOL_ALLOWLIST = SCOPE_INJECTED_PLATFORM_TOOLS, breaking the
   // canonical write-file-then-artifacts_create pattern in FSM LLM actions.
   it("SCOPE_INJECTED is a strict subset of LLM_AGENT_ALLOWED", () => {
@@ -116,21 +115,11 @@ describe("allowlist/wrap-list invariant", () => {
     );
   });
 
-  it("LLM_AGENT_ALLOWED includes the broad surface (fs_*, bash, csv, library_*)", () => {
+  it("LLM_AGENT_ALLOWED includes the broad surface (fs_*, bash, csv)", () => {
     // Pin specific tools that have to stay in the allow-list — these are
     // the ones the writing-to-memory and writing-friday-python-agents
     // skills depend on.
-    const required = [
-      "fs_write_file",
-      "fs_read_file",
-      "fs_glob",
-      "fs_grep",
-      "bash",
-      "csv",
-      "library_list",
-      "library_get",
-      "library_store",
-    ];
+    const required = ["fs_write_file", "fs_read_file", "fs_glob", "fs_grep", "bash", "csv"];
     for (const tool of required) {
       expect(LLM_AGENT_ALLOWED_PLATFORM_TOOLS.has(tool)).toBe(true);
     }
@@ -139,7 +128,7 @@ describe("allowlist/wrap-list invariant", () => {
   it("SCOPE_INJECTED holds only tools that need workspace-id injection", () => {
     // These tools are scope-bound to a workspace at the runtime layer; the
     // LLM never passes workspaceId. Other LLM-allowed tools (bash, fs_*,
-    // csv, library_*) operate on the host directly and don't carry
+    // csv) operate on the host directly and don't carry
     // workspace identity.
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_save")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);

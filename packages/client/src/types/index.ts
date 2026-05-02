@@ -12,14 +12,6 @@ export type { AgentInfo, JobDetailedInfo, JobInfo } from "./agent.ts";
 // Re-export all types
 export type { DaemonStatus } from "./daemon.ts";
 export type {
-  LibraryItem,
-  LibraryItemWithContent,
-  LibrarySearchQuery,
-  LibrarySearchResult,
-  LibraryStats,
-  TemplateConfig,
-} from "./library.ts";
-export type {
   CancelSessionResponse,
   LogEntry,
   SessionDetailedInfo,

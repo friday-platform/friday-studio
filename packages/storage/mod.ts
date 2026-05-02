@@ -26,10 +26,6 @@ export {
   KVStorageError,
   KVTransactionError,
 } from "./src/kv-storage.ts";
-export type { LibraryStorageConfig } from "./src/library-storage-adapter.ts";
-
-// Library storage adapter
-export { LibraryStorageAdapter } from "./src/library-storage-adapter.ts";
 // Memory storage utilities
 export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
 export { MemoryKVStorage } from "./src/memory-kv-storage.ts";

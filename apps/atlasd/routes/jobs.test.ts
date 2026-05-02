@@ -39,7 +39,6 @@ function createJobsTestApp(options: { config?: MergedConfig | null }) {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
-    getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),

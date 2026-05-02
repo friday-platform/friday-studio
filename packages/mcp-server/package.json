@@ -3,11 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "exports": {
-    ".": "./mod.ts",
-    "./tools/system/bash-handler": "./src/tools/system/bash-handler.ts",
-    "./tools/webfetch-handler": "./src/tools/webfetch-handler.ts"
-  },
+  "exports": { ".": "./mod.ts" },
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
     "@atlas/client": "workspace:*",

@@ -65,7 +65,6 @@ function createTestApp(options: {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime,
     destroyWorkspaceRuntime,
-    getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),

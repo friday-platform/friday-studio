@@ -12,7 +12,6 @@ export const COMMANDS: CommandInfo[] = [
   { command: "session", aliases: ["sesh", "sess"], description: "Manage Atlas sessions" },
   { command: "signal", aliases: ["sig"], description: "Manage workspace signals" },
   { command: "agent", aliases: ["ag"], description: "Manage workspace agents" },
-  { command: "library", aliases: ["lib"], description: "Manage library items and templates" },
   { command: "artifacts", aliases: ["artifact"], description: "Retrieve and manage artifacts" },
   { command: "daemon", aliases: ["d"], description: "Manage Atlas daemon" },
   { command: "logs", aliases: ["log"], description: "View session logs" },

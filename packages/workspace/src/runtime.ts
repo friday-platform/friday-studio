@@ -2171,7 +2171,7 @@ export class WorkspaceRuntime {
     const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
 
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
-    // agents see (memory, artifacts, state, fs, library, csv, bash, webfetch,
+    // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
     // workspace_signal_trigger, convert_task_to_workspace). Workspace-management
     // tools (workspace_delete, session_describe, etc.) stay blocked.
     // External MCP server tools pass through unfiltered.
@@ -2184,7 +2184,7 @@ export class WorkspaceRuntime {
     // Wrap allowlisted scope-injected tools (memory/artifacts/state/webfetch)
     // so workspaceId/workspaceName flow from the runtime scope. Tools that
     // aren't in SCOPE_INJECTED_PLATFORM_TOOLS pass through untouched (e.g.
-    // csv, fs_*, library_*, bash from atlas-platform).
+    // csv, fs_*, bash from atlas-platform).
     const mcpTools = wrapPlatformToolsWithScope(filteredTools, {
       workspaceId: opts.workspaceId,
       workspaceName: this.workspace.name,

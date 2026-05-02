@@ -160,7 +160,6 @@ function createTestApp(options: {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn() as unknown as AppContext["getWorkspaceRuntime"],
     destroyWorkspaceRuntime: vi.fn() as unknown as AppContext["destroyWorkspaceRuntime"],
-    getLibraryStorage: vi.fn() as unknown as AppContext["getLibraryStorage"],
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     sessionStreamRegistry: registry,
