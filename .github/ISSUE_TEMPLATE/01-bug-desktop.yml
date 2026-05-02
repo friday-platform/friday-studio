@@ -1,0 +1,128 @@
+name: "Bug — Desktop app (Studio)"
+description: Tray icon, autostart, installer, or service-supervisor issue on macOS
+title: "[BUG/desktop] "
+labels: ["bug", "area/desktop"]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For issues with the **Friday Studio desktop app** — tray menu, autostart, installer, the supervisor that keeps services running, or anything you encounter as an end user of the macOS app.
+
+        Running the daemon yourself from source? Use the **Daemon / CLI / workspace.yml** form instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched [existing issues](https://github.com/friday-platform/friday-studio/issues?q=is%3Aissue) and didn't find a duplicate
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What went wrong?
+      placeholder: "The tray icon shows red 'Error' and the browser won't open."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where in the app?
+      options:
+        - Tray menu (Open in browser, Restart all, View logs, Quit)
+        - Autostart / "Start at login"
+        - Installer / first-run setup (API keys, license)
+        - Service supervisor (one of nats / friday daemon / link / webhook-tunnel / playground stuck)
+        - Browser auto-open after first health check
+        - Log viewer
+        - App update / version mismatch
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tray_state
+    attributes:
+      label: Tray icon state when the bug appeared
+      options:
+        - Green / silent (healthy)
+        - Amber "Starting…"
+        - Red "Error"
+        - Tray icon missing entirely
+        - Don't remember
+    validations:
+      required: true
+
+  - type: dropdown
+    id: last_action
+    attributes:
+      label: What was the last thing that happened before the bug?
+      options:
+        - Just installed for the first time
+        - Rebooted the Mac
+        - Clicked "Restart all" in the tray menu
+        - Quit and relaunched
+        - Nothing — it just appeared on its own
+        - Updated to a new version
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: autostart
+    attributes:
+      label: Is "Start at login" enabled?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure / can't check
+    validations:
+      required: true
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Mac architecture
+      options:
+        - Apple silicon (M1/M2/M3/M4)
+        - Intel
+        - Don't know
+    validations:
+      required: true
+
+  - type: input
+    id: macos_version
+    attributes:
+      label: macOS version
+      placeholder: "14.5 (Sonoma)"
+    validations:
+      required: true
+
+  - type: input
+    id: studio_version
+    attributes:
+      label: Friday Studio version
+      description: From the tray menu's "About" / installer, or the release tag you downloaded.
+      placeholder: "0.1.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Open the tray menu → "View logs" — paste relevant excerpts from `launcher.log` and the daemon log. Redact secrets.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots of the tray menu state, screen recording, anything else useful.
+    validations:
+      required: false

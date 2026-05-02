@@ -1,4 +1,4 @@
-name: Feature request
+name: "Feature request"
 description: Suggest a new capability or improvement
 title: "[FEAT] "
 labels: ["enhancement"]
@@ -21,8 +21,8 @@ body:
     id: problem
     attributes:
       label: What problem does this solve?
-      description: Describe the user pain or limitation. Be specific — concrete scenarios help us prioritize.
-      placeholder: "I'm always frustrated when ..."
+      description: Describe the user pain or limitation. Concrete scenarios help us prioritize.
+      placeholder: "I'm always frustrated when …"
     validations:
       required: true
 
@@ -46,28 +46,18 @@ body:
     id: component
     attributes:
       label: Component
-      description: Where would this feature live?
       options:
-        - Daemon (atlasd / HTTP API)
-        - CLI (atlas-cli)
-        - Studio installer (macOS tray / Tauri launcher)
-        - Web playground (SvelteKit UI)
-        - Python user agents (`friday-agent-sdk`)
-        - Skills system
-        - MCP tools / integration
-        - Examples / docs
-        - Cross-cutting / not sure
-    validations:
-      required: true
-
-  - type: dropdown
-    id: contribution
-    attributes:
-      label: Are you willing to contribute this?
-      options:
-        - "Yes, I'd like to send a PR"
-        - "Maybe, with guidance"
-        - "No, just suggesting"
+        - "Daemon / atlasd"
+        - "CLI / atlas-cli"
+        - "Desktop app (Studio installer / tray)"
+        - "Web playground"
+        - "workspace.yml schema"
+        - "Python user agents / friday-agent-sdk"
+        - "Skills system"
+        - "MCP integration"
+        - "Memory"
+        - "Examples / docs"
+        - "Cross-cutting / not sure"
     validations:
       required: true
 

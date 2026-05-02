@@ -1,0 +1,135 @@
+name: "Bug — Daemon / CLI / workspace.yml"
+description: Bug hit while running the daemon from source, using the CLI, or authoring a workspace.yml
+title: "[BUG/dev] "
+labels: ["bug", "area/dev"]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For issues hit while **running the daemon from source** (`deno task atlas …`), using the CLI, writing a `workspace.yml`, or developing user agents.
+
+        Tray icon stuck on a desktop install? Use the **Desktop app** form. MCP server-specific issue? Use the **MCP integration** form.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched [existing issues](https://github.com/friday-platform/friday-studio/issues?q=is%3Aissue) and didn't find a duplicate
+          required: true
+        - label: I'm on a recent release or `main` — see [Releases](https://github.com/friday-platform/friday-studio/releases)
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What's broken?
+      placeholder: "When I `deno task atlas workspace add ./my-workspace`, the daemon …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Minimal, ordered steps. Include exact commands, prompts, or workspace YAML.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Use codebase terminology — pick the closest.
+      options:
+        - "Daemon (atlasd) — startup, health, signal registry, lifecycle"
+        - "CLI (atlas-cli) — command parsing, workspace/agent/session subcommands"
+        - "workspace.yml — schema, validation, parsing"
+        - "Signals — HTTP routing, cron schedule, payload schema"
+        - "Jobs / FSM engine"
+        - "Python user agents — spawn, friday-agent-sdk, uv/python resolution"
+        - "Skills — loading, assignment, visibility"
+        - "Memory — mounts, scopes, retrieval"
+        - "Web playground (SvelteKit UI)"
+        - "Storage / SQLite"
+        - "Examples / docs"
+        - "Other / cross-cutting"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows
+        - Docker (`docker compose up`)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: friday-studio version or commit
+      description: A release tag (e.g. `0.1.1`) or the short SHA from `git rev-parse --short HEAD`.
+      placeholder: "0.1.1 or abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: deno_version
+    attributes:
+      label: Deno version
+      description: "`deno --version` (first line)"
+      placeholder: "deno 2.7.0"
+    validations:
+      required: true
+
+  - type: input
+    id: other_runtimes
+    attributes:
+      label: Other relevant runtimes
+      description: Only if relevant to the bug — `go version`, `node --version`, `uv --version`, Python version. Skip what doesn't apply.
+      placeholder: "uv 0.11.5 / python 3.12.4"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Daemon logs, stack traces, or CLI output. Run with `LOG_LEVEL=debug` if useful. Redact secrets.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: workspace_yml
+    attributes:
+      label: Relevant workspace.yml snippet
+      description: If the bug involves workspace authoring, paste the relevant portion (signals/jobs/agents stanza). Redact tokens.
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false
