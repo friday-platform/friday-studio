@@ -93,9 +93,12 @@ updates:
       - dependency-name: "undici"
         update-types: ["version-update:semver-major"]
 
-  # Keep Docker dependencies up to date
+  # Keep Docker dependencies up to date across all Dockerfiles
   - package-ecosystem: "docker"
-    directory: "/"
+    directories:
+      - "/"
+      - "/apps/link"
+      - "/apps/ledger"
     schedule:
       interval: "weekly"
       time: "04:17"
@@ -109,7 +112,7 @@ updates:
       - "dependencies"
       - "docker"
     rebase-strategy: "auto"
-    # Block denoland/deno >= 2.7.5
+    # Block denoland/deno >= 2.7.5 — OTEL regression deadlocks compiled binaries.
     # See: https://github.com/denoland/deno/issues/32821
     ignore:
       - dependency-name: "denoland/deno"
@@ -157,28 +160,6 @@ updates:
         patterns:
           - "go.opentelemetry.io/*"
           - "github.com/open-telemetry/*"
-
-  # Keep Docker dependencies up to date (for link service)
-  - package-ecosystem: "docker"
-    directory: "/apps/link"
-    schedule:
-      interval: "weekly"
-      time: "04:17"
-    open-pull-requests-limit: 5
-    assignees:
-      - "ljagiello"
-    commit-message:
-      prefix: "deps"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "docker"
-    rebase-strategy: "auto"
-    # Block denoland/deno >= 2.7.5 - OTEL regression deadlocks compiled binaries
-    # See: https://github.com/denoland/deno/issues/32821
-    ignore:
-      - dependency-name: "denoland/deno"
-        versions: [">= 2.7.5, < 2.8.0"]
 
   # apps/link npm dependencies are covered by the root npm block via
   # workspaces ("./apps/*") — no separate block needed.
