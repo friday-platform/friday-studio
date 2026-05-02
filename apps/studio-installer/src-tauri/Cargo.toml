@@ -19,7 +19,7 @@ serde_json = "1"
 reqwest = { version = "0.12", features = ["rustls-tls", "stream", "json", "blocking"], default-features = false }
 sha2 = "0.11"
 tokio = { version = "1", features = ["full"] }
-dirs = "5"
+dirs = "6"
 hex = "0.4"
 # Mirrors exec.LookPath for our claude discovery so the wizard
 # agrees with the launcher about whether claude is already
