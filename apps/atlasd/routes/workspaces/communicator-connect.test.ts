@@ -136,6 +136,7 @@ async function createTestApp() {
     getActivityAdapter: vi.fn(),
     daemon: { getWorkspaceManager: () => mockWorkspaceManager } as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     exposeKernel: false,

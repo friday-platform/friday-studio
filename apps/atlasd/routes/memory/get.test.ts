@@ -28,7 +28,10 @@ beforeAll(async () => {
 
   app = new Hono();
   app.use("*", async (c, next) => {
-    c.set("app", minimalCtx as never);
+    // Hono's typed Variables narrow `c.set` to specific keys; cast to any
+    // here because this test uses a vanilla Hono instance without the
+    // app's typed factory. The runtime behavior is identical.
+    (c as unknown as { set: (key: string, value: unknown) => void }).set("app", minimalCtx);
     await next();
   });
   app.route("/", memoryNarrativeRoutes);

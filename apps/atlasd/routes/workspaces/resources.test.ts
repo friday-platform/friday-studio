@@ -181,6 +181,7 @@ function createTestApp(overrides: Partial<ResourceStorageAdapter> = {}) {
       getPlatformModels: () => createStubPlatformModels(),
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     exposeKernel: false,

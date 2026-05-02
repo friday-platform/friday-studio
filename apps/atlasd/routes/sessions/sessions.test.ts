@@ -162,6 +162,7 @@ function createTestApp(options: {
     destroyWorkspaceRuntime: vi.fn() as unknown as AppContext["destroyWorkspaceRuntime"],
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: registry,
     sessionHistoryAdapter: adapter,
     getAgentRegistry: vi.fn() as unknown as AppContext["getAgentRegistry"],
