@@ -1,6 +1,11 @@
 import { writeFile } from "node:fs/promises";
 import process from "node:process";
-import { AtlasDaemon, getAtlasDaemonUrl, OPENAPI_DOCUMENTATION } from "@atlas/atlasd";
+import { getAtlasDaemonUrl, OPENAPI_DOCUMENTATION } from "@atlas/atlasd";
+// `@atlas/atlasd` is a type-only barrel; runtime constructors come from the
+// `./daemon` subpath so CLIs that only need route types don't drag the
+// daemon's full module graph (NATS, JetStream, migrations) into their
+// process.
+import { AtlasDaemon } from "@atlas/atlasd/daemon";
 import { generateSpecs } from "hono-openapi";
 import openapiTS, { astToString } from "openapi-typescript";
 

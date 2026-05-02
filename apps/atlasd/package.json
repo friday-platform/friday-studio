@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "exports": { ".": "./mod.ts", "./types": "./types.ts" },
+  "exports": { ".": "./mod.ts", "./types": "./types.ts", "./daemon": "./src/atlas-daemon.ts" },
   "dependencies": {
     "@atlas/adapters-md": "workspace:*",
     "@atlas/agent-sdk": "workspace:*",

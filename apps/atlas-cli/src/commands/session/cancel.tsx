@@ -1,9 +1,13 @@
 import process from "node:process";
 import { getAtlasClient, type SessionDetailedInfo } from "@atlas/client";
-import { WorkspaceSessionStatus } from "@atlas/core";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
+
+// Mirror of WorkspaceSessionStatus values from @atlas/core. Inlined so the CLI
+// stays a thin HTTP client and doesn't drag in the daemon's core package at
+// module load (the only thing we need are the literal status strings).
+const COMPLETED_STATUSES = new Set(["completed", "failed"]);
 
 interface CancelArgs {
   id: string;
@@ -56,11 +60,8 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
       process.exit(1);
     }
 
-    // Check if session is already completed
-    if (
-      session.status === WorkspaceSessionStatus.COMPLETED ||
-      session.status === WorkspaceSessionStatus.FAILED
-    ) {
+    // Check if session is already in a terminal state
+    if (COMPLETED_STATUSES.has(String(session.status).toLowerCase())) {
       infoOutput(`Session '${argv.id}' is already ${session.status}`);
       process.exit(0);
     }

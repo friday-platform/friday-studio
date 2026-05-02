@@ -616,8 +616,12 @@ WshShell.Run "${cmdLine}", 0, False`;
 }
 
 async function startForeground(argv: StartArgs): Promise<void> {
-  // Dynamic import to avoid loading daemon module chain at CLI startup
-  const { AtlasDaemon } = await import("@atlas/atlasd");
+  // Dynamic import to avoid loading daemon module chain at CLI startup.
+  // Reach for the implementation source directly — `@atlas/atlasd` is a
+  // type-only barrel so other CLI commands (chat, session, etc.) that touch
+  // the daemon's route types via @atlas/client don't drag the daemon's
+  // module graph (NATS, JetStream, migrations) into their process at load.
+  const { AtlasDaemon } = await import("@atlas/atlasd/daemon");
   const daemon = new AtlasDaemon({
     port: argv.port,
     hostname: argv.hostname,
