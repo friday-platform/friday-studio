@@ -78,18 +78,32 @@
    * Autocomplete query over skills.sh. Only fires when the user is actively
    * typing something short enough to be a search term (not already a full
    * `owner/repo/slug`) — once they paste a 3-segment ref, skip search.
+   *
+   * skills.sh search is free-text over skill names — it doesn't honour
+   * `owner/partial` as a prefix filter, and short suffixes get buried by
+   * unrelated matches. Once the user types a slash, send the owner
+   * (first segment) so the response is scoped to that owner, then narrow
+   * client-side by the full query prefix.
    */
+  const segs = $derived(searchQuery.split("/").filter(Boolean));
+  const searchTerm = $derived(segs[0] ?? "");
   const searchSuggestions = createQuery(() =>
     queryOptions({
-      queryKey: ["skillssh-search", searchQuery] as const,
+      queryKey: ["skillssh-search", searchTerm, segs.length] as const,
       queryFn:
-        searchQuery.length >= 2 && searchQuery.split("/").filter(Boolean).length < 3
-          ? () => searchSkillsSh(searchQuery, 8)
+        searchTerm.length >= 2 && segs.length < 3
+          ? () => searchSkillsSh(searchTerm, segs.length >= 2 ? 50 : 8)
           : skipToken,
       staleTime: 60_000,
     }),
   );
-  const suggestions = $derived(searchSuggestions.data?.skills ?? []);
+  const suggestions = $derived(
+    segs.length >= 2
+      ? (searchSuggestions.data?.skills ?? [])
+          .filter((s) => s.id.startsWith(searchQuery))
+          .slice(0, 8)
+      : (searchSuggestions.data?.skills ?? []),
+  );
   const showSuggestions = $derived(
     searchFocused && installSource.trim().length >= 2 && suggestions.length > 0,
   );
