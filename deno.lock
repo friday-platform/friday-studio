@@ -6444,17 +6444,6 @@
           ]
         }
       },
-      "packages/workspace-builder": {
-        "packageJson": {
-          "dependencies": [
-            "npm:@jsr/std__yaml@^1.0.10",
-            "npm:ai@^6.0.168",
-            "npm:cron-parser@^5.5.0",
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
-          ]
-        }
-      },
       "tools/agent-playground": {
         "dependencies": [
           "npm:hono@4.12.15"

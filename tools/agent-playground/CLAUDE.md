@@ -7,7 +7,6 @@ navigation, route-based pages, and full RPC type safety.
 
 ```bash
 deno task playground    # from monorepo root (http://localhost:5200)
-deno task sim "prompt"  # headless CLI for workspace pipeline
 ```
 
 The playground also ships as a compiled binary in Friday Studio — the static
@@ -26,20 +25,14 @@ API routes live in `src/lib/server/router.ts`. Route groups:
 - `routes/execute.ts` — bundled agent execution (SSE)
 - `routes/mcp.ts` — MCP server discovery and tool listing
 - `routes/updates.ts` — Studio version check (`GET /`, `POST /check`)
-- `routes/workspace.ts` — workspace parse, execute (SSE), runs
-
-Workspace pipeline logic in `src/lib/server/lib/workspace/`:
-
-- `pipeline.ts` — four-phase pipeline (blueprint → compile → assemble → execute)
-- `run-fsm.ts` — FSM execution harness
-- `mock-executor.ts` / `direct-executor.ts` — mock vs real agent execution
+- `routes/discover.ts` — workspace discovery + bundle import
+- `routes/shell.ts` — shell command execution
 
 ## Routes
 
 ```
 /agents/bundled       — bundled agent selector + execution
-/workspaces           — workspace inspector (load YAML or generate)
-/workspaces/history   — past pipeline runs
+/platform/[wsId]      — workspace inspector
 ```
 
 ## Adding API Routes

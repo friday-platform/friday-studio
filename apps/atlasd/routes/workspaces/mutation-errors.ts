@@ -1,6 +1,5 @@
 /**
- * Shared `MutationError` → HTTP response mapper. Lives in its own module so
- * config.ts and blueprint-recompile.ts can both import it without a cycle.
+ * Shared `MutationError` → HTTP response mapper.
  */
 
 import type { MutationError } from "@atlas/config/mutations";

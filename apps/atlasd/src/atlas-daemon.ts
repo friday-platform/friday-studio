@@ -1255,7 +1255,6 @@ export class AtlasDaemon {
           platformModels: this.getPlatformModels(),
           agentExecutor: this.processAgentExecutor ?? undefined,
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
-          blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
           broadcastNotifier: createFSMBroadcastNotifier({
             workspaceId: workspace.id,
             getInstance: (id) => this.getOrCreateChatSdkInstance(id),

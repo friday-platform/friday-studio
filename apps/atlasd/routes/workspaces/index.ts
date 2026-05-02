@@ -63,7 +63,6 @@ import {
 } from "../../src/services/communicator-wiring.ts";
 import { awaitSignalCompletion } from "../../src/signal-stream.ts";
 import { getCurrentUser } from "../me/adapter.ts";
-import { applyBlueprint, loadWorkspaceBlueprint } from "./blueprint-recompile.ts";
 import {
   buildWorkspaceBundleBytes,
   isOnDiskWorkspace,
@@ -1341,8 +1340,6 @@ const workspacesRoutes = daemonFactory
         name: z.string().min(1).optional(),
         color: ColorSchema.optional(),
         description: z.string().optional(),
-        blueprintArtifactId: z.string().optional(),
-        blueprintRevision: z.number().optional(),
       }),
     ),
     async (c) => {
@@ -1554,70 +1551,6 @@ const workspacesRoutes = daemonFactory
       } catch (error) {
         logger.error("disconnect_communicator_failed", { workspaceId, kind, error });
         return c.json({ error: `Failed to disconnect ${kind}: ${stringifyError(error)}` }, 500);
-      }
-    },
-  )
-  // Recompile workspace.yml from blueprint artifact
-  .post(
-    "/:workspaceId/recompile",
-    zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator(
-      "json",
-      z.object({ artifactId: z.string().optional(), revision: z.number().optional() }),
-    ),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      const body = c.req.valid("json");
-      const ctx = c.get("app");
-
-      try {
-        const manager = ctx.getWorkspaceManager();
-        const workspace = await manager.find({ id: workspaceId });
-        if (!workspace) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-
-        // Resolve artifact ID: explicit param > workspace metadata > error
-        const artifactId = body.artifactId ?? workspace.metadata?.blueprintArtifactId;
-        if (!artifactId) {
-          return c.json(
-            {
-              error:
-                "No blueprint artifact ID provided and workspace has no linked blueprint. " +
-                "Pass artifactId in the request body.",
-            },
-            400,
-          );
-        }
-
-        const loaded = await loadWorkspaceBlueprint(workspace, {
-          artifactId,
-          revision: body.revision,
-        });
-        if (!loaded.ok) {
-          return c.json({ error: loaded.error }, loaded.status);
-        }
-
-        const result = await applyBlueprint(
-          workspace,
-          loaded.blueprint,
-          loaded.artifactId,
-          loaded.revision,
-          ctx,
-        );
-        if (!result.ok) {
-          return c.json({ error: result.error }, result.status);
-        }
-
-        return c.json({
-          ok: true,
-          workspaceId,
-          artifactId: loaded.artifactId,
-          revision: loaded.revision,
-        });
-      } catch (error) {
-        logger.error("Failed to recompile workspace", { workspaceId, error });
-        return c.json({ error: `Recompile failed: ${stringifyError(error)}` }, 500);
       }
     },
   )

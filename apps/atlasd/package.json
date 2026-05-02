@@ -23,7 +23,6 @@
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@atlas/workspace": "workspace:*",
-    "@atlas/workspace-builder": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/link": "workspace:*",
     "@chat-adapter/discord": "4.26.0",

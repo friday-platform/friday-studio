@@ -15,7 +15,6 @@
   import WorkspaceBreadcrumb from "$lib/components/workspace/workspace-breadcrumb.svelte";
   import {
     workspaceMcpQueries,
-    workspaceQueries,
     useEnableMCPServer,
     useDisableMCPServer,
     testChatEventStream,
@@ -25,12 +24,6 @@
   const workspaceId = $derived(page.params.workspaceId ?? null);
 
   const statusQuery = createQuery(() => workspaceMcpQueries.status(workspaceId));
-  const workspacesQuery = createQuery(() => workspaceQueries.list());
-
-  const isBlueprint = $derived.by(() => {
-    const ws = (workspacesQuery.data ?? []).find((w) => w.id === workspaceId);
-    return !!ws?.metadata?.blueprintArtifactId;
-  });
 
   const enableMut = useEnableMCPServer();
   const disableMut = useDisableMCPServer();
@@ -58,7 +51,7 @@
   );
 
   async function enableServer(serverId: string) {
-    if (!workspaceId || isBlueprint) return;
+    if (!workspaceId) return;
     pending = { ...pending, [serverId]: true };
     try {
       await enableMut.mutateAsync({ workspaceId, serverId });
@@ -72,7 +65,7 @@
   }
 
   async function disableServer(serverId: string) {
-    if (!workspaceId || isBlueprint) return;
+    if (!workspaceId) return;
     pending = { ...pending, [serverId]: true };
     try {
       await disableMut.mutateAsync({ workspaceId, serverId });
@@ -165,9 +158,6 @@
         <h2>Enabled in this workspace</h2>
         <span class="count">{enabled.length}</span>
       </header>
-      {#if isBlueprint}
-        <p class="blueprint-hint">This workspace is managed via blueprint — enable and disable actions are disabled.</p>
-      {/if}
       {#if enabled.length === 0}
         <p class="empty-hint">No MCP servers enabled. Enable one from the catalog below.</p>
       {:else}
@@ -186,7 +176,7 @@
                 <button
                   type="button"
                   class="row-action test"
-                  disabled={isBlueprint || testingServerId === server.id}
+                  disabled={testingServerId === server.id}
                   onclick={() => openTestPanel(server.id)}
                 >
                   {testingServerId === server.id ? "Testing…" : "Test"}
@@ -194,7 +184,7 @@
                 <button
                   type="button"
                   class="row-action detach"
-                  disabled={isBlueprint || pending[server.id]}
+                  disabled={pending[server.id]}
                   onclick={() => disableServer(server.id)}
                 >
                   {pending[server.id] ? "Disabling…" : "Disable"}
@@ -297,7 +287,7 @@
               <button
                 type="button"
                 class="row-action attach"
-                disabled={isBlueprint || pending[server.id]}
+                disabled={pending[server.id]}
                 onclick={() => enableServer(server.id)}
               >
                 {pending[server.id] ? "Enabling…" : "Enable"}
@@ -375,13 +365,6 @@
   .count {
     color: color-mix(in srgb, var(--color-text), transparent 45%);
     font-size: var(--font-size-1);
-  }
-
-  .blueprint-hint {
-    color: color-mix(in srgb, var(--color-warning), transparent 20%);
-    font-size: var(--font-size-1);
-    margin: 0;
-    padding-block-start: var(--size-2);
   }
 
   .empty-state {

@@ -24,9 +24,6 @@ export const WorkspaceMetadataSchema = z.object({
   lastError: z.string().optional(),
   lastErrorAt: z.iso.datetime().optional(),
   failureCount: z.number().optional(),
-  // Blueprint tracking
-  blueprintArtifactId: z.string().optional(),
-  blueprintRevision: z.number().optional(),
   // Session tracking fields
   lastFinishedSession: z
     .object({

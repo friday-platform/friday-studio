@@ -237,18 +237,6 @@ describe("PUT /mcp/:serverId", () => {
     expect(body.error).toBe("forbidden");
   });
 
-  test("returns 422 for blueprint workspace", async () => {
-    const workspace = createMockWorkspace({ metadata: { blueprintArtifactId: "art-1" } });
-    const { app } = createTestApp({ workspace, config: createMergedConfig(createTestConfig()) });
-
-    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
-
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("not_supported");
-    expect(body.message).toContain("blueprint");
-  });
-
   test("returns 404 when server not in catalog", async () => {
     mockDiscoverMCPServers.mockResolvedValue([]);
 
@@ -402,18 +390,6 @@ describe("DELETE /mcp/:serverId", () => {
     expect(res.status).toBe(403);
     const body = (await res.json()) as JsonBody;
     expect(body.error).toBe("forbidden");
-  });
-
-  test("returns 422 for blueprint workspace", async () => {
-    const workspace = createMockWorkspace({ metadata: { blueprintArtifactId: "art-1" } });
-    const { app } = createTestApp({ workspace, config: createMergedConfig(createTestConfig()) });
-
-    const res = await app.request("/ws-test-id/mcp/github", { method: "DELETE" });
-
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("not_supported");
-    expect(body.message).toContain("blueprint");
   });
 
   test("returns 404 when server not enabled", async () => {

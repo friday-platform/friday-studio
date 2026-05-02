@@ -63,10 +63,6 @@ export function compileExecutionToFsm(jobName: string, jobSpec: JobSpecification
     throw new ExecutionCompileError(jobName, `has no 'execution' block`);
   }
   if (execution.strategy && execution.strategy !== "sequential") {
-    // Parallel / DAG topologies exist in `@atlas/workspace-builder`'s
-    // buildFSMFromPlan, but that compiler needs document contracts + prepare
-    // mappings that this shape doesn't carry. Authors hitting this error
-    // should either rewrite as `fsm:` or use workspace-builder upstream.
     throw new ExecutionCompileError(
       jobName,
       `execution.strategy='${execution.strategy}' is not supported at runtime yet. ` +

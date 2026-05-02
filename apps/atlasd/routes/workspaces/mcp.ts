@@ -45,11 +45,6 @@ function isSystemWorkspace(workspace: { metadata?: Record<string, unknown> }): b
   return false;
 }
 
-/** Blueprint workspace guard — direct config mutations return 422. */
-function isBlueprintWorkspace(workspace: { metadata?: Record<string, unknown> }): boolean {
-  return !!workspace.metadata?.blueprintArtifactId;
-}
-
 // =============================================================================
 // GET /api/workspaces/:workspaceId/mcp
 // =============================================================================
@@ -135,19 +130,6 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
       return c.json(
         { success: false, error: "forbidden", message: "Cannot modify system workspace" },
         403,
-      );
-    }
-
-    if (isBlueprintWorkspace(workspace)) {
-      return c.json(
-        {
-          success: false,
-          error: "not_supported",
-          message:
-            "This workspace uses a blueprint — direct config mutations are not supported. " +
-            "Use the blueprint mutation path instead.",
-        },
-        422,
       );
     }
 
@@ -249,19 +231,6 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
       return c.json(
         { success: false, error: "forbidden", message: "Cannot modify system workspace" },
         403,
-      );
-    }
-
-    if (isBlueprintWorkspace(workspace)) {
-      return c.json(
-        {
-          success: false,
-          error: "not_supported",
-          message:
-            "This workspace uses a blueprint — direct config mutations are not supported. " +
-            "Use the blueprint mutation path instead.",
-        },
-        422,
       );
     }
 
