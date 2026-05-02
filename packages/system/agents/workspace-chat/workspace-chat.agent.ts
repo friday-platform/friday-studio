@@ -511,12 +511,20 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // happens in-process to avoid that guard and to skip an unnecessary
         // localhost roundtrip.
         //
-        // Before persisting, sweep any tool-call parts that didn't reach a
-        // terminal state. Cancelled / crashed turns leave the last in-flight
-        // tool stuck in `input-streaming` or `input-available`, which the
-        // chat page would then render as a "running…" spinner forever on
-        // reload. Flipping them to `output-error` gives the UI something to
-        // render and matches the semantics of what actually happened.
+        // Before persisting:
+        // 1. Sweep any tool-call parts that didn't reach a terminal state.
+        //    Cancelled / crashed turns leave the last in-flight tool stuck
+        //    in `input-streaming` or `input-available`, which the chat page
+        //    would then render as a "running…" spinner forever on reload.
+        //    Flipping them to `output-error` gives the UI something to
+        //    render and matches the semantics of what actually happened.
+        // 2. Strip `data-nested-chunk` parts. These are live-streaming
+        //    envelopes from a nested job's inner FSM/tool events — useful
+        //    for rendering the running tool-card live in the chat UI, but
+        //    pure noise once the parent tool reaches output-available
+        //    (which captures the final result). Persisting them bloats
+        //    chat history (one observed turn was 82% nested-chunks) and
+        //    forces the UI to filter them on every read.
         const lastMessage = messages[messages.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
           const { closed } = closePendingToolParts(lastMessage);
@@ -526,6 +534,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               messageId: lastMessage.id,
               closed,
               aborted: abortSignal?.aborted === true,
+            });
+          }
+          const beforeCount = lastMessage.parts.length;
+          lastMessage.parts = lastMessage.parts.filter(
+            (p): p is typeof p => p.type !== "data-nested-chunk",
+          );
+          const stripped = beforeCount - lastMessage.parts.length;
+          if (stripped > 0) {
+            logger.debug("Stripped nested-chunk parts before persist", {
+              streamId: session.streamId,
+              messageId: lastMessage.id,
+              stripped,
             });
           }
           const appendResult = await ChatStorage.appendMessage(
