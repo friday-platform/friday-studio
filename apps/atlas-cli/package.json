@@ -16,7 +16,7 @@
     "@inkjs/ui": "^2.0.0",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "ai": "^6.0.168",
+    "ai": "^6.0.174",
     "gunshi": "^0.29.5",
     "ink": "^7.0.1",
     "js-levenshtein": "^1.1.6",
