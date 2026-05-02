@@ -45,6 +45,24 @@ export class NatsManager {
     const alreadyUp = await this.tcpProbe();
     if (alreadyUp) {
       logger.info("nats-server already running, connecting without spawning");
+      // FRIDAY_NATS_MONITOR only takes effect when we spawn the server
+      // ourselves. Probe the monitor endpoint and warn if the user expected
+      // monitoring but the running server doesn't have it enabled.
+      if (process.env.FRIDAY_NATS_MONITOR === "1") {
+        const monitorUp = await this.tcpProbe(NATS_MONITOR_PORT);
+        if (monitorUp) {
+          logger.info(
+            `NATS monitoring detected on existing server at http://localhost:${NATS_MONITOR_PORT}`,
+          );
+        } else {
+          logger.warn(
+            "FRIDAY_NATS_MONITOR=1 set but a nats-server was already running on " +
+              `${NATS_PORT} without --http_port. Monitor flag ignored. Kill the ` +
+              "existing nats-server (e.g. `pkill nats-server`) and restart the " +
+              "daemon to enable monitoring.",
+          );
+        }
+      }
     } else {
       const binary = await this.findBinary();
       await this.spawnServer(binary);
@@ -146,9 +164,9 @@ export class NatsManager {
     throw new Error(`nats-server did not become ready within ${READY_TIMEOUT_MS}ms`);
   }
 
-  private tcpProbe(): Promise<boolean> {
+  private tcpProbe(port: number = NATS_PORT): Promise<boolean> {
     return new Promise((resolve) => {
-      const socket = createConnection({ port: NATS_PORT, host: "127.0.0.1" });
+      const socket = createConnection({ port, host: "127.0.0.1" });
       socket.once("connect", () => {
         socket.destroy();
         resolve(true);
