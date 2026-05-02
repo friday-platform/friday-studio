@@ -122,7 +122,6 @@ import { createBashTool } from "./bash-tool.ts";
 import type { MemoryMount } from "./config-schema.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
-import { JobScheduler } from "./job-scheduler.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { mountRegistry } from "./mount-registry.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
@@ -221,23 +220,6 @@ function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
   }
 }
 
-/**
- * Read an FSM's id without letting YAML serialization failures escape.
- *
- * `engine.toYAML()` runs `@std/yaml`'s `stringify`, which throws
- * `TypeError: Cannot stringify undefined` if any value in the definition
- * is `undefined`. The id is purely diagnostic metadata for one history
- * event — it must never break session persistence (atlas-yset).
- */
-function safeReadFsmId(engine: FSMEngine | undefined): string | undefined {
-  if (!engine) return undefined;
-  try {
-    return engine.toYAML().match(/^id:\s*(.+)$/m)?.[1];
-  } catch {
-    return undefined;
-  }
-}
-
 // Stub factory functions for minimal IAtlasScope manager implementations
 function createStubContextManager(): ITempestContextManager {
   return { add: () => {}, remove: () => {}, search: () => [], size: () => 0 };
@@ -326,62 +308,20 @@ interface WorkspaceRuntimeOptions {
 }
 
 /**
- * User-facing concurrency policy from workspace.yml `jobs.*.concurrency.policy`.
- * See packages/config/src/jobs.ts for the schema and intent of each value.
+ * Job definition. Engines are not shared: every signal that matches a job
+ * spawns its own `FSMEngine` via `createJobEngine`, runs to completion, and
+ * exits. Cross-signal coordination (serialize, dedup, singleton) is handled
+ * by the trigger source or the message broker — not by the runtime.
  */
-type ConcurrencyPolicyKind =
-  | "concurrent"
-  | "serialize"
-  | "skip-if-running"
-  | "coalesce"
-  | "singleton";
-
-interface ResolvedConcurrencyPolicy {
-  kind: ConcurrencyPolicyKind;
-  maxQueued?: number;
-}
-
-/**
- * Internal isolation mode the runtime applies after policy resolution.
- *
- * - `single-flight`: shared engine across signals; persistent doc-store scope
- *   `(workspaceId, jobName)`. The `serialize` / `skip-if-running` / `coalesce`
- *   / `singleton` policies all map here today; the difference between them is
- *   *what to do when overlap is detected* (see processSignalForJob's policy
- *   switch). Cross-process `singleton` semantics are not enforced yet.
- * - `isolated`: fresh engine per signal; per-session doc-store scope
- *   `(workspaceId, jobName, sessionId)`. The `concurrent` policy maps here.
- */
-type JobConcurrencyMode = "single-flight" | "isolated";
-
-/**
- * Apply the new-default rule: when no `concurrency` block is declared,
- * the runtime treats the job as `concurrent`. Existing workflow jobs that
- * need cross-signal engine state must opt into `serialize` (or one of the
- * other gated policies) explicitly.
- */
-function resolveConcurrencyPolicy(
-  fromConfig: { policy?: ConcurrencyPolicyKind; max_queued?: number } | undefined,
-): ResolvedConcurrencyPolicy {
-  if (!fromConfig) return { kind: "concurrent" };
-  return { kind: fromConfig.policy ?? "concurrent", maxQueued: fromConfig.max_queued };
-}
-
 interface FSMJob {
   name: string;
   fsmPath: string;
-  engine?: FSMEngine; // Direct FSMEngine reference
-  documentStore?: FileSystemDocumentStore; // Per-job document store
-  signals: string[]; // Signal IDs this FSM handles
-  fsmDefinition?: unknown; // Inline FSM definition from workspace.yml
+  signals: string[];
+  fsmDefinition?: unknown;
   /** Human-readable description from workspace config */
   description?: string;
   /** Max LLM tool-calling steps for FSM actions */
   maxSteps?: number;
-  /** Resolved concurrency policy from workspace.yml (or runtime default). */
-  policy: ResolvedConcurrencyPolicy;
-  /** Internal isolation mode derived from `policy.kind`. */
-  concurrency: JobConcurrencyMode;
 }
 
 interface ActiveSession {
@@ -405,7 +345,7 @@ interface SessionResult {
   userId?: string;
   /** Captured FSM events (state transitions and action executions) for batch persistence */
   collectedFsmEvents?: FSMEvent[];
-  /** Snapshot of the engine that processed this session (isolated jobs do not use job.engine). */
+  /** Snapshot of the per-signal engine's documents at completion. */
   engineDocuments?: FSMDocument[];
   finalState?: string;
 }
@@ -493,13 +433,14 @@ export class WorkspaceRuntime {
    * abortSignal parameter.
    */
   private activeAbortControllers = new Map<string, AbortController>();
-  private activeJobExecutions = new Map<string, string>();
 
   /**
-   * Enforces serialize / coalesce / singleton concurrency policies declared
-   * in workspace.yml. See packages/workspace/src/job-scheduler.ts.
+   * Engine registry keyed by sessionId. Populated in `processSignalForJob`
+   * for the duration of one signal's execution; cleared in the finally block.
+   * Lets external callers (e.g. HTTP endpoints querying mid-flight FSM docs)
+   * find the engine for a given sessionId without closure access.
    */
-  private jobScheduler = new JobScheduler<IWorkspaceSession>();
+  private sessionEngines = new Map<string, FSMEngine>();
 
   // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
   // Populated by executeAgent, consumed by onEvent callback for step:complete events
@@ -673,8 +614,6 @@ export class WorkspaceRuntime {
         signals: ["chat"],
         fsmDefinition: chatFSM,
         description: "Direct chat with workspace",
-        policy: { kind: "concurrent" },
-        concurrency: "isolated",
       });
 
       logger.debug("Auto-injected handle-chat job for workspace direct chat", {
@@ -714,7 +653,6 @@ export class WorkspaceRuntime {
 
       const signals = (jobSpec.triggers || []).map((t) => t.signal).filter(Boolean);
 
-      const policy = resolveConcurrencyPolicy(jobSpec.concurrency);
       this.jobs.set(jobName, {
         name: jobName,
         fsmPath: "", // Empty for inline FSM
@@ -722,8 +660,6 @@ export class WorkspaceRuntime {
         fsmDefinition,
         description: jobSpec.description,
         maxSteps: jobSpec.config?.max_steps,
-        policy,
-        concurrency: policy.kind === "concurrent" ? "isolated" : "single-flight",
       });
 
       // D.1: declarative `jobs.*.skills` field — warn when refs don't match
@@ -760,14 +696,7 @@ export class WorkspaceRuntime {
       // For standalone FSMs, assume they handle all signals
       const signals = Object.keys(this.config.workspace.signals || {});
 
-      const policy: ResolvedConcurrencyPolicy = { kind: "concurrent" };
-      this.jobs.set(jobName, {
-        name: jobName,
-        fsmPath: fsmFile,
-        signals,
-        policy,
-        concurrency: "isolated",
-      });
+      this.jobs.set(jobName, { name: jobName, fsmPath: fsmFile, signals });
 
       logger.debug("Registered standalone FSM job", { jobName, fsmPath: fsmFile, signals });
     }
@@ -996,29 +925,6 @@ export class WorkspaceRuntime {
     return { engine, documentStore };
   }
 
-  /** Lazy-initialize a job's shared FSM engine. */
-  private async initializeJobEngine(job: FSMJob): Promise<void> {
-    if (job.engine) {
-      return; // Already initialized
-    }
-
-    logger.info("Initializing FSM engine for job", {
-      jobName: job.name,
-      workspaceId: this.workspace.id,
-    });
-
-    const { engine, documentStore } = await this.createJobEngine(job);
-    job.engine = engine;
-    job.documentStore = documentStore;
-
-    logger.info("FSM engine initialized for job", {
-      jobName: job.name,
-      workspaceId: this.workspace.id,
-      initialState: job.engine.state,
-      documentCount: job.engine.documents.length,
-    });
-  }
-
   /** Route a signal to its matching FSM job and execute. */
   async processSignal(
     signal: WorkspaceRuntimeSignal,
@@ -1061,38 +967,14 @@ export class WorkspaceRuntime {
       }
     }
 
-    const runCascade = async (): Promise<IWorkspaceSession> => {
-      const policy = job.concurrency;
-      if (policy === "single-flight") {
-        await this.initializeJobEngine(job);
-      }
-      const sessionResult = await this.processSignalForJob(
-        job,
-        signal,
-        onStreamEvent,
-        abortSignal,
-        skipStates,
-      );
-      return this.finalizeSession(sessionResult, job, signal);
-    };
-
-    // Apply the user-facing concurrency policy from workspace.yml.
-    // - concurrent: every trigger fans out (engine is per-signal isolated).
-    // - skip-if-running: drop on overlap (handled inside processSignalForJob).
-    // - serialize / singleton: chain on a per-job promise, run in order.
-    // - coalesce: replace pending slot, all waiters share the eventual result.
-    // (`singleton` is in-process today; cross-process advisory lock is future
-    // work — see plan G2.2 reinforcement notes.)
-    switch (job.policy.kind) {
-      case "concurrent":
-      case "skip-if-running":
-        return runCascade();
-      case "serialize":
-      case "singleton":
-        return this.jobScheduler.serialize(job.name, job.policy.maxQueued, runCascade);
-      case "coalesce":
-        return this.jobScheduler.coalesce(job.name, runCascade);
-    }
+    const sessionResult = await this.processSignalForJob(
+      job,
+      signal,
+      onStreamEvent,
+      abortSignal,
+      skipStates,
+    );
+    return this.finalizeSession(sessionResult, job, signal);
   }
 
   private async processSignalForJob(
@@ -1103,97 +985,24 @@ export class WorkspaceRuntime {
     skipStates?: string[],
   ): Promise<SessionResult> {
     const sessionId = crypto.randomUUID();
-    const policy = job.concurrency;
-    const activeSessionId = this.activeJobExecutions.get(job.name);
 
-    // User-facing policy from workspace.yml decides what to do on overlap
-    // for `single-flight`-mode jobs. `concurrent` (mode = isolated) bypasses
-    // this entirely; every signal gets a fresh engine and no claim is taken.
-    if (policy === "single-flight" && activeSessionId) {
-      const kind = job.policy.kind;
-      if (kind === "skip-if-running") {
-        logger.info("skip-if-running: dropping new trigger; prior session still running", {
-          jobName: job.name,
-          activeSessionId,
-          newSignalId: signal.id,
-        });
-        return {
-          id: sessionId,
-          workspaceId: this.workspace.id,
-          status: WorkspaceSessionStatus.SKIPPED,
-          startedAt: new Date(),
-          completedAt: new Date(),
-          artifacts: [],
-        };
-      }
-      // serialize / coalesce / singleton currently fall back to throw-on-overlap
-      // (today's single-flight semantics). Full queue/coalesce/cross-process
-      // singleton enforcement is a follow-up.
-      throw new Error(
-        `Job '${job.name}' in workspace '${this.workspace.id}' is already processing session '${activeSessionId}' (policy=${kind})`,
-      );
-    }
-    if (policy === "single-flight") {
-      this.activeJobExecutions.set(job.name, sessionId);
-    }
+    // Every signal spawns a fresh engine, runs to completion, exits.
+    // Per-session document scope `(workspaceId, jobName, sessionId)`.
+    const { engine } = await this.createJobEngine(job, sessionId);
+    this.sessionEngines.set(sessionId, engine);
 
-    let engine: FSMEngine;
-    let isolatedEngine = false;
-    const isTriggerSignal = this.isTriggerSignal(signal.id);
-    try {
-      if (policy === "isolated") {
-        const created = await this.createJobEngine(job, sessionId);
-        engine = created.engine;
-        isolatedEngine = true;
-      } else {
-        if (!job.engine) {
-          throw new Error(`Job ${job.name} engine not initialized`);
-        }
-        engine = job.engine;
-      }
-
-      if (isTriggerSignal && !isolatedEngine) {
-        logger.info("Trigger signal detected - clearing persisted state for fresh execution", {
-          signalId: signal.id,
-          workspaceId: this.workspace.id,
-          jobName: job.name,
-        });
-        await this.clearPersistedState(job);
-
-        await engine.reset();
-
-        logger.debug("Engine reset to initial state", {
-          workspaceId: this.workspace.id,
-          jobName: job.name,
-          initialState: engine.state,
-        });
-      } else {
-        logger.debug(
-          isolatedEngine
-            ? "Isolated signal - using fresh engine"
-            : "Continuation signal - state preserved",
-          { signalId: signal.id, currentState: engine.state },
-        );
-      }
-
-      // Seed __meta into engine results so code actions can reference
-      // workspace_path, repo_root, workspace_id, and platform_url via
-      // context.results['__meta'] without hardcoding operator paths.
-      const workspacePath =
-        this.options.workspacePath ?? path.join(getFridayHome(), "workspaces", this.workspace.id);
-      engine.seedResults({
-        __meta: buildWorkspaceMeta({
-          workspacePath,
-          workspaceId: this.workspace.id,
-          daemonUrl: this.options.daemonUrl,
-        }),
-      });
-    } catch (error) {
-      if (policy === "single-flight") {
-        this.activeJobExecutions.delete(job.name);
-      }
-      throw error;
-    }
+    // Seed __meta into engine results so code actions can reference
+    // workspace_path, repo_root, workspace_id, and platform_url via
+    // context.results['__meta'] without hardcoding operator paths.
+    const workspacePath =
+      this.options.workspacePath ?? path.join(getFridayHome(), "workspaces", this.workspace.id);
+    engine.seedResults({
+      __meta: buildWorkspaceMeta({
+        workspacePath,
+        workspaceId: this.workspace.id,
+        daemonUrl: this.options.daemonUrl,
+      }),
+    });
 
     // Per-session AbortController. Composes with any parent signal passed in
     // (so a canceled HTTP request still propagates) and is registered in
@@ -1247,7 +1056,6 @@ export class WorkspaceRuntime {
           sessionId: session.id,
           signalType: signal.id,
           currentState: engine.state,
-          isTriggerSignal,
           jobName: job.name,
         });
 
@@ -1677,9 +1485,7 @@ export class WorkspaceRuntime {
           session.finalState = engine.state;
           this.agentResultSideChannel.delete(sessionId);
           this.activeAbortControllers.delete(sessionId);
-          if (policy === "single-flight") {
-            this.activeJobExecutions.delete(job.name);
-          }
+          this.sessionEngines.delete(sessionId);
         }
 
         if (otelSpan) {
@@ -2373,55 +2179,6 @@ export class WorkspaceRuntime {
     };
   }
 
-  /**
-   * Check if a signal is a trigger signal
-   * Trigger signals start fresh executions, while other signals resume from persisted state
-   */
-  private isTriggerSignal(signalId: string): boolean {
-    const jobs = this.config.workspace.jobs;
-    if (!jobs) return false;
-
-    // Find job that has this signal as a trigger
-    for (const job of Object.values(jobs)) {
-      const triggers = job.triggers;
-      if (triggers?.some((t) => t.signal === signalId)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Clear persisted FSM state for fresh execution.
-   * Document cleanup is handled by engine.reset() → persistDocuments().
-   */
-  private async clearPersistedState(job: FSMJob): Promise<void> {
-    if (!job.engine || !job.documentStore) {
-      throw new Error("Cannot clear state - engine not initialized");
-    }
-
-    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name };
-    const fsmId = job.engine.definition.id;
-
-    // Clear persisted state file (no schema, null value — cannot fail validation)
-    const clearResult = await job.documentStore.saveState(scope, fsmId, null);
-    if (!clearResult.ok) {
-      logger.warn("Failed to clear persisted state", { error: clearResult.error });
-    }
-
-    const existingDocIds = await job.documentStore.list(scope, fsmId);
-    for (const docId of existingDocIds) {
-      await job.documentStore.delete(scope, fsmId, docId);
-    }
-
-    logger.debug("Cleared persisted state for fresh execution", {
-      workspaceId: this.workspace.id,
-      jobName: job.name,
-      fsmId,
-    });
-  }
-
   async triggerSignal(signalName: string, payload?: Record<string, unknown>): Promise<void> {
     const signal: WorkspaceRuntimeSignal = {
       id: signalName,
@@ -2465,10 +2222,11 @@ export class WorkspaceRuntime {
   async shutdown(): Promise<void> {
     logger.info("Shutting down workspace runtime", { workspaceId: this.workspace.id });
 
-    for (const job of this.jobs.values()) {
-      if (job.engine) {
-        job.engine.stop();
-      }
+    // Engines are per-signal — running ones receive the abort via
+    // activeAbortControllers; the engines themselves get GC'd when their
+    // signal completes. Nothing to stop here at the job level.
+    for (const controller of this.activeAbortControllers.values()) {
+      controller.abort("workspace runtime shutting down");
     }
 
     await this.orchestrator.shutdown();
@@ -2476,8 +2234,7 @@ export class WorkspaceRuntime {
     this.sessions.clear();
     this.sessionResults.clear();
     this.completedSessionDocuments.clear();
-    this.activeJobExecutions.clear();
-    this.jobScheduler.shutdown("Workspace runtime shutting down");
+    this.activeAbortControllers.clear();
     this.jobs.clear();
     this.mountBindings.clear();
     mountRegistry.clear();
@@ -2548,11 +2305,9 @@ export class WorkspaceRuntime {
     const cached = this.completedSessionDocuments.get(sessionId);
     if (cached) return cached;
 
-    // Pre-completion: still live — read straight from the engine.
-    const active = this.sessions.get(sessionId);
-    if (!active) return [];
-    const job = this.jobs.get(active.jobName);
-    if (!job?.engine) return [];
+    // Pre-completion: still live — read from the per-signal engine.
+    const engine = this.sessionEngines.get(sessionId);
+    if (!engine) return [];
 
     // FSM plumbing documents that are noise for most callers. Everything
     // else is passed through — the caller's job to pick fields it cares
@@ -2563,7 +2318,7 @@ export class WorkspaceRuntime {
       "ChatContext",
       "signal-payload",
     ]);
-    return job.engine.documents.filter((d) => !plumbingTypes.has(d.type));
+    return engine.documents.filter((d) => !plumbingTypes.has(d.type));
   }
 
   /**
@@ -2631,30 +2386,12 @@ export class WorkspaceRuntime {
   }
 
   /**
-   * Check if there are active sessions for a signal
+   * Check if there are active sessions for a signal. With per-signal engines
+   * the canonical source is `this.sessions` (populated in finalizeSession);
+   * any active execution shows up there.
    */
   hasActiveSessionsForSignal(signalId: string): boolean {
-    const hasRecordedSession = Array.from(this.sessions.values()).some(
-      (s) => s.signalId === signalId,
-    );
-    if (hasRecordedSession) return true;
-
-    return Array.from(this.jobs.values()).some(
-      (job) => job.signals.includes(signalId) && this.activeJobExecutions.has(job.name),
-    );
-  }
-
-  /**
-   * Get current FSM state for a job
-   */
-  getState(jobName?: string): string {
-    if (!jobName) {
-      const firstJob = Array.from(this.jobs.values())[0];
-      return firstJob?.engine?.state || "uninitialized";
-    }
-
-    const job = this.jobs.get(jobName);
-    return job?.engine?.state || "uninitialized";
+    return Array.from(this.sessions.values()).some((s) => s.signalId === signalId);
   }
 
   getOrchestrator(): AgentOrchestrator {
@@ -2833,11 +2570,9 @@ export class WorkspaceRuntime {
         });
       }
 
-      // Append session-start event. fsmId metadata is best-effort: if YAML
-      // serialization throws (e.g. an undefined slipped into the FSM
-      // definition), it's just metadata for one event — we shouldn't fail
-      // the entire history persistence over it.
-      const fsmId = safeReadFsmId(job.engine) ?? job.name;
+      // For inline FSMs the id is the job name; we use that uniformly here
+      // since per-signal engines don't expose a stable global identity.
+      const fsmId = job.name;
       await SessionHistoryStorage.appendSessionEvent({
         sessionId: sessionResult.id,
         emittedBy: "workspace-runtime",

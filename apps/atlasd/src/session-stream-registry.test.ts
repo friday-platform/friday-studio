@@ -13,6 +13,9 @@ function mockAdapter(): SessionHistoryAdapter {
     save: vi.fn<SessionHistoryAdapter["save"]>().mockResolvedValue(undefined),
     get: vi.fn<SessionHistoryAdapter["get"]>().mockResolvedValue(null),
     listByWorkspace: vi.fn<SessionHistoryAdapter["listByWorkspace"]>().mockResolvedValue([]),
+    markInterruptedSessions: vi
+      .fn<SessionHistoryAdapter["markInterruptedSessions"]>()
+      .mockResolvedValue(0),
   };
 }
 

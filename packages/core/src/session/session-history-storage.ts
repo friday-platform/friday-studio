@@ -46,4 +46,5 @@ export const SessionHistoryStorage: SessionHistoryAdapter = {
   save: (sessionId, events, summary) => adapter.save(sessionId, events, summary),
   get: (sessionId) => adapter.get(sessionId),
   listByWorkspace: (workspaceId) => adapter.listByWorkspace(workspaceId),
+  markInterruptedSessions: () => adapter.markInterruptedSessions(),
 };

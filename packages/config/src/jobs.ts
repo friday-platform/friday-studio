@@ -112,43 +112,6 @@ export const JobConfigSchema = z.looseObject({
 export type JobConfig = z.infer<typeof JobConfigSchema>;
 
 // ==============================================================================
-// CONCURRENCY POLICY
-// ==============================================================================
-
-/**
- * Concurrency policy for a job. Controls what happens when N triggers for the
- * same job arrive at once.
- *
- * - `concurrent` (default): every trigger fans out independently. Right for
- *   chat, NATS event processing, independent work units.
- * - `serialize`: at most one running; new triggers queue. Use `max_queued`
- *   to bound the queue. Right for sequential-event jobs like
- *   "process orders in arrival order".
- * - `skip-if-running`: new trigger drops if one is already running. Right for
- *   periodic sweeps where overlap is wasteful but missing a tick is fine.
- * - `coalesce`: newer trigger replaces queued one; one execution catches up.
- *   Right for cron catch-up after downtime, burst-deduplication on noisy
- *   NATS subjects.
- * - `singleton`: at most one across all daemon replicas (cross-process
- *   advisory lock). Right for external single-writer constraints.
- */
-export const ConcurrencyPolicySchema = z.strictObject({
-  policy: z
-    .enum(["concurrent", "serialize", "skip-if-running", "coalesce", "singleton"])
-    .default("concurrent"),
-  max_queued: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe(
-      "Maximum number of pending triggers when policy=serialize. Beyond this, new triggers are dropped.",
-    ),
-});
-
-export type ConcurrencyPolicy = z.infer<typeof ConcurrencyPolicySchema>;
-
-// ==============================================================================
 // JOB SPECIFICATION
 // ==============================================================================
 
@@ -231,10 +194,6 @@ export const JobSpecificationSchema = z
 
     // Per-job improvement policy override (absent = inherit from workspace level)
     improvement: z.enum(["surface", "auto"]).optional(),
-
-    // Concurrency policy. Default is `concurrent` — every trigger fans out
-    // independently. See plans/2026-05-01-stateless-friday.md G2.2.
-    concurrency: ConcurrencyPolicySchema.optional(),
   })
   .refine(
     (data) => {
