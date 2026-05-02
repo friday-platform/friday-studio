@@ -45,6 +45,22 @@ export const load: PageLoad = async ({ params, fetch }) => {
 
   const messages = chatBody?.messages ?? [];
 
+  // JetStream + KV inspection for the chat — useful when investigating
+  // "where did this chat go" or "why isn't this message persisted" bugs.
+  // Read-only, best-effort: failures here don't abort the page.
+  let nats: unknown = null;
+  try {
+    const debugUrl = `/api/daemon/api/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(chatId)}/_debug`;
+    const r = await fetch(debugUrl);
+    if (r.ok) {
+      nats = await r.json();
+    } else {
+      nats = { error: `${r.status} ${r.statusText}` };
+    }
+  } catch (e) {
+    nats = { error: e instanceof Error ? e.message : String(e) };
+  }
+
   // Collect sub-session IDs referenced from tool outputs.
   const sessionIds = new Set<string>();
   for (const m of messages) {
@@ -75,6 +91,7 @@ export const load: PageLoad = async ({ params, fetch }) => {
     chat: chatBody?.chat ?? null,
     messages,
     sessions,
+    nats,
     fetchError,
   };
 };

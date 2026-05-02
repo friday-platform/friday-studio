@@ -78,6 +78,101 @@
     </section>
   {/if}
 
+  {#if data.nats}
+    {@const n = data.nats as {
+      stream?: {
+        name: string;
+        subject: string;
+        exists: boolean;
+        messages?: number;
+        bytes?: number;
+        firstSeq?: number;
+        lastSeq?: number;
+        created?: string;
+        lastTs?: string;
+        retention?: string;
+        storage?: string;
+        maxMsgSize?: number;
+        replicas?: number;
+        error?: string;
+      };
+      kv?: {
+        bucket: string;
+        key: string;
+        exists: boolean;
+        revision?: number;
+        created?: string;
+        operation?: string;
+        length?: number;
+        value?: unknown;
+        error?: string;
+      };
+      error?: string;
+    }}
+    <section>
+      <h2>nats / jetstream</h2>
+      {#if n.error}
+        <p class="hint">debug fetch failed: {n.error}</p>
+      {:else}
+        <div class="nats-grid">
+          <article class="nats-card">
+            <header>
+              <h3>stream</h3>
+              <code class="state">{n.stream?.exists ? "exists" : "absent"}</code>
+            </header>
+            <dl>
+              <dt>name</dt><dd><code>{n.stream?.name ?? "—"}</code></dd>
+              <dt>subject</dt><dd><code>{n.stream?.subject ?? "—"}</code></dd>
+              {#if n.stream?.exists}
+                <dt>messages</dt><dd>{n.stream.messages ?? 0}</dd>
+                <dt>bytes</dt><dd>{n.stream.bytes ?? 0}</dd>
+                <dt>seq range</dt><dd>{n.stream.firstSeq ?? "—"} → {n.stream.lastSeq ?? "—"}</dd>
+                <dt>created</dt><dd>{fmtTs(n.stream.created)}</dd>
+                <dt>last ts</dt><dd>{fmtTs(n.stream.lastTs)}</dd>
+                <dt>retention</dt><dd><code>{n.stream.retention}</code></dd>
+                <dt>storage</dt><dd><code>{n.stream.storage}</code></dd>
+                <dt>replicas</dt><dd>{n.stream.replicas}</dd>
+                <dt>max msg</dt><dd>{n.stream.maxMsgSize}</dd>
+              {/if}
+              {#if n.stream?.error}
+                <dt>error</dt><dd class="err">{n.stream.error}</dd>
+              {/if}
+            </dl>
+          </article>
+
+          <article class="nats-card">
+            <header>
+              <h3>kv</h3>
+              <code class="state">{n.kv?.exists ? "exists" : "absent"}</code>
+            </header>
+            <dl>
+              <dt>bucket</dt><dd><code>{n.kv?.bucket ?? "—"}</code></dd>
+              <dt>key</dt><dd><code>{n.kv?.key ?? "—"}</code></dd>
+              {#if n.kv?.exists}
+                <dt>revision</dt><dd>{n.kv.revision}</dd>
+                <dt>created</dt><dd>{fmtTs(n.kv.created)}</dd>
+                <dt>operation</dt><dd><code>{n.kv.operation}</code></dd>
+                <dt>length</dt><dd>{n.kv.length} bytes</dd>
+              {/if}
+              {#if n.kv?.error}
+                <dt>error</dt><dd class="err">{n.kv.error}</dd>
+              {/if}
+            </dl>
+            {#if n.kv?.exists && n.kv.value !== undefined}
+              {@const dumpKey = "kv-value-dump"}
+              <div class="kv">
+                <button type="button" onclick={() => toggle(dumpKey)}>
+                  value {expanded[dumpKey] ? "▼" : "▶"}
+                </button>
+                <pre class="dump">{expanded[dumpKey] ? fullJson(n.kv.value) : shortJson(n.kv.value)}</pre>
+              </div>
+            {/if}
+          </article>
+        </div>
+      {/if}
+    </section>
+  {/if}
+
   <section>
     <h2>messages</h2>
     {#each data.messages as m, i (m.id)}
@@ -350,6 +445,33 @@
     text-align: center;
     color: color-mix(in srgb, var(--color-text), transparent 30%);
     font-style: italic;
+  }
+  .nats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--size-2);
+  }
+  .nats-card h3 {
+    margin: 0;
+    font-size: var(--font-size-2, 14px);
+  }
+  .nats-card dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px var(--size-2);
+    margin: var(--size-1) 0 0;
+  }
+  .nats-card dt {
+    color: color-mix(in srgb, var(--color-text), transparent 45%);
+  }
+  .nats-card dd {
+    margin: 0;
+    word-break: break-all;
+  }
+  @media (max-width: 800px) {
+    .nats-grid {
+      grid-template-columns: 1fr;
+    }
   }
   .hint {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
