@@ -11,7 +11,7 @@
   "dependencies": {
     "@atlas/ledger": "workspace:*",
     "@atlas/schemas": "workspace:*",
-    "hono": "4.12.15"
+    "hono": "4.12.16"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }
