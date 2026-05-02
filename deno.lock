@@ -117,7 +117,7 @@
     "npm:cookie@^1.0.2": "1.1.1",
     "npm:cron-parser@^5.5.0": "5.5.0",
     "npm:diff@9": "9.0.0",
-    "npm:dompurify@^3.4.1": "3.4.1",
+    "npm:dompurify@^3.4.2": "3.4.2",
     "npm:dotenv@17.4.2": "17.4.2",
     "npm:eslint-config-prettier@^10.1.8": "10.1.8_eslint@10.2.1",
     "npm:eslint-plugin-svelte@^3.17.1": "3.17.1_eslint@10.2.1_svelte@5.55.5__acorn@8.16.0_postcss@8.5.12",
@@ -3063,8 +3063,8 @@
         "domelementtype"
       ]
     },
-    "dompurify@3.4.1": {
-      "integrity": "sha512-JahakDAIg1gyOm7dlgWSDjV4n7Ip2PKR55NIT6jrMfIgLFgWo81vdr1/QGqWtFNRqXP9UV71oVePtjqS2ebnPw==",
+    "dompurify@3.4.2": {
+      "integrity": "sha512-lHeS9SA/IKeIFFyYciHBr2n0v1VMPlSj843HdLOwjb2OxNwdq9Xykxqhk+FE42MzAdHvInbAolSE4mhahPpjXA==",
       "optionalDependencies": [
         "@types/trusted-types"
       ]
@@ -6519,7 +6519,7 @@
             "npm:ai@^6.0.174",
             "npm:codemirror@^6.0.2",
             "npm:diff@9",
-            "npm:dompurify@^3.4.1",
+            "npm:dompurify@^3.4.2",
             "npm:eslint@^10.2.1",
             "npm:happy-dom@^20.9.0",
             "npm:hono@4.12.16",
