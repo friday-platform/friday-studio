@@ -51,9 +51,9 @@ const ConfigResourceDeclarationSchema = z.union([
 
 export const MemoryTypeSchema = z.enum(["short_term", "long_term", "scratchpad"]);
 
-export const MemoryStrategySchema = z.enum(["narrative", "retrieval", "dedup", "kv"]).optional();
+export const MemoryStrategySchema = z.literal("narrative").optional();
 
-export const StoreKindSchema = z.enum(["narrative", "retrieval", "dedup", "kv"]);
+export const StoreKindSchema = z.literal("narrative");
 
 export const MemoryOwnEntrySchema = z.object({
   name: z.string().min(1),
@@ -63,13 +63,13 @@ export const MemoryOwnEntrySchema = z.object({
 
 // _global is GLOBAL_WORKSPACE_ID from @atlas/agent-sdk/memory-scope
 const SOURCE_RE =
-  /^([A-Za-z0-9_][A-Za-z0-9_-]*|_global)\/(narrative|retrieval|dedup|kv)\/([A-Za-z0-9_][A-Za-z0-9_-]*)$/;
+  /^([A-Za-z0-9_][A-Za-z0-9_-]*|_global)\/(narrative)\/([A-Za-z0-9_][A-Za-z0-9_-]*)$/;
 
 export const MemoryMountSourceSchema = z
   .string()
   .regex(SOURCE_RE, {
     message:
-      'memory.mounts[].source must be "{wsId|_global}/{kind}/{memoryName}" ' +
+      'memory.mounts[].source must be "{wsId|_global}/narrative/{memoryName}" ' +
       '— e.g. "thick_endive/narrative/autopilot-backlog"',
   });
 

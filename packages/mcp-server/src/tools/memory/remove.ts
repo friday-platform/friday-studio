@@ -35,13 +35,7 @@ export function registerMemoryRemoveTool(server: McpServer, ctx: ToolContext): v
         return createErrorResponse(resolved.error);
       }
 
-      const { effectiveWorkspaceId, effectiveMemoryName, strategy } = resolved.resolved;
-
-      if (strategy !== "narrative") {
-        return createErrorResponse(
-          `memory_remove currently only supports narrative stores. Store '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
-        );
-      }
+      const { effectiveWorkspaceId, effectiveMemoryName } = resolved.resolved;
 
       const url = `${ctx.daemonUrl}/api/memory/${encodeURIComponent(effectiveWorkspaceId)}/narrative/${encodeURIComponent(effectiveMemoryName)}/${encodeURIComponent(entryId)}`;
 

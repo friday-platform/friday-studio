@@ -2,9 +2,7 @@ import type {
   MemoryAdapter,
   NarrativeEntry,
   NarrativeStore,
-  StoreKind,
   StoreMetadata,
-  StoreOf,
 } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import type { AgentMountConfig } from "./bootstrap.ts";
@@ -186,10 +184,9 @@ describe("renderSection", () => {
 
 // ── buildBootstrapBlock ─────────────────────────────────────────────────────
 
-// TS cannot narrow conditional StoreOf<K> from runtime check (microsoft/TypeScript#33014)
 function mockAdapter(stores: Record<string, NarrativeEntry[]>): MemoryAdapter {
   return {
-    store<K extends StoreKind>(_wid: string, name: string, _kind: K): Promise<StoreOf<K>> {
+    store(_wid: string, name: string): Promise<NarrativeStore> {
       const data = stores[name] ?? [];
       const narrativeStore: NarrativeStore = {
         read: () => Promise.resolve(data),
@@ -198,8 +195,7 @@ function mockAdapter(stores: Record<string, NarrativeEntry[]>): MemoryAdapter {
         forget: () => Promise.resolve(),
         render: () => Promise.resolve(data.map((e) => e.text).join("\n")),
       };
-      const result: unknown = narrativeStore;
-      return Promise.resolve(result as StoreOf<K>);
+      return Promise.resolve(narrativeStore);
     },
     list: () => Promise.resolve([]),
     bootstrap: () => Promise.resolve(""),
@@ -209,13 +205,13 @@ function mockAdapter(stores: Record<string, NarrativeEntry[]>): MemoryAdapter {
 }
 
 describe("buildBootstrapBlock", () => {
-  it("calls store() with correct kind='narrative'", async () => {
+  it("opens the named narrative store", async () => {
     const data = [entry({ text: "test" })];
-    const kindsSeen: string[] = [];
+    const namesSeen: string[] = [];
 
     const adapter: MemoryAdapter = {
-      store<K extends StoreKind>(_wid: string, _name: string, kind: K): Promise<StoreOf<K>> {
-        kindsSeen.push(kind);
+      store(_wid: string, name: string): Promise<NarrativeStore> {
+        namesSeen.push(name);
         const narrativeStore: NarrativeStore = {
           read: () => Promise.resolve(data),
           append: (e: NarrativeEntry) => Promise.resolve(e),
@@ -223,8 +219,7 @@ describe("buildBootstrapBlock", () => {
           forget: () => Promise.resolve(),
           render: () => Promise.resolve(""),
         };
-        const result: unknown = narrativeStore;
-        return Promise.resolve(result as StoreOf<K>);
+        return Promise.resolve(narrativeStore);
       },
       list: () => Promise.resolve([]),
       bootstrap: () => Promise.resolve(""),
@@ -233,7 +228,7 @@ describe("buildBootstrapBlock", () => {
     };
 
     await buildBootstrapBlock(adapter, "ws-1", [{ name: "tasks", store: "my-corpus" }]);
-    expect(kindsSeen).toEqual(["narrative"]);
+    expect(namesSeen).toEqual(["my-corpus"]);
   });
 
   it("sections appear in mount declaration order", async () => {
@@ -441,7 +436,7 @@ function mockResolveAdapter(
   renderResults: Record<string, string>,
 ): MemoryAdapter {
   return {
-    store<K extends StoreKind>(_wid: string, name: string, _kind: K): Promise<StoreOf<K>> {
+    store(_wid: string, name: string): Promise<NarrativeStore> {
       const narrativeStore: NarrativeStore = {
         read: () => Promise.resolve([]),
         append: (e: NarrativeEntry) => Promise.resolve(e),
@@ -449,8 +444,7 @@ function mockResolveAdapter(
         forget: () => Promise.resolve(),
         render: () => Promise.resolve(renderResults[name] ?? ""),
       };
-      const result: unknown = narrativeStore;
-      return Promise.resolve(result as StoreOf<K>);
+      return Promise.resolve(narrativeStore);
     },
     list: () => Promise.resolve(stores),
     bootstrap: () => Promise.resolve(""),
@@ -496,18 +490,14 @@ describe("resolveBootstrap", () => {
     expect(result).toBe("AAA---BBB");
   });
 
-  it("skips non-narrative stores (kind != 'narrative')", async () => {
+  it("renders narrative stores filtered by workspaceId", async () => {
     const stores: StoreMetadata[] = [
-      { name: "c-narrative", kind: "narrative", workspaceId: "ws-1" },
-      { name: "c-retrieval", kind: "retrieval", workspaceId: "ws-1" },
-      { name: "c-kv", kind: "kv", workspaceId: "ws-1" },
-      { name: "c-dedup", kind: "dedup", workspaceId: "ws-1" },
+      { name: "c-mine", kind: "narrative", workspaceId: "ws-1" },
+      { name: "c-other", kind: "narrative", workspaceId: "ws-2" },
     ];
     const adapter = mockResolveAdapter(stores, {
-      "c-narrative": "Narrative content",
-      "c-retrieval": "Should not appear",
-      "c-kv": "Should not appear",
-      "c-dedup": "Should not appear",
+      "c-mine": "Narrative content",
+      "c-other": "Should not appear",
     });
     const result = await resolveBootstrap(adapter, "ws-1", "agent-1");
     expect(result).toBe("Narrative content");
@@ -523,21 +513,17 @@ describe("buildBootstrap", () => {
     expect(result).toBe("");
   });
 
-  it("only renders narrative stores — skips retrieval, dedup, kv", async () => {
+  it("renders all narrative stores", async () => {
     const stores: StoreMetadata[] = [
       { name: "notes", kind: "narrative", workspaceId: "ws-1" },
-      { name: "docs", kind: "retrieval", workspaceId: "ws-1" },
-      { name: "cache", kind: "dedup", workspaceId: "ws-1" },
-      { name: "flags", kind: "kv", workspaceId: "ws-1" },
+      { name: "decisions", kind: "narrative", workspaceId: "ws-1" },
     ];
     const adapter = mockResolveAdapter(stores, {
       notes: "Important notes",
-      docs: "Should not appear",
-      cache: "Should not appear",
-      flags: "Should not appear",
+      decisions: "Decisions log",
     });
     const result = await buildBootstrap(adapter, "ws-1", "agent-1");
-    expect(result).toBe("Important notes");
+    expect(result).toBe("Important notes\n\nDecisions log");
   });
 
   it("returns empty string when all store renders are whitespace-only", async () => {
@@ -563,7 +549,7 @@ describe("buildBootstrap", () => {
   it("propagates error when store.render() throws", async () => {
     const stores: StoreMetadata[] = [{ name: "broken", kind: "narrative", workspaceId: "ws-1" }];
     const adapter: MemoryAdapter = {
-      store<K extends StoreKind>(_wid: string, _name: string, _kind: K): Promise<StoreOf<K>> {
+      store(_wid: string, _name: string): Promise<NarrativeStore> {
         const narrativeStore: NarrativeStore = {
           read: () => Promise.resolve([]),
           append: (e: NarrativeEntry) => Promise.resolve(e),
@@ -571,8 +557,7 @@ describe("buildBootstrap", () => {
           forget: () => Promise.resolve(),
           render: () => Promise.reject(new Error("store unavailable")),
         };
-        const result: unknown = narrativeStore;
-        return Promise.resolve(result as StoreOf<K>);
+        return Promise.resolve(narrativeStore);
       },
       list: () => Promise.resolve(stores),
       bootstrap: () => Promise.resolve(""),

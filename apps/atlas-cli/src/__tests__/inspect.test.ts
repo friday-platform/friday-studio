@@ -1,24 +1,19 @@
 import type {
   HistoryEntry,
   MemoryAdapter,
+  NarrativeStore,
   ScratchpadAdapter,
   ScratchpadChunk,
   SkillAdapter,
   SkillMetadata,
   SkillVersion,
-  StoreKind,
   StoreMetadata,
-  StoreOf,
 } from "@atlas/agent-sdk";
 import { describe, expect, it, vi } from "vitest";
 import type { InspectDeps } from "../commands/inspect.ts";
 import { inspectCommand } from "../commands/inspect.ts";
 
-function unusedStore<K extends StoreKind>(
-  _workspaceId: string,
-  _name: string,
-  _kind: K,
-): Promise<StoreOf<K>> {
+function unusedStore(_workspaceId: string, _name: string): Promise<NarrativeStore> {
   throw new Error("not called in test");
 }
 
@@ -56,7 +51,7 @@ describe("inspect --kind memory", () => {
   it("renders table rows for two memories", async () => {
     const memories: StoreMetadata[] = [
       { name: "session-log", kind: "narrative", workspaceId: "ws-1" },
-      { name: "docs-index", kind: "retrieval", workspaceId: "ws-1" },
+      { name: "docs-index", kind: "narrative", workspaceId: "ws-1" },
     ];
     const deps = createDeps({
       memory: {
@@ -77,7 +72,6 @@ describe("inspect --kind memory", () => {
     expect(result.output).toContain("session-log");
     expect(result.output).toContain("narrative");
     expect(result.output).toContain("docs-index");
-    expect(result.output).toContain("retrieval");
     expect(result.output).toContain("NAME");
     expect(result.output).toContain("KIND");
   });

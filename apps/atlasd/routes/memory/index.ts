@@ -35,7 +35,7 @@ function resolveMemory(workspaceId: string, memoryName: string): MdNarrativeStor
 
 const memoryNarrativeRoutes = daemonFactory.createApp();
 
-const KNOWN_KINDS = ["narrative", "retrieval", "dedup", "kv"] as const;
+const KNOWN_KINDS = ["narrative"] as const;
 
 async function safeReaddir(dir: string): Promise<string[]> {
   try {

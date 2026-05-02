@@ -771,14 +771,12 @@ export class WorkspaceRuntime {
         assertGlobalWriteAllowed(this.workspace.id, this.options.kernelWorkspaceId);
       }
 
-      mountRegistry.registerSource(sourceId, () =>
-        adapter.store(sourceWsId, memoryName, "narrative"),
-      );
+      mountRegistry.registerSource(sourceId, () => adapter.store(sourceWsId, memoryName));
       mountRegistry.addConsumer(sourceId, this.workspace.id);
 
       let resolvedStore: NarrativeStore;
       try {
-        resolvedStore = await adapter.store(sourceWsId, memoryName, "narrative");
+        resolvedStore = await adapter.store(sourceWsId, memoryName);
       } catch {
         throw new MountSourceNotFoundError(
           sourceId,
@@ -1631,18 +1629,14 @@ export class WorkspaceRuntime {
     const parts: string[] = [];
 
     try {
-      const globalMemory = await adapter.store(
-        GLOBAL_WORKSPACE_ID,
-        STANDING_ORDERS_NAME,
-        "narrative",
-      );
+      const globalMemory = await adapter.store(GLOBAL_WORKSPACE_ID, STANDING_ORDERS_NAME);
       parts.push(await globalMemory.render());
     } catch {
       // Global level missing or unreadable — skip silently
     }
 
     try {
-      const wsMemory = await adapter.store(this.workspace.id, STANDING_ORDERS_NAME, "narrative");
+      const wsMemory = await adapter.store(this.workspace.id, STANDING_ORDERS_NAME);
       parts.push(await wsMemory.render());
     } catch {
       // Workspace level missing or unreadable — skip silently
@@ -1651,11 +1645,7 @@ export class WorkspaceRuntime {
     for (const mount of this._resolvedMemory?.mounts ?? []) {
       if (mount.sourceStoreName === STANDING_ORDERS_NAME && mount.sourceStoreKind === "narrative") {
         try {
-          const mountedMemory = await adapter.store(
-            mount.sourceWorkspaceId,
-            mount.sourceStoreName,
-            "narrative",
-          );
+          const mountedMemory = await adapter.store(mount.sourceWorkspaceId, mount.sourceStoreName);
           parts.push(await mountedMemory.render());
         } catch {
           // Mounted level missing or unreadable — skip silently

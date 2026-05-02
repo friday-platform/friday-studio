@@ -59,14 +59,6 @@ export type {
   WorkspaceMCPStatus,
 } from "./src/mcp-registry/workspace-mcp.ts";
 export { getWorkspaceMCPStatus } from "./src/mcp-registry/workspace-mcp.ts";
-export type { MountConsumer, MountSource } from "./src/mount-registry/mod.ts";
-// Mount Registry
-export {
-  buildSourceId,
-  MountConsumerSchema,
-  MountRegistry,
-  MountSourceSchema,
-} from "./src/mount-registry/mod.ts";
 export type {
   AgentExecutionContext,
   AgentOrchestratorConfig,

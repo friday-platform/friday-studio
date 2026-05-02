@@ -5,9 +5,7 @@ import type {
   NarrativeEntry,
   NarrativeStore,
   ResolvedWorkspaceMemory,
-  StoreKind,
   StoreMetadata,
-  StoreOf,
 } from "@atlas/agent-sdk";
 import { buildResolvedWorkspaceMemory } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
@@ -25,8 +23,8 @@ function createMockStore(): NarrativeStore {
 function createMockAdapter(): MemoryAdapter {
   const store = createMockStore();
   return {
-    store<K extends StoreKind>(_wsId: string, _name: string, _kind: K): Promise<StoreOf<K>> {
-      return Promise.resolve(store as StoreOf<K>);
+    store(_wsId: string, _name: string): Promise<NarrativeStore> {
+      return Promise.resolve(store);
     },
     list: (_wsId: string): Promise<StoreMetadata[]> => Promise.resolve([]),
     bootstrap: (_wsId: string, _agentId: string): Promise<string> => Promise.resolve(""),

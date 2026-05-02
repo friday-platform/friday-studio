@@ -1,14 +1,8 @@
 /**
  * MdMemoryAdapter — Markdown-backed MemoryAdapter facade.
  *
- * Routes store() to MdNarrativeStore for the 'narrative' kind.
- * Retrieval, dedup, and kv backends are deferred to Phase 1b.
- *
  * Storage layout: {root}/memory/{workspaceId}/narrative/{memoryName}/
  * Each memory gets its own directory; MdNarrativeStore writes MEMORY.md inside it.
- *
- * From parity plan v6, lines 585-603:
- * > MemoryAdapter — store-typed memory with swappable backends.
  */
 
 import type { Dirent } from "node:fs";
@@ -18,9 +12,8 @@ import type {
   HistoryEntry,
   HistoryFilter,
   MemoryAdapter,
-  StoreKind,
+  NarrativeStore,
   StoreMetadata,
-  StoreOf,
 } from "@atlas/agent-sdk";
 import { MdNarrativeStore } from "./md-narrative-store.ts";
 import { NotImplementedError } from "./md-skill-adapter.ts";
@@ -40,20 +33,10 @@ export class MdMemoryAdapter implements MemoryAdapter {
     await fs.mkdir(path.join(this.narrativeDir(workspaceId), memoryName), { recursive: true });
   }
 
-  // TS cannot narrow conditional StoreOf<K> from a runtime check on K
-  // (microsoft/TypeScript#33014); safe because all non-narrative paths throw
-  async store<K extends StoreKind>(
-    workspaceId: string,
-    name: string,
-    kind: K,
-  ): Promise<StoreOf<K>> {
-    if (kind !== "narrative") {
-      throw new NotImplementedError(`${kind} backend not implemented — see Phase 1b`);
-    }
+  async store(workspaceId: string, name: string): Promise<NarrativeStore> {
     const storeDir = path.join(this.narrativeDir(workspaceId), name);
     await fs.mkdir(storeDir, { recursive: true });
-    const result: unknown = new MdNarrativeStore({ workspaceRoot: storeDir });
-    return result as StoreOf<K>;
+    return new MdNarrativeStore({ workspaceRoot: storeDir });
   }
 
   async list(workspaceId: string): Promise<StoreMetadata[]> {
@@ -82,7 +65,7 @@ export class MdMemoryAdapter implements MemoryAdapter {
 
     const rendered: string[] = [];
     for (const meta of stores) {
-      const store = await this.store(workspaceId, meta.name, "narrative");
+      const store = await this.store(workspaceId, meta.name);
       const content = await store.render();
       rendered.push(content);
     }
@@ -90,10 +73,10 @@ export class MdMemoryAdapter implements MemoryAdapter {
   }
 
   history(_workspaceId: string, _filter?: HistoryFilter): Promise<HistoryEntry[]> {
-    throw new NotImplementedError("history() not implemented — see Phase 1b");
+    throw new NotImplementedError("history() not implemented");
   }
 
   rollback(_workspaceId: string, _store: string, _toVersion: string): Promise<void> {
-    throw new NotImplementedError("rollback() not implemented — see Phase 1b");
+    throw new NotImplementedError("rollback() not implemented");
   }
 }

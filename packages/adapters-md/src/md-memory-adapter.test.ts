@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MdMemoryAdapter } from "./md-memory-adapter.ts";
 import { MdNarrativeStore } from "./md-narrative-store.ts";
-import { NotImplementedError } from "./md-skill-adapter.ts";
 
 describe("MdMemoryAdapter", () => {
   let tmpDir: string;
@@ -20,8 +19,8 @@ describe("MdMemoryAdapter", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("store(narrative) returns a NarrativeStore", async () => {
-    const store = await adapter.store("ws-1", "test", "narrative");
+  it("store() returns a NarrativeStore", async () => {
+    const store = await adapter.store("ws-1", "test");
 
     expect(typeof store.append).toBe("function");
     expect(typeof store.read).toBe("function");
@@ -30,16 +29,9 @@ describe("MdMemoryAdapter", () => {
     expect(typeof store.render).toBe("function");
   });
 
-  it("store(retrieval) throws NotImplementedError", async () => {
-    await expect(adapter.store("ws-1", "test", "retrieval")).rejects.toThrow(NotImplementedError);
-    await expect(adapter.store("ws-1", "test", "retrieval")).rejects.toThrow(
-      /retrieval backend not implemented/,
-    );
-  });
-
   it("list() returns metadata for created stores", async () => {
-    await adapter.store("ws-1", "alpha", "narrative");
-    await adapter.store("ws-1", "beta", "narrative");
+    await adapter.store("ws-1", "alpha");
+    await adapter.store("ws-1", "beta");
 
     const items = await adapter.list("ws-1");
     expect(items).toHaveLength(2);
@@ -54,7 +46,7 @@ describe("MdMemoryAdapter", () => {
   });
 
   it("bootstrap() returns rendered narrative content", async () => {
-    await adapter.store("ws-1", "daily", "narrative");
+    await adapter.store("ws-1", "daily");
 
     vi.spyOn(MdNarrativeStore.prototype, "render").mockResolvedValue(
       "# Daily Memory\nSome content",

@@ -48,9 +48,23 @@ describe("MemoryOwnEntrySchema", () => {
     expect(entry.strategy).toBeUndefined();
   });
 
-  it.each(["narrative", "retrieval", "dedup", "kv"] as const)("accepts strategy %s", (strategy) => {
-    const entry = MemoryOwnEntrySchema.parse({ name: "test", type: "long_term", strategy });
-    expect(entry.strategy).toBe(strategy);
+  it("accepts strategy narrative", () => {
+    const entry = MemoryOwnEntrySchema.parse({
+      name: "test",
+      type: "long_term",
+      strategy: "narrative",
+    });
+    expect(entry.strategy).toBe("narrative");
+  });
+
+  it.each([
+    "retrieval",
+    "dedup",
+    "kv",
+  ] as const)("rejects %s strategy (removed in 2026-05 cleanup)", (strategy) => {
+    expect(() =>
+      MemoryOwnEntrySchema.parse({ name: "test", type: "long_term", strategy }),
+    ).toThrow();
   });
 
   it("rejects empty name", () => {
@@ -205,10 +219,16 @@ describe("MemoryMountSourceSchema", () => {
     expect(() => MemoryMountSourceSchema.parse("thick_endive/reflections")).toThrow();
   });
 
-  it("accepts _global/kv/shared-flags", () => {
-    expect(MemoryMountSourceSchema.parse("_global/kv/shared-flags")).toBe(
-      "_global/kv/shared-flags",
+  it("accepts _global/narrative/shared-flags", () => {
+    expect(MemoryMountSourceSchema.parse("_global/narrative/shared-flags")).toBe(
+      "_global/narrative/shared-flags",
     );
+  });
+
+  it("rejects retrieval/dedup/kv kinds (removed in 2026-05 cleanup)", () => {
+    for (const kind of ["retrieval", "dedup", "kv"]) {
+      expect(() => MemoryMountSourceSchema.parse(`ws/${kind}/store`)).toThrow();
+    }
   });
 });
 

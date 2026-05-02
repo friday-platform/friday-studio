@@ -1,9 +1,9 @@
-import type { DedupStore, KVStore, NarrativeStore, RetrievalStore } from "@atlas/agent-sdk";
+import type { NarrativeStore } from "@atlas/agent-sdk";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 
-export type StoreResolver = () => Promise<NarrativeStore | RetrievalStore | DedupStore | KVStore>;
+export type StoreResolver = () => Promise<NarrativeStore>;
 
-export type AnyStore = NarrativeStore | RetrievalStore | DedupStore | KVStore;
+export type AnyStore = NarrativeStore;
 
 class MountRegistryImpl {
   private sources = new Map<string, StoreResolver>();

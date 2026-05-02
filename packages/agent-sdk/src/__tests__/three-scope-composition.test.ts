@@ -107,7 +107,7 @@ describe("PER-WORKSPACE scope invariants", () => {
       ownEntries: [
         { name: "notes", type: "short_term" },
         { name: "backlog", type: "long_term", strategy: "narrative" },
-        { name: "scratch", type: "scratchpad", strategy: "dedup" },
+        { name: "scratch", type: "scratchpad" },
       ],
       mountDeclarations: [],
       kernelWorkspaceId: undefined,
@@ -190,7 +190,7 @@ describe("MOUNTED scope invariants", () => {
       ownEntries: [],
       mountDeclarations: [
         { name: "ro-mount", source: "ws1/narrative/corpus", mode: "ro", scope: "workspace" },
-        { name: "rw-mount", source: "ws2/kv/config", mode: "rw", scope: "workspace" },
+        { name: "rw-mount", source: "ws2/narrative/config", mode: "rw", scope: "workspace" },
       ],
       kernelWorkspaceId: undefined,
     });

@@ -18,13 +18,11 @@ export type ScopeTag = "global" | "workspace" | "mounted";
 // ── Zod schemas ───────────────────────────────────────────────────────────
 
 const MemoryTypeValues = ["short_term", "long_term", "scratchpad"] as const;
-const MemoryStrategyValues = ["narrative", "retrieval", "dedup", "kv"] as const;
-const StoreKindValues = ["narrative", "retrieval", "dedup", "kv"] as const;
 
 export const ResolvedOwnStoreSchema = z.object({
   name: z.string(),
   type: z.enum(MemoryTypeValues),
-  strategy: z.enum(MemoryStrategyValues).optional(),
+  strategy: z.literal("narrative").optional(),
   scope: z.literal("workspace" as const),
 });
 
@@ -37,8 +35,7 @@ export const ResolvedMountSchema = z.object({
   scope: z.enum(["workspace", "job", "agent"]),
   scopeTarget: z.string().optional(),
   sourceWorkspaceId: z.string(),
-  // Runtime currently only supports "narrative" mounts (runtime.ts:550)
-  sourceStoreKind: z.enum(StoreKindValues),
+  sourceStoreKind: z.literal("narrative"),
   sourceStoreName: z.string(),
 });
 
