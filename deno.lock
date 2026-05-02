@@ -94,7 +94,7 @@
     "npm:@tanstack/svelte-table@^9.0.0-alpha.37": "9.0.0-alpha.37_svelte@5.55.5__acorn@8.16.0",
     "npm:@tauri-apps/api@2.11.0": "2.11.0",
     "npm:@tauri-apps/cli@2.10.1": "2.10.1",
-    "npm:@tauri-apps/plugin-opener@2.5.3": "2.5.3",
+    "npm:@tauri-apps/plugin-opener@2.5.4": "2.5.4",
     "npm:@total-typescript/ts-reset@~0.6.1": "0.6.1",
     "npm:@types/deno@2.5.0": "2.5.0",
     "npm:@types/markdown-it@^14.1.2": "14.1.2",
@@ -2203,8 +2203,8 @@
       ],
       "bin": true
     },
-    "@tauri-apps/plugin-opener@2.5.3": {
-      "integrity": "sha512-CCcUltXMOfUEArbf3db3kCE7Ggy1ExBEBl51Ko2ODJ6GDYHRp1nSNlQm5uNCFY5k7/ufaK5Ib3Du/Zir19IYQQ==",
+    "@tauri-apps/plugin-opener@2.5.4": {
+      "integrity": "sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ==",
       "dependencies": [
         "@tauri-apps/api"
       ]
@@ -6104,7 +6104,7 @@
             "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
             "npm:@tauri-apps/api@2.11.0",
             "npm:@tauri-apps/cli@2.10.1",
-            "npm:@tauri-apps/plugin-opener@2.5.3",
+            "npm:@tauri-apps/plugin-opener@2.5.4",
             "npm:svelte@^5.55.5",
             "npm:typescript@^5.9.3",
             "npm:vite@^7.3.2"
