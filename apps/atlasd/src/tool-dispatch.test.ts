@@ -82,6 +82,33 @@ describe("callTool + registerToolWorker", () => {
     ).rejects.toThrow();
   });
 
+  it("propagates caller abort to worker via cancel subject", async () => {
+    let aborted = false;
+    const worker = registerToolWorker(nc, "slow", async (_req, hctx) => {
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, 10_000);
+        hctx.abortSignal.addEventListener("abort", () => {
+          clearTimeout(t);
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+      return "should-not-arrive";
+    });
+    try {
+      const controller = new AbortController();
+      const callP = callTool(nc, "slow", {}, { ...ctx, abortSignal: controller.signal });
+      await new Promise((r) => setTimeout(r, 100));
+      controller.abort();
+      await expect(callP).rejects.toThrow();
+      // Give the cancel subject a tick to fire.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(aborted).toBe(true);
+    } finally {
+      await worker.stop();
+    }
+  });
+
   it("queue groups the subject — at most one of N workers handles each call", async () => {
     let aCount = 0;
     let bCount = 0;

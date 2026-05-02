@@ -536,9 +536,11 @@ export class AtlasDaemon {
     // isolation matures (run the entry inside a container).
     if (process.env.FRIDAY_TOOL_WORKERS !== "external") {
       this.toolWorkers.push(
-        registerToolWorker(nc, "bash", (req) => executeBash(BashArgsSchema.parse(req.args))),
-        registerToolWorker(nc, "webfetch", (req) =>
-          executeWebfetch(WebfetchArgsSchema.parse(req.args)),
+        registerToolWorker(nc, "bash", (req, ctx) =>
+          executeBash(BashArgsSchema.parse(req.args), { abortSignal: ctx.abortSignal }),
+        ),
+        registerToolWorker(nc, "webfetch", (req, ctx) =>
+          executeWebfetch(WebfetchArgsSchema.parse(req.args), { abortSignal: ctx.abortSignal }),
         ),
       );
     } else {

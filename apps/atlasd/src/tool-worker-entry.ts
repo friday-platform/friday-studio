@@ -40,8 +40,16 @@ interface ToolHandlerSpec {
 }
 
 const handlers: ToolHandlerSpec[] = [
-  { toolId: "bash", handle: (req) => executeBash(BashArgsSchema.parse(req.args)) },
-  { toolId: "webfetch", handle: (req) => executeWebfetch(WebfetchArgsSchema.parse(req.args)) },
+  {
+    toolId: "bash",
+    handle: (req, ctx) =>
+      executeBash(BashArgsSchema.parse(req.args), { abortSignal: ctx.abortSignal }),
+  },
+  {
+    toolId: "webfetch",
+    handle: (req, ctx) =>
+      executeWebfetch(WebfetchArgsSchema.parse(req.args), { abortSignal: ctx.abortSignal }),
+  },
 ];
 
 function selectHandlers(allowlist: string | undefined): ToolHandlerSpec[] {

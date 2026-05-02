@@ -30,6 +30,10 @@ export function toolCallSubject(toolId: string): string {
   return `tools.${sanitizeToolId(toolId)}.call`;
 }
 
+export function toolCancelSubject(toolId: string, requestId: string): string {
+  return `tools.${sanitizeToolId(toolId)}.cancel.${requestId}`;
+}
+
 export const ToolCallRequestSchema = z.object({
   toolId: z.string().min(1),
   args: z.unknown(),
@@ -44,6 +48,12 @@ export const ToolCallRequestSchema = z.object({
   publishedAt: z.string().datetime(),
   /** Optional opaque trace id propagated from the cascade. */
   traceId: z.string().optional(),
+  /**
+   * Caller-generated id (UUID) used for cancellation. The worker subscribes
+   * to `tools.<toolId>.cancel.<requestId>`; publishing on that subject aborts
+   * the in-flight handler on the worker side.
+   */
+  requestId: z.string().min(1),
 });
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
@@ -65,7 +75,10 @@ export const ToolCallReplySchema = z.discriminatedUnion("ok", [
 ]);
 export type ToolCallReply = z.infer<typeof ToolCallReplySchema>;
 
-export type ToolHandler = (req: ToolCallRequest) => Promise<unknown>;
+export type ToolHandler = (
+  req: ToolCallRequest,
+  ctx: { abortSignal: AbortSignal },
+) => Promise<unknown>;
 
 export interface CallToolOptions {
   workspaceId: string;
@@ -76,11 +89,10 @@ export interface CallToolOptions {
   /** Wait at most this long for the worker reply. Defaults to 30s. */
   timeoutMs?: number;
   /**
-   * When aborted, the caller stops waiting for the worker reply. The worker's
-   * in-flight execution is NOT cancelled (NATS request/reply has no abort
-   * channel today); this just unblocks the caller so the cancel surfaces
-   * upstream. Worker-side cancellation would need a separate `tools.<id>.cancel`
-   * subject — flagged as follow-up.
+   * When aborted, the caller publishes a cancel envelope on
+   * `tools.<toolId>.cancel.<requestId>` and stops waiting for the reply.
+   * The worker observes the cancel and aborts its in-flight handler
+   * (subprocess kill / fetch abort / etc).
    */
   abortSignal?: AbortSignal;
 }
@@ -99,6 +111,7 @@ export async function callTool(
   args: unknown,
   opts: CallToolOptions,
 ): Promise<ToolCallReply> {
+  const requestId = crypto.randomUUID();
   const request: ToolCallRequest = {
     toolId,
     args,
@@ -108,6 +121,7 @@ export async function callTool(
     credentialsRef: opts.credentialsRef,
     publishedAt: new Date().toISOString(),
     traceId: opts.traceId,
+    requestId,
   };
 
   const h = natsHeaders();
@@ -119,24 +133,41 @@ export async function callTool(
     headers: h,
   });
 
-  const reply = await (opts.abortSignal
-    ? Promise.race([
-        requestPromise,
-        new Promise<never>((_, reject) => {
-          if (opts.abortSignal!.aborted) {
-            reject(new DOMException("Aborted", "AbortError"));
-            return;
+  // On abort, publish a cancel envelope so the worker can stop its in-flight
+  // handler, then reject the await. Fire-and-forget — the worker's reply
+  // (success or aborted-error) will arrive via requestPromise either way.
+  let abortHandler: (() => void) | undefined;
+  const abortPromise: Promise<never> | null = opts.abortSignal
+    ? new Promise<never>((_, reject) => {
+        const fire = () => {
+          try {
+            nc.publish(toolCancelSubject(toolId, requestId), enc.encode("{}"));
+          } catch (err) {
+            logger.warn("Failed to publish tool cancel", {
+              toolId,
+              requestId,
+              error: stringifyError(err),
+            });
           }
-          opts.abortSignal!.addEventListener(
-            "abort",
-            () => reject(new DOMException("Aborted", "AbortError")),
-            { once: true },
-          );
-        }),
-      ])
-    : requestPromise);
+          reject(new DOMException("Aborted", "AbortError"));
+        };
+        if (opts.abortSignal!.aborted) {
+          fire();
+          return;
+        }
+        abortHandler = fire;
+        opts.abortSignal!.addEventListener("abort", abortHandler, { once: true });
+      })
+    : null;
 
-  return ToolCallReplySchema.parse(JSON.parse(dec.decode(reply.data)));
+  try {
+    const reply = await (abortPromise
+      ? Promise.race([requestPromise, abortPromise])
+      : requestPromise);
+    return ToolCallReplySchema.parse(JSON.parse(dec.decode(reply.data)));
+  } finally {
+    if (abortHandler) opts.abortSignal?.removeEventListener("abort", abortHandler);
+  }
 }
 
 export interface ToolWorker {
@@ -158,6 +189,10 @@ export function registerToolWorker(
 ): ToolWorker {
   const subject = toolCallSubject(toolId);
   const sub: Subscription = nc.subscribe(subject, { queue: `tool-workers.${toolId}` });
+
+  // In-flight request controllers, keyed by requestId. The cancel-subject
+  // listener flips a controller's signal; the handler observes and aborts.
+  const inflight = new Map<string, AbortController>();
 
   const loop = (async () => {
     for await (const msg of sub) {
@@ -181,8 +216,23 @@ export function registerToolWorker(
         continue;
       }
 
+      const controller = new AbortController();
+      inflight.set(parsed.requestId, controller);
+      // Subscribe per-request to the matching cancel subject. Auto-unsubscribes
+      // after one message; the controller is also cleaned up in the finally.
+      const cancelSub = nc.subscribe(toolCancelSubject(toolId, parsed.requestId), { max: 1 });
+      const cancelLoop = (async () => {
+        for await (const _ of cancelSub) {
+          controller.abort(new DOMException("Tool call cancelled by caller", "AbortError"));
+          break;
+        }
+      })();
+      cancelLoop.catch(() => {
+        // Subscription closed cleanly when we unsubscribe in finally — ignore.
+      });
+
       try {
-        const result = await handler(parsed);
+        const result = await handler(parsed, { abortSignal: controller.signal });
         const okReply = ToolCallReplySchema.parse({
           ok: true,
           result,
@@ -191,8 +241,9 @@ export function registerToolWorker(
         nc.publish(replyTo, enc.encode(JSON.stringify(okReply)));
       } catch (err) {
         const message = stringifyError(err);
-        const code =
-          err instanceof Error && "code" in err && typeof err.code === "string"
+        const code = controller.signal.aborted
+          ? "ABORTED"
+          : err instanceof Error && "code" in err && typeof err.code === "string"
             ? err.code
             : "TOOL_ERROR";
         const errReply = ToolCallReplySchema.parse({
@@ -201,6 +252,9 @@ export function registerToolWorker(
           durationMs: Date.now() - startedAt,
         });
         nc.publish(replyTo, enc.encode(JSON.stringify(errReply)));
+      } finally {
+        inflight.delete(parsed.requestId);
+        cancelSub.unsubscribe();
       }
     }
   })();
