@@ -11,7 +11,7 @@
   "dependencies": {
     "@ai-sdk/fireworks": "2.0.50",
     "@ai-sdk/groq": "3.0.38",
-    "@ai-sdk/provider": "^3.0.8",
+    "@ai-sdk/provider": "^3.0.10",
     "@anthropic-ai/claude-agent-sdk": "^0.2.121",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/schemas": "workspace:*",

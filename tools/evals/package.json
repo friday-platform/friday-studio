@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "@ai-sdk/provider": "^3.0.8",
+    "@ai-sdk/provider": "^3.0.10",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
     "@atlas/core": "workspace:*",
