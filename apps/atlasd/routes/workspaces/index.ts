@@ -1836,6 +1836,32 @@ const workspacesRoutes = daemonFactory
     const streamSub = nc.subscribe(`signals.stream.${correlationId}`);
     const responsePromise = awaitSignalCompletion(nc, correlationId, 600_000);
 
+    // Capture the spawned session's id from the live stream so we can cancel
+    // it on client disconnect. Without this, an aborted chat-tool fetch only
+    // tears down the SSE response — the daemon-side session keeps running
+    // and any side-effects already in flight (send-email, post-to-slack,
+    // etc.) finish anyway. Caused observed email storms when chat follow-ups
+    // aborted prior turns mid-job.
+    let spawnedSessionId: string | undefined;
+    // The Hono request's underlying AbortSignal fires when the client
+    // disconnects (browser navigates away, fetch is aborted, etc.).
+    const clientAbort = c.req.raw.signal;
+    const onClientAbort = () => {
+      if (!spawnedSessionId) return;
+      try {
+        const runtime = ctx.getWorkspaceRuntime(workspaceId);
+        runtime?.cancelSession(spawnedSessionId);
+      } catch (err) {
+        logger.warn("Failed to cancel spawned session on client disconnect", {
+          workspaceId,
+          signalId,
+          sessionId: spawnedSessionId,
+          error: stringifyError(err),
+        });
+      }
+    };
+    clientAbort.addEventListener("abort", onClientAbort, { once: true });
+
     const sseStream = new ReadableStream({
       async start(controller) {
         const safeEnqueue = (bytes: Uint8Array) => {
@@ -1852,10 +1878,26 @@ const workspacesRoutes = daemonFactory
           }
         };
 
-        // Forward NATS-published chunks to the SSE client.
+        // Forward NATS-published chunks to the SSE client AND watch for the
+        // session-start chunk so we know which session to cancel if the
+        // client later disconnects mid-run.
         const forward = (async () => {
           for await (const msg of streamSub) {
-            if (!safeEnqueue(encoder.encode(`data: ${new TextDecoder().decode(msg.data)}\n\n`))) {
+            const decoded = new TextDecoder().decode(msg.data);
+            if (!spawnedSessionId) {
+              try {
+                const parsed = JSON.parse(decoded) as {
+                  type?: string;
+                  data?: { sessionId?: string };
+                };
+                if (parsed.type === "data-session-start" && parsed.data?.sessionId) {
+                  spawnedSessionId = parsed.data.sessionId;
+                }
+              } catch {
+                // Not JSON or schema mismatch — keep streaming.
+              }
+            }
+            if (!safeEnqueue(encoder.encode(`data: ${decoded}\n\n`))) {
               break;
             }
           }
@@ -1915,6 +1957,9 @@ const workspacesRoutes = daemonFactory
         } finally {
           streamSub.unsubscribe();
           await forward.catch(() => undefined);
+          // SSE finished cleanly — the session has already terminated, so
+          // there's nothing to cancel on client abort. Drop the listener.
+          clientAbort.removeEventListener("abort", onClientAbort);
           try {
             controller.close();
           } catch {
