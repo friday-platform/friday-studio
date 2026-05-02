@@ -60,14 +60,14 @@
     "@std/async": "npm:@jsr/std__async@^1.0.14",
     "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@xmldom/xmldom": "^0.9.10",
-    "ai": "^6.0.168",
+    "ai": "^6.0.174",
     "@libpdf/core": "^0.3.4",
     "jose": "^6.2.3",
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
     "proper-lockfile": "^4.1.2",
     "xstate": "^5.31.0",
-    "chat": "^4.26.0",
+    "chat": "^4.27.0",
     "zod": "^4.3.5"
   },
   "devDependencies": { "vitest": "^4.1.0" }
