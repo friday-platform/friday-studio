@@ -1998,6 +1998,47 @@ const workspacesRoutes = daemonFactory
       const correlationId = crypto.randomUUID();
       const nc = ctx.daemon.getNatsConnection();
 
+      // Same client-disconnect-cancels-spawned-session protection as the SSE
+      // handler above. Capture sessionId from the live stream subject (we
+      // don't forward the chunks anywhere — this subscription is purely for
+      // discovery), and cancel on `c.req.raw.signal` abort.
+      let spawnedSessionId: string | undefined;
+      const discoverySub = nc.subscribe(`signals.stream.${correlationId}`);
+      const discovery = (async () => {
+        for await (const msg of discoverySub) {
+          if (spawnedSessionId) break;
+          try {
+            const parsed = JSON.parse(new TextDecoder().decode(msg.data)) as {
+              type?: string;
+              data?: { sessionId?: string };
+            };
+            if (parsed.type === "data-session-start" && parsed.data?.sessionId) {
+              spawnedSessionId = parsed.data.sessionId;
+              break;
+            }
+          } catch {
+            /* keep listening */
+          }
+        }
+      })();
+      discovery.catch(() => undefined);
+      const clientAbort = c.req.raw.signal;
+      const onClientAbort = () => {
+        if (!spawnedSessionId) return;
+        try {
+          const runtime = ctx.getWorkspaceRuntime(workspaceId);
+          runtime?.cancelSession(spawnedSessionId);
+        } catch (err) {
+          logger.warn("Failed to cancel spawned session on client disconnect", {
+            workspaceId,
+            signalId,
+            sessionId: spawnedSessionId,
+            error: stringifyError(err),
+          });
+        }
+      };
+      clientAbort.addEventListener("abort", onClientAbort, { once: true });
+
       try {
         // Subscribe BEFORE publishing — a fast consumer could otherwise
         // beat us to the response subject and we'd miss the reply.
@@ -2071,6 +2112,10 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: errorMessage }, 409);
         }
         return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
+      } finally {
+        clientAbort.removeEventListener("abort", onClientAbort);
+        discoverySub.unsubscribe();
+        await discovery.catch(() => undefined);
       }
     },
   )
