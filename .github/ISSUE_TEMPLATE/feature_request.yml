@@ -1,0 +1,80 @@
+name: Feature request
+description: Suggest a new capability or improvement
+title: "[FEAT] "
+labels: ["enhancement"]
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! The clearer the problem, the better the solution we can land.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched [existing issues](https://github.com/friday-platform/friday-studio/issues?q=is%3Aissue) and didn't find a duplicate
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user pain or limitation. Be specific — concrete scenarios help us prioritize.
+      placeholder: "I'm always frustrated when ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? Sketch the API, UX, or config if you have one in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds, related tools, or other approaches you've thought about — and why they fall short.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Where would this feature live?
+      options:
+        - Daemon (atlasd / HTTP API)
+        - CLI (atlas-cli)
+        - Studio installer (macOS tray / Tauri launcher)
+        - Web playground (SvelteKit UI)
+        - Python user agents (`friday-agent-sdk`)
+        - Skills system
+        - MCP tools / integration
+        - Examples / docs
+        - Cross-cutting / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Are you willing to contribute this?
+      options:
+        - "Yes, I'd like to send a PR"
+        - "Maybe, with guidance"
+        - "No, just suggesting"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, links, prior art, or anything else useful.
+    validations:
+      required: false
