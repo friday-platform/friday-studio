@@ -1726,6 +1726,7 @@ export class WorkspaceRuntime {
                 datetime,
                 agentEnv: agentConfig.env,
                 foregroundWorkspaceIds,
+                abortSignal: signal._context?.abortSignal,
               })
             : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
@@ -1822,6 +1823,7 @@ export class WorkspaceRuntime {
       datetime?: unknown;
       agentEnv?: Record<string, string | LinkCredentialRef>;
       foregroundWorkspaceIds?: string[];
+      abortSignal?: AbortSignal;
     },
   ): Promise<AgentResult> {
     // Resolve agent source location from disk
@@ -2058,6 +2060,7 @@ export class WorkspaceRuntime {
           description: s.description,
           instructions: s.instructions,
         })),
+        abortSignal: opts.abortSignal,
       });
     } finally {
       await dispose();
@@ -2434,6 +2437,15 @@ export class WorkspaceRuntime {
       ]);
       const docs = (sessionResult.engineDocuments ?? []).filter((d) => !plumbingTypes.has(d.type));
       this.completedSessionDocuments.set(sessionResult.id, docs);
+      // Bound the map so a long-running workspace doesn't accumulate doc
+      // snapshots forever. FIFO eviction at 100 entries — well above the
+      // synchronous HTTP-cascade window we care about, well below "leak".
+      const COMPLETED_DOCS_CAP = 100;
+      while (this.completedSessionDocuments.size > COMPLETED_DOCS_CAP) {
+        const oldest = this.completedSessionDocuments.keys().next().value;
+        if (oldest === undefined) break;
+        this.completedSessionDocuments.delete(oldest);
+      }
     }
 
     if (this.options.onSessionFinished) {

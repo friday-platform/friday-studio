@@ -26,14 +26,28 @@ export interface WebfetchResult {
   metadata: Record<string, unknown>;
 }
 
-export async function executeWebfetch(args: WebfetchArgs): Promise<WebfetchResult> {
+export async function executeWebfetch(
+  args: WebfetchArgs,
+  opts?: { abortSignal?: AbortSignal },
+): Promise<WebfetchResult> {
   if (!args.url.startsWith("http://") && !args.url.startsWith("https://")) {
     throw new Error("URL must start with http:// or https://");
   }
 
   const timeout = Math.min((args.timeout ?? DEFAULT_TIMEOUT / 1000) * 1000, MAX_TIMEOUT);
+  // Compose timeout-based abort with caller-supplied abort. Whichever fires
+  // first cancels the in-flight fetch.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
+  let externalAbortHandler: (() => void) | undefined;
+  if (opts?.abortSignal) {
+    if (opts.abortSignal.aborted) {
+      controller.abort(opts.abortSignal.reason);
+    } else {
+      externalAbortHandler = () => controller.abort(opts.abortSignal?.reason);
+      opts.abortSignal.addEventListener("abort", externalAbortHandler, { once: true });
+    }
+  }
 
   let acceptHeader: string;
   switch (args.format) {
@@ -94,12 +108,15 @@ export async function executeWebfetch(args: WebfetchArgs): Promise<WebfetchResul
       case "html":
         return { output: content, title, metadata: {} };
     }
+    throw new Error(`Unhandled format: ${args.format}`);
   } catch (error) {
-    clearTimeout(timeoutId);
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Request was aborted (timeout or cancellation)");
     }
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    if (externalAbortHandler) opts?.abortSignal?.removeEventListener("abort", externalAbortHandler);
   }
 }
 

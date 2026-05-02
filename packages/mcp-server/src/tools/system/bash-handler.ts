@@ -37,14 +37,28 @@ function truncate(text: string): string {
   return `${text.substring(0, MAX_OUTPUT_LENGTH)}\n\n... (output truncated due to length)`;
 }
 
-export async function executeBash(args: BashArgs): Promise<BashResult> {
+export async function executeBash(
+  args: BashArgs,
+  opts?: { abortSignal?: AbortSignal },
+): Promise<BashResult> {
   const { command, cwd, env } = args;
   const timeout = Math.min(args.timeout ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const effectiveCwd = cwd ?? Deno.cwd();
   const mergedEnv = env ? { ...Deno.env.toObject(), ...env } : undefined;
 
+  // Compose the timeout-based controller with any caller-supplied abort. The
+  // child process gets killed on whichever fires first.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
+  let externalAbortHandler: (() => void) | undefined;
+  if (opts?.abortSignal) {
+    if (opts.abortSignal.aborted) {
+      controller.abort(opts.abortSignal.reason);
+    } else {
+      externalAbortHandler = () => controller.abort(opts.abortSignal?.reason);
+      opts.abortSignal.addEventListener("abort", externalAbortHandler, { once: true });
+    }
+  }
 
   try {
     const cmd = new Deno.Command("bash", {
@@ -83,10 +97,17 @@ export async function executeBash(args: BashArgs): Promise<BashResult> {
       },
     };
   } catch (error) {
-    clearTimeout(timeoutId);
     if (error instanceof Error && error.name === "AbortError") {
+      // Distinguish caller cancellation from timeout — caller-aborted commands
+      // should surface as a generic abort, not a timeout message.
+      if (opts?.abortSignal?.aborted) {
+        throw new Error(`Command aborted: ${command}`);
+      }
       throw new Error(`Command timed out after ${timeout}ms: ${command}`);
     }
     throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    if (externalAbortHandler) opts?.abortSignal?.removeEventListener("abort", externalAbortHandler);
   }
 }

@@ -75,6 +75,14 @@ export interface CallToolOptions {
   traceId?: string;
   /** Wait at most this long for the worker reply. Defaults to 30s. */
   timeoutMs?: number;
+  /**
+   * When aborted, the caller stops waiting for the worker reply. The worker's
+   * in-flight execution is NOT cancelled (NATS request/reply has no abort
+   * channel today); this just unblocks the caller so the cancel surfaces
+   * upstream. Worker-side cancellation would need a separate `tools.<id>.cancel`
+   * subject — flagged as follow-up.
+   */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -106,10 +114,27 @@ export async function callTool(
   h.set("Friday-Schema-Version", SCHEMA_VERSION);
   if (opts.traceId) h.set("Friday-Trace-Id", opts.traceId);
 
-  const reply = await nc.request(toolCallSubject(toolId), enc.encode(JSON.stringify(request)), {
+  const requestPromise = nc.request(toolCallSubject(toolId), enc.encode(JSON.stringify(request)), {
     timeout: opts.timeoutMs ?? 30_000,
     headers: h,
   });
+
+  const reply = await (opts.abortSignal
+    ? Promise.race([
+        requestPromise,
+        new Promise<never>((_, reject) => {
+          if (opts.abortSignal!.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          opts.abortSignal!.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+      ])
+    : requestPromise);
 
   return ToolCallReplySchema.parse(JSON.parse(dec.decode(reply.data)));
 }
