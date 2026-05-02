@@ -51,24 +51,32 @@
 </script>
 
 <svelte:head>
-  <title>chat debug · {data.chat.id}</title>
+  <title>chat debug · {data.chat?.id ?? data.chatId}</title>
 </svelte:head>
 
 <div class="page">
   <header>
     <h1>chat debug</h1>
     <div class="meta">
-      <code>{data.chat.id}</code> · workspace <code>{data.workspaceId}</code> ·
-      {data.messages.length} messages ·
-      created {fmtTs(data.chat.createdAt)} · updated {fmtTs(data.chat.updatedAt)}
-      {#if data.chat.title}
-        · <em>{data.chat.title}</em>
+      <code>{data.chat?.id ?? data.chatId}</code> · workspace <code>{data.workspaceId}</code>
+      {#if data.chat}
+        · {data.messages.length} messages
+        · created {fmtTs(data.chat.createdAt)} · updated {fmtTs(data.chat.updatedAt)}
+        {#if data.chat.title}
+          · <em>{data.chat.title}</em>
+        {/if}
       {/if}
     </div>
     <div class="links">
-      <a href="/platform/{data.workspaceId}/chat/{data.chat.id}">← back to chat</a>
+      <a href="/platform/{data.workspaceId}/chat/{data.chat?.id ?? data.chatId}">← back to chat</a>
     </div>
   </header>
+
+  {#if data.fetchError}
+    <section class="empty">
+      <p>{data.fetchError}</p>
+    </section>
+  {/if}
 
   <section>
     <h2>messages</h2>
@@ -336,6 +344,12 @@
   }
   .tools li {
     margin: 4px 0;
+  }
+  .empty {
+    padding: var(--size-3);
+    text-align: center;
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-style: italic;
   }
   .hint {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
