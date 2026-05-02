@@ -122,6 +122,7 @@ import { createBashTool } from "./bash-tool.ts";
 import type { MemoryMount } from "./config-schema.ts";
 import { compileExecutionToFsm, ExecutionCompileError } from "./execution-to-fsm.ts";
 import { assertGlobalWriteAllowed, isGlobalWriteAttempt } from "./global-scope-guard.ts";
+import { JobScheduler } from "./job-scheduler.ts";
 import { MountSourceNotFoundError } from "./mount-errors.ts";
 import { mountRegistry } from "./mount-registry.ts";
 import { MountedStoreBinding } from "./mounted-store-binding.ts";
@@ -493,6 +494,12 @@ export class WorkspaceRuntime {
    */
   private activeAbortControllers = new Map<string, AbortController>();
   private activeJobExecutions = new Map<string, string>();
+
+  /**
+   * Enforces serialize / coalesce / singleton concurrency policies declared
+   * in workspace.yml. See packages/workspace/src/job-scheduler.ts.
+   */
+  private jobScheduler = new JobScheduler<IWorkspaceSession>();
 
   // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
   // Populated by executeAgent, consumed by onEvent callback for step:complete events
@@ -1054,19 +1061,38 @@ export class WorkspaceRuntime {
       }
     }
 
-    const policy = job.concurrency;
-    if (policy === "single-flight") {
-      await this.initializeJobEngine(job);
-    }
-    const sessionResult = await this.processSignalForJob(
-      job,
-      signal,
-      onStreamEvent,
-      abortSignal,
-      skipStates,
-    );
+    const runCascade = async (): Promise<IWorkspaceSession> => {
+      const policy = job.concurrency;
+      if (policy === "single-flight") {
+        await this.initializeJobEngine(job);
+      }
+      const sessionResult = await this.processSignalForJob(
+        job,
+        signal,
+        onStreamEvent,
+        abortSignal,
+        skipStates,
+      );
+      return this.finalizeSession(sessionResult, job, signal);
+    };
 
-    return this.finalizeSession(sessionResult, job, signal);
+    // Apply the user-facing concurrency policy from workspace.yml.
+    // - concurrent: every trigger fans out (engine is per-signal isolated).
+    // - skip-if-running: drop on overlap (handled inside processSignalForJob).
+    // - serialize / singleton: chain on a per-job promise, run in order.
+    // - coalesce: replace pending slot, all waiters share the eventual result.
+    // (`singleton` is in-process today; cross-process advisory lock is future
+    // work — see plan G2.2 reinforcement notes.)
+    switch (job.policy.kind) {
+      case "concurrent":
+      case "skip-if-running":
+        return runCascade();
+      case "serialize":
+      case "singleton":
+        return this.jobScheduler.serialize(job.name, job.policy.maxQueued, runCascade);
+      case "coalesce":
+        return this.jobScheduler.coalesce(job.name, runCascade);
+    }
   }
 
   private async processSignalForJob(
@@ -2451,6 +2477,7 @@ export class WorkspaceRuntime {
     this.sessionResults.clear();
     this.completedSessionDocuments.clear();
     this.activeJobExecutions.clear();
+    this.jobScheduler.shutdown("Workspace runtime shutting down");
     this.jobs.clear();
     this.mountBindings.clear();
     mountRegistry.clear();
