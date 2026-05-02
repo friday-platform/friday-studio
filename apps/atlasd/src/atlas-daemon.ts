@@ -1403,7 +1403,22 @@ export class AtlasDaemon {
     }
   }
 
-  /** Cached per workspace; torn down when the runtime is destroyed. */
+  /**
+   * Cached per workspace; torn down when the runtime is destroyed.
+   *
+   * Cost breakdown (G3.3 audit):
+   * - getWorkspaceConfig: mtime-cached (G3.7(b)) — sub-ms steady state.
+   * - resolvePlatformCredentials: HTTP to Link, ~10-100ms per workspace.
+   *   Paid once per workspace per daemon lifetime via this cache.
+   * - buildChatSdkAdapters + new Chat: ~ms of pure object construction,
+   *   no I/O.
+   *
+   * Per-signal cost is O(1) cache lookup. The single concrete future-work
+   * risk is the cross-worker per-signal model (Phase 2/3): each worker
+   * would re-resolve credentials on its first signal for a given workspace.
+   * Acceptable for typical traffic; if needed, share resolved creds via
+   * NATS KV with a TTL.
+   */
   getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
     const existing = this.chatSdkInstances.get(workspaceId);
     if (existing) return existing;

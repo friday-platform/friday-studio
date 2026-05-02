@@ -15,12 +15,33 @@ const READY_POLL_MS = 100;
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * NATS lifecycle:
+ *
+ * - **External NATS** (`FRIDAY_NATS_URL` set): the daemon connects to that
+ *   broker and never spawns its own. Required for any deployment with more
+ *   than one daemon process or for a managed-NATS topology.
+ * - **Auto-detect existing**: if `nats://localhost:4222` is already serving
+ *   (e.g. a dev `nats-server` started by hand), reuse it.
+ * - **Spawn child**: solo-dev fallback — fork `nats-server --jetstream`
+ *   and own its lifetime.
+ *
+ * The connection's URL list is the single source of truth for "where do I
+ * speak NATS"; consumers never reach for `localhost:4222` directly.
+ */
 export class NatsManager {
   private proc: ChildProcess | null = null;
   private nc: NatsConnection | null = null;
 
   async start(): Promise<NatsConnection> {
-    // If nats-server is already running (external dev instance), reuse it.
+    const externalUrl = process.env.FRIDAY_NATS_URL;
+    if (externalUrl) {
+      logger.info("Using external NATS server", { url: externalUrl });
+      this.nc = await connect({ servers: externalUrl });
+      logger.info("NATS connection established", { url: externalUrl });
+      return this.nc;
+    }
+
     const alreadyUp = await this.tcpProbe();
     if (alreadyUp) {
       logger.info("nats-server already running, connecting without spawning");
@@ -84,7 +105,8 @@ export class NatsManager {
       "nats-server binary not found.\n" +
         "  Install with: brew install nats-server\n" +
         "  Or download from https://github.com/nats-io/nats-server/releases\n" +
-        `  Or place the binary at ${localBin}`,
+        `  Or place the binary at ${localBin}\n` +
+        "  Or set FRIDAY_NATS_URL to point at an external nats-server.",
     );
   }
 

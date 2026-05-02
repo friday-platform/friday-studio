@@ -466,11 +466,15 @@ export class WorkspaceRuntime {
   private sessions = new Map<string, ActiveSession>();
   private sessionResults = new Map<string, SessionResult>();
   /**
-   * Cache of FSM documents captured at `handleSessionCompletion`, keyed by
+   * FSM document snapshots captured at `handleSessionCompletion`, keyed by
    * sessionId. The live `sessions` map is cleared before the signal endpoint
    * returns, but synchronous callers (`triggerWorkspaceSignal` in atlas-daemon)
-   * still need to read the final output docs afterward. Entries self-evict
-   * after 60s so the cache doesn't grow without bound.
+   * still need to read the final output docs afterward. The map is bounded
+   * naturally by the runtime's lifecycle — daemon idle eviction at 5min
+   * tears down the runtime and frees the map. (G3.5 dropped the 60s
+   * setTimeout LRU; the bounded-by-runtime guarantee is sufficient for the
+   * single-host model. Cross-worker access in a future per-worker model
+   * needs to read from the persistent session-history store instead.)
    */
   private completedSessionDocuments = new Map<
     string,
@@ -2444,6 +2448,8 @@ export class WorkspaceRuntime {
     await this.orchestrator.shutdown();
 
     this.sessions.clear();
+    this.sessionResults.clear();
+    this.completedSessionDocuments.clear();
     this.activeJobExecutions.clear();
     this.jobs.clear();
     this.mountBindings.clear();
@@ -2664,7 +2670,6 @@ export class WorkspaceRuntime {
       ]);
       const docs = (sessionResult.engineDocuments ?? []).filter((d) => !plumbingTypes.has(d.type));
       this.completedSessionDocuments.set(sessionResult.id, docs);
-      setTimeout(() => this.completedSessionDocuments.delete(sessionResult.id), 60_000);
     }
 
     if (this.options.onSessionFinished) {
