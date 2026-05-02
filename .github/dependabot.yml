@@ -48,6 +48,23 @@ updates:
       opentelemetry:
         patterns:
           - "@opentelemetry/*"
+      hono:
+        patterns:
+          - "hono"
+          - "@hono/*"
+          - "hono-*"
+      zod:
+        patterns:
+          - "zod"
+          - "zod-*"
+      chat:
+        patterns:
+          - "chat"
+          - "@chat-adapter/*"
+      ai-sdk:
+        patterns:
+          - "ai"
+          - "@ai-sdk/*"
     ignore:
       # Vite 8 uses Rolldown (Rust native bindings) which fails on Alpine/musl
       # Docker images — rolldown-binding.linux-x64-musl.node not found.
@@ -181,6 +198,24 @@ updates:
       - "npm"
       - "link"
     rebase-strategy: "auto"
+    groups:
+      hono:
+        patterns:
+          - "hono"
+          - "@hono/*"
+          - "hono-*"
+      zod:
+        patterns:
+          - "zod"
+          - "zod-*"
+      chat:
+        patterns:
+          - "chat"
+          - "@chat-adapter/*"
+      ai-sdk:
+        patterns:
+          - "ai"
+          - "@ai-sdk/*"
     ignore:
       # @modelcontextprotocol/sdk 1.29.0 regressed argsSchema → callback param
       # type inference. Pinned to ~1.28.x until upstream fixes typing.
