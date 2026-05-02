@@ -272,22 +272,49 @@ export function createJetStreamChatBackend(nc: NatsConnection): JetStreamChatBac
     }
     if (totalMessages === 0) return messages;
 
+    // OrderedConsumer + fetch loop. A single fetch is best-effort within
+    // its expires window — under any back-pressure (slow disk IO, max-ack-
+    // pending throttling, server reconnect, etc.) it can return fewer
+    // messages than max_messages without erroring. Calling getChat then
+    // produced a different prefix on every refresh as the server caught up:
+    // first 4 messages, then 9, then 13, then 14… "iterating through
+    // states." Loop until we've drained `totalMessages` or a batch comes
+    // back empty (genuinely caught up). The OrderedConsumer is single-pass
+    // and advances internally between fetches, so subsequent batches pick
+    // up where the prior left off.
     const c = js();
     const consumer = await c.consumers.get(sName, { filterSubjects: subject(workspaceId, chatId) });
-    const iter = await consumer.fetch({ max_messages: totalMessages, expires: 5_000 });
-    for await (const m of iter) {
-      try {
-        const env = JSON.parse(dec.decode(m.data)) as { message: AtlasUIMessage; ts: string };
-        messages.push(env.message);
-      } catch (parseErr) {
-        logger.warn("Skipping malformed chat envelope", {
-          workspaceId,
-          chatId,
-          seq: m.seq,
-          error: stringifyError(parseErr),
-        });
+    const BATCH = 200;
+    let consecutiveEmptyBatches = 0;
+    while (messages.length < totalMessages) {
+      const remaining = totalMessages - messages.length;
+      const iter = await consumer.fetch({
+        max_messages: Math.min(remaining, BATCH),
+        expires: 5_000,
+      });
+      let batchCount = 0;
+      for await (const m of iter) {
+        batchCount++;
+        try {
+          const env = JSON.parse(dec.decode(m.data)) as { message: AtlasUIMessage; ts: string };
+          messages.push(env.message);
+        } catch (parseErr) {
+          logger.warn("Skipping malformed chat envelope", {
+            workspaceId,
+            chatId,
+            seq: m.seq,
+            error: stringifyError(parseErr),
+          });
+        }
       }
-      if (messages.length >= totalMessages) break;
+      if (batchCount === 0) {
+        // Two empty batches in a row: stream really is exhausted — bail
+        // rather than spinning. (One empty batch can happen on transient
+        // expires-fired-without-anything; tolerate that.)
+        if (++consecutiveEmptyBatches >= 2) break;
+      } else {
+        consecutiveEmptyBatches = 0;
+      }
     }
     return messages;
   }
