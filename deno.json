@@ -65,7 +65,7 @@
     "@std/yaml": "jsr:@std/yaml@^1",
     "cookie": "npm:cookie@^1.0.2",
     "@sendgrid/helpers": "npm:@sendgrid/helpers@^8.0.0",
-    "hono/client": "npm:hono@4.12.15/client",
+    "hono/client": "npm:hono@4.12.16/client",
     "jose": "npm:jose@^6.1.3",
     "nanoid": "npm:nanoid@^5.1.6",
     "openapi-fetch": "npm:openapi-fetch@^0.15.0",
