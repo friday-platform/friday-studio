@@ -272,48 +272,42 @@ export function createJetStreamChatBackend(nc: NatsConnection): JetStreamChatBac
     }
     if (totalMessages === 0) return messages;
 
-    // OrderedConsumer + fetch loop. A single fetch is best-effort within
-    // its expires window — under any back-pressure (slow disk IO, max-ack-
-    // pending throttling, server reconnect, etc.) it can return fewer
-    // messages than max_messages without erroring. Calling getChat then
-    // produced a different prefix on every refresh as the server caught up:
-    // first 4 messages, then 9, then 13, then 14… "iterating through
-    // states." Loop until we've drained `totalMessages` or a batch comes
-    // back empty (genuinely caught up). The OrderedConsumer is single-pass
-    // and advances internally between fetches, so subsequent batches pick
-    // up where the prior left off.
-    const c = js();
-    const consumer = await c.consumers.get(sName, { filterSubjects: subject(workspaceId, chatId) });
-    const BATCH = 200;
-    let consecutiveEmptyBatches = 0;
-    while (messages.length < totalMessages) {
-      const remaining = totalMessages - messages.length;
-      const iter = await consumer.fetch({
-        max_messages: Math.min(remaining, BATCH),
-        expires: 5_000,
-      });
-      let batchCount = 0;
-      for await (const m of iter) {
-        batchCount++;
-        try {
-          const env = JSON.parse(dec.decode(m.data)) as { message: AtlasUIMessage; ts: string };
-          messages.push(env.message);
-        } catch (parseErr) {
-          logger.warn("Skipping malformed chat envelope", {
-            workspaceId,
-            chatId,
-            seq: m.seq,
-            error: stringifyError(parseErr),
-          });
-        }
-      }
-      if (batchCount === 0) {
-        // Two empty batches in a row: stream really is exhausted — bail
-        // rather than spinning. (One empty batch can happen on transient
-        // expires-fired-without-anything; tolerate that.)
-        if (++consecutiveEmptyBatches >= 2) break;
-      } else {
-        consecutiveEmptyBatches = 0;
+    // Read each message by sequence number via direct-get. No consumer
+    // involved, so there's no expires-window or pull-batch state to fight.
+    // jsm.streams.getMessage({seq}) is a single round-trip RPC per
+    // sequence — for chat-sized streams (hundreds of messages tops)
+    // that's fine and predictable. Earlier consumer-fetch attempts
+    // produced "iterating through states" (best-effort fetch giving
+    // partial subsets) and then hangs (loop spinning when the server
+    // didn't drain the expected count) — neither acceptable.
+    const jsm = await nc.jetstreamManager();
+    const stream = await jsm.streams.get(sName);
+    let firstSeq: number;
+    let lastSeq: number;
+    try {
+      const info = await jsm.streams.info(sName);
+      firstSeq = Number(info.state.first_seq);
+      lastSeq = Number(info.state.last_seq);
+    } catch (err) {
+      if (isStreamNotFound(err)) return messages;
+      throw err;
+    }
+    if (lastSeq < firstSeq) return messages;
+
+    for (let seq = firstSeq; seq <= lastSeq; seq++) {
+      try {
+        const m = await stream.getMessage({ seq });
+        // getMessage may return null/undefined for purged messages.
+        // The nats.js typing varies across versions — coerce defensively.
+        const data = (m as { data?: Uint8Array }).data;
+        if (!data) continue;
+        const env = JSON.parse(dec.decode(data)) as { message: AtlasUIMessage; ts: string };
+        messages.push(env.message);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // "no message found" or "deleted" — message was purged; skip.
+        if (/no message|deleted|not found/i.test(msg)) continue;
+        logger.warn("Failed to read chat message", { workspaceId, chatId, seq, error: msg });
       }
     }
     return messages;
