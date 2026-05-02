@@ -8,7 +8,7 @@
   "dependencies": {
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "jszip": "^3.10.1",
-    "zod": "^4.3.5"
+    "zod": "^4.4.2"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }

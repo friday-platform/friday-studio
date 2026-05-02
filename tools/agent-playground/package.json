@@ -50,7 +50,7 @@
     "svelte": "^5.55.5",
     "dompurify": "^3.4.2",
     "yaml": "^2.8.3",
-    "zod": "^4.3.6"
+    "zod": "^4.4.2"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",

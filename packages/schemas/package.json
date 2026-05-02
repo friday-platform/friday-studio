@@ -7,6 +7,6 @@
     "./json-schema": "./src/json-schema.ts",
     "./workspace": "./src/workspace.ts"
   },
-  "dependencies": { "@atlas/config": "workspace:*", "zod": "^4.3.5" },
+  "dependencies": { "@atlas/config": "workspace:*", "zod": "^4.4.2" },
   "devDependencies": { "vitest": "^4.1.0" }
 }

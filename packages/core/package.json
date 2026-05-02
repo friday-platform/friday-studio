@@ -68,7 +68,7 @@
     "proper-lockfile": "^4.1.2",
     "xstate": "^5.31.0",
     "chat": "^4.27.0",
-    "zod": "^4.3.5"
+    "zod": "^4.4.2"
   },
   "devDependencies": { "vitest": "^4.1.0" }
 }
