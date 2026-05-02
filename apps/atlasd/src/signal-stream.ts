@@ -79,6 +79,10 @@ export function signalResponseSubject(correlationId: string): string {
   return `signals.responses.${correlationId}`;
 }
 
+export function signalStreamSubject(correlationId: string): string {
+  return `signals.stream.${correlationId}`;
+}
+
 export async function ensureSignalsStream(nc: NatsConnection): Promise<void> {
   const jsm = await nc.jetstreamManager();
   try {
@@ -302,7 +306,7 @@ export class SignalConsumer {
     let envelope: SignalEnvelope;
     try {
       envelope = SignalEnvelopeSchema.parse(JSON.parse(dec.decode(msg.data)));
-    } catch (err) {
+    } catch (_err) {
       logger.warn("Discarding malformed signal envelope", {
         seq: msg.seq,
         subject: msg.subject,
@@ -313,7 +317,22 @@ export class SignalConsumer {
     }
 
     try {
-      const result = await this.dispatch(envelope, {});
+      const onStreamEvent = envelope.correlationId
+        ? (chunk: AtlasUIMessageChunk) => {
+            try {
+              this.nc.publish(
+                signalStreamSubject(envelope.correlationId!),
+                enc.encode(JSON.stringify(chunk)),
+              );
+            } catch (err) {
+              logger.warn("Failed to forward stream chunk", {
+                correlationId: envelope.correlationId,
+                error: stringifyError(err),
+              });
+            }
+          }
+        : undefined;
+      const result = await this.dispatch(envelope, { onStreamEvent });
       if (envelope.correlationId) {
         this.publishResponse(envelope.correlationId, { ok: true, result });
       }

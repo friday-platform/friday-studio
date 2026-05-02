@@ -476,13 +476,14 @@ export class AtlasDaemon {
     //   - Any other error = infra-level failure → mark the workspace
     //     "inactive" with the error metadata, destroy its runtime, and
     //     throw so the broker NAKs and redelivers (up to maxDeliver).
-    this.signalConsumer = new SignalConsumer(nc, async (envelope: SignalEnvelope) => {
+    this.signalConsumer = new SignalConsumer(nc, async (envelope: SignalEnvelope, ctx) => {
       try {
         return await this.triggerWorkspaceSignal(
           envelope.workspaceId,
           envelope.signalId,
           envelope.payload,
           envelope.streamId,
+          ctx.onStreamEvent,
         );
       } catch (err) {
         if (err instanceof SessionFailedError) {

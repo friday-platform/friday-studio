@@ -110,6 +110,42 @@ describe("publishSignal + SignalConsumer", () => {
     expect(dispatched).toEqual(["once"]);
   });
 
+  it("forwards onStreamEvent chunks to signals.stream.<correlationId>", async () => {
+    const correlationId = crypto.randomUUID();
+    const seenChunks: unknown[] = [];
+
+    // Subscribe BEFORE publishing.
+    const streamSub = nc.subscribe(`signals.stream.${correlationId}`);
+    const reader = (async () => {
+      for await (const msg of streamSub) {
+        seenChunks.push(JSON.parse(new TextDecoder().decode(msg.data)));
+        if (seenChunks.length >= 3) break;
+      }
+    })();
+
+    const consumer = new SignalConsumer(
+      nc,
+      (_envelope, c) => {
+        c.onStreamEvent?.({ type: "delta", text: "a" } as never);
+        c.onStreamEvent?.({ type: "delta", text: "b" } as never);
+        c.onStreamEvent?.({ type: "delta", text: "c" } as never);
+        return Promise.resolve({ done: true });
+      },
+      { name: `test-${crypto.randomUUID()}`, expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
+    await publishSignal(nc, { workspaceId: "ws-stream", signalId: "stream-test", correlationId });
+    const reply = await responsePromise;
+    await reader;
+    streamSub.unsubscribe();
+    await consumer.destroy();
+
+    expect(seenChunks).toHaveLength(3);
+    expect(reply.ok).toBe(true);
+  });
+
   it("publishes the dispatch result to the response subject for correlated requests", async () => {
     const consumer = new SignalConsumer(nc, (env) => Promise.resolve({ echoed: env.payload }), {
       name: `test-${crypto.randomUUID()}`,

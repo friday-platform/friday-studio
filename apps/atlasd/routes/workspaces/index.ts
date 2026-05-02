@@ -1826,83 +1826,101 @@ const workspacesRoutes = daemonFactory
     }
 
     const encoder = new TextEncoder();
+    const correlationId = crypto.randomUUID();
+    const nc = ctx.daemon.getNatsConnection();
+
+    // Subscribe to both subjects BEFORE publishing so a fast worker doesn't
+    // beat us to either. The stream subscription forwards every chunk the
+    // worker publishes; the response subscription delivers the terminal
+    // {ok, result} envelope and triggers SSE close.
+    const streamSub = nc.subscribe(`signals.stream.${correlationId}`);
+    const responsePromise = awaitSignalCompletion(nc, correlationId, 600_000);
 
     const sseStream = new ReadableStream({
-      start(controller) {
-        ctx.daemon
-          .triggerWorkspaceSignal(
+      async start(controller) {
+        const safeEnqueue = (bytes: Uint8Array) => {
+          try {
+            controller.enqueue(bytes);
+            return true;
+          } catch (err) {
+            logger.debug("Client disconnected during signal SSE stream", {
+              workspaceId,
+              signalId,
+              error: err,
+            });
+            return false;
+          }
+        };
+
+        // Forward NATS-published chunks to the SSE client.
+        const forward = (async () => {
+          for await (const msg of streamSub) {
+            if (!safeEnqueue(encoder.encode(`data: ${new TextDecoder().decode(msg.data)}\n\n`))) {
+              break;
+            }
+          }
+        })();
+
+        try {
+          await ctx.daemon.publishSignalToJetStream({
             workspaceId,
             signalId,
-            body.payload,
-            body.streamId,
-            (chunk) => {
-              try {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-              } catch (error) {
-                logger.debug("Client disconnected during signal SSE stream", {
-                  workspaceId,
-                  signalId,
-                  error,
-                });
-              }
-            },
-            body.skipStates,
-          )
-          .then((result) => {
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    type: "job-complete",
-                    data: {
-                      success: true,
-                      sessionId: result.sessionId,
-                      status: "completed",
-                      output: result.output,
-                    },
-                  })}\n\n`,
-                ),
-              );
-              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-              controller.close();
-            } catch (enqueueError) {
-              logger.debug("Client disconnected before job-complete event", {
-                workspaceId,
-                signalId,
-                error: enqueueError,
-              });
-            }
-          })
-          .catch((error) => {
-            const errorMessage = stringifyError(error);
+            payload: body.payload,
+            streamId: body.streamId,
+            correlationId,
+          });
+
+          const response = await responsePromise;
+
+          if (response.ok) {
+            const result = response.result as {
+              sessionId: string;
+              output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+            };
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "job-complete",
+                  data: {
+                    success: true,
+                    sessionId: result.sessionId,
+                    status: "completed",
+                    output: result.output,
+                  },
+                })}\n\n`,
+              ),
+            );
+          } else {
             logger.error("Signal trigger SSE error", {
-              error: errorMessage,
+              error: response.error,
               workspaceId,
               signalId,
             });
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
-                ),
-              );
-              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-              controller.close();
-            } catch (enqueueError) {
-              logger.debug("Client disconnected before job-error event", {
-                workspaceId,
-                signalId,
-                error: enqueueError,
-              });
-            }
-          })
-          .finally(() => {
-            try {
-              controller.close();
-            } catch {
-              /* already closed */
-            }
-          });
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "job-error", data: { error: response.error } })}\n\n`,
+              ),
+            );
+          }
+          safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Signal trigger SSE error", { error: errorMessage, workspaceId, signalId });
+          safeEnqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
+            ),
+          );
+          safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+        } finally {
+          streamSub.unsubscribe();
+          await forward.catch(() => undefined);
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        }
       },
     });
 
