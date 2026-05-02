@@ -226,6 +226,48 @@ calendar-result: <calendar data>
 
 Use array `inputFrom` for "combine N results".
 
+## Signal payload threading
+
+Signal-payload fields are auto-seeded into `prepareResult.config` and reachable as `{{inputs.<field>}}` in **every** step's `prompt` — not just the first. This holds even when a step also declares `inputFrom`: the engine merges chained-doc keys on top of the carried-over signal payload, so end-to-end values like a recipient email or a target id keep resolving through the whole pipeline.
+
+Use this for values that the entire job needs and the caller supplies. Don't try to thread them through `inputFrom` chains by re-emitting them in each agent's output — agents drop fields, paraphrase JSON, or just forget. The signal payload is the only durable carrier.
+
+```yaml
+signals:
+  send-report:
+    schema:
+      type: object
+      properties:
+        report_id:    { type: string }
+        notify_email: { type: string }
+      required: [report_id, notify_email]
+
+jobs:
+  send-report:
+    fsm:
+      initial: idle
+      states:
+        idle: { on: { send-report: { target: build } } }
+        build:
+          entry:
+            - type: agent
+              agentId: report-builder
+              prompt: "Build report {{inputs.report_id}}"
+              outputTo: report
+            - type: emit
+              event: DONE
+          on: { DONE: { target: send } }
+        send:
+          entry:
+            - type: agent
+              agentId: emailer
+              inputFrom: report                   # chained doc
+              prompt: "Send to {{inputs.notify_email}}"   # still resolves
+          type: final
+```
+
+Collisions: if a chained doc id matches a signal-payload key, the chained data wins. Pick distinct names.
+
 ## Crossing session boundaries
 
 `inputFrom` only reads documents in the current FSM session. Every signal fires a fresh session with an empty doc store — a job triggered by signal B cannot `inputFrom` a document produced by a prior session of signal A.

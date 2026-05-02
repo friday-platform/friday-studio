@@ -1001,19 +1001,23 @@ export class FSMEngine {
         ? getInputSnapshot(prepareResult, action, documents)
         : undefined;
 
-    // When the action declares `inputFrom`, the snapshot reflects the chained
-    // documents and must drive the agent prompt — not the carried-over
-    // prepareResult (which is typically an auto-seeded signal payload, often
-    // empty for cron triggers). Without this override the snapshot only flows
-    // to telemetry while `buildContextPrompt` / `buildAgentPrompt` render
-    // `## Input` from prepareResult, surfacing as `{ "config": {} }` and
-    // making the agent complain that its inputs are missing.
+    // When the action declares `inputFrom`, the snapshot's chained data must
+    // drive the agent's `task` and `## Input` (otherwise the agent renders
+    // from the carried-over prepareResult — typically an auto-seeded signal
+    // payload — and complains its inputs are missing). But the signal-payload
+    // `config` must survive: downstream steps need `{{inputs.<signal_field>}}`
+    // to keep working, and end-to-end values like a recipient email should not
+    // get clobbered the moment a step uses inputFrom. So we merge: chained
+    // doc keys layered on top of the carried-over config (collisions favor the
+    // chained data, which matches the historical "inputFrom wins" intent for
+    // any name that overlaps).
     const hasExplicitInputFrom =
       (action.type === "agent" || action.type === "llm") && action.inputFrom !== undefined;
     const effectivePrepareResult: PrepareResult | undefined =
       hasExplicitInputFrom && inputSnapshot
         ? {
             ...inputSnapshot,
+            config: { ...prepareResult?.config, ...inputSnapshot.config },
             ...(prepareResult?.artifactRefs ? { artifactRefs: prepareResult.artifactRefs } : {}),
           }
         : prepareResult;
