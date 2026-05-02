@@ -532,17 +532,27 @@ export class AtlasDaemon {
     });
     await this.signalConsumer.start();
 
-    // Register in-process tool workers. Each worker subscribes to a NATS
-    // subject and executes the tool's handler when an envelope arrives.
-    // Today they all run inside the daemon process; the migration target
-    // for G3.10 is to move them into sandboxed runtimes by changing only
-    // the worker registration site (not the MCP-side dispatcher).
-    this.toolWorkers.push(
-      registerToolWorker(nc, "bash", (req) => executeBash(BashArgsSchema.parse(req.args))),
-      registerToolWorker(nc, "webfetch", (req) =>
-        executeWebfetch(WebfetchArgsSchema.parse(req.args)),
-      ),
-    );
+    // Register in-process tool workers. Default behavior — each worker
+    // subscribes to a NATS subject and executes the tool's handler when
+    // an envelope arrives.
+    //
+    // Set FRIDAY_TOOL_WORKERS=external to skip in-process registration,
+    // so a separate process running apps/atlasd/src/tool-worker-entry.ts
+    // claims the subjects instead. Useful even single-node for process
+    // isolation (a runaway tool can't crash the daemon), resource limits
+    // (ulimit / cgroup the worker without affecting daemon), and
+    // multi-worker scaling. Same path becomes the sandbox runtime when
+    // isolation matures (run the entry inside a container).
+    if (process.env.FRIDAY_TOOL_WORKERS !== "external") {
+      this.toolWorkers.push(
+        registerToolWorker(nc, "bash", (req) => executeBash(BashArgsSchema.parse(req.args))),
+        registerToolWorker(nc, "webfetch", (req) =>
+          executeWebfetch(WebfetchArgsSchema.parse(req.args)),
+        ),
+      );
+    } else {
+      logger.info("FRIDAY_TOOL_WORKERS=external — skipping in-process tool worker registration");
+    }
 
     // Bootstrap @atlas/* system skills before any workspace chat gets a chance
     // to ask for them. Idempotent — only republishes on content-hash mismatch.
