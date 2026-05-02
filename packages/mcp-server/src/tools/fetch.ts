@@ -52,8 +52,19 @@ Usage notes:
           : await executeWebfetch(args);
         return createSuccessResponse(result);
       } catch (error) {
+        // AbortError is expected behavior (caller cancelled, timeout fired) —
+        // surface the message verbatim without logging at error level. Real
+        // tool failures still get the "webfetch tool error" prefix + log.
+        const message = stringifyError(error);
+        const isAbort =
+          (error instanceof DOMException && error.name === "AbortError") ||
+          (error instanceof Error && error.name === "AbortError") ||
+          message.includes("Request was aborted");
+        if (isAbort) {
+          return createErrorResponse(message);
+        }
         ctx.logger.error("webfetch tool error", { error, params });
-        return createErrorResponse(`webfetch tool error: ${stringifyError(error)}`);
+        return createErrorResponse(`webfetch tool error: ${message}`);
       }
     },
   );

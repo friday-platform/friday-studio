@@ -100,6 +100,7 @@ function createTestApp(
     getActivityAdapter: vi.fn(),
     daemon: {},
     streamRegistry: mockStreamRegistry,
+    chatTurnRegistry: { replace: vi.fn(), abort: vi.fn(), get: vi.fn() },
     sessionStreamRegistry: {},
     sessionHistoryAdapter: {},
   };
