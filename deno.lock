@@ -39,7 +39,7 @@
     "npm:@ai-sdk/svelte@^4.0.174": "4.0.174_svelte@5.55.5__acorn@8.16.0_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.121": "0.2.121_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.13",
-    "npm:@chat-adapter/discord@4.26.0": "4.26.0",
+    "npm:@chat-adapter/discord@4.27.0": "4.27.0",
     "npm:@chat-adapter/slack@4.26.0": "4.26.0",
     "npm:@chat-adapter/teams@4.26.0": "4.26.0",
     "npm:@chat-adapter/telegram@4.26.0": "4.26.0",
@@ -600,11 +600,11 @@
     "@borewit/text-codec@0.2.2": {
       "integrity": "sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ=="
     },
-    "@chat-adapter/discord@4.26.0": {
-      "integrity": "sha512-p0Xm/aPjHP9z87/tXtHz0KFmbUcu7SGPQAAlT8mrKRX49jO77Tognj/5poSmV1XQ1C4BLfxpPvTQlLNK/5omkw==",
+    "@chat-adapter/discord@4.27.0": {
+      "integrity": "sha512-9ldbe3f+8AV1XXbeuuu0lup30FBTS+7MnANMY25Q4mhLmQcbUD5l26Ngjy02GOOzQEKQuHEniUtPeEnJ5fSyNg==",
       "dependencies": [
-        "@chat-adapter/shared",
-        "chat@4.26.0",
+        "@chat-adapter/shared@4.27.0",
+        "chat@4.27.0",
         "discord-api-types@0.37.120",
         "discord-interactions",
         "discord.js"
@@ -616,10 +616,16 @@
         "chat@4.26.0"
       ]
     },
+    "@chat-adapter/shared@4.27.0": {
+      "integrity": "sha512-Wz+YZ8Mp2/qcxxJ+rU0ofZQSEtOF/4toEh7wbA+q+uLlPrLue+7hImWluJpQUZqGjSwsUoXhjSNwgFv3hz20aQ==",
+      "dependencies": [
+        "chat@4.27.0"
+      ]
+    },
     "@chat-adapter/slack@4.26.0": {
       "integrity": "sha512-NNN47rURI6qpJf4rRK8xyeumjPTAXr7YSU4/FnViU8cFV/vKYFR4xZTzlFMVWNrYi9SmSwasUjcBmQznigK54Q==",
       "dependencies": [
-        "@chat-adapter/shared",
+        "@chat-adapter/shared@4.26.0",
         "@slack/web-api",
         "chat@4.26.0"
       ]
@@ -627,7 +633,7 @@
     "@chat-adapter/teams@4.26.0": {
       "integrity": "sha512-Hg7TzN7Y/G/PcJr7VWKnv26XBDjP8+KDoe1gp62BAN7Y2MXCPdhsZLSR3cWQ5AH7nw0oz3vPZ38UilWUIhCxFg==",
       "dependencies": [
-        "@chat-adapter/shared",
+        "@chat-adapter/shared@4.26.0",
         "@microsoft/teams.api",
         "@microsoft/teams.apps",
         "@microsoft/teams.cards",
@@ -638,14 +644,14 @@
     "@chat-adapter/telegram@4.26.0": {
       "integrity": "sha512-PE2HoCQ4648VNKZTuHFanQNoYzM/niNoSbDyYlPq6VOoB5qsoo1ctR8TERyl1EfPBNexWZpSWYrrnQPr15LUfA==",
       "dependencies": [
-        "@chat-adapter/shared",
+        "@chat-adapter/shared@4.26.0",
         "chat@4.26.0"
       ]
     },
     "@chat-adapter/whatsapp@4.26.0": {
       "integrity": "sha512-4wfWUjIMZRsbKLonQc+U2rIAaG5wDr8agpDmltaUVoHwwRUhnRuf2TX3PpfjJD8qLeHYdY9e7s9f+L4h5IRiuw==",
       "dependencies": [
-        "@chat-adapter/shared",
+        "@chat-adapter/shared@4.26.0",
         "chat@4.26.0"
       ]
     },
@@ -3041,8 +3047,8 @@
     "discord-interactions@4.4.0": {
       "integrity": "sha512-jjJx8iwAeJcj8oEauV43fue9lNqkf38fy60aSs2+G8D1nJmDxUIrk08o3h0F3wgwuBWWJUZO+X/VgfXsxpCiJA=="
     },
-    "discord.js@14.26.3": {
-      "integrity": "sha512-XEKtYn28YFsiJ5l4fLRyikdbo6RD5oFyqfVHQlvXz2104JhH/E8slN28dbky05w3DCrJcNVWvhVvcJCTSl/KIg==",
+    "discord.js@14.26.4": {
+      "integrity": "sha512-4oBp8tc6Kf8IDBwAHhbsMaAqx1b5fob9SNasZT7V6yyyUydoO5i5fGuX7TmvRtR+q/WgKRnRViRoAWnG7fNyvA==",
       "dependencies": [
         "@discordjs/builders",
         "@discordjs/collection@1.5.3",
@@ -6035,7 +6041,7 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@chat-adapter/discord@4.26.0",
+            "npm:@chat-adapter/discord@4.27.0",
             "npm:@chat-adapter/slack@4.26.0",
             "npm:@chat-adapter/teams@4.26.0",
             "npm:@chat-adapter/telegram@4.26.0",
