@@ -45,7 +45,7 @@
     "diff": "^9.0.0",
     "hono": "4.12.16",
     "jszip": "^3.10.1",
-    "node-html-parser": "^7.0.1",
+    "node-html-parser": "^7.1.0",
     "shiki": "^4.0.2",
     "svelte": "^5.55.5",
     "dompurify": "^3.4.1",
