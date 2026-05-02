@@ -20,7 +20,7 @@
     "oauth4webapi": "3.8.6",
     "postgres": "3.4.9",
     "@hubspot/api-client": "^13.5.0",
-    "zod": "4.3.6"
+    "zod": "4.4.2"
   },
   "devDependencies": { "jose": "6.2.3", "vitest": "^4.1.5" }
 }
