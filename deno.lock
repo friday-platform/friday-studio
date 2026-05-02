@@ -143,7 +143,7 @@
     "npm:knip@6.7.0": "6.7.0_picomatch@4.0.4",
     "npm:lint-staged@^16.4.0": "16.4.0",
     "npm:markdown-it@^14.1.1": "14.1.1",
-    "npm:marked@^18.0.2": "18.0.2",
+    "npm:marked@^18.0.3": "18.0.3",
     "npm:minimatch@^10.2.5": "10.2.5",
     "npm:nanoid@5.1.11": "5.1.11",
     "npm:nanoid@^5.1.6": "5.1.11",
@@ -4153,8 +4153,8 @@
     "markdown-table@3.0.4": {
       "integrity": "sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw=="
     },
-    "marked@18.0.2": {
-      "integrity": "sha512-NsmlUYBS/Zg57rgDWMYdnre6OTj4e+qq/JS2ot3KrYLSoHLw+sDu0Nm1ZGpRgYAq6c+b1ekaY5NzVchMCQnzcg==",
+    "marked@18.0.3": {
+      "integrity": "sha512-7VT90JOkDeaRWpfjOReRGPEKn0ecdARBkDGL+tT1wZY0efPPqkUxLUSmzy/C7TIylQYJC9STISEsCHrqb/7VIA==",
       "bin": true
     },
     "math-intrinsics@1.1.0": {
@@ -6451,7 +6451,7 @@
             "npm:eslint-plugin-svelte@^3.17.1",
             "npm:eslint@^10.2.1",
             "npm:globals@^17.5.0",
-            "npm:marked@^18.0.2",
+            "npm:marked@^18.0.3",
             "npm:prettier-plugin-svelte@^3.5.1",
             "npm:prettier@^3.8.3",
             "npm:publint@~0.3.18",
