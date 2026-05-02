@@ -19,6 +19,16 @@ export interface WorkspaceConfigProvider {
 }
 
 /**
+ * Optional substrate that lets a tool handler dispatch its work over NATS
+ * to a registered worker (today: in-process; future: sandboxed runner).
+ * The MCP server doesn't depend on the `nats` package directly — the
+ * daemon constructs and injects an implementation backed by `callTool`.
+ */
+export interface ToolDispatcher {
+  callTool<Args, Result>(toolId: string, args: Args): Promise<Result>;
+}
+
+/**
  * Context provided to all tool handlers
  */
 export interface ToolContext {
@@ -26,4 +36,10 @@ export interface ToolContext {
   logger: Logger;
   server: McpServer;
   workspaceProvider?: WorkspaceProvider;
+  /**
+   * Present when the daemon has wired NATS-mediated tool dispatch. Tools
+   * that have been migrated to the worker model (e.g. `bash`) use this to
+   * route execution; absent → fall back to in-process execution.
+   */
+  toolDispatcher?: ToolDispatcher;
 }

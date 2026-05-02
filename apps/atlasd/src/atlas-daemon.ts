@@ -23,6 +23,7 @@ import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atla
 import { logger } from "@atlas/logger";
 import { sharedMCPProcesses } from "@atlas/mcp";
 import { PlatformMCPServer } from "@atlas/mcp-server";
+import { BashArgsSchema, executeBash } from "@atlas/mcp-server/tools/system/bash-handler";
 import { createLedgerClient } from "@atlas/resources/ledger-client";
 import type { LibraryStorageAdapter } from "@atlas/storage";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -104,6 +105,7 @@ import {
   type SignalEnvelope,
 } from "./signal-stream.ts";
 import { StreamRegistry } from "./stream-registry.ts";
+import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
 
@@ -188,6 +190,7 @@ export class AtlasDaemon {
   private capabilityRegistry: CapabilityHandlerRegistry | null = null;
   private processAgentExecutor: ProcessAgentExecutor | null = null;
   private signalConsumer: SignalConsumer | null = null;
+  private toolWorkers: ToolWorker[] = [];
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private resourceStorage: ResourceStorageAdapter | null = null;
@@ -520,6 +523,15 @@ export class AtlasDaemon {
     });
     await this.signalConsumer.start();
 
+    // Register in-process tool workers. Each worker subscribes to a NATS
+    // subject and executes the tool's handler when an envelope arrives.
+    // Today they all run inside the daemon process; the migration target
+    // for G3.10 is to move them into sandboxed runtimes by changing only
+    // the worker registration site (not the MCP-side dispatcher).
+    this.toolWorkers.push(
+      registerToolWorker(nc, "bash", (req) => executeBash(BashArgsSchema.parse(req.args))),
+    );
+
     // Bootstrap @atlas/* system skills before any workspace chat gets a chance
     // to ask for them. Idempotent — only republishes on content-hash mismatch.
     try {
@@ -694,6 +706,7 @@ export class AtlasDaemon {
 
     // Create per-session Platform MCP server
     const daemonUrl = getAtlasDaemonUrl();
+    const nc = this.natsManager?.connection;
     const server = new PlatformMCPServer({
       daemonUrl,
       logger: logger.child({ component: "platform-mcp-server", sessionId }),
@@ -703,6 +716,22 @@ export class AtlasDaemon {
       workspaceConfigProvider: {
         getWorkspaceConfig: (id: string) => this.getWorkspaceManager().getWorkspaceConfig(id),
       },
+      toolDispatcher: nc
+        ? {
+            callTool: async <Args, Result>(toolId: string, args: Args): Promise<Result> => {
+              const reply = await callTool(nc, toolId, args, {
+                workspaceId: "platform",
+                sessionId,
+                callerAgentId: "platform-mcp",
+                timeoutMs: 600_000,
+              });
+              if (!reply.ok) {
+                throw new Error(`tool '${toolId}' failed: ${reply.error.message}`);
+              }
+              return reply.result as Result;
+            },
+          }
+        : undefined,
     });
 
     // Connect to MCP server
@@ -2140,6 +2169,16 @@ export class AtlasDaemon {
       Deno.removeSignalListener(signal, handler);
     }
     this.signalHandlers = [];
+
+    // Stop tool workers so in-flight dispatches can finish or fail cleanly.
+    for (const worker of this.toolWorkers) {
+      try {
+        await worker.stop();
+      } catch (error) {
+        logger.error("Error stopping tool worker", { toolId: worker.toolId, error });
+      }
+    }
+    this.toolWorkers = [];
 
     // Stop the SIGNALS consumer before tearing down runtimes so in-flight
     // dispatches can finish against live workspaces.
