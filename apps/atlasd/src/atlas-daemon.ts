@@ -625,7 +625,9 @@ export class AtlasDaemon {
         ackWaitNs: jsCfg.consumer.ackWaitNs.value,
       },
     );
-    await this.signalConsumer.start();
+    // NB: do NOT start the consumer here — that would race with the
+    // rest of init (`getOrCreateWorkspaceRuntime` requires
+    // `isInitialized = true`). Started below after the init flag flips.
 
     // Register in-process tool workers. Default behavior — each worker
     // subscribes to a NATS subject and executes the tool's handler when
@@ -720,6 +722,18 @@ export class AtlasDaemon {
     initChunkedUpload();
 
     this.isInitialized = true;
+
+    // Start the SIGNALS consumer LAST so no message can be dispatched
+    // until every prerequisite (cron manager, session adapter, tool
+    // workers, isInitialized flag) is in place. Pre-existing signals
+    // in the queue (redeliveries, leftovers from a previous daemon
+    // run) sit until we're ready to dispatch — no "not initialized"
+    // throws / NAK / redelivery loops on boot. (Bug 2026-05-03:
+    // rtx-price-check-cron seq 40 was hitting deliveryCount: 3 on
+    // restart because the consumer was started ~100 lines before
+    // isInitialized = true.)
+    if (this.signalConsumer) await this.signalConsumer.start();
+
     logger.info("Atlas daemon initialized");
   }
 
