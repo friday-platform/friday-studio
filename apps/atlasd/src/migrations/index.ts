@@ -32,6 +32,7 @@ import { m_e4b4182_mcp_registry_to_jetstream } from "./m_e4b4182_mcp_registry_to
 import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
 import { m_repair_artifact_object_store } from "./m_repair_artifact_object_store.ts";
 import { m_scratchpad_to_jetstream } from "./m_scratchpad_to_jetstream.ts";
+import { m_skills_to_jetstream } from "./m_skills_to_jetstream.ts";
 import { m_workspace_registry_to_jetstream } from "./m_workspace_registry_to_jetstream.ts";
 import { m_workspace_state_to_jetstream } from "./m_workspace_state_to_jetstream.ts";
 
@@ -68,4 +69,9 @@ export const ALL_MIGRATIONS: Migration[] = [
   // per-workspace JetStream KV bucket WS_STATE_<wsid>. Idempotent
   // marker per bucket; legacy SQLite left in place for rollback.
   m_workspace_state_to_jetstream,
+  // 2026-05-03 — User-published skills (skills.db) → SKILLS KV +
+  // SKILL_ARCHIVES Object Store. Bundled friday/* skills (created_by
+  // = "system") are skipped — their source-of-truth is the package
+  // bootstrap, not the database. Idempotent.
+  m_skills_to_jetstream,
 ];

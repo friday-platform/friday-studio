@@ -29,6 +29,7 @@ import {
   PlatformMCPServer,
   WebfetchArgsSchema,
 } from "@atlas/mcp-server";
+import { initSkillStorage } from "@atlas/skills";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createJetStreamKVStorage,
@@ -497,6 +498,12 @@ export class AtlasDaemon {
     // to JetStream — one KV bucket per workspace (WS_STATE_<wsid>).
     // Replaces the legacy ~/.atlas/artifacts/<wsid>/state.db SQLite store.
     initWorkspaceStateStorage(nc);
+
+    // Wire skill storage to JetStream (SKILLS KV bucket + SKILL_ARCHIVES
+    // Object Store). Both packages/system/skills/ bootstrap and `atlas
+    // skill publish` writes flow through this single adapter. Replaces
+    // the legacy ~/.atlas/skills.db SQLite store.
+    initSkillStorage(nc);
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");

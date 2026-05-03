@@ -1,6 +1,8 @@
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
+import type { NatsConnection } from "nats";
+import { JetStreamSkillAdapter } from "./jetstream-adapter.ts";
 import { LocalSkillAdapter } from "./local-adapter.ts";
 import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } from "./schemas.ts";
 
@@ -62,23 +64,34 @@ export interface SkillStorageAdapter {
 }
 
 /**
- * Local-only since the Cortex variant was deleted 2026-05-02 (speculative
- * remote backend, never reached). The `SKILL_STORAGE_ADAPTER` env var is
- * no longer consulted; skills live in `${FRIDAY_HOME}/skills.db` (override
- * with `SKILL_LOCAL_DB_PATH`). Future skills migration story is tracked
- * separately — see the plan's "Skills migration" task.
+ * Skill storage facade. Production daemon calls `initSkillStorage(nc)`
+ * at startup so both bundled-skill bootstrap (`packages/system/skills/`)
+ * and `atlas skill publish` writes land in the same JetStream `SKILLS`
+ * KV bucket + `SKILL_ARCHIVES` Object Store.
+ *
+ * If init is never called, a `LocalSkillAdapter` (SQLite at
+ * `${FRIDAY_HOME}/skills.db`) is used as a fallback. This keeps
+ * unit tests working without per-test NATS wiring; tests that want
+ * deterministic isolation should set `SKILL_LOCAL_DB_PATH` to a tmp
+ * file or call `_setSkillStorageForTest()`.
  */
-function createSkillStorageAdapter(): SkillStorageAdapter {
-  const dbPath = process.env.SKILL_LOCAL_DB_PATH;
-  logger.info("Using LocalSkillAdapter", { dbPath });
-  return new LocalSkillAdapter(dbPath);
+let _storage: SkillStorageAdapter | null = null;
+
+export function initSkillStorage(nc: NatsConnection): void {
+  _storage = new JetStreamSkillAdapter(nc);
+  logger.info("Skill storage initialized (JetStream)");
 }
 
-let _storage: SkillStorageAdapter | null = null;
+/** Inject a custom adapter — tests only. */
+export function _setSkillStorageForTest(adapter: SkillStorageAdapter | null): void {
+  _storage = adapter;
+}
 
 function getStorage(): SkillStorageAdapter {
   if (!_storage) {
-    _storage = createSkillStorageAdapter();
+    const dbPath = process.env.SKILL_LOCAL_DB_PATH;
+    logger.info("Skill storage falling back to LocalSkillAdapter (SQLite)", { dbPath });
+    _storage = new LocalSkillAdapter(dbPath);
   }
   return _storage;
 }

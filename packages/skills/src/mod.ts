@@ -11,6 +11,8 @@ export {
 export { computeSkillHash } from "./content-hash.ts";
 // Utilities
 export { formatAvailableSkills } from "./format.ts";
+// Storage
+export { JetStreamSkillAdapter } from "./jetstream-adapter.ts";
 export type {
   CreateLoadSkillToolOptions,
   HardcodedSkill,
@@ -54,6 +56,5 @@ export {
   sortByOfficialPriority,
 } from "./skills-sh-client.ts";
 export { toSlug } from "./slug.ts";
-// Storage
 export type { SkillStorageAdapter } from "./storage.ts";
-export { SkillStorage } from "./storage.ts";
+export { _setSkillStorageForTest, initSkillStorage, SkillStorage } from "./storage.ts";
