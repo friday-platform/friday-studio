@@ -125,9 +125,24 @@ export async function ensureWorkspaceEventsStream(nc: NatsConnection): Promise<v
   await js.views.kv(STATE_BUCKET, { history: 1 });
 }
 
-/** Stable per-event id used to join stream entries with KV state. */
+/**
+ * Stable per-event id used to join stream entries with KV state.
+ *
+ * Every segment goes through `sanitizeToken` because NATS KV keys
+ * only allow `[A-Za-z0-9_-./=]`. Workspace ids occasionally have
+ * colons / slashes; signal ids are usually clean but not guaranteed;
+ * `scheduledAt` is an ISO 8601 timestamp whose `:` and `.` chars
+ * both need escaping to make it past `Bucket.validateKey`. Periods
+ * lose their semantic role as segment separators here — but the
+ * outer `.join(".")` separators come from a literal and aren't
+ * sanitized, so the composite stays parseable.
+ */
 function eventStateKey(event: ScheduleMissedEvent): string {
-  return `${sanitizeToken(event.workspaceId)}.${sanitizeToken(event.signalId)}.${event.scheduledAt}`;
+  return composeEventStateKey(event.workspaceId, event.signalId, event.scheduledAt);
+}
+
+function composeEventStateKey(workspaceId: string, signalId: string, scheduledAt: string): string {
+  return [workspaceId, signalId, scheduledAt].map(sanitizeToken).join(".");
 }
 
 interface EventStateRecord {
@@ -181,14 +196,33 @@ async function writeEventState(
   await kv.put(key, enc.encode(JSON.stringify(record)));
 }
 
-async function readEventState(nc: NatsConnection, key: string): Promise<EventStateRecord | null> {
-  const js = nc.jetstream();
-  const kv = await js.views.kv(STATE_BUCKET, { history: 1 });
-  const entry = await kv.get(key);
-  if (!entry || entry.operation !== "PUT") return null;
+/** Same as writeEventState but swallows errors. Used by the read-path
+ * self-heal — a failed write must not break the list response. */
+async function writeEventStateBestEffort(
+  nc: NatsConnection,
+  key: string,
+  record: EventStateRecord,
+): Promise<void> {
   try {
+    await writeEventState(nc, key, record);
+  } catch {
+    // Intentionally silent — caller continues with a transient
+    // pending state in memory; next read retries the heal.
+  }
+}
+
+async function readEventState(nc: NatsConnection, key: string): Promise<EventStateRecord | null> {
+  try {
+    const js = nc.jetstream();
+    const kv = await js.views.kv(STATE_BUCKET, { history: 1 });
+    const entry = await kv.get(key);
+    if (!entry || entry.operation !== "PUT") return null;
     return JSON.parse(dec.decode(entry.value)) as EventStateRecord;
   } catch {
+    // Invalid key or malformed payload — treat as "no state record".
+    // A KV error here would otherwise cascade through readEventsBackwards
+    // and 500 the whole /api/events response. Single-row degradation is
+    // strictly better than full-list failure.
     return null;
   }
 }
@@ -204,7 +238,7 @@ export async function markEventFired(
   signalId: string,
   scheduledAt: string,
 ): Promise<boolean> {
-  const key = `${sanitizeToken(workspaceId)}.${sanitizeToken(signalId)}.${scheduledAt}`;
+  const key = composeEventStateKey(workspaceId, signalId, scheduledAt);
   const existing = await readEventState(nc, key);
   if (!existing || existing.status !== "pending") return false;
   await writeEventState(nc, key, { status: "fired", updatedAt: new Date().toISOString() });
@@ -221,7 +255,7 @@ export async function markEventDismissed(
   signalId: string,
   scheduledAt: string,
 ): Promise<boolean> {
-  const key = `${sanitizeToken(workspaceId)}.${sanitizeToken(signalId)}.${scheduledAt}`;
+  const key = composeEventStateKey(workspaceId, signalId, scheduledAt);
   const existing = await readEventState(nc, key);
   if (!existing || existing.status !== "pending") return false;
   await writeEventState(nc, key, { status: "dismissed", updatedAt: new Date().toISOString() });
@@ -310,8 +344,16 @@ async function readEventsBackwards(
         event.pending = state.status === "pending";
         if (state.status !== "pending") event.actionedAt = state.updatedAt;
       } else {
-        // No state record yet (publish → state-write race window).
-        // Treat as pending; the next read will see the populated state.
+        // No state record — either a publish → state-write race
+        // window OR a pre-fix event whose state-seed failed silently
+        // when the key contained an unescaped `:`. Self-heal: write
+        // a pending record now so the operator-action surface
+        // (markEventFired / markEventDismissed) finds something to
+        // flip when the user clicks Fire / Dismiss.
+        await writeEventStateBestEffort(nc, event.id, {
+          status: "pending",
+          updatedAt: event.firedAt,
+        });
         event.status = "pending";
         event.pending = true;
       }
