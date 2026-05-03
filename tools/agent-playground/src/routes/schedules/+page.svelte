@@ -174,6 +174,23 @@
     const h12 = h % 12 || 12;
     return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
   }
+
+  // ---------------------------------------------------------------------------
+  // Tabs
+  // ---------------------------------------------------------------------------
+  type Tab = "active" | "missed";
+  let activeTab = $state<Tab>("active");
+
+  // Bias toward "missed" if there are pending manual events the user
+  // probably wants to act on right now. Coalesce/catchup auto-fire,
+  // so they don't pull the user's attention by default.
+  $effect(() => {
+    if (events.some((e) => e.policy === "manual" && e.pending)) {
+      activeTab = "missed";
+    }
+  });
+
+  const activeTimers = $derived(timers.filter((t) => !t.paused));
 </script>
 
 <PageLayout.Root>
@@ -193,11 +210,34 @@
           </span>
         </div>
       {:else}
+        <div class="tab-bar" role="tablist">
+          <button
+            class="tab"
+            class:tab--active={activeTab === "active"}
+            role="tab"
+            aria-selected={activeTab === "active"}
+            onclick={() => (activeTab = "active")}
+          >
+            Active <span class="tab-count">{activeTimers.length}</span>
+          </button>
+          <button
+            class="tab"
+            class:tab--active={activeTab === "missed"}
+            role="tab"
+            aria-selected={activeTab === "missed"}
+            onclick={() => (activeTab = "missed")}
+          >
+            Missed
+            {#if events.length > 0}
+              <span class="tab-count" class:tab-count--pending={events.some((e) => e.pending)}>
+                {events.length}
+              </span>
+            {/if}
+          </button>
+        </div>
+
+        {#if activeTab === "active"}
         <section class="section">
-          <header class="section-header">
-            <h2>Active</h2>
-            <span class="count">{timers.filter((t) => !t.paused).length}</span>
-          </header>
           <div class="signal-list">
             {#each timers as timer (timerKey(timer))}
               {@const key = timerKey(timer)}
@@ -249,14 +289,19 @@
             {/each}
           </div>
         </section>
-      {/if}
+        {/if}
 
-      {#if events.length > 0}
+        {#if activeTab === "missed"}
         <section class="section">
-          <header class="section-header">
-            <h2>Missed schedules</h2>
-            <span class="count">{events.length}</span>
-          </header>
+          {#if events.length === 0}
+            <div class="empty-state">
+              <p>No missed schedules.</p>
+              <span class="empty-hint">
+                When the daemon misses a cron firing, it'll show up here. Default policy is
+                <code>onMissed: manual</code> — pending rows will offer Fire / Dismiss buttons.
+              </span>
+            </div>
+          {:else}
           <div class="signal-list">
             {#each events as event (eventKey(event))}
               {@const busy = actingOnEvent.has(eventKey(event))}
@@ -305,16 +350,19 @@
               </div>
             {/each}
           </div>
+          {/if}
         </section>
+        {/if}
       {/if}
     </PageLayout.Content>
     <PageLayout.Sidebar>
-      <p class="subtitle">All cron triggers across every space</p>
-      {#if events.length > 0}
+      {#if activeTab === "active"}
+        <p class="subtitle">All cron triggers across every space</p>
+      {:else}
+        <p class="subtitle">Cron firings the daemon was down for.</p>
         <p class="subtitle subtle">
-          A missed schedule appears here when an <code>onMissed:
-          coalesce</code> or <code>catchup</code> policy fires for cron
-          slots the daemon was down for. Window: 30 days.
+          Default policy is <code>onMissed: manual</code> — pending rows offer Fire / Dismiss.
+          Override via <code>onMissed: skip | coalesce | catchup</code>. Window: 30 days.
         </p>
       {/if}
     </PageLayout.Sidebar>
@@ -325,6 +373,57 @@
   .subtitle {
     color: color-mix(in srgb, var(--color-text), transparent 40%);
     font-size: var(--font-size-2);
+  }
+
+  /* ── Tabs ────────────────────────────────────────────────────────── */
+
+  .tab-bar {
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    gap: var(--size-1);
+    margin-block-end: var(--size-3);
+  }
+
+  .tab {
+    align-items: center;
+    background: none;
+    border: none;
+    border-block-end: 2px solid transparent;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
+    cursor: pointer;
+    display: inline-flex;
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-2);
+    margin-block-end: -1px;
+    padding: var(--size-1-5) var(--size-3);
+    transition:
+      color 120ms ease,
+      border-color 120ms ease;
+  }
+
+  .tab:hover:not(.tab--active) {
+    color: color-mix(in srgb, var(--color-text), transparent 15%);
+  }
+
+  .tab--active {
+    border-block-end-color: var(--color-text);
+    color: var(--color-text);
+  }
+
+  .tab-count {
+    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
+    border-radius: var(--radius-round);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-6);
+    line-height: 1;
+    padding: 2px 6px;
+  }
+
+  .tab-count--pending {
+    background-color: color-mix(in srgb, var(--color-accent, #1f6feb), transparent 80%);
+    color: var(--color-accent, #1f6feb);
   }
 
   /* ── Empty state ─────────────────────────────────────────────────── */
