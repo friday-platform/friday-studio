@@ -34,6 +34,40 @@
 
   const timers = $derived(timersQuery.data?.timers ?? []);
 
+  // ---------------------------------------------------------------------------
+  // Recent missed firings — fed by the WORKSPACE_EVENTS stream that
+  // CronManager publishes to whenever an `onMissed: coalesce | catchup`
+  // policy produces a make-up firing. Cross-workspace; per-workspace
+  // pages can mount their own filtered view.
+  // ---------------------------------------------------------------------------
+  const ScheduleMissedEventSchema = z.object({
+    type: z.literal("schedule.missed"),
+    workspaceId: z.string(),
+    signalId: z.string(),
+    policy: z.enum(["coalesce", "catchup"]),
+    missedCount: z.number(),
+    firstMissedAt: z.string(),
+    lastMissedAt: z.string(),
+    scheduledAt: z.string(),
+    firedAt: z.string(),
+    schedule: z.string(),
+    timezone: z.string(),
+  });
+  const EventsResponseSchema = z.object({ events: z.array(ScheduleMissedEventSchema) });
+  type ScheduleMissedEvent = z.infer<typeof ScheduleMissedEventSchema>;
+
+  const eventsQuery = createQuery(() => ({
+    queryKey: ["workspace-events", "schedule.missed"],
+    queryFn: async () => {
+      const res = await fetch("/api/daemon/api/events?limit=50");
+      if (!res.ok) throw new Error(`Failed to fetch events: ${res.status}`);
+      return EventsResponseSchema.parse(await res.json());
+    },
+    refetchInterval: 60_000,
+  }));
+
+  const events = $derived(eventsQuery.data?.events ?? []);
+
   let toggling = $state<Set<string>>(new Set());
 
   function timerKey(t: Timer) {
@@ -186,9 +220,56 @@
           </div>
         </section>
       {/if}
+
+      {#if events.length > 0}
+        <section class="section">
+          <header class="section-header">
+            <h2>Missed schedules</h2>
+            <span class="count">{events.length}</span>
+          </header>
+          <div class="signal-list">
+            {#each events as event (event.scheduledAt + ":" + event.workspaceId + ":" + event.signalId)}
+              <div class="signal-row event-row">
+                <a class="row-main" href="/platform/{event.workspaceId}/signal/{event.signalId}">
+                  <span class="signal-id">{event.signalId}</span>
+                  <span class="signal-meta">
+                    <span class="ws-name">{event.workspaceId}</span>
+                    <span class="sep">·</span>
+                    <span class="cron-human">
+                      {humanizeCron(event.schedule, event.timezone)}
+                    </span>
+                  </span>
+                </a>
+                <div class="row-right">
+                  <div class="timing">
+                    <span class="timing-label">policy</span>
+                    <span class="timing-value">{event.policy}</span>
+                    {#if event.policy === "coalesce" && event.missedCount > 1}
+                      <span class="timing-label">covered</span>
+                      <span class="timing-value">{event.missedCount} slots</span>
+                    {/if}
+                    <span class="timing-label">scheduled</span>
+                    <span class="timing-value muted">{formatRelative(event.scheduledAt)}</span>
+                    <span class="timing-label">fired</span>
+                    <span class="timing-value muted">{formatRelative(event.firedAt)}</span>
+                  </div>
+                  <span class="badge badge-event">missed schedule</span>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </section>
+      {/if}
     </PageLayout.Content>
     <PageLayout.Sidebar>
       <p class="subtitle">All cron triggers across every space</p>
+      {#if events.length > 0}
+        <p class="subtitle subtle">
+          A missed schedule appears here when an <code>onMissed:
+          coalesce</code> or <code>catchup</code> policy fires for cron
+          slots the daemon was down for. Window: 30 days.
+        </p>
+      {/if}
     </PageLayout.Sidebar>
   </PageLayout.Body>
 </PageLayout.Root>
@@ -372,6 +453,16 @@
   .badge-paused {
     background-color: color-mix(in srgb, var(--color-text), transparent 88%);
     color: color-mix(in srgb, var(--color-text), transparent 30%);
+  }
+
+  .badge-event {
+    background-color: color-mix(in srgb, var(--color-warning, #d29922), transparent 80%);
+    color: var(--color-warning, #d29922);
+  }
+
+  .subtle {
+    margin-top: var(--size-3);
+    font-size: var(--font-size-1);
   }
 
   .action-btn {

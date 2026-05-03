@@ -119,15 +119,34 @@ const dec = new TextDecoder();
  * caller's. Switch to a server-side filtered consumer if cardinality
  * outgrows that.
  */
-export async function listWorkspaceEvents(
+export function listWorkspaceEvents(
   nc: NatsConnection,
   workspaceId: string,
   options: { limit?: number; scanLimit?: number } = {},
 ): Promise<WorkspaceEvent[]> {
+  const wsToken = sanitizeToken(workspaceId);
+  return readEventsBackwards(nc, options, `${SUBJECT_PREFIX}.${wsToken}.`);
+}
+
+/**
+ * Read the most recent workspace events across ALL workspaces. Drives
+ * the top-level `/schedules` page in the playground. Same backwards-walk
+ * pattern as the per-workspace variant; subject filter omitted.
+ */
+export function listAllWorkspaceEvents(
+  nc: NatsConnection,
+  options: { limit?: number; scanLimit?: number } = {},
+): Promise<WorkspaceEvent[]> {
+  return readEventsBackwards(nc, options, `${SUBJECT_PREFIX}.`);
+}
+
+async function readEventsBackwards(
+  nc: NatsConnection,
+  options: { limit?: number; scanLimit?: number },
+  subjectPrefix: string,
+): Promise<WorkspaceEvent[]> {
   const limit = options.limit ?? 50;
   const scanLimit = options.scanLimit ?? 5000;
-  const wsToken = sanitizeToken(workspaceId);
-  const subjectPrefix = `${SUBJECT_PREFIX}.${wsToken}.`;
 
   const jsm = await nc.jetstreamManager();
   let info: Awaited<ReturnType<typeof jsm.streams.info>> | null = null;
