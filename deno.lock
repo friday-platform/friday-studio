@@ -6435,11 +6435,15 @@
         }
       },
       "packages/workspace": {
+        "dependencies": [
+          "npm:nats@^2.29.3"
+        ],
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__dotenv@~0.225.5",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:ai@^6.0.174",
+            "npm:nats@^2.29.3",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]

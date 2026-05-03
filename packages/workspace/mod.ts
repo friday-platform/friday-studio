@@ -42,6 +42,7 @@ export {
   createJetStreamKVStorage,
   createKVStorage,
   createRegistryStorage,
+  createRegistryStorageJS,
   RegistryStorageAdapter,
   StorageConfigs,
 } from "./src/storage.ts";

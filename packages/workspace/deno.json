@@ -14,6 +14,7 @@
   "imports": {
     "@atlas/adapters-md": "../adapters-md/mod.ts",
     "@atlas/core/mount-context-registry": "../core/src/mount-context-registry.ts",
-    "@atlas/memory": "../memory/src/bootstrap.ts"
+    "@atlas/memory": "../memory/src/bootstrap.ts",
+    "nats": "npm:nats@^2.29.3"
   }
 }

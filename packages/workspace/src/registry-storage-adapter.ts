@@ -2,8 +2,27 @@
  * Registry Storage Adapter
  *
  * Domain-specific storage adapter for workspace registry operations.
- * Built on top of the KVStorage interface to provide semantic workspace operations
- * while maintaining complete storage backend independence.
+ * Built on top of the KVStorage interface.
+ *
+ * **Single-key model (since 2026-05-02):** Each workspace lives at a
+ * single KV key (`["workspaces", <id>]`). The previous implementation
+ * also maintained a `["workspaces", "_list"]` index for O(1) listing
+ * and `["registry", "version"]` / `["registry", "lastUpdated"]` meta
+ * keys, all kept in sync via Deno KV's multi-key `atomic()`. JetStream
+ * KV (the substrate after the Deno KV consolidation) only supports
+ * per-key CAS, not multi-key transactions.
+ *
+ * The fix: drop the secondary structures entirely.
+ *   - List comes from `kv.list({prefix: ["workspaces"]})` — sub-ms at
+ *     Friday's expected workspace cardinality (≤100 per install).
+ *   - Registry version was set once to "2.0.0" and never branched on.
+ *     Removed.
+ *   - `lastUpdated` had no external consumers (`getRegistryStats` was
+ *     dead code). Removed.
+ *
+ * Result: every operation is a single-key write — no atomic needed,
+ * no risk of `_list` and per-workspace records drifting out of sync,
+ * no orphan-list-entry failure mode.
  */
 
 import { stat } from "node:fs/promises";
@@ -12,405 +31,152 @@ import type { KVStorage } from "@atlas/storage/kv";
 import type { WorkspaceStatus } from "./types.ts";
 import { type WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatusEnum } from "./types.ts";
 
-/**
- * Registry-specific storage operations
- *
- * This adapter provides high-level workspace registry operations built on
- * the foundational KVStorage interface. It handles schema validation,
- * indexing, and workspace-specific business logic.
- */
 export class RegistryStorageAdapter {
-  private readonly REGISTRY_VERSION = "2.0.0";
-
   constructor(private storage: KVStorage) {}
 
-  /**
-   * Initialize the registry storage
-   * Sets up initial metadata if not present
-   */
+  /** Initialize the underlying storage. No-op for the registry itself. */
   async initialize(): Promise<void> {
     await this.storage.initialize();
-
-    // Initialize registry metadata if not exists
-    const version = await this.storage.get<string>(["registry", "version"]);
-    if (!version) {
-      const atomic = this.storage.atomic();
-      atomic.set(["registry", "version"], this.REGISTRY_VERSION);
-      atomic.set(["registry", "lastUpdated"], new Date().toISOString());
-      await atomic.commit();
-    }
   }
 
-  /**
-   * Register a new workspace
-   */
   async registerWorkspace(workspace: WorkspaceEntry): Promise<void> {
-    // Validate workspace entry
-    const validatedWorkspace = WorkspaceEntrySchema.parse(workspace);
-
-    const workspaceAtomic = this.storage.atomic();
-    workspaceAtomic.set(["workspaces", validatedWorkspace.id], validatedWorkspace);
-    const workspaceSuccess = await workspaceAtomic.commit();
-    if (!workspaceSuccess) {
-      throw new Error(
-        `Failed to register workspace ${validatedWorkspace.id} - atomic operation failed`,
-      );
-    }
-
-    // Update registry metadata in separate atomic operation
-    const metadataAtomic = this.storage.atomic();
-    metadataAtomic.set(["registry", "lastUpdated"], new Date().toISOString());
-    const metadataSuccess = await metadataAtomic.commit();
-    if (!metadataSuccess) {
-      throw new Error("Failed to update registry metadata - atomic operation failed");
-    }
-
-    // Update workspace list in separate atomic operation
-    const workspaceList = await this.getWorkspaceList();
-    if (!workspaceList.includes(validatedWorkspace.id)) {
-      const listAtomic = this.storage.atomic();
-      listAtomic.set(["workspaces", "_list"], [...workspaceList, validatedWorkspace.id]);
-      const listSuccess = await listAtomic.commit();
-      if (!listSuccess) {
-        throw new Error("Failed to update workspace list - atomic operation failed");
-      }
-    }
+    const validated = WorkspaceEntrySchema.parse(workspace);
+    await this.storage.set(["workspaces", validated.id], validated);
   }
 
-  /**
-   * Unregister a workspace
-   */
   async unregisterWorkspace(id: string): Promise<void> {
-    // Delete workspace in separate atomic operation
-    const workspaceAtomic = this.storage.atomic();
-    workspaceAtomic.delete(["workspaces", id]);
-    const workspaceSuccess = await workspaceAtomic.commit();
-    if (!workspaceSuccess) {
-      throw new Error(`Failed to unregister workspace ${id} - atomic operation failed`);
-    }
-
-    // Update registry metadata in separate atomic operation
-    const metadataAtomic = this.storage.atomic();
-    metadataAtomic.set(["registry", "lastUpdated"], new Date().toISOString());
-    const metadataSuccess = await metadataAtomic.commit();
-    if (!metadataSuccess) {
-      throw new Error("Failed to update registry metadata - atomic operation failed");
-    }
-
-    // Update workspace list in separate atomic operation
-    const workspaceList = await this.getWorkspaceList();
-    const updatedList = workspaceList.filter((workspaceId) => workspaceId !== id);
-    const listAtomic = this.storage.atomic();
-    listAtomic.set(["workspaces", "_list"], updatedList);
-    const listSuccess = await listAtomic.commit();
-    if (!listSuccess) {
-      throw new Error("Failed to update workspace list - atomic operation failed");
-    }
+    await this.storage.delete(["workspaces", id]);
   }
 
-  /**
-   * Get a workspace by ID
-   */
   async getWorkspace(id: string): Promise<WorkspaceEntry | null> {
-    const workspace = await this.storage.get<WorkspaceEntry>(["workspaces", id]);
-    return workspace;
+    return await this.storage.get<WorkspaceEntry>(["workspaces", id]);
   }
 
-  /**
-   * Find workspace by name
-   */
   async findWorkspaceByName(name: string): Promise<WorkspaceEntry | null> {
-    // Iterate through all workspaces to find by name
-    // TODO: Add name index for better performance
     for await (const { value } of this.storage.list<WorkspaceEntry>(["workspaces"])) {
-      if (value && value.name === name) {
-        return value;
-      }
+      if (value && value.name === name) return value;
     }
     return null;
   }
 
-  /**
-   * Find workspace by path
-   */
   async findWorkspaceByPath(path: string): Promise<WorkspaceEntry | null> {
-    // Iterate through all workspaces to find by path
-    // TODO: Add path index for better performance
     for await (const { value } of this.storage.list<WorkspaceEntry>(["workspaces"])) {
-      if (value && value.path === path) {
-        return value;
-      }
+      if (value && value.path === path) return value;
     }
     return null;
   }
 
-  /**
-   * List all registered workspaces
-   */
+  /** List all registered workspaces. Validates each entry; warn-and-skip on parse failure. */
   async listWorkspaces(): Promise<WorkspaceEntry[]> {
-    const workspaces: WorkspaceEntry[] = [];
-
+    const out: WorkspaceEntry[] = [];
     for await (const { key, value } of this.storage.list<WorkspaceEntry>(["workspaces"])) {
-      // Skip the special _list key
-      if (key.length === 2 && key[1] !== "_list" && value) {
-        const result = WorkspaceEntrySchema.safeParse(value);
-        if (result.success) {
-          workspaces.push(result.data);
-        } else {
-          logger.warn("Skipping invalid workspace entry in storage", {
-            key,
-            errors: result.error.issues.map((i) => i.message),
-          });
-        }
+      if (!value) continue;
+      const result = WorkspaceEntrySchema.safeParse(value);
+      if (result.success) {
+        out.push(result.data);
+      } else {
+        logger.warn("Skipping invalid workspace entry in storage", {
+          key,
+          errors: result.error.issues.map((i) => i.message),
+        });
       }
     }
-
-    return workspaces;
+    return out;
   }
 
-  /**
-   * Get workspaces by status
-   */
   async getWorkspacesByStatus(status: WorkspaceStatus): Promise<WorkspaceEntry[]> {
-    const workspaces = await this.listWorkspaces();
-    return workspaces.filter((workspace) => workspace.status === status);
+    const all = await this.listWorkspaces();
+    return all.filter((w) => w.status === status);
   }
 
   /**
-   * Update workspace last seen time with retry logic
+   * Update a workspace's `lastSeen` timestamp. Best-effort — failures
+   * log a warning but don't throw, since lastSeen drift is acceptable
+   * compared to disrupting the calling operation.
+   *
+   * No retry loop: the underlying KV is single-writer-per-key, so
+   * concurrent updateWorkspaceLastSeen calls naturally serialize. The
+   * old retry+backoff path was guarding against multi-key atomic
+   * failures that don't apply to the single-key model.
    */
   async updateWorkspaceLastSeen(id: string): Promise<void> {
-    const maxRetries = 3;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const current = await this.getWorkspace(id);
-        if (!current) {
-          return; // Workspace doesn't exist, skip update
-        }
-
-        const updatedWorkspace = { ...current };
-        updatedWorkspace.lastSeen = new Date().toISOString();
-
-        // Validate updated workspace
-        const validatedWorkspace = WorkspaceEntrySchema.parse(updatedWorkspace);
-
-        // Use simple atomic operation without concurrency check
-        // The retry logic handles any potential race conditions
-        const atomic = this.storage.atomic();
-        atomic.set(["workspaces", id], validatedWorkspace);
-
-        const success = await atomic.commit();
-        if (success) {
-          // Success - return immediately
-          return;
-        }
-
-        // Atomic commit failed - prepare for retry
-        if (attempt < maxRetries - 1) {
-          const backoffMs = 10 * 2 ** attempt;
-          logger.warn(
-            `Failed to update lastSeen for workspace ${id} (attempt ${
-              attempt + 1
-            }/${maxRetries}), retrying in ${backoffMs}ms...`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
-        }
-      } catch (error) {
-        if (attempt === maxRetries - 1) {
-          // Don't throw error for lastSeen updates to avoid disrupting workspace operations
-          logger.warn(
-            `Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts`,
-            { error },
-          );
-          return;
-        }
-        // Wait before retry
-        const backoffMs = 10 * 2 ** attempt;
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      }
+    try {
+      const current = await this.getWorkspace(id);
+      if (!current) return; // Workspace gone — nothing to update.
+      const validated = WorkspaceEntrySchema.parse({
+        ...current,
+        lastSeen: new Date().toISOString(),
+      });
+      await this.storage.set(["workspaces", id], validated);
+    } catch (err) {
+      logger.warn(`Failed to update lastSeen for workspace ${id}`, { error: err });
     }
-
-    // If we get here, all retries failed - log warning but don't throw
-    logger.warn(`Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts`);
   }
 
   /**
-   * Update workspace status and metadata with retry logic
+   * Update workspace status + optional metadata patch. Single-key
+   * write (was multi-key atomic + retry loop in the prior
+   * implementation; per-key CAS via the KV layer's natural single-
+   * writer semantics is sufficient).
    */
   async updateWorkspaceStatus(
     id: string,
     status: WorkspaceStatus,
     updates?: Partial<WorkspaceEntry>,
   ): Promise<void> {
-    const maxRetries = 3;
-    let lastError: Error | null = null;
+    const current = await this.getWorkspace(id);
+    if (!current) throw new Error(`Workspace ${id} not found`);
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const current = await this.getWorkspace(id);
-        if (!current) {
-          throw new Error(`Workspace ${id} not found`);
-        }
+    const next: WorkspaceEntry = {
+      ...current,
+      ...(updates ?? {}),
+      status,
+      lastSeen: new Date().toISOString(),
+    };
 
-        const updatedWorkspace = { ...current };
-        updatedWorkspace.status = status;
-        updatedWorkspace.lastSeen = new Date().toISOString();
-
-        // Apply additional updates
-        if (updates) {
-          Object.assign(updatedWorkspace, updates);
-        }
-
-        // Update timestamps based on status (3-state model)
-        if (status === WorkspaceStatusEnum.RUNNING) {
-          updatedWorkspace.startedAt = new Date().toISOString();
-        } else if (
-          status === WorkspaceStatusEnum.STOPPED ||
-          status === WorkspaceStatusEnum.INACTIVE
-        ) {
-          updatedWorkspace.stoppedAt = new Date().toISOString();
-          updatedWorkspace.pid = undefined;
-          updatedWorkspace.port = undefined;
-        }
-
-        // Validate updated workspace
-        const validatedWorkspace = WorkspaceEntrySchema.parse(updatedWorkspace);
-
-        // Use simple atomic operation without concurrency check
-        // The retry logic handles any potential race conditions
-        const atomic = this.storage.atomic();
-        atomic.set(["workspaces", id], validatedWorkspace);
-        atomic.set(["registry", "lastUpdated"], new Date().toISOString());
-
-        const success = await atomic.commit();
-        if (success) {
-          // Success - return immediately
-          return;
-        }
-
-        // Atomic commit failed - prepare for retry
-        const error = new Error(
-          `Failed to update workspace ${id} status (attempt ${
-            attempt + 1
-          }/${maxRetries}) - concurrent modification detected`,
-        );
-        lastError = error;
-
-        // Exponential backoff: wait 10ms, 20ms, 40ms
-        if (attempt < maxRetries - 1) {
-          const backoffMs = 10 * 2 ** attempt;
-          logger.warn(`${error.message}, retrying in ${backoffMs}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
-        }
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        if (attempt === maxRetries - 1) {
-          throw lastError;
-        }
-        // Wait before retry for other types of errors too
-        const backoffMs = 10 * 2 ** attempt;
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      }
+    if (status === WorkspaceStatusEnum.RUNNING) {
+      next.startedAt = new Date().toISOString();
+    } else if (status === WorkspaceStatusEnum.STOPPED || status === WorkspaceStatusEnum.INACTIVE) {
+      next.stoppedAt = new Date().toISOString();
+      next.pid = undefined;
+      next.port = undefined;
     }
 
-    // If we get here, all retries failed
-    throw (
-      lastError || new Error(`Failed to update workspace ${id} status after ${maxRetries} attempts`)
-    );
+    const validated = WorkspaceEntrySchema.parse(next);
+    await this.storage.set(["workspaces", id], validated);
   }
 
   /**
-   * Get registry statistics
-   */
-  async getRegistryStats(): Promise<{
-    totalWorkspaces: number;
-    runningWorkspaces: number;
-    stoppedWorkspaces: number;
-    lastUpdated: string | null;
-    version: string | null;
-  }> {
-    const workspaces = await this.listWorkspaces();
-    const runningWorkspaces = workspaces.filter(
-      (w) => w.status === WorkspaceStatusEnum.RUNNING,
-    ).length;
-    const stoppedWorkspaces = workspaces.filter(
-      (w) => w.status === WorkspaceStatusEnum.STOPPED,
-    ).length;
-
-    const lastUpdated = await this.storage.get<string>(["registry", "lastUpdated"]);
-    const version = await this.storage.get<string>(["registry", "version"]);
-
-    return {
-      totalWorkspaces: workspaces.length,
-      runningWorkspaces,
-      stoppedWorkspaces,
-      lastUpdated,
-      version,
-    };
-  }
-
-  /**
-   * Cleanup orphaned workspaces (paths that no longer exist)
+   * Remove workspaces whose `path` no longer exists on disk. Returns
+   * the IDs that were cleaned up. Per-key deletes; no atomic needed.
    */
   async cleanupOrphanedWorkspaces(): Promise<string[]> {
-    const workspaces = await this.listWorkspaces();
-    const orphanedIds: string[] = [];
+    const all = await this.listWorkspaces();
+    const orphaned: string[] = [];
 
-    for (const workspace of workspaces) {
+    for (const w of all) {
       try {
-        // Check if workspace directory still exists
-        const statResult = await stat(workspace.path);
-        if (!statResult.isDirectory()) {
-          orphanedIds.push(workspace.id);
-        }
+        const result = await stat(w.path);
+        if (!result.isDirectory()) orphaned.push(w.id);
       } catch {
-        // Path doesn't exist
-        orphanedIds.push(workspace.id);
+        orphaned.push(w.id);
       }
     }
 
-    // Remove orphaned workspaces
-    if (orphanedIds.length > 0) {
-      const atomic = this.storage.atomic();
-
-      for (const id of orphanedIds) {
-        atomic.delete(["workspaces", id]);
-      }
-
-      // Update workspace list
-      const workspaceList = await this.getWorkspaceList();
-      const updatedList = workspaceList.filter((id) => !orphanedIds.includes(id));
-      atomic.set(["workspaces", "_list"], updatedList);
-      atomic.set(["registry", "lastUpdated"], new Date().toISOString());
-
-      const success = await atomic.commit();
-      if (!success) {
-        throw new Error("Failed to cleanup orphaned workspaces - atomic operation failed");
-      }
+    for (const id of orphaned) {
+      await this.storage.delete(["workspaces", id]);
     }
 
-    return orphanedIds;
+    return orphaned;
   }
 
-  /**
-   * Get the list of workspace IDs for efficient enumeration
-   */
-  private async getWorkspaceList(): Promise<string[]> {
-    const list = await this.storage.get<string[]>(["workspaces", "_list"]);
-    return list || [];
-  }
-
-  /**
-   * Close the storage adapter
-   */
   async close(): Promise<void> {
     await this.storage.close();
   }
 
   /**
-   * Get the underlying storage for advanced operations
-   * Use sparingly - prefer domain-specific methods
+   * Get the underlying storage. Use sparingly — prefer the
+   * domain-specific methods above.
    */
   getStorage(): KVStorage {
     return this.storage;

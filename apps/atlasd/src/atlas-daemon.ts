@@ -30,8 +30,7 @@ import {
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
   createJetStreamKVStorage,
-  createRegistryStorage,
-  StorageConfigs,
+  createRegistryStorageJS,
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
   WorkspaceRuntime,
@@ -398,9 +397,12 @@ export class AtlasDaemon {
     this.capabilityRegistry.start(nc);
     this.processAgentExecutor = new ProcessAgentExecutor(nc, this.capabilityRegistry);
 
-    // Create WorkspaceManager (initialize later once registrars and watcher are ready)
+    // Create WorkspaceManager (initialize later once registrars and watcher are ready).
+    // Registry storage is JetStream-KV-backed; the per-workspace records
+    // live in the WORKSPACE_REGISTRY bucket. Migration entry republishes
+    // legacy ~/.atlas/storage.db rows.
     logger.info("Creating WorkspaceManager...");
-    const registry = await createRegistryStorage(StorageConfigs.defaultKV());
+    const registry = await createRegistryStorageJS(nc);
     this.workspaceManager = new WorkspaceManager(registry);
     this.workspaceManager.setMemoryAdapter(
       new JetStreamMemoryAdapter({
