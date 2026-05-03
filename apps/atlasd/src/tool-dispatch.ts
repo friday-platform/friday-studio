@@ -174,6 +174,15 @@ export async function callTool(
 
 export interface ToolWorker {
   toolId: string;
+  /**
+   * Resolves once the queue-group subscription is registered server-side.
+   * `nc.subscribe` returns before the SUB protocol message is flushed —
+   * publishers calling `callTool` immediately can otherwise see all messages
+   * routed to whichever worker registered first. Await this when you need
+   * deterministic queue-group distribution (tests; fast-startup orchestrators
+   * spawning N workers + dispatching).
+   */
+  ready: Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -270,6 +279,7 @@ export function registerToolWorker(
 
   return {
     toolId,
+    ready: nc.flush(),
     async stop() {
       sub.unsubscribe();
       try {

@@ -121,6 +121,10 @@ describe("callTool + registerToolWorker", () => {
       return Promise.resolve("from-b");
     });
     try {
+      // Wait for both queue-group subscriptions to be registered
+      // server-side before dispatching, otherwise the broker can route
+      // every message to whichever worker registered first.
+      await Promise.all([a.ready, b.ready]);
       const replies = await Promise.all(
         Array.from({ length: 10 }, () => callTool(nc, "load-balanced", {}, ctx)),
       );
