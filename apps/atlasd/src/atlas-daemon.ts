@@ -102,6 +102,7 @@ import {
   SignalConsumer,
   type SignalEnvelope,
 } from "./signal-stream.ts";
+import { initScratchpadStorage } from "./storage/scratchpad.ts";
 import { StreamRegistry } from "./stream-registry.ts";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
@@ -424,6 +425,15 @@ export class AtlasDaemon {
     logger.info("Initializing CronManager...");
     const cronStorage = await createJetStreamKVStorage(nc, { bucket: "CRON_TIMERS", history: 5 });
     this.cronManager = new CronManager(cronStorage, logger);
+
+    // Wire scratchpad to its own JetStream KV bucket. Same per-key
+    // pattern; migration republishes legacy ~/.atlas/storage.db
+    // scratchpad entries into SCRATCHPAD bucket.
+    const scratchpadStorage = await createJetStreamKVStorage(nc, {
+      bucket: "SCRATCHPAD",
+      history: 1, // notes are append-only; one revision is enough
+    });
+    initScratchpadStorage(scratchpadStorage);
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");
