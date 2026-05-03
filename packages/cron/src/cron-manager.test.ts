@@ -127,3 +127,169 @@ describe("CronManager — orphan pruning", () => {
     expect(remaining.sort()).toEqual(["user:cron-a"]);
   });
 });
+
+/**
+ * Seed a timer whose `nextExecution` is already in the past, so the
+ * onMissed policy enforcement at `start()` exercises the catchup path.
+ */
+async function seedMissedTimer(
+  storage: KVStorage,
+  opts: {
+    timerKey: string;
+    workspaceId: string;
+    signalId: string;
+    schedule: string;
+    nextExecutionAgoMs: number;
+    onMissed?: "skip" | "coalesce" | "catchup";
+    missedWindowMs?: number;
+    lastExecution?: Date;
+  },
+): Promise<void> {
+  await storage.set([`cron_timers`, opts.timerKey], {
+    workspaceId: opts.workspaceId,
+    signalId: opts.signalId,
+    schedule: opts.schedule,
+    timezone: "UTC",
+    nextExecution: new Date(Date.now() - opts.nextExecutionAgoMs).toISOString(),
+    lastExecution: opts.lastExecution?.toISOString(),
+    onMissed: opts.onMissed,
+    missedWindowMs: opts.missedWindowMs,
+  });
+}
+
+interface FiredCall {
+  workspaceId: string;
+  signalId: string;
+  scheduled: string;
+  policy?: string;
+  missedCount?: number;
+  firstMissedAt?: string;
+}
+
+describe("CronManager — onMissed policy", () => {
+  let storage: KVStorage;
+  let manager: CronManager;
+  let fired: FiredCall[];
+
+  beforeEach(async () => {
+    storage = await createKVStorage({ type: "memory" });
+    manager = new CronManager(storage, logger);
+    fired = [];
+    manager.setWakeupCallback((workspaceId, signalId, signalData) => {
+      const data = (signalData as { data: Record<string, unknown> }).data;
+      fired.push({
+        workspaceId,
+        signalId,
+        scheduled: data.scheduled as string,
+        policy: data.policy as string | undefined,
+        missedCount: data.missedCount as number | undefined,
+        firstMissedAt: data.firstMissedAt as string | undefined,
+      });
+      return Promise.resolve();
+    });
+  });
+
+  afterEach(async () => {
+    await manager.shutdown();
+  });
+
+  it("skip: no make-up fire, advances nextExecution past now", async () => {
+    // Every minute, nextExecution slipped 5 min into the past
+    await seedMissedTimer(storage, {
+      timerKey: "user:every-minute",
+      workspaceId: "user",
+      signalId: "every-minute",
+      schedule: "* * * * *",
+      nextExecutionAgoMs: 5 * 60 * 1000,
+      onMissed: "skip",
+    });
+
+    await manager.start();
+
+    expect(fired).toHaveLength(0);
+    const timers = manager.listTimers();
+    expect(timers).toHaveLength(1);
+    expect(timers[0]?.nextExecution.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("coalesce: fires once with missedCount + firstMissedAt", async () => {
+    // Every minute, nextExecution 4 min in the past → 4 missed slots,
+    // collapse into one fire.
+    await seedMissedTimer(storage, {
+      timerKey: "user:digest",
+      workspaceId: "user",
+      signalId: "digest",
+      schedule: "* * * * *",
+      nextExecutionAgoMs: 4 * 60 * 1000,
+      onMissed: "coalesce",
+    });
+
+    await manager.start();
+
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.policy).toBe("coalesce");
+    expect(fired[0]?.missedCount).toBeGreaterThanOrEqual(3);
+    expect(fired[0]?.firstMissedAt).toBeTruthy();
+  });
+
+  it("catchup: fires every missed slot in chronological order", async () => {
+    // Every minute, 3 min in the past → 3 separate fires.
+    await seedMissedTimer(storage, {
+      timerKey: "user:replay",
+      workspaceId: "user",
+      signalId: "replay",
+      schedule: "* * * * *",
+      nextExecutionAgoMs: 3 * 60 * 1000,
+      onMissed: "catchup",
+    });
+
+    await manager.start();
+
+    expect(fired.length).toBeGreaterThanOrEqual(2);
+    expect(fired.length).toBeLessThanOrEqual(4);
+    for (const f of fired) {
+      expect(f.policy).toBe("catchup");
+      expect(f.missedCount).toBe(1);
+    }
+    // Strictly ascending scheduled times
+    const slots = fired.map((f) => Date.parse(f.scheduled));
+    for (let i = 1; i < slots.length; i++) {
+      expect(slots[i]).toBeGreaterThan(slots[i - 1] ?? 0);
+    }
+  });
+
+  it("missedWindowMs caps how far back catchup walks", async () => {
+    // Daemon "down" 2 hours (nextExecution = -2h) but window = 5 min →
+    // catchup must drop everything older than 5 min.
+    await seedMissedTimer(storage, {
+      timerKey: "user:bounded-replay",
+      workspaceId: "user",
+      signalId: "bounded-replay",
+      schedule: "* * * * *",
+      nextExecutionAgoMs: 2 * 60 * 60 * 1000,
+      onMissed: "catchup",
+      missedWindowMs: 5 * 60 * 1000,
+    });
+
+    await manager.start();
+
+    // 5-minute window with every-minute cron → 4-5 fires, never 120.
+    expect(fired.length).toBeLessThanOrEqual(6);
+    expect(fired.length).toBeGreaterThan(0);
+  });
+
+  it("legacy timers (no onMissed) default to skip", async () => {
+    // Pre-G1.5 persisted timer — neither field present. Must not fire.
+    await seedMissedTimer(storage, {
+      timerKey: "user:legacy",
+      workspaceId: "user",
+      signalId: "legacy",
+      schedule: "* * * * *",
+      nextExecutionAgoMs: 5 * 60 * 1000,
+    });
+
+    await manager.start();
+
+    expect(fired).toHaveLength(0);
+  });
+});

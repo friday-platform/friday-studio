@@ -16,6 +16,21 @@ import type { KVStorage } from "@atlas/storage/kv";
 import type { WorkspaceSignalTriggerCallback } from "@atlas/workspace/types";
 import { CronExpressionParser } from "cron-parser";
 
+/**
+ * Coalescing policy for cron firings the daemon was down for.
+ *
+ * - `skip`     — drop missed firings entirely. Pre-G1.5 behavior.
+ * - `coalesce` — fire once now representing every missed slot inside
+ *                `missedWindowMs`. Payload carries `missedCount` +
+ *                `firstMissedAt`.
+ * - `catchup`  — fire each missed slot in chronological order, one
+ *                signal per slot. Bounded by `missedWindowMs`.
+ *
+ * Window cap matters: a daemon down for a week with `catchup` on an
+ * hourly cron only fires the slots inside the window, not all 168.
+ */
+export type OnMissedPolicy = "skip" | "coalesce" | "catchup";
+
 export interface TimerInfo {
   workspaceId: string;
   signalId: string;
@@ -24,10 +39,16 @@ export interface TimerInfo {
   nextExecution: Date; // Always present at runtime
   lastExecution?: Date;
   paused?: boolean;
+  /** Missed-fire policy. Defaults to "skip" if undefined (legacy timers). */
+  onMissed?: OnMissedPolicy;
+  /** How far back to consider missed firings, in ms. Defaults to 24h if undefined. */
+  missedWindowMs?: number;
 }
 
 // Type for registering timers (without computed fields)
 export type TimerConfig = Omit<TimerInfo, "nextExecution" | "lastExecution">;
+
+const DEFAULT_MISSED_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Cron timer signal payload data.
@@ -61,6 +82,24 @@ export interface CronTimerSignalPayload {
    * pause and decide whether to backfill.
    */
   missedSince?: string;
+  /**
+   * Which onMissed policy produced this firing. "ontime" when the fire
+   * was at its scheduled slot; "coalesce" / "catchup" when it was a
+   * make-up fire for a missed slot. Absent on legacy callers.
+   */
+  policy?: "ontime" | "coalesce" | "catchup";
+  /**
+   * For "coalesce" — total slots collapsed into this one fire (>= 1).
+   * For "catchup" — always 1 (each slot fires separately).
+   * Undefined for "ontime".
+   */
+  missedCount?: number;
+  /**
+   * For "coalesce" — ISO 8601 of the earliest missed slot represented.
+   * For "catchup" — ISO 8601 of this specific missed slot (== `scheduled`).
+   * Undefined for "ontime".
+   */
+  firstMissedAt?: string;
 }
 
 /**
@@ -126,6 +165,22 @@ export class CronManager {
 
       if (options?.knownWorkspaceIds) {
         await this.pruneOrphanedTimers(options.knownWorkspaceIds);
+      }
+
+      // Apply onMissed policy for any timer whose nextExecution slipped
+      // into the past while the daemon was down. Default `skip` is a
+      // no-op aside from advancing nextExecution past now; `coalesce`
+      // and `catchup` produce make-up signal fires here.
+      const now = new Date();
+      for (const [timerKey, timer] of this.timers.entries()) {
+        if (timer.paused) continue;
+        if (timer.nextExecution.getTime() <= now.getTime()) {
+          try {
+            await this.applyMissedPolicy(timerKey, timer, now);
+          } catch (err) {
+            this.logger.error("Failed to apply onMissed policy", { timerKey, error: err });
+          }
+        }
       }
 
       // Start the interval-based timer checking for reliability
@@ -378,7 +433,190 @@ export class CronManager {
   // ============================================================================
 
   /**
-   * Execute a timer by waking up the workspace
+   * Enumerate cron slots in (start, end] bounded by `windowMs` (older
+   * slots are discarded). Used to detect missed firings on rehydration
+   * after daemon downtime, broker outage, or extended pause.
+   */
+  private computeMissedSlots(
+    schedule: string,
+    timezone: string,
+    after: Date,
+    until: Date,
+    windowMs: number,
+  ): Date[] {
+    const earliestAcceptable = until.getTime() - windowMs;
+    const startMs = Math.max(after.getTime(), earliestAcceptable);
+    if (startMs >= until.getTime()) return [];
+    let cursor: ReturnType<typeof CronExpressionParser.parse>;
+    try {
+      // currentDate=startMs-1ms guarantees `next()` returns the first
+      // slot at-or-after `startMs`. cron-parser is exclusive on its
+      // `currentDate` boundary.
+      cursor = CronExpressionParser.parse(schedule, {
+        currentDate: new Date(startMs - 1),
+        tz: timezone,
+      });
+    } catch (err) {
+      this.logger.error("Cannot compute missed slots — invalid schedule", { schedule, error: err });
+      return [];
+    }
+    const slots: Date[] = [];
+    const SAFETY_LIMIT = 10_000; // bounded against pathological "* * * * *" + huge window
+    while (slots.length < SAFETY_LIMIT) {
+      let next: Date;
+      try {
+        next = cursor.next().toDate();
+      } catch {
+        break; // cron-parser exhausted (rare; some expressions have finite ranges)
+      }
+      if (next.getTime() > until.getTime()) break;
+      slots.push(next);
+    }
+    return slots;
+  }
+
+  /**
+   * Apply the timer's onMissed policy on rehydration. Returns true if
+   * any catch-up firings were dispatched. Always advances
+   * `nextExecution` past `now` regardless of policy.
+   */
+  private async applyMissedPolicy(timerKey: string, timer: TimerInfo, now: Date): Promise<boolean> {
+    const policy: OnMissedPolicy = timer.onMissed ?? "skip";
+    const windowMs = timer.missedWindowMs ?? DEFAULT_MISSED_WINDOW_MS;
+    // The boundary for "missed" is the timer's previously-scheduled
+    // nextExecution. Slots strictly after lastExecution and at-or-before
+    // now that we never fired count as missed.
+    const after = timer.lastExecution ?? new Date(timer.nextExecution.getTime() - 1);
+    const slots = this.computeMissedSlots(timer.schedule, timer.timezone, after, now, windowMs);
+
+    if (slots.length === 0 || policy === "skip") {
+      if (slots.length > 0) {
+        this.logger.info("Missed cron firings skipped by policy", {
+          timerKey,
+          policy: "skip",
+          missedCount: slots.length,
+          firstMissedAt: slots[0]?.toISOString(),
+        });
+      }
+      // Just advance nextExecution past now and persist.
+      try {
+        const expr = CronExpressionParser.parse(timer.schedule, {
+          currentDate: now,
+          tz: timer.timezone,
+        });
+        timer.nextExecution = expr.next().toDate();
+      } catch (err) {
+        this.logger.error("Failed to advance nextExecution after skip", { timerKey, error: err });
+      }
+      await this.persistTimer(timerKey, timer);
+      return false;
+    }
+
+    if (policy === "coalesce") {
+      const firstMissed = slots[0];
+      const mostRecentMissed = slots[slots.length - 1];
+      if (!firstMissed || !mostRecentMissed) return false;
+      this.logger.info("Cron firings coalesced into one", {
+        timerKey,
+        policy: "coalesce",
+        missedCount: slots.length,
+        firstMissedAt: firstMissed.toISOString(),
+        scheduledAs: mostRecentMissed.toISOString(),
+      });
+      await this.fireOnce(timerKey, timer, mostRecentMissed, now, {
+        policy: "coalesce",
+        missedCount: slots.length,
+        firstMissedAt: firstMissed.toISOString(),
+      });
+      return true;
+    }
+
+    // catchup
+    this.logger.info("Cron firings replaying in order (catchup)", {
+      timerKey,
+      policy: "catchup",
+      missedCount: slots.length,
+      firstMissedAt: slots[0]?.toISOString(),
+      lastMissedAt: slots[slots.length - 1]?.toISOString(),
+    });
+    for (const slot of slots) {
+      await this.fireOnce(timerKey, timer, slot, now, {
+        policy: "catchup",
+        missedCount: 1,
+        firstMissedAt: slot.toISOString(),
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Single fire with explicit `scheduled` slot (used for missed-policy
+   * make-up fires + the normal on-time path). Advances `nextExecution`
+   * to the next slot strictly after `now`, then dispatches via the
+   * wakeup callback.
+   */
+  private async fireOnce(
+    timerKey: string,
+    timer: TimerInfo,
+    scheduled: Date,
+    now: Date,
+    extras: {
+      policy: "ontime" | "coalesce" | "catchup";
+      missedCount?: number;
+      firstMissedAt?: string;
+    },
+  ): Promise<void> {
+    const missedSince = timer.lastExecution?.toISOString();
+    timer.lastExecution = now;
+    try {
+      const expr = CronExpressionParser.parse(timer.schedule, {
+        currentDate: now,
+        tz: timer.timezone,
+      });
+      timer.nextExecution = expr.next().toDate();
+    } catch (err) {
+      this.logger.error("Failed to advance nextExecution", { timerKey, error: err });
+    }
+    await this.persistTimer(timerKey, timer);
+
+    const signalData: CronTimerSignalData = {
+      id: timer.signalId,
+      timestamp: now.toISOString(),
+      data: {
+        scheduled: scheduled.toISOString(),
+        timezone: timer.timezone,
+        nextRun: timer.nextExecution.toISOString(),
+        actualFiredAt: now.toISOString(),
+        ...(missedSince ? { missedSince } : {}),
+        ...extras,
+      },
+    };
+
+    if (!this.wakeupCallback) {
+      this.logger.warn("No wakeup callback set - timer execution skipped", { timerKey });
+      return;
+    }
+    try {
+      await this.wakeupCallback(timer.workspaceId, timer.signalId, signalData);
+      this.logger.debug("Cron timer fired", {
+        timerKey,
+        scheduled: scheduled.toISOString(),
+        policy: extras.policy,
+        nextExecution: timer.nextExecution.toISOString(),
+      });
+    } catch (callbackError) {
+      this.logger.error("Wakeup callback failed", {
+        error: callbackError,
+        timerKey,
+        workspaceId: timer.workspaceId,
+      });
+    }
+  }
+
+  /**
+   * Execute a timer by waking up the workspace. Used by the runtime
+   * tick loop (CHECK_INTERVAL_MS) — assumes a single missed slot at
+   * most. Larger gaps go through `applyMissedPolicy` on startup.
    */
   private async executeTimer(timerKey: string, timer: TimerInfo): Promise<void> {
     this.logger.debug("Executing cron timer", {
@@ -387,62 +625,11 @@ export class CronManager {
       signalId: timer.signalId,
       schedule: timer.schedule,
     });
-
-    try {
-      // Capture `missedSince` BEFORE we mutate lastExecution — it's the
-      // previous tick (if any) that the consumer's "did I miss any?"
-      // computation cares about. See CronTimerSignalPayload docstring.
-      const missedSince = timer.lastExecution?.toISOString();
-
-      const now = new Date();
-      timer.lastExecution = now;
-
-      // Calculate next execution
-      const cronExpression = CronExpressionParser.parse(timer.schedule, {
-        currentDate: now,
-        tz: timer.timezone,
-      });
-      timer.nextExecution = cronExpression.next().toDate();
-
-      // Persist updated timer state immediately for reliability
-      await this.persistTimer(timerKey, timer);
-
-      // Create signal data
-      const signalData: CronTimerSignalData = {
-        id: timer.signalId,
-        timestamp: now.toISOString(),
-        data: {
-          scheduled: timer.schedule,
-          timezone: timer.timezone,
-          nextRun: timer.nextExecution.toISOString(),
-          actualFiredAt: now.toISOString(),
-          ...(missedSince ? { missedSince } : {}),
-        },
-      };
-
-      // Wake up workspace if callback is set
-      if (this.wakeupCallback) {
-        try {
-          await this.wakeupCallback(timer.workspaceId, timer.signalId, signalData);
-          this.logger.debug("Cron timer executed successfully", {
-            timerKey,
-            nextExecution: timer.nextExecution.toISOString(),
-          });
-        } catch (callbackError) {
-          this.logger.error("Wakeup callback failed", {
-            error: callbackError,
-            timerKey,
-            workspaceId: timer.workspaceId,
-          });
-          // Continue with next execution calculation even if callback fails
-        }
-      } else {
-        this.logger.warn("No wakeup callback set - timer execution skipped", { timerKey });
-      }
-    } catch (error) {
-      this.logger.error("Failed to execute cron timer", { error, timerKey, timer });
-      // Timer will be retried on next interval check
-    }
+    const now = new Date();
+    // The runtime tick only sees gaps of CHECK_INTERVAL_MS at most;
+    // treat the previously-scheduled nextExecution as the slot fired,
+    // and tag as "ontime".
+    await this.fireOnce(timerKey, timer, timer.nextExecution, now, { policy: "ontime" });
   }
 
   /**
@@ -459,6 +646,8 @@ export class CronManager {
         nextExecution: string;
         lastExecution?: string;
         paused?: boolean;
+        onMissed?: OnMissedPolicy;
+        missedWindowMs?: number;
       }>([`cron_timers`]);
       let loadedCount = 0;
 
@@ -479,6 +668,8 @@ export class CronManager {
             nextExecution: new Date(value.nextExecution),
             lastExecution: value.lastExecution ? new Date(value.lastExecution) : undefined,
             paused: value.paused,
+            onMissed: value.onMissed,
+            missedWindowMs: value.missedWindowMs,
           };
 
           this.timers.set(timerKey, timer);
@@ -515,6 +706,8 @@ export class CronManager {
       nextExecution: timer.nextExecution.toISOString(),
       lastExecution: timer.lastExecution?.toISOString(),
       paused: timer.paused,
+      onMissed: timer.onMissed,
+      missedWindowMs: timer.missedWindowMs,
     });
     this.logger.debug("Timer persisted to storage", { timerKey });
   }

@@ -1,4 +1,4 @@
-import type { MergedConfig } from "@atlas/config";
+import { type MergedConfig, parseDuration } from "@atlas/config";
 import type { CronManager, TimerConfig } from "@atlas/cron";
 import { logger } from "@atlas/logger";
 import type { WorkspaceSignalRegistrar } from "@atlas/workspace/types";
@@ -33,7 +33,12 @@ export class CronSignalRegistrar implements WorkspaceSignalRegistrar {
             logger.warn("Skipping cron signal without schedule", { workspaceId, signalId });
             continue;
           }
-          timers.push({ workspaceId, signalId, schedule, timezone });
+          // Schema defaults `onMissed` to "skip" and `missedWindow` to
+          // "24h"; passing them through verbatim keeps schema as the
+          // single source of truth.
+          const onMissed = signalConfig.config.onMissed ?? "skip";
+          const missedWindowMs = parseDuration(signalConfig.config.missedWindow ?? "24h");
+          timers.push({ workspaceId, signalId, schedule, timezone, onMissed, missedWindowMs });
         }
       }
 
