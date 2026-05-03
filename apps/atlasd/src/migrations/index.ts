@@ -25,7 +25,9 @@ import type { Migration } from "jetstream";
 import { m_9c0f0fd_chat_jetstream } from "./m_9c0f0fd_chat_jetstream.ts";
 import { m_7492ae5_memory_jetstream } from "./m_7492ae5_memory_jetstream.ts";
 import { m_a6ab40b_sessions_stream_upgrade } from "./m_a6ab40b_sessions_stream_upgrade.ts";
+import { m_artifacts_to_jetstream } from "./m_artifacts_to_jetstream.ts";
 import { m_cron_timers_to_jetstream } from "./m_cron_timers_to_jetstream.ts";
+import { m_drop_legacy_storage_db } from "./m_drop_legacy_storage_db.ts";
 import { m_e4b4182_mcp_registry_to_jetstream } from "./m_e4b4182_mcp_registry_to_jetstream.ts";
 import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
 import { m_scratchpad_to_jetstream } from "./m_scratchpad_to_jetstream.ts";
@@ -47,4 +49,10 @@ export const ALL_MIGRATIONS: Migration[] = [
   m_workspace_registry_to_jetstream,
   // 2026-05-02 — Deno KV → JetStream KV consolidation, step 4: scratchpad
   m_scratchpad_to_jetstream,
+  // 2026-05-02 — Deno KV → JetStream KV consolidation, step 5: artifacts
+  // (also moves blob bytes into the JetStream Object Store, not just metadata)
+  m_artifacts_to_jetstream,
+  // 2026-05-02 — Final step: delete the legacy SQLite KV files now that
+  // every surface above has been migrated. MUST stay last in the manifest.
+  m_drop_legacy_storage_db,
 ];

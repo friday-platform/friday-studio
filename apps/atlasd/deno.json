@@ -1,7 +1,11 @@
 {
   "name": "@atlas/atlasd",
   "version": "1.0.0",
-  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13", "nats": "npm:nats@^2.29.3" },
+  "imports": {
+    "@db/sqlite": "jsr:@db/sqlite@0.13",
+    "file-type": "npm:file-type@^22.0.1",
+    "nats": "npm:nats@^2.29.3"
+  },
   "exports": {
     ".": "./mod.ts",
     "./types": "./types.ts",

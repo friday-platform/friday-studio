@@ -4,7 +4,6 @@
   "type": "module",
   "exports": {
     ".": "./mod.ts",
-    "./kv": "./src/kv.ts",
     "./credentials": "./src/credential-fetcher.ts",
     "./artifacts": "./src/artifacts/mod.ts",
     "./artifacts/file-upload": "./src/artifacts/file-upload.ts",
@@ -42,7 +41,6 @@
   },
   "main": "./mod.ts",
   "dependencies": {
-    "@deno/kv": "^0.13.0",
     "@ai-sdk/provider": "^3.0.10",
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/bundled-agents": "workspace:*",
@@ -61,7 +59,7 @@
     "@xmldom/xmldom": "^0.9.10",
     "ai": "^6.0.174",
     "@libpdf/core": "^0.3.4",
-    "file-type": "^19.6.0",
+    "file-type": "^22.0.1",
     "jetstream": "workspace:*",
     "jose": "^6.2.3",
     "jszip": "^3.10.1",

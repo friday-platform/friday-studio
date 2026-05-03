@@ -8,9 +8,11 @@
  * (cron, workspace registry, scratchpad, artifacts) move.
  *
  * Idempotent: each entry checks for an existing JS KV key before
- * re-writing. The legacy SQLite file is left in place — the final
- * cleanup migration deletes it once all five Deno KV migrations have
- * shipped (see `packages/core/src/kv.ts` + `packages/storage/src/deno-kv-storage.ts`).
+ * re-writing. The legacy SQLite file is left in place by this entry —
+ * the final cleanup migration (`drop-legacy-storage-db`) deletes it
+ * once all five Deno KV migrations have shipped. The legacy
+ * `core/kv.ts` + `storage/deno-kv-storage.ts` adapters were deleted in
+ * the same wave; this migration reads SQLite directly via `Deno.openKv`.
  *
  * No-op if the legacy file doesn't exist (fresh install).
  */

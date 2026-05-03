@@ -18,7 +18,7 @@ import { getCanonicalKind } from "./canonical.ts";
 import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
 import { generateUniqueWorkspaceName } from "./id-generator.ts";
 import type { WorkspaceRuntime } from "./runtime.ts";
-import { createRegistryStorage, type RegistryStorageAdapter, StorageConfigs } from "./storage.ts";
+import type { RegistryStorageAdapter } from "./storage.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 
@@ -1257,14 +1257,4 @@ export class WorkspaceManager {
       throw error;
     }
   }
-}
-
-let _workspaceManager: WorkspaceManager | null = null;
-
-export async function getWorkspaceManager(): Promise<WorkspaceManager> {
-  if (!_workspaceManager) {
-    const registry = await createRegistryStorage(StorageConfigs.defaultKV());
-    _workspaceManager = new WorkspaceManager(registry);
-  }
-  return _workspaceManager;
 }
