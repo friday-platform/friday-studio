@@ -246,6 +246,39 @@ export async function markEventFired(
 }
 
 /**
+ * Bulk: walk every pending manual event for a (workspaceId,
+ * signalId) pair and apply `nextStatus` to each. Used by the group
+ * action endpoints (fire-once, fire-all, dismiss-all) so the
+ * operator can act on N missed slots with a single click instead
+ * of N round trips. Returns the list of `scheduledAt` timestamps
+ * that were transitioned, so the caller can decide how many
+ * underlying signals to publish.
+ */
+export async function markAllPendingForSignal(
+  nc: NatsConnection,
+  workspaceId: string,
+  signalId: string,
+  nextStatus: "fired" | "dismissed",
+): Promise<string[]> {
+  const events = await listAllWorkspaceEvents(nc);
+  const now = new Date().toISOString();
+  const transitioned: string[] = [];
+  for (const e of events) {
+    if (e.workspaceId !== workspaceId) continue;
+    if (e.signalId !== signalId) continue;
+    if (e.policy !== "manual" || e.status !== "pending") continue;
+    const key = composeEventStateKey(workspaceId, signalId, e.scheduledAt);
+    try {
+      await writeEventState(nc, key, { status: nextStatus, updatedAt: now });
+      transitioned.push(e.scheduledAt);
+    } catch {
+      // Skip individual failures — the bulk should still flip what it can.
+    }
+  }
+  return transitioned;
+}
+
+/**
  * Mark a manual `schedule.missed` event as dismissed (operator
  * explicitly skipped). Same shape as markEventFired.
  */

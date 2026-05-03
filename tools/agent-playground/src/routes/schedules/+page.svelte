@@ -72,33 +72,98 @@
 
   const events = $derived(eventsQuery.data?.events ?? []);
 
-  let actingOnEvent = $state<Set<string>>(new Set());
+  let actingOnGroup = $state<Set<string>>(new Set());
+  let openMenuFor = $state<string | null>(null);
 
   function eventKey(e: ScheduleMissedEvent): string {
     return e.id ?? `${e.workspaceId}:${e.signalId}:${e.scheduledAt}`;
   }
 
-  async function manualAction(event: ScheduleMissedEvent, action: "fire" | "dismiss") {
-    const key = eventKey(event);
-    actingOnEvent = new Set([...actingOnEvent, key]);
+  function groupKey(workspaceId: string, signalId: string): string {
+    return `${workspaceId}:${signalId}`;
+  }
+
+  /**
+   * Roll up pending manual events by (workspaceId, signalId) so the
+   * UI shows ONE actionable row per signal even when the daemon
+   * caught N missed slots. The most-recent missed slot is the one
+   * the row displays as "missed Xm ago"; the count drives the
+   * "Fire all (N)" menu option.
+   */
+  interface PendingGroup {
+    workspaceId: string;
+    signalId: string;
+    schedule: string;
+    timezone: string;
+    count: number;
+    /** Most recent missed slot — drives the "missed Xm ago" text. */
+    latestMissedAt: string;
+    /** Earliest missed slot — drives "covers slots since Xm ago" tooltip text. */
+    earliestMissedAt: string;
+  }
+
+  const pendingGroups = $derived.by((): PendingGroup[] => {
+    const byKey = new Map<string, PendingGroup>();
+    for (const e of pendingEvents) {
+      const k = groupKey(e.workspaceId, e.signalId);
+      const existing = byKey.get(k);
+      if (existing) {
+        existing.count++;
+        if (e.scheduledAt > existing.latestMissedAt) existing.latestMissedAt = e.scheduledAt;
+        if (e.scheduledAt < existing.earliestMissedAt) existing.earliestMissedAt = e.scheduledAt;
+      } else {
+        byKey.set(k, {
+          workspaceId: e.workspaceId,
+          signalId: e.signalId,
+          schedule: e.schedule,
+          timezone: e.timezone,
+          count: 1,
+          latestMissedAt: e.scheduledAt,
+          earliestMissedAt: e.scheduledAt,
+        });
+      }
+    }
+    // Most-recent first
+    return Array.from(byKey.values()).sort((a, b) =>
+      b.latestMissedAt.localeCompare(a.latestMissedAt),
+    );
+  });
+
+  async function groupAction(
+    group: PendingGroup,
+    action: "fire-once" | "fire-all" | "dismiss-all",
+  ) {
+    const key = groupKey(group.workspaceId, group.signalId);
+    actingOnGroup = new Set([...actingOnGroup, key]);
+    openMenuFor = null;
     try {
-      const res = await fetch(`/api/daemon/api/events/${action}`, {
+      const res = await fetch("/api/daemon/api/events/group", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          workspaceId: event.workspaceId,
-          signalId: event.signalId,
-          scheduledAt: event.scheduledAt,
+          workspaceId: group.workspaceId,
+          signalId: group.signalId,
+          action,
         }),
       });
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       await queryClient.invalidateQueries({ queryKey: ["workspace-events", "schedule.missed"] });
     } catch (err) {
-      console.error(`Failed to ${action} event:`, err);
+      console.error(`Failed to ${action}:`, err);
     } finally {
-      actingOnEvent = new Set([...actingOnEvent].filter((k) => k !== key));
+      actingOnGroup = new Set([...actingOnGroup].filter((k) => k !== key));
     }
   }
+
+  // Close the dropdown when clicking outside.
+  $effect(() => {
+    if (!openMenuFor) return;
+    const onDocClick = () => {
+      openMenuFor = null;
+    };
+    window.addEventListener("click", onDocClick);
+    return () => window.removeEventListener("click", onDocClick);
+  });
 
   let toggling = $state<Set<string>>(new Set());
 
@@ -322,7 +387,7 @@
           </div>
 
           {#if missedSubTab === "active"}
-            {#if pendingEvents.length === 0}
+            {#if pendingGroups.length === 0}
               <div class="empty-state">
                 <p>No pending missed schedules.</p>
                 <span class="empty-hint">
@@ -333,34 +398,73 @@
               </div>
             {:else}
               <div class="signal-list">
-                {#each pendingEvents as event (eventKey(event))}
-                  {@const busy = actingOnEvent.has(eventKey(event))}
-                  <div class="signal-row event-row event-pending">
-                    <a class="row-main" href="/platform/{event.workspaceId}/signal/{event.signalId}">
+                {#each pendingGroups as group (groupKey(group.workspaceId, group.signalId))}
+                  {@const key = groupKey(group.workspaceId, group.signalId)}
+                  {@const busy = actingOnGroup.has(key)}
+                  {@const menuOpen = openMenuFor === key}
+                  <div class="signal-row event-row">
+                    <a class="row-main" href="/platform/{group.workspaceId}/signal/{group.signalId}">
                       <span class="signal-id">
-                        {event.signalId}
-                        <span class="badge badge-event badge-pending">manual · pending</span>
+                        {group.signalId}
+                        <span class="badge badge-event badge-pending">
+                          manual · pending{group.count > 1 ? ` · ${group.count} missed` : ""}
+                        </span>
                       </span>
                       <span class="signal-meta">
-                        <span class="ws-name">{event.workspaceId}</span>
+                        <span class="ws-name">{group.workspaceId}</span>
                         <span class="sep">·</span>
-                        <span class="cron-human">{humanizeCron(event.schedule, event.timezone)}</span>
+                        <span class="cron-human">{humanizeCron(group.schedule, group.timezone)}</span>
                         <span class="sep">·</span>
-                        <span class="event-time">missed {formatRelative(event.scheduledAt)}</span>
+                        <span class="event-time">
+                          {#if group.count > 1}
+                            oldest missed {formatRelative(group.earliestMissedAt)}
+                          {:else}
+                            missed {formatRelative(group.latestMissedAt)}
+                          {/if}
+                        </span>
                       </span>
                     </a>
                     <div class="row-right">
-                      <button
-                        class="action-btn action-resume"
-                        disabled={busy}
-                        onclick={() => manualAction(event, "fire")}
-                      >
-                        {busy ? "…" : "Fire now"}
-                      </button>
+                      <div class="split-btn">
+                        <button
+                          class="action-btn action-resume split-btn__main"
+                          disabled={busy}
+                          onclick={() => groupAction(group, "fire-once")}
+                        >
+                          {busy ? "…" : "Fire"}
+                        </button>
+                        {#if group.count > 1}
+                          <button
+                            class="action-btn action-resume split-btn__chevron"
+                            aria-label="More fire options"
+                            disabled={busy}
+                            onclick={(e) => {
+                              e.stopPropagation();
+                              openMenuFor = menuOpen ? null : key;
+                            }}
+                          >
+                            ▾
+                          </button>
+                          {#if menuOpen}
+                            <div class="split-btn__menu" role="menu">
+                              <button
+                                class="split-btn__menu-item"
+                                role="menuitem"
+                                onclick={(e) => {
+                                  e.stopPropagation();
+                                  groupAction(group, "fire-all");
+                                }}
+                              >
+                                Fire all missed ({group.count})
+                              </button>
+                            </div>
+                          {/if}
+                        {/if}
+                      </div>
                       <button
                         class="action-btn"
                         disabled={busy}
-                        onclick={() => manualAction(event, "dismiss")}
+                        onclick={() => groupAction(group, "dismiss-all")}
                       >
                         Dismiss
                       </button>
@@ -493,50 +597,103 @@
   }
 
   /* ── Sub-tabs (Active / History inside Missed) ───────────────────── */
+  /* Same underlined-tab look as the parent .tab-bar so the visual
+     hierarchy reads as "tabs all the way down" instead of mixing
+     pill toggles with underlined tabs. Slightly smaller font + less
+     padding to subordinate them to the parent tabs. */
 
   .sub-tab-bar {
-    display: inline-flex;
-    background: color-mix(in srgb, var(--color-text), transparent 92%);
-    border-radius: var(--radius-2);
-    gap: 2px;
+    border-block-end: 1px solid var(--color-border-1);
+    display: flex;
+    gap: var(--size-1);
     margin-block-end: var(--size-3);
-    padding: 2px;
   }
 
   .sub-tab {
     align-items: center;
-    background: transparent;
+    background: none;
     border: none;
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    border-block-end: 2px solid transparent;
+    color: color-mix(in srgb, var(--color-text), transparent 40%);
     cursor: pointer;
     display: inline-flex;
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
-    gap: var(--size-1-5);
+    gap: var(--size-2);
+    margin-block-end: -1px;
     padding: var(--size-1) var(--size-3);
     transition:
-      background 120ms ease,
-      color 120ms ease;
+      color 120ms ease,
+      border-color 120ms ease;
   }
 
   .sub-tab:hover:not(.sub-tab--active) {
-    color: var(--color-text);
+    color: color-mix(in srgb, var(--color-text), transparent 15%);
   }
 
   .sub-tab--active {
-    background: var(--color-surface-1, white);
+    border-block-end-color: var(--color-text);
     color: var(--color-text);
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text), transparent 90%);
   }
 
   .sub-tab-count {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
-    font-variant-numeric: tabular-nums;
+    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
+    border-radius: var(--radius-round);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+    font-size: 0.7em;
+    font-weight: var(--font-weight-6);
+    line-height: 1;
+    padding: 2px 6px;
   }
 
-  .sub-tab--active .sub-tab-count {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
+  /* ── Split button (Fire | ▾  → Fire all) ─────────────────────────── */
+
+  .split-btn {
+    display: inline-flex;
+    position: relative;
+  }
+
+  .split-btn__main {
+    border-end-end-radius: 0;
+    border-start-end-radius: 0;
+  }
+
+  .split-btn__chevron {
+    border-inline-start: none;
+    border-end-start-radius: 0;
+    border-start-start-radius: 0;
+    inline-size: auto;
+    padding-inline: var(--size-2);
+  }
+
+  .split-btn__menu {
+    background: var(--color-surface-1, white);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-text), transparent 88%);
+    inset-block-start: calc(100% + 4px);
+    inset-inline-end: 0;
+    min-inline-size: 12rem;
+    padding: var(--size-1);
+    position: absolute;
+    z-index: 10;
+  }
+
+  .split-btn__menu-item {
+    background: none;
+    border: none;
+    border-radius: var(--radius-1);
+    color: var(--color-text);
+    cursor: pointer;
+    display: block;
+    font-size: var(--font-size-1);
+    inline-size: 100%;
+    padding: var(--size-1-5) var(--size-2);
+    text-align: start;
+  }
+
+  .split-btn__menu-item:hover {
+    background: color-mix(in srgb, var(--color-text), transparent 92%);
   }
 
   /* ── History row dimming + history badge ─────────────────────────── */
@@ -738,10 +895,6 @@
   .badge-pending {
     background-color: color-mix(in srgb, var(--color-accent, #1f6feb), transparent 80%);
     color: var(--color-accent, #1f6feb);
-  }
-
-  .event-row.event-pending {
-    border-left: 3px solid var(--color-accent, #1f6feb);
   }
 
   .event-time {
