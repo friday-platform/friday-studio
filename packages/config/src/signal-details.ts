@@ -10,6 +10,7 @@
  */
 
 import { JobSpecificationSchema } from "./jobs.ts";
+import type { OnMissedPolicy } from "./signals.ts";
 import type { WorkspaceConfig } from "./workspace.ts";
 
 // ==============================================================================
@@ -30,11 +31,10 @@ export interface SignalDetail {
   /** Timezone for schedule signals (defaults to UTC) */
   timezone?: string;
   /**
-   * onMissed policy for schedule signals (defaults to "skip" when
-   * unset). Surfaced so UIs can render the chosen behavior alongside
-   * the cron expression — see /schedules page.
+   * onMissed policy for schedule signals. Surfaced so UIs can render
+   * the chosen behavior alongside the cron expression — see /schedules page.
    */
-  onMissed?: "skip" | "coalesce" | "catchup";
+  onMissed?: OnMissedPolicy;
   /** missedWindow Duration string (e.g., "24h"). */
   missedWindow?: string;
   /** Watched path for fs-watch signals */

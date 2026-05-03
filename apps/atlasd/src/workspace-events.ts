@@ -164,6 +164,15 @@ export async function publishWorkspaceEvent(
   const wsToken = sanitizeToken(event.workspaceId);
   const subject = `${SUBJECT_PREFIX}.${wsToken}.${event.type}`;
   try {
+    // Defense-in-depth dedup for manual schedule events: if a KV
+    // state record already exists for this slot, the operator has
+    // already seen it (pending) or acted on it (fired/dismissed).
+    // Skip the stream publish — appending another entry would inflate
+    // the rolled-up count on the /schedules page.
+    if (event.type === "schedule.missed" && event.policy === "manual" && event.pending) {
+      const existing = await readEventState(nc, eventStateKey(event));
+      if (existing) return;
+    }
     const js = nc.jetstream();
     await js.publish(subject, enc.encode(JSON.stringify(event)));
     // Seed the KV state record for manual events so the read path
@@ -368,33 +377,46 @@ async function readEventsBackwards(
     }
     // Stable id (used by the fire/dismiss routes + UI keying).
     event.id = eventStateKey(event);
-    // Join in mutable state for `manual` events. Coalesce / catchup
-    // never have a state record — they fire immediately.
-    if (event.policy === "manual") {
-      const state = await readEventState(nc, event.id);
-      if (state) {
-        event.status = state.status;
-        event.pending = state.status === "pending";
-        if (state.status !== "pending") event.actionedAt = state.updatedAt;
-      } else {
-        // No state record — either a publish → state-write race
-        // window OR a pre-fix event whose state-seed failed silently
-        // when the key contained an unescaped `:`. Self-heal: write
-        // a pending record now so the operator-action surface
-        // (markEventFired / markEventDismissed) finds something to
-        // flip when the user clicks Fire / Dismiss.
-        await writeEventStateBestEffort(nc, event.id, {
-          status: "pending",
-          updatedAt: event.firedAt,
-        });
-        event.status = "pending";
-        event.pending = true;
-      }
-    } else {
-      // coalesce / catchup are always auto-fired; no pending lifecycle.
-      event.status = "auto";
-    }
     events.push(event);
   }
+
+  // Resolve KV state for all manual events in parallel — the polled
+  // /schedules page used to wait on N sequential round-trips here.
+  type WithId = WorkspaceEvent & { id: string };
+  const manualEvents = events.filter((e): e is WithId => e.policy === "manual" && !!e.id);
+  const stateResults = await Promise.all(manualEvents.map((e) => readEventState(nc, e.id)));
+  const stateById = new Map<string, EventStateRecord | null>();
+  manualEvents.forEach((e, i) => {
+    stateById.set(e.id, stateResults[i] ?? null);
+  });
+  const heals: Promise<void>[] = [];
+  for (const event of events) {
+    if (event.policy !== "manual") {
+      // coalesce / catchup are always auto-fired; no pending lifecycle.
+      event.status = "auto";
+      continue;
+    }
+    const id = event.id;
+    if (!id) continue; // can't happen — event.id was assigned above
+    const state = stateById.get(id);
+    if (state) {
+      event.status = state.status;
+      event.pending = state.status === "pending";
+      if (state.status !== "pending") event.actionedAt = state.updatedAt;
+    } else {
+      // No state record — either a publish → state-write race
+      // window OR a pre-fix event whose state-seed failed silently
+      // when the key contained an unescaped `:`. Self-heal: write
+      // a pending record now so the operator-action surface
+      // (markEventFired / markEventDismissed) finds something to
+      // flip when the user clicks Fire / Dismiss.
+      heals.push(
+        writeEventStateBestEffort(nc, id, { status: "pending", updatedAt: event.firedAt }),
+      );
+      event.status = "pending";
+      event.pending = true;
+    }
+  }
+  await Promise.all(heals);
   return events;
 }

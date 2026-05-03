@@ -68,6 +68,11 @@ export function convertLLMToAgent(
 
         const result = streamText({
           model,
+          // role:"system" in messages (rather than the `system:` parameter)
+          // because we need providerOptions on it (Anthropic cache-control).
+          // The system entry comes from workspace.yml — never user input —
+          // so the AI SDK injection warning is a false positive here.
+          allowSystemInMessages: true,
           messages: [
             {
               role: "system",

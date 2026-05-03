@@ -705,6 +705,11 @@ export class CronManager {
     } catch (err) {
       this.logger.error("Failed to advance nextExecution after manual", { timerKey, error: err });
     }
+    // Bump lastExecution so a subsequent restart's computeMissedSlots
+    // skips past these slots. Without this, every restart re-emits the
+    // same pending entries to WORKSPACE_EVENTS — the KV state record
+    // dedupes operator action but the stream count still inflates.
+    timer.lastExecution = mostRecentMissed;
     await this.persistTimer(timerKey, timer);
     await this.notifyMissedFiring(timer, {
       policy: "manual",

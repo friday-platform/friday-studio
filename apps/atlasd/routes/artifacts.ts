@@ -501,6 +501,38 @@ const BatchGetBody = z.object({
   includeContents: z.boolean().optional(),
 });
 
+/**
+ * When an artifact lookup misses, the cause may be the in-flight
+ * artifacts-to-jetstream / repair-artifact-object-store-v2 migration
+ * rather than missing data. Returns a 503 body if so, otherwise null
+ * (caller should fall through to its own 404 response).
+ */
+function migrationStateError(
+  migrations: { state: "pending" } | { state: "complete"; result: { failed: string[] } },
+): { status: 503; body: Record<string, unknown> } | null {
+  if (migrations.state === "pending") {
+    return {
+      status: 503,
+      body: { error: "Artifact migration in progress — retry shortly", migrating: true },
+    };
+  }
+  const failed = migrations.result.failed;
+  if (
+    failed.includes("artifacts-to-jetstream") ||
+    failed.includes("repair-artifact-object-store-v2")
+  ) {
+    return {
+      status: 503,
+      body: {
+        error:
+          "Artifact migration failed — see daemon logs. The artifact may need to be re-uploaded.",
+        migrationFailed: true,
+      },
+    };
+  }
+  return null;
+}
+
 const artifactsApp = daemonFactory
   .createApp()
   /** Create new artifact */
@@ -582,6 +614,8 @@ const artifactsApp = daemonFactory
       }
 
       if (!result.data) {
+        const migErr = migrationStateError(c.get("app").daemon.getStatus().migrations);
+        if (migErr) return c.json(migErr.body, migErr.status);
         return c.json({ error: "Artifact not found" }, 404);
       }
 
@@ -676,6 +710,8 @@ const artifactsApp = daemonFactory
         return c.json({ error: result.error }, 500);
       }
       if (!result.data) {
+        const migErr = migrationStateError(c.get("app").daemon.getStatus().migrations);
+        if (migErr) return c.json(migErr.body, migErr.status);
         return c.json({ error: "Artifact not found" }, 404);
       }
 

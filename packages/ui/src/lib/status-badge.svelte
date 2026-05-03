@@ -4,12 +4,19 @@
   Renders a rounded pill with icon + label, colored by status.
 
   @component
-  @param {"completed" | "failed" | "active" | "skipped" | "pending" | "cancelled"} status - Execution status
+  @param {"completed" | "failed" | "active" | "skipped" | "pending" | "cancelled" | "interrupted"} status - Execution status
   @param {string} [label] - Override the default label text
 -->
 
 <script lang="ts">
-  type Status = "completed" | "failed" | "active" | "skipped" | "pending" | "cancelled";
+  type Status =
+    | "completed"
+    | "failed"
+    | "active"
+    | "skipped"
+    | "pending"
+    | "cancelled"
+    | "interrupted";
 
   type Props = {
     status: Status;
@@ -25,6 +32,7 @@
     skipped: "Skipped",
     pending: "Pending",
     cancelled: "Cancelled",
+    interrupted: "Interrupted",
   };
 
   const displayLabel = $derived(label ?? defaultLabels[status]);
@@ -38,6 +46,7 @@
   class:status-badge--skipped={status === "skipped"}
   class:status-badge--pending={status === "pending"}
   class:status-badge--cancelled={status === "cancelled"}
+  class:status-badge--interrupted={status === "interrupted"}
 >
   {displayLabel}
 </span>
@@ -82,5 +91,10 @@
   .status-badge--cancelled {
     background-color: color-mix(in srgb, var(--color-text), transparent 88%);
     color: color-mix(in srgb, var(--color-text), transparent 40%);
+  }
+
+  .status-badge--interrupted {
+    background-color: color-mix(in srgb, var(--color-warning), transparent 80%);
+    color: color-mix(in srgb, var(--color-warning), var(--color-text) 20%);
   }
 </style>

@@ -1,7 +1,7 @@
 import type { Logger } from "@atlas/logger";
 import { createKVStorage, type KVStorage } from "@atlas/storage";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CronManager } from "./cron-manager.ts";
+import { CronManager, type OnMissedPolicy } from "./cron-manager.ts";
 
 /** Silent logger — the cron manager only needs the call surface, not output. */
 function makeSilentLogger(): Logger {
@@ -140,7 +140,7 @@ async function seedMissedTimer(
     signalId: string;
     schedule: string;
     nextExecutionAgoMs: number;
-    onMissed?: "skip" | "coalesce" | "catchup";
+    onMissed?: OnMissedPolicy;
     missedWindowMs?: number;
     lastExecution?: Date;
   },

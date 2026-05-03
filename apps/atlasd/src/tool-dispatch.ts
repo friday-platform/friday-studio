@@ -232,6 +232,10 @@ export function registerToolWorker(
       cancelLoop.catch(() => {
         // Subscription closed cleanly when we unsubscribe in finally — ignore.
       });
+      // Subscribe() returns before the server registers the SUB; without
+      // a flush, a cancel published immediately could be missed (max:1
+      // sub with no queue means undelivered messages are dropped).
+      await nc.flush();
 
       try {
         const result = await handler(parsed, { abortSignal: controller.signal });

@@ -196,6 +196,3 @@ export const eventsRoutes = daemonFactory
       200,
     );
   });
-
-export type WorkspaceEventsRoutes = typeof workspaceEventsRoutes;
-export type EventsRoutes = typeof eventsRoutes;
