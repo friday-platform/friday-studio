@@ -1,7 +1,7 @@
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { getDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
 

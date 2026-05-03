@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMBroadcastNotifier, FSMDefinition, FSMEvent } from "../types.ts";
 

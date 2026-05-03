@@ -1,7 +1,7 @@
 import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
-import { getDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { buildLLMActionTrace, FSMEngine, formatToolResultsForRetry } from "../fsm-engine.ts";
 import type {

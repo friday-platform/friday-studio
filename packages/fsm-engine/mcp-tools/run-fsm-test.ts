@@ -5,7 +5,7 @@
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { TestRunner } from "./lib/runner.ts";
 import { TestDefinitionSchema } from "./lib/schema.ts";
 import { createErrorResponse, createSuccessResponse } from "./utils.ts";

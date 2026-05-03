@@ -1,4 +1,4 @@
-import { type DocumentStore, getDocumentStore } from "../../../document-store/node.ts";
+import { type DocumentStore, getDocumentStore } from "../../../document-store/mod.ts";
 import { FSMDocumentDataSchema } from "../../document-schemas.ts";
 import { FSMEngine } from "../../fsm-engine.ts";
 import type { FSMDefinition } from "../../types.ts";

@@ -14,7 +14,7 @@ import process from "node:process";
 import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createFSMOutputValidator } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
-import { getDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput } from "../types.ts";

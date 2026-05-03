@@ -44,7 +44,7 @@ import { stringifyError } from "@atlas/utils";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { type ImagePart, type ModelMessage, type Tool, tool } from "ai";
 import { z } from "zod";
-import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
+import type { DocumentScope, DocumentStore } from "../document-store/mod.ts";
 import { expandArtifactRefsInInput } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { hasDefinedSchema } from "./schema-utils.ts";
