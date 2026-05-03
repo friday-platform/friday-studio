@@ -36,8 +36,16 @@ const sanitize = (s: string) => s.replace(SAFE_NAME_RE, "_");
 
 const MEMORY_INDEX_BUCKET = "MEMORY_INDEX";
 const SCHEMA_VERSION = "1";
-const DEFAULT_MAX_MSG_SIZE = 4 * 1024 * 1024;
+// Match the broker's max_payload (8MB by default) so a borderline-sized
+// memory entry never stream-rejects when the broker would have accepted it.
+const DEFAULT_MAX_MSG_SIZE = 8 * 1024 * 1024;
 const DEFAULT_DUPLICATE_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000;
+
+/** Per-stream limits passed by the daemon at adapter construction. */
+export interface MemoryStreamLimits {
+  maxMsgSize?: number;
+  duplicateWindowNs?: number | bigint;
+}
 
 export const NarrativeIndexEntrySchema = z.object({
   workspaceId: z.string().min(1),
@@ -83,6 +91,7 @@ async function ensureNarrativeStream(
   nc: NatsConnection,
   workspaceId: string,
   name: string,
+  limits: MemoryStreamLimits,
 ): Promise<void> {
   const jsm = await nc.jetstreamManager();
   const sName = memoryStreamName(workspaceId, name);
@@ -92,13 +101,19 @@ async function ensureNarrativeStream(
   } catch (err) {
     if (!isStreamNotFound(err)) throw err;
   }
+  const dup = limits.duplicateWindowNs ?? DEFAULT_DUPLICATE_WINDOW_NS;
   await jsm.streams.add({
     name: sName,
     subjects: [memorySubject(workspaceId, name)],
     retention: RetentionPolicy.Limits,
     storage: StorageType.File,
-    max_msg_size: DEFAULT_MAX_MSG_SIZE,
-    duplicate_window: DEFAULT_DUPLICATE_WINDOW_NS,
+    max_msg_size: limits.maxMsgSize ?? DEFAULT_MAX_MSG_SIZE,
+    duplicate_window: typeof dup === "bigint" ? Number(dup) : dup,
+    // Allow rollup compaction for the future tombstone-compaction primitive.
+    // Today nothing publishes a rollup; admins can `nats stream purge` until
+    // the explicit compact() helper lands. Setting allow_rollup at create
+    // time avoids a stream update later.
+    allow_rollup_hdrs: true,
   });
   logger.info("Created memory stream", { workspaceId, name, stream: sName });
 }
@@ -164,12 +179,19 @@ export class JetStreamNarrativeStore implements NarrativeStore {
   private readonly nc: NatsConnection;
   private readonly workspaceId: string;
   private readonly name: string;
+  private readonly limits: MemoryStreamLimits;
   private cachedKV: KV | null = null;
 
-  constructor(opts: { nc: NatsConnection; workspaceId: string; name: string }) {
+  constructor(opts: {
+    nc: NatsConnection;
+    workspaceId: string;
+    name: string;
+    limits?: MemoryStreamLimits;
+  }) {
     this.nc = opts.nc;
     this.workspaceId = opts.workspaceId;
     this.name = opts.name;
+    this.limits = opts.limits ?? {};
   }
 
   private async kv(): Promise<KV> {
@@ -187,7 +209,7 @@ export class JetStreamNarrativeStore implements NarrativeStore {
       {
         schema: NarrativeEntrySchema,
         commit: async (parsed: NarrativeEntry): Promise<NarrativeEntry> => {
-          await ensureNarrativeStream(this.nc, this.workspaceId, this.name);
+          await ensureNarrativeStream(this.nc, this.workspaceId, this.name, this.limits);
           const h = natsHeaders();
           h.set("Friday-Schema-Version", SCHEMA_VERSION);
           h.set("Friday-Entry-Id", parsed.id);
@@ -233,9 +255,18 @@ export class JetStreamNarrativeStore implements NarrativeStore {
     const tombstones = new Set(index?.tombstones ?? []);
 
     const entries: NarrativeEntry[] = [];
+    // OrderedConsumerOptions uses `filterSubjects` (the nats.js v2.29
+    // canonical name); accepts a string or string[]. The stream has only
+    // one subject so we pass a string.
     const consumer = await this.js().consumers.get(sName, {
       filterSubjects: memorySubject(this.workspaceId, this.name),
     });
+    // max_messages bounds the fetch to exactly what the stream contains, so
+    // the iterator terminates on its own — no manual break needed. The
+    // previous early-break compared `entries.length + tombstones.size` to
+    // `totalMessages`, which silently dropped the tail of the stream when
+    // KV held an orphan tombstone (id never published, or pointing at a
+    // purged message).
     const iter = await consumer.fetch({ max_messages: totalMessages, expires: 5_000 });
     for await (const m of iter) {
       try {
@@ -250,7 +281,6 @@ export class JetStreamNarrativeStore implements NarrativeStore {
           error: String(parseErr),
         });
       }
-      if (entries.length + tombstones.size >= totalMessages) break;
     }
 
     let result = entries;

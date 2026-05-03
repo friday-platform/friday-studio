@@ -16,6 +16,7 @@ import type { NatsConnection } from "nats";
 import {
   ensureMemoryIndexBucket,
   JetStreamNarrativeStore,
+  type MemoryStreamLimits,
   type NarrativeIndexEntry,
   NarrativeIndexEntrySchema,
 } from "./js-narrative-store.ts";
@@ -25,9 +26,11 @@ const dec = new TextDecoder();
 
 export class JetStreamMemoryAdapter implements MemoryAdapter {
   private readonly nc: NatsConnection;
+  private readonly limits: MemoryStreamLimits;
 
-  constructor(opts: { nc: NatsConnection }) {
+  constructor(opts: { nc: NatsConnection; limits?: MemoryStreamLimits }) {
     this.nc = opts.nc;
+    this.limits = opts.limits ?? {};
   }
 
   /**
@@ -56,7 +59,9 @@ export class JetStreamMemoryAdapter implements MemoryAdapter {
   }
 
   store(workspaceId: string, name: string): Promise<NarrativeStore> {
-    return Promise.resolve(new JetStreamNarrativeStore({ nc: this.nc, workspaceId, name }));
+    return Promise.resolve(
+      new JetStreamNarrativeStore({ nc: this.nc, workspaceId, name, limits: this.limits }),
+    );
   }
 
   async list(workspaceId: string): Promise<StoreMetadata[]> {

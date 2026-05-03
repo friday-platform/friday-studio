@@ -842,8 +842,11 @@ export class WorkspaceRuntime {
 
   private async createJobEngine(
     job: FSMJob,
-    sessionId?: string,
+    sessionId: string,
   ): Promise<{ engine: FSMEngine; documentStore: FileSystemDocumentStore }> {
+    // Stateless model: every signal spawns a fresh engine bound to its
+    // sessionId. The optional-sessionId branch was a relic of the deleted
+    // "single-flight" path where one engine spanned multiple signals.
     const stateStoragePath = path.join(getFridayHome(), "workspaces");
     const documentStore = new FileSystemDocumentStore({ basePath: stateStoragePath });
 
@@ -852,11 +855,7 @@ export class WorkspaceRuntime {
 
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
 
-    const scope = {
-      workspaceId: this.workspace.id,
-      workspaceName: this.workspace.name,
-      ...(sessionId ? { sessionId } : {}),
-    };
+    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name, sessionId };
     const platformModels = this.options.platformModels;
     if (!platformModels) {
       throw new Error(
@@ -884,7 +883,7 @@ export class WorkspaceRuntime {
       logger.debug("Loading FSM from inline definition", {
         workspaceId: this.workspace.id,
         jobName: job.name,
-        isolated: sessionId !== undefined,
+        sessionId,
       });
 
       // Inline FSMs in workspace.yml jobs don't include `id` — the job name is the identity.

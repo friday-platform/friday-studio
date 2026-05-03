@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "exports": { ".": "./mod.ts", "./types": "./types.ts", "./daemon": "./src/atlas-daemon.ts" },
+  "exports": {
+    ".": "./mod.ts",
+    "./types": "./types.ts",
+    "./daemon": "./src/atlas-daemon.ts",
+    "./migrations": "./src/migrations/index.ts"
+  },
   "dependencies": {
     "@atlas/adapters-md": "workspace:*",
     "@atlas/agent-sdk": "workspace:*",
@@ -14,6 +19,7 @@
     "@atlas/cron": "workspace:*",
     "@atlas/fsm-engine": "workspace:*",
     "@atlas/hallucination": "workspace:*",
+    "jetstream": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",

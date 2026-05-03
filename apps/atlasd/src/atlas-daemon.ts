@@ -16,7 +16,7 @@ import {
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
-import { initChatStorage } from "@atlas/core/chat/storage";
+import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
 import { CronManager } from "@atlas/cron";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -44,6 +44,7 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
+import { readJetStreamConfig, runMigrations } from "jetstream";
 import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import { activityRoutes } from "../routes/activity.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
@@ -78,7 +79,6 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
-import { migrateLegacyChats } from "./chat-migration.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
 import { broadcastJobOutput } from "./chat-sdk/broadcast.ts";
 import {
@@ -92,7 +92,7 @@ import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts"
 import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
-import { migrateLegacyMemory } from "./memory-migration.ts";
+import { ALL_MIGRATIONS } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
@@ -340,26 +340,56 @@ export class AtlasDaemon {
     const nc = await this.natsManager.start();
     logger.info("NATS ready");
 
-    // Ensure the SESSIONS JetStream stream exists (durable session event store)
+    // Read the env-driven JetStream limits once and propagate to every
+    // stream + consumer creation site below. Single source of truth.
+    const jsCfg = readJetStreamConfig();
+
+    // Subscribe to the broker's max-deliveries advisory across ALL streams
+    // and consumers so dead-lettered messages from CHAT_*, MEMORY_*, and
+    // SIGNALS land in the same log surface. Wildcard matches every
+    // (stream, consumer) pair.
+    this.subscribeMaxDeliveriesAdvisory(nc);
+
+    // Ensure the SESSIONS JetStream stream exists (durable session event store).
+    // For NEW installs this creates File + 30d directly; for upgraded installs
+    // the matching migration entry (`m_a6ab40b_sessions_stream_upgrade`) does
+    // the streams.update / Memory-storage warning.
     await this.ensureSessionsStream(nc);
 
     // Ensure the SIGNALS JetStream stream exists. Triggers (HTTP, cron, chat,
     // future cross-cascade emits) can publish onto this for durable, redeliver-
     // able routing. The consumer worker is started after WorkspaceManager
     // initializes so it can dispatch through `triggerWorkspaceSignal`.
-    await ensureSignalsStream(nc);
-
-    // Wire chat storage to JetStream + ensure CHATS KV bucket exists, then
-    // migrate any legacy file-based chats in the background.
-    initChatStorage(nc);
-    migrateLegacyChats(nc).catch((err: unknown) => {
-      logger.warn("Chat migration failed", { error: String(err) });
+    await ensureSignalsStream(nc, {
+      maxMsgSize: jsCfg.stream.maxMsgSize.value,
+      duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
+      // SIGNALS keeps its own 7d max_age regardless of the global default —
+      // signals are work units, not long-term history.
     });
 
-    // Migrate legacy markdown narrative memories to JetStream in the background.
-    migrateLegacyMemory(nc).catch((err: unknown) => {
-      logger.warn("Memory migration failed", { error: String(err) });
+    // Wire chat storage to JetStream + eagerly create the CHATS KV bucket
+    // so the first cold read doesn't pay the create cost.
+    initChatStorage(nc, {
+      maxMsgSize: jsCfg.stream.maxMsgSize.value,
+      duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
     });
+    await ensureChatsKVBucket(nc);
+
+    // Run all 0.1.1 → current migrations through the consolidated runner.
+    // Idempotent: each entry checks the `_FRIDAY_MIGRATIONS` KV bucket and
+    // skips if already applied. First failure aborts the queue. Backgrounded
+    // so daemon startup isn't gated on (potentially slow) data migrations —
+    // the chat / memory backends are wired before this kicks off so reads
+    // against not-yet-migrated chats just see "no chat" until migration
+    // catches up. Operators can also run `atlas migrate` from the CLI.
+    runMigrations(nc, ALL_MIGRATIONS, logger).then(
+      (result) => {
+        logger.info("Migrations summary", { ...result });
+      },
+      (err: unknown) => {
+        logger.warn("Migration runner failed", { error: String(err) });
+      },
+    );
 
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
@@ -370,7 +400,15 @@ export class AtlasDaemon {
     logger.info("Creating WorkspaceManager...");
     const registry = await createRegistryStorage(StorageConfigs.defaultKV());
     this.workspaceManager = new WorkspaceManager(registry);
-    this.workspaceManager.setMemoryAdapter(new JetStreamMemoryAdapter({ nc }));
+    this.workspaceManager.setMemoryAdapter(
+      new JetStreamMemoryAdapter({
+        nc,
+        limits: {
+          maxMsgSize: jsCfg.stream.maxMsgSize.value,
+          duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
+        },
+      }),
+    );
 
     // Wire up runtime invalidation callback so file watcher changes clear both maps
     this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
@@ -454,64 +492,72 @@ export class AtlasDaemon {
     //   - Any other error = infra-level failure → mark the workspace
     //     "inactive" with the error metadata, destroy its runtime, and
     //     throw so the broker NAKs and redelivers (up to maxDeliver).
-    this.signalConsumer = new SignalConsumer(nc, async (envelope: SignalEnvelope, ctx) => {
-      try {
-        return await this.triggerWorkspaceSignal(
-          envelope.workspaceId,
-          envelope.signalId,
-          envelope.payload,
-          envelope.streamId,
-          ctx.onStreamEvent,
-        );
-      } catch (err) {
-        if (err instanceof SessionFailedError) {
-          logger.warn("Signal session failed", {
+    this.signalConsumer = new SignalConsumer(
+      nc,
+      async (envelope: SignalEnvelope, ctx) => {
+        try {
+          return await this.triggerWorkspaceSignal(
+            envelope.workspaceId,
+            envelope.signalId,
+            envelope.payload,
+            envelope.streamId,
+            ctx.onStreamEvent,
+          );
+        } catch (err) {
+          if (err instanceof SessionFailedError) {
+            logger.warn("Signal session failed", {
+              workspaceId: envelope.workspaceId,
+              signalId: envelope.signalId,
+              status: err.status,
+              error: err.message,
+            });
+            // Domain-level failure (not infra). For correlated callers we need
+            // to surface it as ok=false on the response subject and ack so the
+            // broker doesn't redeliver. For uncorrelated callers (cron-style)
+            // we just ack — the legacy NATS subscriber didn't redeliver these
+            // either.
+            if (envelope.correlationId) {
+              throw err;
+            }
+            return undefined;
+          }
+          logger.error("Failed to process signal", {
+            error: err,
             workspaceId: envelope.workspaceId,
             signalId: envelope.signalId,
-            status: err.status,
-            error: err.message,
           });
-          // Domain-level failure (not infra). For correlated callers we need
-          // to surface it as ok=false on the response subject and ack so the
-          // broker doesn't redeliver. For uncorrelated callers (cron-style)
-          // we just ack — the legacy NATS subscriber didn't redeliver these
-          // either.
-          if (envelope.correlationId) {
-            throw err;
+          try {
+            const manager = this.getWorkspaceManager();
+            const workspace = await manager.find({ id: envelope.workspaceId });
+            await manager.updateWorkspaceStatus(envelope.workspaceId, "inactive", {
+              metadata: {
+                ...workspace?.metadata,
+                lastError: err instanceof Error ? err.message : String(err),
+                lastErrorAt: new Date().toISOString(),
+                failureCount: (workspace?.metadata?.failureCount ?? 0) + 1,
+              },
+            });
+            // Note: we used to destroyWorkspaceRuntime here on signal failure.
+            // That assumed a corrupted runtime is the most likely cause of a
+            // signal failure, but in practice signal failures are usually
+            // transient (network, MCP timeout, LLM error) and tearing down the
+            // runtime forces an expensive cold restart on the next trigger.
+            // Idle timeout / explicit shutdown handle genuine cleanup.
+          } catch (statusError) {
+            logger.error("Failed to update workspace status after signal failure", {
+              workspaceId: envelope.workspaceId,
+              statusError,
+            });
           }
-          return undefined;
+          throw err;
         }
-        logger.error("Failed to process signal", {
-          error: err,
-          workspaceId: envelope.workspaceId,
-          signalId: envelope.signalId,
-        });
-        try {
-          const manager = this.getWorkspaceManager();
-          const workspace = await manager.find({ id: envelope.workspaceId });
-          await manager.updateWorkspaceStatus(envelope.workspaceId, "inactive", {
-            metadata: {
-              ...workspace?.metadata,
-              lastError: err instanceof Error ? err.message : String(err),
-              lastErrorAt: new Date().toISOString(),
-              failureCount: (workspace?.metadata?.failureCount ?? 0) + 1,
-            },
-          });
-          // Note: we used to destroyWorkspaceRuntime here on signal failure.
-          // That assumed a corrupted runtime is the most likely cause of a
-          // signal failure, but in practice signal failures are usually
-          // transient (network, MCP timeout, LLM error) and tearing down the
-          // runtime forces an expensive cold restart on the next trigger.
-          // Idle timeout / explicit shutdown handle genuine cleanup.
-        } catch (statusError) {
-          logger.error("Failed to update workspace status after signal failure", {
-            workspaceId: envelope.workspaceId,
-            statusError,
-          });
-        }
-        throw err;
-      }
-    });
+      },
+      {
+        maxAckPending: jsCfg.consumer.maxAckPending.value,
+        maxDeliver: jsCfg.consumer.maxDeliver.value,
+        ackWaitNs: jsCfg.consumer.ackWaitNs.value,
+      },
+    );
     await this.signalConsumer.start();
 
     // Register in-process tool workers. Default behavior — each worker
@@ -786,25 +832,52 @@ export class AtlasDaemon {
   }
 
   /**
-   * Create the SESSIONS JetStream stream if it doesn't already exist.
-   * The stream retains events for 24 hours so SSE clients can reconnect
-   * and replay the full session history.
+   * Create the SESSIONS JetStream stream if missing. New installs get
+   * File storage + 30d retention. Existing installs are upgraded by the
+   * `m_a6ab40b_sessions_stream_upgrade` migration entry, which adds
+   * `max_age` to streams created without one and warns if storage is
+   * still Memory (storage type can't be changed via update).
    */
   private async ensureSessionsStream(nc: NatsConnection): Promise<void> {
     const jsm = await nc.jetstreamManager();
+    const THIRTY_DAYS_NS = 30 * 24 * 60 * 60 * 1_000_000_000;
     try {
       await jsm.streams.info("SESSIONS");
-      // Stream already exists
+      // Already exists — leave it. Upgrade path is the migration entry.
     } catch {
       await jsm.streams.add({
         name: "SESSIONS",
         subjects: ["sessions.*.events"],
         retention: RetentionPolicy.Limits,
-        storage: StorageType.Memory,
-        max_age: 24 * 60 * 60 * 1_000_000_000, // 24 hours in nanoseconds
+        storage: StorageType.File,
+        max_age: THIRTY_DAYS_NS,
       });
-      logger.info("Created SESSIONS JetStream stream");
+      logger.info("Created SESSIONS JetStream stream (file storage, 30d retention)");
     }
+  }
+
+  /**
+   * Daemon-wide subscription to the broker's max-deliveries advisory.
+   * Catches dead-lettered messages from EVERY (stream, consumer) pair —
+   * SIGNALS, future CHAT_* / MEMORY_* consumers, anything else. One log
+   * surface, no per-stream wiring.
+   *
+   * Wildcard subject: $JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.<stream>.<consumer>
+   * — `>` matches both trailing tokens.
+   */
+  private subscribeMaxDeliveriesAdvisory(nc: NatsConnection): void {
+    const sub = nc.subscribe("$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>");
+    const dec = new TextDecoder();
+    void (async () => {
+      for await (const msg of sub) {
+        try {
+          const advisory = JSON.parse(dec.decode(msg.data));
+          logger.error("JetStream message dead-lettered", { subject: msg.subject, advisory });
+        } catch {
+          // Malformed advisory; ignore.
+        }
+      }
+    })();
   }
 
   /**

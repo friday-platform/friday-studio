@@ -13,16 +13,19 @@ import type { Result } from "@atlas/utils";
 import type { NatsConnection } from "nats";
 import {
   type Chat,
+  type ChatStreamLimits,
   createJetStreamChatBackend,
+  ensureChatsKVBucket,
   type JetStreamChatBackend,
 } from "./jetstream-backend.ts";
 
 export type { Chat };
+export { ensureChatsKVBucket };
 
 let backend: JetStreamChatBackend | null = null;
 
-export function initChatStorage(nc: NatsConnection): void {
-  backend = createJetStreamChatBackend(nc);
+export function initChatStorage(nc: NatsConnection, limits: ChatStreamLimits = {}): void {
+  backend = createJetStreamChatBackend(nc, limits);
 }
 
 function b(): JetStreamChatBackend {

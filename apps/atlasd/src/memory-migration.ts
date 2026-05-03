@@ -26,7 +26,10 @@ import { type NatsConnection, headers as natsHeaders, RetentionPolicy, StorageTy
 
 const SCHEMA_VERSION = "1";
 const enc = new TextEncoder();
-const DEFAULT_MAX_MSG_SIZE = 4 * 1024 * 1024;
+// Match the chat backend / broker max_payload (8MB). Memory entries are
+// usually small, but the migration mustn't reject what the production
+// adapter would accept.
+const DEFAULT_MAX_MSG_SIZE = 8 * 1024 * 1024;
 const DEFAULT_DUPLICATE_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000;
 
 function memoryRoot(): string {

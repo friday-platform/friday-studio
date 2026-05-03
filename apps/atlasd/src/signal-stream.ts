@@ -23,7 +23,6 @@ import {
   headers as natsHeaders,
   RetentionPolicy,
   StorageType,
-  type Subscription,
 } from "nats";
 import { z } from "zod";
 
@@ -32,6 +31,25 @@ const SCHEMA_VERSION = "1";
 const DEFAULT_MAX_MSG_SIZE = 1 * 1024 * 1024;
 const DEFAULT_MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000; // 7 days
 const DEFAULT_DUPLICATE_WINDOW_NS = 5 * 60 * 1_000_000_000; // 5 min — covers cron-tick double-fires
+
+/** Per-stream limits for SIGNALS, sourced from FRIDAY_JETSTREAM_* env vars. */
+export interface SignalsStreamLimits {
+  maxMsgSize?: number;
+  maxAgeNs?: number | bigint;
+  duplicateWindowNs?: number | bigint;
+}
+
+/** Per-consumer limits for SignalConsumer, sourced from FRIDAY_JETSTREAM_* env vars. */
+export interface SignalsConsumerLimits {
+  maxAckPending?: number;
+  maxDeliver?: number;
+  ackWaitNs?: number | bigint;
+}
+
+const toNumber = (v: number | bigint | undefined, fallback: number): number => {
+  if (v === undefined) return fallback;
+  return typeof v === "bigint" ? Number(v) : v;
+};
 // WorkQueue streams require DeliverPolicy.All — messages are dropped from the
 // stream once acked, so "from now on" or "from sequence" deliver policies are
 // rejected by the broker.
@@ -83,7 +101,10 @@ export function signalStreamSubject(correlationId: string): string {
   return `signals.stream.${correlationId}`;
 }
 
-export async function ensureSignalsStream(nc: NatsConnection): Promise<void> {
+export async function ensureSignalsStream(
+  nc: NatsConnection,
+  limits: SignalsStreamLimits = {},
+): Promise<void> {
   const jsm = await nc.jetstreamManager();
   try {
     await jsm.streams.info(STREAM_NAME);
@@ -97,9 +118,9 @@ export async function ensureSignalsStream(nc: NatsConnection): Promise<void> {
     subjects: ["workspaces.*.signals.*"],
     retention: RetentionPolicy.Workqueue,
     storage: StorageType.File,
-    max_msg_size: DEFAULT_MAX_MSG_SIZE,
-    max_age: DEFAULT_MAX_AGE_NS,
-    duplicate_window: DEFAULT_DUPLICATE_WINDOW_NS,
+    max_msg_size: toNumber(limits.maxMsgSize, DEFAULT_MAX_MSG_SIZE),
+    max_age: toNumber(limits.maxAgeNs, DEFAULT_MAX_AGE_NS),
+    duplicate_window: toNumber(limits.duplicateWindowNs, DEFAULT_DUPLICATE_WINDOW_NS),
   });
   logger.info("Created SIGNALS JetStream stream");
 }
@@ -177,6 +198,20 @@ export interface SignalConsumerOptions {
   batchSize?: number;
   /** Max redelivery attempts before sending to dead-letter logging. */
   maxDeliver?: number;
+  /**
+   * Max in-flight unacked messages before the broker pauses delivery to
+   * this consumer. Primary flow-control knob — too low starves the
+   * dispatcher under burst, too high lets the worker fall behind without
+   * back-pressuring the publisher. Sourced from
+   * FRIDAY_JETSTREAM_MAX_ACK_PENDING.
+   */
+  maxAckPending?: number;
+  /**
+   * How long the broker waits for an ack before redelivering. Tune up
+   * if signal cascades routinely exceed the default; tune down if
+   * worker death latency matters more than long-running cascades.
+   */
+  ackWaitNs?: number | bigint;
 }
 
 /**
@@ -188,11 +223,12 @@ export interface SignalConsumerOptions {
 export class SignalConsumer {
   private running = false;
   private loop: Promise<void> | null = null;
-  private deadLetterSub: Subscription | null = null;
   private readonly name: string;
   private readonly expiresMs: number;
   private readonly batchSize: number;
   private readonly maxDeliver: number;
+  private readonly maxAckPending: number;
+  private readonly ackWaitNs: number;
 
   constructor(
     private readonly nc: NatsConnection,
@@ -204,6 +240,8 @@ export class SignalConsumer {
     this.expiresMs = Math.max(1000, opts.expiresMs ?? 10_000);
     this.batchSize = opts.batchSize ?? 16;
     this.maxDeliver = opts.maxDeliver ?? 5;
+    this.maxAckPending = opts.maxAckPending ?? 256;
+    this.ackWaitNs = toNumber(opts.ackWaitNs, 5 * 60 * 1_000_000_000);
   }
 
   async start(): Promise<void> {
@@ -219,45 +257,18 @@ export class SignalConsumer {
         ack_policy: AckPolicy.Explicit,
         deliver_policy: DEFAULT_DELIVER_POLICY,
         max_deliver: this.maxDeliver,
-        ack_wait: 5 * 60 * 1_000_000_000, // 5 min — enough for an LLM step
+        ack_wait: this.ackWaitNs,
+        max_ack_pending: this.maxAckPending,
       });
       logger.info("Created SIGNALS consumer", { name: this.name });
     }
-
-    this.subscribeDeadLetterAdvisory();
 
     this.running = true;
     this.loop = this.runLoop();
   }
 
-  /**
-   * Subscribe to the broker's max-deliveries advisory subject so we get a
-   * structured event when a signal is dead-lettered (rather than only the
-   * `term()` log line in handleMessage). The advisory carries `stream_seq`,
-   * `deliveries`, and the source subject — enough for an offline triage tool
-   * to correlate to the original signal.
-   */
-  private subscribeDeadLetterAdvisory(): void {
-    const subject = `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.${STREAM_NAME}.${this.name}`;
-    this.deadLetterSub = this.nc.subscribe(subject);
-    void (async () => {
-      for await (const msg of this.deadLetterSub!) {
-        try {
-          const advisory = JSON.parse(dec.decode(msg.data));
-          logger.error("SIGNAL dead-lettered (max deliveries)", { advisory });
-        } catch {
-          // Malformed advisory; ignore.
-        }
-      }
-    })();
-  }
-
   async stop(): Promise<void> {
     this.running = false;
-    if (this.deadLetterSub) {
-      this.deadLetterSub.unsubscribe();
-      this.deadLetterSub = null;
-    }
     if (this.loop) {
       try {
         await this.loop;
@@ -316,17 +327,18 @@ export class SignalConsumer {
       return;
     }
 
+    const correlationId = envelope.correlationId;
     try {
-      const onStreamEvent = envelope.correlationId
+      const onStreamEvent = correlationId
         ? (chunk: AtlasUIMessageChunk) => {
             try {
               this.nc.publish(
-                signalStreamSubject(envelope.correlationId!),
+                signalStreamSubject(correlationId),
                 enc.encode(JSON.stringify(chunk)),
               );
             } catch (err) {
               logger.warn("Failed to forward stream chunk", {
-                correlationId: envelope.correlationId,
+                correlationId,
                 error: stringifyError(err),
               });
             }

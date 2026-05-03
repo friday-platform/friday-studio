@@ -7,5 +7,10 @@
     "@db/sqlite": "jsr:@db/sqlite@0.13",
     "nats": "npm:nats@^2.29.3"
   },
-  "exports": { ".": "./mod.ts", "./types": "./types.ts", "./daemon": "./src/atlas-daemon.ts" }
+  "exports": {
+    ".": "./mod.ts",
+    "./types": "./types.ts",
+    "./daemon": "./src/atlas-daemon.ts",
+    "./migrations": "./src/migrations/index.ts"
+  }
 }

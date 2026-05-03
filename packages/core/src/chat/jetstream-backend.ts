@@ -58,6 +58,16 @@ const SCHEMA_VERSION = "1";
 const DEFAULT_MAX_MSG_SIZE = 8 * 1024 * 1024; // 8MB
 const DEFAULT_DUPLICATE_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000; // 24h
 
+/**
+ * Per-stream limits applied at chat-stream creation. Caller (the daemon)
+ * sources these from `readJetStreamConfig()` so all stream creation in
+ * the system shares one set of env-var defaults.
+ */
+export interface ChatStreamLimits {
+  maxMsgSize?: number;
+  duplicateWindowNs?: number | bigint;
+}
+
 const SAFE_NAME_RE = /[^A-Za-z0-9_-]/g;
 
 function sanitizeForStreamName(s: string): string {
@@ -146,6 +156,7 @@ async function ensureChatStream(
   jsm: JetStreamManager,
   workspaceId: string,
   chatId: string,
+  limits: ChatStreamLimits,
 ): Promise<void> {
   const name = streamName(workspaceId, chatId);
   try {
@@ -154,13 +165,14 @@ async function ensureChatStream(
   } catch (err) {
     if (!isStreamNotFound(err)) throw err;
   }
+  const dup = limits.duplicateWindowNs ?? DEFAULT_DUPLICATE_WINDOW_NS;
   await jsm.streams.add({
     name,
     subjects: [subject(workspaceId, chatId)],
     retention: RetentionPolicy.Limits,
     storage: StorageType.File,
-    max_msg_size: DEFAULT_MAX_MSG_SIZE,
-    duplicate_window: DEFAULT_DUPLICATE_WINDOW_NS,
+    max_msg_size: limits.maxMsgSize ?? DEFAULT_MAX_MSG_SIZE,
+    duplicate_window: typeof dup === "bigint" ? Number(dup) : dup,
   });
   logger.info("Created chat stream", { workspaceId, chatId, name });
 }
@@ -207,7 +219,10 @@ export async function ensureChatsKVBucket(nc: NatsConnection): Promise<KV> {
   return await js.views.kv(KV_BUCKET, { history: 5, storage: StorageType.File });
 }
 
-export function createJetStreamChatBackend(nc: NatsConnection): JetStreamChatBackend {
+export function createJetStreamChatBackend(
+  nc: NatsConnection,
+  limits: ChatStreamLimits = {},
+): JetStreamChatBackend {
   let cachedKV: KV | null = null;
 
   async function kv(): Promise<KV> {
@@ -371,7 +386,7 @@ export function createJetStreamChatBackend(nc: NatsConnection): JetStreamChatBac
       await enqueue(`${workspaceId}/${chatId}`, async () => {
         await validateAtlasUIMessages([message]);
         const jsm = await nc.jetstreamManager();
-        await ensureChatStream(jsm, workspaceId, chatId);
+        await ensureChatStream(jsm, workspaceId, chatId, limits);
 
         const c = js();
         const envelope = { message, ts: new Date().toISOString() };

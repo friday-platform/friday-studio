@@ -2,6 +2,7 @@ export { JetStreamMemoryAdapter } from "./src/js-memory-adapter.ts";
 export {
   ensureMemoryIndexBucket,
   JetStreamNarrativeStore,
+  type MemoryStreamLimits,
   memoryIndexKey,
   memoryStreamName,
   memorySubject,

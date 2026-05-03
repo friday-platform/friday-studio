@@ -6,6 +6,7 @@
   "exports": { ".": "./src/cli.ts" },
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
+    "@atlas/atlasd": "workspace:*",
     "@atlas/client": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
@@ -13,6 +14,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
+    "jetstream": "workspace:*",
     "@inkjs/ui": "^2.0.0",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
