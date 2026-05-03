@@ -1,6 +1,5 @@
 export type { LinkRoutes } from "@atlas/link";
 export { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
-export type { ActivityRoutes } from "./routes/activity.ts";
 export type { ArtifactsRoutes } from "./routes/artifacts.ts";
 export type { ChatRoutes } from "./routes/chat.ts";
 export type { ChatStorageRoutes } from "./routes/chat-storage.ts";

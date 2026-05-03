@@ -87,7 +87,6 @@ function createTestApp(
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
     getAgentRegistry: vi.fn(),
-    getActivityAdapter: vi.fn(),
     daemon: {},
     streamRegistry: mockStreamRegistry,
     chatTurnRegistry: { replace: vi.fn(), abort: vi.fn(), get: vi.fn() },

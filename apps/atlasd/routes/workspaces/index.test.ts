@@ -42,7 +42,6 @@ function createTestApp() {
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),
-    getActivityAdapter: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
       runtimes: new Map(),
@@ -190,7 +189,6 @@ function createTestAppWithRuntime(options: {
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),
-    getActivityAdapter: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockWorkspaceManager,
       runtimes: new Map(),
@@ -470,7 +468,6 @@ describe("GET /workspaces/:workspaceId/jobs", () => {
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       evictChatSdkInstance: vi.fn(),
-      getActivityAdapter: vi.fn(),
       daemon: mockDaemon as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
       chatTurnRegistry: {} as AppContext["chatTurnRegistry"],

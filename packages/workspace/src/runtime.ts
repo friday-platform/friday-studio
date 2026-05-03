@@ -5,9 +5,6 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import process from "node:process";
-import type { ActivityStorageAdapter } from "@atlas/activity";
-import { generateSessionActivityTitle } from "@atlas/activity/title-generator";
-import { kebabToSentenceCase } from "@atlas/activity/titles";
 import {
   type AgentMemoryContext,
   type AgentResult,
@@ -275,8 +272,6 @@ interface WorkspaceRuntimeOptions {
     finalOutput: string | undefined;
     jobName: string;
   }) => Promise<void>;
-  /** Activity storage adapter for creating activity feed items */
-  activityStorage?: ActivityStorageAdapter;
   /** Memory adapter for bootstrap injection (feature-flagged via FRIDAY_MEMORY_BOOTSTRAP) */
   memoryAdapter?: MemoryAdapter;
   /** Parsed memory.mounts from workspace config — resolved at initialize time */
@@ -388,7 +383,6 @@ export class WorkspaceRuntime {
   private config: MergedConfig;
   private options: WorkspaceRuntimeOptions;
   private initialized = false;
-  private createdByUserId?: string;
 
   // Shared resources
   private orchestrator: AgentOrchestrator;
@@ -524,7 +518,6 @@ export class WorkspaceRuntime {
     this.workspace = workspace;
     this.config = config;
     this.options = options;
-    this.createdByUserId = workspace.members?.userId;
 
     // Create shared AgentOrchestrator (can handle concurrent executions)
     const agentsServerUrl = options.daemonUrl || "http://localhost:8080";
@@ -1080,32 +1073,9 @@ export class WorkspaceRuntime {
           await onStreamEvent({ type: "data-session-start", data: { sessionId } });
         }
 
-        // Create "running" activity item (skip conversations)
-        const isConversation =
-          this.workspace.id === "friday-conversation" || job.name === "handle-chat";
-        if (this.options.activityStorage && !isConversation) {
-          if (!this.createdByUserId) {
-            logger.warn("Skipping activity creation: workspace has no createdByUserId", {
-              workspaceId: this.workspace.id,
-              sessionId,
-            });
-          } else {
-            try {
-              const title = `${kebabToSentenceCase(job.name)} is running`;
-              await this.options.activityStorage.create({
-                type: "session",
-                source: "agent",
-                referenceId: sessionId,
-                workspaceId: this.workspace.id,
-                jobId: job.name,
-                userId: this.createdByUserId,
-                title,
-              });
-            } catch (err) {
-              logger.warn("Failed to create running activity", { sessionId, error: String(err) });
-            }
-          }
-        }
+        // (activity subsystem deleted 2026-05-02 — was write-only with no
+        // consumer reading the records. Source of truth for "what
+        // happened in workspace X" is the SESSIONS JetStream stream.)
 
         try {
           await engine.signal(
@@ -1412,48 +1382,9 @@ export class WorkspaceRuntime {
               }
             }
 
-            // Replace "running" activity with final activity for terminal sessions.
-            // Skip for code-only sessions (no agent blocks) — no meaningful output to title.
-            if (
-              this.options.activityStorage &&
-              this.options.platformModels &&
-              this.createdByUserId &&
-              !isConversation &&
-              executedBlocks.length > 0 &&
-              (view.status === "completed" || view.status === "failed")
-            ) {
-              const titlePlatformModels = this.options.platformModels;
-              // Delete the "running" activity first
-              await this.options.activityStorage.deleteByReferenceId(sessionId).catch((err) => {
-                logger.warn("Failed to delete running activity", { sessionId, error: String(err) });
-              });
-
-              try {
-                // Extract final output from the last completed agent block
-                const lastBlock = [...executedBlocks].reverse().find((b) => b.output);
-                const finalOutput = lastBlock?.output ? String(lastBlock.output) : undefined;
-
-                const title = await generateSessionActivityTitle({
-                  platformModels: titlePlatformModels,
-                  status: view.status,
-                  jobName: job.name,
-                  agentNames: executedBlocks.map((b) => b.agentName),
-                  finalOutput,
-                  error: session.error?.message,
-                });
-                await this.options.activityStorage.create({
-                  type: "session",
-                  source: "agent",
-                  referenceId: sessionId,
-                  workspaceId: this.workspace.id,
-                  jobId: job.name,
-                  userId: this.createdByUserId,
-                  title,
-                });
-              } catch (err) {
-                logger.warn("Failed to create session activity", { sessionId, error: String(err) });
-              }
-            }
+            // (activity subsystem deleted 2026-05-02 — terminal-session
+            // titles previously got recorded here. SESSIONS JetStream
+            // stream is the source of truth for session lifecycle.)
           }
 
           session.engineDocuments = engine.documents;

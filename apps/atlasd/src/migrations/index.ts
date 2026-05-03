@@ -20,6 +20,7 @@ import type { Migration } from "jetstream";
 import { m_9c0f0fd_chat_jetstream } from "./m_9c0f0fd_chat_jetstream.ts";
 import { m_7492ae5_memory_jetstream } from "./m_7492ae5_memory_jetstream.ts";
 import { m_a6ab40b_sessions_stream_upgrade } from "./m_a6ab40b_sessions_stream_upgrade.ts";
+import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
 
 export const ALL_MIGRATIONS: Migration[] = [
   // 2026-05 — chat + memory storage moves to JetStream
@@ -27,4 +28,6 @@ export const ALL_MIGRATIONS: Migration[] = [
   m_7492ae5_memory_jetstream,
   // 2026-05-02 — durability upgrade for the SESSIONS stream
   m_a6ab40b_sessions_stream_upgrade,
+  // 2026-05-02 — delete orphaned activity.db after activity subsystem deletion
+  m_f9536a1_delete_activity_db,
 ];

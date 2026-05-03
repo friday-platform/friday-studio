@@ -1,4 +1,3 @@
-import type { ActivityStorageAdapter } from "@atlas/activity";
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
@@ -37,9 +36,6 @@ export interface AppContext {
   // Runtime management methods
   getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined;
   destroyWorkspaceRuntime(workspaceId: string): Promise<void>;
-
-  // Activity storage
-  getActivityAdapter(): ActivityStorageAdapter;
 
   // Agent registry
   getAgentRegistry(): AgentRegistry;

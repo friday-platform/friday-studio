@@ -1,8 +1,6 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
-import type { ActivityStorageAdapter } from "@atlas/activity";
-import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
 import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
@@ -46,7 +44,6 @@ import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { readJetStreamConfig, runMigrations } from "jetstream";
 import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
-import { activityRoutes } from "../routes/activity.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -193,7 +190,6 @@ export class AtlasDaemon {
   private toolWorkers: ToolWorker[] = [];
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
-  private activityAdapter: ActivityStorageAdapter | null = null;
   public streamRegistry!: StreamRegistry;
   public chatTurnRegistry!: ChatTurnRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
@@ -263,7 +259,6 @@ export class AtlasDaemon {
       resetIdleTimeout: this.resetIdleTimeout.bind(this),
       getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
-      getActivityAdapter: this.getActivityAdapter.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
       getOrCreateChatSdkInstance: this.getOrCreateChatSdkInstance.bind(this),
       evictChatSdkInstance: this.evictChatSdkInstance.bind(this),
@@ -418,12 +413,6 @@ export class AtlasDaemon {
     const kvStorageConfig = StorageConfigs.defaultKV();
     const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
-
-    // Activity storage uses the local SQLite adapter — Ledger was deleted
-    // (versioned resource storage was unused; activity is the only thing that
-    // talks to a per-tenant SQLite, and it works fine in-process).
-    this.activityAdapter = new LocalActivityAdapter();
-    logger.info("Activity storage using local SQLite adapter");
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");
@@ -890,14 +879,6 @@ export class AtlasDaemon {
     return this.platformModels;
   }
 
-  /** Get activity storage adapter (constructed during initialize). */
-  public getActivityAdapter(): ActivityStorageAdapter {
-    if (!this.activityAdapter) {
-      throw new Error("Activity adapter not initialized — call initialize() first");
-    }
-    return this.activityAdapter;
-  }
-
   /**
    * Get shared agent registry instance
    */
@@ -959,7 +940,6 @@ export class AtlasDaemon {
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);
     this.app.route("/api/sessions", sessionsRoutes);
-    this.app.route("/api/activity", activityRoutes);
     this.app.route("/api/agents", agentsRoutes);
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
@@ -1331,7 +1311,6 @@ export class AtlasDaemon {
         {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode
-          activityStorage: this.getActivityAdapter(), // Share activity storage for feed items
           platformModels: this.getPlatformModels(),
           agentExecutor: this.processAgentExecutor ?? undefined,
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching

@@ -203,7 +203,6 @@ function createTestApp() {
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),
-    getActivityAdapter: vi.fn(),
     daemon: { getWorkspaceManager: () => mockWorkspaceManager } as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
     chatTurnRegistry: {} as AppContext["chatTurnRegistry"],

@@ -168,7 +168,6 @@ function createTestApp(options: {
     getAgentRegistry: vi.fn() as unknown as AppContext["getAgentRegistry"],
     getOrCreateChatSdkInstance: vi.fn() as unknown as AppContext["getOrCreateChatSdkInstance"],
     evictChatSdkInstance: vi.fn() as unknown as AppContext["evictChatSdkInstance"],
-    getActivityAdapter: vi.fn() as unknown as AppContext["getActivityAdapter"],
     exposeKernel: false,
     platformModels: {} as AppContext["platformModels"],
   };

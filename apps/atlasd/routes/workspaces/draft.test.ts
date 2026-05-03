@@ -82,7 +82,6 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-    getActivityAdapter: vi.fn(),
     exposeKernel: false,
     platformModels: { get: vi.fn() },
   };
@@ -285,7 +284,6 @@ describe("Draft file flow", () => {
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-      getActivityAdapter: vi.fn(),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };
@@ -347,7 +345,6 @@ describe("Draft file flow", () => {
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-      getActivityAdapter: vi.fn(),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };
@@ -877,7 +874,6 @@ describe("Draft file flow", () => {
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-      getActivityAdapter: vi.fn(),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };

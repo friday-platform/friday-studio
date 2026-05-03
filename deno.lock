@@ -6084,21 +6084,6 @@
           ]
         }
       },
-      "packages/activity": {
-        "dependencies": [
-          "npm:hono@^4.10.4",
-          "npm:ulid@^3.0.2"
-        ],
-        "packageJson": {
-          "dependencies": [
-            "npm:@jsr/db__sqlite@0.12",
-            "npm:hono@4.12.16",
-            "npm:ulid@^3.0.2",
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.5"
-          ]
-        }
-      },
       "packages/adapters-md": {
         "packageJson": {
           "dependencies": [
