@@ -1,16 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import dotenv from "dotenv";
 import { stringifyError } from "@atlas/utils";
+import dotenv from "dotenv";
 
 // Mirror the launcher's importDotEnvIntoProcessEnv() so FRIDAYD_URL,
 // FRIDAY_PORT_*, and other launcher-managed vars are visible to CLI
 // commands when the binary is run directly from a shell. Shell exports
 // win — we only inject vars not already present in process.env.
 (function importLauncherEnv() {
-  const home = process.env.FRIDAY_LAUNCHER_HOME
-    || join(process.env.HOME || process.env.USERPROFILE || "", ".friday", "local");
+  const home =
+    process.env.FRIDAY_LAUNCHER_HOME ||
+    join(process.env.HOME || process.env.USERPROFILE || "", ".friday", "local");
   const envPath = join(home, ".env");
   if (!existsSync(envPath)) return;
   try {
