@@ -70,8 +70,6 @@ import { createBoundWorkspaceOpsTools, createWorkspaceOpsTools } from "./tools/w
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
 
-const ROLE_SYSTEM = "system" as const;
-
 interface WorkspaceChatResult {
   text: string | undefined;
 }
@@ -824,26 +822,33 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           return !hasReasoning;
         });
 
+        // Use AI SDK's `system` parameter rather than `role: "system"`
+        // entries inside `messages`. The latter triggers a security
+        // warning ("System messages in the prompt or messages fields
+        // can be a security risk … may enable prompt injection attacks")
+        // because some providers don't isolate them from user content.
+        // Concatenating the two system blocks keeps the same content;
+        // the datetime block is a tiny suffix.
+        const combinedSystem = `${systemPrompt}\n\n${datetimeMessage}`;
+        const modelMessages = await convertToModelMessages(sanitizedMessages, {
+          convertDataPart: (part) => {
+            if (part.type === "data-credential-linked") {
+              const data = (
+                part as { type: string; data?: { displayName?: string; provider?: string } }
+              ).data;
+              const name = data?.displayName ?? data?.provider ?? "service";
+              return { type: "text" as const, text: `Connected ${name}.` };
+            }
+            return undefined;
+          },
+        });
+
         try {
           const result = streamText({
             model: conversationalModel,
             experimental_repairToolCall: repairToolCall,
-            messages: [
-              { role: ROLE_SYSTEM, content: systemPrompt },
-              { role: ROLE_SYSTEM, content: datetimeMessage },
-              ...(await convertToModelMessages(sanitizedMessages, {
-                convertDataPart: (part) => {
-                  if (part.type === "data-credential-linked") {
-                    const data = (
-                      part as { type: string; data?: { displayName?: string; provider?: string } }
-                    ).data;
-                    const name = data?.displayName ?? data?.provider ?? "service";
-                    return { type: "text" as const, text: `Connected ${name}.` };
-                  }
-                  return undefined;
-                },
-              })),
-            ],
+            system: combinedSystem,
+            messages: modelMessages,
             tools: allTools,
             toolChoice: "auto",
             stopWhen: [stepCountIs(40), connectServiceSucceeded(), connectCommunicatorSucceeded()],
