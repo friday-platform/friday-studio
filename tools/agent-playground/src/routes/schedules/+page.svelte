@@ -425,40 +425,51 @@
                       </span>
                     </a>
                     <div class="row-right">
-                      <div class="split-btn">
+                      <div class="dropdown-btn">
                         <button
-                          class="action-btn action-resume split-btn__main"
+                          class="action-btn action-resume dropdown-btn__trigger"
                           disabled={busy}
-                          onclick={() => groupAction(group, "fire-once")}
-                        >
-                          {busy ? "…" : "Fire"}
-                        </button>
-                        {#if group.count > 1}
-                          <button
-                            class="action-btn action-resume split-btn__chevron"
-                            aria-label="More fire options"
-                            disabled={busy}
-                            onclick={(e) => {
-                              e.stopPropagation();
+                          aria-haspopup="menu"
+                          aria-expanded={menuOpen}
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            // Single missed slot → no choice to make,
+                            // fire on click. Multiple → show menu.
+                            if (group.count === 1) {
+                              groupAction(group, "fire-once");
+                            } else {
                               openMenuFor = menuOpen ? null : key;
-                            }}
-                          >
-                            ▾
-                          </button>
-                          {#if menuOpen}
-                            <div class="split-btn__menu" role="menu">
-                              <button
-                                class="split-btn__menu-item"
-                                role="menuitem"
-                                onclick={(e) => {
-                                  e.stopPropagation();
-                                  groupAction(group, "fire-all");
-                                }}
-                              >
-                                Fire all missed ({group.count})
-                              </button>
-                            </div>
+                            }
+                          }}
+                        >
+                          {busy ? "…" : "Trigger"}
+                          {#if group.count > 1}
+                            <span class="dropdown-btn__chevron" aria-hidden="true">▾</span>
                           {/if}
+                        </button>
+                        {#if menuOpen && group.count > 1}
+                          <div class="dropdown-btn__menu" role="menu">
+                            <button
+                              class="dropdown-btn__menu-item"
+                              role="menuitem"
+                              onclick={(e) => {
+                                e.stopPropagation();
+                                groupAction(group, "fire-once");
+                              }}
+                            >
+                              Trigger One
+                            </button>
+                            <button
+                              class="dropdown-btn__menu-item"
+                              role="menuitem"
+                              onclick={(e) => {
+                                e.stopPropagation();
+                                groupAction(group, "fire-all");
+                              }}
+                            >
+                              Trigger All ({group.count})
+                            </button>
+                          </div>
                         {/if}
                       </div>
                       <button
@@ -646,27 +657,29 @@
     padding: 2px 6px;
   }
 
-  /* ── Split button (Fire | ▾  → Fire all) ─────────────────────────── */
+  /* ── Dropdown button (Trigger ▾ → Trigger One / Trigger All) ─────── */
+  /* Single button with an inline chevron — click anywhere on the
+     button opens a menu when count > 1, fires directly when count == 1
+     (no choice to surface). Mirrors the Mews "Pay invoice ▾" pattern. */
 
-  .split-btn {
+  .dropdown-btn {
     display: inline-flex;
     position: relative;
   }
 
-  .split-btn__main {
-    border-end-end-radius: 0;
-    border-start-end-radius: 0;
+  .dropdown-btn__trigger {
+    align-items: center;
+    display: inline-flex;
+    gap: var(--size-1);
   }
 
-  .split-btn__chevron {
-    border-inline-start: none;
-    border-end-start-radius: 0;
-    border-start-start-radius: 0;
-    inline-size: auto;
-    padding-inline: var(--size-2);
+  .dropdown-btn__chevron {
+    color: color-mix(in srgb, currentcolor, transparent 30%);
+    font-size: 0.85em;
+    line-height: 1;
   }
 
-  .split-btn__menu {
+  .dropdown-btn__menu {
     background: var(--color-surface-1, white);
     border: 1px solid var(--color-border-1);
     border-radius: var(--radius-2);
@@ -679,7 +692,7 @@
     z-index: 10;
   }
 
-  .split-btn__menu-item {
+  .dropdown-btn__menu-item {
     background: none;
     border: none;
     border-radius: var(--radius-1);
@@ -692,7 +705,7 @@
     text-align: start;
   }
 
-  .split-btn__menu-item:hover {
+  .dropdown-btn__menu-item:hover {
     background: color-mix(in srgb, var(--color-text), transparent 92%);
   }
 
