@@ -52,7 +52,9 @@
     firedAt: z.string(),
     schedule: z.string(),
     timezone: z.string(),
+    status: z.enum(["pending", "fired", "dismissed", "auto"]).optional(),
     pending: z.boolean().optional(),
+    actionedAt: z.string().optional(),
     id: z.string().optional(),
   });
   const EventsResponseSchema = z.object({ events: z.array(ScheduleMissedEventSchema) });
@@ -179,18 +181,23 @@
   // Tabs
   // ---------------------------------------------------------------------------
   type Tab = "active" | "missed";
+  type MissedSubTab = "active" | "history";
   let activeTab = $state<Tab>("active");
+  let missedSubTab = $state<MissedSubTab>("active");
 
-  // Bias toward "missed" if there are pending manual events the user
-  // probably wants to act on right now. Coalesce/catchup auto-fire,
-  // so they don't pull the user's attention by default.
+  const pendingEvents = $derived(events.filter((e) => e.status === "pending"));
+  const historyEvents = $derived(events.filter((e) => e.status !== "pending"));
+  const activeTimers = $derived(timers.filter((t) => !t.paused));
+
+  // Bias toward Missed → Active sub-tab when there are pending manual
+  // events. Coalesce/catchup auto-fire and land in History — they
+  // don't pull attention.
   $effect(() => {
-    if (events.some((e) => e.policy === "manual" && e.pending)) {
+    if (pendingEvents.length > 0) {
       activeTab = "missed";
+      missedSubTab = "active";
     }
   });
-
-  const activeTimers = $derived(timers.filter((t) => !t.paused));
 </script>
 
 <PageLayout.Root>
@@ -228,10 +235,10 @@
             onclick={() => (activeTab = "missed")}
           >
             Missed
-            {#if events.length > 0}
-              <span class="tab-count" class:tab-count--pending={events.some((e) => e.pending)}>
-                {events.length}
-              </span>
+            {#if pendingEvents.length > 0}
+              <span class="tab-count tab-count--pending">{pendingEvents.length}</span>
+            {:else if historyEvents.length > 0}
+              <span class="tab-count">{historyEvents.length}</span>
             {/if}
           </button>
         </div>
@@ -293,63 +300,118 @@
 
         {#if activeTab === "missed"}
         <section class="section">
-          {#if events.length === 0}
-            <div class="empty-state">
-              <p>No missed schedules.</p>
-              <span class="empty-hint">
-                When the daemon misses a cron firing, it'll show up here. Default policy is
-                <code>onMissed: manual</code> — pending rows will offer Fire / Dismiss buttons.
-              </span>
-            </div>
-          {:else}
-          <div class="signal-list">
-            {#each events as event (eventKey(event))}
-              {@const busy = actingOnEvent.has(eventKey(event))}
-              <div class="signal-row event-row" class:event-pending={event.pending}>
-                <a class="row-main" href="/platform/{event.workspaceId}/signal/{event.signalId}">
-                  <span class="signal-id">
-                    {event.signalId}
-                    <span
-                      class="badge badge-event"
-                      class:badge-pending={event.pending}
-                    >{event.policy}{event.policy === "coalesce" && event.missedCount > 1
-                        ? ` ×${event.missedCount}`
-                        : ""}{event.pending ? " · pending" : ""}</span>
-                  </span>
-                  <span class="signal-meta">
-                    <span class="ws-name">{event.workspaceId}</span>
-                    <span class="sep">·</span>
-                    <span class="cron-human">
-                      {humanizeCron(event.schedule, event.timezone)}
-                    </span>
-                    <span class="sep">·</span>
-                    <span class="event-time">
-                      missed {formatRelative(event.scheduledAt)}
-                    </span>
-                  </span>
-                </a>
-
-                {#if event.policy === "manual" && event.pending}
-                  <div class="row-right">
-                    <button
-                      class="action-btn action-resume"
-                      disabled={busy}
-                      onclick={() => manualAction(event, "fire")}
-                    >
-                      {busy ? "…" : "Fire now"}
-                    </button>
-                    <button
-                      class="action-btn"
-                      disabled={busy}
-                      onclick={() => manualAction(event, "dismiss")}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                {/if}
-              </div>
-            {/each}
+          <div class="sub-tab-bar" role="tablist">
+            <button
+              class="sub-tab"
+              class:sub-tab--active={missedSubTab === "active"}
+              role="tab"
+              aria-selected={missedSubTab === "active"}
+              onclick={() => (missedSubTab = "active")}
+            >
+              Active <span class="sub-tab-count">{pendingEvents.length}</span>
+            </button>
+            <button
+              class="sub-tab"
+              class:sub-tab--active={missedSubTab === "history"}
+              role="tab"
+              aria-selected={missedSubTab === "history"}
+              onclick={() => (missedSubTab = "history")}
+            >
+              History <span class="sub-tab-count">{historyEvents.length}</span>
+            </button>
           </div>
+
+          {#if missedSubTab === "active"}
+            {#if pendingEvents.length === 0}
+              <div class="empty-state">
+                <p>No pending missed schedules.</p>
+                <span class="empty-hint">
+                  Pending entries appear here when an <code>onMissed: manual</code> cron
+                  is missed. Auto-fired (<code>coalesce</code>, <code>catchup</code>) entries
+                  go straight to History.
+                </span>
+              </div>
+            {:else}
+              <div class="signal-list">
+                {#each pendingEvents as event (eventKey(event))}
+                  {@const busy = actingOnEvent.has(eventKey(event))}
+                  <div class="signal-row event-row event-pending">
+                    <a class="row-main" href="/platform/{event.workspaceId}/signal/{event.signalId}">
+                      <span class="signal-id">
+                        {event.signalId}
+                        <span class="badge badge-event badge-pending">manual · pending</span>
+                      </span>
+                      <span class="signal-meta">
+                        <span class="ws-name">{event.workspaceId}</span>
+                        <span class="sep">·</span>
+                        <span class="cron-human">{humanizeCron(event.schedule, event.timezone)}</span>
+                        <span class="sep">·</span>
+                        <span class="event-time">missed {formatRelative(event.scheduledAt)}</span>
+                      </span>
+                    </a>
+                    <div class="row-right">
+                      <button
+                        class="action-btn action-resume"
+                        disabled={busy}
+                        onclick={() => manualAction(event, "fire")}
+                      >
+                        {busy ? "…" : "Fire now"}
+                      </button>
+                      <button
+                        class="action-btn"
+                        disabled={busy}
+                        onclick={() => manualAction(event, "dismiss")}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          {:else}
+            {#if historyEvents.length === 0}
+              <div class="empty-state">
+                <p>No missed-schedule history.</p>
+                <span class="empty-hint">
+                  Auto-fired and operator-actioned entries land here. Window: 30 days.
+                </span>
+              </div>
+            {:else}
+              <div class="signal-list">
+                {#each historyEvents as event (eventKey(event))}
+                  <div class="signal-row event-row event-row--history">
+                    <a class="row-main" href="/platform/{event.workspaceId}/signal/{event.signalId}">
+                      <span class="signal-id">
+                        {event.signalId}
+                        <span class="badge badge-event badge-history">
+                          {event.policy}{event.policy === "coalesce" && event.missedCount > 1
+                            ? ` ×${event.missedCount}`
+                            : ""}
+                          {#if event.status === "fired"}· fired{:else if event.status === "dismissed"}· dismissed{:else}· auto-fired{/if}
+                        </span>
+                      </span>
+                      <span class="signal-meta">
+                        <span class="ws-name">{event.workspaceId}</span>
+                        <span class="sep">·</span>
+                        <span class="cron-human">{humanizeCron(event.schedule, event.timezone)}</span>
+                        <span class="sep">·</span>
+                        <span class="event-time">missed {formatRelative(event.scheduledAt)}</span>
+                        {#if event.actionedAt}
+                          <span class="sep">·</span>
+                          <span class="event-time">
+                            {event.status === "dismissed" ? "dismissed" : "fired"} {formatRelative(event.actionedAt)}
+                          </span>
+                        {:else if event.status === "auto"}
+                          <span class="sep">·</span>
+                          <span class="event-time">fired {formatRelative(event.firedAt)}</span>
+                        {/if}
+                      </span>
+                    </a>
+                  </div>
+                {/each}
+              </div>
+            {/if}
           {/if}
         </section>
         {/if}
@@ -361,8 +423,12 @@
       {:else}
         <p class="subtitle">Cron firings the daemon was down for.</p>
         <p class="subtitle subtle">
-          Default policy is <code>onMissed: manual</code> — pending rows offer Fire / Dismiss.
-          Override via <code>onMissed: skip | coalesce | catchup</code>. Window: 30 days.
+          <strong>Active</strong>: pending <code>onMissed: manual</code> events waiting on
+          your action.
+        </p>
+        <p class="subtitle subtle">
+          <strong>History</strong>: fired / dismissed manual events, plus all auto-fired
+          (<code>coalesce</code>, <code>catchup</code>) entries within the 30-day window.
         </p>
       {/if}
     </PageLayout.Sidebar>
@@ -424,6 +490,68 @@
   .tab-count--pending {
     background-color: color-mix(in srgb, var(--color-accent, #1f6feb), transparent 80%);
     color: var(--color-accent, #1f6feb);
+  }
+
+  /* ── Sub-tabs (Active / History inside Missed) ───────────────────── */
+
+  .sub-tab-bar {
+    display: inline-flex;
+    background: color-mix(in srgb, var(--color-text), transparent 92%);
+    border-radius: var(--radius-2);
+    gap: 2px;
+    margin-block-end: var(--size-3);
+    padding: 2px;
+  }
+
+  .sub-tab {
+    align-items: center;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-1);
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    cursor: pointer;
+    display: inline-flex;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    gap: var(--size-1-5);
+    padding: var(--size-1) var(--size-3);
+    transition:
+      background 120ms ease,
+      color 120ms ease;
+  }
+
+  .sub-tab:hover:not(.sub-tab--active) {
+    color: var(--color-text);
+  }
+
+  .sub-tab--active {
+    background: var(--color-surface-1, white);
+    color: var(--color-text);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text), transparent 90%);
+  }
+
+  .sub-tab-count {
+    color: color-mix(in srgb, var(--color-text), transparent 50%);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sub-tab--active .sub-tab-count {
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
+  }
+
+  /* ── History row dimming + history badge ─────────────────────────── */
+
+  .event-row--history {
+    opacity: 0.7;
+  }
+
+  .event-row--history:hover {
+    opacity: 1;
+  }
+
+  .badge-history {
+    background-color: color-mix(in srgb, var(--color-text), transparent 88%);
+    color: color-mix(in srgb, var(--color-text), transparent 30%);
   }
 
   /* ── Empty state ─────────────────────────────────────────────────── */

@@ -70,11 +70,29 @@ export interface ScheduleMissedEvent {
   /** Timezone the cron expression resolves in. */
   timezone: string;
   /**
-   * True for `manual` events that haven't been operator-fired yet.
-   * Joined in from the EVENT_STATE KV bucket at read time, since
-   * stream entries are immutable.
+   * Operator-action lifecycle for `manual` events. Joined in at read
+   * time from the EVENT_STATE KV bucket since stream entries are
+   * immutable.
+   *
+   * - `pending`   — manual event, waiting on operator action
+   * - `fired`     — manual event the operator clicked Fire now on
+   * - `dismissed` — manual event the operator clicked Dismiss on
+   * - `auto`      — coalesce / catchup; never had a pending state
+   *                 (the daemon auto-fired). Always `auto` when
+   *                 `policy !== "manual"`.
+   */
+  status?: "pending" | "fired" | "dismissed" | "auto";
+  /**
+   * Convenience boolean kept for backwards compat with earlier UI
+   * builds. Equivalent to `status === "pending"`. New code should
+   * read `status` directly.
    */
   pending?: boolean;
+  /**
+   * ISO 8601 — when the operator actioned (fired or dismissed) the
+   * event. Undefined for `auto` and `pending` rows.
+   */
+  actionedAt?: string;
   /**
    * Stable id derived from the event's content so the UI can address
    * it for "fire now" + the KV state record can key on it. Computed
@@ -287,12 +305,19 @@ async function readEventsBackwards(
     // never have a state record — they fire immediately.
     if (event.policy === "manual") {
       const state = await readEventState(nc, event.id);
-      // Default to pending only if the event was published with
-      // `pending: true` AND no state record exists yet (race-free
-      // during the publish → state-write window).
       if (state) {
+        event.status = state.status;
         event.pending = state.status === "pending";
+        if (state.status !== "pending") event.actionedAt = state.updatedAt;
+      } else {
+        // No state record yet (publish → state-write race window).
+        // Treat as pending; the next read will see the populated state.
+        event.status = "pending";
+        event.pending = true;
       }
+    } else {
+      // coalesce / catchup are always auto-fired; no pending lifecycle.
+      event.status = "auto";
     }
     events.push(event);
   }
