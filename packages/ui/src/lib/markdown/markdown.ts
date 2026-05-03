@@ -465,6 +465,23 @@ function preserveBareNumericLines(text: string): string {
 }
 
 /**
+ * Split single-line numbered runs ("1. foo 2. bar 3. baz") onto their own
+ * lines so marked renders them as a real <ol> instead of collapsing into a
+ * single <li>. Chat output from LLMs (and humans) frequently arrives this
+ * way; CommonMark treats it as one item, but users see "broken list".
+ *
+ * Only triggers when a line starts with `<digit>.` AND contains ` <digit>. `
+ * later in the same line. Multi-line lists, tables ("Score: 9. Out of 10"),
+ * decimals, and version strings are untouched.
+ */
+function splitInlineNumberedRuns(text: string): string {
+  return text.replace(/^(\s*)(\d+)\.\s.*$/gm, (line) => {
+    if (!/\s\d+\.\s/.test(line)) return line;
+    return line.replace(/\s(\d+)\.\s/g, "\n$1. ");
+  });
+}
+
+/**
  * Convert markdown to HTML using `marked` (GFM-compliant, battle-tested).
  * Pipe-separated lines without a GFM separator row are auto-fixed first.
  */
@@ -475,8 +492,11 @@ export function markdownToHTML(markdown: string): string {
   // Preserve bare "N." answers (e.g. "2." as a reply to arithmetic) that
   // marked would otherwise swallow into an empty <ol><li></li></ol>.
   const preserved = preserveBareNumericLines(normalized);
+  // Split inline numbered runs ("1. a 2. b 3. c") onto their own lines so
+  // they render as a real <ol> instead of one collapsed <li>.
+  const split = splitInlineNumberedRuns(preserved);
   // Auto-fix sloppy pipe tables from LLM output
-  const withTables = normalizePipeTables(preserved);
+  const withTables = normalizePipeTables(split);
   // marked.parse() is synchronous when async: false
   const html = marked.parse(withTables) as string;
   // Strip trailing newline that marked adds
