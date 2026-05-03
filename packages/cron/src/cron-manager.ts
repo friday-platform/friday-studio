@@ -344,47 +344,109 @@ export class CronManager {
   }
 
   /**
-   * Register a timer for a workspace signal
+   * Register a timer for a workspace signal.
+   *
+   * Critical: this runs at workspace-init time for every cron signal
+   * declared in workspace.yml — including ones the daemon already had
+   * persisted from a previous run. **Persisted runtime state
+   * (`nextExecution`, `lastExecution`, `paused`) is preserved on
+   * re-registration**; only schema-derived fields (schedule, timezone,
+   * onMissed, missedWindowMs) get refreshed from the new config.
+   *
+   * Why: the daemon-startup ordering is
+   *   workspaceManager.initialize  → registrar calls registerTimer
+   *   cronManager.start            → loadPersistedTimers + applyMissedPolicy
+   *
+   * If registerTimer freshly recomputed `nextExecution` every call, it
+   * would clobber the on-disk "this slot was scheduled at 07:05" with
+   * "next slot from now is 07:20", and applyMissedPolicy would never
+   * see a missed-slot gap to recover from. Onboarding tested 2026-05-03:
+   * daemon down 10 min on a 5-min cron produced ZERO missed-firing
+   * notifications until this preservation landed.
    */
   async registerTimer(config: TimerConfig): Promise<void> {
     const timerKey = `${config.workspaceId}:${config.signalId}`;
 
-    // Check if timer already exists
+    // In-memory check — if a previous registerTimer call (or
+    // loadPersistedTimers) already populated the manager's map, skip.
     if (this.timers.has(timerKey)) {
       this.logger.warn("Timer already exists, skipping registration", { timerKey });
       return;
     }
 
-    // Validate cron expression and calculate next execution
-    this.logger.debug("Registering cron timer", {
-      workspaceId: config.workspaceId,
-      signalId: config.signalId,
-      schedule: config.schedule,
-      timezone: config.timezone,
-    });
-    let nextExecution: Date;
+    // Storage check — preserve runtime state (nextExecution,
+    // lastExecution, paused) across daemon restarts. Schedule edits
+    // through workspace.yml DO refresh schedule/timezone/onMissed.
+    const persisted = await this.storage.get<{
+      nextExecution: string;
+      lastExecution?: string;
+      paused?: boolean;
+      schedule?: string;
+    }>([`cron_timers`, timerKey]);
 
-    try {
-      const cronExpression = CronExpressionParser.parse(config.schedule, {
-        currentDate: new Date(),
-        tz: config.timezone,
+    let nextExecution: Date;
+    let lastExecution: Date | undefined;
+    let paused: boolean | undefined;
+
+    if (persisted) {
+      // Schedule changed → recompute from now; otherwise carry the
+      // previously-scheduled slot forward so applyMissedPolicy can
+      // detect the gap.
+      const scheduleChanged = persisted.schedule !== config.schedule;
+      if (scheduleChanged) {
+        try {
+          const expr = CronExpressionParser.parse(config.schedule, {
+            currentDate: new Date(),
+            tz: config.timezone,
+          });
+          nextExecution = expr.next().toDate();
+        } catch (error) {
+          const errorMsg = `Invalid cron expression '${config.schedule}': ${
+            error instanceof Error ? error.message : String(error)
+          }`;
+          this.logger.error(errorMsg, { config });
+          throw new Error(errorMsg);
+        }
+      } else {
+        nextExecution = new Date(persisted.nextExecution);
+      }
+      lastExecution = persisted.lastExecution ? new Date(persisted.lastExecution) : undefined;
+      paused = persisted.paused;
+      this.logger.debug("Re-registering cron timer; preserving runtime state", {
+        timerKey,
+        nextExecution: nextExecution.toISOString(),
+        scheduleChanged,
       });
-      nextExecution = cronExpression.next().toDate();
-    } catch (error) {
-      const errorMsg = `Invalid cron expression '${config.schedule}': ${
-        error instanceof Error ? error.message : String(error)
-      }`;
-      this.logger.error(errorMsg, { config });
-      throw new Error(errorMsg);
+    } else {
+      this.logger.debug("Registering new cron timer", {
+        workspaceId: config.workspaceId,
+        signalId: config.signalId,
+        schedule: config.schedule,
+        timezone: config.timezone,
+      });
+      try {
+        const expr = CronExpressionParser.parse(config.schedule, {
+          currentDate: new Date(),
+          tz: config.timezone,
+        });
+        nextExecution = expr.next().toDate();
+      } catch (error) {
+        const errorMsg = `Invalid cron expression '${config.schedule}': ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        this.logger.error(errorMsg, { config });
+        throw new Error(errorMsg);
+      }
     }
 
-    // Create timer info (reuse config but ensure nextExecution is set)
-    const timerInfo: TimerInfo = { ...config, nextExecution };
+    const timerInfo: TimerInfo = {
+      ...config,
+      nextExecution,
+      ...(lastExecution ? { lastExecution } : {}),
+      ...(paused !== undefined ? { paused } : {}),
+    };
 
-    // Persist to storage first, then store in memory
     await this.persistTimer(timerKey, timerInfo);
-
-    // Store in memory only after successful persistence
     this.timers.set(timerKey, timerInfo);
 
     this.logger.debug("Cron timer registered successfully", {

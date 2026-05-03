@@ -292,4 +292,74 @@ describe("CronManager — onMissed policy", () => {
 
     expect(fired).toHaveLength(0);
   });
+
+  it("registerTimer preserves persisted nextExecution on re-registration", async () => {
+    // Daemon-startup ordering bug regression (live-tested 2026-05-03):
+    //   workspaceManager.initialize → registrar calls registerTimer
+    //   cronManager.start → loadPersistedTimers + applyMissedPolicy
+    //
+    // If registerTimer recomputed nextExecution every call, it would
+    // overwrite the persisted "missed slot" with a fresh future slot
+    // and applyMissedPolicy would never see a gap. Set a coalesce
+    // timer with a past nextExecution, RE-REGISTER it (simulating
+    // workspace.yml re-load on daemon restart), then start() —
+    // applyMissedPolicy must still see the original past slot and
+    // produce a coalesce fire.
+    await seedMissedTimer(storage, {
+      timerKey: "user:digest",
+      workspaceId: "user",
+      signalId: "digest",
+      schedule: "* * * * *",
+      nextExecutionAgoMs: 4 * 60 * 1000,
+      onMissed: "coalesce",
+    });
+
+    // Simulates the cron registrar firing for the same signal on
+    // restart. With the bug present, this would persist
+    // nextExecution=now+~1min and applyMissedPolicy would do nothing.
+    await manager.registerTimer({
+      workspaceId: "user",
+      signalId: "digest",
+      schedule: "* * * * *",
+      timezone: "UTC",
+      onMissed: "coalesce",
+    });
+
+    await manager.start();
+
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.policy).toBe("coalesce");
+    expect(fired[0]?.missedCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it("registerTimer recomputes nextExecution when schedule changed", async () => {
+    // If the user edited workspace.yml to a different cron expression,
+    // we must NOT carry the old slot forward — it might never align
+    // with the new schedule. Recompute from now.
+    await seedMissedTimer(storage, {
+      timerKey: "user:edited",
+      workspaceId: "user",
+      signalId: "edited",
+      schedule: "*/30 * * * *", // every 30 min
+      nextExecutionAgoMs: 5 * 60 * 1000,
+      onMissed: "coalesce",
+    });
+
+    // Re-register with a DIFFERENT schedule.
+    await manager.registerTimer({
+      workspaceId: "user",
+      signalId: "edited",
+      schedule: "0 * * * *", // hourly — different from above
+      timezone: "UTC",
+      onMissed: "coalesce",
+    });
+
+    // No make-up fire — schedule edit invalidates the missed slot
+    // because it wouldn't have aligned with the new schedule anyway.
+    await manager.start();
+
+    expect(fired).toHaveLength(0);
+    const timer = manager.listTimers()[0];
+    expect(timer?.nextExecution.getTime()).toBeGreaterThan(Date.now());
+  });
 });
