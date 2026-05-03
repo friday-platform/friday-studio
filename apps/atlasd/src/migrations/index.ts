@@ -20,6 +20,7 @@ import type { Migration } from "jetstream";
 import { m_9c0f0fd_chat_jetstream } from "./m_9c0f0fd_chat_jetstream.ts";
 import { m_7492ae5_memory_jetstream } from "./m_7492ae5_memory_jetstream.ts";
 import { m_a6ab40b_sessions_stream_upgrade } from "./m_a6ab40b_sessions_stream_upgrade.ts";
+import { m_e4b4182_mcp_registry_to_jetstream } from "./m_e4b4182_mcp_registry_to_jetstream.ts";
 import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
 
 export const ALL_MIGRATIONS: Migration[] = [
@@ -30,4 +31,6 @@ export const ALL_MIGRATIONS: Migration[] = [
   m_a6ab40b_sessions_stream_upgrade,
   // 2026-05-02 — delete orphaned activity.db after activity subsystem deletion
   m_f9536a1_delete_activity_db,
+  // 2026-05-02 — Deno KV → JetStream KV consolidation, step 1: MCP registry
+  m_e4b4182_mcp_registry_to_jetstream,
 ];

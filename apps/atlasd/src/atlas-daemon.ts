@@ -15,6 +15,7 @@ import {
   wrapAtlasAgent,
 } from "@atlas/core";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
+import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { CronManager } from "@atlas/cron";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -369,6 +370,12 @@ export class AtlasDaemon {
       duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
     });
     await ensureChatsKVBucket(nc);
+
+    // Wire MCP registry to JetStream KV. Routes / discovery code call
+    // the zero-arg `getMCPRegistryAdapter()` and get back the JS-KV-backed
+    // adapter. Migration entry below republishes any legacy
+    // ~/.atlas/mcp-registry.db entries into the new bucket.
+    initMCPRegistryAdapter(nc);
 
     // Run all 0.1.1 → current migrations through the consolidated runner.
     // Idempotent: each entry checks the `_FRIDAY_MIGRATIONS` KV bucket and
