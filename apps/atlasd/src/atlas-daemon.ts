@@ -8,7 +8,7 @@ import {
   AtlasAgentsMCPServer,
   AgentRegistry as CoreAgentRegistry,
   convertLLMToAgent,
-  LocalSessionHistoryAdapter,
+  JetStreamSessionHistoryAdapter,
   SessionFailedError,
   WorkspaceNotFoundError,
   WorkspaceSessionStatus,
@@ -212,7 +212,7 @@ export class AtlasDaemon {
   public streamRegistry!: StreamRegistry;
   public chatTurnRegistry!: ChatTurnRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
-  public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
+  public sessionHistoryAdapter!: JetStreamSessionHistoryAdapter;
   private chatSdkInstances = new Map<string, Promise<ChatSdkInstance>>();
   private sseHealthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private agentSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -703,10 +703,11 @@ export class AtlasDaemon {
     this.streamRegistry.start();
     this.chatTurnRegistry = new ChatTurnRegistry();
 
-    // Initialize session history v2 adapter + registry
-    this.sessionHistoryAdapter = new LocalSessionHistoryAdapter(
-      join(getFridayHome(), "sessions-v2"),
-    );
+    // Initialize session history v2 adapter + registry. JetStream-backed:
+    // events live in the SESSION_EVENTS stream, summaries in
+    // SESSION_METADATA KV, in-flight markers in SESSION_INFLIGHT KV.
+    // Replaces ~/.atlas/sessions-v2/<sid>/{events.jsonl, metadata.json}.
+    this.sessionHistoryAdapter = new JetStreamSessionHistoryAdapter(nc);
     // Recover any sessions whose previous daemon process died mid-flight.
     this.sessionHistoryAdapter.markInterruptedSessions().catch((err: unknown) => {
       logger.warn("Failed to mark interrupted sessions on startup", { error: String(err) });

@@ -33,6 +33,7 @@ import { m_e4b4182_mcp_registry_to_jetstream } from "./m_e4b4182_mcp_registry_to
 import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
 import { m_repair_artifact_object_store } from "./m_repair_artifact_object_store.ts";
 import { m_scratchpad_to_jetstream } from "./m_scratchpad_to_jetstream.ts";
+import { m_sessions_v2_to_jetstream } from "./m_sessions_v2_to_jetstream.ts";
 import { m_skills_to_jetstream } from "./m_skills_to_jetstream.ts";
 import { m_workspace_registry_to_jetstream } from "./m_workspace_registry_to_jetstream.ts";
 import { m_workspace_state_to_jetstream } from "./m_workspace_state_to_jetstream.ts";
@@ -80,4 +81,11 @@ export const ALL_MIGRATIONS: Migration[] = [
   // JetStream KV bucket. Idempotent marker per bucket; legacy on-disk
   // tree left in place for rollback. workspace.yml + bundles/ untouched.
   m_document_store_to_jetstream,
+  // 2026-05-03 — sessions-v2 (~/.atlas/sessions-v2/<sid>/{events.jsonl,
+  // metadata.json}) → SESSION_EVENTS stream (subject sessions.<sid>.events)
+  // + SESSION_METADATA KV (per-session summary) + SESSION_INFLIGHT KV
+  // (marker for sessions whose daemon died mid-flight; daemon startup
+  // finalizes them via markInterruptedSessions). Idempotent via the
+  // metadata KV check; legacy on-disk dirs left in place.
+  m_sessions_v2_to_jetstream,
 ];
