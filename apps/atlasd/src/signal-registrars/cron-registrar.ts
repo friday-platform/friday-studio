@@ -33,10 +33,12 @@ export class CronSignalRegistrar implements WorkspaceSignalRegistrar {
             logger.warn("Skipping cron signal without schedule", { workspaceId, signalId });
             continue;
           }
-          // Schema defaults `onMissed` to "skip" and `missedWindow` to
-          // "24h"; passing them through verbatim keeps schema as the
-          // single source of truth.
-          const onMissed = signalConfig.config.onMissed ?? "skip";
+          // Defaults: `manual` (surface in /schedules UI as pending,
+          // operator clicks "Fire now" to trigger) and a 24h missed
+          // window. Default flipped from `skip` to `manual` 2026-05-03
+          // so unannounced daemon downtime always produces an
+          // operator-visible signal — silent drops surprised users.
+          const onMissed = signalConfig.config.onMissed ?? "manual";
           const missedWindowMs = parseDuration(signalConfig.config.missedWindow ?? "24h");
           timers.push({ workspaceId, signalId, schedule, timezone, onMissed, missedWindowMs });
         }

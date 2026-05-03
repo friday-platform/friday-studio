@@ -25,11 +25,15 @@ import { CronExpressionParser } from "cron-parser";
  *                `firstMissedAt`.
  * - `catchup`  — fire each missed slot in chronological order, one
  *                signal per slot. Bounded by `missedWindowMs`.
+ * - `manual`   — emit a pending notification but DO NOT fire. The
+ *                operator decides via the /schedules UI whether to
+ *                trigger. Right for expensive / visible side-effect
+ *                jobs.
  *
  * Window cap matters: a daemon down for a week with `catchup` on an
  * hourly cron only fires the slots inside the window, not all 168.
  */
-export type OnMissedPolicy = "skip" | "coalesce" | "catchup";
+export type OnMissedPolicy = "skip" | "coalesce" | "catchup" | "manual";
 
 export interface TimerInfo {
   workspaceId: string;
@@ -133,14 +137,26 @@ export interface CronTimerSignalData extends Record<string, unknown> {
 export interface MissedFiringNotification {
   workspaceId: string;
   signalId: string;
-  policy: "coalesce" | "catchup";
+  policy: "coalesce" | "catchup" | "manual";
   missedCount: number;
   firstMissedAt: string;
   lastMissedAt: string;
   scheduledAt: string;
+  /**
+   * For `coalesce` / `catchup`: ISO 8601 of when the make-up fire
+   * dispatched. For `manual`: ISO 8601 of when the missed slot was
+   * detected (no fire happened). The UI uses this to display "fired"
+   * vs "detected" timing depending on policy.
+   */
   firedAt: string;
   schedule: string;
   timezone: string;
+  /**
+   * True for `manual` events that haven't been operator-fired yet.
+   * Always undefined for `coalesce` / `catchup` (those fire
+   * immediately and have no pending state).
+   */
+  pending?: boolean;
 }
 export type MissedFiringNotifier = (event: MissedFiringNotification) => void | Promise<void>;
 
@@ -579,7 +595,11 @@ export class CronManager {
    * `nextExecution` past `now` regardless of policy.
    */
   private async applyMissedPolicy(timerKey: string, timer: TimerInfo, now: Date): Promise<boolean> {
-    const policy: OnMissedPolicy = timer.onMissed ?? "skip";
+    // Default flipped from `skip` → `manual` 2026-05-03. Legacy
+    // persisted timers without an explicit policy now produce a
+    // pending /schedules entry on first restart. Operators can opt
+    // back into silent skip via `onMissed: skip` in workspace.yml.
+    const policy: OnMissedPolicy = timer.onMissed ?? "manual";
     const windowMs = timer.missedWindowMs ?? DEFAULT_MISSED_WINDOW_MS;
     // The boundary for "missed" is the timer's previously-scheduled
     // nextExecution. Slots strictly after lastExecution and at-or-before
@@ -637,30 +657,65 @@ export class CronManager {
       return true;
     }
 
-    // catchup
-    this.logger.info("Cron firings replaying in order (catchup)", {
-      timerKey,
-      policy: "catchup",
-      missedCount: slots.length,
-      firstMissedAt: slots[0]?.toISOString(),
-      lastMissedAt: slots[slots.length - 1]?.toISOString(),
-    });
-    for (const slot of slots) {
-      await this.fireOnce(timerKey, timer, slot, now, {
+    if (policy === "catchup") {
+      this.logger.info("Cron firings replaying in order (catchup)", {
+        timerKey,
         policy: "catchup",
-        missedCount: 1,
-        firstMissedAt: slot.toISOString(),
+        missedCount: slots.length,
+        firstMissedAt: slots[0]?.toISOString(),
+        lastMissedAt: slots[slots.length - 1]?.toISOString(),
       });
-      await this.notifyMissedFiring(timer, {
-        policy: "catchup",
-        missedCount: 1,
-        firstMissedAt: slot.toISOString(),
-        lastMissedAt: slot.toISOString(),
-        scheduledAt: slot.toISOString(),
-        firedAt: now.toISOString(),
-      });
+      for (const slot of slots) {
+        await this.fireOnce(timerKey, timer, slot, now, {
+          policy: "catchup",
+          missedCount: 1,
+          firstMissedAt: slot.toISOString(),
+        });
+        await this.notifyMissedFiring(timer, {
+          policy: "catchup",
+          missedCount: 1,
+          firstMissedAt: slot.toISOString(),
+          lastMissedAt: slot.toISOString(),
+          scheduledAt: slot.toISOString(),
+          firedAt: now.toISOString(),
+        });
+      }
+      return true;
     }
-    return true;
+
+    // manual: surface as a pending event but do NOT fire. The
+    // operator decides via the /schedules UI. Still advance
+    // nextExecution so the next normal slot fires on schedule.
+    const firstMissed = slots[0];
+    const mostRecentMissed = slots[slots.length - 1];
+    if (!firstMissed || !mostRecentMissed) return false;
+    this.logger.info("Cron firings flagged for manual review", {
+      timerKey,
+      policy: "manual",
+      missedCount: slots.length,
+      firstMissedAt: firstMissed.toISOString(),
+      lastMissedAt: mostRecentMissed.toISOString(),
+    });
+    try {
+      const expr = CronExpressionParser.parse(timer.schedule, {
+        currentDate: now,
+        tz: timer.timezone,
+      });
+      timer.nextExecution = expr.next().toDate();
+    } catch (err) {
+      this.logger.error("Failed to advance nextExecution after manual", { timerKey, error: err });
+    }
+    await this.persistTimer(timerKey, timer);
+    await this.notifyMissedFiring(timer, {
+      policy: "manual",
+      missedCount: slots.length,
+      firstMissedAt: firstMissed.toISOString(),
+      lastMissedAt: mostRecentMissed.toISOString(),
+      scheduledAt: mostRecentMissed.toISOString(),
+      firedAt: now.toISOString(),
+      pending: true,
+    });
+    return false; // didn't actually fire
   }
 
   /**
@@ -672,7 +727,13 @@ export class CronManager {
     timer: TimerInfo,
     extras: Pick<
       MissedFiringNotification,
-      "policy" | "missedCount" | "firstMissedAt" | "lastMissedAt" | "scheduledAt" | "firedAt"
+      | "policy"
+      | "missedCount"
+      | "firstMissedAt"
+      | "lastMissedAt"
+      | "scheduledAt"
+      | "firedAt"
+      | "pending"
     >,
   ): Promise<void> {
     if (!this.missedFiringNotifier) return;

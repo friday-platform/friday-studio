@@ -278,8 +278,30 @@ describe("CronManager — onMissed policy", () => {
     expect(fired.length).toBeGreaterThan(0);
   });
 
-  it("legacy timers (no onMissed) default to skip", async () => {
-    // Pre-G1.5 persisted timer — neither field present. Must not fire.
+  it("manual: emits notification but does NOT fire the signal", async () => {
+    await seedMissedTimer(storage, {
+      timerKey: "user:expensive",
+      workspaceId: "user",
+      signalId: "expensive",
+      schedule: "* * * * *",
+      nextExecutionAgoMs: 3 * 60 * 1000,
+      onMissed: "manual",
+    });
+
+    await manager.start();
+
+    // No fires — manual surfaces in the UI for operator decision
+    expect(fired).toHaveLength(0);
+    // nextExecution still advances past now so the next normal slot fires
+    const timer = manager.listTimers()[0];
+    expect(timer?.nextExecution.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("legacy timers (no onMissed) default to manual — no auto-fire", async () => {
+    // Pre-G1.5 persisted timer — neither field present. Default
+    // flipped from `skip` to `manual` 2026-05-03 so silent drops
+    // never happen unannounced. The notification still publishes
+    // (out-of-test surface); only the auto-fire is suppressed.
     await seedMissedTimer(storage, {
       timerKey: "user:legacy",
       workspaceId: "user",

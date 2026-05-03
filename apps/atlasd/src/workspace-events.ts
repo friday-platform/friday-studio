@@ -33,6 +33,7 @@ import { stringifyError } from "@atlas/utils";
 import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
 
 const STREAM_NAME = "WORKSPACE_EVENTS";
+const STATE_BUCKET = "WORKSPACE_EVENT_STATE";
 const SUBJECT_PREFIX = "events";
 const THIRTY_DAYS_NS = 30 * 24 * 60 * 60 * 1_000_000_000;
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
@@ -43,9 +44,15 @@ export interface ScheduleMissedEvent {
   type: "schedule.missed";
   workspaceId: string;
   signalId: string;
-  /** Which onMissed policy produced this event. */
-  policy: "coalesce" | "catchup";
-  /** Total slots collapsed. Always 1 for catchup; >= 1 for coalesce. */
+  /**
+   * Which onMissed policy produced this event.
+   * - coalesce / catchup → fired automatically; `pending` is undefined.
+   * - manual → emitted but NOT fired; `pending: true` until the
+   *   operator clicks "Fire now" in the UI, then a separate
+   *   per-event KV state record flips it (see `eventStateRead`).
+   */
+  policy: "coalesce" | "catchup" | "manual";
+  /** Total slots collapsed. Always 1 for catchup; >= 1 for coalesce/manual. */
   missedCount: number;
   /** ISO 8601 — earliest missed slot represented by this event. */
   firstMissedAt: string;
@@ -53,12 +60,28 @@ export interface ScheduleMissedEvent {
   lastMissedAt: string;
   /** ISO 8601 — the cron slot this fire represents. */
   scheduledAt: string;
-  /** ISO 8601 — wall-clock time the make-up fire dispatched. */
+  /**
+   * ISO 8601. For coalesce/catchup: when the make-up fire dispatched.
+   * For manual: when the missed slot was detected (no fire happened).
+   */
   firedAt: string;
   /** Cron expression for context. */
   schedule: string;
   /** Timezone the cron expression resolves in. */
   timezone: string;
+  /**
+   * True for `manual` events that haven't been operator-fired yet.
+   * Joined in from the EVENT_STATE KV bucket at read time, since
+   * stream entries are immutable.
+   */
+  pending?: boolean;
+  /**
+   * Stable id derived from the event's content so the UI can address
+   * it for "fire now" + the KV state record can key on it. Computed
+   * at read time from the stream sequence; clients should treat as
+   * opaque.
+   */
+  id?: string;
 }
 
 export type WorkspaceEvent = ScheduleMissedEvent;
@@ -68,7 +91,6 @@ export async function ensureWorkspaceEventsStream(nc: NatsConnection): Promise<v
   const jsm = await nc.jetstreamManager();
   try {
     await jsm.streams.info(STREAM_NAME);
-    return; // already there — leave it; future config drift goes through a migration
   } catch {
     await jsm.streams.add({
       name: STREAM_NAME,
@@ -78,6 +100,22 @@ export async function ensureWorkspaceEventsStream(nc: NatsConnection): Promise<v
       max_age: THIRTY_DAYS_NS,
     });
   }
+  // Sidecar KV bucket for mutable per-event state (manual events go
+  // pending → fired). Stream entries are immutable; the join happens
+  // at read time. history=1 is enough — only the latest state matters.
+  const js = nc.jetstream();
+  await js.views.kv(STATE_BUCKET, { history: 1 });
+}
+
+/** Stable per-event id used to join stream entries with KV state. */
+function eventStateKey(event: ScheduleMissedEvent): string {
+  return `${sanitizeToken(event.workspaceId)}.${sanitizeToken(event.signalId)}.${event.scheduledAt}`;
+}
+
+interface EventStateRecord {
+  status: "pending" | "fired" | "dismissed";
+  /** ISO 8601 — when status flipped. */
+  updatedAt: string;
 }
 
 function sanitizeToken(s: string): string {
@@ -95,6 +133,14 @@ export async function publishWorkspaceEvent(
   try {
     const js = nc.jetstream();
     await js.publish(subject, enc.encode(JSON.stringify(event)));
+    // Seed the KV state record for manual events so the read path
+    // sees `pending: true` until the operator fires or dismisses.
+    if (event.type === "schedule.missed" && event.policy === "manual" && event.pending) {
+      await writeEventState(nc, eventStateKey(event), {
+        status: "pending",
+        updatedAt: new Date().toISOString(),
+      });
+    }
   } catch (err) {
     // Notification publishing is best-effort; failing here must not
     // break the cron firing that triggered it. Logged at WARN so the
@@ -105,6 +151,63 @@ export async function publishWorkspaceEvent(
       error: stringifyError(err),
     });
   }
+}
+
+async function writeEventState(
+  nc: NatsConnection,
+  key: string,
+  record: EventStateRecord,
+): Promise<void> {
+  const js = nc.jetstream();
+  const kv = await js.views.kv(STATE_BUCKET, { history: 1 });
+  await kv.put(key, enc.encode(JSON.stringify(record)));
+}
+
+async function readEventState(nc: NatsConnection, key: string): Promise<EventStateRecord | null> {
+  const js = nc.jetstream();
+  const kv = await js.views.kv(STATE_BUCKET, { history: 1 });
+  const entry = await kv.get(key);
+  if (!entry || entry.operation !== "PUT") return null;
+  try {
+    return JSON.parse(dec.decode(entry.value)) as EventStateRecord;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mark a manual `schedule.missed` event as fired. Returns false if the
+ * event isn't found (or isn't pending). The HTTP fire route calls this
+ * after successfully triggering the underlying signal.
+ */
+export async function markEventFired(
+  nc: NatsConnection,
+  workspaceId: string,
+  signalId: string,
+  scheduledAt: string,
+): Promise<boolean> {
+  const key = `${sanitizeToken(workspaceId)}.${sanitizeToken(signalId)}.${scheduledAt}`;
+  const existing = await readEventState(nc, key);
+  if (!existing || existing.status !== "pending") return false;
+  await writeEventState(nc, key, { status: "fired", updatedAt: new Date().toISOString() });
+  return true;
+}
+
+/**
+ * Mark a manual `schedule.missed` event as dismissed (operator
+ * explicitly skipped). Same shape as markEventFired.
+ */
+export async function markEventDismissed(
+  nc: NatsConnection,
+  workspaceId: string,
+  signalId: string,
+  scheduledAt: string,
+): Promise<boolean> {
+  const key = `${sanitizeToken(workspaceId)}.${sanitizeToken(signalId)}.${scheduledAt}`;
+  const existing = await readEventState(nc, key);
+  if (!existing || existing.status !== "pending") return false;
+  await writeEventState(nc, key, { status: "dismissed", updatedAt: new Date().toISOString() });
+  return true;
 }
 
 const dec = new TextDecoder();
@@ -171,11 +274,27 @@ async function readEventsBackwards(
       continue;
     }
     if (!msg || !msg.subject.startsWith(subjectPrefix)) continue;
+    let event: WorkspaceEvent;
     try {
-      events.push(JSON.parse(dec.decode(msg.data)) as WorkspaceEvent);
+      event = JSON.parse(dec.decode(msg.data)) as WorkspaceEvent;
     } catch {
       // Malformed payload — skip rather than fail the whole list.
+      continue;
     }
+    // Stable id (used by the fire/dismiss routes + UI keying).
+    event.id = eventStateKey(event);
+    // Join in mutable state for `manual` events. Coalesce / catchup
+    // never have a state record — they fire immediately.
+    if (event.policy === "manual") {
+      const state = await readEventState(nc, event.id);
+      // Default to pending only if the event was published with
+      // `pending: true` AND no state record exists yet (race-free
+      // during the publish → state-write window).
+      if (state) {
+        event.pending = state.status === "pending";
+      }
+    }
+    events.push(event);
   }
   return events;
 }

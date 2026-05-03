@@ -44,7 +44,7 @@
     type: z.literal("schedule.missed"),
     workspaceId: z.string(),
     signalId: z.string(),
-    policy: z.enum(["coalesce", "catchup"]),
+    policy: z.enum(["coalesce", "catchup", "manual"]),
     missedCount: z.number(),
     firstMissedAt: z.string(),
     lastMissedAt: z.string(),
@@ -52,6 +52,8 @@
     firedAt: z.string(),
     schedule: z.string(),
     timezone: z.string(),
+    pending: z.boolean().optional(),
+    id: z.string().optional(),
   });
   const EventsResponseSchema = z.object({ events: z.array(ScheduleMissedEventSchema) });
   type ScheduleMissedEvent = z.infer<typeof ScheduleMissedEventSchema>;
@@ -67,6 +69,34 @@
   }));
 
   const events = $derived(eventsQuery.data?.events ?? []);
+
+  let actingOnEvent = $state<Set<string>>(new Set());
+
+  function eventKey(e: ScheduleMissedEvent): string {
+    return e.id ?? `${e.workspaceId}:${e.signalId}:${e.scheduledAt}`;
+  }
+
+  async function manualAction(event: ScheduleMissedEvent, action: "fire" | "dismiss") {
+    const key = eventKey(event);
+    actingOnEvent = new Set([...actingOnEvent, key]);
+    try {
+      const res = await fetch(`/api/daemon/api/events/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: event.workspaceId,
+          signalId: event.signalId,
+          scheduledAt: event.scheduledAt,
+        }),
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      await queryClient.invalidateQueries({ queryKey: ["workspace-events", "schedule.missed"] });
+    } catch (err) {
+      console.error(`Failed to ${action} event:`, err);
+    } finally {
+      actingOnEvent = new Set([...actingOnEvent].filter((k) => k !== key));
+    }
+  }
 
   let toggling = $state<Set<string>>(new Set());
 
@@ -228,33 +258,50 @@
             <span class="count">{events.length}</span>
           </header>
           <div class="signal-list">
-            {#each events as event (event.scheduledAt + ":" + event.workspaceId + ":" + event.signalId)}
-              <div class="signal-row event-row">
+            {#each events as event (eventKey(event))}
+              {@const busy = actingOnEvent.has(eventKey(event))}
+              <div class="signal-row event-row" class:event-pending={event.pending}>
                 <a class="row-main" href="/platform/{event.workspaceId}/signal/{event.signalId}">
-                  <span class="signal-id">{event.signalId}</span>
+                  <span class="signal-id">
+                    {event.signalId}
+                    <span
+                      class="badge badge-event"
+                      class:badge-pending={event.pending}
+                    >{event.policy}{event.policy === "coalesce" && event.missedCount > 1
+                        ? ` ×${event.missedCount}`
+                        : ""}{event.pending ? " · pending" : ""}</span>
+                  </span>
                   <span class="signal-meta">
                     <span class="ws-name">{event.workspaceId}</span>
                     <span class="sep">·</span>
                     <span class="cron-human">
                       {humanizeCron(event.schedule, event.timezone)}
                     </span>
+                    <span class="sep">·</span>
+                    <span class="event-time">
+                      missed {formatRelative(event.scheduledAt)}
+                    </span>
                   </span>
                 </a>
-                <div class="row-right">
-                  <div class="timing">
-                    <span class="timing-label">policy</span>
-                    <span class="timing-value">{event.policy}</span>
-                    {#if event.policy === "coalesce" && event.missedCount > 1}
-                      <span class="timing-label">covered</span>
-                      <span class="timing-value">{event.missedCount} slots</span>
-                    {/if}
-                    <span class="timing-label">scheduled</span>
-                    <span class="timing-value muted">{formatRelative(event.scheduledAt)}</span>
-                    <span class="timing-label">fired</span>
-                    <span class="timing-value muted">{formatRelative(event.firedAt)}</span>
+
+                {#if event.policy === "manual" && event.pending}
+                  <div class="row-right">
+                    <button
+                      class="action-btn action-resume"
+                      disabled={busy}
+                      onclick={() => manualAction(event, "fire")}
+                    >
+                      {busy ? "…" : "Fire now"}
+                    </button>
+                    <button
+                      class="action-btn"
+                      disabled={busy}
+                      onclick={() => manualAction(event, "dismiss")}
+                    >
+                      Dismiss
+                    </button>
                   </div>
-                  <span class="badge badge-event">missed schedule</span>
-                </div>
+                {/if}
               </div>
             {/each}
           </div>
@@ -458,6 +505,20 @@
   .badge-event {
     background-color: color-mix(in srgb, var(--color-warning, #d29922), transparent 80%);
     color: var(--color-warning, #d29922);
+    margin-inline-start: var(--size-2);
+  }
+
+  .badge-pending {
+    background-color: color-mix(in srgb, var(--color-accent, #1f6feb), transparent 80%);
+    color: var(--color-accent, #1f6feb);
+  }
+
+  .event-row.event-pending {
+    border-left: 3px solid var(--color-accent, #1f6feb);
+  }
+
+  .event-time {
+    font-variant-numeric: tabular-nums;
   }
 
   .subtle {
