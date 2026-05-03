@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PageLayout } from "@atlas/ui";
+  import { IconSmall, PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { getDaemonClient } from "$lib/daemon-client";
   import { z } from "zod";
@@ -444,7 +444,9 @@
                         >
                           {busy ? "…" : "Trigger"}
                           {#if group.count > 1}
-                            <span class="dropdown-btn__chevron" aria-hidden="true">▾</span>
+                            <span class="dropdown-btn__chevron" aria-hidden="true">
+                              <IconSmall.ChevronDown />
+                            </span>
                           {/if}
                         </button>
                         {#if menuOpen && group.count > 1}
@@ -674,9 +676,10 @@
   }
 
   .dropdown-btn__chevron {
-    color: color-mix(in srgb, currentcolor, transparent 30%);
-    font-size: 0.85em;
-    line-height: 1;
+    align-items: center;
+    color: color-mix(in srgb, currentcolor, transparent 25%);
+    display: inline-flex;
+    margin-inline-start: -2px; /* tighten gap; the icon has its own padding */
   }
 
   .dropdown-btn__menu {
