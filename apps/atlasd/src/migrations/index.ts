@@ -33,6 +33,7 @@ import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts"
 import { m_repair_artifact_object_store } from "./m_repair_artifact_object_store.ts";
 import { m_scratchpad_to_jetstream } from "./m_scratchpad_to_jetstream.ts";
 import { m_workspace_registry_to_jetstream } from "./m_workspace_registry_to_jetstream.ts";
+import { m_workspace_state_to_jetstream } from "./m_workspace_state_to_jetstream.ts";
 
 export const ALL_MIGRATIONS: Migration[] = [
   // 2026-05 — chat + memory storage moves to JetStream
@@ -63,4 +64,8 @@ export const ALL_MIGRATIONS: Migration[] = [
   // because it doesn't need the legacy SQLite at all — only on-disk
   // file roots.
   m_repair_artifact_object_store,
+  // 2026-05-03 — Workspace state.db (used by state_* MCP tools) →
+  // per-workspace JetStream KV bucket WS_STATE_<wsid>. Idempotent
+  // marker per bucket; legacy SQLite left in place for rollback.
+  m_workspace_state_to_jetstream,
 ];

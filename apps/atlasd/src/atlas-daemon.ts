@@ -25,6 +25,7 @@ import {
   BashArgsSchema,
   executeBash,
   executeWebfetch,
+  initWorkspaceStateStorage,
   PlatformMCPServer,
   WebfetchArgsSchema,
 } from "@atlas/mcp-server";
@@ -491,6 +492,11 @@ export class AtlasDaemon {
     // ~/.atlas/storage.db artifact rows + reads file contents from
     // disk into the Object Store, content-addressed by SHA-256.
     initArtifactStorage(nc);
+
+    // Wire workspace-state storage (state_append/lookup/filter MCP tools)
+    // to JetStream — one KV bucket per workspace (WS_STATE_<wsid>).
+    // Replaces the legacy ~/.atlas/artifacts/<wsid>/state.db SQLite store.
+    initWorkspaceStateStorage(nc);
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");

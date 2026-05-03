@@ -1,34 +1,14 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { stringifyError } from "@atlas/utils";
-import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
-import { Database } from "@db/sqlite";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
+import { appendStateEntry } from "./storage.ts";
 
 /** Cache artifact IDs to skip listByWorkspace on repeat calls */
 const artifactIdCache = new Map<string, string>();
-
-const CountRow = z.object({ c: z.number() });
-
-function dbPath(workspaceId: string): string {
-  return join(getWorkspaceFilesDir(workspaceId), "state.db");
-}
-
-function ensureTable(db: Database, key: string): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS "${key}" (
-      id INTEGER PRIMARY KEY,
-      data TEXT NOT NULL,
-      _ts TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS "idx_${key}_ts" ON "${key}" (_ts);
-  `);
-}
 
 async function resolveArtifactId(workspaceId: string): Promise<string | undefined> {
   const cached = artifactIdCache.get(workspaceId);
@@ -51,7 +31,7 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
     "state_append",
     {
       description:
-        "Append an entry to persistent workspace state (SQLite-backed). " +
+        "Append an entry to persistent workspace state (JetStream-backed). " +
         "A _ts timestamp is auto-added. " +
         "Optionally prune entries older than ttl_hours. " +
         "State survives across job runs and workspace restarts.",
@@ -64,7 +44,7 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
           .max(100)
           .regex(/^[a-z][a-z0-9_-]*$/)
           .describe(
-            "State key — becomes a table name (lowercase alphanumeric, hyphens, underscores)",
+            "State key — becomes a table-like prefix (lowercase alphanumeric, hyphens, underscores)",
           ),
         entry: z.record(z.string(), z.unknown()).describe("JSON object to append"),
         ttl_hours: z
@@ -78,112 +58,64 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
       ctx.logger.info("MCP state_append called", { workspaceId, workspaceName, key, ttl_hours });
 
       try {
-        const dir = getWorkspaceFilesDir(workspaceId);
-        await mkdir(dir, { recursive: true });
+        const { count, pruned } = await appendStateEntry(workspaceId, key, entry, ttl_hours);
 
-        const filePath = dbPath(workspaceId);
-        const db = new Database(filePath);
+        // Maintain an artifact-as-discovery-handle so the workspace UI
+        // can surface that state exists. The artifact content is a tiny
+        // JSON manifest — no longer the raw DB.
+        const nameLabel = workspaceName ? ` [${workspaceName}]` : "";
+        const summary = `Workspace${nameLabel} state (${count} entries in "${key}")`;
+        const manifest = JSON.stringify(
+          {
+            kind: "workspace-state",
+            workspaceId,
+            key,
+            count,
+            lastUpdate: new Date().toISOString(),
+          },
+          null,
+          2,
+        );
+        const manifestData = {
+          type: "file" as const,
+          content: manifest,
+          mimeType: "application/json",
+          originalName: "workspace-state.json",
+        };
 
-        try {
-          db.exec("PRAGMA journal_mode=WAL");
-          db.exec("PRAGMA busy_timeout=5000");
-          ensureTable(db, key);
-
-          const ts = new Date().toISOString();
-          const data = JSON.stringify(entry);
-
-          // Append + prune in a single transaction using db.transaction()
-          let pruned = 0;
-          const runTx = db.transaction(() => {
-            const insertStmt = db.prepare(`INSERT INTO "${key}" (data, _ts) VALUES (?, ?)`);
-            insertStmt.run(data, ts);
-            insertStmt.finalize();
-
-            if (ttl_hours !== undefined) {
-              const cutoff = new Date(Date.now() - ttl_hours * 3600000).toISOString();
-              const countStmt = db.prepare(`SELECT COUNT(*) as c FROM "${key}" WHERE _ts < ?`);
-              const countResult = CountRow.optional().parse(countStmt.get(cutoff));
-              countStmt.finalize();
-              pruned = countResult?.c ?? 0;
-
-              const deleteStmt = db.prepare(`DELETE FROM "${key}" WHERE _ts < ?`);
-              deleteStmt.run(cutoff);
-              deleteStmt.finalize();
-            }
+        const existingId = await resolveArtifactId(workspaceId);
+        if (existingId) {
+          const updateResult = await ArtifactStorage.update({
+            id: existingId,
+            data: manifestData,
+            summary,
           });
-          runTx();
-
-          const totalStmt = db.prepare(`SELECT COUNT(*) as c FROM "${key}"`);
-          const totalResult = CountRow.optional().parse(totalStmt.get());
-          totalStmt.finalize();
-          const count = totalResult?.c ?? 0;
-
-          // Create or update an artifact-as-discovery-handle for the
-          // workspace state DB. The SQLite DB lives on disk under
-          // FRIDAY_HOME/workspaces/<id>/files/state.db; the artifact
-          // content is a small JSON manifest (not the DB itself), so
-          // we don't re-upload the whole DB on every append. Lookup
-          // and filter tools open the on-disk DB directly via
-          // `getWorkspaceFilesDir(...)/state.db`.
-          const existingId = await resolveArtifactId(workspaceId);
-          const nameLabel = workspaceName ? ` [${workspaceName}]` : "";
-          const summary = `Workspace${nameLabel} state DB (${count} entries in "${key}")`;
-          const manifest = JSON.stringify(
-            {
-              kind: "workspace-state-db",
-              workspaceId,
+          if (!updateResult.ok) {
+            // Stale cache — artifact may have been deleted externally
+            artifactIdCache.delete(workspaceId);
+            ctx.logger.warn("Failed to update state artifact, cache invalidated", {
+              error: updateResult.error,
               key,
-              count,
-              lastUpdate: new Date().toISOString(),
-            },
-            null,
-            2,
-          );
-          const manifestData = {
-            type: "file" as const,
-            content: manifest,
-            mimeType: "application/json",
-            originalName: "workspace-state.json",
-          };
-
-          if (existingId) {
-            const updateResult = await ArtifactStorage.update({
-              id: existingId,
-              data: manifestData,
-              summary,
             });
-            if (!updateResult.ok) {
-              // Stale cache — artifact may have been deleted externally
-              artifactIdCache.delete(workspaceId);
-              ctx.logger.warn("Failed to update state artifact, cache invalidated", {
-                error: updateResult.error,
-                key,
-              });
-            }
           }
-
-          // Create if no existing artifact or update failed (cache was invalidated)
-          if (!artifactIdCache.has(workspaceId)) {
-            const createResult = await ArtifactStorage.create({
-              data: manifestData,
-              title: "workspace-state",
-              summary,
-              workspaceId,
-            });
-            if (createResult.ok) {
-              artifactIdCache.set(workspaceId, createResult.data.id);
-            } else {
-              ctx.logger.warn("Failed to create state artifact", {
-                error: createResult.error,
-                key,
-              });
-            }
-          }
-
-          return createSuccessResponse({ count, pruned });
-        } finally {
-          db.close();
         }
+
+        // Create if no existing artifact or update failed (cache was invalidated)
+        if (!artifactIdCache.has(workspaceId)) {
+          const createResult = await ArtifactStorage.create({
+            data: manifestData,
+            title: "workspace-state",
+            summary,
+            workspaceId,
+          });
+          if (createResult.ok) {
+            artifactIdCache.set(workspaceId, createResult.data.id);
+          } else {
+            ctx.logger.warn("Failed to create state artifact", { error: createResult.error, key });
+          }
+        }
+
+        return createSuccessResponse({ count, pruned });
       } catch (error) {
         ctx.logger.error("state_append failed", { error, workspaceId, key });
         return createErrorResponse("Failed to append state", stringifyError(error));
