@@ -4,14 +4,12 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./backends": "./src/backends/index.ts",
     "./types": "./src/types.ts",
     "./vercel-helpers": "./src/vercel-helpers/index.ts"
   },
   "main": "./src/index.ts",
   "dependencies": {
     "@ai-sdk/provider": "^3.0.10",
-    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "@opentelemetry/api": "^1.9.1",
     "ai": "^6.0.174",
     "jsonrepair": "^3.14.0",

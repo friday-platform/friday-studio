@@ -24,7 +24,6 @@
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",
     "@atlas/mcp-server": "workspace:*",
-    "@atlas/schemas": "workspace:*",
     "@atlas/signals": "workspace:*",
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",

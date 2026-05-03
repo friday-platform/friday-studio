@@ -39,13 +39,6 @@ export interface SignalsStreamLimits {
   duplicateWindowNs?: number | bigint;
 }
 
-/** Per-consumer limits for SignalConsumer, sourced from FRIDAY_JETSTREAM_* env vars. */
-export interface SignalsConsumerLimits {
-  maxAckPending?: number;
-  maxDeliver?: number;
-  ackWaitNs?: number | bigint;
-}
-
 const toNumber = (v: number | bigint | undefined, fallback: number): number => {
   if (v === undefined) return fallback;
   return typeof v === "bigint" ? Number(v) : v;

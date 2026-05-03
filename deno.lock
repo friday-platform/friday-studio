@@ -139,6 +139,7 @@
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:jsonrepair@^3.14.0": "3.14.0",
     "npm:jszip@^3.10.1": "3.10.1",
+    "npm:knip@*": "6.11.0_@emnapi+core@1.10.0_@emnapi+runtime@1.10.0",
     "npm:knip@6.11.0": "6.11.0_@emnapi+core@1.10.0_@emnapi+runtime@1.10.0",
     "npm:lint-staged@^16.4.0": "16.4.0",
     "npm:markdown-it@^14.1.1": "14.1.1",
@@ -6021,6 +6022,8 @@
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@~0.7.6",
             "npm:@jsr/std__async@^1.0.15",
+            "npm:@jsr/std__encoding@^1.0.10",
+            "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__path@^1.1.4",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@libpdf/core@~0.3.4",
@@ -6108,7 +6111,6 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.10",
-            "npm:@jsr/db__sqlite@0.12",
             "npm:@opentelemetry/api@^1.9.1",
             "npm:ai@^6.0.174",
             "npm:jsonrepair@^3.14.0",
@@ -6183,7 +6185,6 @@
             "npm:@ai-sdk/provider@^3.0.10",
             "npm:@jsr/std__async@^1.0.14",
             "npm:@jsr/std__encoding@^1.0.10",
-            "npm:@jsr/std__media-types@^1.1.0",
             "npm:@libpdf/core@~0.3.4",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@xmldom/xmldom@~0.9.10",
@@ -6248,8 +6249,7 @@
       "packages/jetstream": {
         "packageJson": {
           "dependencies": [
-            "npm:nats@^2.29.3",
-            "npm:vitest@^4.1.0"
+            "npm:nats@^2.29.3"
           ]
         }
       },
@@ -6368,11 +6368,8 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__yaml@^1.0.10",
-            "npm:nats@^2.29.3",
-            "npm:vitest@^4.1.0",
-            "npm:zod@^4.3.6"
+            "npm:nats@^2.29.3"
           ]
         }
       },
@@ -6384,6 +6381,7 @@
         ],
         "packageJson": {
           "dependencies": [
+            "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:@worker-tools/html-rewriter@~0.1.0-pre.17",
             "npm:ai@^6.0.174",
@@ -6498,7 +6496,6 @@
         "packageJson": {
           "dependencies": [
             "npm:@ai-sdk/provider@^3.0.10",
-            "npm:@jsr/db__sqlite@0.12",
             "npm:ai@^6.0.174",
             "npm:dotenv@17.4.2",
             "npm:gunshi@~0.29.5",

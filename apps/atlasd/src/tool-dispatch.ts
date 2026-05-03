@@ -57,13 +57,15 @@ export const ToolCallRequestSchema = z.object({
 });
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
-export const ToolCallSuccessSchema = z.object({
+// Reply discriminated union — the success/error halves are private; no
+// caller composes them independently. Keep the union itself exported.
+const ToolCallSuccessSchema = z.object({
   ok: z.literal(true),
   result: z.unknown(),
   durationMs: z.number(),
 });
 
-export const ToolCallErrorSchema = z.object({
+const ToolCallErrorSchema = z.object({
   ok: z.literal(false),
   error: z.object({ code: z.string(), message: z.string() }),
   durationMs: z.number(),

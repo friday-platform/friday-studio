@@ -249,6 +249,3 @@ export function formatStartupLog(cfg: ResolvedJetStreamConfig): string {
     `    ack_wait             = ${fmtDurationNs(c.ackWaitNs.value)}  ${tag(c.ackWaitNs)}`,
   ].join("\n");
 }
-
-// Test helpers
-export const __test__ = { parseBytes, parseDurationNs, fmtBytes, fmtDurationNs };

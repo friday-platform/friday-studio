@@ -9,6 +9,5 @@
     "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
     "nats": "^2.29.3"
-  },
-  "devDependencies": { "vitest": "^4.1.0" }
+  }
 }

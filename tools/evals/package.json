@@ -13,7 +13,6 @@
     "ai": "^6.0.174",
     "dotenv": "17.4.2",
     "gunshi": "^0.29.5",
-    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "zod": "^4.3.5"
   },
   "devDependencies": { "vitest": "^4.1.0" }
