@@ -6021,6 +6021,7 @@
             "npm:@hono/mcp@~0.2.5",
             "npm:@hono/standard-validator@~0.2.2",
             "npm:@hono/zod-validator@~0.7.6",
+            "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__async@^1.0.15",
             "npm:@jsr/std__encoding@^1.0.10",
             "npm:@jsr/std__media-types@^1.1.0",
@@ -6213,6 +6214,7 @@
       "packages/document-store": {
         "packageJson": {
           "dependencies": [
+            "npm:nats@^2.29.3",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]
@@ -6293,17 +6295,14 @@
         }
       },
       "packages/mcp-server": {
-        "dependencies": [
-          "jsr:@db/sqlite@0.13"
-        ],
         "packageJson": {
           "dependencies": [
-            "npm:@jsr/db__sqlite@0.12",
             "npm:@modelcontextprotocol/sdk@1.28",
             "npm:@worker-tools/html-rewriter@0.1.0-pre.19",
             "npm:ai@^6.0.174",
             "npm:fast-glob@^3.3.3",
             "npm:minimatch@^10.2.5",
+            "npm:nats@^2.29.3",
             "npm:papaparse@^5.5.3",
             "npm:turndown@7.2.4",
             "npm:vitest@^4.1.0",
@@ -6355,6 +6354,7 @@
             "npm:ai@^6.0.174",
             "npm:markdown-it@^14.1.1",
             "npm:nanoid@^5.1.6",
+            "npm:nats@^2.29.3",
             "npm:tar@^7.5.13",
             "npm:ulid@^3.0.2",
             "npm:vitest@^4.1.0",

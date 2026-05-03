@@ -52,8 +52,8 @@ const AssignmentRow = z.object({
   job_name: z.string().nullable(),
 });
 
-export const m_skills_to_jetstream: Migration = {
-  id: "skills-to-jetstream",
+export const migration: Migration = {
+  id: "20260503_110100_skills_to_jetstream",
   name: "user-published skills (skills.db) → JetStream KV + Object Store",
   description:
     "Walk ~/.atlas/skills.db `skills` rows (excluding bundled friday/* " +

@@ -18,7 +18,6 @@
     "nats": "^2.29.3",
     "papaparse": "^5.5.3",
     "turndown": "7.2.4",
-    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
     "zod": "^4.3.5"
   },
   "devDependencies": { "vitest": "^4.1.0" }

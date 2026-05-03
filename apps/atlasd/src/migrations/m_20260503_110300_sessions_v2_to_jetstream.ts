@@ -38,8 +38,8 @@ function sanitize(s: string): string {
   return s.replace(SAFE_TOKEN_RE, "_");
 }
 
-export const m_sessions_v2_to_jetstream: Migration = {
-  id: "sessions-v2-to-jetstream",
+export const migration: Migration = {
+  id: "20260503_110300_sessions_v2_to_jetstream",
   name: "sessions-v2 → SESSION_EVENTS stream + SESSION_METADATA KV",
   description:
     "Walk ~/.atlas/sessions-v2/<sid>/. For each session: publish " +

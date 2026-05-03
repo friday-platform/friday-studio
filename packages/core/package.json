@@ -51,6 +51,7 @@
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",
     "@atlas/skills": "workspace:*",
+    "@atlas/storage": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@modelcontextprotocol/sdk": "~1.28.0",
     "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",

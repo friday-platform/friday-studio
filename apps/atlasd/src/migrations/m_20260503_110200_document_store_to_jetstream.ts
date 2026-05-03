@@ -48,8 +48,8 @@ async function readJsonFile(path: string): Promise<unknown | null> {
   }
 }
 
-export const m_document_store_to_jetstream: Migration = {
-  id: "document-store-to-jetstream",
+export const migration: Migration = {
+  id: "20260503_110200_document_store_to_jetstream",
   name: "FileSystemDocumentStore → per-workspace JetStream KV",
   description:
     "Walk ~/.atlas/workspaces/<wsid>/ and copy every document-store " +

@@ -68,7 +68,7 @@
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
     },
     "apps/atlasd": {
-      "entry": ["**/*.test.ts"],
+      "entry": ["**/*.test.ts", "src/migrations/m_*.ts!"],
       "project": ["**/*.{ts,tsx,js,jsx}!"],
       "ignore": ["src/tool-worker-launcher.ts"]
     },

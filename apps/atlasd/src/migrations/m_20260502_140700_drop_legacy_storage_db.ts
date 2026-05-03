@@ -40,8 +40,8 @@ async function tryUnlink(path: string): Promise<"deleted" | "missing" | "failed"
   }
 }
 
-export const m_drop_legacy_storage_db: Migration = {
-  id: "drop-legacy-storage-db",
+export const migration: Migration = {
+  id: "20260502_140700_drop_legacy_storage_db",
   name: "drop ~/.atlas/storage.db + mcp-registry.db",
   description:
     "Delete the Deno KV SQLite files (and their -shm/-wal sidecars) once all " +

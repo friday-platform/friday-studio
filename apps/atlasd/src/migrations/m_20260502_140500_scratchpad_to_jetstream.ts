@@ -37,8 +37,8 @@ interface StoredNote {
   ts: string;
 }
 
-export const m_scratchpad_to_jetstream: Migration = {
-  id: "scratchpad-to-jetstream",
+export const migration: Migration = {
+  id: "20260502_140500_scratchpad_to_jetstream",
   name: "scratchpad → JetStream KV",
   description:
     "Walk ~/.atlas/storage.db scratchpad rows and republish each into the " +

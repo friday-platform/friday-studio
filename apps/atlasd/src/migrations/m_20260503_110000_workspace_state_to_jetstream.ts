@@ -33,8 +33,8 @@ function sanitizeBucketName(workspaceId: string): string {
   return workspaceId.replace(SAFE_BUCKET_RE, "_");
 }
 
-export const m_workspace_state_to_jetstream: Migration = {
-  id: "workspace-state-to-jetstream",
+export const migration: Migration = {
+  id: "20260503_110000_workspace_state_to_jetstream",
   name: "workspace state.db → JetStream KV (per-workspace bucket)",
   description:
     "For each ~/.atlas/artifacts/<wsid>/state.db, open the SQLite, " +

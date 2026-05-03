@@ -24,7 +24,7 @@
 
 import { join } from "node:path";
 import process from "node:process";
-import { ALL_MIGRATIONS } from "@atlas/atlasd/migrations";
+import { getAllMigrations } from "@atlas/atlasd/migrations";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -105,10 +105,11 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   const { nc, cleanup } = handle;
 
   try {
+    const migrations = await getAllMigrations();
     if (argv.list) {
       const records = await listMigrationRecords(nc);
       const byId = new Map(records.map((r) => [r.id, r]));
-      const entries = ALL_MIGRATIONS.map((m) => ({
+      const entries = migrations.map((m) => ({
         id: m.id,
         name: m.name,
         description: m.description,
@@ -122,7 +123,7 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
       return;
     }
 
-    const result = await runMigrations(nc, ALL_MIGRATIONS, logger, { dryRun: !!argv.dryRun });
+    const result = await runMigrations(nc, migrations, logger, { dryRun: !!argv.dryRun });
     if (argv.json) {
       console.log(JSON.stringify(result, null, 2));
       return;

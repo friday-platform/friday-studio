@@ -1,91 +1,68 @@
 /**
- * Consolidated 0.1.1 → current migration manifest.
+ * Auto-discovered migration manifest.
  *
- * Order is canonical — each entry runs once, in this order, and is
- * tracked in the `_FRIDAY_MIGRATIONS` JetStream KV bucket. New migrations
- * append to the bottom; never reorder or rename existing entries.
+ * Every `m_<id>.ts` file in this directory is a migration. The id is
+ * the filename without the `m_` prefix and `.ts` suffix; the file
+ * exports a `migration: Migration` whose `id` field matches the
+ * filename. Run order is the lexicographic sort of the filenames —
+ * which means **timestamp ordering** if the convention is followed.
  *
- * **ID convention (revised 2026-05-02): use a permanent slug, not the
- * commit SHA.** The earlier "amend with real SHA after commit" dance
- * was a footgun — the SHA changes every time you amend (lint fix,
- * commit-message edit), so the audit trail accumulates orphan records
- * and you can't tell from the file alone which id ran. Slug ids
- * (`mcp-registry-to-jetstream`, `cron-timers-to-jetstream`) are
- * stable from the moment of authoring. The legacy SHA-id entries
- * already in audit trails on existing installs (`9c0f0fd`, `7492ae5`,
- * `a6ab40b-sessions`, `f9536a1`, `e4b4182`) are left as-is — they're
- * already recorded.
+ * **ID convention** (locked-in 2026-05-03 — the legacy SHA-prefix +
+ * manual-slug ids were renamed in this PR; first-merge users have
+ * never seen the old ids):
  *
- * Wire-up: `AtlasDaemon.initialize()` calls `runMigrations(nc, ALL_MIGRATIONS, logger)`
- * at startup. CLI: `atlas migrate` runs the same. Both are idempotent —
- * already-completed migrations are skipped via the audit-trail KV.
+ *   m_YYYYMMDD_HHMMSS_descriptive_slug.ts
+ *
+ * - `YYYYMMDD_HHMMSS` is the UTC timestamp at authoring time.
+ * - `descriptive_slug` is lowercase + underscore-separated.
+ * - The id stored in `_FRIDAY_MIGRATIONS` KV is the same string
+ *   without the `m_` prefix or `.ts` suffix.
+ *
+ * Why timestamp-prefixed: lexicographic sort = chronological sort
+ * (no manual array maintenance), parallel-branch authors get
+ * distinct ids without renumbering, and the id self-documents when
+ * the migration was authored.
+ *
+ * **Once a migration ships, NEVER rename or delete the file.** Doing
+ * so orphans audit-trail records on every existing install + breaks
+ * idempotency. The unit test in `index.test.ts` enforces the
+ * filename↔id convention; CI fails if you violate it.
  */
 
+import { readdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { Migration } from "jetstream";
-import { m_9c0f0fd_chat_jetstream } from "./m_9c0f0fd_chat_jetstream.ts";
-import { m_7492ae5_memory_jetstream } from "./m_7492ae5_memory_jetstream.ts";
-import { m_a6ab40b_sessions_stream_upgrade } from "./m_a6ab40b_sessions_stream_upgrade.ts";
-import { m_artifacts_to_jetstream } from "./m_artifacts_to_jetstream.ts";
-import { m_cron_timers_to_jetstream } from "./m_cron_timers_to_jetstream.ts";
-import { m_document_store_to_jetstream } from "./m_document_store_to_jetstream.ts";
-import { m_drop_legacy_storage_db } from "./m_drop_legacy_storage_db.ts";
-import { m_e4b4182_mcp_registry_to_jetstream } from "./m_e4b4182_mcp_registry_to_jetstream.ts";
-import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
-import { m_repair_artifact_object_store } from "./m_repair_artifact_object_store.ts";
-import { m_scratchpad_to_jetstream } from "./m_scratchpad_to_jetstream.ts";
-import { m_sessions_v2_to_jetstream } from "./m_sessions_v2_to_jetstream.ts";
-import { m_skills_to_jetstream } from "./m_skills_to_jetstream.ts";
-import { m_workspace_registry_to_jetstream } from "./m_workspace_registry_to_jetstream.ts";
-import { m_workspace_state_to_jetstream } from "./m_workspace_state_to_jetstream.ts";
 
-export const ALL_MIGRATIONS: Migration[] = [
-  // 2026-05 — chat + memory storage moves to JetStream
-  m_9c0f0fd_chat_jetstream,
-  m_7492ae5_memory_jetstream,
-  // 2026-05-02 — durability upgrade for the SESSIONS stream
-  m_a6ab40b_sessions_stream_upgrade,
-  // 2026-05-02 — delete orphaned activity.db after activity subsystem deletion
-  m_f9536a1_delete_activity_db,
-  // 2026-05-02 — Deno KV → JetStream KV consolidation, step 1: MCP registry
-  m_e4b4182_mcp_registry_to_jetstream,
-  // 2026-05-02 — Deno KV → JetStream KV consolidation, step 2: cron timers
-  m_cron_timers_to_jetstream,
-  // 2026-05-02 — Deno KV → JetStream KV consolidation, step 3: workspace registry
-  m_workspace_registry_to_jetstream,
-  // 2026-05-02 — Deno KV → JetStream KV consolidation, step 4: scratchpad
-  m_scratchpad_to_jetstream,
-  // 2026-05-02 — Deno KV → JetStream KV consolidation, step 5: artifacts
-  // (also moves blob bytes into the JetStream Object Store, not just metadata)
-  m_artifacts_to_jetstream,
-  // 2026-05-02 — Final step: delete the legacy SQLite KV files now that
-  // every surface above has been migrated. MUST stay last in the manifest.
-  m_drop_legacy_storage_db,
-  // 2026-05-03 — Recovery for the artifacts-to-jetstream bug (os.info()
-  // null-on-missing was misread as "present", skipping every blob put).
-  // Walks on-disk artifact files + republishes any missing blobs to
-  // the Object Store. Idempotent. Listed AFTER drop-legacy-storage-db
-  // because it doesn't need the legacy SQLite at all — only on-disk
-  // file roots.
-  m_repair_artifact_object_store,
-  // 2026-05-03 — Workspace state.db (used by state_* MCP tools) →
-  // per-workspace JetStream KV bucket WS_STATE_<wsid>. Idempotent
-  // marker per bucket; legacy SQLite left in place for rollback.
-  m_workspace_state_to_jetstream,
-  // 2026-05-03 — User-published skills (skills.db) → SKILLS KV +
-  // SKILL_ARCHIVES Object Store. Bundled friday/* skills (created_by
-  // = "system") are skipped — their source-of-truth is the package
-  // bootstrap, not the database. Idempotent.
-  m_skills_to_jetstream,
-  // 2026-05-03 — FileSystemDocumentStore (~/.atlas/workspaces/<wsid>/
-  // [sessions/<sid>/]<type>/<id>.json) → per-workspace WS_DOCS_<wsid>
-  // JetStream KV bucket. Idempotent marker per bucket; legacy on-disk
-  // tree left in place for rollback. workspace.yml + bundles/ untouched.
-  m_document_store_to_jetstream,
-  // 2026-05-03 — sessions-v2 (~/.atlas/sessions-v2/<sid>/{events.jsonl,
-  // metadata.json}) → SESSION_EVENTS stream (subject sessions.<sid>.events)
-  // + SESSION_METADATA KV (per-session summary) + SESSION_INFLIGHT KV
-  // (marker for sessions whose daemon died mid-flight; daemon startup
-  // finalizes them via markInterruptedSessions). Idempotent via the
-  // metadata KV check; legacy on-disk dirs left in place.
-  m_sessions_v2_to_jetstream,
-];
+/**
+ * Discover and return all migrations in this directory, sorted by id
+ * (which equals the filename prefix, which is the timestamp). Async
+ * because dynamic imports are async; daemon awaits this once at
+ * startup and the CLI awaits it before invoking `runMigrations`.
+ */
+export async function getAllMigrations(): Promise<Migration[]> {
+  const dir = new URL(".", import.meta.url);
+  const dirPath = fileURLToPath(dir);
+  const entries = await readdir(dirPath, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.startsWith("m_") || !entry.name.endsWith(".ts")) continue;
+    if (entry.name.endsWith(".test.ts")) continue;
+    files.push(entry.name);
+  }
+  files.sort();
+
+  const migrations: Migration[] = [];
+  for (const file of files) {
+    const mod = (await import(new URL(file, dir).href)) as { migration?: Migration };
+    if (!mod.migration) {
+      throw new Error(
+        `Migration file ${file} does not export a \`migration\` const. ` +
+          `Every m_*.ts file in apps/atlasd/src/migrations/ must export ` +
+          `\`export const migration: Migration = { id: "...", ... }\`.`,
+      );
+    }
+    migrations.push(mod.migration);
+  }
+  return migrations;
+}

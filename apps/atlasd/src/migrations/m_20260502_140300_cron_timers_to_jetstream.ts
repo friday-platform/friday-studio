@@ -34,8 +34,8 @@ interface CronTimerEntry {
 const KV_PREFIX = ["cron_timers"] as const;
 const TARGET_BUCKET = "CRON_TIMERS";
 
-export const m_cron_timers_to_jetstream: Migration = {
-  id: "cron-timers-to-jetstream",
+export const migration: Migration = {
+  id: "20260502_140300_cron_timers_to_jetstream",
   name: "cron timers → JetStream KV",
   description:
     "Walk ~/.atlas/storage.db cron rows and republish each entry into " +

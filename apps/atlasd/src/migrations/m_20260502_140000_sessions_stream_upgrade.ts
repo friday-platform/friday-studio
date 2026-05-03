@@ -21,8 +21,8 @@ import { StorageType } from "nats";
 
 const THIRTY_DAYS_NS = 30 * 24 * 60 * 60 * 1_000_000_000;
 
-export const m_a6ab40b_sessions_stream_upgrade: Migration = {
-  id: "a6ab40b-sessions",
+export const migration: Migration = {
+  id: "20260502_140000_sessions_stream_upgrade",
   name: "SESSIONS stream durability upgrade",
   description:
     "Add max_age: 30d to the existing SESSIONS stream if missing; warn if " +

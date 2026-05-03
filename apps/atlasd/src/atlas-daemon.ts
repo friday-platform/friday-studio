@@ -94,7 +94,7 @@ import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts"
 import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
-import { ALL_MIGRATIONS } from "./migrations/index.ts";
+import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
@@ -402,41 +402,43 @@ export class AtlasDaemon {
     // the chat / memory backends are wired before this kicks off so reads
     // against not-yet-migrated chats just see "no chat" until migration
     // catches up. Operators can also run `atlas migrate` from the CLI.
-    runMigrations(nc, ALL_MIGRATIONS, logger).then(
-      (result) => {
-        this.migrationStatus = { state: "complete", result };
-        if (result.failed.length > 0) {
-          // ERROR (not WARN) so log filters/dashboards surface this. A
-          // half-migrated install is a correctness hazard — the operator
-          // needs to re-run `atlas migrate` (or restart the daemon, which
-          // re-runs the failed entry) and inspect the per-migration error
-          // recorded in the `_FRIDAY_MIGRATIONS` audit-trail KV.
-          logger.error("Migrations completed with failures", {
-            ran: result.ran,
-            skipped: result.skipped,
-            failed: result.failed,
+    getAllMigrations()
+      .then((migrations) => runMigrations(nc, migrations, logger))
+      .then(
+        (result) => {
+          this.migrationStatus = { state: "complete", result };
+          if (result.failed.length > 0) {
+            // ERROR (not WARN) so log filters/dashboards surface this. A
+            // half-migrated install is a correctness hazard — the operator
+            // needs to re-run `atlas migrate` (or restart the daemon, which
+            // re-runs the failed entry) and inspect the per-migration error
+            // recorded in the `_FRIDAY_MIGRATIONS` audit-trail KV.
+            logger.error("Migrations completed with failures", {
+              ran: result.ran,
+              skipped: result.skipped,
+              failed: result.failed,
+              hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
+            });
+          } else {
+            logger.info("Migrations summary", { ...result });
+          }
+        },
+        (err: unknown) => {
+          const error = String(err);
+          // The runner itself threw before producing a per-entry result —
+          // most often a transient broker disconnect mid-walk. Same severity
+          // bump: operator needs visibility, not a buried warning.
+          this.migrationStatus = {
+            state: "complete",
+            result: { ran: [], skipped: [], failed: ["__runner__"] },
+            error,
+          };
+          logger.error("Migration runner failed", {
+            error,
             hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
           });
-        } else {
-          logger.info("Migrations summary", { ...result });
-        }
-      },
-      (err: unknown) => {
-        const error = String(err);
-        // The runner itself threw before producing a per-entry result —
-        // most often a transient broker disconnect mid-walk. Same severity
-        // bump: operator needs visibility, not a buried warning.
-        this.migrationStatus = {
-          state: "complete",
-          result: { ran: [], skipped: [], failed: ["__runner__"] },
-          error,
-        };
-        logger.error("Migration runner failed", {
-          error,
-          hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
-        });
-      },
-    );
+        },
+      );
 
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();

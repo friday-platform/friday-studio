@@ -26,8 +26,8 @@ import { enc, type Migration, readKvJson } from "jetstream";
 
 const KV_PREFIX = ["mcp_registry"] as const;
 
-export const m_e4b4182_mcp_registry_to_jetstream: Migration = {
-  id: "e4b4182",
+export const migration: Migration = {
+  id: "20260502_140200_mcp_registry_to_jetstream",
   name: "MCP registry → JetStream KV",
   description:
     "Walk ~/.atlas/mcp-registry.db (Deno KV) and republish each entry into " +

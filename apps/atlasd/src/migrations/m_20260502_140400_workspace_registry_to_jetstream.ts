@@ -28,8 +28,8 @@ import type { Migration } from "jetstream";
 const KV_PREFIX = ["workspaces"] as const;
 const TARGET_BUCKET = "WORKSPACE_REGISTRY";
 
-export const m_workspace_registry_to_jetstream: Migration = {
-  id: "workspace-registry-to-jetstream",
+export const migration: Migration = {
+  id: "20260502_140400_workspace_registry_to_jetstream",
   name: "workspace registry → JetStream KV",
   description:
     "Walk ~/.atlas/storage.db workspace rows and republish each entry into " +

@@ -12,8 +12,8 @@
 import type { Migration } from "jetstream";
 import { migrateLegacyChats } from "../chat-migration.ts";
 
-export const m_9c0f0fd_chat_jetstream: Migration = {
-  id: "9c0f0fd",
+export const migration: Migration = {
+  id: "20260501_120000_chat_to_jetstream",
   name: "chat-storage → JetStream",
   description:
     "Walk ~/.atlas/chats/ and migrate every legacy chat_*.json into a per-chat " +

@@ -1,6 +1,1 @@
-{
-  "name": "@atlas/mcp-server",
-  "version": "1.0.0",
-  "exports": "./mod.ts",
-  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13" }
-}
+{ "name": "@atlas/mcp-server", "version": "1.0.0", "exports": "./mod.ts" }

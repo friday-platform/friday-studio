@@ -11,8 +11,8 @@
 import type { Migration } from "jetstream";
 import { migrateLegacyMemory } from "../memory-migration.ts";
 
-export const m_7492ae5_memory_jetstream: Migration = {
-  id: "7492ae5",
+export const migration: Migration = {
+  id: "20260501_120100_memory_to_jetstream",
   name: "memory-narrative → JetStream",
   description:
     "Walk ~/.atlas/memory/<wsId>/narrative/<name>/ and migrate every legacy " +

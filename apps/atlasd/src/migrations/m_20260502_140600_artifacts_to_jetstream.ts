@@ -132,8 +132,8 @@ async function casUpdateLatest(kv: KV, id: string, revision: number) {
   throw new Error(`Failed CAS update for ${latestKey}`);
 }
 
-export const m_artifacts_to_jetstream: Migration = {
-  id: "artifacts-to-jetstream",
+export const migration: Migration = {
+  id: "20260502_140600_artifacts_to_jetstream",
   name: "artifacts → JetStream KV + Object Store",
   description:
     "Walk ~/.atlas/storage.db artifact rows, read each revision's file from disk, " +

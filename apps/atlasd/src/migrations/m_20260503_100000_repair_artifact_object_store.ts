@@ -85,12 +85,12 @@ async function* walkFiles(root: string): AsyncGenerator<string> {
   }
 }
 
-export const m_repair_artifact_object_store: Migration = {
+export const migration: Migration = {
   // v2: the v1 entry walked uploads/artifacts + workspaces only, missing
   // ~/.atlas/artifacts/<workspaceId> where image-gen + transcription
   // agents wrote their outputs. Bumped slug so the framework re-runs
   // against the broader root set; idempotent on the per-hash check.
-  id: "repair-artifact-object-store-v2",
+  id: "20260503_100000_repair_artifact_object_store",
   name: "rehydrate artifacts Object Store from on-disk files (v2)",
   description:
     "Walk ~/.atlas/uploads/artifacts, ~/.atlas/artifacts/<workspaceId>, and " +

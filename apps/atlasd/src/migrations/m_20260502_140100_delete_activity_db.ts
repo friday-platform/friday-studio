@@ -16,8 +16,8 @@ import { join } from "node:path";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import type { Migration } from "jetstream";
 
-export const m_f9536a1_delete_activity_db: Migration = {
-  id: "f9536a1",
+export const migration: Migration = {
+  id: "20260502_140100_delete_activity_db",
   name: "delete orphaned activity.db",
   description:
     "Remove ~/.atlas/activity.db left over from the deleted activity subsystem. " +
