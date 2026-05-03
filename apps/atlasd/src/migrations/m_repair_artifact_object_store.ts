@@ -86,17 +86,30 @@ async function* walkFiles(root: string): AsyncGenerator<string> {
 }
 
 export const m_repair_artifact_object_store: Migration = {
-  id: "repair-artifact-object-store",
-  name: "rehydrate artifacts Object Store from on-disk files",
+  // v2: the v1 entry walked uploads/artifacts + workspaces only, missing
+  // ~/.atlas/artifacts/<workspaceId> where image-gen + transcription
+  // agents wrote their outputs. Bumped slug so the framework re-runs
+  // against the broader root set; idempotent on the per-hash check.
+  id: "repair-artifact-object-store-v2",
+  name: "rehydrate artifacts Object Store from on-disk files (v2)",
   description:
-    "Walk ~/.atlas/uploads/artifacts and ~/.atlas/workspaces/*/files, hash each " +
-    "file (SHA-256), and republish to the `artifacts` JetStream Object Store " +
-    "if not already present. Repairs the empty Object Store left by the " +
-    "first artifacts-to-jetstream run, which had a bug where os.info()'s " +
-    "null-on-missing return value was misread as 'present', skipping all puts.",
+    "Walk ~/.atlas/uploads/artifacts, ~/.atlas/artifacts/<workspaceId>, and " +
+    "~/.atlas/workspaces/<id>/files, hash each file (SHA-256), and republish to " +
+    "the `artifacts` JetStream Object Store if not already present. Repairs the " +
+    "empty Object Store left by the first artifacts-to-jetstream run, which had " +
+    "a bug where os.info()'s null-on-missing return value was misread as " +
+    "'present', skipping all puts. v2 adds the missed `~/.atlas/artifacts` root.",
   async run({ nc, logger }) {
     const home = getFridayHome();
-    const roots = [join(home, "uploads", "artifacts"), join(home, "workspaces")];
+    // Three roots covered:
+    //   - uploads/artifacts: chat upload route's persisted files
+    //   - artifacts/<workspaceId>: image-gen + transcription agent outputs
+    //   - workspaces/<id>/files: per-workspace state DBs and other tool output
+    const roots = [
+      join(home, "uploads", "artifacts"),
+      join(home, "artifacts"),
+      join(home, "workspaces"),
+    ];
 
     const js = nc.jetstream();
     const os = await js.views.os(OS_BUCKET);
