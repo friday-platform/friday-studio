@@ -10,11 +10,7 @@ import { assert, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
 
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
-vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
-  FilesystemWorkspaceCreationAdapter: vi.fn(),
-}));
+vi.mock("@atlas/storage", () => ({ FilesystemWorkspaceCreationAdapter: vi.fn() }));
 
 // Mock fetchLinkCredential to control Link responses — real error classes via importOriginal
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());

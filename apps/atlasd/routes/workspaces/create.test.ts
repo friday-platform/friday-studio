@@ -14,7 +14,6 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 
 // Mock storage (FilesystemWorkspaceCreationAdapter used in create)
 vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
   FilesystemWorkspaceCreationAdapter: class {
     createWorkspaceDirectory = vi.fn().mockResolvedValue("/tmp/test-ws");
     writeWorkspaceFiles = vi.fn().mockResolvedValue(undefined);

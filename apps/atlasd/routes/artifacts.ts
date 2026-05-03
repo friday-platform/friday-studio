@@ -2,7 +2,6 @@ import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
-import process from "node:process";
 import {
   type ArtifactDataInput,
   type ArtifactWithContents,
@@ -122,10 +121,7 @@ async function convertUploadedFile(opts: {
     };
   }
 
-  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
-  const artifactsDir = usingCortex
-    ? join(tmpdir(), "atlas-artifacts")
-    : join(getFridayHome(), "uploads", "artifacts");
+  const artifactsDir = join(getFridayHome(), "uploads", "artifacts");
   await mkdir(artifactsDir, { recursive: true });
 
   const ext = extname(fileName).toLowerCase();
@@ -435,17 +431,9 @@ export async function createArtifactFromFile(opts: {
     return { ok: false as const, error: result.error };
   }
 
-  // Cortex uploaded the file — local copy is no longer needed
-  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
-  const fileData = converted.data.data;
-  if (usingCortex && typeof fileData === "object" && fileData !== null && "path" in fileData) {
-    await unlink(fileData.path).catch((err) => {
-      logger.debug("Failed to cleanup temp file after Cortex upload", {
-        path: fileData.path,
-        error: stringifyError(err),
-      });
-    });
-  }
+  // (Cortex temp-file cleanup branch removed 2026-05-02 along with the
+  // Cortex artifact storage adapter. Local-only path keeps the file
+  // alongside the artifact metadata.)
 
   // Fire-and-forget: LLM summary for converted documents
   if (converted.markdown) {
@@ -515,21 +503,8 @@ export async function replaceArtifactFromFile(opts: {
     return { ok: false as const, error: result.error };
   }
 
-  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
-  const replaceCleanupData = converted.data.data;
-  if (
-    usingCortex &&
-    typeof replaceCleanupData === "object" &&
-    replaceCleanupData !== null &&
-    "path" in replaceCleanupData
-  ) {
-    await unlink(replaceCleanupData.path).catch((err) => {
-      logger.debug("Failed to cleanup temp file after Cortex upload", {
-        path: replaceCleanupData.path,
-        error: stringifyError(err),
-      });
-    });
-  }
+  // (Cortex temp-file cleanup branch removed 2026-05-02 along with the
+  // Cortex artifact storage adapter.)
 
   // Fire-and-forget: LLM summary for converted documents
   if (converted.markdown) {

@@ -18,7 +18,6 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
 
 vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
   FilesystemWorkspaceCreationAdapter: class {
     createWorkspaceDirectory = vi.fn().mockResolvedValue("/tmp");
     writeWorkspaceFiles = vi.fn().mockResolvedValue(undefined);

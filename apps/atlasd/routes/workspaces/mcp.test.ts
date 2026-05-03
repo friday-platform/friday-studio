@@ -18,9 +18,6 @@ import {
   useTempDir,
 } from "./config.test-fixtures.ts";
 
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
-vi.mock("@atlas/storage", () => ({ storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined) }));
-
 // Mock discoverMCPServers to control catalog contents without real registry
 const mockDiscoverMCPServers = vi.hoisted(() => vi.fn());
 

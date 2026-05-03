@@ -66,7 +66,6 @@ export type {
 } from "./src/orchestrator/agent-orchestrator.ts";
 // Agent Orchestrator
 export { AgentOrchestrator } from "./src/orchestrator/agent-orchestrator.ts";
-export { CortexSessionHistoryAdapter } from "./src/session/cortex-session-history-adapter.ts";
 // Event Emission Mapper (FSM events → session stream events)
 export {
   type AgentResultData,

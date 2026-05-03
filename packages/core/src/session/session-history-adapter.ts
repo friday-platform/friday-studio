@@ -2,8 +2,7 @@
  * Session History v2 — Storage adapter interface.
  *
  * Defines the contract for persisting and retrieving session stream events.
- * Implementations: LocalSessionHistoryAdapter (JSONL files),
- * CortexSessionHistoryAdapter (remote storage, future).
+ * Single implementation today (LocalSessionHistoryAdapter, JSONL files).
  *
  * @module
  */

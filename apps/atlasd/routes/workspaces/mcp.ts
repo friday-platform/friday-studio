@@ -15,7 +15,6 @@ import { disableMCPServer, enableMCPServer } from "@atlas/config/mutations";
 import { discoverMCPServers } from "@atlas/core/mcp-registry/discovery";
 import { getWorkspaceMCPStatus } from "@atlas/core/mcp-registry/workspace-mcp";
 import { createLogger } from "@atlas/logger";
-import { storeWorkspaceHistory } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -171,13 +170,12 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
     const mutationFn = (cfg: WorkspaceConfig) =>
       enableMCPServer(cfg, serverId, candidate.metadata.configTemplate as MCPServerConfig);
 
-    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
-      onBeforeWrite: async () => {
-        await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
-          throwOnError: true,
-        });
-      },
-    });
+    // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+    // and got deleted with the rest of the speculative remote-backend
+    // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+    // wire it as a new local primitive (or via JetStream) — don't
+    // resurrect the Cortex shape.
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn);
 
     if (!result.ok) {
       return mapMutationError(c, result.error);
@@ -244,13 +242,12 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
 
     const mutationFn = (cfg: WorkspaceConfig) => disableMCPServer(cfg, serverId, { force });
 
-    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
-      onBeforeWrite: async () => {
-        await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
-          throwOnError: true,
-        });
-      },
-    });
+    // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+    // and got deleted with the rest of the speculative remote-backend
+    // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+    // wire it as a new local primitive (or via JetStream) — don't
+    // resurrect the Cortex shape.
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn);
 
     if (!result.ok) {
       if (result.error.type === "not_found") {

@@ -21,9 +21,7 @@ const mockWriteWorkspaceFiles = vi.hoisted(() =>
     .mockResolvedValue(undefined),
 );
 
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
 vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
   FilesystemWorkspaceCreationAdapter: class {
     createWorkspaceDirectory() {
       return Promise.resolve("/tmp/test-workspace");

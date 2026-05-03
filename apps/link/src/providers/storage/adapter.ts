@@ -4,10 +4,9 @@ import type { DynamicProviderInput } from "../types.ts";
  * Storage adapter interface for dynamic provider definitions.
  *
  * Handles persistence of user-registered OAuth and API key providers.
- * Implementations provide either local (Deno KV) or remote (Cortex) storage.
+ * Single implementation today (LocalProviderStorageAdapter, Deno KV).
  *
- * @see LocalProviderStorageAdapter - Deno KV for local dev
- * @see CortexProviderStorageAdapter - Cortex blob storage for cloud
+ * @see LocalProviderStorageAdapter
  */
 export interface ProviderStorageAdapter {
   /**

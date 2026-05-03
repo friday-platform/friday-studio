@@ -1,7 +1,6 @@
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
-import { CortexSkillAdapter } from "./cortex-adapter.ts";
 import { LocalSkillAdapter } from "./local-adapter.ts";
 import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } from "./schemas.ts";
 
@@ -62,25 +61,17 @@ export interface SkillStorageAdapter {
   listJobOnlySkillIds(): Promise<Result<string[], string>>;
 }
 
+/**
+ * Local-only since the Cortex variant was deleted 2026-05-02 (speculative
+ * remote backend, never reached). The `SKILL_STORAGE_ADAPTER` env var is
+ * no longer consulted; skills live in `${FRIDAY_HOME}/skills.db` (override
+ * with `SKILL_LOCAL_DB_PATH`). Future skills migration story is tracked
+ * separately — see the plan's "Skills migration" task.
+ */
 function createSkillStorageAdapter(): SkillStorageAdapter {
-  const adapterType = process.env.SKILL_STORAGE_ADAPTER || "local";
-  switch (adapterType) {
-    case "local": {
-      const dbPath = process.env.SKILL_LOCAL_DB_PATH;
-      logger.info("Using LocalSkillAdapter", { dbPath });
-      return new LocalSkillAdapter(dbPath);
-    }
-    case "cortex": {
-      const cortexUrl = process.env.CORTEX_URL;
-      if (!cortexUrl) {
-        throw new Error("CORTEX_URL required when SKILL_STORAGE_ADAPTER=cortex");
-      }
-      logger.info("Using CortexSkillAdapter", { cortexUrl });
-      return new CortexSkillAdapter(cortexUrl);
-    }
-    default:
-      throw new Error(`Unknown skill storage adapter: ${adapterType}`);
-  }
+  const dbPath = process.env.SKILL_LOCAL_DB_PATH;
+  logger.info("Using LocalSkillAdapter", { dbPath });
+  return new LocalSkillAdapter(dbPath);
 }
 
 let _storage: SkillStorageAdapter | null = null;

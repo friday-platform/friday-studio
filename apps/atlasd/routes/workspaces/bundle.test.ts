@@ -9,10 +9,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
 
-vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
-  FilesystemWorkspaceCreationAdapter: vi.fn(),
-}));
+vi.mock("@atlas/storage", () => ({ FilesystemWorkspaceCreationAdapter: vi.fn() }));
 
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());
 vi.mock("@atlas/core/mcp-registry/credential-resolver", async (importOriginal) => ({

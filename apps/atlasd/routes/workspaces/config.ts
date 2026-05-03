@@ -25,7 +25,6 @@ import {
   LinkCredentialNotFoundError,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { createLogger } from "@atlas/logger";
-import { storeWorkspaceHistory } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import type { Context } from "hono";
@@ -391,13 +390,12 @@ async function handleUpdateCredential(
     // Draft-aware mutation (goes to draft if one exists, otherwise live workspace.yml)
     const mutationFn = (cfg: WorkspaceConfig) =>
       updateCredential(cfg, path, newCredentialId, newCredential.provider);
-    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
-      onBeforeWrite: async () => {
-        await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
-          throwOnError: true,
-        });
-      },
-    });
+    // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+    // and got deleted with the rest of the speculative remote-backend
+    // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+    // wire it as a new local primitive (or via JetStream) — don't
+    // resurrect the Cortex shape.
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn);
 
     if (!result.ok) {
       const error = result.error;
@@ -556,10 +554,7 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
       // Extract route params
       const params = handlerConfig.extractParams(c);
 
-      // Load current config for history (before mutation modifies disk)
-      const currentConfig = await manager.getWorkspaceConfig(workspace.id);
-
-      // 3. Apply mutation with onBeforeWrite callback for history storage
+      // 3. Apply the mutation
       // Note: The cast is safe — with-schema input comes from zValidator,
       // without-schema input is undefined (DELETE handlers).
       const mutationFn = (
@@ -568,15 +563,11 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
           params: TParams,
         ) => (config: WorkspaceConfig) => MutationResult<WorkspaceConfig>
       )(input, params);
-      const result = await applyMutation(workspace.path, mutationFn, {
-        onBeforeWrite: async () => {
-          if (currentConfig) {
-            await storeWorkspaceHistory(workspace, currentConfig.workspace, "partial-update", {
-              throwOnError: true,
-            });
-          }
-        },
-      });
+      // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+      // and got deleted with the rest of the speculative remote-backend
+      // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+      // wire it as a new local primitive (or via JetStream).
+      const result = await applyMutation(workspace.path, mutationFn);
 
       if (!result.ok) {
         // Build conflict message - use custom builder or default

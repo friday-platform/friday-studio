@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "exports": {
     ".": "./mod.ts",
-    "./cortex-http": "./src/cortex-http.ts",
     "./fs.server": "./src/fs.ts",
     "./paths.server": "./src/paths.ts",
     "./release-channel": "./src/release-channel.ts",

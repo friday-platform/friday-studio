@@ -1,6 +1,5 @@
 import process from "node:process";
 import { createLogger } from "@atlas/logger";
-import { CortexStorageAdapter } from "./cortex-adapter.ts";
 import { LocalStorageAdapter } from "./local-adapter.ts";
 import type { ArtifactDataInput, CreateArtifactInput } from "./model.ts";
 import type { ArtifactStorageAdapter } from "./types.ts";
@@ -8,41 +7,21 @@ import type { ArtifactStorageAdapter } from "./types.ts";
 const logger = createLogger({ name: "artifact-storage" });
 
 /**
- * Create artifact storage adapter based on environment configuration.
- *
- * Auto-detects adapter from CORTEX_URL presence:
- * - If CORTEX_URL is set: Uses Cortex adapter (FRIDAY_KEY read at request time)
- * - Otherwise: Uses local adapter
- *
  * Environment Variables:
- * - CORTEX_URL: Cortex service URL (presence enables Cortex adapter)
- * - FRIDAY_KEY: JWT token for Cortex authentication (read at request time, not startup)
- * - ARTIFACT_STORAGE_PATH: Override default KV path (local only)
+ * - ARTIFACT_STORAGE_PATH: Override default Deno KV path.
+ *
+ * The remote-backend (Cortex) variant of this adapter was deleted 2026-05-02 —
+ * speculative infrastructure that was env-gated behind `CORTEX_URL` and never
+ * reached. When a real cloud-backend story returns, build it against the
+ * redesigned Object-Store-backed model, not the legacy Deno KV shape.
  */
-function createArtifactStorageAdapter(): ArtifactStorageAdapter {
-  const cortexUrl = process.env.CORTEX_URL;
-
-  if (cortexUrl) {
-    // FRIDAY_KEY is read from env at request time, not module load (same pattern as Link routes)
-    logger.info("Using CortexStorageAdapter", { cortexUrl });
-    return new CortexStorageAdapter(cortexUrl);
-  }
-
-  const kvPath = process.env.ARTIFACT_STORAGE_PATH;
-  logger.info("Using LocalStorageAdapter", { kvPath: kvPath || "default" });
-  return new LocalStorageAdapter(kvPath);
-}
-
-// Create singleton adapter instance
-const adapter = createArtifactStorageAdapter();
+const kvPath = process.env.ARTIFACT_STORAGE_PATH;
+logger.info("Using LocalStorageAdapter", { kvPath: kvPath || "default" });
+const adapter: ArtifactStorageAdapter = new LocalStorageAdapter(kvPath);
 
 /**
- * Artifact storage facade.
- *
- * Delegates all operations to the configured storage adapter (local or cortex).
- * The adapter is selected once at startup based on environment variables.
- *
- * All consumers should import this facade, not the adapters directly.
+ * Artifact storage facade. Delegates to the local adapter (the only one
+ * since 2026-05-02). All consumers import this facade, not the adapter.
  */
 export const ArtifactStorage: ArtifactStorageAdapter = {
   create: (input: CreateArtifactInput) => adapter.create(input),

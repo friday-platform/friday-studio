@@ -20,9 +20,6 @@ import {
   useTempDir,
 } from "./config.test-fixtures.ts";
 
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
-vi.mock("@atlas/storage", () => ({ storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined) }));
-
 // Mock fetchLinkCredential to control Link responses
 const mockFetchLinkCredential = vi.hoisted(() => vi.fn());
 vi.mock("@atlas/core/mcp-registry/credential-resolver", () => ({
