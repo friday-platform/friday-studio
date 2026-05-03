@@ -29,6 +29,14 @@ export interface SignalDetail {
   schedule?: string;
   /** Timezone for schedule signals (defaults to UTC) */
   timezone?: string;
+  /**
+   * onMissed policy for schedule signals (defaults to "skip" when
+   * unset). Surfaced so UIs can render the chosen behavior alongside
+   * the cron expression — see /schedules page.
+   */
+  onMissed?: "skip" | "coalesce" | "catchup";
+  /** missedWindow Duration string (e.g., "24h"). */
+  missedWindow?: string;
   /** Watched path for fs-watch signals */
   watchPath?: string;
   /** Input JSON Schema, null if not defined */
@@ -75,6 +83,9 @@ export function deriveSignalDetails(config: WorkspaceConfig): SignalDetail[] {
     } else if (signal.provider === "schedule") {
       detail.schedule = signal.config.schedule;
       detail.timezone = signal.config.timezone;
+      if (signal.config.onMissed !== undefined) detail.onMissed = signal.config.onMissed;
+      if (signal.config.missedWindow !== undefined)
+        detail.missedWindow = signal.config.missedWindow;
     } else if (signal.provider === "fs-watch") {
       detail.watchPath = signal.config.path;
     }

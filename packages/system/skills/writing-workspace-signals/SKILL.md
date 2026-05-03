@@ -118,7 +118,23 @@ signals:
     config:
       schedule: "0 9 * * *"
       timezone: "America/Los_Angeles"
+      # Optional: what to do with firings the daemon was down for.
+      # Defaults to skip (silently drop). The two opt-ins are
+      # bounded by missedWindow (default 24h) so a long outage
+      # never produces an unbounded burst.
+      onMissed: skip          # or: coalesce | catchup
+      missedWindow: 24h       # optional; default 24h
 ```
+
+**`onMissed` policies:**
+
+- `skip` (default) — drop missed firings entirely. Safe for everything; matches pre-2026-05-03 behavior.
+- `coalesce` — fire **once now** to represent every missed slot inside `missedWindow`. The signal payload carries `policy: "coalesce"`, `missedCount`, `firstMissedAt`. Right for "did this happen recently?" jobs (digests, syncs, "fetch latest"). Use this when the cron's *recency*, not its *cadence*, is what matters.
+- `catchup` — fire **each** missed slot in chronological order, one signal per slot, payload tagged `policy: "catchup"`. Right for "every tick must run" jobs (rate-limit accruals, time-series ingest, slot-numbered exports). Use this when missing a slot is incorrect, not just late.
+
+`missedWindow` (Duration: `s`/`m`/`h`, default `24h`) caps the catch-up window. A daemon down for a week with `catchup` on an hourly cron only fires the slots inside the window — never all 168.
+
+Make-up firings are surfaced on the playground `/schedules` page under "Missed schedules" and persisted in the JetStream `WORKSPACE_EVENTS` stream for 30 days.
 
 ### System trigger
 
