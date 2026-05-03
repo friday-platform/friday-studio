@@ -6464,6 +6464,7 @@
             "npm:@hono/zod-validator@~0.7.6",
             "npm:@lezer/highlight@^1.2.3",
             "npm:@melt-ui/svelte@~0.86.6",
+            "npm:@opentelemetry/api@^1.9.1",
             "npm:@sveltejs/adapter-static@^3.0.10",
             "npm:@sveltejs/kit@^2.59.0",
             "npm:@sveltejs/vite-plugin-svelte@~6.2.4",
