@@ -93,8 +93,10 @@ function makeImageArtifact(id: string, mimeType = "image/png") {
     revision: 1,
     data: {
       type: "file",
-      version: 1,
-      data: { path: `/files/${id}.png`, mimeType, originalName: `${id}.png` },
+      contentRef: "0".repeat(64),
+      size: 0,
+      mimeType,
+      originalName: `${id}.png`,
     },
     title: `${id}.png`,
     summary: "Image file",

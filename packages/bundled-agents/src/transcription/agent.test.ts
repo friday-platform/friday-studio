@@ -67,8 +67,10 @@ function makeAudioArtifact(id: string, originalName: string) {
     revision: 1,
     data: {
       type: "file",
-      version: 1,
-      data: { path: `/files/${originalName}`, mimeType: "audio/mpeg", originalName },
+      contentRef: "0".repeat(64),
+      size: 0,
+      mimeType: "audio/mpeg",
+      originalName,
     },
     title: originalName,
     summary: "Audio file",

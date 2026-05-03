@@ -26,11 +26,7 @@ function makeFileArtifact(id: string, mimeType: string, originalName = "file.mp3
     id,
     type: "file",
     revision: 1,
-    data: {
-      type: "file",
-      version: 1,
-      data: { path: `/files/${originalName}`, mimeType, originalName },
-    },
+    data: { type: "file", contentRef: "0".repeat(64), size: 0, mimeType, originalName },
     title: originalName,
     summary: "test",
     createdAt: "2026-03-09T00:00:00Z",
@@ -38,15 +34,15 @@ function makeFileArtifact(id: string, mimeType: string, originalName = "file.mp3
 }
 
 function makeDatabaseArtifact(id: string) {
+  // The artifact `type` union narrowed to "file" only after the
+  // 2026-05-02 redesign; this fixture intentionally uses a
+  // non-"file" type to verify the discovery filter rejects non-audio
+  // artifacts. Cast to the test mock's expected shape.
   return {
     id,
     type: "database",
     revision: 1,
-    data: {
-      type: "database",
-      version: 1,
-      data: { path: "/db/test.db", schema: { tableName: "t", rowCount: 10 } },
-    },
+    data: { type: "database" },
     title: "test.db",
     summary: "test database",
     createdAt: "2026-03-09T00:00:00Z",

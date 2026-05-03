@@ -18,12 +18,10 @@ function makeFileArtifact(overrides: {
     revision: 1,
     data: {
       type: "file",
-      version: 1,
-      data: {
-        path: `/fake/${overrides.id}`,
-        mimeType: overrides.mimeType,
-        originalName: overrides.originalName ?? "file.bin",
-      },
+      contentRef: "0".repeat(64),
+      size: 0,
+      mimeType: overrides.mimeType,
+      originalName: overrides.originalName ?? "file.bin",
     },
     title: "test",
     summary: "test",

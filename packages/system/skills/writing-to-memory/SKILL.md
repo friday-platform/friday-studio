@@ -73,20 +73,29 @@ The user mentioned that they would like newsletters from substack.com to be arch
 
 Anything over ~500 chars (result sets, reports, structured data, analyses) must not go directly into memory — it will bloat every future turn's system prompt.
 
-**Step 1 — write to a file, then create an artifact:**
+**Step 1 — call `artifacts_create` with the content inline:**
 ```
-fs_write_file(path="/tmp/q1-analysis.md", content=<full content>)
 artifacts_create(
-  data={type:"file", version:1, data:{path:"/tmp/q1-analysis.md"}},
+  data={type:"file", content:"<full content>", originalName:"q1-analysis.md"},
   title="Q1 email analysis",
   summary="..."
 )
 → { artifactId: "art_abc123" }
 ```
 
-`fs_write_file` works in every execution context (workspace-chat, FSM LLM steps, `type: "user"`/`"llm"` agents) and accepts arbitrary host paths. **`write_file` is workspace-chat only** and writes to the session scratch dir (`<friday-home>/scratch/{sessionId}/`) — fine for ephemeral content but not what `artifacts_create` expects when you pass an arbitrary path.
+The storage layer hashes the bytes (SHA-256), sniffs the mime type from
+the magic bytes if you don't pass `mimeType`, and writes to the JetStream
+Object Store named by hash — identical bytes dedup automatically. No
+filesystem hop, no `write_file → artifacts_create(path)` two-step.
 
-**`artifacts_create` requires the file to already exist on disk.** The storage adapter calls `stat(path)` and rejects with `400 "File not found"` if step 1 was skipped. Always write the file first, even if you only have the content as a string.
+For binary content over a JSON wire (e.g. images returned by a tool),
+base64-encode the bytes and pass `contentEncoding: "base64"`:
+```
+artifacts_create(
+  data={type:"file", content:"<base64>", contentEncoding:"base64", mimeType:"image/png", originalName:"chart.png"},
+  ...
+)
+```
 
 **Step 2 — save a terse reference to memory:**
 ```

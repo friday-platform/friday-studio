@@ -13,15 +13,14 @@ import { afterAll, describe, expect, it } from "vitest";
 import { expandArtifactRefsInDocuments } from "../artifact-expansion.ts";
 import type { Document } from "../types.ts";
 
-/** Absolute path to a fixture file that always exists at test time. */
-const FIXTURE_PATH = new URL(
-  "../../packages/core/src/artifacts/test-utils/test-fixture.txt",
-  import.meta.url,
-).pathname;
-
-/** Minimal ArtifactDataInput for a file artifact using the shared fixture. */
+/** Minimal ArtifactDataInput for a file artifact with inline test content. */
 function makeFileInput(): ArtifactDataInput {
-  return { type: "file", version: 1, data: { path: FIXTURE_PATH } };
+  return {
+    type: "file",
+    content: "Test fixture content for artifact-expansion integration tests.\n",
+    mimeType: "text/plain",
+    originalName: "test-fixture.txt",
+  };
 }
 
 /** Skip when daemon isn't reachable. The whole suite hits the real /api endpoints. */
@@ -92,7 +91,7 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifactId]).toMatchObject({ type: "file" });
     });
 
     it("expands artifactRefs array with multiple artifacts", async () => {
@@ -121,8 +120,8 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifact1Id]).toMatchObject({ type: "file", version: 1 });
-      expect(content[artifact2Id]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifact1Id]).toMatchObject({ type: "file" });
+      expect(content[artifact2Id]).toMatchObject({ type: "file" });
     });
 
     it("handles documents with both artifactRef and artifactRefs", async () => {
@@ -153,9 +152,9 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
       expect(Object.keys(content)).toHaveLength(3);
-      expect(content[singleId]).toMatchObject({ type: "file", version: 1 });
-      expect(content[arrayId1]).toMatchObject({ type: "file", version: 1 });
-      expect(content[arrayId2]).toMatchObject({ type: "file", version: 1 });
+      expect(content[singleId]).toMatchObject({ type: "file" });
+      expect(content[arrayId1]).toMatchObject({ type: "file" });
+      expect(content[arrayId2]).toMatchObject({ type: "file" });
     });
 
     it("expands artifactRef wrapped in Result pattern { ok: true, data: { artifactRef } }", async () => {
@@ -186,7 +185,7 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifactId]).toMatchObject({ type: "file" });
     });
 
     it("expands artifactRefs array wrapped in Result pattern", async () => {
@@ -218,8 +217,8 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifact1Id]).toMatchObject({ type: "file", version: 1 });
-      expect(content[artifact2Id]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifact1Id]).toMatchObject({ type: "file" });
+      expect(content[artifact2Id]).toMatchObject({ type: "file" });
     });
 
     it("deduplicates when multiple documents reference the same artifact", async () => {
@@ -250,14 +249,8 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
 
       // Assert: both docs should have the content, fetched only once
       expect(expanded).toHaveLength(2);
-      expect(expanded[0]?.data?.artifactContent?.[sharedId]).toMatchObject({
-        type: "file",
-        version: 1,
-      });
-      expect(expanded[1]?.data?.artifactContent?.[sharedId]).toMatchObject({
-        type: "file",
-        version: 1,
-      });
+      expect(expanded[0]?.data?.artifactContent?.[sharedId]).toMatchObject({ type: "file" });
+      expect(expanded[1]?.data?.artifactContent?.[sharedId]).toMatchObject({ type: "file" });
     });
   });
 
@@ -308,7 +301,7 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(expanded[0]?.data?.artifactContent).toBeUndefined(); // no-ref
       const content = expanded[1]?.data?.artifactContent;
       expect.assert(content !== undefined, "has-ref doc should have artifactContent");
-      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifactId]).toMatchObject({ type: "file" });
       expect(expanded[2]?.data?.artifactContent).toBeUndefined(); // also-no-ref
     });
 
@@ -368,7 +361,7 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[realId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[realId]).toMatchObject({ type: "file" });
       expect(content[fakeId]).toBeUndefined();
     });
 
@@ -411,8 +404,10 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
             artifactContent: {
               "art-123": {
                 type: "file",
-                version: 1,
-                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+                contentRef: "0".repeat(64),
+                size: 0,
+                mimeType: "text/plain",
+                originalName: "test-fixture.txt",
               },
             },
           },
@@ -425,8 +420,10 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
             artifactContent: {
               "art-456": {
                 type: "file",
-                version: 1,
-                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+                contentRef: "0".repeat(64),
+                size: 0,
+                mimeType: "text/plain",
+                originalName: "test-fixture.txt",
               },
             },
           },
@@ -438,14 +435,8 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
 
       // Assert: returns same documents, no fetch occurred
       expect(expanded).toHaveLength(2);
-      expect(expanded[0]?.data?.artifactContent?.["art-123"]).toMatchObject({
-        type: "file",
-        version: 1,
-      });
-      expect(expanded[1]?.data?.artifactContent?.["art-456"]).toMatchObject({
-        type: "file",
-        version: 1,
-      });
+      expect(expanded[0]?.data?.artifactContent?.["art-123"]).toMatchObject({ type: "file" });
+      expect(expanded[1]?.data?.artifactContent?.["art-456"]).toMatchObject({ type: "file" });
     });
 
     it("calling expand twice returns same result (true idempotency)", async () => {
@@ -470,7 +461,7 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(firstExpansion).toHaveLength(1);
       const content = firstExpansion[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifactId]).toMatchObject({ type: "file" });
 
       // Act: expand again - should be a no-op (early exit)
       const secondExpansion = await expandArtifactRefsInDocuments(firstExpansion);
@@ -479,7 +470,6 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(secondExpansion).toHaveLength(1);
       expect(secondExpansion[0]?.data?.artifactContent?.[artifactId]).toMatchObject({
         type: "file",
-        version: 1,
       });
     });
 
@@ -497,8 +487,10 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
             artifactContent: {
               "old-art": {
                 type: "file",
-                version: 1,
-                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+                contentRef: "0".repeat(64),
+                size: 0,
+                mimeType: "text/plain",
+                originalName: "test-fixture.txt",
               },
             },
           },
@@ -523,7 +515,7 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       // Doc 2: should have the new artifact content
       const content = expanded[1]?.data?.artifactContent;
       expect.assert(content !== undefined, "doc-2 artifactContent should be defined");
-      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifactId]).toMatchObject({ type: "file" });
     });
 
     it("handles mixed docs where some have no artifact refs (regression: every() bug)", async () => {
@@ -558,7 +550,7 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(firstExpansion[0]?.data?.artifactContent).toBeUndefined(); // No refs = no artifactContent
       const content = firstExpansion[1]?.data?.artifactContent;
       expect.assert(content !== undefined, "doc-with-ref should have artifactContent");
-      expect(content[artifactId]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifactId]).toMatchObject({ type: "file" });
 
       // Act: second expansion should early-exit (all referenced IDs already have content)
       const secondExpansion = await expandArtifactRefsInDocuments(firstExpansion);
@@ -568,7 +560,6 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(secondExpansion[0]?.data?.artifactContent).toBeUndefined();
       expect(secondExpansion[1]?.data?.artifactContent?.[artifactId]).toMatchObject({
         type: "file",
-        version: 1,
       });
     });
 
@@ -592,8 +583,10 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
             artifactContent: {
               [artifact1Id]: {
                 type: "file" as const,
-                version: 1 as const,
-                data: { path: FIXTURE_PATH, mimeType: "text/plain" },
+                contentRef: "0".repeat(64),
+                size: 0,
+                mimeType: "text/plain",
+                originalName: "test-fixture.txt",
               },
             },
           },
@@ -607,8 +600,8 @@ describe.skipIf(!DAEMON_RUNNING)("expandArtifactRefsInDocuments", () => {
       expect(expanded).toHaveLength(1);
       const content = expanded[0]?.data?.artifactContent;
       expect.assert(content !== undefined, "artifactContent should be defined");
-      expect(content[artifact1Id]).toMatchObject({ type: "file", version: 1 });
-      expect(content[artifact2Id]).toMatchObject({ type: "file", version: 1 });
+      expect(content[artifact1Id]).toMatchObject({ type: "file" });
+      expect(content[artifact2Id]).toMatchObject({ type: "file" });
     });
   });
 });
