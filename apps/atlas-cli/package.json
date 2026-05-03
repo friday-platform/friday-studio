@@ -13,6 +13,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@atlas/storage": "workspace:*",
     "@atlas/utils": "workspace:*",
+    "dotenv": "^16.4.7",
     "@inkjs/ui": "^2.0.0",
     "@std/dotenv": "npm:@jsr/std__dotenv@^0.225.5",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",

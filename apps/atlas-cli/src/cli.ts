@@ -1,5 +1,30 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
+import dotenv from "dotenv";
 import { stringifyError } from "@atlas/utils";
+
+// Mirror the launcher's importDotEnvIntoProcessEnv() so FRIDAYD_URL,
+// FRIDAY_PORT_*, and other launcher-managed vars are visible to CLI
+// commands when the binary is run directly from a shell. Shell exports
+// win — we only inject vars not already present in process.env.
+(function importLauncherEnv() {
+  const home = process.env.FRIDAY_LAUNCHER_HOME
+    || join(process.env.HOME || process.env.USERPROFILE || "", ".friday", "local");
+  const envPath = join(home, ".env");
+  if (!existsSync(envPath)) return;
+  try {
+    const parsed = dotenv.parse(readFileSync(envPath, "utf-8"));
+    for (const [key, value] of Object.entries(parsed)) {
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+      }
+    }
+  } catch {
+    // .env is best-effort; absent or unreadable is normal for
+    // dev-mode installs that don't use the launcher.
+  }
+})();
 
 /**
  * CLI entry point — routes between native gunshi commands and legacy yargs commands.
