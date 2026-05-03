@@ -1,11 +1,7 @@
 /**
- * Smoke tests for `JetStreamSkillAdapter`. Mirrors the shape of the
- * `LocalSkillAdapter` tests at the contract level — publish + read +
- * version listing + assignments + archive round-trip.
- *
- * Full behavioral parity coverage stays in the LocalSkillAdapter
- * suite; this file exercises just enough of the JetStream path to
- * catch a regression in the encoding layer or KV/OS wiring.
+ * Smoke tests for `JetStreamSkillAdapter` — the only production
+ * skill storage adapter. Covers publish + read + version listing +
+ * archive round-trip + assignments + delete.
  */
 
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";

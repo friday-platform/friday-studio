@@ -4,10 +4,10 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerFSMCreateTool } from "./create-fsm.ts";
+import { registerFSMTestCreateTool } from "./create-fsm-test.ts";
 import { registerFSMToYAMLTool } from "./fsm-to-yaml.ts";
-import { registerFSMTestCreateTool } from "./test-create.ts";
-import { registerFSMTestRunTool } from "./test-run.ts";
-import { registerFSMTestSuiteRunTool } from "./test-suite-run.ts";
+import { registerFSMTestRunTool } from "./run-fsm-test.ts";
+import { registerFSMTestSuiteRunTool } from "./run-fsm-test-suite.ts";
 import { registerFSMValidateTool } from "./validate-fsm.ts";
 
 /**

@@ -1,14 +1,11 @@
 /**
  * @module @atlas/document-store/node
  *
- * Node.js-compatible exports (excludes Deno-specific FileSystemDocumentStore)
- *
- * For Node.js environments, import from this file:
- * ```
- * import { InMemoryDocumentStore } from "../document-store/node.ts";
- * ```
+ * Node.js-compatible re-exports. Kept as a separate entry point for
+ * historical reasons; the same exports live on the main `mod.ts`.
  */
 
 export { DocumentStore } from "./src/document-store.ts";
-export { InMemoryDocumentStore } from "./src/in-memory-document-store.ts";
+export { JetStreamDocumentStore } from "./src/jetstream-document-store.ts";
+export { getDocumentStore } from "./src/storage.ts";
 export type { DocumentScope, StoredDocument } from "./src/types.ts";

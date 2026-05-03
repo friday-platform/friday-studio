@@ -5,7 +5,7 @@
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { InMemoryDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/node.ts";
 import { TestRunner } from "./lib/runner.ts";
 import { TestDefinitionSchema } from "./lib/schema.ts";
 import { createErrorResponse, createSuccessResponse } from "./utils.ts";
@@ -69,10 +69,12 @@ Example output:
         const parsed = RunTestInputSchema.parse({ test: args });
         const test = parsed.test;
 
-        // Create test runner with temporary storage
-        const runner = new TestRunner(new InMemoryDocumentStore(), {
-          workspaceId: "test",
-          sessionId: "test-session",
+        // Create test runner against a per-invocation scope so the
+        // run's writes don't pollute (or get polluted by) any real
+        // workspace document state in the shared JetStream store.
+        const runner = new TestRunner(getDocumentStore(), {
+          workspaceId: `fsm-test-${crypto.randomUUID()}`,
+          sessionId: `fsm-test-session-${crypto.randomUUID()}`,
         });
 
         // Run the test

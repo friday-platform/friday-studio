@@ -1,1 +1,5 @@
-{ "name": "@atlas/mcp-server", "version": "1.0.0", "exports": "./mod.ts" }
+{
+  "name": "@atlas/mcp-server",
+  "version": "1.0.0",
+  "exports": { ".": "./mod.ts", "./state-storage": "./src/tools/state/storage.ts" }
+}

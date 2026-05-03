@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/node.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMEvent } from "../types.ts";
 import { createTestEngine } from "./lib/test-utils.ts";
@@ -231,8 +231,11 @@ describe("FSM Engine - Core Mechanics", () => {
         },
       };
 
-      const store = new InMemoryDocumentStore();
-      const scope = { workspaceId: "test", sessionId: "test-session" };
+      const store = getDocumentStore();
+      const scope = {
+        workspaceId: `test-${crypto.randomUUID()}`,
+        sessionId: `test-session-${crypto.randomUUID()}`,
+      };
 
       const engine = new FSMEngine(fsm, {
         documentStore: store,

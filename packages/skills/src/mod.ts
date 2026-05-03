@@ -12,7 +12,6 @@ export { computeSkillHash } from "./content-hash.ts";
 // Utilities
 export { formatAvailableSkills } from "./format.ts";
 // Storage
-export { InMemorySkillAdapter } from "./in-memory-adapter.ts";
 export { JetStreamSkillAdapter } from "./jetstream-adapter.ts";
 export type {
   CreateLoadSkillToolOptions,

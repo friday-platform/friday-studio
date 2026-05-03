@@ -6349,7 +6349,6 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@jsr/db__sqlite@0.12",
             "npm:@jsr/std__yaml@^1.0.10",
             "npm:ai@^6.0.174",
             "npm:markdown-it@^14.1.1",

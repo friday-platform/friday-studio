@@ -14,7 +14,7 @@ import process from "node:process";
 import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { createFSMOutputValidator } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
-import { InMemoryDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/node.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput } from "../types.ts";
@@ -66,7 +66,7 @@ function mockToEnvelope(
  * The LLM provider returns scripted responses.
  */
 async function createIntegrationEngine(opts: { llmResponses: MockLLMResponse[] }) {
-  const store = new InMemoryDocumentStore();
+  const store = getDocumentStore();
   const scope = { workspaceId: "integration-test", sessionId: "test-session" };
 
   const fsm: FSMDefinition = {

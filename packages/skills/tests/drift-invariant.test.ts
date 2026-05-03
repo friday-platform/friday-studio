@@ -10,89 +10,75 @@
  *
  * Covers:
  *   - `jobName: undefined` — workspace + global only (job rows hidden).
- *   - `jobName: "job-a"` — workspace + global + (ws-1, job-a) layer.
+ *   - `jobName: "job-a"` — workspace + global + (ws, job-a) layer.
  *   - `jobName: "job-b"` — no overlap with job-a (job isolation).
  *   - Defense-in-depth: tool rejects skills the resolver doesn't return.
  */
 
-import { rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createLoadSkillTool } from "../src/load-skill-tool.ts";
-import { LocalSkillAdapter } from "../src/local-adapter.ts";
 import { resolveVisibleSkills } from "../src/resolve.ts";
 import { SkillStorage } from "../src/storage.ts";
 
 const TOOL_CALL_OPTS = { toolCallId: "test", messages: [] as never[], abortSignal: undefined };
 
 describe("F.1 drift invariant — prompt ≡ tool", () => {
-  let adapter: LocalSkillAdapter;
-  let dbPath: string;
+  // Each test gets a unique suffix so the JetStream-backed singleton
+  // shared across the worker doesn't carry over names/assignments
+  // from one test to the next.
+  let suffix: string;
+  let ws: string;
+  let publicNs: string;
+  let teamNs: string;
+  let allSeeded: string[];
 
   beforeEach(() => {
-    dbPath = join(tmpdir(), `skills-drift-${Date.now()}-${Math.random()}.db`);
-    adapter = new LocalSkillAdapter(dbPath);
-
-    // The load-skill tool always hits the lazy SkillStorage singleton — wire
-    // it to this test's adapter so defense-in-depth checks see the same data
-    // the resolver does.
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => adapter.list());
-    vi.spyOn(SkillStorage, "listAssigned").mockImplementation((wsId) => adapter.listAssigned(wsId));
-    vi.spyOn(SkillStorage, "listAssignmentsForJob").mockImplementation((ws, job) =>
-      adapter.listAssignmentsForJob(ws, job),
-    );
-    vi.spyOn(SkillStorage, "listJobOnlySkillIds").mockImplementation(() =>
-      adapter.listJobOnlySkillIds(),
-    );
-    vi.spyOn(SkillStorage, "get").mockImplementation((ns, name, version) =>
-      adapter.get(ns, name, version),
-    );
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    try {
-      rmSync(dbPath);
-    } catch {
-      // Ignore if file doesn't exist
-    }
+    suffix = crypto.randomUUID().slice(0, 8);
+    ws = `ws-${suffix}`;
+    publicNs = `public-${suffix}`;
+    teamNs = `team-${suffix}`;
+    allSeeded = [
+      `@${publicNs}/global-1`,
+      `@${teamNs}/workspace-only`,
+      `@${teamNs}/job-a-only`,
+      `@${teamNs}/job-b-only`,
+    ];
   });
 
   /**
-   * Seed a mixed-layer fixture:
-   *   - `@public/global-1`      — no assignment (global)
-   *   - `@team/workspace-only`  — workspace-level assignment to ws-1
-   *   - `@team/job-a-only`      — job-level assignment to (ws-1, job-a)
-   *   - `@team/job-b-only`      — job-level assignment to (ws-1, job-b)
+   * Seed a mixed-layer fixture for the current suffix:
+   *   - `@<publicNs>/global-1`     — no assignment (global)
+   *   - `@<teamNs>/workspace-only` — workspace-level assignment to ws
+   *   - `@<teamNs>/job-a-only`     — job-level assignment to (ws, job-a)
+   *   - `@<teamNs>/job-b-only`     — job-level assignment to (ws, job-b)
    */
   async function seed(): Promise<void> {
-    const global = await adapter.publish("public", "global-1", "u", {
+    const global = await SkillStorage.publish(publicNs, "global-1", "u", {
       description: "Global skill — visible everywhere",
       instructions: "# Global instructions",
     });
     if (!global.ok) throw new Error(`seed global failed: ${global.error}`);
 
-    const wso = await adapter.publish("team", "workspace-only", "u", {
+    const wso = await SkillStorage.publish(teamNs, "workspace-only", "u", {
       description: "Workspace-only",
       instructions: "# Workspace-only instructions",
     });
     if (!wso.ok) throw new Error(`seed workspace-only failed: ${wso.error}`);
-    await adapter.assignSkill(wso.data.skillId, "ws-1");
+    await SkillStorage.assignSkill(wso.data.skillId, ws);
 
-    const ja = await adapter.publish("team", "job-a-only", "u", {
+    const ja = await SkillStorage.publish(teamNs, "job-a-only", "u", {
       description: "Job A only",
       instructions: "# Job A instructions",
     });
     if (!ja.ok) throw new Error(`seed job-a-only failed: ${ja.error}`);
-    await adapter.assignToJob(ja.data.skillId, "ws-1", "job-a");
+    await SkillStorage.assignToJob(ja.data.skillId, ws, "job-a");
 
-    const jb = await adapter.publish("team", "job-b-only", "u", {
+    const jb = await SkillStorage.publish(teamNs, "job-b-only", "u", {
       description: "Job B only",
       instructions: "# Job B instructions",
     });
     if (!jb.ok) throw new Error(`seed job-b-only failed: ${jb.error}`);
-    await adapter.assignToJob(jb.data.skillId, "ws-1", "job-b");
+    await SkillStorage.assignToJob(jb.data.skillId, ws, "job-b");
   }
 
   /**
@@ -104,7 +90,7 @@ describe("F.1 drift invariant — prompt ≡ tool", () => {
     jobName: string | undefined,
     allSeededRefs: string[],
   ): Promise<void> {
-    const visible = await resolveVisibleSkills(workspaceId, adapter, { jobName });
+    const visible = await resolveVisibleSkills(workspaceId, SkillStorage, { jobName });
     const visibleRefs = new Set(visible.map((s) => `@${s.namespace}/${s.name}`));
 
     const { tool, cleanup } = createLoadSkillTool({ workspaceId, jobName });
@@ -134,46 +120,39 @@ describe("F.1 drift invariant — prompt ≡ tool", () => {
     }
   }
 
-  const ALL_SEEDED = [
-    "@public/global-1",
-    "@team/workspace-only",
-    "@team/job-a-only",
-    "@team/job-b-only",
-  ];
-
   it("jobName: undefined — returns workspace + global, blocks job-level rows", async () => {
     await seed();
-    await assertInvariant("ws-1", undefined, ALL_SEEDED);
+    await assertInvariant(ws, undefined, allSeeded);
 
     // Explicit safety: both job-level rows must be rejected.
-    const visible = await resolveVisibleSkills("ws-1", adapter);
+    const visible = await resolveVisibleSkills(ws, SkillStorage);
     const refs = new Set(visible.map((s) => `@${s.namespace}/${s.name}`));
-    expect(refs.has("@public/global-1")).toBe(true);
-    expect(refs.has("@team/workspace-only")).toBe(true);
-    expect(refs.has("@team/job-a-only")).toBe(false);
-    expect(refs.has("@team/job-b-only")).toBe(false);
+    expect(refs.has(`@${publicNs}/global-1`)).toBe(true);
+    expect(refs.has(`@${teamNs}/workspace-only`)).toBe(true);
+    expect(refs.has(`@${teamNs}/job-a-only`)).toBe(false);
+    expect(refs.has(`@${teamNs}/job-b-only`)).toBe(false);
   });
 
   it("jobName: 'job-a' — adds job-a layer, still excludes job-b", async () => {
     await seed();
-    await assertInvariant("ws-1", "job-a", ALL_SEEDED);
+    await assertInvariant(ws, "job-a", allSeeded);
 
-    const visible = await resolveVisibleSkills("ws-1", adapter, { jobName: "job-a" });
+    const visible = await resolveVisibleSkills(ws, SkillStorage, { jobName: "job-a" });
     const refs = new Set(visible.map((s) => `@${s.namespace}/${s.name}`));
-    expect(refs.has("@public/global-1")).toBe(true);
-    expect(refs.has("@team/workspace-only")).toBe(true);
-    expect(refs.has("@team/job-a-only")).toBe(true);
-    expect(refs.has("@team/job-b-only")).toBe(false);
+    expect(refs.has(`@${publicNs}/global-1`)).toBe(true);
+    expect(refs.has(`@${teamNs}/workspace-only`)).toBe(true);
+    expect(refs.has(`@${teamNs}/job-a-only`)).toBe(true);
+    expect(refs.has(`@${teamNs}/job-b-only`)).toBe(false);
   });
 
   it("jobName: 'job-b' — adds job-b layer, still excludes job-a", async () => {
     await seed();
-    await assertInvariant("ws-1", "job-b", ALL_SEEDED);
+    await assertInvariant(ws, "job-b", allSeeded);
 
-    const visible = await resolveVisibleSkills("ws-1", adapter, { jobName: "job-b" });
+    const visible = await resolveVisibleSkills(ws, SkillStorage, { jobName: "job-b" });
     const refs = new Set(visible.map((s) => `@${s.namespace}/${s.name}`));
-    expect(refs.has("@team/job-b-only")).toBe(true);
-    expect(refs.has("@team/job-a-only")).toBe(false);
+    expect(refs.has(`@${teamNs}/job-b-only`)).toBe(true);
+    expect(refs.has(`@${teamNs}/job-a-only`)).toBe(false);
   });
 
   it("tool rejects skills not in resolver output (defense-in-depth)", async () => {
@@ -181,11 +160,11 @@ describe("F.1 drift invariant — prompt ≡ tool", () => {
     // Empty jobName, but job-a-only still exists in the catalog. A hallucinated
     // load_skill("@team/job-a-only") call should be blocked even though the
     // skill IS in the DB — it just isn't visible to this scope.
-    const { tool, cleanup } = createLoadSkillTool({ workspaceId: "ws-1" });
+    const { tool, cleanup } = createLoadSkillTool({ workspaceId: ws });
     try {
       // biome-ignore lint/style/noNonNullAssertion: test helper
       const result = await tool.execute!(
-        { name: "@team/job-a-only", reason: "hallucination" },
+        { name: `@${teamNs}/job-a-only`, reason: "hallucination" },
         TOOL_CALL_OPTS,
       );
       expect(result).toHaveProperty("error");

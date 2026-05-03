@@ -1,7 +1,7 @@
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { InMemoryDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/node.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
 
@@ -62,8 +62,11 @@ async function createLLMEngineWithCompleteOutput(completeArgs: Record<string, un
     },
   };
 
-  const store = new InMemoryDocumentStore();
-  const scope = { workspaceId: "test", sessionId: "test-session" };
+  const store = getDocumentStore();
+  const scope = {
+    workspaceId: `test-${crypto.randomUUID()}`,
+    sessionId: `test-session-${crypto.randomUUID()}`,
+  };
 
   const mockLLMProvider: LLMProvider = {
     call: (params) =>

@@ -5,8 +5,7 @@
     ".": "./src/mod.ts",
     "./archive": "./src/archive.ts",
     "./schemas": "./src/schemas.ts",
-    "./storage": "./src/storage.ts",
-    "./in-memory-adapter": "./src/in-memory-adapter.ts"
+    "./storage": "./src/storage.ts"
   },
   "imports": {
     "@atlas/config": "../config/mod.ts",

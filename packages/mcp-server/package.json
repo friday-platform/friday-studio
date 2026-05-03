@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./mod.ts",
-  "exports": { ".": "./mod.ts" },
+  "exports": { ".": "./mod.ts", "./state-storage": "./src/tools/state/storage.ts" },
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
     "@atlas/client": "workspace:*",
