@@ -43,7 +43,7 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
-import { readJetStreamConfig, runMigrations } from "jetstream";
+import { type RunMigrationsResult, readJetStreamConfig, runMigrations } from "jetstream";
 import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
@@ -192,6 +192,18 @@ export class AtlasDaemon {
   private toolWorkers: ToolWorker[] = [];
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
+  /**
+   * Last completed migration run, populated once `runMigrations` resolves.
+   * `pending` while the background runner is still in flight; populated
+   * with `RunMigrationsResult` on success/failure; populated with
+   * `{ ran: [], skipped: [], failed: ["__runner__"], error: ... }` if the
+   * runner itself threw before producing a result. Surfaced via
+   * `getStatus()` so HTTP / launcher consumers can detect a half-migrated
+   * install instead of grepping logs.
+   */
+  private migrationStatus:
+    | { state: "pending" }
+    | { state: "complete"; result: RunMigrationsResult; error?: string } = { state: "pending" };
   public streamRegistry!: StreamRegistry;
   public chatTurnRegistry!: ChatTurnRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
@@ -387,10 +399,37 @@ export class AtlasDaemon {
     // catches up. Operators can also run `atlas migrate` from the CLI.
     runMigrations(nc, ALL_MIGRATIONS, logger).then(
       (result) => {
-        logger.info("Migrations summary", { ...result });
+        this.migrationStatus = { state: "complete", result };
+        if (result.failed.length > 0) {
+          // ERROR (not WARN) so log filters/dashboards surface this. A
+          // half-migrated install is a correctness hazard — the operator
+          // needs to re-run `atlas migrate` (or restart the daemon, which
+          // re-runs the failed entry) and inspect the per-migration error
+          // recorded in the `_FRIDAY_MIGRATIONS` audit-trail KV.
+          logger.error("Migrations completed with failures", {
+            ran: result.ran,
+            skipped: result.skipped,
+            failed: result.failed,
+            hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
+          });
+        } else {
+          logger.info("Migrations summary", { ...result });
+        }
       },
       (err: unknown) => {
-        logger.warn("Migration runner failed", { error: String(err) });
+        const error = String(err);
+        // The runner itself threw before producing a per-entry result —
+        // most often a transient broker disconnect mid-walk. Same severity
+        // bump: operator needs visibility, not a buried warning.
+        this.migrationStatus = {
+          state: "complete",
+          result: { ran: [], skipped: [], failed: ["__runner__"] },
+          error,
+        };
+        logger.error("Migration runner failed", {
+          error,
+          hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
+        });
       },
     );
 
@@ -2399,6 +2438,7 @@ export class AtlasDaemon {
       cronManager: cronStats
         ? { isActive: this.cronManager?.isRunning || false, ...cronStats }
         : null,
+      migrations: this.migrationStatus,
       configuration: {
         maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
         idleTimeoutMs: this.options.idleTimeoutMs ?? 0,
