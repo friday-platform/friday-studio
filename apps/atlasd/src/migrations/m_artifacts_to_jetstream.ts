@@ -102,12 +102,11 @@ function readableFrom(bytes: Uint8Array): ReadableStream<Uint8Array> {
 }
 
 async function putBlobIdempotent(os: ObjectStore, contentRef: string, bytes: Uint8Array) {
-  try {
-    await os.info(contentRef);
-    return; // already present (content-addressed)
-  } catch {
-    // not present — write below
-  }
+  // os.info() resolves to null when not found — it does NOT throw.
+  // Earlier try/catch shape always returned early, silently skipping
+  // every put.
+  const existing = await os.info(contentRef);
+  if (existing) return; // already present (content-addressed)
   await os.put({ name: contentRef }, readableFrom(bytes));
 }
 

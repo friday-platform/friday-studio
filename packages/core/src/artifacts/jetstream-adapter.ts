@@ -129,16 +129,15 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
   /**
    * Write blob bytes to Object Store, named by sha256. Idempotent —
    * if an object with the same name already exists, skip the write.
+   *
+   * NB: `os.info()` returns `null` for missing entries; it does NOT
+   * throw. The earlier `try { await os.info() } catch {}` shape always
+   * fell into the early-return branch, silently skipping every put.
    */
   private async putBlob(bytes: Uint8Array, contentRef: string): Promise<void> {
     const os = await this.os();
-    try {
-      await os.info(contentRef);
-      // Already there — content-addressed, so identical bytes.
-      return;
-    } catch {
-      // Not present; write.
-    }
+    const existing = await os.info(contentRef);
+    if (existing) return; // already present — content-addressed, so identical bytes
     await os.put({ name: contentRef }, readableFrom(bytes));
   }
 

@@ -30,6 +30,7 @@ import { m_cron_timers_to_jetstream } from "./m_cron_timers_to_jetstream.ts";
 import { m_drop_legacy_storage_db } from "./m_drop_legacy_storage_db.ts";
 import { m_e4b4182_mcp_registry_to_jetstream } from "./m_e4b4182_mcp_registry_to_jetstream.ts";
 import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
+import { m_repair_artifact_object_store } from "./m_repair_artifact_object_store.ts";
 import { m_scratchpad_to_jetstream } from "./m_scratchpad_to_jetstream.ts";
 import { m_workspace_registry_to_jetstream } from "./m_workspace_registry_to_jetstream.ts";
 
@@ -55,4 +56,11 @@ export const ALL_MIGRATIONS: Migration[] = [
   // 2026-05-02 — Final step: delete the legacy SQLite KV files now that
   // every surface above has been migrated. MUST stay last in the manifest.
   m_drop_legacy_storage_db,
+  // 2026-05-03 — Recovery for the artifacts-to-jetstream bug (os.info()
+  // null-on-missing was misread as "present", skipping every blob put).
+  // Walks on-disk artifact files + republishes any missing blobs to
+  // the Object Store. Idempotent. Listed AFTER drop-legacy-storage-db
+  // because it doesn't need the legacy SQLite at all — only on-disk
+  // file roots.
+  m_repair_artifact_object_store,
 ];
