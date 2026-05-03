@@ -119,10 +119,36 @@ export interface CronTimerSignalData extends Record<string, unknown> {
  * workspace runtime lifecycle. Allows workspaces to sleep while
  * maintaining scheduled automation.
  */
+/**
+ * Callback the daemon registers to receive a structured event when
+ * the onMissed policy produced a make-up firing (`coalesce` or
+ * `catchup`). Lives outside the wakeup callback so the daemon can
+ * publish to a separate audit feed (`WORKSPACE_EVENTS`) without
+ * conflating "fire the signal" with "log that we caught up."
+ *
+ * Best-effort: implementations should not throw. Failures inside the
+ * notifier are caught + logged at WARN by the manager so a failing
+ * notification publish never breaks the cron firing it describes.
+ */
+export interface MissedFiringNotification {
+  workspaceId: string;
+  signalId: string;
+  policy: "coalesce" | "catchup";
+  missedCount: number;
+  firstMissedAt: string;
+  lastMissedAt: string;
+  scheduledAt: string;
+  firedAt: string;
+  schedule: string;
+  timezone: string;
+}
+export type MissedFiringNotifier = (event: MissedFiringNotification) => void | Promise<void>;
+
 export class CronManager {
   private storage: KVStorage;
   private logger: Logger;
   private wakeupCallback?: WorkspaceSignalTriggerCallback;
+  private missedFiringNotifier?: MissedFiringNotifier;
   private timers = new Map<string, TimerInfo>();
   public isRunning = false;
 
@@ -140,6 +166,16 @@ export class CronManager {
    */
   setWakeupCallback(callback: WorkspaceSignalTriggerCallback): void {
     this.wakeupCallback = callback;
+  }
+
+  /**
+   * Register the missed-firing notifier. Daemon wires this to publish
+   * `events.<wsid>.schedule.missed` records to the WORKSPACE_EVENTS
+   * stream so the `/schedules` UI (and any subscriber) can surface
+   * make-up fires after the fact.
+   */
+  setMissedFiringNotifier(notifier: MissedFiringNotifier): void {
+    this.missedFiringNotifier = notifier;
   }
 
   /**
@@ -528,6 +564,14 @@ export class CronManager {
         missedCount: slots.length,
         firstMissedAt: firstMissed.toISOString(),
       });
+      await this.notifyMissedFiring(timer, {
+        policy: "coalesce",
+        missedCount: slots.length,
+        firstMissedAt: firstMissed.toISOString(),
+        lastMissedAt: mostRecentMissed.toISOString(),
+        scheduledAt: mostRecentMissed.toISOString(),
+        firedAt: now.toISOString(),
+      });
       return true;
     }
 
@@ -545,8 +589,46 @@ export class CronManager {
         missedCount: 1,
         firstMissedAt: slot.toISOString(),
       });
+      await this.notifyMissedFiring(timer, {
+        policy: "catchup",
+        missedCount: 1,
+        firstMissedAt: slot.toISOString(),
+        lastMissedAt: slot.toISOString(),
+        scheduledAt: slot.toISOString(),
+        firedAt: now.toISOString(),
+      });
     }
     return true;
+  }
+
+  /**
+   * Best-effort dispatch to the registered notifier. Errors are logged
+   * at WARN and swallowed — a failing notification publish must not
+   * break the cron firing it describes.
+   */
+  private async notifyMissedFiring(
+    timer: TimerInfo,
+    extras: Pick<
+      MissedFiringNotification,
+      "policy" | "missedCount" | "firstMissedAt" | "lastMissedAt" | "scheduledAt" | "firedAt"
+    >,
+  ): Promise<void> {
+    if (!this.missedFiringNotifier) return;
+    try {
+      await this.missedFiringNotifier({
+        workspaceId: timer.workspaceId,
+        signalId: timer.signalId,
+        schedule: timer.schedule,
+        timezone: timer.timezone,
+        ...extras,
+      });
+    } catch (err) {
+      this.logger.warn("Missed-firing notifier threw — event lost", {
+        workspaceId: timer.workspaceId,
+        signalId: timer.signalId,
+        error: err,
+      });
+    }
   }
 
   /**

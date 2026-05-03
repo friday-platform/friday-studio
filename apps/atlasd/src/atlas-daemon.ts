@@ -70,6 +70,7 @@ import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
+import { workspaceEventsRoutes } from "../routes/workspace-events.ts";
 import workspaceChatRoutes from "../routes/workspaces/chat.ts";
 import workspaceChatDebugRoutes from "../routes/workspaces/chat-debug.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
@@ -108,6 +109,7 @@ import { StreamRegistry } from "./stream-registry.ts";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
+import { ensureWorkspaceEventsStream, publishWorkspaceEvent } from "./workspace-events.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -465,6 +467,15 @@ export class AtlasDaemon {
     logger.info("Initializing CronManager...");
     const cronStorage = await createJetStreamKVStorage(nc, { bucket: "CRON_TIMERS", history: 5 });
     this.cronManager = new CronManager(cronStorage, logger);
+
+    // Workspace events stream — append-only audit feed for the
+    // `/schedules` UI and any future workspace-side subscriber. Wire
+    // CronManager to publish a `schedule.missed` event on every
+    // coalesce / catchup make-up firing.
+    await ensureWorkspaceEventsStream(nc);
+    this.cronManager.setMissedFiringNotifier((event) =>
+      publishWorkspaceEvent(nc, { type: "schedule.missed", ...event }, logger),
+    );
 
     // Wire scratchpad to its own JetStream KV bucket. Same per-key
     // pattern; migration republishes legacy ~/.atlas/storage.db
@@ -999,6 +1010,7 @@ export class AtlasDaemon {
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatDebugRoutes);
     this.app.route("/api/workspaces/:workspaceId/integrations", integrationRoutes);
     this.app.route("/api/workspaces/:workspaceId/mcp", mcpRoutes);
+    this.app.route("/api/workspaces", workspaceEventsRoutes);
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
