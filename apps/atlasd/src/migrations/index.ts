@@ -27,6 +27,7 @@ import { m_7492ae5_memory_jetstream } from "./m_7492ae5_memory_jetstream.ts";
 import { m_a6ab40b_sessions_stream_upgrade } from "./m_a6ab40b_sessions_stream_upgrade.ts";
 import { m_artifacts_to_jetstream } from "./m_artifacts_to_jetstream.ts";
 import { m_cron_timers_to_jetstream } from "./m_cron_timers_to_jetstream.ts";
+import { m_document_store_to_jetstream } from "./m_document_store_to_jetstream.ts";
 import { m_drop_legacy_storage_db } from "./m_drop_legacy_storage_db.ts";
 import { m_e4b4182_mcp_registry_to_jetstream } from "./m_e4b4182_mcp_registry_to_jetstream.ts";
 import { m_f9536a1_delete_activity_db } from "./m_f9536a1_delete_activity_db.ts";
@@ -74,4 +75,9 @@ export const ALL_MIGRATIONS: Migration[] = [
   // = "system") are skipped — their source-of-truth is the package
   // bootstrap, not the database. Idempotent.
   m_skills_to_jetstream,
+  // 2026-05-03 — FileSystemDocumentStore (~/.atlas/workspaces/<wsid>/
+  // [sessions/<sid>/]<type>/<id>.json) → per-workspace WS_DOCS_<wsid>
+  // JetStream KV bucket. Idempotent marker per bucket; legacy on-disk
+  // tree left in place for rollback. workspace.yml + bundles/ untouched.
+  m_document_store_to_jetstream,
 ];

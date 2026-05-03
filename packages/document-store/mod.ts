@@ -19,4 +19,10 @@ export {
   type FileSystemDocumentStoreOptions,
 } from "./src/file-system-document-store.ts";
 export { InMemoryDocumentStore } from "./src/in-memory-document-store.ts";
+export { JetStreamDocumentStore } from "./src/jetstream-document-store.ts";
+export {
+  getDocumentStore,
+  initDocumentStore,
+  setDocumentStoreForTest,
+} from "./src/storage.ts";
 export type { DocumentScope, StoredDocument } from "./src/types.ts";

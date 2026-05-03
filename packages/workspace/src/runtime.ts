@@ -57,7 +57,7 @@ import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
-import { FileSystemDocumentStore } from "@atlas/document-store";
+import { type DocumentStore, getDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
   type AgentExecutor,
@@ -836,12 +836,13 @@ export class WorkspaceRuntime {
   private async createJobEngine(
     job: FSMJob,
     sessionId: string,
-  ): Promise<{ engine: FSMEngine; documentStore: FileSystemDocumentStore }> {
+  ): Promise<{ engine: FSMEngine; documentStore: DocumentStore }> {
     // Stateless model: every signal spawns a fresh engine bound to its
     // sessionId. The optional-sessionId branch was a relic of the deleted
     // "single-flight" path where one engine spanned multiple signals.
-    const stateStoragePath = path.join(getFridayHome(), "workspaces");
-    const documentStore = new FileSystemDocumentStore({ basePath: stateStoragePath });
+    // DocumentStore is the daemon-wired JetStream singleton (per-workspace
+    // KV bucket internally; one connection shared across job engines).
+    const documentStore = getDocumentStore();
 
     const agentExecutor: AgentExecutor = (action, context, signal, options) =>
       this.executeAgent(action, context, job, signal, options);

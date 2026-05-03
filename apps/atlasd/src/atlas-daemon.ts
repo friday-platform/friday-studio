@@ -18,6 +18,7 @@ import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { CronManager } from "@atlas/cron";
+import { initDocumentStore } from "@atlas/document-store";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { sharedMCPProcesses } from "@atlas/mcp";
@@ -504,6 +505,13 @@ export class AtlasDaemon {
     // skill publish` writes flow through this single adapter. Replaces
     // the legacy ~/.atlas/skills.db SQLite store.
     initSkillStorage(nc);
+
+    // Wire DocumentStore to JetStream — one KV bucket per workspace
+    // (WS_DOCS_<wsid>). Used by the workspace runtime + FSM engine for
+    // per-step input/output documents and FSM state. Replaces the
+    // ~/.atlas/workspaces/<wsid>/[sessions/<sid>/]<type>/<id>.json
+    // FileSystemDocumentStore tree.
+    initDocumentStore(nc);
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");

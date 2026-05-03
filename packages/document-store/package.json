@@ -4,6 +4,13 @@
   "type": "module",
   "main": "./mod.ts",
   "exports": { ".": "./mod.ts" },
-  "dependencies": { "@atlas/utils": "workspace:*", "zod": "^4.3.5" },
+  "dependencies": {
+    "@atlas/core": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/storage": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "nats": "^2.29.3",
+    "zod": "^4.3.5"
+  },
   "devDependencies": { "vitest": "^4.1.0" }
 }
