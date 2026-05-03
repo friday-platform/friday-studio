@@ -20,6 +20,7 @@
     "@atlas/oapi-client": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/utils": "workspace:*",
+    "@std/encoding": "npm:@jsr/std__encoding@^1.0.10",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "@worker-tools/html-rewriter": "^0.1.0-pre.17",
     "ai": "^6.0.174",
