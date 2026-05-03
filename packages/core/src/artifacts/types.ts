@@ -2,9 +2,8 @@ import type { Result } from "@atlas/utils";
 import type { Artifact, ArtifactDataInput, ArtifactSummary, CreateArtifactInput } from "./model.ts";
 
 /**
- * Adapter interface for artifact storage. Single implementation today
- * (LocalStorageAdapter, Deno KV–backed); the interface is preserved so
- * the planned Object-Store-backed redesign can swap in cleanly.
+ * Adapter interface for artifact storage. Single implementation
+ * (`JetStreamArtifactStorageAdapter`, JetStream KV + Object Store).
  * All methods return Result<T, string> for consistent error handling.
  */
 export interface ArtifactStorageAdapter {

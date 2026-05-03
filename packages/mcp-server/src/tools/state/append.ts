@@ -118,15 +118,38 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
           totalStmt.finalize();
           const count = totalResult?.c ?? 0;
 
-          // Create or update artifact for workspace-scoped discovery
+          // Create or update an artifact-as-discovery-handle for the
+          // workspace state DB. The SQLite DB lives on disk under
+          // FRIDAY_HOME/workspaces/<id>/files/state.db; the artifact
+          // content is a small JSON manifest (not the DB itself), so
+          // we don't re-upload the whole DB on every append. Lookup
+          // and filter tools open the on-disk DB directly via
+          // `getWorkspaceFilesDir(...)/state.db`.
           const existingId = await resolveArtifactId(workspaceId);
           const nameLabel = workspaceName ? ` [${workspaceName}]` : "";
           const summary = `Workspace${nameLabel} state DB (${count} entries in "${key}")`;
+          const manifest = JSON.stringify(
+            {
+              kind: "workspace-state-db",
+              workspaceId,
+              key,
+              count,
+              lastUpdate: new Date().toISOString(),
+            },
+            null,
+            2,
+          );
+          const manifestData = {
+            type: "file" as const,
+            content: manifest,
+            mimeType: "application/json",
+            originalName: "workspace-state.json",
+          };
 
           if (existingId) {
             const updateResult = await ArtifactStorage.update({
               id: existingId,
-              data: { type: "file", version: 1, data: { path: filePath } },
+              data: manifestData,
               summary,
             });
             if (!updateResult.ok) {
@@ -142,7 +165,7 @@ export function registerStateAppendTool(server: McpServer, ctx: ToolContext): vo
           // Create if no existing artifact or update failed (cache was invalidated)
           if (!artifactIdCache.has(workspaceId)) {
             const createResult = await ArtifactStorage.create({
-              data: { type: "file", version: 1, data: { path: filePath } },
+              data: manifestData,
               title: "workspace-state",
               summary,
               workspaceId,

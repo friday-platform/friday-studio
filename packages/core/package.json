@@ -61,6 +61,8 @@
     "@xmldom/xmldom": "^0.9.10",
     "ai": "^6.0.174",
     "@libpdf/core": "^0.3.4",
+    "file-type": "^19.6.0",
+    "jetstream": "workspace:*",
     "jose": "^6.2.3",
     "jszip": "^3.10.1",
     "nats": "^2.29.3",

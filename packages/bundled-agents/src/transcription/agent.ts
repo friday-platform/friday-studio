@@ -1,11 +1,8 @@
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { APICallError } from "@ai-sdk/provider";
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { type Artifact, ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry } from "@atlas/llm";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
-import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { experimental_transcribe } from "ai";
 import { z } from "zod";
 
@@ -97,8 +94,8 @@ export const transcriptionAgent = createAgent<string, TranscriptionResult>({
     for (const id of artifactIds) {
       const artifact = artifacts.get(id);
       let fileName = "audio";
-      if (artifact?.data.type === "file" && artifact.data.data.originalName) {
-        fileName = artifact.data.data.originalName;
+      if (artifact?.data.type === "file" && artifact.data.originalName) {
+        fileName = artifact.data.originalName;
       }
 
       const readResult = await ArtifactStorage.readBinaryContents({ id });
@@ -131,24 +128,22 @@ export const transcriptionAgent = createAgent<string, TranscriptionResult>({
           data: { toolName: "Transcription", content: "Saving transcript..." },
         });
 
-        const workspaceFilesDir = getWorkspaceFilesDir(session.workspaceId);
-        await mkdir(workspaceFilesDir, { recursive: true });
-
-        const diskFileName = `transcript-${crypto.randomUUID()}.txt`;
         const displayName = `transcript-${fileName.replace(/\.[^.]+$/, "")}.txt`;
-        const filePath = join(workspaceFilesDir, diskFileName);
-        await writeFile(filePath, result.text, "utf-8");
 
         const artifactResult = await ArtifactStorage.create({
           workspaceId: session.workspaceId,
           chatId: session.streamId,
-          data: { type: "file", version: 1, data: { path: filePath, originalName: displayName } },
+          data: {
+            type: "file",
+            content: result.text,
+            mimeType: "text/plain",
+            originalName: displayName,
+          },
           title: `Transcript: ${fileName}`,
           summary: truncateUnicode(result.text, 200),
         });
 
         if (!artifactResult.ok) {
-          await unlink(filePath).catch(() => {});
           logger.error("Failed to create transcript artifact", { error: artifactResult.error });
           transcripts.push({
             status: "error",

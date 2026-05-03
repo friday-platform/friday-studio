@@ -1,7 +1,11 @@
 {
   "name": "@atlas/core",
   "version": "1.0.0",
-  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13" },
+  "imports": {
+    "@db/sqlite": "jsr:@db/sqlite@0.13",
+    "file-type": "npm:file-type@^19.6.0",
+    "jetstream": "../jetstream/mod.ts"
+  },
   "exports": {
     ".": "./mod.ts",
     "./kv": "./src/kv.ts",

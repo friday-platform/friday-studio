@@ -14,6 +14,7 @@ import {
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
+import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { CronManager } from "@atlas/cron";
@@ -434,6 +435,12 @@ export class AtlasDaemon {
       history: 1, // notes are append-only; one revision is enough
     });
     initScratchpadStorage(scratchpadStorage);
+
+    // Wire artifact storage to JetStream KV (ARTIFACTS bucket) + Object
+    // Store (OBJ_artifacts). Migration entry republishes legacy
+    // ~/.atlas/storage.db artifact rows + reads file contents from
+    // disk into the Object Store, content-addressed by SHA-256.
+    initArtifactStorage(nc);
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");

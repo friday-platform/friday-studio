@@ -18,7 +18,7 @@ const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 /** Checks whether an artifact is an audio/video file by mime type. */
 function isAudioArtifact(artifact: Artifact): boolean {
   if (artifact.data.type !== "file") return false;
-  const { mimeType } = artifact.data.data;
+  const { mimeType } = artifact.data;
   return mimeType.startsWith("audio/") || mimeType.startsWith("video/");
 }
 

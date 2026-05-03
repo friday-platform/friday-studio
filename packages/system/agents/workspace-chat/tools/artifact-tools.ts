@@ -9,10 +9,12 @@
  * instantiation when spread into `streamText`'s tools parameter.
  */
 
+import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { createLogger } from "@atlas/logger";
+import { encodeBase64 } from "@std/encoding/base64";
 import { tool } from "ai";
 import { z } from "zod";
 import { displayArtifact } from "./display-artifact.ts";
@@ -97,10 +99,22 @@ export function createArtifactsCreateTool({
         const resolved = resolveInScratch(sessionId, path);
         if (!resolved.ok) return { success: false, error: resolved.error };
 
+        let bytes: Uint8Array;
+        try {
+          bytes = new Uint8Array(await readFile(resolved.absolute));
+        } catch (err) {
+          return { success: false, error: `Failed to read scratch file: ${String(err)}` };
+        }
+
+        // Send over the JSON wire: base64-encode bytes. The route's
+        // FileDataInput parser decodes when contentEncoding === "base64".
+        const base64 = encodeBase64(bytes);
+
         const data = {
           type: "file" as const,
-          version: 1 as const,
-          data: { path: resolved.absolute, originalName: basename(path) },
+          content: base64,
+          contentEncoding: "base64" as const,
+          originalName: basename(path),
         };
 
         logger.info("artifacts_create called", { sessionId, path, workspaceId });

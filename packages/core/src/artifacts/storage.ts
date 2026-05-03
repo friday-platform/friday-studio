@@ -1,46 +1,67 @@
-import process from "node:process";
-import { createLogger } from "@atlas/logger";
-import { LocalStorageAdapter } from "./local-adapter.ts";
-import type { ArtifactDataInput, CreateArtifactInput } from "./model.ts";
+import type { Result } from "@atlas/utils";
+import type { NatsConnection } from "nats";
+import { JetStreamArtifactStorageAdapter } from "./jetstream-adapter.ts";
+import type { Artifact, ArtifactDataInput, ArtifactSummary, CreateArtifactInput } from "./model.ts";
 import type { ArtifactStorageAdapter } from "./types.ts";
 
-const logger = createLogger({ name: "artifact-storage" });
+let adapter: ArtifactStorageAdapter | null = null;
 
 /**
- * Environment Variables:
- * - ARTIFACT_STORAGE_PATH: Override default Deno KV path.
- *
- * The remote-backend (Cortex) variant of this adapter was deleted 2026-05-02 —
- * speculative infrastructure that was env-gated behind `CORTEX_URL` and never
- * reached. When a real cloud-backend story returns, build it against the
- * redesigned Object-Store-backed model, not the legacy Deno KV shape.
+ * Wire artifact storage to a NATS connection. Daemon calls this once at
+ * startup. Subsequent `ArtifactStorage.*` calls go through the JetStream
+ * KV + Object Store adapter.
  */
-const kvPath = process.env.ARTIFACT_STORAGE_PATH;
-logger.info("Using LocalStorageAdapter", { kvPath: kvPath || "default" });
-const adapter: ArtifactStorageAdapter = new LocalStorageAdapter(kvPath);
+export function initArtifactStorage(nc: NatsConnection): void {
+  adapter = new JetStreamArtifactStorageAdapter(nc);
+}
+
+function require_(): ArtifactStorageAdapter {
+  if (!adapter) {
+    throw new Error(
+      "Artifact storage not initialized — call initArtifactStorage(nc) at daemon startup",
+    );
+  }
+  return adapter;
+}
 
 /**
- * Artifact storage facade. Delegates to the local adapter (the only one
- * since 2026-05-02). All consumers import this facade, not the adapter.
+ * Artifact storage facade. Delegates to the JetStream-backed adapter
+ * once `initArtifactStorage(nc)` has been called.
  */
 export const ArtifactStorage: ArtifactStorageAdapter = {
-  create: (input: CreateArtifactInput) => adapter.create(input),
+  create: (input: CreateArtifactInput): Promise<Result<Artifact, string>> =>
+    require_().create(input),
   update: (input: {
     id: string;
     data: ArtifactDataInput;
     title?: string;
     summary: string;
     revisionMessage?: string;
-  }) => adapter.update(input),
-  get: (input: { id: string; revision?: number }) => adapter.get(input),
-  getManyLatest: (input: { ids: string[] }) => adapter.getManyLatest(input),
-  listAll: (input: { limit?: number; includeData?: boolean }) => adapter.listAll(input),
-  listByWorkspace: (input: { workspaceId: string; limit?: number; includeData?: boolean }) =>
-    adapter.listByWorkspace(input),
-  listByChat: (input: { chatId: string; limit?: number; includeData?: boolean }) =>
-    adapter.listByChat(input),
-  deleteArtifact: (input: { id: string }) => adapter.deleteArtifact(input),
-  readFileContents: (input: { id: string; revision?: number }) => adapter.readFileContents(input),
-  readBinaryContents: (input: { id: string; revision?: number }) =>
-    adapter.readBinaryContents(input),
+  }): Promise<Result<Artifact, string>> => require_().update(input),
+  get: (input: { id: string; revision?: number }): Promise<Result<Artifact | null, string>> =>
+    require_().get(input),
+  getManyLatest: (input: { ids: string[] }): Promise<Result<Artifact[], string>> =>
+    require_().getManyLatest(input),
+  listAll: (input: {
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> => require_().listAll(input),
+  listByWorkspace: (input: {
+    workspaceId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> => require_().listByWorkspace(input),
+  listByChat: (input: {
+    chatId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> => require_().listByChat(input),
+  deleteArtifact: (input: { id: string }): Promise<Result<void, string>> =>
+    require_().deleteArtifact(input),
+  readFileContents: (input: { id: string; revision?: number }): Promise<Result<string, string>> =>
+    require_().readFileContents(input),
+  readBinaryContents: (input: {
+    id: string;
+    revision?: number;
+  }): Promise<Result<Uint8Array, string>> => require_().readBinaryContents(input),
 };
