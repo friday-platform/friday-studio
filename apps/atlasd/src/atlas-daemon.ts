@@ -29,7 +29,7 @@ import {
 } from "@atlas/mcp-server";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
-  createKVStorage,
+  createJetStreamKVStorage,
   createRegistryStorage,
   StorageConfigs,
   validateMCPEnvironmentForWorkspace,
@@ -415,11 +415,13 @@ export class AtlasDaemon {
     // Wire up runtime invalidation callback so file watcher changes clear both maps
     this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
 
-    // Initialize CronManager with KV storage
+    // Initialize CronManager with JetStream-KV-backed storage. Cron
+    // only uses get/set/delete/list — JS KV's per-key model fits
+    // exactly. Migration entry below republishes any legacy
+    // ~/.atlas/storage.db cron rows into the CRON_TIMERS bucket.
     logger.info("Initializing CronManager...");
-    const kvStorageConfig = StorageConfigs.defaultKV();
-    const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
-    this.cronManager = new CronManager(kvStorage, logger);
+    const cronStorage = await createJetStreamKVStorage(nc, { bucket: "CRON_TIMERS", history: 5 });
+    this.cronManager = new CronManager(cronStorage, logger);
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");

@@ -1,5 +1,6 @@
 {
   "name": "@atlas/storage",
   "version": "1.0.0",
-  "exports": { ".": "./mod.ts", "./kv": "./src/kv-storage.ts" }
+  "exports": { ".": "./mod.ts", "./kv": "./src/kv-storage.ts" },
+  "imports": { "nats": "npm:nats@^2.29.3" }
 }

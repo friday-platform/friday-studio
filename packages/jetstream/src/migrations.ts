@@ -97,6 +97,26 @@ export async function runMigrations(
   logger: Logger,
   opts: RunMigrationsOptions = {},
 ): Promise<RunMigrationsResult> {
+  // Reject duplicate ids across ALL_MIGRATIONS. The framework keys the
+  // audit trail by id, so two entries sharing an id silently skip the
+  // second one (real bug we hit when both new migrations used the
+  // literal `__pending__` placeholder). Convention: stable slugs like
+  // `mcp-registry-to-jetstream`. Catch at runtime; better to fail loud
+  // than silently skip a data migration.
+  const seen = new Set<string>();
+  for (const m of migrations) {
+    if (seen.has(m.id)) {
+      throw new Error(
+        `Duplicate migration id "${m.id}" (entry "${m.name}"). ` +
+          "Migration ids must be unique across ALL_MIGRATIONS — the framework keys " +
+          "the audit trail by id, so duplicates would silently skip the second entry. " +
+          "Use a stable slug like 'cron-timers-to-jetstream' (not commit SHAs — " +
+          "amends churn the id and orphan the audit trail).",
+      );
+    }
+    seen.add(m.id);
+  }
+
   const js = createJetStreamFacade(nc);
   const kv = await js.kv.getOrCreate(MIGRATIONS_BUCKET, { history: 5 });
 

@@ -10,7 +10,7 @@ import { createKVStorage, type KVStorageConfig } from "@atlas/storage/kv";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 
-export { createKVStorage } from "@atlas/storage/kv";
+export { createJetStreamKVStorage, createKVStorage } from "@atlas/storage/kv";
 // Re-export for convenience
 export { RegistryStorageAdapter } from "./registry-storage-adapter.ts";
 

@@ -13,6 +13,11 @@ export const STORAGE_VERSION = "1.0.0";
 
 // KV storage implementations
 export { DenoKVStorage } from "./src/deno-kv-storage.ts";
+export type { JetStreamKVStorageOptions } from "./src/jetstream-kv-storage.ts";
+export {
+  JetStreamKVStorage,
+  jetstreamKvUpdateCAS,
+} from "./src/jetstream-kv-storage.ts";
 export type {
   AtomicOperation,
   KVEntry,
@@ -21,6 +26,7 @@ export type {
 } from "./src/kv-storage.ts";
 // KV storage interface, factory, and error types
 export {
+  createJetStreamKVStorage,
   createKVStorage,
   KVConnectionError,
   KVStorageError,

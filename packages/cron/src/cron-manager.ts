@@ -30,12 +30,37 @@ export interface TimerInfo {
 export type TimerConfig = Omit<TimerInfo, "nextExecution" | "lastExecution">;
 
 /**
- * Cron timer signal payload data
+ * Cron timer signal payload data.
+ *
+ * `scheduled` is when the tick was *supposed* to fire (according to the
+ * schedule + the previously-persisted `nextExecution`). `actualFiredAt`
+ * is when it actually fired — usually identical, but diverges after a
+ * daemon downtime or broker outage.
+ *
+ * **Coalescing semantics (G1.5):** Friday collapses missed ticks into
+ * a single execution. If the daemon was down 1h and a job was
+ * scheduled to fire every 15 min, the job fires ONCE on restart with
+ * `scheduled` set to the most-recent missed tick. `missedSince`
+ * carries the previous successful tick (`lastExecution` before the
+ * gap) so jobs that care about catching up — counting metrics,
+ * window-aware batches — can compute the gap themselves and self-batch.
+ *
+ * Idempotent jobs (sweeps, autopilots) ignore `missedSince` and the
+ * default behavior is correct.
  */
 export interface CronTimerSignalPayload {
   scheduled: string;
   timezone: string;
   nextRun: string;
+  /** ISO 8601 of when this tick actually fired. */
+  actualFiredAt: string;
+  /**
+   * ISO 8601 of the last successful tick before this one, or undefined
+   * on first execution. Jobs can compute `(scheduled − missedSince)` to
+   * detect gaps caused by daemon downtime / broker outage / manual
+   * pause and decide whether to backfill.
+   */
+  missedSince?: string;
 }
 
 /**
@@ -364,12 +389,17 @@ export class CronManager {
     });
 
     try {
-      // Update last execution time
-      timer.lastExecution = new Date();
+      // Capture `missedSince` BEFORE we mutate lastExecution — it's the
+      // previous tick (if any) that the consumer's "did I miss any?"
+      // computation cares about. See CronTimerSignalPayload docstring.
+      const missedSince = timer.lastExecution?.toISOString();
+
+      const now = new Date();
+      timer.lastExecution = now;
 
       // Calculate next execution
       const cronExpression = CronExpressionParser.parse(timer.schedule, {
-        currentDate: new Date(),
+        currentDate: now,
         tz: timer.timezone,
       });
       timer.nextExecution = cronExpression.next().toDate();
@@ -380,11 +410,13 @@ export class CronManager {
       // Create signal data
       const signalData: CronTimerSignalData = {
         id: timer.signalId,
-        timestamp: new Date().toISOString(),
+        timestamp: now.toISOString(),
         data: {
           scheduled: timer.schedule,
           timezone: timer.timezone,
           nextRun: timer.nextExecution.toISOString(),
+          actualFiredAt: now.toISOString(),
+          ...(missedSince ? { missedSince } : {}),
         },
       };
 

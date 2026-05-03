@@ -6361,10 +6361,14 @@
         }
       },
       "packages/storage": {
+        "dependencies": [
+          "npm:nats@^2.29.3"
+        ],
         "packageJson": {
           "dependencies": [
             "npm:@jsr/std__media-types@^1.1.0",
             "npm:@jsr/std__yaml@^1.0.10",
+            "npm:nats@^2.29.3",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.6"
           ]

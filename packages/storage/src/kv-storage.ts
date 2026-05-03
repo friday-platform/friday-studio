@@ -8,7 +8,9 @@
  */
 
 import type { MaybePromise } from "@atlas/utils";
+import type { NatsConnection } from "nats";
 import { DenoKVStorage } from "./deno-kv-storage.ts";
+import { JetStreamKVStorage } from "./jetstream-kv-storage.ts";
 import { MemoryKVStorage } from "./memory-kv-storage.ts";
 
 /**
@@ -147,6 +149,22 @@ export async function createKVStorage(config: KVStorageConfig): Promise<KVStorag
     default:
       throw new Error(`Unsupported storage type: ${config.type}`);
   }
+}
+
+/**
+ * JetStream-KV–backed storage. Separate from `createKVStorage` because
+ * it needs a live NATS connection at construction time — the pure
+ * config-string factory above can't carry one. Daemon calls this
+ * directly for surfaces that have moved to JetStream substrate (cron
+ * timers as of 2026-05-02; workspace registry next).
+ */
+export async function createJetStreamKVStorage(
+  nc: NatsConnection,
+  options: { bucket: string; history?: number },
+): Promise<KVStorage> {
+  const storage = new JetStreamKVStorage(nc, options);
+  await storage.initialize();
+  return storage;
 }
 
 /**
