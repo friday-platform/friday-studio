@@ -93,32 +93,40 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
     await os.put({ name: this.archiveKey(skillId, version) }, readableFrom(bytes));
   }
 
-  private async getArchive(skillId: string, version: number): Promise<Uint8Array | null> {
-    try {
-      const os = await this.getOS();
-      const result = await os.get(this.archiveKey(skillId, version));
-      if (!result) return null;
-      const reader = result.data.getReader();
-      const chunks: Uint8Array[] = [];
-      let total = 0;
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) {
-          chunks.push(value);
-          total += value.byteLength;
-        }
+  /**
+   * Read an archive blob. Returns:
+   *   - `success(bytes)` when present
+   *   - `fail("missing")` when the OS entry doesn't exist (caller decides
+   *     whether to treat as data corruption)
+   *   - propagates broker errors via `fail(stringifyError)`
+   *
+   * The earlier shape (`Uint8Array | null` with bare `catch {}`) silently
+   * turned broker errors into "no archive", so a skill missing its
+   * tar.gz looked identical to a text-only skill. Callers now have to
+   * decide explicitly.
+   */
+  private async getArchive(skillId: string, version: number): Promise<Result<Uint8Array, string>> {
+    const os = await this.getOS();
+    const result = await os.get(this.archiveKey(skillId, version));
+    if (!result) return fail(`skill archive missing: ${skillId}/${version}`);
+    const reader = result.data.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        total += value.byteLength;
       }
-      const out = new Uint8Array(total);
-      let offset = 0;
-      for (const c of chunks) {
-        out.set(c, offset);
-        offset += c.byteLength;
-      }
-      return out;
-    } catch {
-      return null;
     }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      out.set(c, offset);
+      offset += c.byteLength;
+    }
+    return success(out);
   }
 
   private async getCopiedArchive(
@@ -126,9 +134,9 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
     fromVersion: number,
     toVersion: number,
   ): Promise<boolean> {
-    const bytes = await this.getArchive(skillId, fromVersion);
-    if (!bytes) return false;
-    await this.putArchive(skillId, toVersion, bytes);
+    const result = await this.getArchive(skillId, fromVersion);
+    if (!result.ok) return false;
+    await this.putArchive(skillId, toVersion, result.data);
     return true;
   }
 
@@ -252,12 +260,18 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
     try {
       // If the caller passed an explicit skillId AND we already have rows
       // under it, propagate the new name to every prior version (matches
-      // SQLite UPDATE skills SET name=? WHERE skill_id=?).
+      // SQLite UPDATE skills SET name=? WHERE skill_id=?). Also retire
+      // the old (namespace, oldName) → skillId index so a `get` on the
+      // old name 404s, matching the SQLite behavior.
       if (input.skillId && latest && latest.name !== name) {
+        const oldName = latest.name;
         for await (const e of kv.list<SkillRecord>(["skill", skillId])) {
           if (e.value.name !== name) {
             await kv.set(["skill", skillId, String(e.value.version)], { ...e.value, name });
           }
+        }
+        if (oldName) {
+          await kv.delete(["index", "by_name", namespace, oldName]);
         }
       }
 
@@ -289,9 +303,7 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
       record = await this.getLatestRecord(skillId);
     }
     if (!record) return success(null);
-
-    const archive = record.hasArchive ? await this.getArchive(skillId, record.version) : null;
-    return success(this.toSkill(record, archive));
+    return this.skillWithArchive(record, skillId);
   }
 
   async getById(id: string): Promise<Result<Skill | null, string>> {
@@ -300,15 +312,29 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
     if (!loc) return success(null);
     const record = await kv.get<SkillRecord>(["skill", loc.skillId, String(loc.version)]);
     if (!record) return success(null);
-    const archive = record.hasArchive ? await this.getArchive(loc.skillId, loc.version) : null;
-    return success(this.toSkill(record, archive));
+    return this.skillWithArchive(record, loc.skillId);
   }
 
   async getBySkillId(skillId: string): Promise<Result<Skill | null, string>> {
     const record = await this.getLatestRecord(skillId);
     if (!record) return success(null);
-    const archive = record.hasArchive ? await this.getArchive(skillId, record.version) : null;
-    return success(this.toSkill(record, archive));
+    return this.skillWithArchive(record, skillId);
+  }
+
+  /**
+   * Materialize a `Skill` from a `SkillRecord`, fetching the archive
+   * from Object Store if `hasArchive`. Surfaces archive-read failures
+   * as a `Result.fail` so callers can't silently install a skill whose
+   * bundle is missing or unreadable.
+   */
+  private async skillWithArchive(
+    record: SkillRecord,
+    skillId: string,
+  ): Promise<Result<Skill, string>> {
+    if (!record.hasArchive) return success(this.toSkill(record, null));
+    const archiveResult = await this.getArchive(skillId, record.version);
+    if (!archiveResult.ok) return fail(archiveResult.error);
+    return success(this.toSkill(record, archiveResult.data));
   }
 
   async list(

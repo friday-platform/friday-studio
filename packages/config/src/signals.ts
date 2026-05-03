@@ -19,7 +19,7 @@ export type HTTPProviderConfig = z.infer<typeof HTTPProviderConfigSchema>;
 /**
  * Coalescing policy for missed cron firings.
  *
- * - `skip`     — drop missed firings entirely. Behavior pre-G1.5.
+ * - `skip`     — drop missed firings entirely.
  * - `coalesce` — fire once now to represent every missed slot inside
  *                `missedWindow`. Payload carries `missedCount` +
  *                `firstMissedAt`. Right for "did this happen recently?"

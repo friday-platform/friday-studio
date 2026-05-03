@@ -296,8 +296,25 @@ export class JetStreamNarrativeStore implements NarrativeStore {
     return result;
   }
 
-  search(_query: string, _opts?: SearchOpts): Promise<NarrativeEntry[]> {
-    throw new Error("search not implemented for JetStream narrative store");
+  /**
+   * Substring search across all narrative entries (case-insensitive).
+   *
+   * Implementation: read every entry, filter in-memory by `text.includes`.
+   * O(N) per call, where N is the entry count. Right for the
+   * single-digit-thousands range a typical workspace's narrative log
+   * lands in; if a future surface needs higher-volume search, swap in
+   * an external index (e.g. KV-backed inverted index, or a sidecar
+   * full-text store) without changing this contract.
+   */
+  async search(query: string, opts?: SearchOpts): Promise<NarrativeEntry[]> {
+    const all = await this.read();
+    const needle = query.toLowerCase();
+    const matches =
+      needle.length === 0 ? all : all.filter((e) => e.text.toLowerCase().includes(needle));
+    if (opts?.limit !== undefined && opts.limit >= 0) {
+      return matches.slice(0, opts.limit);
+    }
+    return matches;
   }
 
   async forget(id: string): Promise<void> {

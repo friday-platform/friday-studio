@@ -1,5 +1,5 @@
 /**
- * Tool worker launcher (G3.10 substrate).
+ * Tool worker launcher.
  *
  * Spawns one or more tool workers into a configurable sandbox runtime. The
  * worker process itself is identical across runtimes — the launcher's job

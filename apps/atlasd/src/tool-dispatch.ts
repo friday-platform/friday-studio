@@ -1,5 +1,5 @@
 /**
- * NATS-mediated tool dispatch substrate (G3.10).
+ * NATS-mediated tool dispatch substrate.
  *
  * Subjects: `tools.<tool-id>.call` carry tool-call requests; the broker's
  * request/reply shape (auto-routed reply inbox) carries the response.
@@ -9,9 +9,8 @@
  * replies. Workers register with `registerToolWorker(nc, toolId, handler)`;
  * callers dispatch with `callTool(nc, toolId, args, opts)`.
  *
- * The substrate is intentionally minimal — the auth/credential-injection,
- * resource-limit, and sandbox-runtime concerns described in G3.10 are
- * layered on top of this in subsequent commits.
+ * The substrate is intentionally minimal — auth/credential injection,
+ * resource limits, and sandbox-runtime concerns layer on top.
  */
 
 import { logger } from "@atlas/logger";

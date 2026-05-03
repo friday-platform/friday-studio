@@ -20,6 +20,7 @@ export default defineConfig({
   },
   test: {
     reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
+    setupFiles: ["./vitest.setup.ts"],
     coverage: { provider: "v8" },
     include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"],
     exclude: [

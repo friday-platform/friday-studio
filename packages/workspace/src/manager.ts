@@ -116,8 +116,6 @@ export class WorkspaceManager {
    * and re-parse. Cuts the per-signal YAML parse + Zod validation cost from
    * ~5–20ms to a single file stat. Bounded only by the number of workspaces
    * the daemon has touched.
-   *
-   * Implements G3.7(b) of plans/2026-05-01-stateless-friday.md.
    */
   private configCache = new Map<string, { mtimeMs: number; config: MergedConfig }>();
 

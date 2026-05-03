@@ -16,11 +16,7 @@ const generateImageMock = vi.hoisted(() => vi.fn());
 const createArtifactMock = vi.hoisted(() => vi.fn());
 const readBinaryContentsMock = vi.hoisted(() => vi.fn());
 const discoverImageFilesMock = vi.hoisted(() => vi.fn());
-const getWorkspaceFilesDirMock = vi.hoisted(() => vi.fn());
 const smallLLMMock = vi.hoisted(() => vi.fn());
-const mkdirMock = vi.hoisted(() => vi.fn());
-const unlinkMock = vi.hoisted(() => vi.fn());
-const writeFileMock = vi.hoisted(() => vi.fn());
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -33,14 +29,6 @@ vi.mock("@atlas/core/artifacts/server", () => ({
 vi.mock("ai", () => ({ generateImage: generateImageMock }));
 
 vi.mock("./discovery.ts", () => ({ discoverImageFiles: discoverImageFilesMock }));
-
-vi.mock("@atlas/utils/paths.server", () => ({ getWorkspaceFilesDir: getWorkspaceFilesDirMock }));
-
-vi.mock("node:fs/promises", () => ({
-  mkdir: mkdirMock,
-  unlink: unlinkMock,
-  writeFile: writeFileMock,
-}));
 
 vi.mock("@atlas/llm", () => ({
   registry: { imageModel: () => "gemini-mock" },
@@ -113,9 +101,6 @@ function makeDiscoveryResult(entries: Array<{ id: string; mimeType?: string }>) 
 
 /** Standard mock setup for the artifact save path. */
 function setupSaveMocks() {
-  getWorkspaceFilesDirMock.mockReturnValue("/tmp/ws-files");
-  mkdirMock.mockResolvedValue(undefined);
-  writeFileMock.mockResolvedValue(undefined);
   createArtifactMock.mockResolvedValue({
     ok: true,
     data: { id: "artifact-out-1", type: "file", summary: "Image output" },
@@ -127,11 +112,7 @@ afterEach(() => {
   createArtifactMock.mockReset();
   readBinaryContentsMock.mockReset();
   discoverImageFilesMock.mockReset();
-  getWorkspaceFilesDirMock.mockReset();
   smallLLMMock.mockReset();
-  mkdirMock.mockReset();
-  unlinkMock.mockReset();
-  writeFileMock.mockReset();
   vi.clearAllMocks();
 });
 

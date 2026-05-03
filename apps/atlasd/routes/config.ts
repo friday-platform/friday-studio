@@ -156,9 +156,7 @@ configRoutes.put(
 // ---------------------------------------------------------------------------
 // Surfaces the four per-role models (labels, classifier, planner,
 // conversational) the daemon resolved at startup. Read-only — editing
-// requires mutating friday.yml and restarting, which is out of scope for
-// the MVP settings page (plan item 4.3 in
-// docs/plans/2026-04-16-chat-ux-and-fast-improvements.md).
+// requires mutating friday.yml and restarting.
 
 const PLATFORM_ROLES = ["labels", "classifier", "planner", "conversational"] as const;
 type ModelRole = (typeof PLATFORM_ROLES)[number];

@@ -1,9 +1,7 @@
 /**
- * Playground-local chat types. The backend (Ken's chat-unification — see
- * docs/plans/2026-04-15-chat-unification.md) always routes into the single
+ * Playground-local chat types. The backend always routes into the single
  * `user` workspace via Chat SDK per-workspace, so there's no "global chat"
- * matching or per-conversation workspace creation — those concepts from the
- * old design were removed during the @ai-sdk/svelte migration.
+ * matching or per-conversation workspace creation.
  *
  * AI SDK's `Chat` instance owns the real chat state (messages, streaming,
  * errors). The types here are just the thin wrappers used by:

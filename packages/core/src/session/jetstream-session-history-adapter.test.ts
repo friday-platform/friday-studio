@@ -122,6 +122,27 @@ describe("JetStreamSessionHistoryAdapter", () => {
     expect(summary?.status).toBe("interrupted");
   });
 
+  it("save() after appendEvent does NOT duplicate events in the rebuilt view", async () => {
+    // Regression: the reducer matches step:start by agentName+pending,
+    // so a republish of the same event used to produce duplicate
+    // agentBlocks. Stream-side dedup via Nats-Msg-Id keeps it at one.
+    const adapter = new JetStreamSessionHistoryAdapter(nc);
+    const sid = `s-${crypto.randomUUID()}`;
+    const start = startEvent(sid, "ws-dedup");
+    const complete = completeEvent(sid);
+
+    await adapter.appendEvent(sid, start);
+    await adapter.appendEvent(sid, complete);
+    // save() republishes both events — broker should dedup them.
+    await adapter.save(sid, [start, complete], summaryFor(sid, "ws-dedup"));
+
+    const view = await adapter.get(sid);
+    expect(view).not.toBeNull();
+    // Exactly one of each — not two.
+    expect(view?.agentBlocks.length ?? 0).toBe(0); // no step events in this fixture
+    expect(view?.task).toBe("do the thing");
+  });
+
   it("save() then markInterruptedSessions() does not double-finalize", async () => {
     const adapter = new JetStreamSessionHistoryAdapter(nc);
     const sid = `s-${crypto.randomUUID()}`;

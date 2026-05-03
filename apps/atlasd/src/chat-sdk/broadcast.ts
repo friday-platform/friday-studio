@@ -2,14 +2,9 @@
  * Broadcast helper — fans a session's final output to every configured chat
  * communicator's `default_destination`, except the source.
  *
- * NOTE on scope: this layer goes beyond the v3 ChatSdkNotifier design
- * (`docs/plans/2026-04-27-chatsdk-notifier-design.v3.md`), which explicitly
- * deferred routing rules ("which communicator for which output") under
- * § "Out of Scope". The notifier itself is v3-faithful (transactional,
- * single-destination, caller decides). This broadcaster is the deferred
- * routing layer, added during interactive testing — see
- * `docs/reviews/2026-04-27-chatsdk-notifier-design.md` for the full
- * post-implementation review.
+ * NOTE on scope: the underlying ChatSdkNotifier is single-destination
+ * (transactional, caller decides where to send). This broadcaster is the
+ * routing layer that fans out to every wired communicator.
  */
 
 import { createLogger } from "@atlas/logger";

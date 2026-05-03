@@ -19,7 +19,7 @@ import { CronExpressionParser } from "cron-parser";
 /**
  * Coalescing policy for cron firings the daemon was down for.
  *
- * - `skip`     — drop missed firings entirely. Pre-G1.5 behavior.
+ * - `skip`     — drop missed firings entirely.
  * - `coalesce` — fire once now representing every missed slot inside
  *                `missedWindowMs`. Payload carries `missedCount` +
  *                `firstMissedAt`.
@@ -62,7 +62,7 @@ const DEFAULT_MISSED_WINDOW_MS = 24 * 60 * 60 * 1000;
  * is when it actually fired — usually identical, but diverges after a
  * daemon downtime or broker outage.
  *
- * **Coalescing semantics (G1.5):** Friday collapses missed ticks into
+ * **Coalescing semantics:** Friday collapses missed ticks into
  * a single execution. If the daemon was down 1h and a job was
  * scheduled to fire every 15 min, the job fires ONCE on restart with
  * `scheduled` set to the most-recent missed tick. `missedSince`
@@ -333,8 +333,8 @@ export class CronManager {
    * advances `nextExecution` from the current clock. Idempotent jobs (sweeps,
    * autopilots, fetch-latest) absorb this fine. Counting jobs and time-window
    * jobs (e.g. "9am batch") lose their missed window and wait until the next
-   * scheduled fire. This is documented as expected behavior — see G1.5 in
-   * plans/2026-05-01-stateless-friday.md.
+   * scheduled fire — that's intentional. Use `onMissed: catchup` if every
+   * slot must run.
    */
   private checkTimers(): void {
     const now = Date.now();

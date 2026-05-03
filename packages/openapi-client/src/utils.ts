@@ -60,7 +60,7 @@ export function getAtlasDaemonUrl(): string {
  * Get the atlas-platform MCP server config pointing at the daemon's /mcp endpoint.
  *
  * `FRIDAY_ATLAS_PLATFORM_URL` overrides the URL when atlas-platform is
- * deployed as a separate shared service (G3.1). This lets a cloud
+ * deployed as a separate shared service. This lets a cloud
  * deployment run one atlas-platform pod fronted by Traefik / a Service
  * and have N daemons all point at the same URL, instead of every daemon
  * embedding its own copy. Default — and the only path on a single-host

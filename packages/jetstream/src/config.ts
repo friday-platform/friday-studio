@@ -5,9 +5,6 @@
  * passed at stream creation time. Library code (chat backend, memory
  * adapter) receives the per-stream limits via their init APIs so the
  * `process.env` read stays in the daemon's startup path.
- *
- * See plans/2026-05-01-stateless-friday.md "JetStream env / config" for
- * the rationale and operator-facing docs.
  */
 
 import process from "node:process";

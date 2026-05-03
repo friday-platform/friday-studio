@@ -29,9 +29,7 @@ const PROXY_BASE = "/api/daemon";
 function makeDaemonClient(customFetch: typeof globalThis.fetch) {
   return {
     health: hc<HealthRoutes>(`${PROXY_BASE}/health`, { fetch: customFetch }),
-    // POST /api/chat routes through Chat SDK per-workspace into the `user` workspace
-    // (see docs/plans/2026-04-15-chat-unification.md). The old /api/global-chat
-    // route was removed during chat unification.
+    // POST /api/chat routes through Chat SDK per-workspace into the `user` workspace.
     chat: hc<ChatRoutes>(`${PROXY_BASE}/api/chat`, { fetch: customFetch }),
     workspace: hc<WorkspaceRoutes>(`${PROXY_BASE}/api/workspaces`, { fetch: customFetch }),
     workspaceConfig: (workspaceId: string) =>

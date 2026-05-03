@@ -1679,8 +1679,8 @@ export class AtlasDaemon {
   /**
    * Cached per workspace; torn down when the runtime is destroyed.
    *
-   * Cost breakdown (G3.3 audit):
-   * - getWorkspaceConfig: mtime-cached (G3.7(b)) — sub-ms steady state.
+   * Cost breakdown:
+   * - getWorkspaceConfig: mtime-cached — sub-ms steady state.
    * - resolvePlatformCredentials: HTTP to Link, ~10-100ms per workspace.
    *   Paid once per workspace per daemon lifetime via this cache.
    * - buildChatSdkAdapters + new Chat: ~ms of pure object construction,

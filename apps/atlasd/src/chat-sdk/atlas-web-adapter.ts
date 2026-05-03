@@ -109,10 +109,9 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
   // Structural marker: `ChatSdkNotifier` filters this adapter out of `list()`
   // and `post()`. We use a structural property (not a name-based allowlist) so
   // any future stub adapter just declares `outboundDeliverable = false` to
-  // opt out — no central registry to keep in sync. See
-  // docs/plans/2026-04-27-chatsdk-notifier-design.v3.md § "Stub-adapter filter"
-  // for the rationale. Real outbound delivery flows through StreamRegistry SSE
-  // on the inbound webhook path (see `postMessage` below ~line 286).
+  // opt out — no central registry to keep in sync. Real outbound delivery
+  // flows through StreamRegistry SSE on the inbound webhook path (see
+  // `postMessage` below).
   readonly outboundDeliverable = false;
   readonly userName: string;
 

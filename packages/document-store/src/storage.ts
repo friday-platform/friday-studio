@@ -9,10 +9,8 @@
  * `setDocumentStoreForTest(new InMemoryDocumentStore())`.
  */
 
-import { logger } from "@atlas/logger";
 import type { NatsConnection } from "nats";
 import type { DocumentStore } from "./document-store.ts";
-import { InMemoryDocumentStore } from "./in-memory-document-store.ts";
 import { JetStreamDocumentStore } from "./jetstream-document-store.ts";
 
 let _store: DocumentStore | null = null;
@@ -23,19 +21,19 @@ export function initDocumentStore(nc: NatsConnection): void {
 }
 
 /**
- * Return the current DocumentStore. Falls back to an in-memory store
- * if neither `initDocumentStore(nc)` nor `setDocumentStoreForTest()`
- * has been called — that path is intended for unit tests that exercise
- * the workspace runtime without standing up a real NATS server. Logs
- * a warning so production wiring bugs don't go silent.
+ * Return the current DocumentStore. Throws if init was never called —
+ * a missing init is a daemon-wiring bug; falling back to an in-memory
+ * store would silently lose every FSM document on restart, which is
+ * worse than failing fast. Tests that exercise this path without a
+ * real NATS server should call `setDocumentStoreForTest(new
+ * InMemoryDocumentStore())` explicitly.
  */
 export function getDocumentStore(): DocumentStore {
   if (!_store) {
-    logger.warn(
-      "DocumentStore not initialized — falling back to InMemoryDocumentStore. " +
-        "If you're seeing this in production, call initDocumentStore(nc) at daemon startup.",
+    throw new Error(
+      "DocumentStore not initialized — call initDocumentStore(nc) at daemon startup, " +
+        "or setDocumentStoreForTest(new InMemoryDocumentStore()) in tests.",
     );
-    _store = new InMemoryDocumentStore();
   }
   return _store;
 }

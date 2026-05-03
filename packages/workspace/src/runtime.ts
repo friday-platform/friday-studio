@@ -400,10 +400,10 @@ export class WorkspaceRuntime {
    * returns, but synchronous callers (`triggerWorkspaceSignal` in atlas-daemon)
    * still need to read the final output docs afterward. The map is bounded
    * naturally by the runtime's lifecycle — daemon idle eviction at 5min
-   * tears down the runtime and frees the map. (G3.5 dropped the 60s
-   * setTimeout LRU; the bounded-by-runtime guarantee is sufficient for the
-   * single-host model. Cross-worker access in a future per-worker model
-   * needs to read from the persistent session-history store instead.)
+   * tears down the runtime and frees the map. The bounded-by-runtime
+   * guarantee is sufficient for the single-host model. Cross-worker
+   * access in a future per-worker model needs to read from the
+   * persistent session-history store instead.
    */
   private completedSessionDocuments = new Map<
     string,

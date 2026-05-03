@@ -19,6 +19,7 @@
  * reducer sees events in the same order as the JSONL implementation.
  */
 
+import { createHash } from "node:crypto";
 import { createLogger } from "@atlas/logger";
 import { createJetStreamKVStorage, type KVStorage } from "@atlas/storage";
 import { dec, enc } from "jetstream";
@@ -27,6 +28,20 @@ import type { SessionStreamEvent, SessionSummary, SessionView } from "./session-
 import { SessionStreamEventSchema, SessionSummarySchema } from "./session-events.ts";
 import type { SessionHistoryAdapter } from "./session-history-adapter.ts";
 import { buildSessionView } from "./session-reducer.ts";
+
+/**
+ * Stable per-event id used as `Nats-Msg-Id` so the broker dedups
+ * republishes (which happen when `save()` lands a session that
+ * `appendEvent` already streamed). Hash is deterministic on event
+ * content + sessionId, so the same event published twice resolves
+ * to the same id and the second publish is rejected.
+ */
+function eventMsgId(sessionId: string, event: SessionStreamEvent): string {
+  return createHash("sha256")
+    .update(`${sessionId}:${JSON.stringify(event)}`)
+    .digest("base64url")
+    .slice(0, 32);
+}
 
 const logger = createLogger({ component: "jetstream-session-history-adapter" });
 
@@ -99,7 +114,9 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     // identical values via per-key revision history.
     await inflight.set([sessionId], { startedAt: new Date().toISOString() });
     const js = this.nc.jetstream();
-    await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(event)));
+    await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(event)), {
+      msgID: eventMsgId(sessionId, event),
+    });
   }
 
   async save(
@@ -109,16 +126,20 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
   ): Promise<void> {
     await this.ensureStream();
     const js = this.nc.jetstream();
-    // Idempotent backfill: publish any events not already in the
-    // stream. The common path is "appendEvent already pushed each event;
-    // save() just writes the summary." Republishing is safe — the
-    // reducer is ordering-tolerant and de-dups by event id where
-    // applicable. Not using Nats-Msg-Id dedup here because save() is
-    // sometimes called with a synthesized event list (eg. tests) that
-    // lacks IDs; the stream's appendEvent path is the dedup boundary.
+    // Idempotent backfill: republish each event with a stable
+    // `Nats-Msg-Id`. The broker silently rejects duplicates within its
+    // dedup window (default 2m, plenty for "appendEvent → save" in the
+    // same handler), so the common case where appendEvent already
+    // streamed every event becomes a no-op at the stream layer.
+    // Without this, the reducer would see two `step:start` events for
+    // every step on a save() that follows appendEvent (the reducer
+    // matches step:start by agentName+pending, so a re-publish appends
+    // a duplicate block instead of merging — verified in repro).
     if (events.length > 0) {
       for (const e of events) {
-        await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(e)));
+        await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(e)), {
+          msgID: eventMsgId(sessionId, e),
+        });
       }
     }
     const metadata = await this.getMetadataKV();

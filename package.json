@@ -19,6 +19,7 @@
     "@atlas/client": "workspace:*",
     "@atlas/config": "workspace:*",
     "@atlas/core": "workspace:*",
+    "@atlas/document-store": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/skills": "workspace:*",

@@ -3,8 +3,7 @@
  *
  * Replaces the binary `{ valid, feedback }` envelope. Status is derived in code
  * (not picked by the judge) from a confidence-band → supervision-threshold mapping;
- * severity is derived from category via a static map. See the design doc:
- * `docs/plans/2026-04-28-fine-grained-validation-verdict-design.md`.
+ * severity is derived from category via a static map.
  *
  * NOTE: "Validator (Workspace)" in `@atlas/config` is a different concept; this
  * module is the post-hoc Output Validator (Hallucination Judge) — runtime, LLM-driven.
