@@ -146,12 +146,9 @@ describe("imageGenerationAgent", () => {
     smallLLMMock.mockResolvedValue("Sunset over mountains");
   });
 
-  test("generates image, writes file, creates artifact, and returns ok with artifactRef", async () => {
+  test("generates image, creates artifact, and returns ok with artifactRef", async () => {
     const imageFile = makeImageFile();
     generateImageMock.mockResolvedValue(makeGenerateImageResult([imageFile]));
-    getWorkspaceFilesDirMock.mockReturnValue("/tmp/ws-files");
-    mkdirMock.mockResolvedValue(undefined);
-    writeFileMock.mockResolvedValue(undefined);
     createArtifactMock.mockResolvedValue({
       ok: true,
       data: { id: "artifact-out-1", type: "file", summary: "A beautiful sunset image" },
@@ -171,15 +168,16 @@ describe("imageGenerationAgent", () => {
     expect(result.artifactRefs).toEqual([
       { id: "artifact-out-1", type: "file", summary: "A beautiful sunset image" },
     ]);
-    expect(writeFileMock).toHaveBeenCalledWith(
-      expect.stringContaining("image-"),
-      imageFile.uint8Array,
-    );
     expect(createArtifactMock).toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceId: "ws-1",
         chatId: "chat-1",
         title: expect.stringContaining("Generated Image:"),
+        data: expect.objectContaining({
+          type: "file",
+          mimeType: "image/png",
+          originalName: "generated-image.png",
+        }),
       }),
     );
   });
@@ -203,20 +201,15 @@ describe("imageGenerationAgent", () => {
     );
   });
 
-  test("cleans up file and returns error when artifact creation fails", async () => {
+  test("returns error when artifact creation fails", async () => {
     generateImageMock.mockResolvedValue(makeGenerateImageResult([makeImageFile()]));
-    getWorkspaceFilesDirMock.mockReturnValue("/tmp/ws-files");
-    mkdirMock.mockResolvedValue(undefined);
-    writeFileMock.mockResolvedValue(undefined);
     createArtifactMock.mockResolvedValue({ ok: false, error: "Storage full" });
-    unlinkMock.mockResolvedValue(undefined);
 
     const result = await imageGenerationAgent.execute("Generate an image", makeContext());
 
     expect(result.ok).toBe(false);
     expect.assert(result.ok === false);
     expect(result.error.reason).toContain("Failed to save generated image");
-    expect(unlinkMock).toHaveBeenCalled();
   });
 
   test("passes 1024x1024 size to generateImage", async () => {
@@ -235,14 +228,11 @@ describe("imageGenerationAgent", () => {
 
     await imageGenerationAgent.execute("Generate an image", makeContext());
 
-    expect(writeFileMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\.jpg$/),
-      jpegFile.uint8Array,
-    );
     expect(createArtifactMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          data: expect.objectContaining({ originalName: "generated-image.jpg" }),
+          mimeType: "image/jpeg",
+          originalName: "generated-image.jpg",
         }),
       }),
     );
@@ -255,11 +245,11 @@ describe("imageGenerationAgent", () => {
 
     await imageGenerationAgent.execute("Generate an image", makeContext());
 
-    expect(writeFileMock).toHaveBeenCalledWith(expect.stringMatching(/\.png$/), pngFile.uint8Array);
     expect(createArtifactMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          data: expect.objectContaining({ originalName: "generated-image.png" }),
+          mimeType: "image/png",
+          originalName: "generated-image.png",
         }),
       }),
     );
@@ -289,7 +279,11 @@ describe("imageGenerationAgent", () => {
     await imageGenerationAgent.execute("Generate a sunset", makeContext());
 
     expect(createArtifactMock).toHaveBeenCalledWith(
-      expect.objectContaining({ title: expect.stringMatching(/^Generated Image: image-[\w-]+$/) }),
+      expect.objectContaining({
+        title: expect.stringMatching(
+          /^Generated Image: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        ),
+      }),
     );
   });
 
@@ -301,7 +295,11 @@ describe("imageGenerationAgent", () => {
     await imageGenerationAgent.execute("Generate a sunset", makeContext());
 
     expect(createArtifactMock).toHaveBeenCalledWith(
-      expect.objectContaining({ title: expect.stringMatching(/^Generated Image: image-[\w-]+$/) }),
+      expect.objectContaining({
+        title: expect.stringMatching(
+          /^Generated Image: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        ),
+      }),
     );
   });
 
@@ -435,9 +433,7 @@ describe("imageGenerationAgent", () => {
       expect(createArtifactMock).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Edited Image: Brightened landscape photo",
-          data: expect.objectContaining({
-            data: expect.objectContaining({ originalName: "edited-image.png" }),
-          }),
+          data: expect.objectContaining({ originalName: "edited-image.png" }),
         }),
       );
     });

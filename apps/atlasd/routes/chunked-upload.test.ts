@@ -5,10 +5,13 @@ import {
   CHUNKED_UPLOAD_TTL_MS,
   MAX_FILE_SIZE,
 } from "@atlas/core/artifacts/file-upload";
+import { initArtifactStorage } from "@atlas/core/artifacts/server";
+import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { createStubPlatformModels } from "@atlas/llm";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { Hono } from "hono";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { connect, type NatsConnection } from "nats";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AppContext, AppVariables } from "../src/factory.ts";
 import { artifactsApp as rawArtifactsApp } from "./artifacts.ts";
@@ -19,6 +22,20 @@ import {
   MAX_CONCURRENT_SESSIONS,
   chunkedUploadApp as rawChunkedUploadApp,
 } from "./chunked-upload.ts";
+
+let natsServer: TestNatsServer;
+let nc: NatsConnection;
+
+beforeAll(async () => {
+  natsServer = await startNatsTestServer();
+  nc = await connect({ servers: natsServer.url });
+  initArtifactStorage(nc);
+}, 30_000);
+
+afterAll(async () => {
+  await nc.drain();
+  await natsServer.stop();
+});
 
 const stubPlatformModels = createStubPlatformModels();
 

@@ -11,8 +11,6 @@ import { knowledgeHybridAgent } from "./knowledge/agent.ts";
 import { KnowledgeOutputSchema } from "./knowledge/shared.ts";
 import { SlackOutputSchema, slackCommunicatorAgent } from "./slack/communicator.ts";
 import { SummaryOutputSchema, summaryAgent } from "./summary.ts";
-import { TranscriptionOutputSchema, transcriptionAgent } from "./transcription/agent.ts";
-import { type DiscoveredAudio, discoverAudioFiles } from "./transcription/discovery.ts";
 import {
   type BrowserAgentResult,
   BrowserOutputSchema,
@@ -31,7 +29,7 @@ export {
   discoverableBundledAgents,
 } from "./registry.ts";
 
-export type { BrowserAgentResult, DiscoveredAudio, DiscoveredImages, WebAgentResult };
+export type { BrowserAgentResult, DiscoveredImages, WebAgentResult };
 export {
   BbOutputSchema,
   BrowserOutputSchema,
@@ -41,7 +39,6 @@ export {
   CsvFilterSamplerOutputSchema,
   claudeCodeAgent,
   csvFilterSamplerAgent,
-  discoverAudioFiles,
   discoverImageFiles,
   FathomOutputSchema,
   fathomGetTranscriptAgent,
@@ -60,8 +57,6 @@ export {
   SummaryOutputSchema,
   slackCommunicatorAgent,
   summaryAgent,
-  TranscriptionOutputSchema,
-  transcriptionAgent,
   WebOutputSchema,
   webAgent,
   webSearchAgent,
