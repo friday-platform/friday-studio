@@ -162,9 +162,7 @@ describe("Skills API Routes - Global Catalog", () => {
 
       const getRes = await skillsRoutes.request("/@atlas/merge-conflict");
       expect(getRes.status).toBe(200);
-      const body = (await getRes.json()) as {
-        skill: { frontmatter: Record<string, unknown> };
-      };
+      const body = (await getRes.json()) as { skill: { frontmatter: Record<string, unknown> } };
       expect(body.skill.frontmatter.description).toBe("explicit");
     });
 
@@ -172,8 +170,7 @@ describe("Skills API Routes - Global Catalog", () => {
       // Legacy rows had embedded frontmatter without `description` in
       // `instructions`. The strict parser rejected them, so the body was
       // stored verbatim with the YAML preamble — exactly what this PR fixes.
-      const legacySkillMd =
-        "---\nname: legacy-skill\n---\n\n# Legacy Skill\n\nBody content.\n";
+      const legacySkillMd = "---\nname: legacy-skill\n---\n\n# Legacy Skill\n\nBody content.\n";
       const publishRes = await skillsRoutes.request("/@atlas/legacy-skill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

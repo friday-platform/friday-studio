@@ -622,7 +622,10 @@ export const skillsRoutes = daemonFactory
       }
 
       if (isFridayNamespaceBlockedForUser(namespace, auth.userId)) {
-        return c.json({ error: "The @friday namespace is reserved for bundled system skills" }, 403);
+        return c.json(
+          { error: "The @friday namespace is reserved for bundled system skills" },
+          403,
+        );
       }
 
       // Collect file paths (excluding SKILL.md) for dead-link validation.
@@ -648,7 +651,8 @@ export const skillsRoutes = daemonFactory
         storageArchive = new Uint8Array(await packSkillArchive(extractedDir));
       }
 
-      const description = typeof frontmatter.description === "string" ? frontmatter.description : "";
+      const description =
+        typeof frontmatter.description === "string" ? frontmatter.description : "";
 
       const input = PublishSkillInputSchema.safeParse({
         description,

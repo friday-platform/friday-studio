@@ -57,9 +57,10 @@ function splitFrontmatter(content: string): { raw: string; body: string } | null
  * Returns empty frontmatter when the YAML can't be parsed as a mapping, but
  * still strips the body so we don't double-emit the preamble downstream.
  */
-export function splitSkillMd(
-  content: string,
-): { frontmatter: Record<string, unknown>; instructions: string } {
+export function splitSkillMd(content: string): {
+  frontmatter: Record<string, unknown>;
+  instructions: string;
+} {
   const normalized = content.replace(/\r\n/g, "\n");
   const split = splitFrontmatter(normalized);
   if (!split) return { frontmatter: {}, instructions: content.trim() };
