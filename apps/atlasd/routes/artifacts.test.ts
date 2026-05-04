@@ -709,6 +709,10 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
+    // The CSP sandbox is mime-keyed to active-content responses
+    // (HTML/XHTML/SVG). Benign images must NOT inherit the restriction —
+    // a future refactor that broadens the gate would be caught here.
+    expect(contentResponse.headers.get("Content-Security-Policy")).toBeNull();
     // Disposition carries a filename hint after the type, so split on the
     // first `;` and check the leading token. The full header looks like
     // `inline; filename="sec.png"; filename*=UTF-8''sec.png` — see
@@ -736,9 +740,145 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
+    // No CSP for application/json: JSON is not active content.
+    expect(contentResponse.headers.get("Content-Security-Policy")).toBeNull();
     const cd = contentResponse.headers.get("Content-Disposition") ?? "";
     expect(cd.split(";")[0]?.trim()).toEqual("attachment");
     expect(cd).toContain('filename="data.json"');
+  });
+
+  it("sandboxes inline HTML artifact content", async () => {
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "HTML report",
+        summary: "HTML report with active content",
+        data: {
+          type: "file",
+          content: "<script>parent.document.body.dataset.pwned = 'true'</script>",
+          mimeType: "text/html",
+          originalName: "report.html",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Type")).toEqual("text/html");
+    // HTML gets `allow-scripts` so legit agent-rendered pages (Leaflet,
+    // charts, embedded viewers) can run. The opaque-origin sandbox is
+    // what isolates them from the parent.
+    const htmlCsp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(htmlCsp).toContain("sandbox");
+    expect(htmlCsp).toContain("allow-scripts");
+  });
+
+  it("sandboxes XHTML artifact content the same as HTML", async () => {
+    // XHTML is rendered as a document and executes `<script>` exactly like
+    // text/html. Without the sandbox the embedded script would run
+    // same-origin against the daemon.
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "XHTML report",
+        summary: "XHTML report with active content",
+        data: {
+          type: "file",
+          content:
+            '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><script>parent.document.body.dataset.pwned = "true"</script></body></html>',
+          mimeType: "application/xhtml+xml",
+          originalName: "report.xhtml",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Type")).toEqual("application/xhtml+xml");
+    const xhtmlCsp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(xhtmlCsp).toContain("sandbox");
+    expect(xhtmlCsp).toContain("allow-scripts");
+  });
+
+  it("sandboxes HTML artifact content even when mime carries a charset parameter", async () => {
+    // Storage adapters that round-trip text mimes with a charset (e.g.
+    // `text/html; charset=utf-8`) used to bypass the sandbox because the
+    // route keyed the CSP gate off raw `mimeType` equality. The browser
+    // still parses such responses as HTML, so the sandbox MUST apply.
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "HTML with charset",
+        summary: "HTML report whose stored mime carries a charset parameter",
+        data: {
+          type: "file",
+          content: "<script>parent.document.body.dataset.pwned = 'true'</script>",
+          mimeType: "text/html; charset=utf-8",
+          originalName: "report.html",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    // Response Content-Type preserves the charset for the browser.
+    expect(contentResponse.headers.get("Content-Type")).toEqual("text/html; charset=utf-8");
+    const csp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("sandbox");
+    expect(csp).toContain("allow-scripts");
+  });
+
+  it("sandboxes SVG artifact content (X-Content-Type-Options does not stop SVG scripts)", async () => {
+    // SVG served same-origin can execute embedded `<script>` regardless
+    // of `nosniff`. The CSP sandbox directive is the only thing that
+    // blocks it — ship it on `image/svg+xml` for parity with text/html.
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "SVG icon",
+        summary: "SVG with embedded script that should be sandboxed",
+        data: {
+          type: "file",
+          content:
+            '<svg xmlns="http://www.w3.org/2000/svg"><script>parent.document.body.dataset.pwned = "true"</script></svg>',
+          mimeType: "image/svg+xml",
+          originalName: "icon.svg",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Type")).toEqual("image/svg+xml");
+    // SVG renders as an image — no `<script>` should ever execute.
+    // Sandbox stays on, but `allow-scripts` is intentionally absent.
+    const svgCsp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(svgCsp).toContain("sandbox");
+    expect(svgCsp).not.toContain("allow-scripts");
   });
 });
 

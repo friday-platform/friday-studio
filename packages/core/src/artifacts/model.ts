@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FileDataInputSchema, FileDataSchema } from "./primitives.ts";
+import { FileDataInputSchema, FileDataInputWireSchema, FileDataSchema } from "./primitives.ts";
 
 /** Slug: lowercase alphanumeric + hyphens, with optional path segments separated by `/`. */
 const SlugSchema = z.string().regex(/^[a-z0-9-]+(\/[a-z0-9-]+)*$/);
@@ -33,6 +33,20 @@ export const ArtifactDataInputSchema = z.object({
 });
 
 export type ArtifactDataInput = z.infer<typeof ArtifactDataInputSchema>;
+
+/**
+ * Wire-level artifact data input — JSON-safe, no `Uint8Array` branch.
+ * Use at the MCP boundary; in-process callers can keep
+ * {@link ArtifactDataInputSchema}. The HTTP route still validates with
+ * {@link ArtifactDataInputSchema} — over JSON the union picks the string
+ * branch fine, and migrating the route hasn't been needed.
+ */
+export const ArtifactDataInputWireSchema = z.object({
+  type: z.literal("file"),
+  ...FileDataInputWireSchema.shape,
+});
+
+export type ArtifactDataInputWire = z.infer<typeof ArtifactDataInputWireSchema>;
 
 /** Schema for valid artifact type */
 export const ArtifactTypeSchema = z.literal("file");

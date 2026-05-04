@@ -1,5 +1,8 @@
 # Friday Studio
 
+[![CI](https://github.com/friday-platform/friday-studio/actions/workflows/test.yml/badge.svg)](https://github.com/friday-platform/friday-studio/actions)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/uczJyp5FMH)
+
 AI agent orchestration platform. Workspaces run autonomous agents triggered by
 signals (HTTP, cron).
 
