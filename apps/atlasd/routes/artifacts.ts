@@ -792,7 +792,7 @@ const artifactsApp = daemonFactory
         return c.json({ error: binaryResult.error }, 500);
       }
 
-      const { mimeType } = artifact.data;
+      const { mimeType, originalName } = artifact.data;
       // Mimes the browser renders inline in an `<iframe>` or `<img>`. Anything
       // else triggers a download. PDFs and HTML need `inline` so the chat
       // UI's artifact-card iframe shows a preview instead of pulling down a
@@ -804,13 +804,29 @@ const artifactsApp = daemonFactory
         mimeType === "text/plain";
       const disposition = isInlineRenderable ? "inline" : "attachment";
 
+      // Filename hint so the browser uses something meaningful when the user
+      // saves (Right-click → Save As, or attachment-disposition downloads).
+      // Without it the browser falls back to the URL's last path segment,
+      // which is the literal string "content" — every download lands as
+      // "content", "content (1)", etc. We prefer originalName, falling back
+      // to artifact title with a mime-derived extension.
+      //
+      // RFC 6266 escaping: `filename=` is the ASCII fallback (quotes and
+      // backslashes escaped); `filename*=UTF-8''…` carries the real value
+      // for any non-ASCII characters. Modern browsers prefer filename*.
+      const extFromMime = mimeType.split("/")[1]?.split(";")[0]?.split("+")[0] ?? "bin";
+      const rawName = originalName ?? `${artifact.title}.${extFromMime}`;
+      const asciiName = rawName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
+      const utf8Name = encodeURIComponent(rawName);
+      const contentDisposition = `${disposition}; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
+
       const body = new Uint8Array(binaryResult.data);
       return new Response(body, {
         status: 200,
         headers: {
           "Content-Type": mimeType,
           "Content-Length": String(body.byteLength),
-          "Content-Disposition": disposition,
+          "Content-Disposition": contentDisposition,
           "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, max-age=31536000, immutable",
         },
