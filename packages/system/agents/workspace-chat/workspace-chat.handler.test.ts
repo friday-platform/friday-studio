@@ -541,14 +541,17 @@ describe("workspace-chat handler", () => {
     expect(mockSetSystemPromptContext).toHaveBeenCalledOnce();
   });
 
-  it("does NOT capture system prompt context when messages.length > 1", async () => {
+  it("captures system prompt context on every turn, not just the first", async () => {
     setupDefaultMocks([makeMessage("user", "Hello"), makeMessage("assistant", "Hi")]);
 
     const handler = getHandler();
     const ctx = makeContext();
     await handler("", ctx);
 
-    expect(mockSetSystemPromptContext).not.toHaveBeenCalled();
+    // Phase 0: setter is no longer first-turn-only — the snapshot is
+    // written on every turn so the persisted context reflects what the
+    // model actually saw on the latest turn.
+    expect(mockSetSystemPromptContext).toHaveBeenCalledOnce();
   });
 
   // -----------------------------------------------------------------------

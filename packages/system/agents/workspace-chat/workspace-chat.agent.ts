@@ -38,7 +38,7 @@ import {
   composeWorkspaceSections,
   fetchForegroundContexts,
 } from "./compose-context.ts";
-import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
+import { buildOnboardingClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
 import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
@@ -59,6 +59,7 @@ import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
+import { createSetUserIdentityTool } from "./tools/set-user-identity.ts";
 import {
   createAssignWorkspaceSkillTool,
   createUnassignWorkspaceSkillTool,
@@ -306,7 +307,6 @@ export function getSystemPrompt(
     resources?: string;
     memory?: string;
     onboarding?: string;
-    userProfile?: string;
   },
 ): string {
   let prompt = SYSTEM_PROMPT;
@@ -335,10 +335,6 @@ export function getSystemPrompt(
 
   if (options?.userIdentity) {
     prompt = `${prompt}\n\n${options.userIdentity}`;
-  }
-
-  if (options?.userProfile) {
-    prompt = `${prompt}\n\n${options.userProfile}`;
   }
 
   return prompt;
@@ -506,11 +502,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           fetchWorkspaceDetails(workspaceId, logger),
           parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
           fetchLinkSummary(logger),
-          fetchUserIdentitySection(logger),
+          fetchUserIdentitySection(session.userId, logger),
           foregroundIds.length > 0
             ? fetchForegroundContexts(foregroundIds, logger)
             : Promise.resolve([]),
-          fetchUserProfileState(workspaceId, logger),
+          fetchUserProfileState(session.userId, logger),
         ]);
 
         let wsConfig: WorkspaceConfig | undefined;
@@ -697,6 +693,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             streamId: session.streamId,
           }),
           ...createMemorySaveTool(workspaceId, logger),
+          ...createSetUserIdentityTool(session.userId, logger),
           ...webFetchTool,
           ...webSearchTool,
           ...runCodeTool,
@@ -755,7 +752,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
 
         const onboardingClause = buildOnboardingClause(profileState);
-        const userProfileClause = buildUserProfileClause(profileState);
 
         const systemPrompt = getSystemPrompt(workspaceSection, {
           integrations: integrationsSection,
@@ -764,7 +760,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           resources: resourceSection,
           memory: memorySection,
           onboarding: onboardingClause,
-          userProfile: userProfileClause,
         });
 
         const datetimeMessage = buildTemporalFacts(session.datetime);
