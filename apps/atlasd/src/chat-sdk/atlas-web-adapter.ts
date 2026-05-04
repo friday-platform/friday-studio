@@ -27,6 +27,7 @@ import type {
 } from "chat";
 import { Message, parseMarkdown, stringifyMarkdown } from "chat";
 import { z } from "zod";
+import type { ChatTurnRegistry } from "../chat-turn-registry.ts";
 import type { StreamRegistry } from "../stream-registry.ts";
 
 const SSE_HEADERS = {
@@ -91,6 +92,16 @@ export interface WebChatPayload {
     timezoneOffset: string;
   };
   foregroundWorkspaceIds?: string[];
+  /**
+   * Server-controlled abort signal for this turn. Sourced from the daemon's
+   * ChatTurnRegistry — fires when a follow-up message arrives in the same
+   * chat or a DELETE /:chatId/stream is received. Threaded through the Chat
+   * SDK handler to triggerFn → fsm-engine so the in-flight model call stops
+   * cleanly. Distinct from `Request.signal` (which fires on HTTP disconnect)
+   * because `chat.processMessage` is fire-and-forget — the originating
+   * request may be long gone before the FSM is done.
+   */
+  abortSignal?: AbortSignal;
 }
 
 export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
@@ -98,18 +109,24 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
   // Structural marker: `ChatSdkNotifier` filters this adapter out of `list()`
   // and `post()`. We use a structural property (not a name-based allowlist) so
   // any future stub adapter just declares `outboundDeliverable = false` to
-  // opt out — no central registry to keep in sync. See
-  // docs/plans/2026-04-27-chatsdk-notifier-design.v3.md § "Stub-adapter filter"
-  // for the rationale. Real outbound delivery flows through StreamRegistry SSE
-  // on the inbound webhook path (see `postMessage` below ~line 286).
+  // opt out — no central registry to keep in sync. Real outbound delivery
+  // flows through StreamRegistry SSE on the inbound webhook path (see
+  // `postMessage` below).
   readonly outboundDeliverable = false;
   readonly userName: string;
 
   private chat: ChatInstance | null = null;
   private readonly streamRegistry: StreamRegistry;
+  private readonly chatTurnRegistry: ChatTurnRegistry | undefined;
 
-  constructor(opts: { streamRegistry: StreamRegistry; workspaceId: string; userName?: string }) {
+  constructor(opts: {
+    streamRegistry: StreamRegistry;
+    chatTurnRegistry?: ChatTurnRegistry;
+    workspaceId: string;
+    userName?: string;
+  }) {
     this.streamRegistry = opts.streamRegistry;
+    this.chatTurnRegistry = opts.chatTurnRegistry;
     this.userName = opts.userName ?? "Friday";
   }
 
@@ -215,6 +232,15 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
     // THIS turn's buffer, even if a follow-up POST has already replaced it.
     const turnBuffer = this.streamRegistry.createStream(chatId);
 
+    // The route handler called `chatTurnRegistry.replace(chatId)` before
+    // forwarding here — read the controller it registered. Falls back to
+    // undefined when the registry isn't wired (test scaffolding); the
+    // handler chain treats abortSignal as optional throughout. Capture the
+    // controller reference so the post-turn cleanup below only releases
+    // entries this turn owns (a follow-up POST would have replaced it).
+    const turnController = this.chatTurnRegistry?.get(chatId);
+    const abortSignal = turnController?.signal;
+
     const payload: WebChatPayload = {
       chatId,
       message: messageText,
@@ -222,6 +248,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
       uiMessage,
       datetime,
       foregroundWorkspaceIds,
+      abortSignal,
     };
     const message = this.parseMessage(payload);
     this.chat.processMessage(this, chatId, message, {
@@ -243,6 +270,9 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
           setTimeout(() => {
             this.streamRegistry.finishStreamIfCurrent(chatId, turnBuffer);
           }, 500);
+          if (turnController) {
+            this.chatTurnRegistry?.release(chatId, turnController);
+          }
         });
       },
     });

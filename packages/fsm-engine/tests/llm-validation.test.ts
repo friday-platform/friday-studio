@@ -1,7 +1,7 @@
 import type { AgentResult, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
-import { InMemoryDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { buildLLMActionTrace, FSMEngine, formatToolResultsForRetry } from "../fsm-engine.ts";
 import type {
@@ -238,8 +238,11 @@ describe("LLM Action Validation Hook", () => {
     validator?: OutputValidator;
     llmResponses: MockLLMResponse[];
   }) {
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
 
     const fsm: FSMDefinition = {
       id: "llm-validation-test",
@@ -617,8 +620,11 @@ describe("LLM Action Validation Hook", () => {
 
     // Capture prompts passed to the LLM
     const llmPrompts: string[] = [];
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
 
     const fsm: FSMDefinition = {
       id: "retry-prompt-test",
@@ -703,8 +709,11 @@ describe("LLM Action Validation Hook", () => {
 
   it("retry prompt without tool results does not reference tool results above", async () => {
     const llmPrompts: string[] = [];
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
 
     const fsm: FSMDefinition = {
       id: "no-tools-retry-test",
@@ -934,8 +943,9 @@ describe("FSMValidationAttemptEvent emission", () => {
     abortSignal?: AbortSignal;
     expectThrow?: boolean;
   }): Promise<FSMValidationAttemptEvent[]> {
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "ws-1", sessionId: "sess-1" };
+    const store = getDocumentStore();
+    const uid = crypto.randomUUID();
+    const scope = { workspaceId: `ws-${uid}`, sessionId: `sess-${uid}` };
 
     const fsm: FSMDefinition = {
       id: "validation-events-test",
@@ -1014,11 +1024,11 @@ describe("FSMValidationAttemptEvent emission", () => {
       attempt: 1,
       status: "running",
       actionId: "output",
-      sessionId: "sess-1",
-      workspaceId: "ws-1",
       jobName: "validation-events-test",
       state: "pending",
     });
+    expect(validationEvents[0]?.data.sessionId).toMatch(/^sess-/);
+    expect(validationEvents[0]?.data.workspaceId).toMatch(/^ws-/);
     expect(validationEvents[0]?.data.verdict).toBeUndefined();
     expect(validationEvents[0]?.data.terminal).toBeUndefined();
 

@@ -45,14 +45,17 @@ export class ProcessAgentExecutor {
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const startTime = performance.now();
 
-    // 1. Register session capabilities
+    // 1. Register session capabilities. The session's abortSignal flows through
+    //    so capability handlers (mcpToolCall, llm.generate, http.fetch) can race
+    //    their work against cancellation instead of running to completion after
+    //    the user hit cancel.
     this.capabilityRegistry.register(sessionId, {
       streamEmitter: options.streamEmitter,
       mcpToolCall: options.mcpToolCall,
       mcpListTools: options.mcpListTools,
       agentLlmConfig: options.agentLlmConfig,
       logger: options.logger,
-      abortSignal: undefined,
+      abortSignal: options.abortSignal,
     });
 
     // 2. Subscribe to stream events from the agent on the private subprocess→host
@@ -119,13 +122,32 @@ export class ProcessAgentExecutor {
         ),
       ]);
 
-      // 6. Agent is subscribed — send the execute request
+      // 6. Agent is subscribed — send the execute request. Race against the
+      //    session abortSignal so a cancel surfaces immediately instead of
+      //    waiting for the full request timeout. On abort the subprocess gets
+      //    SIGTERM in finally; the upstream caller sees an AbortError.
       const payload = sc.encode(
         JSON.stringify({ prompt, context: JSON.parse(serializeAgentContext(options)) }),
       );
-      const response = await this.nc.request(`agents.${sessionId}.execute`, payload, {
+      const requestPromise = this.nc.request(`agents.${sessionId}.execute`, payload, {
         timeout: timeoutMs,
       });
+      const response = await (options.abortSignal
+        ? Promise.race([
+            requestPromise,
+            new Promise<never>((_, reject) => {
+              if (options.abortSignal!.aborted) {
+                reject(new DOMException("Aborted", "AbortError"));
+                return;
+              }
+              options.abortSignal!.addEventListener(
+                "abort",
+                () => reject(new DOMException("Aborted", "AbortError")),
+                { once: true },
+              );
+            }),
+          ])
+        : requestPromise);
 
       const result = JSON.parse(sc.decode(response.data)) as { tag: string; val: string };
       const durationMs = performance.now() - startTime;
@@ -196,7 +218,15 @@ export class ProcessAgentExecutor {
 
       proc.kill("SIGTERM");
       await new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, 2_000);
+        const t = setTimeout(() => {
+          // Subprocess didn't exit within 2s — escalate to SIGKILL so a hung
+          // user agent (deadlock, infinite loop, etc.) doesn't keep the
+          // executor blocked.
+          if (proc.exitCode === null && proc.signalCode === null) {
+            proc.kill("SIGKILL");
+          }
+          resolve();
+        }, 2_000);
         proc.once("exit", () => {
           clearTimeout(t);
           resolve();

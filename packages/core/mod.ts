@@ -59,14 +59,6 @@ export type {
   WorkspaceMCPStatus,
 } from "./src/mcp-registry/workspace-mcp.ts";
 export { getWorkspaceMCPStatus } from "./src/mcp-registry/workspace-mcp.ts";
-export type { MountConsumer, MountSource } from "./src/mount-registry/mod.ts";
-// Mount Registry
-export {
-  buildSourceId,
-  MountConsumerSchema,
-  MountRegistry,
-  MountSourceSchema,
-} from "./src/mount-registry/mod.ts";
 export type {
   AgentExecutionContext,
   AgentOrchestratorConfig,
@@ -74,7 +66,6 @@ export type {
 } from "./src/orchestrator/agent-orchestrator.ts";
 // Agent Orchestrator
 export { AgentOrchestrator } from "./src/orchestrator/agent-orchestrator.ts";
-export { CortexSessionHistoryAdapter } from "./src/session/cortex-session-history-adapter.ts";
 // Event Emission Mapper (FSM events → session stream events)
 export {
   type AgentResultData,
@@ -87,6 +78,7 @@ export {
 // Session History
 export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";
 export * from "./src/session/history-storage.ts";
+export { JetStreamSessionHistoryAdapter } from "./src/session/jetstream-session-history-adapter.ts";
 export { LocalSessionHistoryAdapter } from "./src/session/local-session-history-adapter.ts";
 // Planned Steps (FSM graph traversal)
 export {

@@ -1,34 +1,40 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import process, { env } from "node:process";
-import { type ActivityStorageAdapter, createActivityLedgerClient } from "@atlas/activity";
-import { LocalActivityAdapter } from "@atlas/activity/local-adapter";
+import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
   AtlasAgentsMCPServer,
   AgentRegistry as CoreAgentRegistry,
   convertLLMToAgent,
-  LocalSessionHistoryAdapter,
+  JetStreamSessionHistoryAdapter,
   SessionFailedError,
   WorkspaceNotFoundError,
   WorkspaceSessionStatus,
   wrapAtlasAgent,
 } from "@atlas/core";
+import { initArtifactStorage } from "@atlas/core/artifacts/server";
+import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
+import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { CronManager } from "@atlas/cron";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
+import { initDocumentStore } from "@atlas/document-store";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { sharedMCPProcesses } from "@atlas/mcp";
-import { PlatformMCPServer } from "@atlas/mcp-server";
-import { createLedgerClient } from "@atlas/resources/ledger-client";
-import type { LibraryStorageAdapter } from "@atlas/storage";
+import {
+  BashArgsSchema,
+  executeBash,
+  executeWebfetch,
+  initWorkspaceStateStorage,
+  PlatformMCPServer,
+  WebfetchArgsSchema,
+} from "@atlas/mcp-server";
+import { initSkillStorage } from "@atlas/skills";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import {
-  createKVStorage,
-  createLibraryStorage,
-  createRegistryStorage,
-  StorageConfigs,
+  createJetStreamKVStorage,
+  createRegistryStorageJS,
   validateMCPEnvironmentForWorkspace,
   WorkspaceManager,
   WorkspaceRuntime,
@@ -40,8 +46,8 @@ import type {
 import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
-import { type NatsConnection, RetentionPolicy, StorageType, type Subscription } from "nats";
-import { activityRoutes } from "../routes/activity.ts";
+import { type RunMigrationsResult, readJetStreamConfig, runMigrations } from "jetstream";
+import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -56,7 +62,6 @@ import { cronRoutes } from "../routes/cron.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
-import { libraryRoutes } from "../routes/library/index.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
@@ -68,7 +73,9 @@ import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
 import { skillsRoutes } from "../routes/skills.ts";
 import { userRoutes } from "../routes/user/index.ts";
+import { eventsRoutes, workspaceEventsRoutes } from "../routes/workspace-events.ts";
 import workspaceChatRoutes from "../routes/workspaces/chat.ts";
+import workspaceChatDebugRoutes from "../routes/workspaces/chat-debug.ts";
 import { configRoutes as workspaceConfigRoutes } from "../routes/workspaces/config.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
@@ -84,16 +91,28 @@ import {
   resolvePlatformCredentials,
 } from "./chat-sdk/chat-sdk-instance.ts";
 import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts";
+import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
+import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
 import { SessionStreamRegistry } from "./session-stream-registry.ts";
 import { CronSignalRegistrar } from "./signal-registrars/cron-registrar.ts";
 import { FsWatchSignalRegistrar } from "./signal-registrars/fs-watch-registrar.ts";
+import {
+  ensureSignalsStream,
+  type PublishSignalOpts,
+  publishSignal,
+  SignalConsumer,
+  type SignalEnvelope,
+} from "./signal-stream.ts";
+import { initScratchpadStorage } from "./storage/scratchpad.ts";
 import { StreamRegistry } from "./stream-registry.ts";
+import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
+import { ensureWorkspaceEventsStream, publishWorkspaceEvent } from "./workspace-events.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -171,17 +190,29 @@ export class AtlasDaemon {
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
   private platformModels: PlatformModels | null = null;
-  private libraryStorage: LibraryStorageAdapter | null = null;
   private natsManager: NatsManager | null = null;
   private capabilityRegistry: CapabilityHandlerRegistry | null = null;
   private processAgentExecutor: ProcessAgentExecutor | null = null;
+  private signalConsumer: SignalConsumer | null = null;
+  private toolWorkers: ToolWorker[] = [];
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
-  private resourceStorage: ResourceStorageAdapter | null = null;
-  private activityAdapter: ActivityStorageAdapter | null = null;
+  /**
+   * Last completed migration run, populated once `runMigrations` resolves.
+   * `pending` while the background runner is still in flight; populated
+   * with `RunMigrationsResult` on success/failure; populated with
+   * `{ ran: [], skipped: [], failed: ["__runner__"], error: ... }` if the
+   * runner itself threw before producing a result. Surfaced via
+   * `getStatus()` so HTTP / launcher consumers can detect a half-migrated
+   * install instead of grepping logs.
+   */
+  private migrationStatus:
+    | { state: "pending" }
+    | { state: "complete"; result: RunMigrationsResult; error?: string } = { state: "pending" };
   public streamRegistry!: StreamRegistry;
+  public chatTurnRegistry!: ChatTurnRegistry;
   public sessionStreamRegistry!: SessionStreamRegistry;
-  public sessionHistoryAdapter!: LocalSessionHistoryAdapter;
+  public sessionHistoryAdapter!: JetStreamSessionHistoryAdapter;
   private chatSdkInstances = new Map<string, Promise<ChatSdkInstance>>();
   private sseHealthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private agentSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -198,7 +229,6 @@ export class AtlasDaemon {
   // Track active SSE connections per session
   private agentSSEConnections = new Set<string>();
   // NATS signal subscriptions per workspace (drained on runtime destroy)
-  private signalSubscriptions = new Map<string, Subscription>();
   // Single shared agent registry
   private agentRegistry: AgentRegistryType | null = null;
   // Session limits
@@ -248,15 +278,15 @@ export class AtlasDaemon {
       resetIdleTimeout: this.resetIdleTimeout.bind(this),
       getWorkspaceRuntime: this.getWorkspaceRuntime.bind(this),
       destroyWorkspaceRuntime: this.destroyWorkspaceRuntime.bind(this),
-      getActivityAdapter: this.getActivityAdapter.bind(this),
-      getLibraryStorage: this.getLibraryStorage.bind(this),
-      getLedgerAdapter: this.getLedgerAdapter.bind(this),
       getAgentRegistry: this.getAgentRegistry.bind(this),
       getOrCreateChatSdkInstance: this.getOrCreateChatSdkInstance.bind(this),
       evictChatSdkInstance: this.evictChatSdkInstance.bind(this),
       daemon: this,
       get streamRegistry() {
         return this.daemon.streamRegistry;
+      },
+      get chatTurnRegistry() {
+        return this.daemon.chatTurnRegistry;
       },
       get sessionStreamRegistry() {
         return this.daemon.sessionStreamRegistry;
@@ -324,52 +354,170 @@ export class AtlasDaemon {
     const nc = await this.natsManager.start();
     logger.info("NATS ready");
 
-    // Ensure the SESSIONS JetStream stream exists (durable session event store)
+    // Read the env-driven JetStream limits once and propagate to every
+    // stream + consumer creation site below. Single source of truth.
+    const jsCfg = readJetStreamConfig();
+
+    // Subscribe to the broker's max-deliveries advisory across ALL streams
+    // and consumers so dead-lettered messages from CHAT_*, MEMORY_*, and
+    // SIGNALS land in the same log surface. Wildcard matches every
+    // (stream, consumer) pair.
+    this.subscribeMaxDeliveriesAdvisory(nc);
+
+    // Ensure the SESSIONS JetStream stream exists (durable session event store).
+    // For NEW installs this creates File + 30d directly; for upgraded installs
+    // the matching migration entry (`m_a6ab40b_sessions_stream_upgrade`) does
+    // the streams.update / Memory-storage warning.
     await this.ensureSessionsStream(nc);
+
+    // Ensure the SIGNALS JetStream stream exists. Triggers (HTTP, cron, chat,
+    // future cross-cascade emits) can publish onto this for durable, redeliver-
+    // able routing. The consumer worker is started after WorkspaceManager
+    // initializes so it can dispatch through `triggerWorkspaceSignal`.
+    await ensureSignalsStream(nc, {
+      maxMsgSize: jsCfg.stream.maxMsgSize.value,
+      duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
+      // SIGNALS keeps its own 7d max_age regardless of the global default —
+      // signals are work units, not long-term history.
+    });
+
+    // Wire chat storage to JetStream + eagerly create the CHATS KV bucket
+    // so the first cold read doesn't pay the create cost.
+    initChatStorage(nc, {
+      maxMsgSize: jsCfg.stream.maxMsgSize.value,
+      duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
+    });
+    await ensureChatsKVBucket(nc);
+
+    // Wire MCP registry to JetStream KV. Routes / discovery code call
+    // the zero-arg `getMCPRegistryAdapter()` and get back the JS-KV-backed
+    // adapter. Migration entry below republishes any legacy
+    // ~/.atlas/mcp-registry.db entries into the new bucket.
+    initMCPRegistryAdapter(nc);
+
+    // Run all 0.1.1 → current migrations through the consolidated runner.
+    // Idempotent: each entry checks the `_FRIDAY_MIGRATIONS` KV bucket and
+    // skips if already applied. First failure aborts the queue. Awaited
+    // synchronously: WorkspaceManager.initialize() and CronManager.start()
+    // below both depend on the registry / cron timer migrations having
+    // landed first — without that, the on-disk workspace scan invents
+    // fresh runtime IDs that orphan every per-workspace migration's data
+    // (registry duplicates, cron timers re-registered with empty history,
+    // memory readable only at the dead legacy id). Steady-state cost is
+    // microseconds (audit shows everything skipped); upgrade-boot cost is
+    // bounded by legacy data volume. Operators can still run `atlas
+    // migrate` standalone for recovery — the lock in `runMigrations`
+    // serializes us against them.
+    try {
+      const migrations = await getAllMigrations();
+      const result = await runMigrations(nc, migrations, logger, { runner: "daemon" });
+      this.migrationStatus = { state: "complete", result };
+      if (result.failed.length > 0) {
+        // ERROR (not WARN) so log filters/dashboards surface this. A
+        // half-migrated install is a correctness hazard — the operator
+        // needs to re-run `atlas migrate` (or restart the daemon, which
+        // re-runs the failed entry) and inspect the per-migration error
+        // recorded in the `_FRIDAY_MIGRATIONS` audit-trail KV.
+        logger.error("Migrations completed with failures", {
+          ran: result.ran,
+          skipped: result.skipped,
+          failed: result.failed,
+          hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
+        });
+      } else {
+        logger.info("Migrations summary", { ...result });
+      }
+    } catch (err) {
+      const error = String(err);
+      // The runner itself threw before producing a per-entry result —
+      // most often a transient broker disconnect mid-walk, or another
+      // process holding the migration lock. Same severity bump:
+      // operator needs visibility, not a buried warning.
+      this.migrationStatus = {
+        state: "complete",
+        result: { ran: [], skipped: [], failed: ["__runner__"] },
+        error,
+      };
+      logger.error("Migration runner failed", {
+        error,
+        hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
+      });
+    }
 
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();
     this.capabilityRegistry.start(nc);
     this.processAgentExecutor = new ProcessAgentExecutor(nc, this.capabilityRegistry);
 
-    // Create WorkspaceManager (initialize later once registrars and watcher are ready)
+    // Create WorkspaceManager (initialize later once registrars and watcher are ready).
+    // Registry storage is JetStream-KV-backed; the per-workspace records
+    // live in the WORKSPACE_REGISTRY bucket. Migration entry republishes
+    // legacy ~/.atlas/storage.db rows.
     logger.info("Creating WorkspaceManager...");
-    const registry = await createRegistryStorage(StorageConfigs.defaultKV());
+    const registry = await createRegistryStorageJS(nc);
     this.workspaceManager = new WorkspaceManager(registry);
+    this.workspaceManager.setMemoryAdapter(
+      new JetStreamMemoryAdapter({
+        nc,
+        limits: {
+          maxMsgSize: jsCfg.stream.maxMsgSize.value,
+          duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
+        },
+      }),
+    );
 
     // Wire up runtime invalidation callback so file watcher changes clear both maps
     this.workspaceManager.setRuntimeInvalidateCallback(this.destroyWorkspaceRuntime.bind(this));
 
-    // Initialize LibraryStorage with hybrid storage
-    logger.info("Initializing LibraryStorage...");
-    this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
-      // Use XDG-compliant default location, but allow environment override
-      contentDir: env.FRIDAY_LIBRARY_DIR,
-      organizeByDate: true,
-    });
-
-    // Initialize CronManager with KV storage
+    // Initialize CronManager with JetStream-KV-backed storage. Cron
+    // only uses get/set/delete/list — JS KV's per-key model fits
+    // exactly. Migration entry below republishes any legacy
+    // ~/.atlas/storage.db cron rows into the CRON_TIMERS bucket.
     logger.info("Initializing CronManager...");
-    const kvStorageConfig = StorageConfigs.defaultKV();
-    const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
-    this.cronManager = new CronManager(kvStorage, logger);
+    const cronStorage = await createJetStreamKVStorage(nc, { bucket: "CRON_TIMERS", history: 5 });
+    this.cronManager = new CronManager(cronStorage, logger);
 
-    // Initialize Ledger client for versioned resource storage (auto-publish, resource tools)
-    if (process.env.LEDGER_URL) {
-      this.resourceStorage = createLedgerClient();
-      logger.info("Resource storage using Ledger client");
-    } else {
-      logger.info("Resource storage not configured (LEDGER_URL not set)");
-    }
+    // Workspace events stream — append-only audit feed for the
+    // `/schedules` UI and any future workspace-side subscriber. Wire
+    // CronManager to publish a `schedule.missed` event on every
+    // coalesce / catchup make-up firing.
+    await ensureWorkspaceEventsStream(nc);
+    this.cronManager.setMissedFiringNotifier((event) =>
+      publishWorkspaceEvent(nc, { type: "schedule.missed", ...event }, logger),
+    );
 
-    // Initialize activity storage adapter
-    if (process.env.LEDGER_URL) {
-      this.activityAdapter = createActivityLedgerClient();
-      logger.info("Activity storage using Ledger client");
-    } else {
-      this.activityAdapter = new LocalActivityAdapter();
-      logger.info("Activity storage using local SQLite adapter");
-    }
+    // Wire scratchpad to its own JetStream KV bucket. Same per-key
+    // pattern; migration republishes legacy ~/.atlas/storage.db
+    // scratchpad entries into SCRATCHPAD bucket.
+    const scratchpadStorage = await createJetStreamKVStorage(nc, {
+      bucket: "SCRATCHPAD",
+      history: 1, // notes are append-only; one revision is enough
+    });
+    initScratchpadStorage(scratchpadStorage);
+
+    // Wire artifact storage to JetStream KV (ARTIFACTS bucket) + Object
+    // Store (OBJ_artifacts). Migration entry republishes legacy
+    // ~/.atlas/storage.db artifact rows + reads file contents from
+    // disk into the Object Store, content-addressed by SHA-256.
+    initArtifactStorage(nc);
+
+    // Wire workspace-state storage (state_append/lookup/filter MCP tools)
+    // to JetStream — one KV bucket per workspace (WS_STATE_<wsid>).
+    // Replaces the legacy ~/.atlas/artifacts/<wsid>/state.db SQLite store.
+    initWorkspaceStateStorage(nc);
+
+    // Wire skill storage to JetStream (SKILLS KV bucket + SKILL_ARCHIVES
+    // Object Store). Both packages/system/skills/ bootstrap and `atlas
+    // skill publish` writes flow through this single adapter. Replaces
+    // the legacy ~/.atlas/skills.db SQLite store.
+    initSkillStorage(nc);
+
+    // Wire DocumentStore to JetStream — one KV bucket per workspace
+    // (WS_DOCS_<wsid>). Used by the workspace runtime + FSM engine for
+    // per-step input/output documents and FSM state. Replaces the
+    // ~/.atlas/workspaces/<wsid>/[sessions/<sid>/]<type>/<id>.json
+    // FileSystemDocumentStore tree.
+    initDocumentStore(nc);
 
     // Initialize agent registry with bundled + user agents
     logger.info("Initializing agent registry...");
@@ -381,14 +529,17 @@ export class AtlasDaemon {
     logger.info("Agent registry initialized");
     this.agentRegistry = agentRegistry;
 
-    // Set up workspace wakeup callback — publishes to NATS so runtimes receive
-    // signals via their own subscriptions (decoupled from the cron/fs-watch call path).
+    // Set up workspace wakeup callback — publishes onto the SIGNALS JetStream
+    // stream. The local SignalConsumer (started below) picks up the envelope
+    // and dispatches via `triggerWorkspaceSignal`. Going through JetStream
+    // gives us durability (broker redelivers if the daemon dies between
+    // publish and dispatch) and a uniform substrate that future cross-process
+    // workers consume from.
     const wakeupCallback: WorkspaceSignalTriggerCallback = async (
       workspaceId: string,
       signalId: string,
       signalData,
     ) => {
-      // Inject workspace owner's userId before publishing
       let enrichedSignalData = signalData;
       if (!signalData.userId) {
         const manager = this.getWorkspaceManager();
@@ -398,27 +549,19 @@ export class AtlasDaemon {
         }
       }
 
-      // Ensure the runtime (and its NATS subscription) exists before publishing.
-      // Without this, signals to sleeping workspaces are dropped because there
-      // is no subscriber on `signals.${workspaceId}.*` until a runtime is active.
       try {
-        await this.getOrCreateWorkspaceRuntime(workspaceId);
+        await publishSignal(nc, {
+          workspaceId,
+          signalId,
+          payload: enrichedSignalData as Record<string, unknown>,
+        });
+        logger.debug("Signal published to JetStream", { workspaceId, signalId });
       } catch (error) {
-        logger.error("Failed to wake workspace runtime for signal", {
+        logger.error("Failed to publish wakeup signal to JetStream", {
           workspaceId,
           signalId,
           error,
         });
-        return;
-      }
-
-      const nc = this.natsManager?.connection;
-      if (nc) {
-        nc.publish(
-          `signals.${workspaceId}.${signalId}`,
-          JSON.stringify({ payload: enrichedSignalData }),
-        );
-        logger.debug("Signal published to NATS", { workspaceId, signalId });
       }
     };
 
@@ -432,6 +575,110 @@ export class AtlasDaemon {
 
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
+
+    // Spin up the SIGNALS consumer now that the workspace manager can satisfy
+    // dispatched envelopes. The consumer reads from the stream and calls
+    // triggerWorkspaceSignal — same in-process path the HTTP handler uses.
+    //
+    // Error handling mirrors the legacy per-workspace NATS subscription:
+    //   - SessionFailedError = domain-level session failure → ack (signal
+    //     was delivered fine; the cascade just had a domain failure).
+    //   - Any other error = infra-level failure → mark the workspace
+    //     "inactive" with the error metadata, destroy its runtime, and
+    //     throw so the broker NAKs and redelivers (up to maxDeliver).
+    this.signalConsumer = new SignalConsumer(
+      nc,
+      async (envelope: SignalEnvelope, ctx) => {
+        try {
+          return await this.triggerWorkspaceSignal(
+            envelope.workspaceId,
+            envelope.signalId,
+            envelope.payload,
+            envelope.streamId,
+            ctx.onStreamEvent,
+          );
+        } catch (err) {
+          if (err instanceof SessionFailedError) {
+            logger.warn("Signal session failed", {
+              workspaceId: envelope.workspaceId,
+              signalId: envelope.signalId,
+              status: err.status,
+              error: err.message,
+            });
+            // Domain-level failure (not infra). For correlated callers we need
+            // to surface it as ok=false on the response subject and ack so the
+            // broker doesn't redeliver. For uncorrelated callers (cron-style)
+            // we just ack — the legacy NATS subscriber didn't redeliver these
+            // either.
+            if (envelope.correlationId) {
+              throw err;
+            }
+            return undefined;
+          }
+          logger.error("Failed to process signal", {
+            error: err,
+            workspaceId: envelope.workspaceId,
+            signalId: envelope.signalId,
+          });
+          try {
+            const manager = this.getWorkspaceManager();
+            const workspace = await manager.find({ id: envelope.workspaceId });
+            await manager.updateWorkspaceStatus(envelope.workspaceId, "inactive", {
+              metadata: {
+                ...workspace?.metadata,
+                lastError: err instanceof Error ? err.message : String(err),
+                lastErrorAt: new Date().toISOString(),
+                failureCount: (workspace?.metadata?.failureCount ?? 0) + 1,
+              },
+            });
+            // Note: we used to destroyWorkspaceRuntime here on signal failure.
+            // That assumed a corrupted runtime is the most likely cause of a
+            // signal failure, but in practice signal failures are usually
+            // transient (network, MCP timeout, LLM error) and tearing down the
+            // runtime forces an expensive cold restart on the next trigger.
+            // Idle timeout / explicit shutdown handle genuine cleanup.
+          } catch (statusError) {
+            logger.error("Failed to update workspace status after signal failure", {
+              workspaceId: envelope.workspaceId,
+              statusError,
+            });
+          }
+          throw err;
+        }
+      },
+      {
+        maxAckPending: jsCfg.consumer.maxAckPending.value,
+        maxDeliver: jsCfg.consumer.maxDeliver.value,
+        ackWaitNs: jsCfg.consumer.ackWaitNs.value,
+      },
+    );
+    // NB: do NOT start the consumer here — that would race with the
+    // rest of init (`getOrCreateWorkspaceRuntime` requires
+    // `isInitialized = true`). Started below after the init flag flips.
+
+    // Register in-process tool workers. Default behavior — each worker
+    // subscribes to a NATS subject and executes the tool's handler when
+    // an envelope arrives.
+    //
+    // Set FRIDAY_TOOL_WORKERS=external to skip in-process registration,
+    // so a separate process running apps/atlasd/src/tool-worker-entry.ts
+    // claims the subjects instead. Useful even single-node for process
+    // isolation (a runaway tool can't crash the daemon), resource limits
+    // (ulimit / cgroup the worker without affecting daemon), and
+    // multi-worker scaling. Same path becomes the sandbox runtime when
+    // isolation matures (run the entry inside a container).
+    if (process.env.FRIDAY_TOOL_WORKERS !== "external") {
+      this.toolWorkers.push(
+        registerToolWorker(nc, "bash", (req, ctx) =>
+          executeBash(BashArgsSchema.parse(req.args), { abortSignal: ctx.abortSignal }),
+        ),
+        registerToolWorker(nc, "webfetch", (req, ctx) =>
+          executeWebfetch(WebfetchArgsSchema.parse(req.args), { abortSignal: ctx.abortSignal }),
+        ),
+      );
+    } else {
+      logger.info("FRIDAY_TOOL_WORKERS=external — skipping in-process tool worker registration");
+    }
 
     // Bootstrap @atlas/* system skills before any workspace chat gets a chance
     // to ask for them. Idempotent — only republishes on content-hash mismatch.
@@ -460,11 +707,17 @@ export class AtlasDaemon {
     // Initialize StreamRegistry
     this.streamRegistry = new StreamRegistry();
     this.streamRegistry.start();
+    this.chatTurnRegistry = new ChatTurnRegistry();
 
-    // Initialize session history v2 adapter + registry
-    this.sessionHistoryAdapter = new LocalSessionHistoryAdapter(
-      join(getFridayHome(), "sessions-v2"),
-    );
+    // Initialize session history v2 adapter + registry. JetStream-backed:
+    // events live in the SESSION_EVENTS stream, summaries in
+    // SESSION_METADATA KV, in-flight markers in SESSION_INFLIGHT KV.
+    // Replaces ~/.atlas/sessions-v2/<sid>/{events.jsonl, metadata.json}.
+    this.sessionHistoryAdapter = new JetStreamSessionHistoryAdapter(nc);
+    // Recover any sessions whose previous daemon process died mid-flight.
+    this.sessionHistoryAdapter.markInterruptedSessions().catch((err: unknown) => {
+      logger.warn("Failed to mark interrupted sessions on startup", { error: String(err) });
+    });
     this.sessionStreamRegistry = new SessionStreamRegistry(nc);
     this.sessionStreamRegistry.start();
 
@@ -497,6 +750,18 @@ export class AtlasDaemon {
     initChunkedUpload();
 
     this.isInitialized = true;
+
+    // Start the SIGNALS consumer LAST so no message can be dispatched
+    // until every prerequisite (cron manager, session adapter, tool
+    // workers, isInitialized flag) is in place. Pre-existing signals
+    // in the queue (redeliveries, leftovers from a previous daemon
+    // run) sit until we're ready to dispatch — no "not initialized"
+    // throws / NAK / redelivery loops on boot. (Bug 2026-05-03:
+    // rtx-price-check-cron seq 40 was hitting deliveryCount: 3 on
+    // restart because the consumer was started ~100 lines before
+    // isInitialized = true.)
+    if (this.signalConsumer) await this.signalConsumer.start();
+
     logger.info("Atlas daemon initialized");
   }
 
@@ -602,6 +867,7 @@ export class AtlasDaemon {
 
     // Create per-session Platform MCP server
     const daemonUrl = getAtlasDaemonUrl();
+    const nc = this.natsManager?.connection;
     const server = new PlatformMCPServer({
       daemonUrl,
       logger: logger.child({ component: "platform-mcp-server", sessionId }),
@@ -611,6 +877,22 @@ export class AtlasDaemon {
       workspaceConfigProvider: {
         getWorkspaceConfig: (id: string) => this.getWorkspaceManager().getWorkspaceConfig(id),
       },
+      toolDispatcher: nc
+        ? {
+            callTool: async <Args, Result>(toolId: string, args: Args): Promise<Result> => {
+              const reply = await callTool(nc, toolId, args, {
+                workspaceId: "platform",
+                sessionId,
+                callerAgentId: "platform-mcp",
+                timeoutMs: 600_000,
+              });
+              if (!reply.ok) {
+                throw new Error(`tool '${toolId}' failed: ${reply.error.message}`);
+              }
+              return reply.result as Result;
+            },
+          }
+        : undefined,
     });
 
     // Connect to MCP server
@@ -659,25 +941,52 @@ export class AtlasDaemon {
   }
 
   /**
-   * Create the SESSIONS JetStream stream if it doesn't already exist.
-   * The stream retains events for 24 hours so SSE clients can reconnect
-   * and replay the full session history.
+   * Create the SESSIONS JetStream stream if missing. New installs get
+   * File storage + 30d retention. Existing installs are upgraded by the
+   * `m_a6ab40b_sessions_stream_upgrade` migration entry, which adds
+   * `max_age` to streams created without one and warns if storage is
+   * still Memory (storage type can't be changed via update).
    */
   private async ensureSessionsStream(nc: NatsConnection): Promise<void> {
     const jsm = await nc.jetstreamManager();
+    const THIRTY_DAYS_NS = 30 * 24 * 60 * 60 * 1_000_000_000;
     try {
       await jsm.streams.info("SESSIONS");
-      // Stream already exists
+      // Already exists — leave it. Upgrade path is the migration entry.
     } catch {
       await jsm.streams.add({
         name: "SESSIONS",
         subjects: ["sessions.*.events"],
         retention: RetentionPolicy.Limits,
-        storage: StorageType.Memory,
-        max_age: 24 * 60 * 60 * 1_000_000_000, // 24 hours in nanoseconds
+        storage: StorageType.File,
+        max_age: THIRTY_DAYS_NS,
       });
-      logger.info("Created SESSIONS JetStream stream");
+      logger.info("Created SESSIONS JetStream stream (file storage, 30d retention)");
     }
+  }
+
+  /**
+   * Daemon-wide subscription to the broker's max-deliveries advisory.
+   * Catches dead-lettered messages from EVERY (stream, consumer) pair —
+   * SIGNALS, future CHAT_* / MEMORY_* consumers, anything else. One log
+   * surface, no per-stream wiring.
+   *
+   * Wildcard subject: $JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.<stream>.<consumer>
+   * — `>` matches both trailing tokens.
+   */
+  private subscribeMaxDeliveriesAdvisory(nc: NatsConnection): void {
+    const sub = nc.subscribe("$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>");
+    const dec = new TextDecoder();
+    void (async () => {
+      for await (const msg of sub) {
+        try {
+          const advisory = JSON.parse(dec.decode(msg.data));
+          logger.error("JetStream message dead-lettered", { subject: msg.subject, advisory });
+        } catch {
+          // Malformed advisory; ignore.
+        }
+      }
+    })();
   }
 
   /**
@@ -688,32 +997,6 @@ export class AtlasDaemon {
       throw new Error("Platform models not initialized. Call initialize() first.");
     }
     return this.platformModels;
-  }
-
-  /** Get activity storage adapter (constructed during initialize). */
-  public getActivityAdapter(): ActivityStorageAdapter {
-    if (!this.activityAdapter) {
-      throw new Error("Activity adapter not initialized — call initialize() first");
-    }
-    return this.activityAdapter;
-  }
-
-  /**
-   * Get library storage instance
-   */
-  public getLibraryStorage(): LibraryStorageAdapter {
-    if (!this.libraryStorage) {
-      throw new Error("Library storage not initialized");
-    }
-    return this.libraryStorage;
-  }
-
-  /** Get Ledger resource storage adapter */
-  public getLedgerAdapter(): ResourceStorageAdapter {
-    if (!this.resourceStorage) {
-      throw new Error("Ledger adapter not initialized (LEDGER_URL not set)");
-    }
-    return this.resourceStorage;
   }
 
   /**
@@ -766,8 +1049,11 @@ export class AtlasDaemon {
     // Mount workspace config routes for partial updates (separate from workspacesRoutes to avoid circular deps)
     this.app.route("/api/workspaces/:workspaceId/config", workspaceConfigRoutes);
     this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatRoutes);
+    this.app.route("/api/workspaces/:workspaceId/chat", workspaceChatDebugRoutes);
     this.app.route("/api/workspaces/:workspaceId/integrations", integrationRoutes);
     this.app.route("/api/workspaces/:workspaceId/mcp", mcpRoutes);
+    this.app.route("/api/workspaces", workspaceEventsRoutes);
+    this.app.route("/api/events", eventsRoutes);
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
@@ -776,9 +1062,7 @@ export class AtlasDaemon {
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);
     this.app.route("/api/sessions", sessionsRoutes);
-    this.app.route("/api/activity", activityRoutes);
     this.app.route("/api/agents", agentsRoutes);
-    this.app.route("/api/library", libraryRoutes);
     this.app.route("/api/daemon", daemonApp);
     this.app.route("/api/share", shareRoutes);
     this.app.route("/api/link", linkRoutes);
@@ -1149,12 +1433,9 @@ export class AtlasDaemon {
         {
           lazy: true, // Always use lazy loading in daemon mode
           workspacePath, // Pass workspace path for daemon mode
-          resourceStorage: this.resourceStorage ?? undefined, // Share daemon's Ledger client (auto-publish)
-          activityStorage: this.getActivityAdapter(), // Share activity storage for feed items
           platformModels: this.getPlatformModels(),
           agentExecutor: this.processAgentExecutor ?? undefined,
           daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
-          blueprintArtifactId: workspace.metadata?.blueprintArtifactId,
           broadcastNotifier: createFSMBroadcastNotifier({
             workspaceId: workspace.id,
             getInstance: (id) => this.getOrCreateChatSdkInstance(id),
@@ -1287,11 +1568,15 @@ export class AtlasDaemon {
                 }
 
                 if (!hasActiveSessions && !hasActiveExecutions) {
-                  // Apply any deferred workspace.yml changes BEFORE destroying
-                  // the runtime — handleWorkspaceConfigChange itself will
-                  // tear it down and re-load from the (now updated) config.
-                  // Order matters: if we destroyed first, processPending
-                  // would see no runtime and fall through.
+                  // Apply any deferred workspace.yml changes. If a deferred
+                  // change exists, processPendingWatcherChange routes through
+                  // handleWorkspaceConfigChange → stopRuntimeIfActive →
+                  // destroyWorkspaceRuntime, so the runtime gets rebuilt from
+                  // the new config on the next signal. If no deferred change
+                  // exists, we DO NOT tear down the runtime — keep MCP
+                  // connections warm; idle timeout handles eventual cleanup.
+                  // The prior unconditional destroy here was the source of
+                  // per-chat-turn create/destroy churn.
                   try {
                     await mgr.processPendingWatcherChange(workspaceId);
                   } catch (err) {
@@ -1300,7 +1585,7 @@ export class AtlasDaemon {
                       error: err,
                     });
                   }
-                  await this.destroyWorkspaceRuntime(workspaceId);
+                  this.resetIdleTimeout(workspaceId);
                 } else {
                   // Still active sessions or agent executions; let idle timeout handle cleanup
                   this.resetIdleTimeout(workspaceId);
@@ -1325,8 +1610,10 @@ export class AtlasDaemon {
       await manager.registerRuntime(workspace.id, runtime);
       logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
 
-      // Subscribe to NATS signal subjects for this workspace
-      this.subscribeWorkspaceToSignals(workspace.id, runtime);
+      // Signal routing now goes through the SIGNALS JetStream stream and the
+      // shared SignalConsumer (started in initialize()). No per-workspace
+      // NATS subscription needed — the consumer dispatches every envelope
+      // via triggerWorkspaceSignal which already does the runtime wakeup.
 
       // Watcher is managed centrally by WorkspaceManager.initialize()
 
@@ -1376,7 +1663,39 @@ export class AtlasDaemon {
     }
   }
 
-  /** Cached per workspace; torn down when the runtime is destroyed. */
+  /**
+   * Publish a signal envelope onto the SIGNALS JetStream stream. The local
+   * SignalConsumer (or any worker subscribed to the same durable consumer
+   * in a multi-process deployment) will pick it up and run the cascade
+   * via `triggerWorkspaceSignal`.
+   *
+   * Use this for fire-and-forget dispatch — the publish ack returns immediately
+   * with the broker sequence number; the actual session id is allocated later
+   * by whichever worker handles the message. For synchronous "trigger and
+   * await result" semantics, keep using `triggerWorkspaceSignal` directly.
+   */
+  public publishSignalToJetStream(opts: PublishSignalOpts): Promise<{ seq: number }> {
+    const nc = this.natsManager?.connection;
+    if (!nc) throw new Error("NATS not initialized — call initialize() first");
+    return publishSignal(nc, opts);
+  }
+
+  /**
+   * Cached per workspace; torn down when the runtime is destroyed.
+   *
+   * Cost breakdown:
+   * - getWorkspaceConfig: mtime-cached — sub-ms steady state.
+   * - resolvePlatformCredentials: HTTP to Link, ~10-100ms per workspace.
+   *   Paid once per workspace per daemon lifetime via this cache.
+   * - buildChatSdkAdapters + new Chat: ~ms of pure object construction,
+   *   no I/O.
+   *
+   * Per-signal cost is O(1) cache lookup. The single concrete future-work
+   * risk is the cross-worker per-signal model (Phase 2/3): each worker
+   * would re-resolve credentials on its first signal for a given workspace.
+   * Acceptable for typical traffic; if needed, share resolved creds via
+   * NATS KV with a TTL.
+   */
   getOrCreateChatSdkInstance(workspaceId: string): Promise<ChatSdkInstance> {
     const existing = this.chatSdkInstances.get(workspaceId);
     if (existing) return existing;
@@ -1434,14 +1753,17 @@ export class AtlasDaemon {
         | Record<string, { kind?: string } & Record<string, unknown>>
         | undefined,
       streamRegistry: this.streamRegistry,
+      chatTurnRegistry: this.chatTurnRegistry,
       exposeKernel: process.env.FRIDAY_EXPOSE_KERNEL === "1",
-      triggerFn: async (signalId, signalData, streamId, onStreamEvent) => {
+      triggerFn: async (signalId, signalData, streamId, onStreamEvent, abortSignal) => {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
         const session = await runtime.triggerSignalWithSession(
           signalId,
           signalData,
           streamId,
           onStreamEvent,
+          undefined,
+          abortSignal,
         );
         return { sessionId: session.id };
       },
@@ -1733,13 +2055,6 @@ export class AtlasDaemon {
       this.runtimes.delete(workspaceId);
     }
 
-    // Drain the NATS signal subscription for this workspace
-    const signalSub = this.signalSubscriptions.get(workspaceId);
-    if (signalSub) {
-      signalSub.unsubscribe();
-      this.signalSubscriptions.delete(workspaceId);
-    }
-
     await this.evictChatSdkInstance(workspaceId);
 
     // Unregister runtime from WorkspaceManager
@@ -1761,97 +2076,6 @@ export class AtlasDaemon {
     }
 
     logger.info("Workspace runtime destroyed", { workspaceId });
-  }
-
-  /**
-   * Subscribe to NATS `signals.{workspaceId}.*` for the given runtime.
-   * Called once per runtime creation; drained when the runtime is destroyed.
-   * Queue group per workspace ensures only one daemon instance processes each signal.
-   */
-  private subscribeWorkspaceToSignals(workspaceId: string, runtime: WorkspaceRuntime): void {
-    const nc = this.natsManager?.connection;
-    if (!nc) return;
-
-    const sub = nc.subscribe(`signals.${workspaceId}.*`, {
-      queue: `signal-processors.${workspaceId}`,
-    });
-    this.signalSubscriptions.set(workspaceId, sub);
-
-    void (async () => {
-      try {
-        for await (const msg of sub) {
-          const parts = msg.subject.split(".");
-          const signalId = parts[2];
-          if (!signalId) continue;
-
-          let payload: Record<string, unknown> = {};
-          let streamId: string | undefined;
-
-          try {
-            const parsed: unknown = JSON.parse(msg.string());
-            if (typeof parsed === "object" && parsed !== null) {
-              if ("payload" in parsed) {
-                const p = (parsed as { payload: unknown }).payload;
-                if (typeof p === "object" && p !== null) {
-                  payload = p as Record<string, unknown>;
-                }
-              }
-              if ("streamId" in parsed) {
-                const s = (parsed as { streamId: unknown }).streamId;
-                if (typeof s === "string") streamId = s;
-              }
-            }
-          } catch {
-            // ignore parse errors on malformed payloads
-          }
-
-          if (runtime.hasActiveSessionsForSignal(signalId)) {
-            logger.warn("Skipping NATS signal — active session in progress", {
-              workspaceId,
-              signalId,
-            });
-            continue;
-          }
-
-          try {
-            await runtime.triggerSignalWithSession(signalId, payload, streamId);
-            logger.info("NATS signal processed", { workspaceId, signalId });
-          } catch (err) {
-            if (err instanceof SessionFailedError) {
-              logger.warn("NATS signal session failed", {
-                workspaceId,
-                signalId,
-                status: err.status,
-                error: err.message,
-              });
-            } else {
-              logger.error("Failed to process NATS signal", { error: err, workspaceId, signalId });
-              try {
-                const manager = this.getWorkspaceManager();
-                const workspace = await manager.find({ id: workspaceId });
-                await manager.updateWorkspaceStatus(workspaceId, "inactive", {
-                  metadata: {
-                    ...workspace?.metadata,
-                    lastError: err instanceof Error ? err.message : String(err),
-                    lastErrorAt: new Date().toISOString(),
-                    failureCount: (workspace?.metadata?.failureCount ?? 0) + 1,
-                  },
-                });
-                logger.info("Marked workspace as failed", { workspaceId, signalId });
-                await this.destroyWorkspaceRuntime(workspaceId);
-              } catch (statusError) {
-                logger.error("Failed to update workspace status after NATS signal failure", {
-                  workspaceId,
-                  statusError,
-                });
-              }
-            }
-          }
-        }
-      } catch {
-        // subscription drained — expected during destroyWorkspaceRuntime
-      }
-    })();
   }
 
   private setupSignalHandlers() {
@@ -2110,6 +2334,27 @@ export class AtlasDaemon {
     }
     this.signalHandlers = [];
 
+    // Stop tool workers so in-flight dispatches can finish or fail cleanly.
+    for (const worker of this.toolWorkers) {
+      try {
+        await worker.stop();
+      } catch (error) {
+        logger.error("Error stopping tool worker", { toolId: worker.toolId, error });
+      }
+    }
+    this.toolWorkers = [];
+
+    // Stop the SIGNALS consumer before tearing down runtimes so in-flight
+    // dispatches can finish against live workspaces.
+    if (this.signalConsumer) {
+      try {
+        await this.signalConsumer.stop();
+      } catch (error) {
+        logger.error("Error stopping SIGNALS consumer", { error });
+      }
+      this.signalConsumer = null;
+    }
+
     // Stop chunked upload cleanup
     shutdownChunkedUpload();
 
@@ -2131,6 +2376,7 @@ export class AtlasDaemon {
 
     // Shutdown StreamRegistry
     this.streamRegistry?.shutdown();
+    this.chatTurnRegistry?.shutdown();
 
     // Shutdown SessionStreamRegistry
     this.sessionStreamRegistry?.shutdown();
@@ -2216,17 +2462,6 @@ export class AtlasDaemon {
       this.workspaceManager = null;
     }
 
-    // Close LibraryStorage
-    if (this.libraryStorage) {
-      try {
-        await this.libraryStorage.close();
-        this.libraryStorage = null;
-        logger.info("LibraryStorage closed");
-      } catch (error) {
-        logger.error("Failed to close LibraryStorage", { error });
-      }
-    }
-
     // Shutdown HTTP server
     if (this.server) {
       try {
@@ -2258,6 +2493,7 @@ export class AtlasDaemon {
       cronManager: cronStats
         ? { isActive: this.cronManager?.isRunning || false, ...cronStats }
         : null,
+      migrations: this.migrationStatus,
       configuration: {
         maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
         idleTimeoutMs: this.options.idleTimeoutMs ?? 0,

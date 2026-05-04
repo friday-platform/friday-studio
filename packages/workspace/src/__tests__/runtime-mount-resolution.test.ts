@@ -4,9 +4,7 @@ import type {
   MemoryAdapter,
   NarrativeEntry,
   NarrativeStore,
-  StoreKind,
   StoreMetadata,
-  StoreOf,
 } from "@atlas/agent-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryMount } from "../config-schema.ts";
@@ -31,11 +29,11 @@ function createMockStore(): NarrativeStore {
 function createMockAdapter(storeOrNull?: NarrativeStore | null): MemoryAdapter {
   const store = storeOrNull === null ? undefined : (storeOrNull ?? createMockStore());
   return {
-    store<K extends StoreKind>(_wsId: string, _name: string, _kind: K): Promise<StoreOf<K>> {
+    store(_wsId: string, _name: string): Promise<NarrativeStore> {
       if (!store) {
         return Promise.reject(new Error("Store not found"));
       }
-      return Promise.resolve(store as StoreOf<K>);
+      return Promise.resolve(store);
     },
     list: vi.fn<(_wsId: string) => Promise<StoreMetadata[]>>().mockResolvedValue([]),
     bootstrap: vi.fn<(_wsId: string, _agentId: string) => Promise<string>>().mockResolvedValue(""),
@@ -72,12 +70,10 @@ describe("runtime mount resolution (unit)", () => {
     const adapter = createMockAdapter(store);
     const mount = validMount();
 
-    mountRegistry.registerSource(mount.source, () =>
-      adapter.store("_global", "autopilot-backlog", "narrative"),
-    );
+    mountRegistry.registerSource(mount.source, () => adapter.store("_global", "autopilot-backlog"));
     mountRegistry.addConsumer(mount.source, "test-ws");
 
-    const resolvedStore = await adapter.store("_global", "autopilot-backlog", "narrative");
+    const resolvedStore = await adapter.store("_global", "autopilot-backlog");
 
     const binding = new MountedStoreBinding({
       name: mount.name,

@@ -689,6 +689,7 @@ describe("workspace-chat handler", () => {
       tools: Record<string, unknown>;
       messages: unknown[];
       stopWhen: unknown[];
+      system: string;
     }> = [];
 
     mockStreamText.mockImplementation((opts) => {
@@ -849,12 +850,13 @@ describe("workspace-chat handler", () => {
     // Turn 1 stopWhen includes step-cap, connectServiceSucceeded, connectCommunicatorSucceeded
     expect(turn1Args.stopWhen).toHaveLength(3);
 
-    // Turn 1 messages include the user query
+    // Turn 1: system prompt is on the `system:` parameter (not in messages
+    // — see f271aa1, AI SDK security warning); messages contain only the
+    // user query.
+    expect(turn1Args.system).toEqual(expect.any(String));
+    expect(turn1Args.system.length).toBeGreaterThan(0);
     expect(turn1Args.messages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ role: "system" }),
-        expect.objectContaining({ role: "user" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ role: "user" })]),
     );
 
     // Persisted assistant message from turn 1

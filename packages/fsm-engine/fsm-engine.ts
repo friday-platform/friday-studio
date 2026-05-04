@@ -9,10 +9,6 @@ import {
   type AgentResult as AgentSDKExecutionResult,
   type ArtifactRef,
   ArtifactRefSchema,
-  createResourceLinkRefTool,
-  createResourceReadTool,
-  createResourceSaveTool,
-  createResourceWriteTool,
   type FailInput,
   FailInputSchema,
   PLATFORM_TOOL_NAMES,
@@ -33,17 +29,10 @@ import {
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
-import {
-  buildResourceGuidance,
-  enrichCatalogEntries,
-  publishDirtyDrafts,
-  toCatalogEntries,
-} from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import {
   createLoadSkillTool,
@@ -55,7 +44,7 @@ import { stringifyError } from "@atlas/utils";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
 import { type ImagePart, type ModelMessage, type Tool, tool } from "ai";
 import { z } from "zod";
-import type { DocumentScope, DocumentStore } from "../document-store/node.ts";
+import type { DocumentScope, DocumentStore } from "../document-store/mod.ts";
 import { expandArtifactRefsInInput } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { hasDefinedSchema } from "./schema-utils.ts";
@@ -84,7 +73,7 @@ import type {
  *
  * Mirrors the allowlist used by `runtime.executeCodeAgent` and
  * `routes/agents/run.ts` so all three LLM-agent execution paths see the
- * same surface (fs_*, bash, csv, library_*, plus the scope-injected
+ * same surface (fs_*, bash, csv, plus the scope-injected
  * subset for memory/artifacts/state/webfetch). Pre-fix this aliased
  * SCOPE_INJECTED_PLATFORM_TOOLS instead, which silently stripped
  * fs_write_file etc. from FSM LLM steps and broke the canonical
@@ -409,8 +398,6 @@ export interface FSMEngineOptions {
   validateOutput?: OutputValidator;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
-  /** Ledger storage adapter for versioned workspace resources */
-  resourceAdapter?: ResourceStorageAdapter;
   /**
    * Outbound chat broadcaster used by `notification` actions. Required only
    * when an FSM declares at least one such action — engines without it throw
@@ -1001,19 +988,23 @@ export class FSMEngine {
         ? getInputSnapshot(prepareResult, action, documents)
         : undefined;
 
-    // When the action declares `inputFrom`, the snapshot reflects the chained
-    // documents and must drive the agent prompt — not the carried-over
-    // prepareResult (which is typically an auto-seeded signal payload, often
-    // empty for cron triggers). Without this override the snapshot only flows
-    // to telemetry while `buildContextPrompt` / `buildAgentPrompt` render
-    // `## Input` from prepareResult, surfacing as `{ "config": {} }` and
-    // making the agent complain that its inputs are missing.
+    // When the action declares `inputFrom`, the snapshot's chained data must
+    // drive the agent's `task` and `## Input` (otherwise the agent renders
+    // from the carried-over prepareResult — typically an auto-seeded signal
+    // payload — and complains its inputs are missing). But the signal-payload
+    // `config` must survive: downstream steps need `{{inputs.<signal_field>}}`
+    // to keep working, and end-to-end values like a recipient email should not
+    // get clobbered the moment a step uses inputFrom. So we merge: chained
+    // doc keys layered on top of the carried-over config (collisions favor the
+    // chained data, which matches the historical "inputFrom wins" intent for
+    // any name that overlaps).
     const hasExplicitInputFrom =
       (action.type === "agent" || action.type === "llm") && action.inputFrom !== undefined;
     const effectivePrepareResult: PrepareResult | undefined =
       hasExplicitInputFrom && inputSnapshot
         ? {
             ...inputSnapshot,
+            config: { ...prepareResult?.config, ...inputSnapshot.config },
             ...(prepareResult?.artifactRefs ? { artifactRefs: prepareResult.artifactRefs } : {}),
           }
         : prepareResult;
@@ -1144,26 +1135,6 @@ export class FSMEngine {
               cleanupSkills = cleanup;
             }
 
-            // Inject Ledger resource tools when workspace has a resource adapter
-            if (workspaceId && this.options.resourceAdapter) {
-              baseTools.resource_read = createResourceReadTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-              baseTools.resource_write = createResourceWriteTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-              baseTools.resource_save = createResourceSaveTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-              baseTools.resource_link_ref = createResourceLinkRefTool(
-                this.options.resourceAdapter,
-                workspaceId,
-              ) as Tool;
-            }
-
             try {
               // Inject failStep tool for explicit failure signaling
               const failStepTool = tool({
@@ -1220,37 +1191,6 @@ export class FSMEngine {
                 effectivePrepareResult,
                 skills,
               );
-
-              // Append workspace resource context so LLM knows what resources are available
-              if (workspaceId && this.options.resourceAdapter) {
-                try {
-                  const metadata = await this.options.resourceAdapter.listResources(workspaceId);
-                  if (metadata.length > 0) {
-                    const catalogEntries = await toCatalogEntries(
-                      metadata,
-                      this.options.resourceAdapter,
-                      workspaceId,
-                    );
-                    const entries = this.options.artifactStorage
-                      ? await enrichCatalogEntries(catalogEntries, this.options.artifactStorage)
-                      : catalogEntries.filter((e) => e.type !== "artifact_ref");
-                    const guidance = buildResourceGuidance(entries);
-                    if (guidance) {
-                      contextPrompt += `\n\n${guidance}`;
-                    }
-                    const hasDocuments = entries.some((e) => e.type === "document");
-                    if (hasDocuments) {
-                      const skillText = await this.options.resourceAdapter.getSkill();
-                      contextPrompt += `\n\n${skillText}`;
-                    }
-                  }
-                } catch (err) {
-                  logger.warn("Failed to build resource guidance", {
-                    workspaceId,
-                    error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
 
               if (completeToolInjected) {
                 contextPrompt +=
@@ -1544,14 +1484,6 @@ export class FSMEngine {
             } finally {
               await buildResult.dispose();
               cleanupSkills?.();
-
-              // Publish dirty drafts after LLM actions that have resource tools.
-              // Agent actions are covered by runtime.ts:executeAgent(), but LLM
-              // actions execute entirely within the FSM engine and need their own
-              // publish hook to avoid orphaning drafts until session teardown.
-              if (workspaceId && this.options.resourceAdapter) {
-                await publishDirtyDrafts(this.options.resourceAdapter, workspaceId);
-              }
             }
             break;
           }
@@ -1909,7 +1841,39 @@ export class FSMEngine {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
 
-    const mcpServerIds = toolNames;
+    // `action.tools` accepts three entry shapes:
+    //   "serverId/toolName" — qualified, strict per-tool allowlist for that server
+    //   "serverId"          — bare server ID, all tools from that server
+    //   "toolName"          — bare tool name (legacy); resolved against any
+    //                         configured server that exposes it
+    //
+    // Per-server allowlist tracks which names are permitted from each server.
+    // A server mapped to "all" exposes every tool it provides; a server mapped
+    // to a Set is restricted to those names. Bare tool names get added to a
+    // global pool that's matched by name regardless of source server.
+    const knownServer = (id: string) => Boolean(this.options.mcpServerConfigs?.[id]);
+    const serverAllow = new Map<string, "all" | Set<string>>();
+    const bareToolNames = new Set<string>();
+    for (const entry of toolNames) {
+      const slash = entry.indexOf("/");
+      if (slash > 0) {
+        const sid = entry.slice(0, slash);
+        const tn = entry.slice(slash + 1);
+        const cur = serverAllow.get(sid);
+        if (cur === "all") continue;
+        if (cur instanceof Set) {
+          cur.add(tn);
+        } else {
+          serverAllow.set(sid, new Set([tn]));
+        }
+      } else if (knownServer(entry)) {
+        serverAllow.set(entry, "all");
+      } else {
+        bareToolNames.add(entry);
+      }
+    }
+    const hasBareToolName = bareToolNames.size > 0;
+    const hasNameAllowlist = hasBareToolName || [...serverAllow.values()].some((v) => v !== "all");
 
     // MCP tools: always include atlas-platform for ambient capabilities (webfetch,
     // artifacts) even when the action only uses FSM-defined tools. The connection
@@ -1918,25 +1882,16 @@ export class FSMEngine {
     const effectiveConfigs: Record<string, MCPServerConfig> = {
       "atlas-platform": getAtlasPlatformServerConfig(),
     };
-    // `action.tools` is historically ambiguous: workspace-authored LLM actions
-    // (including those expanded from `type: agent` via expandAgentActions)
-    // put **tool names** here (e.g. "write_query"), while FSM-in-workspaces
-    // authored directly put **server IDs** (e.g. "sqlite"). The ID-based
-    // lookup below handles the latter. For the former, we load every
-    // workspace-configured MCP server so the tool names resolve against
-    // whichever server exposes them — the post-load filter at line 1998
-    // already blocks non-allowlisted platform tools from leaking in. Without
-    // this, Friday-generated KB workspaces spawn the sqlite MCP server
-    // successfully but the LLM step sees zero sqlite tools because the
-    // filter above never matched a server ID to "write_query" and silently
-    // dropped sqlite from `effectiveConfigs`.
-    const hasLikelyToolNames = mcpServerIds.some((name) => !this.options.mcpServerConfigs?.[name]);
-    if (hasLikelyToolNames && this.options.mcpServerConfigs) {
+    // Server selection. Bare tool names can come from any server, so we have
+    // to load all of them and rely on the post-filter to scope down. Without
+    // any bare names we connect only to servers explicitly referenced — both
+    // qualified (`serverId/toolName`) and bare server IDs.
+    if (hasBareToolName && this.options.mcpServerConfigs) {
       for (const [id, config] of Object.entries(this.options.mcpServerConfigs)) {
         if (id !== "atlas-platform") effectiveConfigs[id] = config;
       }
     } else {
-      for (const id of mcpServerIds) {
+      for (const id of serverAllow.keys()) {
         const config = this.options.mcpServerConfigs?.[id];
         if (config && id !== "atlas-platform") {
           effectiveConfigs[id] = config;
@@ -1973,7 +1928,41 @@ export class FSMEngine {
         filtered[name] = mcpTool;
       }
     }
-    const wrapped = wrapPlatformToolsWithScope(filtered, {
+
+    // Per-agent tools whitelist, applied per-server using the attribution
+    // index from createMCPTools. A server mapped to "all" passes every tool
+    // through; a server mapped to a Set keeps only those names; bare tool
+    // names are matched globally regardless of source server. Without this,
+    // an agent declaring `tools: [google-calendar/list_calendars]` would
+    // still see every other server's tools (e.g. `send_gmail_message`) —
+    // the source of the daily-memo "fetcher agents send their own emails"
+    // bug.
+    let scoped: Record<string, Tool> = filtered;
+    if (hasNameAllowlist) {
+      scoped = {};
+      for (const [serverId, names] of Object.entries(mcpResult.toolsByServer)) {
+        if (serverId === "atlas-platform") {
+          // Platform tools were already filtered above by PLATFORM_TOOL_ALLOWLIST.
+          // Don't re-filter here — they're ambient, not subject to the agent's
+          // workspace MCP whitelist.
+          for (const name of names) if (filtered[name]) scoped[name] = filtered[name];
+          continue;
+        }
+        const allow = serverAllow.get(serverId);
+        for (const name of names) {
+          if (!filtered[name]) continue; // dropped by platform-allowlist filter
+          if (allow === "all") {
+            scoped[name] = filtered[name];
+          } else if (allow instanceof Set && allow.has(name)) {
+            scoped[name] = filtered[name];
+          } else if (bareToolNames.has(name)) {
+            scoped[name] = filtered[name];
+          }
+        }
+      }
+    }
+
+    const wrapped = wrapPlatformToolsWithScope(scoped, {
       workspaceId: this.options.scope.workspaceId,
       workspaceName: this.options.scope.workspaceName,
     });

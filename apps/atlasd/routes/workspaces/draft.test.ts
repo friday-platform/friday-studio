@@ -18,7 +18,6 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { workspacesRoutes } from "./index.ts";
 
 vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
   FilesystemWorkspaceCreationAdapter: class {
     createWorkspaceDirectory = vi.fn().mockResolvedValue("/tmp");
     writeWorkspaceFiles = vi.fn().mockResolvedValue(undefined);
@@ -72,19 +71,17 @@ function createApp(opts: { workspaceDir: string; workspaceId: string }) {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn().mockResolvedValue(undefined),
-    getLibraryStorage: vi.fn(),
     daemon: {
       getWorkspaceManager: () => mockManager,
       runtimes: new Map(),
     } as unknown as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-    getLedgerAdapter: vi.fn(),
-    getActivityAdapter: vi.fn(),
     exposeKernel: false,
     platformModels: { get: vi.fn() },
   };
@@ -276,19 +273,17 @@ describe("Draft file flow", () => {
       resetIdleTimeout: vi.fn(),
       getWorkspaceRuntime: vi.fn().mockReturnValue({ id: "runtime-1" }),
       destroyWorkspaceRuntime: destroySpy,
-      getLibraryStorage: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockManager,
         runtimes: new Map(),
       } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
+      chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-      getLedgerAdapter: vi.fn(),
-      getActivityAdapter: vi.fn(),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };
@@ -339,19 +334,17 @@ describe("Draft file flow", () => {
       resetIdleTimeout: vi.fn(),
       getWorkspaceRuntime: vi.fn().mockReturnValue(undefined),
       destroyWorkspaceRuntime: destroySpy,
-      getLibraryStorage: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockManager,
         runtimes: new Map(),
       } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
+      chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-      getLedgerAdapter: vi.fn(),
-      getActivityAdapter: vi.fn(),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };
@@ -870,19 +863,17 @@ describe("Draft file flow", () => {
       resetIdleTimeout: vi.fn(),
       getWorkspaceRuntime: vi.fn(),
       destroyWorkspaceRuntime: vi.fn().mockResolvedValue(undefined),
-      getLibraryStorage: vi.fn(),
       daemon: {
         getWorkspaceManager: () => mockManager,
         runtimes: new Map(),
       } as unknown as AppContext["daemon"],
       streamRegistry: {} as AppContext["streamRegistry"],
+      chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
       sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
       sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
       getAgentRegistry: vi.fn(),
       getOrCreateChatSdkInstance: vi.fn(),
       evictChatSdkInstance: vi.fn().mockResolvedValue(undefined),
-      getLedgerAdapter: vi.fn(),
-      getActivityAdapter: vi.fn(),
       exposeKernel: false,
       platformModels: { get: vi.fn() },
     };

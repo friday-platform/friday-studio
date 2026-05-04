@@ -8,5 +8,5 @@ export type { Artifact } from "./mod.ts";
 // CSV Parsing (server-only, uses papaparse Node dependency)
 export type { CsvCell, CsvParseResult } from "./parsers/mod.ts";
 export { CsvParseResultSchema, parseCsvContent } from "./parsers/mod.ts";
-// Storage (server-only, uses Deno.openKv)
-export { ArtifactStorage } from "./storage.ts";
+// Storage (server-only — JetStream KV + Object Store backed)
+export { ArtifactStorage, initArtifactStorage } from "./storage.ts";

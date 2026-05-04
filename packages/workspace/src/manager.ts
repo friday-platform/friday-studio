@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { env } from "node:process";
-import { MdMemoryAdapter } from "@atlas/adapters-md";
+import type { MemoryAdapter } from "@atlas/agent-sdk";
 import { ConfigLoader, ConfigNotFoundError, type MergedConfig } from "@atlas/config";
 import { MissingEnvironmentError } from "@atlas/core";
 import { logger } from "@atlas/logger";
@@ -18,7 +18,7 @@ import { getCanonicalKind } from "./canonical.ts";
 import { ensureDefaultUserWorkspace } from "./first-run-bootstrap.ts";
 import { generateUniqueWorkspaceName } from "./id-generator.ts";
 import type { WorkspaceRuntime } from "./runtime.ts";
-import { createRegistryStorage, type RegistryStorageAdapter, StorageConfigs } from "./storage.ts";
+import type { RegistryStorageAdapter } from "./storage.ts";
 import type { WorkspaceEntry, WorkspaceSignalRegistrar, WorkspaceStatus } from "./types.ts";
 import { WorkspaceConfigWatcher } from "./watchers/index.ts";
 
@@ -106,6 +106,18 @@ export class WorkspaceManager {
   private signalRegistrars: WorkspaceSignalRegistrar[] = [];
   private fileWatcher: WorkspaceConfigWatcher | null = null;
   private onRuntimeInvalidate?: RuntimeInvalidateCallback;
+  private memoryAdapter?: MemoryAdapter & {
+    ensureRoot(workspaceId: string, name: string): Promise<void>;
+  };
+
+  /**
+   * Cache of parsed workspace configs keyed by workspaceId. Each entry pins
+   * the workspace.yml mtime that produced it; on a stat mismatch we evict
+   * and re-parse. Cuts the per-signal YAML parse + Zod validation cost from
+   * ~5–20ms to a single file stat. Bounded only by the number of workspaces
+   * the daemon has touched.
+   */
+  private configCache = new Map<string, { mtimeMs: number; config: MergedConfig }>();
 
   /**
    * Pending watcher events for workspaces that had active sessions when the
@@ -121,6 +133,18 @@ export class WorkspaceManager {
 
   constructor(registry: RegistryStorageAdapter) {
     this.registry = registry;
+  }
+
+  /**
+   * Inject the memory adapter used to seed `memory.own` directories on
+   * workspace registration. AtlasDaemon constructs a JetStreamMemoryAdapter
+   * after NATS is up and passes it in. Tests can pass a mock or omit it
+   * (seeding becomes a no-op).
+   */
+  setMemoryAdapter(
+    adapter: MemoryAdapter & { ensureRoot(workspaceId: string, name: string): Promise<void> },
+  ): void {
+    this.memoryAdapter = adapter;
   }
 
   /** Set callback for when runtime needs invalidation. Called by AtlasDaemon. */
@@ -284,10 +308,9 @@ export class WorkspaceManager {
     logger.info(`Workspace registered: ${entry.name}`, { id: entry.id });
 
     const ownEntries = config.workspace.memory?.own ?? [];
-    if (ownEntries.length > 0) {
+    if (ownEntries.length > 0 && this.memoryAdapter) {
       try {
-        const memoryAdapter = new MdMemoryAdapter({ root: getFridayHome() });
-        await seedMemories(memoryAdapter, entry.id, ownEntries);
+        await seedMemories(this.memoryAdapter, entry.id, ownEntries);
       } catch (error) {
         logger.warn("Failed to seed workspace memories", { workspaceId: entry.id, error });
       }
@@ -431,11 +454,30 @@ export class WorkspaceManager {
       return { atlas: null, workspace: config };
     }
 
+    const cached = this.configCache.get(workspaceId);
+    const yamlPath = join(workspace.path, "workspace.yml");
+    let mtimeMs: number | null = null;
+    try {
+      mtimeMs = (await stat(yamlPath)).mtimeMs;
+    } catch {
+      // File missing — fall through to load() which surfaces the right error.
+    }
+    if (cached && mtimeMs !== null && cached.mtimeMs === mtimeMs) {
+      return cached.config;
+    }
+
     try {
       const adapter = new FilesystemConfigAdapter(workspace.path);
       const configLoader = new ConfigLoader(adapter, workspace.path);
-      return await configLoader.load();
+      const config = await configLoader.load();
+      if (mtimeMs !== null) {
+        this.configCache.set(workspaceId, { mtimeMs, config });
+      } else {
+        this.configCache.delete(workspaceId);
+      }
+      return config;
     } catch (error) {
+      this.configCache.delete(workspaceId);
       // Missing config is expected (deleted workspace, moved directory) - log at warn level
       // Other errors (validation, IO) are unexpected - log at error level
       if (error instanceof ConfigNotFoundError) {
@@ -1062,6 +1104,7 @@ export class WorkspaceManager {
   }
 
   private async stopRuntimeIfActive(workspaceId: string): Promise<void> {
+    this.configCache.delete(workspaceId);
     // If daemon callback set, let daemon handle full cleanup (both maps)
     if (this.onRuntimeInvalidate) {
       await this.onRuntimeInvalidate(workspaceId);
@@ -1212,14 +1255,4 @@ export class WorkspaceManager {
       throw error;
     }
   }
-}
-
-let _workspaceManager: WorkspaceManager | null = null;
-
-export async function getWorkspaceManager(): Promise<WorkspaceManager> {
-  if (!_workspaceManager) {
-    const registry = await createRegistryStorage(StorageConfigs.defaultKV());
-    _workspaceManager = new WorkspaceManager(registry);
-  }
-  return _workspaceManager;
 }

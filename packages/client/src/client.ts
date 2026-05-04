@@ -4,16 +4,12 @@
  */
 
 import { parseResult, client as v2Client } from "@atlas/client/v2";
-import { createAtlasClient } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 import { AtlasApiError } from "./errors.ts";
 import type {
   AgentInfo,
   CancelSessionResponse,
   JobInfo,
-  LibraryItemWithContent,
-  LibrarySearchQuery,
-  LibrarySearchResult,
   SessionDetailedInfo,
   SessionInfo,
   SignalTriggerResponse,
@@ -220,49 +216,6 @@ export class AtlasClient {
     );
     if (!response.ok) {
       throw new Error(`Failed to list workspace sessions: ${stringifyError(response.error)}`);
-    }
-    return response.data;
-  }
-
-  // =================================================================
-  // LIBRARY OPERATIONS
-  // =================================================================
-
-  /**
-   * List library items
-   */
-  async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
-    const q = {
-      query: query?.query,
-      type: Array.isArray(query?.type) ? query.type.join(",") : query?.type,
-      tags: Array.isArray(query?.tags) ? query.tags.join(",") : query?.tags,
-      since: query?.since,
-      until: query?.until,
-      limit: query?.limit,
-      offset: query?.offset,
-    };
-
-    const client = createAtlasClient();
-    const response = await client.GET("/api/library", { params: { query: q } });
-    if (response.error) {
-      throw new Error(stringifyError(response.error));
-    }
-    return response.data;
-  }
-
-  /**
-   * Get specific library item
-   */
-  async getLibraryItem(
-    itemId: string,
-    includeContent: boolean = false,
-  ): Promise<LibraryItemWithContent> {
-    const client = createAtlasClient();
-    const response = await client.GET("/api/library/{itemId}", {
-      params: { query: { content: includeContent ? "true" : undefined }, path: { itemId } },
-    });
-    if (response.error) {
-      throw new Error(stringifyError(response.error));
     }
     return response.data;
   }

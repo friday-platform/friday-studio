@@ -5,9 +5,6 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import process from "node:process";
-import type { ActivityStorageAdapter } from "@atlas/activity";
-import { generateSessionActivityTitle } from "@atlas/activity/title-generator";
-import { kebabToSentenceCase } from "@atlas/activity/titles";
 import {
   type AgentMemoryContext,
   type AgentResult,
@@ -60,7 +57,7 @@ import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
-import { FileSystemDocumentStore } from "@atlas/document-store";
+import { type DocumentStore, getDocumentStore } from "@atlas/document-store";
 import {
   type AgentAction,
   type AgentExecutor,
@@ -80,7 +77,6 @@ import {
   validateFSMStructure,
 } from "@atlas/fsm-engine";
 import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
@@ -89,7 +85,6 @@ import {
 import { logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
-import { publishDirtyDrafts } from "@atlas/resources";
 import { extractArchiveContents, SkillStorage, validateSkillReferences } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
@@ -220,23 +215,6 @@ function fsmEventToStreamChunk(event: FSMEvent): AtlasUIMessageChunk | null {
   }
 }
 
-/**
- * Read an FSM's id without letting YAML serialization failures escape.
- *
- * `engine.toYAML()` runs `@std/yaml`'s `stringify`, which throws
- * `TypeError: Cannot stringify undefined` if any value in the definition
- * is `undefined`. The id is purely diagnostic metadata for one history
- * event — it must never break session persistence (atlas-yset).
- */
-function safeReadFsmId(engine: FSMEngine | undefined): string | undefined {
-  if (!engine) return undefined;
-  try {
-    return engine.toYAML().match(/^id:\s*(.+)$/m)?.[1];
-  } catch {
-    return undefined;
-  }
-}
-
 // Stub factory functions for minimal IAtlasScope manager implementations
 function createStubContextManager(): ITempestContextManager {
   return { add: () => {}, remove: () => {}, search: () => [], size: () => 0 };
@@ -294,10 +272,6 @@ interface WorkspaceRuntimeOptions {
     finalOutput: string | undefined;
     jobName: string;
   }) => Promise<void>;
-  /** Ledger storage adapter for versioned workspace resources (auto-publish) */
-  resourceStorage?: ResourceStorageAdapter;
-  /** Activity storage adapter for creating activity feed items */
-  activityStorage?: ActivityStorageAdapter;
   /** Memory adapter for bootstrap injection (feature-flagged via FRIDAY_MEMORY_BOOTSTRAP) */
   memoryAdapter?: MemoryAdapter;
   /** Parsed memory.mounts from workspace config — resolved at initialize time */
@@ -306,8 +280,6 @@ interface WorkspaceRuntimeOptions {
   kernelWorkspaceId?: string;
   /** Platform model resolver — required for session summarization and other platform LLM calls */
   platformModels: PlatformModels;
-  /** Blueprint artifact ID, when this workspace was generated from a blueprint */
-  blueprintArtifactId?: string;
   /** Injectable agent executor. Injected by daemon as ProcessAgentExecutor (NATS). */
   agentExecutor?: {
     execute(
@@ -324,21 +296,21 @@ interface WorkspaceRuntimeOptions {
   broadcastNotifier?: FSMBroadcastNotifier;
 }
 
-type JobConcurrencyPolicy = "single-flight" | "isolated";
-
+/**
+ * Job definition. Engines are not shared: every signal that matches a job
+ * spawns its own `FSMEngine` via `createJobEngine`, runs to completion, and
+ * exits. Cross-signal coordination (serialize, dedup, singleton) is handled
+ * by the trigger source or the message broker — not by the runtime.
+ */
 interface FSMJob {
   name: string;
   fsmPath: string;
-  engine?: FSMEngine; // Direct FSMEngine reference
-  documentStore?: FileSystemDocumentStore; // Per-job document store
-  signals: string[]; // Signal IDs this FSM handles
-  fsmDefinition?: unknown; // Inline FSM definition from workspace.yml
+  signals: string[];
+  fsmDefinition?: unknown;
   /** Human-readable description from workspace config */
   description?: string;
   /** Max LLM tool-calling steps for FSM actions */
   maxSteps?: number;
-  /** Internal execution isolation policy. Not exposed in workspace.yml yet. */
-  concurrency?: JobConcurrencyPolicy;
 }
 
 interface ActiveSession {
@@ -362,7 +334,7 @@ interface SessionResult {
   userId?: string;
   /** Captured FSM events (state transitions and action executions) for batch persistence */
   collectedFsmEvents?: FSMEvent[];
-  /** Snapshot of the engine that processed this session (isolated jobs do not use job.engine). */
+  /** Snapshot of the per-signal engine's documents at completion. */
   engineDocuments?: FSMDocument[];
   finalState?: string;
 }
@@ -411,7 +383,6 @@ export class WorkspaceRuntime {
   private config: MergedConfig;
   private options: WorkspaceRuntimeOptions;
   private initialized = false;
-  private createdByUserId?: string;
 
   // Shared resources
   private orchestrator: AgentOrchestrator;
@@ -424,11 +395,15 @@ export class WorkspaceRuntime {
   private sessions = new Map<string, ActiveSession>();
   private sessionResults = new Map<string, SessionResult>();
   /**
-   * Cache of FSM documents captured at `handleSessionCompletion`, keyed by
+   * FSM document snapshots captured at `handleSessionCompletion`, keyed by
    * sessionId. The live `sessions` map is cleared before the signal endpoint
    * returns, but synchronous callers (`triggerWorkspaceSignal` in atlas-daemon)
-   * still need to read the final output docs afterward. Entries self-evict
-   * after 60s so the cache doesn't grow without bound.
+   * still need to read the final output docs afterward. The map is bounded
+   * naturally by the runtime's lifecycle — daemon idle eviction at 5min
+   * tears down the runtime and frees the map. The bounded-by-runtime
+   * guarantee is sufficient for the single-host model. Cross-worker
+   * access in a future per-worker model needs to read from the
+   * persistent session-history store instead.
    */
   private completedSessionDocuments = new Map<
     string,
@@ -446,7 +421,14 @@ export class WorkspaceRuntime {
    * abortSignal parameter.
    */
   private activeAbortControllers = new Map<string, AbortController>();
-  private activeJobExecutions = new Map<string, string>();
+
+  /**
+   * Engine registry keyed by sessionId. Populated in `processSignalForJob`
+   * for the duration of one signal's execution; cleared in the finally block.
+   * Lets external callers (e.g. HTTP endpoints querying mid-flight FSM docs)
+   * find the engine for a given sessionId without closure access.
+   */
+  private sessionEngines = new Map<string, FSMEngine>();
 
   // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
   // Populated by executeAgent, consumed by onEvent callback for step:complete events
@@ -536,7 +518,6 @@ export class WorkspaceRuntime {
     this.workspace = workspace;
     this.config = config;
     this.options = options;
-    this.createdByUserId = workspace.members?.userId;
 
     // Create shared AgentOrchestrator (can handle concurrent executions)
     const agentsServerUrl = options.daemonUrl || "http://localhost:8080";
@@ -620,7 +601,6 @@ export class WorkspaceRuntime {
         signals: ["chat"],
         fsmDefinition: chatFSM,
         description: "Direct chat with workspace",
-        concurrency: "isolated",
       });
 
       logger.debug("Auto-injected handle-chat job for workspace direct chat", {
@@ -771,14 +751,12 @@ export class WorkspaceRuntime {
         assertGlobalWriteAllowed(this.workspace.id, this.options.kernelWorkspaceId);
       }
 
-      mountRegistry.registerSource(sourceId, () =>
-        adapter.store(sourceWsId, memoryName, "narrative"),
-      );
+      mountRegistry.registerSource(sourceId, () => adapter.store(sourceWsId, memoryName));
       mountRegistry.addConsumer(sourceId, this.workspace.id);
 
       let resolvedStore: NarrativeStore;
       try {
-        resolvedStore = await adapter.store(sourceWsId, memoryName, "narrative");
+        resolvedStore = await adapter.store(sourceWsId, memoryName);
       } catch {
         throw new MountSourceNotFoundError(
           sourceId,
@@ -857,21 +835,21 @@ export class WorkspaceRuntime {
 
   private async createJobEngine(
     job: FSMJob,
-    sessionId?: string,
-  ): Promise<{ engine: FSMEngine; documentStore: FileSystemDocumentStore }> {
-    const stateStoragePath = path.join(getFridayHome(), "workspaces");
-    const documentStore = new FileSystemDocumentStore({ basePath: stateStoragePath });
+    sessionId: string,
+  ): Promise<{ engine: FSMEngine; documentStore: DocumentStore }> {
+    // Stateless model: every signal spawns a fresh engine bound to its
+    // sessionId. The optional-sessionId branch was a relic of the deleted
+    // "single-flight" path where one engine spanned multiple signals.
+    // DocumentStore is the daemon-wired JetStream singleton (per-workspace
+    // KV bucket internally; one connection shared across job engines).
+    const documentStore = getDocumentStore();
 
     const agentExecutor: AgentExecutor = (action, context, signal, options) =>
       this.executeAgent(action, context, job, signal, options);
 
     const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
 
-    const scope = {
-      workspaceId: this.workspace.id,
-      workspaceName: this.workspace.name,
-      ...(sessionId ? { sessionId } : {}),
-    };
+    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name, sessionId };
     const platformModels = this.options.platformModels;
     if (!platformModels) {
       throw new Error(
@@ -891,7 +869,6 @@ export class WorkspaceRuntime {
         this.options.platformModels,
       ),
       artifactStorage: ArtifactStorage,
-      resourceAdapter: this.options.resourceStorage,
       broadcastNotifier: this.options.broadcastNotifier,
     };
 
@@ -900,7 +877,7 @@ export class WorkspaceRuntime {
       logger.debug("Loading FSM from inline definition", {
         workspaceId: this.workspace.id,
         jobName: job.name,
-        isolated: sessionId !== undefined,
+        sessionId,
       });
 
       // Inline FSMs in workspace.yml jobs don't include `id` — the job name is the identity.
@@ -932,29 +909,6 @@ export class WorkspaceRuntime {
     const engine = createEngine(definition, engineOptions);
     await engine.initialize();
     return { engine, documentStore };
-  }
-
-  /** Lazy-initialize a job's shared FSM engine. */
-  private async initializeJobEngine(job: FSMJob): Promise<void> {
-    if (job.engine) {
-      return; // Already initialized
-    }
-
-    logger.info("Initializing FSM engine for job", {
-      jobName: job.name,
-      workspaceId: this.workspace.id,
-    });
-
-    const { engine, documentStore } = await this.createJobEngine(job);
-    job.engine = engine;
-    job.documentStore = documentStore;
-
-    logger.info("FSM engine initialized for job", {
-      jobName: job.name,
-      workspaceId: this.workspace.id,
-      initialState: job.engine.state,
-      documentCount: job.engine.documents.length,
-    });
   }
 
   /** Route a signal to its matching FSM job and execute. */
@@ -999,10 +953,6 @@ export class WorkspaceRuntime {
       }
     }
 
-    const policy = job.concurrency ?? "single-flight";
-    if (policy === "single-flight") {
-      await this.initializeJobEngine(job);
-    }
     const sessionResult = await this.processSignalForJob(
       job,
       signal,
@@ -1010,7 +960,6 @@ export class WorkspaceRuntime {
       abortSignal,
       skipStates,
     );
-
     return this.finalizeSession(sessionResult, job, signal);
   }
 
@@ -1022,74 +971,24 @@ export class WorkspaceRuntime {
     skipStates?: string[],
   ): Promise<SessionResult> {
     const sessionId = crypto.randomUUID();
-    const policy = job.concurrency ?? "single-flight";
-    const activeSessionId = this.activeJobExecutions.get(job.name);
-    if (policy === "single-flight" && activeSessionId) {
-      throw new Error(
-        `Job '${job.name}' in workspace '${this.workspace.id}' is already processing session '${activeSessionId}'`,
-      );
-    }
-    if (policy === "single-flight") {
-      this.activeJobExecutions.set(job.name, sessionId);
-    }
 
-    let engine: FSMEngine;
-    let isolatedEngine = false;
-    const isTriggerSignal = this.isTriggerSignal(signal.id);
-    try {
-      if (policy === "isolated") {
-        const created = await this.createJobEngine(job, sessionId);
-        engine = created.engine;
-        isolatedEngine = true;
-      } else {
-        if (!job.engine) {
-          throw new Error(`Job ${job.name} engine not initialized`);
-        }
-        engine = job.engine;
-      }
+    // Every signal spawns a fresh engine, runs to completion, exits.
+    // Per-session document scope `(workspaceId, jobName, sessionId)`.
+    const { engine } = await this.createJobEngine(job, sessionId);
+    this.sessionEngines.set(sessionId, engine);
 
-      if (isTriggerSignal && !isolatedEngine) {
-        logger.info("Trigger signal detected - clearing persisted state for fresh execution", {
-          signalId: signal.id,
-          workspaceId: this.workspace.id,
-          jobName: job.name,
-        });
-        await this.clearPersistedState(job);
-
-        await engine.reset();
-
-        logger.debug("Engine reset to initial state", {
-          workspaceId: this.workspace.id,
-          jobName: job.name,
-          initialState: engine.state,
-        });
-      } else {
-        logger.debug(
-          isolatedEngine
-            ? "Isolated signal - using fresh engine"
-            : "Continuation signal - state preserved",
-          { signalId: signal.id, currentState: engine.state },
-        );
-      }
-
-      // Seed __meta into engine results so code actions can reference
-      // workspace_path, repo_root, workspace_id, and platform_url via
-      // context.results['__meta'] without hardcoding operator paths.
-      const workspacePath =
-        this.options.workspacePath ?? path.join(getFridayHome(), "workspaces", this.workspace.id);
-      engine.seedResults({
-        __meta: buildWorkspaceMeta({
-          workspacePath,
-          workspaceId: this.workspace.id,
-          daemonUrl: this.options.daemonUrl,
-        }),
-      });
-    } catch (error) {
-      if (policy === "single-flight") {
-        this.activeJobExecutions.delete(job.name);
-      }
-      throw error;
-    }
+    // Seed __meta into engine results so code actions can reference
+    // workspace_path, repo_root, workspace_id, and platform_url via
+    // context.results['__meta'] without hardcoding operator paths.
+    const workspacePath =
+      this.options.workspacePath ?? path.join(getFridayHome(), "workspaces", this.workspace.id);
+    engine.seedResults({
+      __meta: buildWorkspaceMeta({
+        workspacePath,
+        workspaceId: this.workspace.id,
+        daemonUrl: this.options.daemonUrl,
+      }),
+    });
 
     // Per-session AbortController. Composes with any parent signal passed in
     // (so a canceled HTTP request still propagates) and is registered in
@@ -1143,7 +1042,6 @@ export class WorkspaceRuntime {
           sessionId: session.id,
           signalType: signal.id,
           currentState: engine.state,
-          isTriggerSignal,
           jobName: job.name,
         });
 
@@ -1176,32 +1074,9 @@ export class WorkspaceRuntime {
           await onStreamEvent({ type: "data-session-start", data: { sessionId } });
         }
 
-        // Create "running" activity item (skip conversations)
-        const isConversation =
-          this.workspace.id === "friday-conversation" || job.name === "handle-chat";
-        if (this.options.activityStorage && !isConversation) {
-          if (!this.createdByUserId) {
-            logger.warn("Skipping activity creation: workspace has no createdByUserId", {
-              workspaceId: this.workspace.id,
-              sessionId,
-            });
-          } else {
-            try {
-              const title = `${kebabToSentenceCase(job.name)} is running`;
-              await this.options.activityStorage.create({
-                type: "session",
-                source: "agent",
-                referenceId: sessionId,
-                workspaceId: this.workspace.id,
-                jobId: job.name,
-                userId: this.createdByUserId,
-                title,
-              });
-            } catch (err) {
-              logger.warn("Failed to create running activity", { sessionId, error: String(err) });
-            }
-          }
-        }
+        // (activity subsystem deleted 2026-05-02 — was write-only with no
+        // consumer reading the records. Source of truth for "what
+        // happened in workspace X" is the SESSIONS JetStream stream.)
 
         try {
           await engine.signal(
@@ -1390,23 +1265,6 @@ export class WorkspaceRuntime {
             }
           }
         } finally {
-          // Auto-publish dirty resource drafts at session teardown (defensive catch-all)
-          if (this.options.resourceStorage) {
-            try {
-              await publishDirtyDrafts(this.options.resourceStorage, this.workspace.id, {
-                jobId: job.name,
-                userId: this.createdByUserId,
-                activityStorage: this.options.activityStorage,
-                platformModels: this.options.platformModels,
-              });
-            } catch (publishError) {
-              logger.warn("Auto-publish at session teardown failed", {
-                sessionId: session.id,
-                error: publishError instanceof Error ? publishError.message : String(publishError),
-              });
-            }
-          }
-
           if (onStreamEvent) {
             try {
               await onStreamEvent({
@@ -1525,57 +1383,16 @@ export class WorkspaceRuntime {
               }
             }
 
-            // Replace "running" activity with final activity for terminal sessions.
-            // Skip for code-only sessions (no agent blocks) — no meaningful output to title.
-            if (
-              this.options.activityStorage &&
-              this.options.platformModels &&
-              this.createdByUserId &&
-              !isConversation &&
-              executedBlocks.length > 0 &&
-              (view.status === "completed" || view.status === "failed")
-            ) {
-              const titlePlatformModels = this.options.platformModels;
-              // Delete the "running" activity first
-              await this.options.activityStorage.deleteByReferenceId(sessionId).catch((err) => {
-                logger.warn("Failed to delete running activity", { sessionId, error: String(err) });
-              });
-
-              try {
-                // Extract final output from the last completed agent block
-                const lastBlock = [...executedBlocks].reverse().find((b) => b.output);
-                const finalOutput = lastBlock?.output ? String(lastBlock.output) : undefined;
-
-                const title = await generateSessionActivityTitle({
-                  platformModels: titlePlatformModels,
-                  status: view.status,
-                  jobName: job.name,
-                  agentNames: executedBlocks.map((b) => b.agentName),
-                  finalOutput,
-                  error: session.error?.message,
-                });
-                await this.options.activityStorage.create({
-                  type: "session",
-                  source: "agent",
-                  referenceId: sessionId,
-                  workspaceId: this.workspace.id,
-                  jobId: job.name,
-                  userId: this.createdByUserId,
-                  title,
-                });
-              } catch (err) {
-                logger.warn("Failed to create session activity", { sessionId, error: String(err) });
-              }
-            }
+            // (activity subsystem deleted 2026-05-02 — terminal-session
+            // titles previously got recorded here. SESSIONS JetStream
+            // stream is the source of truth for session lifecycle.)
           }
 
           session.engineDocuments = engine.documents;
           session.finalState = engine.state;
           this.agentResultSideChannel.delete(sessionId);
           this.activeAbortControllers.delete(sessionId);
-          if (policy === "single-flight") {
-            this.activeJobExecutions.delete(job.name);
-          }
+          this.sessionEngines.delete(sessionId);
         }
 
         if (otelSpan) {
@@ -1631,18 +1448,14 @@ export class WorkspaceRuntime {
     const parts: string[] = [];
 
     try {
-      const globalMemory = await adapter.store(
-        GLOBAL_WORKSPACE_ID,
-        STANDING_ORDERS_NAME,
-        "narrative",
-      );
+      const globalMemory = await adapter.store(GLOBAL_WORKSPACE_ID, STANDING_ORDERS_NAME);
       parts.push(await globalMemory.render());
     } catch {
       // Global level missing or unreadable — skip silently
     }
 
     try {
-      const wsMemory = await adapter.store(this.workspace.id, STANDING_ORDERS_NAME, "narrative");
+      const wsMemory = await adapter.store(this.workspace.id, STANDING_ORDERS_NAME);
       parts.push(await wsMemory.render());
     } catch {
       // Workspace level missing or unreadable — skip silently
@@ -1651,11 +1464,7 @@ export class WorkspaceRuntime {
     for (const mount of this._resolvedMemory?.mounts ?? []) {
       if (mount.sourceStoreName === STANDING_ORDERS_NAME && mount.sourceStoreKind === "narrative") {
         try {
-          const mountedMemory = await adapter.store(
-            mount.sourceWorkspaceId,
-            mount.sourceStoreName,
-            "narrative",
-          );
+          const mountedMemory = await adapter.store(mount.sourceWorkspaceId, mount.sourceStoreName);
           parts.push(await mountedMemory.render());
         } catch {
           // Mounted level missing or unreadable — skip silently
@@ -1695,7 +1504,6 @@ export class WorkspaceRuntime {
       fsmContext,
       signal, // Use actual signal instead of synthetic one
       signal._context?.abortSignal,
-      this.options.resourceStorage,
       this.workspace.id,
       ArtifactStorage,
     );
@@ -1824,6 +1632,7 @@ export class WorkspaceRuntime {
                 datetime,
                 agentEnv: agentConfig.env,
                 foregroundWorkspaceIds,
+                abortSignal: signal._context?.abortSignal,
               })
             : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
@@ -1853,11 +1662,6 @@ export class WorkspaceRuntime {
 
         // Validate agent output (hallucination detection only runs for LLM agents)
         await validateAgentOutput(agentResult, fsmContext, agentType, this.options.platformModels);
-
-        // Auto-publish dirty resource drafts after agent turn completion
-        if (this.options.resourceStorage && workspaceId) {
-          await publishDirtyDrafts(this.options.resourceStorage, workspaceId);
-        }
 
         return agentResult;
       },
@@ -1920,6 +1724,7 @@ export class WorkspaceRuntime {
       datetime?: unknown;
       agentEnv?: Record<string, string | LinkCredentialRef>;
       foregroundWorkspaceIds?: string[];
+      abortSignal?: AbortSignal;
     },
   ): Promise<AgentResult> {
     // Resolve agent source location from disk
@@ -2075,7 +1880,7 @@ export class WorkspaceRuntime {
     const { tools: rawMcpTools, dispose } = await createMCPTools(mcpConfigs, logger);
 
     // Filter platform tools to LLM_AGENT_ALLOWED — same surface workspace LLM
-    // agents see (memory, artifacts, state, fs, library, csv, bash, webfetch,
+    // agents see (memory, artifacts, state, fs, csv, bash, webfetch,
     // workspace_signal_trigger, convert_task_to_workspace). Workspace-management
     // tools (workspace_delete, session_describe, etc.) stay blocked.
     // External MCP server tools pass through unfiltered.
@@ -2088,7 +1893,7 @@ export class WorkspaceRuntime {
     // Wrap allowlisted scope-injected tools (memory/artifacts/state/webfetch)
     // so workspaceId/workspaceName flow from the runtime scope. Tools that
     // aren't in SCOPE_INJECTED_PLATFORM_TOOLS pass through untouched (e.g.
-    // csv, fs_*, library_*, bash from atlas-platform).
+    // csv, fs_*, bash from atlas-platform).
     const mcpTools = wrapPlatformToolsWithScope(filteredTools, {
       workspaceId: opts.workspaceId,
       workspaceName: this.workspace.name,
@@ -2156,6 +1961,7 @@ export class WorkspaceRuntime {
           description: s.description,
           instructions: s.instructions,
         })),
+        abortSignal: opts.abortSignal,
       });
     } finally {
       await dispose();
@@ -2277,55 +2083,6 @@ export class WorkspaceRuntime {
     };
   }
 
-  /**
-   * Check if a signal is a trigger signal
-   * Trigger signals start fresh executions, while other signals resume from persisted state
-   */
-  private isTriggerSignal(signalId: string): boolean {
-    const jobs = this.config.workspace.jobs;
-    if (!jobs) return false;
-
-    // Find job that has this signal as a trigger
-    for (const job of Object.values(jobs)) {
-      const triggers = job.triggers;
-      if (triggers?.some((t) => t.signal === signalId)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Clear persisted FSM state for fresh execution.
-   * Document cleanup is handled by engine.reset() → persistDocuments().
-   */
-  private async clearPersistedState(job: FSMJob): Promise<void> {
-    if (!job.engine || !job.documentStore) {
-      throw new Error("Cannot clear state - engine not initialized");
-    }
-
-    const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name };
-    const fsmId = job.engine.definition.id;
-
-    // Clear persisted state file (no schema, null value — cannot fail validation)
-    const clearResult = await job.documentStore.saveState(scope, fsmId, null);
-    if (!clearResult.ok) {
-      logger.warn("Failed to clear persisted state", { error: clearResult.error });
-    }
-
-    const existingDocIds = await job.documentStore.list(scope, fsmId);
-    for (const docId of existingDocIds) {
-      await job.documentStore.delete(scope, fsmId, docId);
-    }
-
-    logger.debug("Cleared persisted state for fresh execution", {
-      workspaceId: this.workspace.id,
-      jobName: job.name,
-      fsmId,
-    });
-  }
-
   async triggerSignal(signalName: string, payload?: Record<string, unknown>): Promise<void> {
     const signal: WorkspaceRuntimeSignal = {
       id: signalName,
@@ -2343,6 +2100,7 @@ export class WorkspaceRuntime {
     streamId?: string,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
+    abortSignal?: AbortSignal,
   ): Promise<IWorkspaceSession> {
     // Top-level `streamId` arg wins over any payload.streamId. The runtime
     // reads the merged value via `signal.data.streamId` (see processSignalForJob
@@ -2359,7 +2117,7 @@ export class WorkspaceRuntime {
       timestamp: new Date(),
     };
 
-    return await this.processSignal(signal, onStreamEvent, undefined, skipStates);
+    return await this.processSignal(signal, onStreamEvent, abortSignal, skipStates);
   }
 
   /**
@@ -2368,16 +2126,19 @@ export class WorkspaceRuntime {
   async shutdown(): Promise<void> {
     logger.info("Shutting down workspace runtime", { workspaceId: this.workspace.id });
 
-    for (const job of this.jobs.values()) {
-      if (job.engine) {
-        job.engine.stop();
-      }
+    // Engines are per-signal — running ones receive the abort via
+    // activeAbortControllers; the engines themselves get GC'd when their
+    // signal completes. Nothing to stop here at the job level.
+    for (const controller of this.activeAbortControllers.values()) {
+      controller.abort("workspace runtime shutting down");
     }
 
     await this.orchestrator.shutdown();
 
     this.sessions.clear();
-    this.activeJobExecutions.clear();
+    this.sessionResults.clear();
+    this.completedSessionDocuments.clear();
+    this.activeAbortControllers.clear();
     this.jobs.clear();
     this.mountBindings.clear();
     mountRegistry.clear();
@@ -2448,11 +2209,9 @@ export class WorkspaceRuntime {
     const cached = this.completedSessionDocuments.get(sessionId);
     if (cached) return cached;
 
-    // Pre-completion: still live — read straight from the engine.
-    const active = this.sessions.get(sessionId);
-    if (!active) return [];
-    const job = this.jobs.get(active.jobName);
-    if (!job?.engine) return [];
+    // Pre-completion: still live — read from the per-signal engine.
+    const engine = this.sessionEngines.get(sessionId);
+    if (!engine) return [];
 
     // FSM plumbing documents that are noise for most callers. Everything
     // else is passed through — the caller's job to pick fields it cares
@@ -2463,7 +2222,7 @@ export class WorkspaceRuntime {
       "ChatContext",
       "signal-payload",
     ]);
-    return job.engine.documents.filter((d) => !plumbingTypes.has(d.type));
+    return engine.documents.filter((d) => !plumbingTypes.has(d.type));
   }
 
   /**
@@ -2531,30 +2290,12 @@ export class WorkspaceRuntime {
   }
 
   /**
-   * Check if there are active sessions for a signal
+   * Check if there are active sessions for a signal. With per-signal engines
+   * the canonical source is `this.sessions` (populated in finalizeSession);
+   * any active execution shows up there.
    */
   hasActiveSessionsForSignal(signalId: string): boolean {
-    const hasRecordedSession = Array.from(this.sessions.values()).some(
-      (s) => s.signalId === signalId,
-    );
-    if (hasRecordedSession) return true;
-
-    return Array.from(this.jobs.values()).some(
-      (job) => job.signals.includes(signalId) && this.activeJobExecutions.has(job.name),
-    );
-  }
-
-  /**
-   * Get current FSM state for a job
-   */
-  getState(jobName?: string): string {
-    if (!jobName) {
-      const firstJob = Array.from(this.jobs.values())[0];
-      return firstJob?.engine?.state || "uninitialized";
-    }
-
-    const job = this.jobs.get(jobName);
-    return job?.engine?.state || "uninitialized";
+    return Array.from(this.sessions.values()).some((s) => s.signalId === signalId);
   }
 
   getOrchestrator(): AgentOrchestrator {
@@ -2597,7 +2338,15 @@ export class WorkspaceRuntime {
       ]);
       const docs = (sessionResult.engineDocuments ?? []).filter((d) => !plumbingTypes.has(d.type));
       this.completedSessionDocuments.set(sessionResult.id, docs);
-      setTimeout(() => this.completedSessionDocuments.delete(sessionResult.id), 60_000);
+      // Bound the map so a long-running workspace doesn't accumulate doc
+      // snapshots forever. FIFO eviction at 100 entries — well above the
+      // synchronous HTTP-cascade window we care about, well below "leak".
+      const COMPLETED_DOCS_CAP = 100;
+      while (this.completedSessionDocuments.size > COMPLETED_DOCS_CAP) {
+        const oldest = this.completedSessionDocuments.keys().next().value;
+        if (oldest === undefined) break;
+        this.completedSessionDocuments.delete(oldest);
+      }
     }
 
     if (this.options.onSessionFinished) {
@@ -2734,11 +2483,9 @@ export class WorkspaceRuntime {
         });
       }
 
-      // Append session-start event. fsmId metadata is best-effort: if YAML
-      // serialization throws (e.g. an undefined slipped into the FSM
-      // definition), it's just metadata for one event — we shouldn't fail
-      // the entire history persistence over it.
-      const fsmId = safeReadFsmId(job.engine) ?? job.name;
+      // For inline FSMs the id is the job name; we use that uniformly here
+      // since per-signal engines don't expose a stable global identity.
+      const fsmId = job.name;
       await SessionHistoryStorage.appendSessionEvent({
         sessionId: sessionResult.id,
         emittedBy: "workspace-runtime",

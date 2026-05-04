@@ -1,22 +1,16 @@
 /**
  * @module @atlas/document-store
  *
- * Schema-validated document storage for Atlas workspaces
+ * Schema-validated document storage for Atlas workspaces.
  *
- * This package provides:
- * - Simple CRUD operations for documents
- * - Zod schema validation
- * - Workspace and session scoping
- * - Filesystem-based storage
- * - In-memory storage for testing
+ * Production wires `JetStreamDocumentStore` via `initDocumentStore(nc)`
+ * at daemon startup. NATS is a hard requirement — there is no
+ * in-process / on-disk fallback. Tests stand up a NATS test server
+ * (see vitest.setup.ts) and let the same JetStream adapter run
+ * against it.
  */
 
 export { DocumentStore } from "./src/document-store.ts";
-// Backward compatibility alias
-export type { FileSystemDocumentStoreOptions as DocumentStoreOptions } from "./src/file-system-document-store.ts";
-export {
-  FileSystemDocumentStore,
-  type FileSystemDocumentStoreOptions,
-} from "./src/file-system-document-store.ts";
-export { InMemoryDocumentStore } from "./src/in-memory-document-store.ts";
+export { JetStreamDocumentStore } from "./src/jetstream-document-store.ts";
+export { getDocumentStore, initDocumentStore, setDocumentStoreForTest } from "./src/storage.ts";
 export type { DocumentScope, StoredDocument } from "./src/types.ts";

@@ -98,3 +98,13 @@ describe("WorkspaceConfigSchema round-trip with job extension fields", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("JobSpecificationSchema concurrency", () => {
+  it("rejects a `concurrency` field — jobs are always isolated", () => {
+    const result = JobSpecificationSchema.safeParse({
+      ...minimalFsmJob,
+      concurrency: { policy: "serialize" },
+    });
+    expect(result.success).toBe(false);
+  });
+});

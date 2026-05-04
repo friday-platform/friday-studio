@@ -19,16 +19,12 @@ export function resolveImageParts(
   storage: ArtifactStorageAdapter,
 ): Promise<Array<ImagePart | TextPart>> {
   const imageArtifacts = artifacts.filter(
-    (
-      a,
-    ): a is Artifact & {
-      data: { type: "file"; data: { mimeType: string; originalName?: string } };
-    } => a.data.type === "file" && isImageMimeType(a.data.data.mimeType),
+    (a): a is Artifact => a.data.type === "file" && isImageMimeType(a.data.mimeType),
   );
 
   return Promise.all(
     imageArtifacts.map(async (artifact): Promise<ImagePart | TextPart> => {
-      const { mimeType, originalName } = artifact.data.data;
+      const { mimeType, originalName } = artifact.data;
       const result = await storage.readBinaryContents({ id: artifact.id });
 
       if (result.ok) {

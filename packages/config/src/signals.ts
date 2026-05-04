@@ -16,9 +16,44 @@ export const HTTPProviderConfigSchema = z.strictObject({
 });
 export type HTTPProviderConfig = z.infer<typeof HTTPProviderConfigSchema>;
 
+/**
+ * Coalescing policy for missed cron firings.
+ *
+ * - `skip`     — drop missed firings entirely.
+ * - `coalesce` — fire once now to represent every missed slot inside
+ *                `missedWindow`. Payload carries `missedCount` +
+ *                `firstMissedAt`. Right for "did this happen recently?"
+ *                jobs (digests, syncs).
+ * - `catchup`  — fire each missed slot in chronological order, one
+ *                signal per slot. Right for "every tick must run"
+ *                jobs (rate-limit accruals, time-series ingest).
+ * - `manual`   — surface the missed slot in the /schedules UI as a
+ *                pending row, do NOT fire automatically. The user
+ *                clicks "Fire now" to trigger the signal explicitly.
+ *                Right for jobs with expensive / visible side effects
+ *                (paid API calls, email blasts, Slack posts) where you
+ *                want oversight without auto-replay.
+ *
+ * Bounded by `missedWindow` regardless of policy: a daemon down for a
+ * week on a `catchup` hourly cron only fires the slots inside the
+ * window, not all 168.
+ */
+export const OnMissedPolicySchema = z.enum(["skip", "coalesce", "catchup", "manual"]);
+export type OnMissedPolicy = z.infer<typeof OnMissedPolicySchema>;
+
 export const ScheduleProviderConfigSchema = z.strictObject({
   schedule: z.string().describe("Cron expression (e.g., '0 9 * * *' for daily at 9 AM)"),
   timezone: z.string().optional().default("UTC").describe("Timezone for the schedule"),
+  onMissed: OnMissedPolicySchema.optional().describe(
+    "What to do with cron firings the daemon was down for. " +
+      "manual = surface in /schedules UI as pending, do not auto-fire (DEFAULT); " +
+      "skip = drop silently; coalesce = fire once now with missedCount; " +
+      "catchup = fire each missed slot in order. Bounded by missedWindow.",
+  ),
+  missedWindow: DurationSchema.optional().describe(
+    "How far back to consider missed firings. Slots older than now-missedWindow " +
+      "are skipped regardless of policy. Defaults to 24h.",
+  ),
 });
 export type ScheduleProviderConfig = z.infer<typeof ScheduleProviderConfigSchema>;
 

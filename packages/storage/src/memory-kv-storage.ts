@@ -5,13 +5,7 @@
  * Data is not persisted and will be lost when the process exits.
  */
 
-import {
-  type AtomicOperation,
-  type KVEntry,
-  type KVStorage,
-  KVStorageError,
-  KVTransactionError,
-} from "./kv-storage.ts";
+import type { AtomicOperation, KVEntry, KVStorage } from "./kv-storage.ts";
 
 /**
  * In-memory atomic operation implementation
@@ -64,11 +58,11 @@ class MemoryAtomicOperation implements AtomicOperation {
 
       return true;
     } catch (error) {
-      throw new KVTransactionError(
+      throw new Error(
         `Failed to commit atomic operation: ${
           error instanceof Error ? error.message : String(error)
         }`,
-        error instanceof Error ? error : new Error(String(error)),
+        { cause: error },
       );
     }
   }
@@ -95,7 +89,7 @@ export class MemoryKVStorage implements KVStorage {
 
   get<T>(key: string[]) {
     if (!this.isInitialized) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
+      throw new Error("Storage not initialized");
     }
     const keyString = this.keyToString(key);
     const value = this.data.get(keyString);
@@ -104,7 +98,7 @@ export class MemoryKVStorage implements KVStorage {
 
   set<T>(key: string[], value: T) {
     if (!this.isInitialized) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
+      throw new Error("Storage not initialized");
     }
 
     const keyString = this.keyToString(key);
@@ -113,7 +107,7 @@ export class MemoryKVStorage implements KVStorage {
 
   delete(key: string[]) {
     if (!this.isInitialized) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
+      throw new Error("Storage not initialized");
     }
 
     const keyString = this.keyToString(key);
@@ -123,7 +117,7 @@ export class MemoryKVStorage implements KVStorage {
   // @ts-expect-error issue with narrowing Deno.KVKey in the `*list` asyncIterator.
   async *list<T>(prefix: string[]): AsyncIterableIterator<KVEntry<T>> {
     if (!this.isInitialized) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
+      throw new Error("Storage not initialized");
     }
 
     const prefixString = this.keyToString(prefix);
@@ -138,7 +132,7 @@ export class MemoryKVStorage implements KVStorage {
 
   atomic(): AtomicOperation {
     if (!this.isInitialized) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
+      throw new Error("Storage not initialized");
     }
 
     return new MemoryAtomicOperation(this);

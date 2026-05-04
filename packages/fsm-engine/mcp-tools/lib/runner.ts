@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import type { DocumentScope, DocumentStore } from "../../../document-store/node.ts";
+import type { DocumentScope, DocumentStore } from "../../../document-store/mod.ts";
 import { FSMDocumentDataSchema } from "../../document-schemas.ts";
 import { FSMEngine } from "../../fsm-engine.ts";
 import type { Document, EmittedEvent } from "../../types.ts";

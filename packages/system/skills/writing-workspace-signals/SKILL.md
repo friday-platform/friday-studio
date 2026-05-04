@@ -118,7 +118,25 @@ signals:
     config:
       schedule: "0 9 * * *"
       timezone: "America/Los_Angeles"
+      # Optional: what to do with firings the daemon was down for.
+      # Defaults to manual — surfaces a pending row in /schedules,
+      # operator decides. All non-skip policies are bounded by
+      # missedWindow (default 24h) so a long outage can't produce
+      # an unbounded burst.
+      onMissed: manual        # default; other options: skip | coalesce | catchup
+      missedWindow: 24h       # optional; default 24h
 ```
+
+**`onMissed` policies:**
+
+- `manual` (default) — surface the missed slot on the `/schedules` UI as a **pending** row; do **not** auto-fire. The operator clicks "Fire now" or "Dismiss". Right for jobs with expensive or visible side effects (paid API calls, email blasts, Slack posts) where you want oversight without auto-replay. Default since 2026-05-03 — silent drops surprised users.
+- `skip` — drop missed firings entirely. Pick this when missing slots is a non-event because the next scheduled fire will pick up where it left off (e.g., "fetch latest prices" — recency is implicit in the next fire).
+- `coalesce` — fire **once now** to represent every missed slot inside `missedWindow`. Payload carries `policy: "coalesce"`, `missedCount`, `firstMissedAt`. Right for "did this happen recently?" jobs (digests, syncs) where one make-up call covers the gap.
+- `catchup` — fire **each** missed slot in chronological order, one signal per slot, payload tagged `policy: "catchup"`. Right for "every tick must run" jobs (rate-limit accruals, time-series ingest, slot-numbered exports). Use when missing a slot is incorrect, not just late.
+
+`missedWindow` (Duration: `s`/`m`/`h`, default `24h`) caps the catch-up window for every policy. A daemon down for a week with `catchup` on an hourly cron only fires the slots inside the window — never all 168.
+
+Missed-schedule events surface on the playground `/schedules` page under "Missed schedules" and persist in the JetStream `WORKSPACE_EVENTS` stream for 30 days. `manual` events that haven't been fired/dismissed show a pending badge + action buttons.
 
 ### System trigger
 

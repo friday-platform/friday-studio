@@ -5,6 +5,11 @@
   "type": "module",
   "exports": { ".": "./mod.ts" },
   "main": "./mod.ts",
-  "dependencies": {},
+  "dependencies": {
+    "@atlas/agent-sdk": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "nats": "^2.29.3",
+    "zod": "^4.3.5"
+  },
   "devDependencies": { "vitest": "^4.1.0" }
 }

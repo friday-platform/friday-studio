@@ -94,7 +94,7 @@ describe("buildResolvedWorkspaceMemory with only own stores", () => {
       ownEntries: [
         { name: "notes", type: "short_term" },
         { name: "backlog", type: "long_term", strategy: "narrative" },
-        { name: "scratch", type: "scratchpad", strategy: "dedup" },
+        { name: "scratch", type: "scratchpad" },
       ],
       mountDeclarations: [],
       kernelWorkspaceId: undefined,
@@ -115,7 +115,7 @@ describe("buildResolvedWorkspaceMemory with only own stores", () => {
 
     const scratch = resolved.own.find((c) => c.name === "scratch");
     expect(scratch?.type).toBe("scratchpad");
-    expect(scratch?.strategy).toBe("dedup");
+    expect(scratch?.strategy).toBeUndefined();
 
     expect(resolved.mounts).toHaveLength(0);
     expect(resolved.globalAccess.canRead).toBe(false);
@@ -136,7 +136,7 @@ describe("buildResolvedWorkspaceMemory with mount declarations", () => {
       },
       {
         name: "config-store",
-        source: "braised_biscuit/kv/config",
+        source: "braised_biscuit/narrative/config",
         mode: "rw",
         scope: "agent",
         scopeTarget: "my-agent",
@@ -159,7 +159,7 @@ describe("buildResolvedWorkspaceMemory with mount declarations", () => {
 
     const m1 = resolved.mounts[1];
     expect(m1?.sourceWorkspaceId).toBe("braised_biscuit");
-    expect(m1?.sourceStoreKind).toBe("kv");
+    expect(m1?.sourceStoreKind).toBe("narrative");
     expect(m1?.sourceStoreName).toBe("config");
     expect(m1?.scope).toBe("agent");
     expect(m1?.scopeTarget).toBe("my-agent");

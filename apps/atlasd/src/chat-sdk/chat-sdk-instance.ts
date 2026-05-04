@@ -19,6 +19,7 @@ import { signalToStream, type TriggerFn } from "@atlas/workspace/signal-to-strea
 import type { Message, StreamEvent, Thread } from "chat";
 import { Chat } from "chat";
 import { z } from "zod";
+import type { ChatTurnRegistry } from "../chat-turn-registry.ts";
 import { KERNEL_WORKSPACE_ID } from "../factory.ts";
 import {
   findCommunicatorWiring,
@@ -81,6 +82,7 @@ export interface ChatSdkInstanceConfig {
   signals?: Record<string, { provider?: string; config?: Record<string, unknown> }>;
   communicators?: Record<string, CommunicatorEntry>;
   streamRegistry: StreamRegistry;
+  chatTurnRegistry?: ChatTurnRegistry;
   triggerFn: TriggerFn;
   exposeKernel?: boolean;
 }
@@ -850,6 +852,19 @@ export function createMessageHandler(
         ? message.raw.datetime
         : undefined;
 
+    // The atlas web adapter stashes the per-turn abort signal on the raw
+    // payload (sourced from ChatTurnRegistry). Other adapters (Slack, Telegram)
+    // don't currently set this — they get undefined, which means no per-turn
+    // abort, matching their existing behavior. Validate the runtime shape
+    // because Message.raw is `unknown` here.
+    const abortSignal =
+      typeof message.raw === "object" &&
+      message.raw !== null &&
+      "abortSignal" in message.raw &&
+      message.raw.abortSignal instanceof AbortSignal
+        ? message.raw.abortSignal
+        : undefined;
+
     const rawFgPayload =
       typeof message.raw === "object" &&
       message.raw !== null &&
@@ -885,6 +900,7 @@ export function createMessageHandler(
           }
         }
       },
+      abortSignal,
     );
 
     try {
@@ -960,7 +976,15 @@ export async function initializeChatSdkInstance(
   config: ChatSdkInstanceConfig,
   credentials?: PlatformCredentials | PlatformCredentials[],
 ): Promise<ChatSdkInstance> {
-  const { workspaceId, userId, signals, communicators, streamRegistry, triggerFn } = config;
+  const {
+    workspaceId,
+    userId,
+    signals,
+    communicators,
+    streamRegistry,
+    chatTurnRegistry,
+    triggerFn,
+  } = config;
 
   const adapters = buildChatSdkAdapters({
     workspaceId,
@@ -968,6 +992,7 @@ export async function initializeChatSdkInstance(
     communicators,
     credentials,
     streamRegistry,
+    chatTurnRegistry,
   });
 
   const stateAdapter = new ChatSdkStateAdapter({ userId, workspaceId });

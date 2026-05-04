@@ -15,11 +15,9 @@
       summary: z.string().optional(),
       data: z.object({
         type: z.literal("file"),
-        version: z.literal(1),
-        data: z.object({
-          path: z.string(),
-          mimeType: z.string(),
-        }),
+        mimeType: z.string(),
+        size: z.number().int().nonnegative(),
+        originalName: z.string().optional(),
       }),
     }),
     contents: z.string().optional(),
@@ -29,11 +27,10 @@
   let resolvedSummary = $state<string | undefined>(undefined);
   let mimeType = $state<string | undefined>(undefined);
   let contents = $state<string | undefined>(undefined);
-  let localPath = $state<string | undefined>(undefined);
+  let originalName = $state<string | undefined>(undefined);
+  let sizeBytes = $state<number | undefined>(undefined);
   let loading = $state(true);
   let fetchError = $state<string | null>(null);
-  let openError = $state<string | null>(null);
-  let opening = $state(false);
 
   // Iframe scale — computed from container width vs assumed content width.
   const IFRAME_CONTENT_WIDTH = 1200;
@@ -77,12 +74,10 @@
         const { artifact, contents: rawContents } = parsed.data;
         resolvedTitle = artifact.title || "Artifact";
         resolvedSummary = artifact.summary;
-        mimeType = artifact.data.data.mimeType;
+        mimeType = artifact.data.mimeType;
+        sizeBytes = artifact.data.size;
+        originalName = artifact.data.originalName;
         contents = rawContents;
-        const path = artifact.data.data.path;
-        if (!path.startsWith("cortex://")) {
-          localPath = path;
-        }
         loading = false;
       } catch (e) {
         if (cancelled) return;
@@ -97,8 +92,10 @@
     };
   });
 
+  // Bytes come straight from the daemon's /:id/content endpoint, which
+  // streams the Object Store blob inline (image) or as attachment.
   const serveUrl = $derived(
-    localPath ? `/api/shell/serve-file?path=${encodeURIComponent(localPath)}` : null,
+    artifactId ? `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content` : null,
   );
 
   const imageUrl = $derived(
@@ -138,12 +135,7 @@
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  // Approximate size from in-memory contents string when present. Server's
-  // `size_bytes` isn't on the response, but `contents` is a faithful copy of
-  // the file body for text-ish artifacts.
-  const sizeLabel = $derived(
-    contents !== undefined ? formatBytes(new Blob([contents]).size) : undefined,
-  );
+  const sizeLabel = $derived(sizeBytes !== undefined ? formatBytes(sizeBytes) : undefined);
 
   function previewContents(raw: string | undefined, mt: string | undefined): string {
     if (!raw) return "";
@@ -161,26 +153,6 @@
     return text.length > limit ? `${text.slice(0, limit)}\n… (truncated)` : text;
   }
 
-  async function openFile() {
-    if (!localPath) return;
-    opening = true;
-    openError = null;
-    try {
-      const res = await fetch("/api/shell/open-path", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: localPath }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        openError = (body as { error?: string }).error ?? `Open failed (${res.status})`;
-      }
-    } catch (e) {
-      openError = e instanceof Error ? e.message : String(e);
-    } finally {
-      opening = false;
-    }
-  }
 </script>
 
 <div class="artifact-card">
@@ -199,15 +171,10 @@
       {/if}
     </div>
 
-    {#if localPath && !loading}
-      <button
-        class="open-btn"
-        onclick={openFile}
-        disabled={opening}
-        title="Open file"
-      >
-        {opening ? "Opening…" : "Open"}
-      </button>
+    {#if serveUrl && !loading}
+      <a class="open-btn" href={serveUrl} target="_blank" rel="noopener noreferrer" title="Open">
+        Open
+      </a>
     {/if}
   </div>
 
@@ -237,22 +204,12 @@
     <pre class="artifact-preview">{previewContents(contents, mimeType)}</pre>
   {/if}
 
-  {#if openError}
-    <div class="artifact-error">{openError}</div>
-  {/if}
-
-  {#if !loading && !fetchError && (localPath || sizeLabel || mimeType)}
+  {#if !loading && !fetchError && (originalName || sizeLabel || mimeType)}
     <dl class="artifact-meta">
-      {#if localPath}
+      {#if originalName}
         <div class="meta-row">
-          <dt>Path</dt>
-          <dd class="meta-path" title={localPath}>
-            <a
-              href={serveUrl ?? "#"}
-              target="_blank"
-              rel="noopener noreferrer"
-            >{localPath}</a>
-          </dd>
+          <dt>Name</dt>
+          <dd class="meta-path" title={originalName}>{originalName}</dd>
         </div>
       {/if}
       {#if mimeType}

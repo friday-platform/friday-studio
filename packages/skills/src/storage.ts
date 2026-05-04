@@ -1,8 +1,7 @@
-import process from "node:process";
 import { createLogger } from "@atlas/logger";
 import type { Result } from "@atlas/utils";
-import { CortexSkillAdapter } from "./cortex-adapter.ts";
-import { LocalSkillAdapter } from "./local-adapter.ts";
+import type { NatsConnection } from "nats";
+import { JetStreamSkillAdapter } from "./jetstream-adapter.ts";
 import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } from "./schemas.ts";
 
 const logger = createLogger({ name: "skill-storage" });
@@ -62,32 +61,36 @@ export interface SkillStorageAdapter {
   listJobOnlySkillIds(): Promise<Result<string[], string>>;
 }
 
-function createSkillStorageAdapter(): SkillStorageAdapter {
-  const adapterType = process.env.SKILL_STORAGE_ADAPTER || "local";
-  switch (adapterType) {
-    case "local": {
-      const dbPath = process.env.SKILL_LOCAL_DB_PATH;
-      logger.info("Using LocalSkillAdapter", { dbPath });
-      return new LocalSkillAdapter(dbPath);
-    }
-    case "cortex": {
-      const cortexUrl = process.env.CORTEX_URL;
-      if (!cortexUrl) {
-        throw new Error("CORTEX_URL required when SKILL_STORAGE_ADAPTER=cortex");
-      }
-      logger.info("Using CortexSkillAdapter", { cortexUrl });
-      return new CortexSkillAdapter(cortexUrl);
-    }
-    default:
-      throw new Error(`Unknown skill storage adapter: ${adapterType}`);
-  }
+/**
+ * Skill storage facade. Production daemon calls `initSkillStorage(nc)`
+ * at startup so both bundled-skill bootstrap (`packages/system/skills/`)
+ * and `atlas skill publish` writes land in the same JetStream `SKILLS`
+ * KV bucket + `SKILL_ARCHIVES` Object Store.
+ *
+ * Throws if neither `initSkillStorage(nc)` nor
+ * `_setSkillStorageForTest()` has been called. A missing init is a
+ * daemon-wiring bug; falling back to an in-process / on-disk SQLite
+ * shim would silently fork the skill catalog away from the broker
+ * and lose every published skill on restart.
+ */
+let _storage: SkillStorageAdapter | null = null;
+
+export function initSkillStorage(nc: NatsConnection): void {
+  _storage = new JetStreamSkillAdapter(nc);
+  logger.info("Skill storage initialized (JetStream)");
 }
 
-let _storage: SkillStorageAdapter | null = null;
+/** Inject a custom adapter — tests only. */
+export function _setSkillStorageForTest(adapter: SkillStorageAdapter | null): void {
+  _storage = adapter;
+}
 
 function getStorage(): SkillStorageAdapter {
   if (!_storage) {
-    _storage = createSkillStorageAdapter();
+    throw new Error(
+      "Skill storage not initialized — call initSkillStorage(nc) at daemon startup, " +
+        "or _setSkillStorageForTest(adapter) in tests.",
+    );
   }
   return _storage;
 }

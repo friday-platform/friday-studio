@@ -2,7 +2,10 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { afterAll, describe, expect, it } from "vitest";
+import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
+import { initSkillStorage } from "@atlas/skills";
+import { connect, type NatsConnection } from "nats";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 // Set up isolated test environment BEFORE importing routes
@@ -81,7 +84,18 @@ const VersionsListSchema = z.object({
 
 const ErrorSchema = z.object({ error: z.string() });
 
-afterAll(() => {
+let natsServer: TestNatsServer;
+let nc: NatsConnection;
+
+beforeAll(async () => {
+  natsServer = await startNatsTestServer();
+  nc = await connect({ servers: natsServer.url });
+  initSkillStorage(nc);
+}, 30_000);
+
+afterAll(async () => {
+  await nc.drain();
+  await natsServer.stop();
   rmSync(testDir, { recursive: true, force: true });
 });
 

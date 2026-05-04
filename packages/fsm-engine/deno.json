@@ -8,5 +8,5 @@
     "./mcp-tools": "./mcp-tools/index.ts",
     "./workspace-meta": "./workspace-meta.ts"
   },
-  "imports": { "@atlas/ledger": "../../apps/ledger/src/index.ts" }
+  "imports": {}
 }

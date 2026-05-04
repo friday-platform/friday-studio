@@ -29,11 +29,12 @@ export const ReasoningResultStatus = {
 /**
  * Workspace session status — single source of truth.
  *
- * - active:    session is currently running
- * - completed: finished successfully
- * - failed:    platform/system error
- * - skipped:   user configuration issue (e.g. OAuth not connected)
- * - cancelled: session was cancelled by user
+ * - active:      session is currently running
+ * - completed:   finished successfully
+ * - failed:      platform/system error
+ * - skipped:     user configuration issue (e.g. OAuth not connected)
+ * - cancelled:   session was cancelled by user
+ * - interrupted: daemon was killed mid-session (set on startup recovery)
  */
 export const WorkspaceSessionStatusSchema = z.enum([
   "active",
@@ -41,6 +42,7 @@ export const WorkspaceSessionStatusSchema = z.enum([
   "failed",
   "skipped",
   "cancelled",
+  "interrupted",
 ]);
 
 export type WorkspaceSessionStatusType = z.infer<typeof WorkspaceSessionStatusSchema>;
@@ -51,6 +53,7 @@ export const WorkspaceSessionStatus = {
   FAILED: "failed",
   SKIPPED: "skipped",
   CANCELLED: "cancelled",
+  INTERRUPTED: "interrupted",
 } as const satisfies Record<string, WorkspaceSessionStatusType>;
 
 // Type exports

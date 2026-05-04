@@ -1,8 +1,7 @@
 import { createWriteStream } from "node:fs";
-import { copyFile, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, extname, join } from "node:path";
-import process from "node:process";
 import {
   type ArtifactDataInput,
   type ArtifactWithContents,
@@ -17,7 +16,6 @@ import {
   USER_FACING_ERROR_CODES,
 } from "@atlas/core/artifacts/converters";
 import {
-  EXTENSION_TO_MIME,
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
   isAudioMimeType,
@@ -34,7 +32,6 @@ import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { type PlatformModels, smallLLM } from "@atlas/llm";
 import { createLogger } from "@atlas/logger";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
-import { getFridayHome } from "@atlas/utils/paths.server";
 import { zValidator } from "@hono/zod-validator";
 import { fileTypeFromFile } from "file-type";
 import JSZip from "jszip";
@@ -42,12 +39,6 @@ import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 
 const logger = createLogger({ name: "artifacts-upload" });
-
-/** Reverse map: MIME type -> canonical extension (first match wins). */
-const MIME_TO_EXTENSION = new Map<string, string>();
-for (const [ext, mime] of EXTENSION_TO_MIME) {
-  if (!MIME_TO_EXTENSION.has(mime)) MIME_TO_EXTENSION.set(mime, ext);
-}
 
 type ValidationResult = { valid: true; mimeType: string } | { valid: false; error: string };
 
@@ -122,21 +113,11 @@ async function convertUploadedFile(opts: {
     };
   }
 
-  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
-  const artifactsDir = usingCortex
-    ? join(tmpdir(), "atlas-artifacts")
-    : join(getFridayHome(), "uploads", "artifacts");
-  await mkdir(artifactsDir, { recursive: true });
-
-  const ext = extname(fileName).toLowerCase();
-  const resolvedExt = resolvedMime ? (MIME_TO_EXTENSION.get(resolvedMime) ?? ext) : ext;
-
   // PDF -> markdown
   if (resolvedMime === "application/pdf") {
     return convertUploadedBinary({
       filePath,
       fileName,
-      artifactsDir,
       converter: pdfToMarkdown,
       formatLabel: "PDF",
       maxSize: MAX_PDF_SIZE,
@@ -152,7 +133,6 @@ async function convertUploadedFile(opts: {
     return convertUploadedBinary({
       filePath,
       fileName,
-      artifactsDir,
       converter: docxToMarkdown,
       formatLabel: "DOCX",
       maxSize: MAX_OFFICE_SIZE,
@@ -167,7 +147,6 @@ async function convertUploadedFile(opts: {
     return convertUploadedBinary({
       filePath,
       fileName,
-      artifactsDir,
       converter: pptxToMarkdown,
       formatLabel: "PPTX",
       maxSize: MAX_OFFICE_SIZE,
@@ -178,7 +157,8 @@ async function convertUploadedFile(opts: {
     });
   }
 
-  // Image files — store as-is
+  // Image files — read into bytes, hand off to storage (Object Store
+  // dedups identical bytes by SHA-256).
   if (resolvedMime && isImageMimeType(resolvedMime)) {
     try {
       const { size } = await stat(filePath);
@@ -186,20 +166,13 @@ async function convertUploadedFile(opts: {
         await rm(filePath, { force: true });
         return { ok: false, error: "Image files must be under 5MB." };
       }
-
-      const persistedImagePath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt}`);
-      await copyFile(filePath, persistedImagePath);
+      const bytes = new Uint8Array(await readFile(filePath));
       await unlink(filePath).catch(() => {});
-
       return {
         ok: true,
         title: fileName,
         summary: `Image: ${fileName}`,
-        data: {
-          type: "file",
-          version: 1,
-          data: { path: persistedImagePath, originalName: fileName },
-        },
+        data: { type: "file", content: bytes, mimeType: resolvedMime, originalName: fileName },
       };
     } catch (error) {
       await unlink(filePath).catch(() => {});
@@ -211,7 +184,7 @@ async function convertUploadedFile(opts: {
     }
   }
 
-  // Audio files — store as-is (transcription happens downstream)
+  // Audio files — read into bytes, hand off to storage.
   if (resolvedMime && isAudioMimeType(resolvedMime)) {
     try {
       const { size } = await stat(filePath);
@@ -219,20 +192,13 @@ async function convertUploadedFile(opts: {
         await rm(filePath, { force: true });
         return { ok: false, error: "Audio files must be under 25MB." };
       }
-
-      const persistedAudioPath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt}`);
-      await copyFile(filePath, persistedAudioPath);
+      const bytes = new Uint8Array(await readFile(filePath));
       await unlink(filePath).catch(() => {});
-
       return {
         ok: true,
         title: fileName,
         summary: `Audio: ${fileName}`,
-        data: {
-          type: "file",
-          version: 1,
-          data: { path: persistedAudioPath, originalName: fileName },
-        },
+        data: { type: "file", content: bytes, mimeType: resolvedMime, originalName: fileName },
       };
     } catch (error) {
       await unlink(filePath).catch(() => {});
@@ -244,20 +210,22 @@ async function convertUploadedFile(opts: {
     }
   }
 
-  // Other text files — copy as-is
-  const persistedPath = join(artifactsDir, `${crypto.randomUUID()}${resolvedExt || ".txt"}`);
+  // Other text files — read into bytes; let storage sniff/override mime.
   try {
-    await copyFile(filePath, persistedPath);
+    const bytes = new Uint8Array(await readFile(filePath));
     await unlink(filePath).catch(() => {});
-
     return {
       ok: true,
       title: fileName,
       summary: `Uploaded file: ${fileName}`,
-      data: { type: "file", version: 1, data: { path: persistedPath, originalName: fileName } },
+      data: {
+        type: "file",
+        content: bytes,
+        ...(resolvedMime ? { mimeType: resolvedMime } : {}),
+        originalName: fileName,
+      },
     };
   } catch (error) {
-    await unlink(persistedPath).catch(() => {});
     await unlink(filePath).catch(() => {});
     logger.error("Failed to process file", { filename: fileName, error: stringifyError(error) });
     return { ok: false, error: "Upload failed" };
@@ -268,15 +236,12 @@ async function convertUploadedFile(opts: {
 async function convertUploadedBinary(opts: {
   filePath: string;
   fileName: string;
-  artifactsDir: string;
   converter: (buffer: Uint8Array, filename: string) => Promise<string>;
   formatLabel: string;
   maxSize: number;
   placeholderSummary: (markdown: string) => string;
 }): Promise<ConvertedFile> {
-  const { filePath, fileName, artifactsDir, converter, formatLabel, maxSize, placeholderSummary } =
-    opts;
-  const mdPath = join(artifactsDir, `${crypto.randomUUID()}.md`);
+  const { filePath, fileName, converter, formatLabel, maxSize, placeholderSummary } = opts;
   try {
     const { size } = await stat(filePath);
     if (size > maxSize) {
@@ -287,19 +252,18 @@ async function convertUploadedBinary(opts: {
 
     const buffer = await readFile(filePath);
     const markdown = await converter(buffer, fileName);
-    await writeFile(mdPath, markdown, "utf-8");
 
     const summary = placeholderSummary(markdown);
+    const mdName = fileName.replace(/\.[^.]+$/, "") + ".md";
 
     return {
       ok: true,
       title: fileName,
       summary,
-      data: { type: "file", version: 1, data: { path: mdPath, originalName: fileName } },
+      data: { type: "file", content: markdown, mimeType: "text/markdown", originalName: mdName },
       markdown,
     };
   } catch (error) {
-    await unlink(mdPath).catch(() => {});
     const isUserFacing = error instanceof ConverterError && USER_FACING_ERROR_CODES.has(error.code);
     const message = error instanceof Error ? error.message : "";
     logger.error(`Failed to convert ${formatLabel} to markdown`, {
@@ -428,23 +392,7 @@ export async function createArtifactFromFile(opts: {
 
   if (!result.ok) {
     logger.error("ArtifactStorage.create failed", { filename: fileName, error: result.error });
-    const fileData = converted.data.data;
-    if (typeof fileData === "object" && fileData !== null && "path" in fileData) {
-      await unlink(fileData.path).catch(() => {});
-    }
     return { ok: false as const, error: result.error };
-  }
-
-  // Cortex uploaded the file — local copy is no longer needed
-  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
-  const fileData = converted.data.data;
-  if (usingCortex && typeof fileData === "object" && fileData !== null && "path" in fileData) {
-    await unlink(fileData.path).catch((err) => {
-      logger.debug("Failed to cleanup temp file after Cortex upload", {
-        path: fileData.path,
-        error: stringifyError(err),
-      });
-    });
   }
 
   // Fire-and-forget: LLM summary for converted documents
@@ -508,27 +456,7 @@ export async function replaceArtifactFromFile(opts: {
       filename: fileName,
       error: result.error,
     });
-    const replaceData = converted.data.data;
-    if (typeof replaceData === "object" && replaceData !== null && "path" in replaceData) {
-      await unlink(replaceData.path).catch(() => {});
-    }
     return { ok: false as const, error: result.error };
-  }
-
-  const usingCortex = process.env.ARTIFACT_STORAGE_ADAPTER === "cortex";
-  const replaceCleanupData = converted.data.data;
-  if (
-    usingCortex &&
-    typeof replaceCleanupData === "object" &&
-    replaceCleanupData !== null &&
-    "path" in replaceCleanupData
-  ) {
-    await unlink(replaceCleanupData.path).catch((err) => {
-      logger.debug("Failed to cleanup temp file after Cortex upload", {
-        path: replaceCleanupData.path,
-        error: stringifyError(err),
-      });
-    });
   }
 
   // Fire-and-forget: LLM summary for converted documents
@@ -573,6 +501,38 @@ const BatchGetBody = z.object({
   includeContents: z.boolean().optional(),
 });
 
+/**
+ * When an artifact lookup misses, the cause may be the in-flight
+ * artifacts-to-jetstream / repair-artifact-object-store-v2 migration
+ * rather than missing data. Returns a 503 body if so, otherwise null
+ * (caller should fall through to its own 404 response).
+ */
+function migrationStateError(
+  migrations: { state: "pending" } | { state: "complete"; result: { failed: string[] } },
+): { status: 503; body: Record<string, unknown> } | null {
+  if (migrations.state === "pending") {
+    return {
+      status: 503,
+      body: { error: "Artifact migration in progress — retry shortly", migrating: true },
+    };
+  }
+  const failed = migrations.result.failed;
+  if (
+    failed.includes("artifacts-to-jetstream") ||
+    failed.includes("repair-artifact-object-store-v2")
+  ) {
+    return {
+      status: 503,
+      body: {
+        error:
+          "Artifact migration failed — see daemon logs. The artifact may need to be re-uploaded.",
+        migrationFailed: true,
+      },
+    };
+  }
+  return null;
+}
+
 const artifactsApp = daemonFactory
   .createApp()
   /** Create new artifact */
@@ -597,8 +557,9 @@ const artifactsApp = daemonFactory
       const result = await ArtifactStorage.update({
         id,
         data: data.data,
+        ...(data.title !== undefined ? { title: data.title } : {}),
         summary: data.summary,
-        revisionMessage: data.revisionMessage,
+        ...(data.revisionMessage !== undefined ? { revisionMessage: data.revisionMessage } : {}),
       });
 
       if (!result.ok) {
@@ -653,6 +614,8 @@ const artifactsApp = daemonFactory
       }
 
       if (!result.data) {
+        const migErr = migrationStateError(c.get("app").daemon.getStatus().migrations);
+        if (migErr) return c.json(migErr.body, migErr.status);
         return c.json({ error: "Artifact not found" }, 404);
       }
 
@@ -747,6 +710,8 @@ const artifactsApp = daemonFactory
         return c.json({ error: result.error }, 500);
       }
       if (!result.data) {
+        const migErr = migrationStateError(c.get("app").daemon.getStatus().migrations);
+        if (migErr) return c.json(migErr.body, migErr.status);
         return c.json({ error: "Artifact not found" }, 404);
       }
 
@@ -763,7 +728,7 @@ const artifactsApp = daemonFactory
         return c.json({ error: binaryResult.error }, 500);
       }
 
-      const { mimeType } = artifact.data.data;
+      const { mimeType } = artifact.data;
       const disposition = isImageMimeType(mimeType) ? "inline" : "attachment";
 
       const body = new Uint8Array(binaryResult.data);

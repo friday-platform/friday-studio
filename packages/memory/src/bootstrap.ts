@@ -57,7 +57,7 @@ export async function resolveBootstrap(
 
   const blocks: string[] = [];
   for (const meta of narrativeStores) {
-    const store = await adapter.store(workspaceId, meta.name, "narrative");
+    const store = await adapter.store(workspaceId, meta.name);
     const rendered = await store.render();
     if (rendered.trim().length > 0) {
       blocks.push(rendered);
@@ -199,7 +199,7 @@ export async function buildBootstrapBlock(
   let totalSize = 0;
 
   for (const mount of mounts) {
-    const store = await adapter.store(workspaceId, mount.store, "narrative");
+    const store = await adapter.store(workspaceId, mount.store);
     const allEntries = await store.read();
     const filtered = mount.filter ? applyFilter(allEntries, mount.filter) : allEntries;
     if (filtered.length === 0) continue;
@@ -234,7 +234,7 @@ export async function buildBootstrap(
 
   const sections: string[] = [];
   for (const meta of narrativeStores) {
-    const store = await adapter.store(workspaceId, meta.name, "narrative");
+    const store = await adapter.store(workspaceId, meta.name);
     const rendered = await store.render();
     if (rendered.trim()) {
       sections.push(rendered.trim());

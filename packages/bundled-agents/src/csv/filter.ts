@@ -1,11 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import { streamTextWithEvents } from "@atlas/agent-sdk/vercel-helpers";
 import { ArtifactStorage, parseCsvContent } from "@atlas/core/artifacts/server";
 import { registry, traceModel } from "@atlas/llm";
 import { stringifyError } from "@atlas/utils";
-import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { Database } from "@db/sqlite";
 import type { ModelMessage } from "ai";
 import { tool } from "ai";
@@ -298,19 +295,17 @@ Call buildSqlWhere tool with your WHERE clause (WITHOUT the 'WHERE' keyword).`,
         samples,
       };
 
-      // Write JSON to file
-      const workspaceFilesDir = getWorkspaceFilesDir(session.workspaceId);
-      await mkdir(workspaceFilesDir, { recursive: true });
-
       const jsonFileName = `csv-filter-${timestamp.replace(/[:.]/g, "-")}.json`;
-      const jsonFilePath = join(workspaceFilesDir, jsonFileName);
+      const jsonContent = JSON.stringify(artifactData, null, 2);
 
-      await writeFile(jsonFilePath, JSON.stringify(artifactData, null, 2), "utf-8");
-
-      // Create file artifact
       const artifactResult = await ArtifactStorage.create({
         workspaceId: session.workspaceId,
-        data: { type: "file", version: 1, data: { path: jsonFilePath } },
+        data: {
+          type: "file",
+          content: jsonContent,
+          mimeType: "application/json",
+          originalName: jsonFileName,
+        },
         title: `CSV Filter: ${artifactId.slice(0, 8)}`,
         summary: `CSV filter results: ${samples.length} sample(s) from ${filteredCount} filtered record(s)`,
       });

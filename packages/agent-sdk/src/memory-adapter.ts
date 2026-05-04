@@ -1,11 +1,8 @@
 /**
  * Memory Adapter Interface
  *
- * Store-typed memory with swappable backends. A thin MemoryAdapter router
- * hands out kind-typed Store handles. Every store write emits a typed
- * AtlasDataEvent and records a version.
- *
- * From parity plan v6, lines 582-652.
+ * Narrative-only after the 2026-05 cleanup. Retrieval/dedup/kv strategies
+ * removed; the only Store kind is markdown narrative.
  */
 
 import { z } from "zod";
@@ -22,12 +19,6 @@ export const NarrativeEntrySchema = z.object({
 
 export const SearchOptsSchema = z.object({ limit: z.number().int().optional() });
 
-export const RetrievalOptsSchema = z.object({
-  filter: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const DedupEntrySchema = z.record(z.string(), z.unknown());
-
 export const HistoryFilterSchema = z.object({
   store: z.string().optional(),
   since: z.string().optional(),
@@ -43,7 +34,7 @@ export const HistoryEntrySchema = z.object({
 
 export const StoreMetadataSchema = z.object({
   name: z.string().min(1),
-  kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
+  kind: z.literal("narrative"),
   workspaceId: z.string().min(1),
 });
 
@@ -71,9 +62,9 @@ export const ReflectionNarrativeEntrySchema = z.object({
   metadata: ReflectionMetadataSchema,
 });
 
-// ── TypeScript types (authoritative — verbatim from plan) ───────────────────
+// ── TypeScript types ────────────────────────────────────────────────────────
 
-export type StoreKind = "narrative" | "retrieval" | "dedup" | "kv";
+export type StoreKind = "narrative";
 
 export interface NarrativeEntry {
   id: string;
@@ -86,48 +77,20 @@ export interface NarrativeEntry {
 export interface SearchOpts {
   limit?: number;
 }
-export interface DocBatch {
-  docs: Array<{ id: string; text: string; metadata?: Record<string, unknown> }>;
-}
-export interface IngestOpts {
-  chunker?: string;
-  embedder?: string;
-}
-export interface IngestResult {
-  ingested: number;
-  skipped: number;
-}
-export interface RetrievalQuery {
-  text: string;
-  topK?: number;
-}
-export interface RetrievalOpts {
-  filter?: Record<string, unknown>;
-}
-export interface Hit {
-  id: string;
-  score: number;
-  text: string;
-  metadata?: Record<string, unknown>;
-}
-export interface RetrievalStats {
-  count: number;
-  sizeBytes: number;
-}
-export interface DedupEntry {
-  [field: string]: unknown;
-}
+
 export interface HistoryFilter {
   store?: string;
   since?: string;
   limit?: number;
 }
+
 export interface HistoryEntry {
   version: string;
   store: string;
   at: string;
   summary: string;
 }
+
 export interface StoreMetadata {
   name: string;
   kind: StoreKind;
@@ -142,39 +105,11 @@ export interface NarrativeStore {
   render(): Promise<string>;
 }
 
-export interface RetrievalStore {
-  ingest(docs: DocBatch, opts?: IngestOpts): Promise<IngestResult>;
-  query(q: RetrievalQuery, opts?: RetrievalOpts): Promise<Hit[]>;
-  stats(): Promise<RetrievalStats>;
-  reset(): Promise<void>;
-}
-
-export interface DedupStore {
-  append(namespace: string, entry: DedupEntry, ttlHours?: number): Promise<void>;
-  filter(namespace: string, field: string, values: unknown[]): Promise<unknown[]>;
-  clear(namespace: string): Promise<void>;
-}
-
-export interface KVStore {
-  get<T = unknown>(key: string): Promise<T | undefined>;
-  set(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
-  delete(key: string): Promise<void>;
-  list(prefix?: string): Promise<string[]>;
-}
-
-export type StoreOf<K extends StoreKind> = K extends "narrative"
-  ? NarrativeStore
-  : K extends "retrieval"
-    ? RetrievalStore
-    : K extends "dedup"
-      ? DedupStore
-      : K extends "kv"
-        ? KVStore
-        : never;
+export type StoreOf = NarrativeStore;
 
 export interface MemoryAdapter {
-  /** Open or create a named store. Backend resolved per-store from config. */
-  store<K extends StoreKind>(workspaceId: string, name: string, kind: K): Promise<StoreOf<K>>;
+  /** Open or create a named narrative store. */
+  store(workspaceId: string, name: string): Promise<NarrativeStore>;
 
   /** Enumerate stores registered in this workspace. */
   list(workspaceId: string): Promise<StoreMetadata[]>;

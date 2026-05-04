@@ -12,24 +12,19 @@
 export const STORAGE_VERSION = "1.0.0";
 
 // KV storage implementations
-export { DenoKVStorage } from "./src/deno-kv-storage.ts";
+export type { JetStreamKVStorageOptions } from "./src/jetstream-kv-storage.ts";
+export {
+  JetStreamKVStorage,
+  jetstreamKvUpdateCAS,
+} from "./src/jetstream-kv-storage.ts";
 export type {
   AtomicOperation,
   KVEntry,
   KVStorage,
   KVStorageConfig,
 } from "./src/kv-storage.ts";
-// KV storage interface, factory, and error types
-export {
-  createKVStorage,
-  KVConnectionError,
-  KVStorageError,
-  KVTransactionError,
-} from "./src/kv-storage.ts";
-export type { LibraryStorageConfig } from "./src/library-storage-adapter.ts";
-
-// Library storage adapter
-export { LibraryStorageAdapter } from "./src/library-storage-adapter.ts";
+// KV storage interface and factory
+export { createJetStreamKVStorage, createKVStorage } from "./src/kv-storage.ts";
 // Memory storage utilities
 export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
 export { MemoryKVStorage } from "./src/memory-kv-storage.ts";
@@ -78,10 +73,3 @@ export type {
 // Export workspace creation adapters
 export type { WorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
 export { FilesystemWorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
-export type {
-  StoreWorkspaceHistoryOptions,
-  WorkspaceConfigMetadata,
-  WorkspaceHistoryInput,
-} from "./src/cortex.ts";
-// Export cortex workspace history storage
-export { storeToCortex, storeWorkspaceHistory } from "./src/cortex.ts";

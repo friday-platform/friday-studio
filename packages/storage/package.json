@@ -6,12 +6,9 @@
   "exports": { ".": "./mod.ts", "./kv": "./src/kv-storage.ts" },
   "dependencies": {
     "@atlas/config": "workspace:*",
-    "@atlas/core": "workspace:*",
-    "@atlas/logger": "workspace:*",
     "@atlas/utils": "workspace:*",
-    "@std/media-types": "npm:@jsr/std__media-types@^1.1.0",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": { "vitest": "^4.1.0" }
+    "jetstream": "workspace:*",
+    "nats": "^2.29.3"
+  }
 }

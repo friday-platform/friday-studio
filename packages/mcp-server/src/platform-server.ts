@@ -13,13 +13,24 @@ import type { PromptContext } from "./prompts/types.ts";
 import { registerResources } from "./resources/index.ts";
 import type { ResourceContext } from "./resources/types.ts";
 import { registerTools } from "./tools/index.ts";
-import type { ToolContext, WorkspaceConfigProvider, WorkspaceProvider } from "./tools/types.ts";
+import type {
+  ToolContext,
+  ToolDispatcher,
+  WorkspaceConfigProvider,
+  WorkspaceProvider,
+} from "./tools/types.ts";
 
 export interface PlatformMCPServerDependencies {
   daemonUrl?: string; // Default: from getAtlasDaemonUrl()
   logger: Logger;
   workspaceProvider: WorkspaceProvider;
   workspaceConfigProvider: WorkspaceConfigProvider;
+  /**
+   * Optional NATS-mediated tool dispatcher. When provided, tools that have
+   * been migrated to the worker model (e.g. `bash`) route execution through
+   * `callTool` instead of running in-process.
+   */
+  toolDispatcher?: ToolDispatcher;
 }
 
 export class PlatformMCPServer {
@@ -47,6 +58,7 @@ export class PlatformMCPServer {
       logger: this.logger,
       server: this.server,
       workspaceProvider: this.workspaceProvider,
+      toolDispatcher: dependencies.toolDispatcher,
     };
 
     // Register all tools with shared context

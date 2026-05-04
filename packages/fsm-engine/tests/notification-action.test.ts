@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { InMemoryDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMBroadcastNotifier, FSMDefinition, FSMEvent } from "../types.ts";
 
@@ -28,8 +28,11 @@ describe("FSM notification action", () => {
   it("calls broadcastNotifier with the message and no communicator filter when omitted", async () => {
     const broadcast = vi.fn<FSMBroadcastNotifier["broadcast"]>().mockResolvedValue();
     const notifier: FSMBroadcastNotifier = { broadcast };
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
     const engine = new FSMEngine(makeFSM(), {
       documentStore: store,
       scope,
@@ -45,8 +48,11 @@ describe("FSM notification action", () => {
 
   it("forwards the optional communicators allowlist verbatim", async () => {
     const broadcast = vi.fn<FSMBroadcastNotifier["broadcast"]>().mockResolvedValue();
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
     const engine = new FSMEngine(makeFSM(["slack", "telegram"]), {
       documentStore: store,
       scope,
@@ -63,8 +69,11 @@ describe("FSM notification action", () => {
   });
 
   it("throws a typed error when no broadcastNotifier is configured", async () => {
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
     const engine = new FSMEngine(makeFSM(), { documentStore: store, scope });
     await engine.initialize();
 
@@ -86,8 +95,11 @@ describe("FSM notification action", () => {
         end: { type: "final" },
       },
     };
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
     const engine = new FSMEngine(fsm, {
       documentStore: store,
       scope,
@@ -118,8 +130,11 @@ describe("FSM notification action", () => {
     const broadcast = vi
       .fn<FSMBroadcastNotifier["broadcast"]>()
       .mockRejectedValue(new Error("no destinations"));
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
     const engine = new FSMEngine(makeFSM(), {
       documentStore: store,
       scope,

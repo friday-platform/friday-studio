@@ -7,7 +7,6 @@
     "dev": "LINK_DEV_MODE=true deno run --watch --env-file=$HOME/.atlas/link.env --allow-all src/index.ts"
   },
   "imports": {
-    "@atlas/core/kv": "../../packages/core/src/kv.ts",
     "@atlas/logger": "../../packages/logger/mod.ts",
     "@atlas/utils": "../../packages/utils/mod.ts",
     "@atlas/utils/paths.server": "../../packages/utils/src/paths.ts",

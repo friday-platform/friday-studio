@@ -1,14 +1,12 @@
-import type { ActivityStorageAdapter } from "@atlas/activity";
 import type { AgentRegistry } from "@atlas/agent-sdk";
 import type { AtlasDaemon } from "@atlas/atlasd";
 import type { SessionHistoryAdapter } from "@atlas/core";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import type { PlatformModels } from "@atlas/llm";
-import type { LibraryStorageAdapter } from "@atlas/storage";
 import type { WorkspaceManager, WorkspaceRuntime } from "@atlas/workspace";
 import { cors } from "hono/cors";
 import { createFactory } from "hono/factory";
 import type { ChatSdkInstance } from "./chat-sdk/chat-sdk-instance.ts";
+import type { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import type { SessionStreamRegistry } from "./session-stream-registry.ts";
 import type { StreamRegistry } from "./stream-registry.ts";
 
@@ -39,15 +37,6 @@ export interface AppContext {
   getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined;
   destroyWorkspaceRuntime(workspaceId: string): Promise<void>;
 
-  // Library storage methods
-  getLibraryStorage(): LibraryStorageAdapter;
-
-  // Ledger resource storage
-  getLedgerAdapter(): ResourceStorageAdapter;
-
-  // Activity storage
-  getActivityAdapter(): ActivityStorageAdapter;
-
   // Agent registry
   getAgentRegistry(): AgentRegistry;
 
@@ -60,6 +49,10 @@ export interface AppContext {
 
   // Stream registry for managing chat streams
   streamRegistry: StreamRegistry;
+
+  // Per-chat AbortController registry — aborts the in-flight turn when the
+  // user sends a follow-up message in the same chat. See ChatTurnRegistry.
+  chatTurnRegistry: ChatTurnRegistry;
 
   // Session stream registry for managing session event streams (v2)
   sessionStreamRegistry: SessionStreamRegistry;

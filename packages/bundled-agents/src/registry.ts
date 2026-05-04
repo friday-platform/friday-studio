@@ -12,7 +12,6 @@ import { jiraAgent } from "./jira/agent.ts";
 import { knowledgeHybridAgent } from "./knowledge/agent.ts";
 import { slackCommunicatorAgent } from "./slack/communicator.ts";
 import { summaryAgent } from "./summary.ts";
-import { transcriptionAgent } from "./transcription/agent.ts";
 import { webAgent } from "./web/index.ts";
 
 /**
@@ -30,7 +29,6 @@ export const bundledAgents: AtlasAgent[] = [
   bbAgent,
   jiraAgent,
   csvFilterSamplerAgent,
-  transcriptionAgent,
   hubspotAgent,
   imageGenerationAgent,
   knowledgeHybridAgent,

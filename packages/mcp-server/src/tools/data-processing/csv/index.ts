@@ -7,14 +7,12 @@
  *
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
 import {
   ArtifactStorage,
   CsvParseResultSchema,
   parseCsvContent,
 } from "@atlas/core/artifacts/server";
 import { stringifyError } from "@atlas/utils";
-import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import Papa from "papaparse";
 import { z } from "zod";
@@ -138,23 +136,16 @@ export function registerCsvTool(server: McpServer, context: ToolContext): void {
           const rows = result.dataByFile[f.fileName] ?? f.data;
           const columns = result.columnsByFile[f.fileName] ?? f.columns;
 
-          // Convert to CSV content
           const csvContent = Papa.unparse({ fields: columns, data: rows });
+          const outputFileName = `${f.fileName.replace(/\.csv$/i, "")}-transformed.csv`;
 
-          // Write to workspace files directory
-          const workspaceFilesDir = getWorkspaceFilesDir(input.workspaceId);
-          await mkdir(workspaceFilesDir, { recursive: true });
-
-          const outputFileName = `${crypto.randomUUID()}.csv`;
-          const outputPath = `${workspaceFilesDir}/${outputFileName}`;
-          await writeFile(outputPath, csvContent, "utf-8");
-
-          // Set restrictive permissions (owner read/write only)
-          await Deno.chmod(outputPath, 0o600);
-
-          // Create artifact pointing to the file
           const createResult = await ArtifactStorage.create({
-            data: { type: "file", version: 1, data: { path: outputPath } },
+            data: {
+              type: "file",
+              content: csvContent,
+              mimeType: "text/csv",
+              originalName: outputFileName,
+            },
             title: `${f.fileName} (transformed)`,
             summary: `Transformed CSV: ${f.fileName}`,
             workspaceId: input.workspaceId,

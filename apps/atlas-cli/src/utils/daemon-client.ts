@@ -4,7 +4,7 @@
  */
 
 import { parseResult, client as v2Client } from "@atlas/client/v2";
-import { createAtlasClient, getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { stringifyError } from "@atlas/utils";
 
 interface WorkspaceInfo {
@@ -15,43 +15,6 @@ interface WorkspaceInfo {
   path: string;
   createdAt: string;
   lastSeen: string;
-}
-
-interface LibrarySearchQuery {
-  query?: string;
-  type?: string | string[];
-  tags?: string | string[];
-  since?: string;
-  until?: string;
-  limit?: number;
-  offset?: number;
-}
-
-interface LibraryItem {
-  id: string;
-  type: string;
-  name: string;
-  description?: string;
-  content_path: string;
-  mime_type: string;
-  metadata: {
-    source: string;
-    session_id?: string;
-    agent_ids?: string[];
-    custom_fields?: Record<string, unknown>;
-  };
-  created_at: string;
-  updated_at: string;
-  tags: string[];
-  size_bytes: number;
-  workspace_id?: string;
-}
-
-interface LibrarySearchResult {
-  items: LibraryItem[];
-  total: number;
-  query: LibrarySearchQuery;
-  took_ms: number;
 }
 
 class DaemonClient {
@@ -212,49 +175,6 @@ class DaemonClient {
     );
     if (!response.ok) {
       throw new Error(`Failed to list workspace sessions: ${stringifyError(response.error)}`);
-    }
-    return response.data;
-  }
-
-  // =================================================================
-  // LIBRARY OPERATIONS
-  // =================================================================
-
-  /**
-   * List library items
-   */
-  async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
-    const q = {
-      query: query?.query,
-      type: Array.isArray(query?.type) ? query.type.join(",") : query?.type,
-      tags: Array.isArray(query?.tags) ? query.tags.join(",") : query?.tags,
-      since: query?.since,
-      until: query?.until,
-      limit: query?.limit,
-      offset: query?.offset,
-    };
-
-    const client = createAtlasClient();
-    const response = await client.GET("/api/library", { params: { query: q } });
-    if (response.error) {
-      throw new Error(stringifyError(response.error));
-    }
-    return response.data;
-  }
-
-  /**
-   * Get specific library item
-   */
-  async getLibraryItem(
-    itemId: string,
-    includeContent: boolean = false,
-  ): Promise<{ item: LibraryItem; content?: string | Uint8Array }> {
-    const client = createAtlasClient();
-    const response = await client.GET("/api/library/{itemId}", {
-      params: { query: { content: includeContent ? "true" : undefined }, path: { itemId } },
-    });
-    if (response.error) {
-      throw new Error(stringifyError(response.error));
     }
     return response.data;
   }

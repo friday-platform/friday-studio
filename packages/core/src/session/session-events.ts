@@ -22,6 +22,11 @@ export const SessionStatusSchema = z.enum([
   "failed",
   "skipped",
   "cancelled",
+  // Set on daemon startup for sessions whose events.jsonl exists but
+  // metadata.json doesn't — i.e. they were mid-flight when the previous
+  // daemon process died. Distinguishes "killed by restart" from "user
+  // cancelled" or "platform failed".
+  "interrupted",
 ]);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 

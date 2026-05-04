@@ -10,50 +10,14 @@ import { WorkspaceSignalConfigSchema } from "./signals.ts";
 import { SkillEntrySchema } from "./skills.ts";
 
 // ==============================================================================
-// RESOURCE DECLARATIONS (config-level schema, strict validation at provisioning)
-// ==============================================================================
-
-const ConfigResourceDeclarationSchema = z.union([
-  z.object({
-    type: z.literal("document"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    schema: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    type: z.literal("prose"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-  }),
-  z.object({
-    type: z.literal("artifact_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    artifactId: z.string(),
-  }),
-  z.object({
-    type: z.literal("external_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    provider: z.string(),
-    ref: z.string().optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  }),
-]);
-
-// ==============================================================================
 // MEMORY SCHEMAS
 // ==============================================================================
 
 export const MemoryTypeSchema = z.enum(["short_term", "long_term", "scratchpad"]);
 
-export const MemoryStrategySchema = z.enum(["narrative", "retrieval", "dedup", "kv"]).optional();
+export const MemoryStrategySchema = z.literal("narrative").optional();
 
-export const StoreKindSchema = z.enum(["narrative", "retrieval", "dedup", "kv"]);
+export const StoreKindSchema = z.literal("narrative");
 
 export const MemoryOwnEntrySchema = z.object({
   name: z.string().min(1),
@@ -63,13 +27,13 @@ export const MemoryOwnEntrySchema = z.object({
 
 // _global is GLOBAL_WORKSPACE_ID from @atlas/agent-sdk/memory-scope
 const SOURCE_RE =
-  /^([A-Za-z0-9_][A-Za-z0-9_-]*|_global)\/(narrative|retrieval|dedup|kv)\/([A-Za-z0-9_][A-Za-z0-9_-]*)$/;
+  /^([A-Za-z0-9_][A-Za-z0-9_-]*|_global)\/(narrative)\/([A-Za-z0-9_][A-Za-z0-9_-]*)$/;
 
 export const MemoryMountSourceSchema = z
   .string()
   .regex(SOURCE_RE, {
     message:
-      'memory.mounts[].source must be "{wsId|_global}/{kind}/{memoryName}" ' +
+      'memory.mounts[].source must be "{wsId|_global}/narrative/{memoryName}" ' +
       '— e.g. "thick_endive/narrative/autopilot-backlog"',
   });
 
@@ -146,7 +110,6 @@ export const WorkspaceConfigSchema = z.strictObject({
   communicators: z.record(z.string(), CommunicatorConfigSchema).optional(),
   jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
-  resources: z.array(ConfigResourceDeclarationSchema).optional(),
   notifications: NotificationConfigSchema.optional(),
   federation: FederationConfigSchema.optional(),
   improvement: z

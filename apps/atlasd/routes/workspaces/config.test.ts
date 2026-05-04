@@ -15,7 +15,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify } from "@std/yaml";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   assert404WorkspaceNotFound,
   createMergedConfig,
@@ -25,9 +25,6 @@ import {
   type JsonBody,
   useTempDir,
 } from "./config.test-fixtures.ts";
-
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
-vi.mock("@atlas/storage", () => ({ storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined) }));
 
 // ==============================================================================
 // PARAMETERIZED ERROR TESTS - Common 404/400 patterns across endpoints

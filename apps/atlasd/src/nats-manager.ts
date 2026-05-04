@@ -1,37 +1,102 @@
-import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { access } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { promisify } from "node:util";
 import { logger } from "@atlas/logger";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { connect, type NatsConnection } from "nats";
+import {
+  connectToNats,
+  DEFAULT_NATS_MONITOR_PORT,
+  DEFAULT_NATS_PORT,
+  formatStartupLog,
+  readJetStreamConfig,
+  type SpawnedNats,
+  spawnNatsServer,
+  tcpProbe,
+} from "jetstream";
+import type { NatsConnection } from "nats";
 
-const NATS_PORT = 4222;
-const NATS_MONITOR_PORT = 8222;
-const READY_TIMEOUT_MS = 10_000;
-const READY_POLL_MS = 100;
-
-const execFileAsync = promisify(execFile);
-
+/**
+ * Daemon-side NATS lifecycle.
+ *
+ * Three modes, decided at start():
+ *
+ * - **External NATS** (`FRIDAY_NATS_URL` set): connect to that broker
+ *   and never spawn. Required for any deployment with more than one
+ *   daemon process or for a managed-NATS topology.
+ * - **Auto-detect existing**: if `localhost:4222` is already serving
+ *   (e.g. an `atlas migrate` run by the operator left a broker up,
+ *   or someone started nats-server by hand), reuse it.
+ * - **Spawn child**: solo-dev fallback — spawn `nats-server` and own
+ *   its lifetime. Stop kills the child.
+ *
+ * The actual spawn is delegated to `jetstream.spawnNatsServer`, which
+ * is the same primitive the CLI uses for its ephemeral broker.
+ */
 export class NatsManager {
-  private proc: ChildProcess | null = null;
+  private spawned: SpawnedNats | null = null;
   private nc: NatsConnection | null = null;
 
   async start(): Promise<NatsConnection> {
-    // If nats-server is already running (external dev instance), reuse it.
-    const alreadyUp = await this.tcpProbe();
-    if (alreadyUp) {
-      logger.info("nats-server already running, connecting without spawning");
-    } else {
-      const binary = await this.findBinary();
-      await this.spawnServer(binary);
-      await this.waitReady();
+    // Log resolved JetStream config + provenance unconditionally — applies
+    // to spawn, reuse-existing-broker, and external-broker paths.
+    const cfg = readJetStreamConfig();
+    logger.info(formatStartupLog(cfg));
+
+    const externalUrl = process.env.FRIDAY_NATS_URL;
+    if (externalUrl) {
+      logger.info("Using external NATS server", { url: externalUrl });
+      this.nc = await connectToNats({ url: externalUrl, name: "atlasd" });
+      logger.info("NATS connection established", { url: externalUrl });
+      return this.nc;
     }
 
-    this.nc = await connect({ servers: `nats://localhost:${NATS_PORT}` });
-    logger.info("NATS connection established", { port: NATS_PORT });
+    const alreadyUp = await tcpProbe(DEFAULT_NATS_PORT);
+    if (alreadyUp) {
+      logger.info("nats-server already running, connecting without spawning");
+      // FRIDAY_NATS_MONITOR only takes effect on the spawning process.
+      // Probe the monitor endpoint and warn if the operator expected it
+      // but the running broker doesn't have it enabled.
+      if (process.env.FRIDAY_NATS_MONITOR === "1") {
+        const monitorUp = await tcpProbe(DEFAULT_NATS_MONITOR_PORT);
+        if (monitorUp) {
+          logger.info(
+            `NATS monitoring detected on existing server at http://localhost:${DEFAULT_NATS_MONITOR_PORT}`,
+          );
+        } else {
+          logger.warn(
+            "FRIDAY_NATS_MONITOR=1 set but a nats-server was already running on " +
+              `${DEFAULT_NATS_PORT} without --http_port. Monitor flag ignored. Kill the ` +
+              "existing nats-server (e.g. `pkill nats-server`) and restart the " +
+              "daemon to enable monitoring.",
+          );
+        }
+      }
+    } else {
+      const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+      // Earlier daemon versions wrote JetStream data to nats-server's
+      // built-in default location (`$TMPDIR/nats/jetstream`). Operators
+      // upgrading past that change saw a fresh empty broker. Detect
+      // orphaned data and tell them how to recover before they panic.
+      await this.warnIfOrphanedJetStreamData(storeDir);
+
+      // Use the daemon's persistent config dir so re-launches reuse the
+      // same generated server.conf (vs the spawn helper's default
+      // tmpdir-based work dir, which is right for ephemeral CLI spawns
+      // but throwaway for the daemon).
+      this.spawned = await spawnNatsServer({
+        port: DEFAULT_NATS_PORT,
+        workDir: join(getFridayHome(), "nats"),
+        storeDir,
+        logger,
+      });
+      if (process.env.FRIDAY_NATS_MONITOR === "1") {
+        logger.info(`NATS monitoring enabled at http://localhost:${DEFAULT_NATS_MONITOR_PORT}`);
+      }
+    }
+
+    this.nc = await connectToNats({ url: `nats://localhost:${DEFAULT_NATS_PORT}`, name: "atlasd" });
+    logger.info("NATS connection established", { port: DEFAULT_NATS_PORT });
     return this.nc;
   }
 
@@ -50,92 +115,68 @@ export class NatsManager {
       this.nc = null;
     }
 
-    if (this.proc) {
-      this.proc.kill("SIGTERM");
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(resolve, 3_000);
-        this.proc!.once("exit", () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-      });
-      this.proc = null;
+    if (this.spawned) {
+      await this.spawned.stop();
+      this.spawned = null;
     }
   }
 
-  private async findBinary(): Promise<string> {
-    // Prefer a binary pinned to ~/.friday/local/bin/ so the daemon is self-contained
-    const localBin = join(getFridayHome(), "bin", "nats-server");
+  /**
+   * If the new explicit store_dir is empty / fresh and the OS-tmpdir
+   * default location has streams, log a recovery hint. We do not move
+   * the data automatically — that's an operator decision (data may
+   * span users / be owned by a different process / etc.) — but we make
+   * the situation impossible to miss.
+   */
+  private async warnIfOrphanedJetStreamData(currentStoreDir: string): Promise<void> {
+    const legacyCandidate = join(tmpdir(), "nats", "jetstream", "$G", "streams");
+    let legacyEntries: string[] = [];
     try {
-      await access(localBin);
-      return localBin;
+      legacyEntries = await readdir(legacyCandidate);
     } catch {
-      // Not there — fall through to PATH
+      return; // No legacy dir = nothing to recover.
     }
+    if (legacyEntries.length === 0) return;
 
+    let currentEntries: string[] = [];
     try {
-      const { stdout } = await execFileAsync("which", ["nats-server"]);
-      return stdout.trim();
+      currentEntries = await readdir(join(currentStoreDir, "jetstream", "$G", "streams"));
     } catch {
-      // Not in PATH either
+      // Current dir doesn't exist yet — broker hasn't booted with new path.
     }
+    if (currentEntries.length > 0) return; // Already migrated or already populated.
 
-    throw new Error(
-      "nats-server binary not found.\n" +
-        "  Install with: brew install nats-server\n" +
-        "  Or download from https://github.com/nats-io/nats-server/releases\n" +
-        `  Or place the binary at ${localBin}`,
+    // nats-server appends `/jetstream/$G/streams` under its configured
+    // store_dir. Legacy default was `$TMPDIR/nats` (broker creates
+    // `$TMPDIR/nats/jetstream/$G/...`). The recover command must rsync
+    // the broker's full prefix so the double `jetstream/jetstream`
+    // layout matches.
+    const legacyRoot = join(tmpdir(), "nats", "jetstream");
+    const newRoot = join(currentStoreDir, "jetstream");
+    logger.warn(
+      [
+        "",
+        "════════════════════════════════════════════════════════════════════",
+        "ORPHANED JETSTREAM DATA DETECTED",
+        "════════════════════════════════════════════════════════════════════",
+        `Earlier daemon versions wrote JetStream data to nats-server's`,
+        `default store directory: ${legacyCandidate}`,
+        "",
+        `That directory holds ${legacyEntries.length} streams.`,
+        `The current daemon is configured to use: ${currentStoreDir}`,
+        "— which is empty.",
+        "",
+        "Your chats, memory, and signals are NOT lost — they're sitting at",
+        `the legacy path. Recover with (daemon stopped):`,
+        "",
+        `  mkdir -p "${newRoot}"`,
+        `  rsync -a "${legacyRoot}/" "${newRoot}/"`,
+        "",
+        "Then restart the daemon. To suppress this warning without moving",
+        "data, set FRIDAY_JETSTREAM_STORE_DIR to the legacy path.",
+        "════════════════════════════════════════════════════════════════════",
+        "",
+      ].join("\n"),
     );
-  }
-
-  private spawnServer(binary: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const args = ["--port", String(NATS_PORT), "--jetstream"];
-      if (process.env.FRIDAY_NATS_MONITOR === "1") {
-        args.push("--http_port", String(NATS_MONITOR_PORT));
-        logger.info(`NATS monitoring enabled at http://localhost:${NATS_MONITOR_PORT}`);
-      }
-      this.proc = spawn(binary, args, { stdio: "pipe" });
-
-      // Reject immediately on exec-level failures (binary not executable, etc.)
-      this.proc.once("error", (err) =>
-        reject(new Error(`nats-server failed to start: ${err.message}`)),
-      );
-
-      // If the process exits before we poll ready it almost certainly failed
-      this.proc.once("exit", (code) => {
-        if (code !== 0 && code !== null) {
-          reject(new Error(`nats-server exited with code ${code}`));
-        }
-      });
-
-      // Give the process a short tick to surface early exec errors, then hand
-      // off to waitReady() for the TCP poll.
-      setTimeout(resolve, 50);
-    });
-  }
-
-  private async waitReady(): Promise<void> {
-    const deadline = Date.now() + READY_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (await this.tcpProbe()) return;
-      await new Promise((r) => setTimeout(r, READY_POLL_MS));
-    }
-    throw new Error(`nats-server did not become ready within ${READY_TIMEOUT_MS}ms`);
-  }
-
-  private tcpProbe(): Promise<boolean> {
-    return new Promise((resolve) => {
-      const socket = createConnection({ port: NATS_PORT, host: "127.0.0.1" });
-      socket.once("connect", () => {
-        socket.destroy();
-        resolve(true);
-      });
-      socket.once("error", () => resolve(false));
-      socket.setTimeout(500, () => {
-        socket.destroy();
-        resolve(false);
-      });
-    });
   }
 }

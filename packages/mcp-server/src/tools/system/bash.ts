@@ -2,11 +2,17 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../utils.ts";
+import { type BashArgs, executeBash } from "./bash-handler.ts";
 
-const MAX_OUTPUT_LENGTH = 30000;
-const DEFAULT_TIMEOUT = 120000; // 2 minutes
-const MAX_TIMEOUT = 600000; // 10 minutes
+const MAX_TIMEOUT = 600000;
 
+/**
+ * MCP `bash` tool. Dispatches to a NATS tool worker (`tools.bash.call`) when
+ * the daemon has wired one up; otherwise runs in-process via the same handler
+ * the worker uses. The worker indirection is the foothold for future
+ * sandboxed-execution work — when the worker moves into a container, this
+ * registration doesn't change.
+ */
 export function registerBashTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "bash",
@@ -50,91 +56,41 @@ Usage notes:
       },
     },
     async (params) => {
-      const timeout = Math.min(params.timeout ?? DEFAULT_TIMEOUT, MAX_TIMEOUT);
-
-      const cwd = params.cwd ?? Deno.cwd();
-      const mergedEnv = params.env ? { ...Deno.env.toObject(), ...params.env } : undefined;
-
       ctx.logger.info("Executing bash command", {
         command: params.command,
-        timeout,
-        cwd,
+        timeout: params.timeout,
+        cwd: params.cwd,
         envKeys: params.env ? Object.keys(params.env) : undefined,
+        viaNats: !!ctx.toolDispatcher,
       });
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
       try {
-        const command = new Deno.Command("bash", {
-          args: ["-c", params.command],
-          cwd,
-          env: mergedEnv,
-          stdout: "piped",
-          stderr: "piped",
-          signal: controller.signal,
-        });
-
-        const process = command.spawn();
-        const { code, stdout, stderr } = await process.output();
-
-        clearTimeout(timeoutId);
-
-        const stdoutText = new TextDecoder().decode(stdout);
-        const stderrText = new TextDecoder().decode(stderr);
-
-        // Truncate output if it's too long
-        const truncateOutput = (text: string) => {
-          if (text.length > MAX_OUTPUT_LENGTH) {
-            return `${text.substring(0, MAX_OUTPUT_LENGTH)}\n\n... (output truncated due to length)`;
-          }
-          return text;
+        const args: BashArgs = {
+          command: params.command,
+          timeout: params.timeout,
+          cwd: params.cwd,
+          env: params.env,
         };
 
-        const truncatedStdout = truncateOutput(stdoutText);
-        const truncatedStderr = truncateOutput(stderrText);
-
-        const output = [
-          `<stdout>`,
-          truncatedStdout ?? "",
-          `</stdout>`,
-          `<stderr>`,
-          truncatedStderr ?? "",
-          `</stderr>`,
-        ].join("\n");
+        const result = ctx.toolDispatcher
+          ? await ctx.toolDispatcher.callTool<typeof args, ReturnType<typeof executeBash>>(
+              "bash",
+              args,
+            )
+          : await executeBash(args);
 
         ctx.logger.info("Bash command completed", {
           command: params.command,
-          exitCode: code,
-          stdoutLength: stdoutText.length,
-          stderrLength: stderrText.length,
-          truncated: stdoutText.length > MAX_OUTPUT_LENGTH || stderrText.length > MAX_OUTPUT_LENGTH,
+          exitCode: result.metadata.exitCode,
+          truncated: result.metadata.truncated,
         });
 
-        return createSuccessResponse({
-          title: params.command,
-          output,
-          metadata: {
-            exitCode: code,
-            stdout: truncatedStdout,
-            stderr: truncatedStderr,
-            truncated:
-              stdoutText.length > MAX_OUTPUT_LENGTH || stderrText.length > MAX_OUTPUT_LENGTH,
-          },
-        });
+        return createSuccessResponse(result);
       } catch (error) {
-        clearTimeout(timeoutId);
-
-        if (error instanceof Error && error.name === "AbortError") {
-          ctx.logger.error("Bash command timed out", { command: params.command, timeout });
-          throw new Error(`Command timed out after ${timeout}ms: ${params.command}`);
-        }
-
         ctx.logger.error("Bash command failed", {
           command: params.command,
           error: error instanceof Error ? error.message : String(error),
         });
-
         throw error;
       }
     },

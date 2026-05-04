@@ -10,7 +10,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { parse, stringify } from "@std/yaml";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   createMergedConfig,
   createMockWorkspace,
@@ -19,9 +19,6 @@ import {
   type JsonBody,
   useTempDir,
 } from "./config.test-fixtures.ts";
-
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
-vi.mock("@atlas/storage", () => ({ storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined) }));
 
 /**
  * Create an FSM job config with agent/llm actions in state entries.

@@ -15,7 +15,6 @@ import { disableMCPServer, enableMCPServer } from "@atlas/config/mutations";
 import { discoverMCPServers } from "@atlas/core/mcp-registry/discovery";
 import { getWorkspaceMCPStatus } from "@atlas/core/mcp-registry/workspace-mcp";
 import { createLogger } from "@atlas/logger";
-import { storeWorkspaceHistory } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -43,11 +42,6 @@ function isSystemWorkspace(workspace: { metadata?: Record<string, unknown> }): b
   if (workspace.metadata?.canonical === "system") return true;
   if (workspace.metadata?.system && workspace.metadata?.canonical !== "personal") return true;
   return false;
-}
-
-/** Blueprint workspace guard — direct config mutations return 422. */
-function isBlueprintWorkspace(workspace: { metadata?: Record<string, unknown> }): boolean {
-  return !!workspace.metadata?.blueprintArtifactId;
 }
 
 // =============================================================================
@@ -138,19 +132,6 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
       );
     }
 
-    if (isBlueprintWorkspace(workspace)) {
-      return c.json(
-        {
-          success: false,
-          error: "not_supported",
-          message:
-            "This workspace uses a blueprint — direct config mutations are not supported. " +
-            "Use the blueprint mutation path instead.",
-        },
-        422,
-      );
-    }
-
     const config = await manager.getWorkspaceConfig(workspace.id);
     if (!config) {
       return c.json(
@@ -189,13 +170,12 @@ const handleEnableMCPServer = async (c: import("hono").Context<AppVariables>) =>
     const mutationFn = (cfg: WorkspaceConfig) =>
       enableMCPServer(cfg, serverId, candidate.metadata.configTemplate as MCPServerConfig);
 
-    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
-      onBeforeWrite: async () => {
-        await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
-          throwOnError: true,
-        });
-      },
-    });
+    // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+    // and got deleted with the rest of the speculative remote-backend
+    // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+    // wire it as a new local primitive (or via JetStream) — don't
+    // resurrect the Cortex shape.
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn);
 
     if (!result.ok) {
       return mapMutationError(c, result.error);
@@ -252,19 +232,6 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
       );
     }
 
-    if (isBlueprintWorkspace(workspace)) {
-      return c.json(
-        {
-          success: false,
-          error: "not_supported",
-          message:
-            "This workspace uses a blueprint — direct config mutations are not supported. " +
-            "Use the blueprint mutation path instead.",
-        },
-        422,
-      );
-    }
-
     const config = await manager.getWorkspaceConfig(workspace.id);
     if (!config) {
       return c.json(
@@ -275,13 +242,12 @@ const handleDisableMCPServer = async (c: import("hono").Context<AppVariables>) =
 
     const mutationFn = (cfg: WorkspaceConfig) => disableMCPServer(cfg, serverId, { force });
 
-    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
-      onBeforeWrite: async () => {
-        await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
-          throwOnError: true,
-        });
-      },
-    });
+    // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+    // and got deleted with the rest of the speculative remote-backend
+    // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+    // wire it as a new local primitive (or via JetStream) — don't
+    // resurrect the Cortex shape.
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn);
 
     if (!result.ok) {
       if (result.error.type === "not_found") {

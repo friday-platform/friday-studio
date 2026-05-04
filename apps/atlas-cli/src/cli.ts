@@ -35,12 +35,11 @@ const LEGACY_COMMANDS = new Set([
   "session",
   "sesh",
   "sess",
-  "library",
-  "lib",
   "artifacts",
   "artifact",
   "inspect",
   "insp",
+  "migrate",
 ]);
 
 const argv = process.argv.slice(2);

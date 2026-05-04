@@ -7,11 +7,10 @@
  *
  * @example
  * ```typescript
- * import { WorkspaceManager, WorkspaceDraftStore } from "@atlas/workspace";
- * import { WorkspaceEntry } from "@atlas/workspace/types";
+ * import { WorkspaceManager, createRegistryStorageJS } from "@atlas/workspace";
  *
- * // Use workspace manager
- * const manager = await getWorkspaceManager();
+ * const registry = await createRegistryStorageJS(nc);
+ * const manager = new WorkspaceManager(registry);
  * const workspaces = await manager.list();
  * ```
  */
@@ -30,20 +29,16 @@ export {
 export type { RuntimeInvalidateCallback } from "./src/manager.ts";
 // Export WorkspaceManagerOptions interface
 // Export main components
-export {
-  getWorkspaceManager,
-  validateMCPEnvironmentForWorkspace,
-  WorkspaceManager,
-} from "./src/manager.ts";
+export { validateMCPEnvironmentForWorkspace, WorkspaceManager } from "./src/manager.ts";
 // Runtime
 export { classifySessionError, WorkspaceRuntime } from "./src/runtime.ts";
 // Storage factories and registry adapter
 export {
+  createJetStreamKVStorage,
   createKVStorage,
-  createLibraryStorage,
-  createRegistryStorage,
+  createRegistryStorageJS,
+  createRegistryStorageMemory,
   RegistryStorageAdapter,
-  StorageConfigs,
 } from "./src/storage.ts";
 // Export all types and schemas
 export type {

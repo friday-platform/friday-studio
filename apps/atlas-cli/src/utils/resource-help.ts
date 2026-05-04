@@ -63,7 +63,7 @@ Key Concepts:
       "ANTHROPIC_API_KEY missing: Add your API key to the .env file",
       "Init requires terminal: Run directly in terminal, not through pipes",
     ],
-    seeAlso: ["daemon", "session", "signal", "agent", "library"],
+    seeAlso: ["daemon", "session", "signal", "agent"],
   },
 
   session: {
@@ -143,35 +143,7 @@ Key Concepts:
       "Remote agent timeout: Verify remote endpoint is accessible",
       "MCP connection failed: Check MCP server configuration",
     ],
-    seeAlso: ["workspace", "session", "library", "mcp"],
-  },
-
-  library: {
-    overview: `
-The library system stores reusable content, templates, and generated artifacts. It
-provides versioned storage for prompts, configurations, and any content generated
-by agents during execution.`,
-    concepts: `
-Key Concepts:
-  • Library Items: Stored content with metadata, tags, and versioning
-  • Templates: Reusable patterns for generating content (not workspace templates)
-  • Content Types: prompts, configs, documents, code, etc.
-  • Workspace vs Platform: Items can be workspace-specific or platform-wide
-Note: For workspace initialization templates, use 'atlas workspace init'`,
-    commonTasks: [
-      "List library items: atlas library list",
-      "Search content: atlas library search 'agent config'",
-      "Get item with content: atlas library get item_123 --content",
-      "List templates: atlas library templates",
-      "Generate from template: atlas library generate my-template data.json",
-      "View statistics: atlas library stats",
-    ],
-    troubleshooting: [
-      "Item not found: Use partial ID match or search functionality",
-      "Template generation failed: Verify data file format matches template requirements",
-      "Storage limit reached: Check atlas library stats and clean up old items",
-    ],
-    seeAlso: ["workspace", "agent"],
+    seeAlso: ["workspace", "session", "mcp"],
   },
 
   logs: {

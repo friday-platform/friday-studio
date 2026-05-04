@@ -2,11 +2,7 @@
   "name": "@atlas/schemas",
   "version": "1.0.0",
   "type": "module",
-  "exports": {
-    "./library": "./src/library.ts",
-    "./json-schema": "./src/json-schema.ts",
-    "./workspace": "./src/workspace.ts"
-  },
-  "dependencies": { "@atlas/config": "workspace:*", "zod": "^4.3.5" },
+  "exports": { "./json-schema": "./src/json-schema.ts" },
+  "dependencies": { "zod": "^4.3.5" },
   "devDependencies": { "vitest": "^4.1.0" }
 }

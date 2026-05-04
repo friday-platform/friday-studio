@@ -1,7 +1,7 @@
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import type { ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
-import { InMemoryDocumentStore } from "../../document-store/node.ts";
+import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
 import type { FSMDefinition, FSMLLMOutput, LLMProvider, OutputValidator } from "../types.ts";
@@ -64,8 +64,11 @@ describe("complete tool injection for LLM actions", () => {
     llmResponses: MockLLMResponse[];
     validator?: OutputValidator;
   }) {
-    const store = new InMemoryDocumentStore();
-    const scope = { workspaceId: "test", sessionId: "test-session" };
+    const store = getDocumentStore();
+    const scope = {
+      workspaceId: `test-${crypto.randomUUID()}`,
+      sessionId: `test-session-${crypto.randomUUID()}`,
+    };
 
     let callCount = 0;
     const capturedPrompts: string[] = [];

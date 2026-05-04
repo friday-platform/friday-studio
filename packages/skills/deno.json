@@ -4,7 +4,8 @@
   "exports": {
     ".": "./src/mod.ts",
     "./archive": "./src/archive.ts",
-    "./schemas": "./src/schemas.ts"
+    "./schemas": "./src/schemas.ts",
+    "./storage": "./src/storage.ts"
   },
   "imports": {
     "@atlas/config": "../config/mod.ts",

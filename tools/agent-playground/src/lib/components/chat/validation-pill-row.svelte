@@ -6,7 +6,6 @@
    * Pure presentational pill row for a single validation attempt.
    * One row per attempt; rendered after the tool calls of the action being validated.
    * Pass/uncertain auto-collapse, fail expands by default.
-   * See docs/plans/2026-04-28-fine-grained-validation-verdict-design.md.
    */
 
   interface Props {

@@ -544,5 +544,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
     this.mcpSessions.clear();
     this.activeStreamHandlers.clear();
+    this.activeMCPRequests.clear();
+    this.activeAgentExecutions.clear();
   }
 }

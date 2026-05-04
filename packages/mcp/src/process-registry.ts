@@ -295,8 +295,7 @@ class ProcessRegistry {
 
     // Capture stderr for error messages only — never pattern-matched. uvicorn
     // fails silently on bind errors so the buffer is unreliable for control
-    // flow (see docs/plans/2026-04-28-shared-mcp-process-registry-design.md
-    // "Ruled-out alternatives").
+    // flow.
     let stderrAccumulator = "";
     child.stderr?.on("data", (data: Uint8Array) => {
       stderrAccumulator += new TextDecoder().decode(data);

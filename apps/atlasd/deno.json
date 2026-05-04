@@ -2,10 +2,14 @@
   "name": "@atlas/atlasd",
   "version": "1.0.0",
   "imports": {
-    "@atlas/activity/titles": "../../packages/activity/src/title-utils.ts",
-    "@atlas/activity/local-adapter": "../../packages/activity/src/local-adapter.ts",
     "@db/sqlite": "jsr:@db/sqlite@0.13",
+    "file-type": "npm:file-type@^22.0.1",
     "nats": "npm:nats@^2.29.3"
   },
-  "exports": { ".": "./mod.ts", "./types": "./types.ts" }
+  "exports": {
+    ".": "./mod.ts",
+    "./types": "./types.ts",
+    "./daemon": "./src/atlas-daemon.ts",
+    "./migrations": "./src/migrations/index.ts"
+  }
 }

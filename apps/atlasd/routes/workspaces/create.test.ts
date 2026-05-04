@@ -14,7 +14,6 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 
 // Mock storage (FilesystemWorkspaceCreationAdapter used in create)
 vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
   FilesystemWorkspaceCreationAdapter: class {
     createWorkspaceDirectory = vi.fn().mockResolvedValue("/tmp/test-ws");
     writeWorkspaceFiles = vi.fn().mockResolvedValue(undefined);
@@ -201,14 +200,12 @@ function createTestApp() {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
-    getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),
-    getLedgerAdapter: vi.fn(),
-    getActivityAdapter: vi.fn(),
     daemon: { getWorkspaceManager: () => mockWorkspaceManager } as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     exposeKernel: false,

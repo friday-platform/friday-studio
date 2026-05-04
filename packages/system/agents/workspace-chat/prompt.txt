@@ -152,6 +152,8 @@ Three types — pick deliberately. Full shape rules live in the `upsert_agent` t
 - `type: "user"` — Python/TS SDK code agent. ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the body would call `ctx.llm.generate` to decide anything, it's `type: "llm"`, not `type: "user"`.
 
 If the user names a type explicitly (`use an llm agent`, `make this a user agent`), use that type unless it's structurally impossible. Don't second-guess explicit instructions.
+
+For `type: "llm"`, the `config.tools` field is a strict per-agent whitelist. Format: `serverId/toolName` (e.g. `google-gmail/send_gmail_message`) or bare server ID (e.g. `sqlite` — exposes all of that server's tools). Only list the tools the agent should actually use; the agent will only see those. A fetcher that should not send must not list the send tool — prompt-level "do not send" guards are unreliable. Mismatch between the prompt's intent and the tool list is the most common cause of an agent doing more than it should.
 </agent_types>
 
 Before finalizing job design:
@@ -175,10 +177,11 @@ Exact sequence — no more, no less:
 2. Read current config once: GET /api/workspaces/:id/config.
 3. Form complete plan.
 4. Execute:
-   - Single entity → `upsert_signal`/`upsert_agent`/`upsert_job` directly. These respect draft mode if one exists, or write live if not.
+   - Single entity → `upsert_signal`/`upsert_agent`/`upsert_job` directly. These respect draft mode if one exists, or write live if not. Single-prop edits (e.g. just an agent's prompt) → still `upsert_agent` with the full agent config — partial PUT endpoints don't accept full configs and will reject you.
    - Multi-entity → `begin_draft` → upserts → `validate_workspace` → `publish_draft`.
-   - Full replacement → POST /api/workspaces/:id/update with full mutated config.
 5. Verify: one call (GET config or check runtime status).
+
+Never `POST /api/workspaces/:id/update` from chat. That endpoint tears down the workspace runtime — including the runtime your chat is running in — and kills the conversation. Use `upsert_*` tools or `publish_draft` instead.
 
 No read-verify-read. No incremental edits. No bash loop to verify intermediate state. One read, one write, one verify — then report.
 
@@ -280,7 +283,7 @@ Tools may return `artifacts` = [{id, summary}]. All artifacts are files — use 
 
 Read contents → `artifacts_get` (returns `contents` field). Pass to another tool → pass ID, not re-serialized contents.
 
-Creating artifacts from scratch files: after `write_file` or `run_code` produces a file the user should see, call `artifacts_create(path, title, summary)` (relative path, same format as `write_file`) → then immediately call `display_artifact` with the returned `artifactId`. Do NOT use `delegate` to register artifacts — use `artifacts_create` directly.
+Creating artifacts: pass content directly to `artifacts_create` — no `write_file → artifacts_create(path)` two-step. Inline string for text, base64 (with `contentEncoding: "base64"`) for binary. Storage hashes the bytes and writes to the JetStream Object Store named by SHA-256, so identical content dedups automatically. After creation, immediately call `display_artifact` with the returned `artifactId`. The legacy scratch-dir path-based form is still accepted by the workspace-chat-only `artifacts_create` tool (it reads the file and base64-encodes for you), but only when `run_code` or `write_file` produced an opaque binary you don't already hold in-memory. Do NOT use `delegate` to register artifacts.
 </artifacts>
 
 <service_connection>

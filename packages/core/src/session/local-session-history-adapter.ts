@@ -11,7 +11,7 @@
  * @module
  */
 
-import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import type { SessionStreamEvent, SessionSummary, SessionView } from "./session-events.ts";
@@ -105,5 +105,77 @@ export class LocalSessionHistoryAdapter implements SessionHistoryAdapter {
 
     summaries.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
     return summaries;
+  }
+
+  /**
+   * Walk session dirs that have events.jsonl but no metadata.json — these
+   * are sessions whose daemon process died mid-flight. Reduce their events
+   * into a partial SessionSummary and write metadata.json with status
+   * "interrupted" so the listing endpoint surfaces them as failed-to-finish
+   * rather than "still active forever".
+   */
+  async markInterruptedSessions(): Promise<number> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.baseDir);
+    } catch {
+      return 0;
+    }
+
+    let count = 0;
+    for (const entry of entries) {
+      const sessionDir = join(this.baseDir, entry);
+      const eventsPath = join(sessionDir, "events.jsonl");
+      const metadataPath = join(sessionDir, "metadata.json");
+
+      try {
+        await access(eventsPath);
+      } catch {
+        continue;
+      }
+      try {
+        await access(metadataPath);
+        continue;
+      } catch {
+        // No metadata.json — this session was mid-flight.
+      }
+
+      try {
+        const content = await readFile(eventsPath, "utf-8");
+        const events: SessionStreamEvent[] = [];
+        for (const line of content.split("\n")) {
+          if (!line.trim()) continue;
+          try {
+            events.push(SessionStreamEventSchema.parse(JSON.parse(line)));
+          } catch {
+            // Skip corrupted lines
+          }
+        }
+        if (events.length === 0) continue;
+
+        const view = buildSessionView(events);
+        const summary: SessionSummary = {
+          sessionId: entry,
+          workspaceId: view.workspaceId,
+          jobName: view.jobName,
+          task: view.task,
+          status: "interrupted",
+          startedAt: view.startedAt,
+          completedAt: new Date().toISOString(),
+          stepCount: view.agentBlocks.length,
+          agentNames: view.agentBlocks.map((b) => b.agentName),
+          error: "Daemon was killed mid-session",
+        };
+        await writeFile(metadataPath, JSON.stringify(summary, null, 2), "utf-8");
+        count++;
+      } catch (err) {
+        logger.warn("Failed to mark session interrupted", { sessionId: entry, error: String(err) });
+      }
+    }
+
+    if (count > 0) {
+      logger.info("Marked sessions as interrupted on startup", { count });
+    }
+    return count;
   }
 }

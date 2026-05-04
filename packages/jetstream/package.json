@@ -1,0 +1,14 @@
+{
+  "name": "jetstream",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./mod.ts" },
+  "main": "./mod.ts",
+  "dependencies": {
+    "@atlas/logger": "workspace:*",
+    "@atlas/utils": "workspace:*",
+    "nats": "^2.29.3"
+  },
+  "devDependencies": { "@atlas/core": "workspace:*", "vitest": "^4.1.0" }
+}

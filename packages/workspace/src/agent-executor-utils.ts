@@ -29,6 +29,12 @@ export interface CodeAgentExecutorOptions {
   timeoutMs?: number;
   /** Skills to inject into the execute payload. Body-only, frontmatter stripped. */
   skills?: AgentSkillPayload[];
+  /**
+   * Propagated from the runtime's per-session AbortController. When aborted,
+   * the executor must terminate the subprocess and return promptly so the
+   * cancel reaches in-flight tools and the LLM call upstream.
+   */
+  abortSignal?: AbortSignal;
 }
 
 /**

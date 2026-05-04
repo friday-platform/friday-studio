@@ -70,16 +70,11 @@
     "nanoid": "npm:nanoid@^5.1.6",
     "openapi-fetch": "npm:openapi-fetch@^0.15.0",
     "cron-parser": "npm:cron-parser@^5.5.0",
-    "@atlas/workspace-builder": "./packages/workspace-builder/mod.ts",
     "@atlas/fsm-engine": "./packages/fsm-engine/mod.ts",
     "@atlas/hallucination": "./packages/hallucination/mod.ts",
     "@atlas/hallucination/verdict": "./packages/hallucination/src/verdict.ts",
     "@atlas/resources": "./packages/resources/src/mod.ts",
     "@atlas/resources/guidance": "./packages/resources/src/guidance.ts",
-    "@atlas/activity": "./packages/activity/src/mod.ts",
-    "@atlas/activity/titles": "./packages/activity/src/title-utils.ts",
-    "@atlas/activity/title-generator": "./packages/activity/src/title-generator.ts",
-    "@atlas/activity/local-adapter": "./packages/activity/src/local-adapter.ts",
     "@atlas/resources/types": "./packages/resources/src/types.ts"
   },
   "allowScripts": [

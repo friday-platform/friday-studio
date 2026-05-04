@@ -152,7 +152,7 @@ export const AtlasDataEventSchemas = {
     workspaceId: z.string(),
     store: z.string(),
     entryId: z.string(),
-    kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
+    kind: z.literal("narrative"),
     at: z.string(),
   }),
   "memory-rollback": z.object({
@@ -203,7 +203,7 @@ export const MemoryWriteEventSchema = z.object({
   workspaceId: z.string(),
   store: z.string(),
   entryId: z.string(),
-  kind: z.enum(["narrative", "retrieval", "dedup", "kv"]),
+  kind: z.literal("narrative"),
   at: z.string(),
 });
 

@@ -20,7 +20,7 @@ const IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "imag
 /** Checks whether an artifact is an image file by MIME type. */
 function isImageArtifact(artifact: Artifact): boolean {
   if (artifact.data.type !== "file") return false;
-  const { mimeType } = artifact.data.data;
+  const { mimeType } = artifact.data;
   return IMAGE_MIME_TYPES.has(mimeType);
 }
 

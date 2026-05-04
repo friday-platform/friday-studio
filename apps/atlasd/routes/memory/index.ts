@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
-import path from "node:path";
-import { MdNarrativeStore } from "@atlas/adapters-md";
+import {
+  ensureMemoryIndexBucket,
+  JetStreamMemoryAdapter,
+  JetStreamNarrativeStore,
+} from "@atlas/adapters-md";
 import { NarrativeEntrySchema } from "@atlas/agent-sdk";
 import { parseMemoryMountSource } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import { getFridayHome } from "@atlas/utils/paths.server";
 import { validator } from "hono-openapi";
+import type { NatsConnection } from "nats";
 import { z } from "zod";
 import { daemonFactory, KERNEL_WORKSPACE_ID } from "../../src/factory.ts";
 
@@ -28,46 +30,33 @@ const ForgetParamsSchema = z.object({
   entryId: z.string(),
 });
 
-function resolveMemory(workspaceId: string, memoryName: string): MdNarrativeStore {
-  const memoryPath = path.join(getFridayHome(), "memory", workspaceId, "narrative", memoryName);
-  return new MdNarrativeStore({ workspaceRoot: memoryPath });
+function resolveMemory(
+  nc: NatsConnection,
+  workspaceId: string,
+  memoryName: string,
+): JetStreamNarrativeStore {
+  return new JetStreamNarrativeStore({ nc, workspaceId, name: memoryName });
 }
 
 const memoryNarrativeRoutes = daemonFactory.createApp();
 
-const KNOWN_KINDS = ["narrative", "retrieval", "dedup", "kv"] as const;
-
-async function safeReaddir(dir: string): Promise<string[]> {
-  try {
-    return await readdir(dir);
-  } catch {
-    return [];
-  }
-}
-
-async function isDir(p: string): Promise<boolean> {
-  try {
-    return (await stat(p)).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-// GET / — list workspace IDs that have any memory on disk.
-// Backed by ~/.friday/local/memory/ — every immediate subdirectory is treated as a
-// workspaceId. Empty array if the memory root doesn't exist yet.
-// Respects FRIDAY_EXPOSE_KERNEL — hides the kernel workspace memory unless set.
+// GET / — list workspace IDs that have any narrative memory in JetStream.
+// Reads MEMORY_INDEX KV bucket and dedupes by workspaceId prefix. Respects
+// FRIDAY_EXPOSE_KERNEL — hides the kernel workspace memory unless set.
 memoryNarrativeRoutes.get("/", async (c) => {
-  const root = path.join(getFridayHome(), "memory");
-  const entries = await safeReaddir(root);
+  const nc = c.get("app").daemon.getNatsConnection();
   const exposeKernel = c.get("app").exposeKernel;
-  const workspaces: string[] = [];
-  for (const name of entries) {
-    if (name.startsWith(".")) continue;
-    if (!exposeKernel && name === KERNEL_WORKSPACE_ID) continue;
-    if (await isDir(path.join(root, name))) workspaces.push(name);
+  const seen = new Set<string>();
+  const kv = await ensureMemoryIndexBucket(nc);
+  const it = await kv.keys();
+  for await (const key of it) {
+    const sep = key.indexOf("/");
+    if (sep <= 0) continue;
+    const wsId = key.slice(0, sep);
+    if (!exposeKernel && wsId === KERNEL_WORKSPACE_ID) continue;
+    seen.add(wsId);
   }
-  return c.json(workspaces);
+  return c.json([...seen]);
 });
 
 // GET /:workspaceId — list memories for a workspace.
@@ -113,20 +102,12 @@ memoryNarrativeRoutes.get(
       return c.json(memories);
     }
 
-    // Fallback: filesystem scan for workspaces without explicit memory config.
-    const wsRoot = path.join(getFridayHome(), "memory", workspaceId);
-    const memories: { workspaceId: string; name: string; kind: string }[] = [];
-    for (const kind of KNOWN_KINDS) {
-      const kindDir = path.join(wsRoot, kind);
-      const names = await safeReaddir(kindDir);
-      for (const name of names) {
-        if (name.startsWith(".")) continue;
-        if (await isDir(path.join(kindDir, name))) {
-          memories.push({ workspaceId, name, kind });
-        }
-      }
-    }
-    return c.json(memories);
+    // Fallback for workspaces without an explicit memory block: list whatever
+    // narrative streams have been written via the KV index.
+    const nc = c.get("app").daemon.getNatsConnection();
+    const adapter = new JetStreamMemoryAdapter({ nc });
+    const stores = await adapter.list(workspaceId);
+    return c.json(stores.map((s) => ({ workspaceId: s.workspaceId, name: s.name, kind: s.kind })));
   },
 );
 
@@ -143,7 +124,8 @@ memoryNarrativeRoutes.get(
     const { since, limit } = c.req.valid("query");
 
     try {
-      const store = resolveMemory(workspaceId, memoryName);
+      const nc = c.get("app").daemon.getNatsConnection();
+      const store = resolveMemory(nc, workspaceId, memoryName);
       const entries = await store.read({ since, limit });
       return c.json(entries);
     } catch (error: unknown) {
@@ -175,7 +157,8 @@ memoryNarrativeRoutes.post(
     });
 
     try {
-      const store = resolveMemory(workspaceId, memoryName);
+      const nc = c.get("app").daemon.getNatsConnection();
+      const store = resolveMemory(nc, workspaceId, memoryName);
       const appended = await store.append(entry);
       return c.json(appended);
     } catch (error: unknown) {
@@ -193,7 +176,8 @@ memoryNarrativeRoutes.delete(
     const { workspaceId, memoryName, entryId } = c.req.valid("param");
 
     try {
-      const store = resolveMemory(workspaceId, memoryName);
+      const nc = c.get("app").daemon.getNatsConnection();
+      const store = resolveMemory(nc, workspaceId, memoryName);
       await store.forget(entryId);
       return c.json({ success: true });
     } catch (error: unknown) {

@@ -16,25 +16,21 @@ import { z } from "zod";
 /** Operation class — `read` allows any declared memory, `write` requires own or rw mount. */
 export type MemoryOp = "read" | "write";
 
-export type MemoryStrategy = "narrative" | "retrieval" | "dedup" | "kv";
+export type MemoryStrategy = "narrative";
 
 export interface ResolvedStore {
   /** Workspace that actually holds the entries (equals input workspaceId unless the call was via a mount). */
   effectiveWorkspaceId: string;
   /** Memory name on disk (may differ from the mount alias the agent passed). */
   effectiveMemoryName: string;
-  /** Storage strategy as declared in memory.own (or inferred from mount source kind). */
+  /** Storage strategy — always "narrative" after the 2026-05 cleanup. */
   strategy: MemoryStrategy;
 }
 
-/**
- * Minimal shape we need from the workspace config — full `MergedConfig` pulls
- * too many imports. We parse via a loose schema so this module stays isolated.
- */
 const MemoryOwnRow = z.object({
   name: z.string(),
   type: z.enum(["short_term", "long_term", "scratchpad"]),
-  strategy: z.enum(["narrative", "retrieval", "dedup", "kv"]).optional(),
+  strategy: z.literal("narrative").optional(),
 });
 
 const MemoryMountRow = z.object({
@@ -125,7 +121,7 @@ export async function resolveStore(args: {
       resolved: {
         effectiveWorkspaceId: parsedSource.workspaceId,
         effectiveMemoryName: parsedSource.memoryName,
-        strategy: parsedSource.kind as MemoryStrategy,
+        strategy: parsedSource.kind,
       },
     };
   }

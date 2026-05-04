@@ -134,6 +134,11 @@ export const sessionSupervisorAgent = createAgent<SupervisorInput, SupervisorOut
         model: platformModels.get("conversational"),
         experimental_repairText: repairJson,
         schema: SupervisorOutputSchema,
+        // role:"system" in messages so we can attach providerOptions
+        // (Anthropic cache-control) to the supervisor prompt. The
+        // system entry is a module-level constant — never user input —
+        // so the AI SDK injection warning is a false positive here.
+        allowSystemInMessages: true,
         messages,
         maxOutputTokens: 16384,
         maxRetries: 3,

@@ -1,10 +1,13 @@
 {
   "name": "@atlas/core",
   "version": "1.0.0",
-  "imports": { "@db/sqlite": "jsr:@db/sqlite@0.13" },
+  "imports": {
+    "@db/sqlite": "jsr:@db/sqlite@0.13",
+    "file-type": "npm:file-type@^22.0.1",
+    "jetstream": "../jetstream/mod.ts"
+  },
   "exports": {
     ".": "./mod.ts",
-    "./kv": "./src/kv.ts",
     "./credentials": "./src/credential-fetcher.ts",
     "./types": "./src/types/workspace.ts",
     "./artifacts": "./src/artifacts/mod.ts",
@@ -14,7 +17,6 @@
     "./artifacts/storage": "./src/artifacts/storage.ts",
     "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./errors": "./src/errors.ts",
-    "./library": "./src/library/types.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./chat/storage": "./src/chat/storage.ts",
     "./chat/sse-manager": "./src/chat/sse-manager.ts",
@@ -42,6 +44,7 @@
     "./errors/missing-environment": "./src/errors/missing-environment-error.ts",
     "./errors/workspace-not-found": "./src/errors/workspace-not-found-error.ts",
     "./mount-registry": "./src/mount-registry/mod.ts",
-    "./mount-context-registry": "./src/mount-context-registry.ts"
+    "./mount-context-registry": "./src/mount-context-registry.ts",
+    "./test-utils/nats-test-server": "./src/test-utils/nats-test-server.ts"
   }
 }

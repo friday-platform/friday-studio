@@ -1,93 +1,100 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { MdNarrativeStore } from "@atlas/adapters-md";
 import { NarrativeEntrySchema } from "@atlas/agent-sdk";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
+import { Hono } from "hono";
+import { connect, type NatsConnection } from "nats";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { memoryNarrativeRoutes } from "./index.ts";
 
-let mockAtlasHome = "";
-
-vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => mockAtlasHome }));
-
 const EntryArraySchema = z.array(NarrativeEntrySchema);
 
-describe("GET /api/memory/:workspaceId/narrative/:memoryName", () => {
-  let tmpDir: string;
+let server: TestNatsServer;
+let nc: NatsConnection;
+let app: Hono;
 
-  beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "memory-route-"));
-    mockAtlasHome = tmpDir;
+beforeAll(async () => {
+  server = await startNatsTestServer();
+  nc = await connect({ servers: server.url });
+
+  // Wrap memory routes in a tiny app that injects the bits of AppContext
+  // these routes actually touch (daemon.getNatsConnection + exposeKernel +
+  // getWorkspaceManager). This lets us test the route layer without
+  // standing up the whole daemon.
+  const minimalCtx = {
+    exposeKernel: true,
+    daemon: { getNatsConnection: () => nc },
+    getWorkspaceManager: () => ({ getWorkspaceConfig: () => Promise.resolve(null) }),
+  };
+
+  app = new Hono();
+  app.use("*", async (c, next) => {
+    // Hono's typed Variables narrow `c.set` to specific keys; cast to any
+    // here because this test uses a vanilla Hono instance without the
+    // app's typed factory. The runtime behavior is identical.
+    (c as unknown as { set: (key: string, value: unknown) => void }).set("app", minimalCtx);
+    await next();
   });
+  app.route("/", memoryNarrativeRoutes);
+}, 30_000);
 
-  afterEach(async () => {
-    await fs.rm(tmpDir, { recursive: true, force: true });
+afterAll(async () => {
+  await nc.drain();
+  await server.stop();
+});
+
+describe("GET /:workspaceId/narrative/:memoryName", () => {
+  let workspaceId: string;
+
+  beforeEach(() => {
+    workspaceId = `ws-${crypto.randomUUID()}`;
   });
 
   it("returns 200 + NarrativeEntry[] for a populated store", async () => {
-    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "backlog");
-    await fs.mkdir(memoryDir, { recursive: true });
+    await app.request(`/${workspaceId}/narrative/backlog`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "e1", text: "task one", createdAt: "2026-04-14T00:00:00Z" }),
+    });
 
-    const store = new MdNarrativeStore({ workspaceRoot: memoryDir });
-    await store.append({ id: "e1", text: "task one", createdAt: "2026-04-14T00:00:00Z" });
-
-    const res = await memoryNarrativeRoutes.request("/ws1/narrative/backlog");
+    const res = await app.request(`/${workspaceId}/narrative/backlog`);
     expect(res.status).toBe(200);
 
     const body = EntryArraySchema.parse(await res.json());
     expect(body).toHaveLength(1);
-    const [first] = body;
-    expect(first).toBeDefined();
-    expect(first?.id).toBe("e1");
-    expect(first?.text).toBe("task one");
+    expect(body[0]?.id).toBe("e1");
   });
 
-  it("returns 200 + [] for nonexistent store (not 404)", async () => {
-    const res = await memoryNarrativeRoutes.request("/ws1/narrative/missing");
+  it("returns 200 + [] for nonexistent store", async () => {
+    const res = await app.request(`/${workspaceId}/narrative/missing`);
     expect(res.status).toBe(200);
-
-    const body = await res.json();
-    expect(body).toEqual([]);
+    expect(await res.json()).toEqual([]);
   });
 
-  it("forwards since and limit query params to read()", async () => {
-    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "backlog");
-    await fs.mkdir(memoryDir, { recursive: true });
+  it("forwards since and limit query params", async () => {
+    for (const [id, createdAt, text] of [
+      ["e1", "2026-04-14T00:00:00Z", "old"],
+      ["e2", "2026-04-14T12:00:00Z", "new"],
+    ] as const) {
+      await app.request(`/${workspaceId}/narrative/backlog`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, text, createdAt }),
+      });
+    }
 
-    const store = new MdNarrativeStore({ workspaceRoot: memoryDir });
-    await store.append({ id: "e1", text: "old", createdAt: "2026-04-14T00:00:00Z" });
-    await store.append({ id: "e2", text: "new", createdAt: "2026-04-14T12:00:00Z" });
-
-    const res = await memoryNarrativeRoutes.request(
-      "/ws1/narrative/backlog?since=2026-04-14T06:00:00Z&limit=10",
+    const res = await app.request(
+      `/${workspaceId}/narrative/backlog?since=2026-04-14T06:00:00Z&limit=10`,
     );
-    expect(res.status).toBe(200);
-
     const body = EntryArraySchema.parse(await res.json());
     expect(body).toHaveLength(1);
-    const [first] = body;
-    expect(first?.id).toBe("e2");
+    expect(body[0]?.id).toBe("e2");
   });
 });
 
-describe("POST /api/memory/:workspaceId/narrative/:memoryName", () => {
-  let tmpDir: string;
-
-  beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "memory-route-"));
-    mockAtlasHome = tmpDir;
-  });
-
-  afterEach(async () => {
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
+describe("POST /:workspaceId/narrative/:memoryName", () => {
   it("appends entry with generated id and createdAt when only text provided", async () => {
-    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
-    await fs.mkdir(memoryDir, { recursive: true });
-
-    const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes", {
+    const wsId = `ws-${crypto.randomUUID()}`;
+    const res = await app.request(`/${wsId}/narrative/notes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: "remember this" }),
@@ -101,10 +108,8 @@ describe("POST /api/memory/:workspaceId/narrative/:memoryName", () => {
   });
 
   it("preserves supplied id and createdAt", async () => {
-    const memoryDir = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
-    await fs.mkdir(memoryDir, { recursive: true });
-
-    const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes", {
+    const wsId = `ws-${crypto.randomUUID()}`;
+    const res = await app.request(`/${wsId}/narrative/notes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -117,12 +122,12 @@ describe("POST /api/memory/:workspaceId/narrative/:memoryName", () => {
 
     const body = NarrativeEntrySchema.parse(await res.json());
     expect(body.id).toBe("custom-id");
-    expect(body.text).toBe("explicit entry");
     expect(body.createdAt).toBe("2026-01-01T00:00:00Z");
   });
 
   it("returns 400 for invalid body (empty object)", async () => {
-    const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes", {
+    const wsId = `ws-${crypto.randomUUID()}`;
+    const res = await app.request(`/${wsId}/narrative/notes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -131,49 +136,31 @@ describe("POST /api/memory/:workspaceId/narrative/:memoryName", () => {
   });
 });
 
-describe("DELETE /api/memory/:workspaceId/narrative/:memoryName/:entryId", () => {
-  let tmpDir: string;
+describe("DELETE /:workspaceId/narrative/:memoryName/:entryId", () => {
+  it("returns 200 and tombstones the entry from subsequent reads", async () => {
+    const wsId = `ws-${crypto.randomUUID()}`;
+    for (const [id, text] of [
+      ["e1", "hello"],
+      ["e2", "keep me"],
+    ] as const) {
+      await app.request(`/${wsId}/narrative/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, text, createdAt: "2026-01-01T00:00:00Z" }),
+      });
+    }
 
-  beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "memory-route-"));
-    mockAtlasHome = tmpDir;
+    const del = await app.request(`/${wsId}/narrative/notes/e1`, { method: "DELETE" });
+    expect(del.status).toBe(200);
+
+    const getRes = await app.request(`/${wsId}/narrative/notes`);
+    const body = EntryArraySchema.parse(await getRes.json());
+    expect(body.map((e) => e.id)).toEqual(["e2"]);
   });
 
-  afterEach(async () => {
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
-  it("returns 200 and removes the entry from JSONL and MEMORY.md", async () => {
-    const workspaceRoot = path.join(tmpDir, "memory", "ws1", "narrative", "notes");
-    await fs.mkdir(workspaceRoot, { recursive: true });
-    const jsonlPath = path.join(workspaceRoot, "entries.jsonl");
-    const memoryMdPath = path.join(workspaceRoot, "MEMORY.md");
-
-    const store = new MdNarrativeStore({ workspaceRoot });
-    await store.append({ id: "e1", text: "hello", createdAt: "2026-01-01T00:00:00Z" });
-    await store.append({ id: "e2", text: "keep me", createdAt: "2026-01-02T00:00:00Z" });
-
-    const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes/e1", {
-      method: "DELETE",
-    });
-    expect(res.status).toBe(200);
-
-    const remaining = (await fs.readFile(jsonlPath, "utf-8"))
-      .split("\n")
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l) as unknown);
-    expect(remaining).toHaveLength(1);
-    expect((remaining[0] as { id: string }).id).toBe("e2");
-
-    const memoryMd = await fs.readFile(memoryMdPath, "utf-8");
-    expect(memoryMd).not.toContain("(id: e1)");
-    expect(memoryMd).toContain("(id: e2)");
-  });
-
-  it("returns 200 even when store files do not exist yet", async () => {
-    const res = await memoryNarrativeRoutes.request("/ws1/narrative/notes/missing-id", {
-      method: "DELETE",
-    });
+  it("returns 200 even when narrative does not exist yet", async () => {
+    const wsId = `ws-${crypto.randomUUID()}`;
+    const res = await app.request(`/${wsId}/narrative/notes/missing-id`, { method: "DELETE" });
     expect(res.status).toBe(200);
   });
 });

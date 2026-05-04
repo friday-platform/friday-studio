@@ -27,11 +27,14 @@ describe("MemoryTypeSchema", () => {
 });
 
 describe("MemoryStrategySchema", () => {
-  it("accepts valid strategies", () => {
+  it("accepts narrative", () => {
     expect(MemoryStrategySchema.parse("narrative")).toBe("narrative");
-    expect(MemoryStrategySchema.parse("retrieval")).toBe("retrieval");
-    expect(MemoryStrategySchema.parse("dedup")).toBe("dedup");
-    expect(MemoryStrategySchema.parse("kv")).toBe("kv");
+  });
+
+  it("rejects retrieval/dedup/kv (removed in 2026-05 cleanup)", () => {
+    for (const strategy of ["retrieval", "dedup", "kv"]) {
+      expect(() => MemoryStrategySchema.parse(strategy)).toThrow();
+    }
   });
 
   it("accepts undefined (optional)", () => {

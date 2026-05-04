@@ -3,7 +3,6 @@ import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import type { ResourceEntry } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { z } from "zod";
@@ -18,7 +17,6 @@ export interface ComposedForegroundContext {
   details: WorkspaceDetails;
   config?: WorkspaceConfig;
   skills: SkillSummary[];
-  resourceEntries: ResourceEntry[];
 }
 
 export async function fetchForegroundContexts(
@@ -35,7 +33,7 @@ export async function fetchForegroundContexts(
 
       const config = wsConfigResult.ok ? wsConfigResult.data.config : undefined;
 
-      return { workspaceId, details, config, skills, resourceEntries: details.resourceEntries };
+      return { workspaceId, details, config, skills };
     }),
   );
 
@@ -97,26 +95,6 @@ export function composeTools(
     for (const [name, tool] of Object.entries(tools)) {
       if (!(name in merged)) {
         merged[name] = tool;
-      }
-    }
-  }
-  return merged;
-}
-
-export function composeResources(
-  primaryResources: ResourceEntry[],
-  foregrounds: ComposedForegroundContext[],
-): ResourceEntry[] {
-  if (foregrounds.length === 0) return primaryResources;
-
-  const seen = new Set(primaryResources.map((r) => r.slug));
-  const merged = [...primaryResources];
-
-  for (const fg of foregrounds) {
-    for (const entry of fg.resourceEntries) {
-      if (!seen.has(entry.slug)) {
-        seen.add(entry.slug);
-        merged.push(entry);
       }
     }
   }

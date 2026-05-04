@@ -7,7 +7,6 @@
   "dependencies": {
     "@atlas/atlasd": "workspace:*",
     "@atlas/link": "workspace:*",
-    "@atlas/schemas": "workspace:*",
     "@atlas/utils": "workspace:*",
     "hono": "4.12.16",
     "zod": "^4.3.5"

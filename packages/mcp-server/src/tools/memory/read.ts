@@ -14,7 +14,6 @@ export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): voi
       description:
         "Read entries from a named memory store in a workspace, newest-first by default. " +
         "The store must be declared in workspace.yml under `memory.own` or as a mount — undeclared stores are rejected. " +
-        "The store strategy is resolved from config — you do not need to specify the adapter type. " +
         "Note: narrative memory is also auto-injected into workspace-chat system prompts; call this only for explicit lookup, time filtering, or reading more than the default prompt window.",
       inputSchema: {
         workspaceId: z.string().describe("Workspace ID (runtime id like `grilled_xylem`)"),
@@ -40,13 +39,7 @@ export function registerMemoryReadTool(server: McpServer, ctx: ToolContext): voi
         return createErrorResponse(resolved.error);
       }
 
-      const { effectiveWorkspaceId, effectiveMemoryName, strategy } = resolved.resolved;
-
-      if (strategy !== "narrative") {
-        return createErrorResponse(
-          `memory_read currently only supports narrative stores. Store '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
-        );
-      }
+      const { effectiveWorkspaceId, effectiveMemoryName } = resolved.resolved;
 
       const queryParams = new URLSearchParams();
       if (since) queryParams.set("since", since);

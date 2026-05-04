@@ -1,15 +1,15 @@
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HTMLRewriter } from "@worker-tools/html-rewriter";
-import TurndownService from "turndown";
 import { z } from "zod";
 import type { ToolContext } from "./types.ts";
 import { createErrorResponse, createSuccessResponse } from "./utils.ts";
+import { executeWebfetch, type WebfetchArgs } from "./webfetch-handler.ts";
 
-const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
-const DEFAULT_TIMEOUT = 30 * 1000; // 30 seconds
-const MAX_TIMEOUT = 120 * 1000; // 2 minutes
-
+/**
+ * MCP `webfetch` tool. Dispatches to a NATS worker (`tools.webfetch.call`) when
+ * the daemon has wired one up; otherwise runs in-process via the same handler
+ * the worker uses.
+ */
 export function registerFetchTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "webfetch",
@@ -39,142 +39,33 @@ Usage notes:
     },
     async (params) => {
       try {
-        // Validate URL
-        if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
-          return createErrorResponse("URL must start with http:// or https://");
-        }
-
-        const timeout = Math.min((params.timeout ?? DEFAULT_TIMEOUT / 1000) * 1000, MAX_TIMEOUT);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-        // Build Accept header based on requested format with q parameters for fallbacks
-        let acceptHeader = "*/*";
-        switch (params.format) {
-          case "markdown":
-            acceptHeader =
-              "text/markdown;q=1.0, text/x-markdown;q=0.9, text/plain;q=0.8, text/html;q=0.7, */*;q=0.1";
-            break;
-          case "text":
-            acceptHeader = "text/plain;q=1.0, text/markdown;q=0.9, text/html;q=0.8, */*;q=0.1";
-            break;
-          case "html":
-            acceptHeader =
-              "text/html;q=1.0, application/xhtml+xml;q=0.9, text/plain;q=0.8, text/markdown;q=0.7, */*;q=0.1";
-            break;
-          default:
-            acceptHeader =
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8";
-        }
-
-        const response = await fetch(params.url, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            Accept: acceptHeader,
-            "Accept-Language": "en-US,en;q=0.9",
-          },
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`Request failed with status code: ${response.status}`);
-        }
-
-        // Check content length
-        const contentLength = response.headers.get("content-length");
-        if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
-          throw new Error("Response too large (exceeds 5MB limit)");
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
-          throw new Error("Response too large (exceeds 5MB limit)");
-        }
-
-        const content = new TextDecoder().decode(arrayBuffer);
-        const contentType = response.headers.get("content-type") || "";
-
-        const title = `${params.url} (${contentType})`;
-
-        // Handle content based on requested format and actual content type
-        switch (params.format) {
-          case "markdown":
-            if (contentType.includes("text/html")) {
-              const markdown = convertHTMLToMarkdown(content);
-              return createSuccessResponse({ output: markdown, title, metadata: {} });
-            }
-            return createSuccessResponse({ output: content, title, metadata: {} });
-
-          case "text":
-            if (contentType.includes("text/html")) {
-              const text = await extractTextFromHTML(content);
-              return createSuccessResponse({ output: text, title, metadata: {} });
-            }
-            return createSuccessResponse({ output: content, title, metadata: {} });
-
-          case "html":
-            return createSuccessResponse({ output: content, title, metadata: {} });
-
-          default:
-            return createSuccessResponse({ output: content, title, metadata: {} });
-        }
+        const args: WebfetchArgs = {
+          url: params.url,
+          format: params.format,
+          timeout: params.timeout,
+        };
+        const result = ctx.toolDispatcher
+          ? await ctx.toolDispatcher.callTool<
+              WebfetchArgs,
+              Awaited<ReturnType<typeof executeWebfetch>>
+            >("webfetch", args)
+          : await executeWebfetch(args);
+        return createSuccessResponse(result);
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return createErrorResponse("Request was aborted (timeout or cancellation)");
+        // AbortError is expected behavior (caller cancelled, timeout fired) —
+        // surface the message verbatim without logging at error level. Real
+        // tool failures still get the "webfetch tool error" prefix + log.
+        const message = stringifyError(error);
+        const isAbort =
+          (error instanceof DOMException && error.name === "AbortError") ||
+          (error instanceof Error && error.name === "AbortError") ||
+          message.includes("Request was aborted");
+        if (isAbort) {
+          return createErrorResponse(message);
         }
         ctx.logger.error("webfetch tool error", { error, params });
-        return createErrorResponse(`webfetch tool error: ${stringifyError(error)}`);
+        return createErrorResponse(`webfetch tool error: ${message}`);
       }
     },
   );
-}
-
-async function extractTextFromHTML(html: string) {
-  let text = "";
-  let skipContent = false;
-
-  const rewriter = new HTMLRewriter()
-    .on("script, style, noscript, iframe, object, embed", {
-      element() {
-        skipContent = true;
-      },
-      text() {
-        // Skip text content inside these elements
-      },
-    })
-    .on("*", {
-      element(element: { tagName: string }) {
-        // Reset skip flag when entering other elements
-        if (
-          !["script", "style", "noscript", "iframe", "object", "embed"].includes(element.tagName)
-        ) {
-          skipContent = false;
-        }
-      },
-      text(input: { text: string }) {
-        if (!skipContent) {
-          text += input.text;
-        }
-      },
-    })
-    .transform(new Response(html));
-
-  await rewriter.text();
-  return text.trim();
-}
-
-function convertHTMLToMarkdown(html: string): string {
-  const turndownService = new TurndownService({
-    headingStyle: "atx",
-    hr: "---",
-    bulletListMarker: "-",
-    codeBlockStyle: "fenced",
-    emDelimiter: "*",
-  });
-  turndownService.remove(["script", "style", "meta", "link"]);
-  return turndownService.turndown(html);
 }

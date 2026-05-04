@@ -1,6 +1,3 @@
-import { createMemoryDedupTools } from "./platform-tools/memory-dedup-tools.ts";
-import { createMemoryKVTools } from "./platform-tools/memory-kv-tools.ts";
-import { createMemoryRetrievalTools } from "./platform-tools/memory-retrieval-tools.ts";
 import { createScratchpadTools } from "./platform-tools/scratchpad-tools.ts";
 import type { AgentContext } from "./types.ts";
 
@@ -34,13 +31,6 @@ export const PLATFORM_TOOL_NAMES = new Set([
   // Agent management
   "workspace_agents_list",
   "workspace_agents_describe",
-  // Library
-  "library_list",
-  "library_get",
-  "library_get_stream",
-  "library_store",
-  "library_stats",
-  "library_templates",
   // Filesystem
   "fs_glob",
   "fs_grep",
@@ -62,20 +52,10 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "csv",
   "system_version",
   "webfetch",
-  // Memory — adapter-agnostic
+  // Memory
   "memory_save",
   "memory_read",
   "memory_remove",
-  // Memory — retrieval
-  "memory_retrieval_ingest",
-  "memory_retrieval_query",
-  // Memory — dedup
-  "memory_dedup_append",
-  "memory_dedup_filter",
-  // Memory — KV
-  "memory_kv_get",
-  "memory_kv_set",
-  "memory_kv_delete",
   // Scratchpad
   "scratchpad_append",
   "scratchpad_read",
@@ -83,10 +63,5 @@ export const PLATFORM_TOOL_NAMES = new Set([
 ]);
 
 export function createPlatformTools(ctx: AgentContext) {
-  return {
-    ...createMemoryRetrievalTools(ctx),
-    ...createMemoryDedupTools(ctx),
-    ...createMemoryKVTools(ctx),
-    ...createScratchpadTools(ctx),
-  };
+  return { ...createScratchpadTools(ctx) };
 }

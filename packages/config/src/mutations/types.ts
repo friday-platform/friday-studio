@@ -142,15 +142,6 @@ export function conflictError(willUnlinkFrom: CascadeTarget[] = []): ConflictErr
 }
 
 /**
- * Creates a NotSupportedError for mutations that can't be represented in the target format.
- *
- * @param message - Human-readable explanation of why the mutation isn't supported
- */
-export function notSupportedError(message: string): NotSupportedError {
-  return { type: "not_supported", message };
-}
-
-/**
  * Creates an InvalidOperationError for type change attempts.
  *
  * @param oldType - Current type value

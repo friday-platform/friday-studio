@@ -1,10 +1,5 @@
 {
   "name": "@atlas/schemas",
   "version": "1.0.0",
-  "exports": {
-    "./library": "./src/library.ts",
-    "./json-schema": "./src/json-schema.ts",
-    "./workspace": "./src/workspace.ts"
-  },
-  "imports": { "@atlas/config": "../config/mod.ts" }
+  "exports": { "./json-schema": "./src/json-schema.ts" }
 }

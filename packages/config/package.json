@@ -22,7 +22,6 @@
   "dependencies": {
     "@atlas/agent-sdk": "workspace:*",
     "@atlas/fsm-engine": "workspace:*",
-    "@atlas/schemas": "workspace:*",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "cron-parser": "^5.5.0",
     "immer": "^11.1.4",

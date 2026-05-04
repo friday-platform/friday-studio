@@ -182,6 +182,29 @@ describe("markdownToHTML", () => {
     expect(result).toContain("<li>Second item</li>");
   });
 
+  it("single-line numbered run splits into a real ordered list", () => {
+    // LLM (and human) output frequently arrives as "1. a 2. b 3. c" on a
+    // single line. CommonMark collapses it into one <li>; users see a
+    // broken list. We split before each ` <digit>. ` so it renders right.
+    const result = markdownToHTML("1. PR failed 2. Dental AI 3. RTX 5080");
+    expect(result).toContain("<ol>");
+    expect(result).toContain("<li>PR failed</li>");
+    expect(result).toContain("<li>Dental AI</li>");
+    expect(result).toContain("<li>RTX 5080</li>");
+  });
+
+  it("does not split decimals or version strings inside paragraphs", () => {
+    const result = markdownToHTML("Version is 1.2.3 and pi is 3.14");
+    expect(result).not.toContain("<ol>");
+  });
+
+  it("does not split a paragraph that just happens to contain numerals", () => {
+    const result = markdownToHTML("The score was 9. Out of 10 it's good.");
+    // Plain text paragraph — no leading numbered marker, so the trailing
+    // `9.` shouldn't trigger a list.
+    expect(result).not.toContain("<ol>");
+  });
+
   it("H1 gets a slug id", () => {
     expect(markdownToHTML("# Header 1")).toContain('<h1 id="header-1">Header 1</h1>');
   });

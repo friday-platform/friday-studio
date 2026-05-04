@@ -21,9 +21,7 @@ const mockWriteWorkspaceFiles = vi.hoisted(() =>
     .mockResolvedValue(undefined),
 );
 
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
 vi.mock("@atlas/storage", () => ({
-  storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined),
   FilesystemWorkspaceCreationAdapter: class {
     createWorkspaceDirectory() {
       return Promise.resolve("/tmp/test-workspace");
@@ -106,16 +104,14 @@ function createImportTestApp() {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     destroyWorkspaceRuntime: vi.fn(),
-    getLibraryStorage: vi.fn(),
     daemon: { getWorkspaceManager: () => mockWorkspaceManager } as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),
-    getLedgerAdapter: vi.fn(),
-    getActivityAdapter: vi.fn(),
     exposeKernel: false,
     platformModels: createStubPlatformModels(),
   };

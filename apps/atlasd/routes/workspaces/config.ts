@@ -14,12 +14,7 @@ import {
   type FSMAgentResponse,
   FSMAgentUpdateSchema,
   type MutationResult,
-  parseCredentialPath,
-  patchBlueprintSignalConfig,
   patchSignalConfig,
-  updateBlueprintCredential,
-  updateBlueprintFSMAgent,
-  updateBlueprintSignalConfig,
   updateCredential,
   updateFSMAgent,
   updateSignal,
@@ -30,19 +25,12 @@ import {
   LinkCredentialNotFoundError,
 } from "@atlas/core/mcp-registry/credential-resolver";
 import { createLogger } from "@atlas/logger";
-import { storeWorkspaceHistory } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
-import type { WorkspaceBlueprint } from "@atlas/workspace-builder";
 import { zValidator } from "@hono/zod-validator";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { type AppVariables, daemonFactory } from "../../src/factory.ts";
-import {
-  loadWorkspaceBlueprint,
-  saveAndRecompileBlueprint,
-  withBlueprintMutation,
-} from "./blueprint-recompile.ts";
 import { applyDraftAwareMutation, getEditableConfig } from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./index.ts";
 import { mapMutationError } from "./mutation-errors.ts";
@@ -399,72 +387,15 @@ async function handleUpdateCredential(
       );
     }
 
-    // Blueprint path — when a blueprint exists, all mutations go through it.
-    // Failures are surfaced, never silently falling back to direct workspace.yml mutation.
-    if (workspace.metadata?.blueprintArtifactId) {
-      const parsed = parseCredentialPath(path);
-      if (!parsed) {
-        return c.json(
-          {
-            success: false,
-            error: "bad_request",
-            message: `Cannot parse credential path: ${path}`,
-          },
-          400,
-        );
-      }
-
-      const loaded = await loadWorkspaceBlueprint(workspace);
-      if (!loaded.ok) {
-        return c.json({ success: false, error: "internal", message: loaded.error }, loaded.status);
-      }
-
-      const mutationResult = updateBlueprintCredential(
-        loaded.blueprint,
-        parsed.type,
-        parsed.entityId,
-        parsed.envVar,
-        newCredentialId,
-        newCredential.provider,
-      );
-      if (!mutationResult.ok) {
-        return c.json(
-          {
-            success: false,
-            error: "not_found",
-            message: `Credential binding not found in blueprint: ${path}`,
-          },
-          404,
-        );
-      }
-
-      const recompileResult = await saveAndRecompileBlueprint(
-        workspace,
-        mutationResult.value,
-        loaded.artifactId,
-        ctx,
-        `Update credential: ${path}`,
-      );
-      if (!recompileResult.ok) {
-        return c.json(
-          { success: false, error: "internal", message: recompileResult.error },
-          recompileResult.status,
-        );
-      }
-
-      return c.json({ ok: true });
-    }
-
-    // No blueprint — draft-aware mutation (goes to draft if one exists)
+    // Draft-aware mutation (goes to draft if one exists, otherwise live workspace.yml)
     const mutationFn = (cfg: WorkspaceConfig) =>
       updateCredential(cfg, path, newCredentialId, newCredential.provider);
-    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn, {
-      onBeforeWrite: async () => {
-        await storeWorkspaceHistory(workspace, config.workspace, "partial-update", {
-          throwOnError: true,
-        });
-      },
-    });
+    // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+    // and got deleted with the rest of the speculative remote-backend
+    // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+    // wire it as a new local primitive (or via JetStream) — don't
+    // resurrect the Cortex shape.
+    const { result } = await applyDraftAwareMutation(workspace.path, mutationFn);
 
     if (!result.ok) {
       const error = result.error;
@@ -620,28 +551,10 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
         );
       }
 
-      // Block direct mutations on blueprint workspaces — the blueprint is the
-      // source of truth and direct workspace.yml changes get overwritten on recompile.
-      if (workspace.metadata?.blueprintArtifactId) {
-        return c.json(
-          {
-            success: false,
-            error: "not_supported",
-            message:
-              "This workspace uses a blueprint — direct config mutations are not supported. " +
-              "Use the blueprint mutation path instead.",
-          },
-          422,
-        );
-      }
-
       // Extract route params
       const params = handlerConfig.extractParams(c);
 
-      // Load current config for history (before mutation modifies disk)
-      const currentConfig = await manager.getWorkspaceConfig(workspace.id);
-
-      // 3. Apply mutation with onBeforeWrite callback for history storage
+      // 3. Apply the mutation
       // Note: The cast is safe — with-schema input comes from zValidator,
       // without-schema input is undefined (DELETE handlers).
       const mutationFn = (
@@ -650,15 +563,11 @@ function createMutationHandler<TSchema extends z.ZodType, TParams>(
           params: TParams,
         ) => (config: WorkspaceConfig) => MutationResult<WorkspaceConfig>
       )(input, params);
-      const result = await applyMutation(workspace.path, mutationFn, {
-        onBeforeWrite: async () => {
-          if (currentConfig) {
-            await storeWorkspaceHistory(workspace, currentConfig.workspace, "partial-update", {
-              throwOnError: true,
-            });
-          }
-        },
-      });
+      // Workspace config history (storeWorkspaceHistory) was Cortex-backed
+      // and got deleted with the rest of the speculative remote-backend
+      // infrastructure 2026-05-02. If audit-trail-on-config-write returns,
+      // wire it as a new local primitive (or via JetStream).
+      const result = await applyMutation(workspace.path, mutationFn);
 
       if (!result.ok) {
         // Build conflict message - use custom builder or default
@@ -725,8 +634,8 @@ const handleAgentDeleteMethodNotAllowed = (c: Context) => {
 // MUTATION HANDLER DEFINITIONS
 // ==============================================================================
 
-/** PUT /signals/:signalId - Update existing signal (legacy direct mutation) */
-const handleUpdateSignalLegacy = createMutationHandler({
+/** PUT /signals/:signalId - Update existing signal */
+const handleUpdateSignal = createMutationHandler({
   schema: WorkspaceSignalConfigSchema,
   extractParams: (c) => ({ signalId: requireParam(c, "signalId") }),
   buildMutation:
@@ -737,41 +646,8 @@ const handleUpdateSignalLegacy = createMutationHandler({
   entityName: "Signal",
 });
 
-/**
- * PUT /signals/:signalId - Blueprint-aware signal update.
- *
- * When the workspace has a linked blueprint, updates the blueprint signal's
- * signalConfig, saves the new revision, and recompiles workspace.yml.
- * Falls back to direct workspace.yml mutation for non-blueprint workspaces.
- */
-async function handleUpdateSignal(
-  c: Context<AppVariables>,
-  input: z.infer<typeof WorkspaceSignalConfigSchema>,
-) {
-  const signalId = requireParam(c, "signalId");
-
-  // Map workspace signal config to blueprint signal config.
-  // Only schedule and http providers have config — system/fs-watch don't exist in blueprints.
-  let blueprintSignalConfig: WorkspaceBlueprint["signals"][number]["signalConfig"];
-  if (input.provider === "schedule") {
-    blueprintSignalConfig = { provider: "schedule", config: input.config };
-  } else if (input.provider === "http") {
-    blueprintSignalConfig = { provider: "http", config: input.config };
-  } else {
-    blueprintSignalConfig = undefined;
-  }
-
-  const result = await withBlueprintMutation(c, {
-    revisionMessage: `Update signal: ${signalId}`,
-    mutate: (blueprint) => updateBlueprintSignalConfig(blueprint, signalId, blueprintSignalConfig),
-  });
-
-  if (result.mode === "blueprint") return result.response;
-  return handleUpdateSignalLegacy(c, input);
-}
-
-/** PATCH /signals/:signalId - Patch signal config, legacy (schedule, timezone, etc.) */
-const handlePatchSignalLegacy = createMutationHandler({
+/** PATCH /signals/:signalId - Patch signal config (schedule, timezone, etc.) */
+const handlePatchSignal = createMutationHandler({
   schema: SignalConfigPatchSchema,
   extractParams: (c) => ({ signalId: requireParam(c, "signalId") }),
   buildMutation:
@@ -781,29 +657,6 @@ const handlePatchSignalLegacy = createMutationHandler({
   successStatus: 200,
   entityName: "Signal",
 });
-
-/**
- * PATCH /signals/:signalId - Blueprint-aware signal config patch.
- *
- * When the workspace has a linked blueprint, patches the blueprint signal's
- * config sub-object, saves the new revision, and recompiles workspace.yml.
- * Falls back to direct workspace.yml mutation for non-blueprint workspaces.
- */
-async function handlePatchSignal(
-  c: Context<AppVariables>,
-  input: z.infer<typeof SignalConfigPatchSchema>,
-) {
-  const signalId = requireParam(c, "signalId");
-
-  const result = await withBlueprintMutation(c, {
-    revisionMessage: `Patch signal config: ${signalId}`,
-    mutate: (blueprint) =>
-      patchBlueprintSignalConfig(blueprint, signalId, input as Record<string, unknown>),
-  });
-
-  if (result.mode === "blueprint") return result.response;
-  return handlePatchSignalLegacy(c, input);
-}
 
 /** DELETE /signals/:signalId - Delete signal */
 const handleDeleteSignal = createMutationHandler({
@@ -836,7 +689,7 @@ const handleCreateSignal = createMutationHandler({
 });
 
 /** PUT /agents/:agentId - Update existing FSM-embedded agent */
-const handleUpdateAgentLegacy = createMutationHandler({
+const handleUpdateAgent = createMutationHandler({
   schema: FSMAgentUpdateSchema,
   extractParams: (c) => ({ agentId: requireParam(c, "agentId") }),
   buildMutation:
@@ -846,32 +699,6 @@ const handleUpdateAgentLegacy = createMutationHandler({
   successStatus: 200,
   entityName: "Agent",
 });
-
-/**
- * PUT /agents/:agentId - Blueprint-aware agent update.
- *
- * When the workspace has a linked blueprint, routes prompt updates through the
- * blueprint path (updating the DAG step description, which the compiler uses as
- * the FSM action prompt). Other fields (e.g. model) are not represented in the
- * blueprint schema — updateBlueprintFSMAgent returns not_supported for those,
- * which surfaces as a 422.
- *
- * Falls back to direct workspace.yml mutation for non-blueprint workspaces.
- */
-async function handleUpdateAgent(
-  c: Context<AppVariables>,
-  input: z.infer<typeof FSMAgentUpdateSchema>,
-) {
-  const agentId = requireParam(c, "agentId");
-
-  const result = await withBlueprintMutation(c, {
-    revisionMessage: `Update agent prompt: ${agentId}`,
-    mutate: (blueprint) => updateBlueprintFSMAgent(blueprint, agentId, input),
-  });
-
-  if (result.mode === "blueprint") return result.response;
-  return handleUpdateAgentLegacy(c, input);
-}
 
 // ==============================================================================
 // ROUTE DEFINITIONS

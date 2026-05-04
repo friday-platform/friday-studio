@@ -1,26 +1,21 @@
-import { rm } from "node:fs/promises";
-import process from "node:process";
-import { makeTempDir } from "@atlas/utils/temp.server";
-import { aroundEach, describe, expect, it, vi } from "vitest";
+import { connect, type NatsConnection } from "nats";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { startNatsTestServer, type TestNatsServer } from "../test-utils/nats-test-server.ts";
 import { ChatSdkStateAdapter } from "./chat-sdk-state-adapter.ts";
+import { initChatStorage } from "./storage.ts";
 
-let testDir: string;
+let server: TestNatsServer;
+let nc: NatsConnection;
 
-aroundEach(async (run) => {
-  testDir = makeTempDir({ prefix: "atlas_chat_sdk_state_test_" });
-  const originalAtlasHome = process.env.FRIDAY_HOME;
-  process.env.FRIDAY_HOME = testDir;
-  await run();
-  if (originalAtlasHome) {
-    process.env.FRIDAY_HOME = originalAtlasHome;
-  } else {
-    delete process.env.FRIDAY_HOME;
-  }
-  try {
-    await rm(testDir, { recursive: true });
-  } catch {
-    // Ignore cleanup errors
-  }
+beforeAll(async () => {
+  server = await startNatsTestServer();
+  nc = await connect({ servers: server.url });
+  initChatStorage(nc);
+}, 30_000);
+
+afterAll(async () => {
+  await nc.drain();
+  await server.stop();
 });
 
 describe("ChatSdkStateAdapter", () => {

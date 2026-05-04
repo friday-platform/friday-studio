@@ -14,12 +14,17 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
     "artifacts_create",
     {
       description:
-        "Create a new file artifact. Stores a file by path and associates it with the current chat or workspace.",
+        "Create a new file artifact. Pass file content directly (string for text, base64 for binary) and associate it with the current chat or workspace.",
       inputSchema: {
         data: z
           .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)
           .describe(
-            "Artifact envelope: { type, version, data }. Currently only type 'file' is supported. version is always 1. data is the file payload: { path: '/path/to/file' }. Example: { type: 'file', version: 1, data: { path: '/tmp/content.md' } }. To store text/markdown content, write it to a file first, then pass the path here.",
+            "File payload: { type: 'file', content, mimeType?, originalName?, contentEncoding? }. " +
+              "`content` is the file body — a UTF-8 string for text, OR a base64-encoded string with " +
+              "`contentEncoding: 'base64'` for binary. The server hashes, sniffs the mime, sizes it, " +
+              "and writes to the JetStream Object Store (content-addressed by SHA-256, so identical " +
+              "bytes dedup automatically). Example: { type: 'file', content: '# Heading\\n…', " +
+              "originalName: 'notes.md' }.",
           ),
         title: z
           .string()

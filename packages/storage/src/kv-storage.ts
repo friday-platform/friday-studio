@@ -8,7 +8,8 @@
  */
 
 import type { MaybePromise } from "@atlas/utils";
-import { DenoKVStorage } from "./deno-kv-storage.ts";
+import type { NatsConnection } from "nats";
+import { JetStreamKVStorage } from "./jetstream-kv-storage.ts";
 import { MemoryKVStorage } from "./memory-kv-storage.ts";
 
 /**
@@ -108,72 +109,42 @@ export interface KVStorage {
 }
 
 /**
- * Storage configuration options
+ * Storage configuration options. The `deno-kv` backend was removed in
+ * the 2026-05-02 JetStream KV consolidation — use
+ * `createJetStreamKVStorage` for production surfaces, and `memory` here
+ * for tests.
  */
 export interface KVStorageConfig {
-  /**
-   * Storage backend type
-   */
-  type: "deno-kv" | "memory" | "redis" | "postgres";
-
-  /**
-   * Connection string or path (implementation-specific)
-   */
-  connection?: string;
-
-  /**
-   * Additional storage-specific options
-   */
+  type: "memory";
   options?: Record<string, unknown>;
 }
 
-/**
- * Factory function to create storage instances
- */
-export async function createKVStorage(config: KVStorageConfig): Promise<KVStorage> {
+/** Factory function to create storage instances. */
+export function createKVStorage(config: KVStorageConfig): Promise<KVStorage> {
   switch (config.type) {
-    case "deno-kv": {
-      const storage = new DenoKVStorage(config.connection);
-      await storage.initialize();
-      // @ts-expect-error issue with narrowing Deno.KVKey in the `*list` asyncIterator.
-      return storage;
-    }
     case "memory": {
       const storage = new MemoryKVStorage();
       storage.initialize();
       // @ts-expect-error issue with narrowing Deno.KVKey in the `*list` asyncIterator.
-      return storage;
+      return Promise.resolve(storage);
     }
     default:
-      throw new Error(`Unsupported storage type: ${config.type}`);
+      throw new Error(`Unsupported storage type: ${(config as { type: string }).type}`);
   }
 }
 
 /**
- * Storage error types for better error handling
+ * JetStream-KV–backed storage. Separate from `createKVStorage` because
+ * it needs a live NATS connection at construction time — the pure
+ * config-string factory above can't carry one. Daemon calls this
+ * directly for surfaces that have moved to JetStream substrate (cron
+ * timers as of 2026-05-02; workspace registry next).
  */
-export class KVStorageError extends Error {
-  public readonly code: string;
-  public override readonly cause?: Error;
-
-  constructor(message: string, code: string, cause?: Error) {
-    super(message);
-    this.name = "KVStorageError";
-    this.code = code;
-    this.cause = cause;
-  }
-}
-
-export class KVTransactionError extends KVStorageError {
-  constructor(message: string, cause?: Error) {
-    super(message, "TRANSACTION_FAILED", cause);
-    this.name = "KVTransactionError";
-  }
-}
-
-export class KVConnectionError extends KVStorageError {
-  constructor(message: string, cause?: Error) {
-    super(message, "CONNECTION_FAILED", cause);
-    this.name = "KVConnectionError";
-  }
+export async function createJetStreamKVStorage(
+  nc: NatsConnection,
+  options: { bucket: string; history?: number },
+): Promise<KVStorage> {
+  const storage = new JetStreamKVStorage(nc, options);
+  await storage.initialize();
+  return storage;
 }

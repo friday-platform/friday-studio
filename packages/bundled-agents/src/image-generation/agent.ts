@@ -1,10 +1,7 @@
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { type ArtifactRef, createAgent, err, ok } from "@atlas/agent-sdk";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { registry, smallLLM } from "@atlas/llm";
 import { stringifyError, truncateUnicode } from "@atlas/utils";
-import { getWorkspaceFilesDir } from "@atlas/utils/paths.server";
 import { generateImage } from "ai";
 import { z } from "zod";
 import { type DiscoveredImages, discoverImageFiles } from "./discovery.ts";
@@ -129,18 +126,11 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
       data: { toolName: "Image Generation", content: "Saving image..." },
     });
 
-    const workspaceFilesDir = getWorkspaceFilesDir(session.workspaceId);
-    await mkdir(workspaceFilesDir, { recursive: true });
-
     const mediaType = generatedFile.mediaType;
     const ext = MIME_TO_EXT[mediaType] ?? ".png";
-    const diskFileName = `image-${crypto.randomUUID()}${ext}`;
-    const filePath = join(workspaceFilesDir, diskFileName);
-    await writeFile(filePath, generatedFile.uint8Array);
-
+    const imageId = crypto.randomUUID();
+    const fallbackTitle = `${isEditMode ? "Edited Image" : "Generated Image"}: ${imageId}`;
     const titlePrefix = isEditMode ? "Edited Image" : "Generated Image";
-    const imageId = diskFileName.replace(ext, "");
-    const fallbackTitle = `${titlePrefix}: ${imageId}`;
 
     const title = await smallLLM({
       platformModels,
@@ -160,16 +150,21 @@ export const imageGenerationAgent = createAgent<string, ImageGenerationOutput>({
     const summary = truncateUnicode(prompt, 200);
     const originalName = `${isEditMode ? "edited" : "generated"}-image${ext}`;
 
+    // Copy into an ArrayBuffer-backed Uint8Array so the schema's
+    // `Uint8Array<ArrayBuffer>` typing is satisfied (the AI SDK returns
+    // `Uint8Array<ArrayBufferLike>`).
+    const imageBytes = new Uint8Array(generatedFile.uint8Array.byteLength);
+    imageBytes.set(generatedFile.uint8Array);
+
     const artifactResult = await ArtifactStorage.create({
       workspaceId: session.workspaceId,
       chatId: session.streamId,
-      data: { type: "file", version: 1, data: { path: filePath, originalName } },
+      data: { type: "file", content: imageBytes, mimeType: mediaType, originalName },
       title,
       summary,
     });
 
     if (!artifactResult.ok) {
-      await unlink(filePath).catch(() => {});
       logger.error("Failed to create image artifact", { error: artifactResult.error });
       return err(
         `Failed to save ${isEditMode ? "edited" : "generated"} image: ${artifactResult.error}`,

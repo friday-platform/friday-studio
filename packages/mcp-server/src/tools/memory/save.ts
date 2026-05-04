@@ -14,7 +14,6 @@ export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): voi
       description:
         "Save an entry to a named memory store in a workspace. " +
         "The store must be declared in workspace.yml under `memory.own` (or reachable via an `rw` mount) — undeclared stores are rejected with the list of declared ones. " +
-        "The store strategy (narrative, retrieval, dedup, kv) is resolved from the workspace config — you do not need to know the adapter type. " +
         "Entries persist across sessions. Use for facts, decisions, and notes the agent should remember long-term. " +
         "For session-scoped ephemeral state, use state_append instead.",
       inputSchema: {
@@ -51,13 +50,7 @@ export function registerMemorySaveTool(server: McpServer, ctx: ToolContext): voi
         return createErrorResponse(resolved.error);
       }
 
-      const { effectiveWorkspaceId, effectiveMemoryName, strategy } = resolved.resolved;
-
-      if (strategy !== "narrative") {
-        return createErrorResponse(
-          `memory_save currently only supports narrative stores. Store '${memoryName}' has strategy '${strategy}'. Use the strategy-specific tools (memory_${strategy}_*) for now.`,
-        );
-      }
+      const { effectiveWorkspaceId, effectiveMemoryName } = resolved.resolved;
 
       const url = `${ctx.daemonUrl}/api/memory/${encodeURIComponent(effectiveWorkspaceId)}/narrative/${encodeURIComponent(effectiveMemoryName)}`;
 

@@ -18,9 +18,6 @@ import {
   useTempDir,
 } from "./config.test-fixtures.ts";
 
-// Mock storeWorkspaceHistory to avoid Cortex dependencies
-vi.mock("@atlas/storage", () => ({ storeWorkspaceHistory: vi.fn().mockResolvedValue(undefined) }));
-
 // Mock discoverMCPServers to control catalog contents without real registry
 const mockDiscoverMCPServers = vi.hoisted(() => vi.fn());
 
@@ -65,14 +62,12 @@ function createTestApp(options: {
     resetIdleTimeout: vi.fn(),
     getWorkspaceRuntime,
     destroyWorkspaceRuntime,
-    getLibraryStorage: vi.fn(),
     getAgentRegistry: vi.fn(),
     getOrCreateChatSdkInstance: vi.fn(),
     evictChatSdkInstance: vi.fn(),
-    getLedgerAdapter: vi.fn(),
-    getActivityAdapter: vi.fn(),
     daemon: {} as AppContext["daemon"],
     streamRegistry: {} as AppContext["streamRegistry"],
+    chatTurnRegistry: {} as AppContext["chatTurnRegistry"],
     sessionStreamRegistry: {} as AppContext["sessionStreamRegistry"],
     sessionHistoryAdapter: {} as AppContext["sessionHistoryAdapter"],
     exposeKernel: false,
@@ -238,18 +233,6 @@ describe("PUT /mcp/:serverId", () => {
     expect(body.error).toBe("forbidden");
   });
 
-  test("returns 422 for blueprint workspace", async () => {
-    const workspace = createMockWorkspace({ metadata: { blueprintArtifactId: "art-1" } });
-    const { app } = createTestApp({ workspace, config: createMergedConfig(createTestConfig()) });
-
-    const res = await app.request("/ws-test-id/mcp/github", { method: "PUT" });
-
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("not_supported");
-    expect(body.message).toContain("blueprint");
-  });
-
   test("returns 404 when server not in catalog", async () => {
     mockDiscoverMCPServers.mockResolvedValue([]);
 
@@ -403,18 +386,6 @@ describe("DELETE /mcp/:serverId", () => {
     expect(res.status).toBe(403);
     const body = (await res.json()) as JsonBody;
     expect(body.error).toBe("forbidden");
-  });
-
-  test("returns 422 for blueprint workspace", async () => {
-    const workspace = createMockWorkspace({ metadata: { blueprintArtifactId: "art-1" } });
-    const { app } = createTestApp({ workspace, config: createMergedConfig(createTestConfig()) });
-
-    const res = await app.request("/ws-test-id/mcp/github", { method: "DELETE" });
-
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("not_supported");
-    expect(body.message).toContain("blueprint");
   });
 
   test("returns 404 when server not enabled", async () => {

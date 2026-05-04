@@ -12,12 +12,10 @@
   "dependencies": {
     "@ai-sdk/provider": "^3.0.10",
     "@atlas/agent-sdk": "workspace:*",
-    "@atlas/ledger": "workspace:*",
     "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/mcp": "workspace:*",
-    "@atlas/resources": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/utils": "workspace:*",
     "@modelcontextprotocol/sdk": "~1.28.0",

@@ -4,13 +4,18 @@
   "exports": {
     ".": "./src/mod.ts",
     "./archive": "./src/archive.ts",
-    "./schemas": "./src/schemas.ts"
+    "./schemas": "./src/schemas.ts",
+    "./storage": "./src/storage.ts"
   },
   "dependencies": {
     "@atlas/config": "workspace:*",
-    "@db/sqlite": "npm:@jsr/db__sqlite@^0.12.0",
+    "@atlas/core": "workspace:*",
+    "@atlas/logger": "workspace:*",
+    "@atlas/storage": "workspace:*",
+    "@atlas/utils": "workspace:*",
     "@std/yaml": "npm:@jsr/std__yaml@^1.0.10",
     "ai": "^6.0.174",
+    "nats": "^2.29.3",
     "nanoid": "^5.1.6",
     "markdown-it": "^14.1.1",
     "tar": "^7.5.13",

@@ -1,7 +1,15 @@
 # Schedule signal — cron-triggered automation.
 #
-# schedule: cron expression (e.g., "0 9 * * *" for daily at 9am)
-# timezone: IANA timezone name (defaults to UTC if omitted)
+# schedule:     cron expression (e.g., "0 9 * * *" for daily at 9am)
+# timezone:     IANA timezone name (defaults to UTC if omitted)
+# onMissed:     what to do with cron firings the daemon was down for.
+#               manual = surface pending in /schedules UI (DEFAULT);
+#               skip = drop silently;
+#               coalesce = fire once with missedCount;
+#               catchup = fire each missed slot in order.
+#               Bounded by missedWindow.
+# missedWindow: duration (s/m/h). Slots older than now-missedWindow are
+#               dropped regardless of policy. Defaults to 24h.
 
 signals:
   my-schedule:
@@ -10,3 +18,7 @@ signals:
     config:
       schedule: "0 9 * * *"
       timezone: "America/Los_Angeles"
+      # onMissed: skip          # opt out of pending UI; silently drop
+      # onMissed: coalesce      # auto-fire once if any missed
+      # onMissed: catchup       # auto-fire each missed slot
+      # missedWindow: 24h

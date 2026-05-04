@@ -35,24 +35,26 @@ describe("MemoryMountSchema", () => {
       expect(result.source).toBe("thick_endive/narrative/autopilot-backlog");
     });
 
-    it("accepts _global/kv/shared-flags", () => {
-      const result = MemoryMountSchema.parse(validMount({ source: "_global/kv/shared-flags" }));
-      expect(result.source).toBe("_global/kv/shared-flags");
+    it("accepts _global/narrative/shared-flags", () => {
+      const result = MemoryMountSchema.parse(
+        validMount({ source: "_global/narrative/shared-flags" }),
+      );
+      expect(result.source).toBe("_global/narrative/shared-flags");
     });
 
-    it("accepts all four store kinds", () => {
-      for (const kind of ["narrative", "retrieval", "dedup", "kv"]) {
-        const result = MemoryMountSchema.parse(validMount({ source: `ws_1/${kind}/corpus-name` }));
-        expect(result.source).toBe(`ws_1/${kind}/corpus-name`);
-      }
+    it("accepts narrative kind", () => {
+      const result = MemoryMountSchema.parse(validMount({ source: `ws_1/narrative/corpus-name` }));
+      expect(result.source).toBe(`ws_1/narrative/corpus-name`);
     });
 
     it("rejects invalid kind e.g. ws/unknown/corpus", () => {
       expect(() => MemoryMountSchema.parse(validMount({ source: "ws/unknown/corpus" }))).toThrow();
     });
 
-    it("rejects source with unsupported kind 'vector'", () => {
-      expect(() => MemoryMountSourceSchema.parse("ws/vector/corpus")).toThrow();
+    it("rejects retrieval, dedup, kv kinds (removed in 2026-05 cleanup)", () => {
+      for (const kind of ["retrieval", "dedup", "kv"]) {
+        expect(() => MemoryMountSourceSchema.parse(`ws/${kind}/corpus`)).toThrow();
+      }
     });
 
     it("rejects 'bad//corpus'", () => {
@@ -266,9 +268,13 @@ describe("MemoryConfigSchema", () => {
 });
 
 describe("StoreKindSchema", () => {
-  it("accepts all four kinds", () => {
-    for (const kind of ["narrative", "retrieval", "dedup", "kv"]) {
-      expect(StoreKindSchema.parse(kind)).toBe(kind);
+  it("accepts narrative", () => {
+    expect(StoreKindSchema.parse("narrative")).toBe("narrative");
+  });
+
+  it("rejects retrieval/dedup/kv (removed in 2026-05 cleanup)", () => {
+    for (const kind of ["retrieval", "dedup", "kv"]) {
+      expect(() => StoreKindSchema.parse(kind)).toThrow();
     }
   });
 
@@ -286,9 +292,9 @@ describe("parseMemoryMountSource", () => {
   });
 
   it("parses _global source", () => {
-    const result = parseMemoryMountSource("_global/kv/shared-flags");
+    const result = parseMemoryMountSource("_global/narrative/shared-flags");
     expect(result.workspaceId).toBe("_global");
-    expect(result.kind).toBe("kv");
+    expect(result.kind).toBe("narrative");
     expect(result.memoryName).toBe("shared-flags");
   });
 
@@ -308,8 +314,14 @@ describe("MemoryTypeSchema", () => {
 });
 
 describe("MemoryStrategySchema", () => {
-  it.each(["narrative", "retrieval", "dedup", "kv"] as const)("accepts %s", (strategy) => {
-    expect(MemoryStrategySchema.parse(strategy)).toBe(strategy);
+  it("accepts narrative", () => {
+    expect(MemoryStrategySchema.parse("narrative")).toBe("narrative");
+  });
+
+  it("rejects retrieval/dedup/kv (removed in 2026-05 cleanup)", () => {
+    for (const strategy of ["retrieval", "dedup", "kv"]) {
+      expect(() => MemoryStrategySchema.parse(strategy)).toThrow();
+    }
   });
 
   it("rejects invalid strategy", () => {

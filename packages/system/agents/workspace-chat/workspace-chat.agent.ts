@@ -20,8 +20,6 @@ import {
   smallLLM,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import type { ResourceEntry } from "@atlas/resources";
-import { buildResourceGuidance, createLedgerClient } from "@atlas/resources";
 import type { SkillSummary } from "@atlas/skills";
 import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import {
@@ -35,7 +33,6 @@ import { z } from "zod";
 import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
 import {
   composeMemoryBlocks,
-  composeResources,
   composeSkills,
   composeTools,
   composeWorkspaceSections,
@@ -61,7 +58,6 @@ import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
-import { createResourceChatTools, RESOURCE_CHAT_TOOL_NAMES } from "./tools/resource-tools.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import {
   createAssignWorkspaceSkillTool,
@@ -73,8 +69,6 @@ import { createWebSearchTool } from "./tools/web-search.ts";
 import { createBoundWorkspaceOpsTools, createWorkspaceOpsTools } from "./tools/workspace-ops.ts";
 import { fetchUserIdentitySection } from "./user-identity.ts";
 import { fetchUserProfileState } from "./user-profile.ts";
-
-const ROLE_SYSTEM = "system" as const;
 
 interface WorkspaceChatResult {
   text: string | undefined;
@@ -88,55 +82,11 @@ export interface ArtifactSummary {
   summary: string;
 }
 
-/** Zod schema for parsing resource entries from the daemon API. */
-const ResourceEntrySchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("document"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("external_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    provider: z.string(),
-    ref: z.string().optional(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
-  z.object({
-    type: z.literal("artifact_ref"),
-    slug: z.string(),
-    name: z.string(),
-    description: z.string(),
-    artifactId: z.string(),
-    artifactType: z.enum(["file", "unavailable"]),
-    rowCount: z.number().optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
-]);
-
-const ResourcesResponseSchema = z.object({ resources: z.array(ResourceEntrySchema) });
 const ArtifactsResponseSchema = z.object({
   artifacts: z.array(
     z.object({ id: z.string(), type: z.string(), title: z.string(), summary: z.string() }),
   ),
 });
-
-/**
- * Parse resource entries from raw daemon API response.
- * Returns empty array on invalid data (graceful degradation).
- */
-export function parseResourceEntries(data: unknown): ResourceEntry[] {
-  const parsed = ResourcesResponseSchema.safeParse(data);
-  return parsed.success ? parsed.data.resources : [];
-}
 
 /**
  * Parse artifact summaries from raw daemon API response.
@@ -147,44 +97,26 @@ export function parseArtifactSummaries(data: unknown): ArtifactSummary[] {
   return parsed.success ? parsed.data.artifacts : [];
 }
 
-/**
- * Compute orphaned artifacts — those whose IDs don't appear in any artifact_ref resource entry.
- */
-export function computeOrphanedArtifacts(
-  resourceEntries: ResourceEntry[],
-  artifacts: ArtifactSummary[],
-): ArtifactSummary[] {
-  const linkedArtifactIds = new Set(
-    resourceEntries
-      .filter((e): e is ResourceEntry & { type: "artifact_ref" } => e.type === "artifact_ref")
-      .map((e) => e.artifactId),
-  );
-  return artifacts.filter((a) => !linkedArtifactIds.has(a.id));
-}
-
 export interface WorkspaceDetails {
   name: string;
   description?: string;
   agents: string[];
   jobs: Array<{ id: string; name: string; description?: string }>;
   signals: Array<{ name: string }>;
-  resourceEntries: ResourceEntry[];
-  orphanedArtifacts: ArtifactSummary[];
+  artifacts: ArtifactSummary[];
 }
 
 export async function fetchWorkspaceDetails(
   workspaceId: string,
   logger: Logger,
 ): Promise<WorkspaceDetails> {
-  const [wsResult, agentsResult, jobsResult, signalsResult, artifactsResult, resourcesResult] =
-    await Promise.all([
-      parseResult(client.workspace[":workspaceId"].$get({ param: { workspaceId } })),
-      parseResult(client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } })),
-      parseResult(client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } })),
-      parseResult(client.workspace[":workspaceId"].signals.$get({ param: { workspaceId } })),
-      parseResult(client.artifactsStorage.index.$get({ query: { workspaceId, limit: "50" } })),
-      parseResult(client.workspace[":workspaceId"].resources.$get({ param: { workspaceId } })),
-    ]);
+  const [wsResult, agentsResult, jobsResult, signalsResult, artifactsResult] = await Promise.all([
+    parseResult(client.workspace[":workspaceId"].$get({ param: { workspaceId } })),
+    parseResult(client.workspace[":workspaceId"].agents.$get({ param: { workspaceId } })),
+    parseResult(client.workspace[":workspaceId"].jobs.$get({ param: { workspaceId } })),
+    parseResult(client.workspace[":workspaceId"].signals.$get({ param: { workspaceId } })),
+    parseResult(client.artifactsStorage.index.$get({ query: { workspaceId, limit: "50" } })),
+  ]);
 
   const name = wsResult.ok ? (wsResult.data.name ?? workspaceId) : workspaceId;
   const description = wsResult.ok ? wsResult.data.description : undefined;
@@ -233,18 +165,6 @@ export async function fetchWorkspaceDetails(
     logger.warn("Failed to fetch workspace signals", { workspaceId, error: signalsResult.error });
   }
 
-  // Parse resource entries from daemon API (graceful degradation on failure)
-  let resourceEntries: ResourceEntry[] = [];
-  if (resourcesResult.ok) {
-    resourceEntries = parseResourceEntries(resourcesResult.data);
-  } else {
-    logger.warn("Failed to fetch workspace resources", {
-      workspaceId,
-      error: resourcesResult.error,
-    });
-  }
-
-  // Parse artifacts and compute orphans (artifacts not linked to any resource entry)
   let artifacts: ArtifactSummary[] = [];
   if (artifactsResult.ok) {
     artifacts = parseArtifactSummaries(artifactsResult.data);
@@ -255,9 +175,7 @@ export async function fetchWorkspaceDetails(
     });
   }
 
-  const orphanedArtifacts = computeOrphanedArtifacts(resourceEntries, artifacts);
-
-  return { name, description, agents, jobs, signals, resourceEntries, orphanedArtifacts };
+  return { name, description, agents, jobs, signals, artifacts };
 }
 
 /**
@@ -511,12 +429,20 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // happens in-process to avoid that guard and to skip an unnecessary
         // localhost roundtrip.
         //
-        // Before persisting, sweep any tool-call parts that didn't reach a
-        // terminal state. Cancelled / crashed turns leave the last in-flight
-        // tool stuck in `input-streaming` or `input-available`, which the
-        // chat page would then render as a "running…" spinner forever on
-        // reload. Flipping them to `output-error` gives the UI something to
-        // render and matches the semantics of what actually happened.
+        // Before persisting:
+        // 1. Sweep any tool-call parts that didn't reach a terminal state.
+        //    Cancelled / crashed turns leave the last in-flight tool stuck
+        //    in `input-streaming` or `input-available`, which the chat page
+        //    would then render as a "running…" spinner forever on reload.
+        //    Flipping them to `output-error` gives the UI something to
+        //    render and matches the semantics of what actually happened.
+        // 2. Strip `data-nested-chunk` parts. These are live-streaming
+        //    envelopes from a nested job's inner FSM/tool events — useful
+        //    for rendering the running tool-card live in the chat UI, but
+        //    pure noise once the parent tool reaches output-available
+        //    (which captures the final result). Persisting them bloats
+        //    chat history (one observed turn was 82% nested-chunks) and
+        //    forces the UI to filter them on every read.
         const lastMessage = messages[messages.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
           const { closed } = closePendingToolParts(lastMessage);
@@ -526,6 +452,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               messageId: lastMessage.id,
               closed,
               aborted: abortSignal?.aborted === true,
+            });
+          }
+          const beforeCount = lastMessage.parts.length;
+          lastMessage.parts = lastMessage.parts.filter(
+            (p): p is typeof p => p.type !== "data-nested-chunk",
+          );
+          const stripped = beforeCount - lastMessage.parts.length;
+          if (stripped > 0) {
+            logger.debug("Stripped nested-chunk parts before persist", {
+              streamId: session.streamId,
+              messageId: lastMessage.id,
+              stripped,
             });
           }
           const appendResult = await ChatStorage.appendMessage(
@@ -619,9 +557,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           connect_communicator: createConnectCommunicatorTool(),
         };
 
-        // Resource adapter — shared by resource tools
-        const resourceAdapter = createLedgerClient();
-
         // load_skill
         const loadSkillResult = createLoadSkillTool({ workspaceId });
         const loadSkillTool = loadSkillResult.tool;
@@ -666,19 +601,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           writer,
           abortSignal,
         );
-
-        // Compose resources from primary + foreground workspaces
-        const mergedResources = composeResources(workspaceDetails.resourceEntries, foregrounds);
-
-        // Resource tools — only register when workspace has document resources
-        const hasDocuments = mergedResources.some((e) => e.type === "document");
-        const resourceTools = hasDocuments
-          ? createResourceChatTools(
-              resourceAdapter,
-              new Map(mergedResources.map((e) => [e.slug, e])),
-              workspaceId,
-            )
-          : {};
 
         // Ad-hoc freedom tools — modeled on Hermes + OpenClaw patterns.
         // These give the chat agent web fetch + search + code execution +
@@ -774,7 +696,6 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             workspaceId,
             streamId: session.streamId,
           }),
-          ...resourceTools,
           ...createMemorySaveTool(workspaceId, logger),
           ...webFetchTool,
           ...webSearchTool,
@@ -814,41 +735,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const allTools = composeTools(primaryTools, foregroundToolSets);
         allToolsRef = allTools;
 
-        // Build resource section for system prompt
+        // Surface artifacts list so the LLM knows what files are available
+        // via artifacts_get. Resources subsystem (Ledger) was deleted; the
+        // artifact catalog is the only stored-output surface now.
         const resourceSectionParts: string[] = [];
-
-        if (hasDocuments) {
-          resourceSectionParts.push(`<resources>
-Use resource_read/resource_write for direct document operations — faster than delegate or job tools.
-For external services, use the matching \`agent_*\` specialist or \`delegate\`. For artifact data, use artifacts_get.
-</resources>`);
-        }
-
-        const resourceGuidance = buildResourceGuidance(mergedResources, {
-          availableTools: RESOURCE_CHAT_TOOL_NAMES,
-        });
-        if (resourceGuidance) {
-          resourceSectionParts.push(resourceGuidance);
-        }
-
-        if (workspaceDetails.orphanedArtifacts.length > 0) {
-          const orphanLines = workspaceDetails.orphanedArtifacts.map(
+        if (workspaceDetails.artifacts.length > 0) {
+          const artifactLines = workspaceDetails.artifacts.map(
             (a) => `- ${a.id} (${a.type}): ${a.title} - ${a.summary}`,
           );
-          resourceSectionParts.push(`Files (access via artifacts_get):\n${orphanLines.join("\n")}`);
+          resourceSectionParts.push(
+            `Files (access via artifacts_get):\n${artifactLines.join("\n")}`,
+          );
         }
-
-        if (hasDocuments) {
-          try {
-            const skillText = await resourceAdapter.getSkill(RESOURCE_CHAT_TOOL_NAMES);
-            if (skillText) {
-              resourceSectionParts.push(skillText);
-            }
-          } catch (err) {
-            logger.warn("Failed to fetch resource skill text", { error: err });
-          }
-        }
-
         const resourceSection =
           resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
 
@@ -888,7 +786,7 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
           agentCount: workspaceDetails.agents.length,
           jobCount: workspaceDetails.jobs.length,
           signalCount: workspaceDetails.signals.length,
-          resourceCount: workspaceDetails.resourceEntries.length,
+          artifactCount: workspaceDetails.artifacts.length,
           integrations: linkSummary ? linkSummary.credentials.length : "unavailable",
           userIdentity: userIdentitySection ? "available" : "unavailable",
         });
@@ -924,26 +822,33 @@ For external services, use the matching \`agent_*\` specialist or \`delegate\`. 
           return !hasReasoning;
         });
 
+        // Use AI SDK's `system` parameter rather than `role: "system"`
+        // entries inside `messages`. The latter triggers a security
+        // warning ("System messages in the prompt or messages fields
+        // can be a security risk … may enable prompt injection attacks")
+        // because some providers don't isolate them from user content.
+        // Concatenating the two system blocks keeps the same content;
+        // the datetime block is a tiny suffix.
+        const combinedSystem = `${systemPrompt}\n\n${datetimeMessage}`;
+        const modelMessages = await convertToModelMessages(sanitizedMessages, {
+          convertDataPart: (part) => {
+            if (part.type === "data-credential-linked") {
+              const data = (
+                part as { type: string; data?: { displayName?: string; provider?: string } }
+              ).data;
+              const name = data?.displayName ?? data?.provider ?? "service";
+              return { type: "text" as const, text: `Connected ${name}.` };
+            }
+            return undefined;
+          },
+        });
+
         try {
           const result = streamText({
             model: conversationalModel,
             experimental_repairToolCall: repairToolCall,
-            messages: [
-              { role: ROLE_SYSTEM, content: systemPrompt },
-              { role: ROLE_SYSTEM, content: datetimeMessage },
-              ...(await convertToModelMessages(sanitizedMessages, {
-                convertDataPart: (part) => {
-                  if (part.type === "data-credential-linked") {
-                    const data = (
-                      part as { type: string; data?: { displayName?: string; provider?: string } }
-                    ).data;
-                    const name = data?.displayName ?? data?.provider ?? "service";
-                    return { type: "text" as const, text: `Connected ${name}.` };
-                  }
-                  return undefined;
-                },
-              })),
-            ],
+            system: combinedSystem,
+            messages: modelMessages,
             tools: allTools,
             toolChoice: "auto",
             stopWhen: [stepCountIs(40), connectServiceSucceeded(), connectCommunicatorSucceeded()],

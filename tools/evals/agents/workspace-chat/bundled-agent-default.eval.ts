@@ -44,11 +44,9 @@
  *   #   - enable_mcp_server was NOT called for playwright-mcp / puppeteer-mcp
  *   deno task atlas daemon stop
  *
- * That repro is the design's "integration test against a real daemon" bullet
- * (`docs/plans/2026-04-28-bundled-agent-discovery-design.md` § Testing
- * Decisions, final bullet). It is not automated here because the daemon needs
- * a real workspace, real credentials, and real LLM cost — the eval below is
- * the closest CI-runnable approximation.
+ * That repro is the integration-test path against a real daemon — not
+ * automated here because it needs a real workspace, real credentials, and
+ * real LLM cost. The eval below is the closest CI-runnable approximation.
  */
 
 import { existsSync } from "node:fs";

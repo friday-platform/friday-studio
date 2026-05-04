@@ -14,10 +14,8 @@ import {
   ValidationFailedError,
   validate as validateOutput,
 } from "@atlas/hallucination";
-import type { ResourceStorageAdapter } from "@atlas/ledger";
 import { buildTemporalFacts, type DatetimeContext, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
-import { buildResourceGuidance, enrichCatalogEntries, toCatalogEntries } from "@atlas/resources";
 
 /**
  * Type guard for LLM agent config
@@ -117,9 +115,8 @@ export async function buildAgentPrompt(
   fsmContext: Context,
   signal: Signal,
   abortSignal?: AbortSignal,
-  resourceAdapter?: ResourceStorageAdapter,
-  workspaceId?: string,
-  artifactStorage?: ArtifactStorageAdapter,
+  _workspaceId?: string,
+  _artifactStorage?: ArtifactStorageAdapter,
 ): Promise<string> {
   const signalContext = signal.data;
   const signalDatetime = signal.data?.datetime as DatetimeContext | undefined;
@@ -158,32 +155,6 @@ export async function buildAgentPrompt(
     sections.push(
       `## Signal Data\n\n\`\`\`json\n${JSON.stringify(signalContext, null, 2)}\n\`\`\``,
     );
-  }
-
-  if (resourceAdapter && workspaceId) {
-    try {
-      const metadata = await resourceAdapter.listResources(workspaceId);
-      if (metadata.length > 0) {
-        const catalogEntries = await toCatalogEntries(metadata, resourceAdapter, workspaceId);
-        const entries = artifactStorage
-          ? await enrichCatalogEntries(catalogEntries, artifactStorage)
-          : catalogEntries.filter((e) => e.type !== "artifact_ref");
-        const guidance = buildResourceGuidance(entries);
-        if (guidance) {
-          sections.push(guidance);
-        }
-        const hasDocuments = entries.some((e) => e.type === "document");
-        if (hasDocuments) {
-          const skillText = await resourceAdapter.getSkill();
-          sections.push(skillText);
-        }
-      }
-    } catch (err) {
-      logger.warn("Failed to fetch workspace resources for prompt", {
-        workspaceId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
   }
 
   return sections.join("\n\n");

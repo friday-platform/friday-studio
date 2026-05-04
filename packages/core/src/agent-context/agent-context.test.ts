@@ -15,8 +15,6 @@ import type { AtlasAgent } from "@atlas/agent-sdk";
 import { createStubPlatformModels } from "@atlas/llm";
 import { packSkillArchive, SkillStorage } from "@atlas/skills";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-// Import LocalSkillAdapter directly from file since it's not exported from the package
-import { LocalSkillAdapter } from "../../../skills/src/local-adapter.ts";
 import { clearMountContextRegistry, setMountContext } from "../mount-context-registry.ts";
 import { createAgentContextBuilder } from "./index.ts";
 
@@ -77,8 +75,6 @@ function mockWorkspaceConfigFetch() {
 }
 
 describe("buildAgentContext skill injection", () => {
-  let tempDbPath: string;
-  let tempAdapter: LocalSkillAdapter;
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
@@ -87,51 +83,25 @@ describe("buildAgentContext skill injection", () => {
     mockDispose.mockResolvedValue(undefined);
     mockCreateMCPTools.mockResolvedValue({ tools: {}, dispose: mockDispose, disconnected: [] });
     mockDiscoverMCPServers.mockClear().mockResolvedValue([]);
-
-    // Create temp database for skills
-    tempDbPath = join(tmpdir(), `skills-test-${Date.now()}.db`);
-    tempAdapter = new LocalSkillAdapter(tempDbPath);
-
-    // Mock fetch for workspace config
     originalFetch = globalThis.fetch;
     globalThis.fetch = mockWorkspaceConfigFetch();
-
-    // Wire SkillStorage delegates that resolveVisibleSkills + agent-context use
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
-    vi.spyOn(SkillStorage, "listAssigned").mockImplementation((wsId) =>
-      tempAdapter.listAssigned(wsId),
-    );
-    vi.spyOn(SkillStorage, "listJobOnlySkillIds").mockImplementation(() =>
-      tempAdapter.listJobOnlySkillIds(),
-    );
-    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-
-    // Restore fetch
     globalThis.fetch = originalFetch;
-
-    // Clean up temp database
-    try {
-      rmSync(tempDbPath);
-    } catch {
-      // Ignore if file doesn't exist
-    }
   });
 
   it("adds load_skill tool when skills exist", async () => {
     const workspaceId = "ws-with-skills";
 
     // Create a skill in the temp database
-    await tempAdapter.publish("atlas", "my-skill", "user-1", {
+    await SkillStorage.publish("atlas", "my-skill", "user-1", {
       description: "A useful skill",
       instructions: "Do the thing",
     });
 
     // Stub SkillStorage.list to use temp adapter
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -152,13 +122,12 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-with-skills-2";
 
     // Create a skill
-    await tempAdapter.publish("atlas", "debug-helper", "user-1", {
+    await SkillStorage.publish("atlas", "debug-helper", "user-1", {
       description: "Helps with debugging",
       instructions: "Use this for debugging",
     });
 
     // Stub SkillStorage.list
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -184,7 +153,6 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-no-skills";
 
     // No skills created — list returns empty array
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -208,13 +176,12 @@ describe("buildAgentContext skill injection", () => {
   it("load_skill tool is scoped to correct workspace", async () => {
     const workspaceId = "ws-tool-scope";
 
-    await tempAdapter.publish("atlas", "scoped-skill", "user-1", {
+    await SkillStorage.publish("atlas", "scoped-skill", "user-1", {
       description: "Test scoping",
       instructions: "Scoped instructions",
     });
 
     // Stub SkillStorage methods
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -262,13 +229,12 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-existing-tool";
 
     // Create a skill so the injection code path runs
-    await tempAdapter.publish("atlas", "test-skill", "user-1", {
+    await SkillStorage.publish("atlas", "test-skill", "user-1", {
       description: "Test skill",
       instructions: "Test instructions",
     });
 
     // Stub SkillStorage.list
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     // Create a mock "unified" load_skill tool with a distinctive description
     const unifiedLoadSkillTool = {
@@ -307,13 +273,12 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-opt-out";
 
     // Create a skill in the temp database
-    await tempAdapter.publish("atlas", "ignored-skill", "user-1", {
+    await SkillStorage.publish("atlas", "ignored-skill", "user-1", {
       description: "This skill should be ignored",
       instructions: "Agent did not opt in",
     });
 
     // Stub SkillStorage.list to use temp adapter
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -340,13 +305,10 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-global-skills";
 
     // Publish a skill so SkillStorage.get resolves it
-    await tempAdapter.publish("atlas", "review-skill", "user-1", {
+    await SkillStorage.publish("atlas", "review-skill", "user-1", {
       description: "Reviews pull requests",
       instructions: "Review the PR diff carefully",
     });
-
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
-    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -359,18 +321,20 @@ describe("buildAgentContext skill injection", () => {
       "Review this PR",
     );
 
-    // context.skills should include the resolved global skill
+    // context.skills should include the resolved global skill. Other
+    // tests in the suite publish to the same shared SKILLS bucket, so
+    // we look up by name rather than asserting a strict count.
     expect(context.skills).toBeDefined();
-    expect(context.skills).toHaveLength(1);
-    expect(context.skills?.[0]?.name).toBe("review-skill");
-    expect(context.skills?.[0]?.instructions).toBe("Review the PR diff carefully");
+    const reviewSkill = context.skills?.find((s) => s.name === "review-skill");
+    expect(reviewSkill).toBeDefined();
+    expect(reviewSkill?.instructions).toBe("Review the PR diff carefully");
   });
 
   it("handles failed global skill fetch gracefully", async () => {
     const workspaceId = "ws-skill-error";
 
     // Publish a skill so list returns it, then make get() fail
-    await tempAdapter.publish("atlas", "broken-skill", "user-1", {
+    await SkillStorage.publish("atlas", "broken-skill", "user-1", {
       description: "A broken skill",
       instructions: "Will fail to load",
     });
@@ -399,7 +363,7 @@ describe("buildAgentContext skill injection", () => {
   it("handles missing global skill gracefully", async () => {
     const workspaceId = "ws-skill-missing";
 
-    await tempAdapter.publish("atlas", "deleted-skill", "user-1", {
+    await SkillStorage.publish("atlas", "deleted-skill", "user-1", {
       description: "A skill that disappears",
       instructions: "Gone before fetch",
     });
@@ -432,14 +396,11 @@ describe("buildAgentContext skill injection", () => {
     const archive = await packSkillArchive(archiveDir);
     rmSync(archiveDir, { recursive: true, force: true });
 
-    await tempAdapter.publish("atlas", "archive-skill", "user-1", {
+    await SkillStorage.publish("atlas", "archive-skill", "user-1", {
       description: "Skill with archive",
       instructions: "Load [criteria](references/review-criteria.md) for review.",
       archive: new Uint8Array(archive),
     });
-
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
-    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -453,10 +414,8 @@ describe("buildAgentContext skill injection", () => {
     );
 
     expect(context.skills).toBeDefined();
-    expect(context.skills).toHaveLength(1);
-
-    const skill = context.skills?.[0];
-    expect(skill?.name).toBe("archive-skill");
+    const skill = context.skills?.find((s) => s.name === "archive-skill");
+    expect(skill).toBeDefined();
     // Instructions are passed through as-is (relative paths, no transformation)
     expect(skill?.instructions).toContain("references/review-criteria.md");
     // Reference files should be extracted from archive
@@ -469,14 +428,11 @@ describe("buildAgentContext skill injection", () => {
     const workspaceId = "ws-bad-archive";
 
     // Publish skill with invalid archive (not a valid tar.gz)
-    await tempAdapter.publish("atlas", "bad-archive-skill", "user-1", {
+    await SkillStorage.publish("atlas", "bad-archive-skill", "user-1", {
       description: "Skill with bad archive",
       instructions: "Some instructions",
       archive: new Uint8Array([1, 2, 3, 4]),
     });
-
-    vi.spyOn(SkillStorage, "list").mockImplementation(() => tempAdapter.list());
-    vi.spyOn(SkillStorage, "get").mockImplementation((...args) => tempAdapter.get(...args));
 
     const buildAgentContext = createAgentContextBuilder({
       logger: mockLogger,
@@ -491,10 +447,10 @@ describe("buildAgentContext skill injection", () => {
 
     // Skill should still be included but without referenceFiles
     expect(context.skills).toBeDefined();
-    expect(context.skills).toHaveLength(1);
-    expect(context.skills?.[0]?.name).toBe("bad-archive-skill");
-    expect(context.skills?.[0]?.instructions).toBe("Some instructions");
-    expect(context.skills?.[0]?.referenceFiles).toBeUndefined();
+    const skill = context.skills?.find((s) => s.name === "bad-archive-skill");
+    expect(skill).toBeDefined();
+    expect(skill?.instructions).toBe("Some instructions");
+    expect(skill?.referenceFiles).toBeUndefined();
 
     // Should have logged a warning about the extraction failure
     expect(mockWarn).toHaveBeenCalledWith(

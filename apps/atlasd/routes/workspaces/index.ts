@@ -41,10 +41,8 @@ import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidat
 import { createDefaultResolvers } from "@atlas/core/mcp-registry/resolvers";
 import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
 import { getMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
-import type { ResourceMetadata, ResourceVersion } from "@atlas/ledger";
 import { createLogger, logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
-import { createLedgerClient } from "@atlas/resources";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { ColorSchema, isErrnoException, stringifyError } from "@atlas/utils";
@@ -63,8 +61,8 @@ import {
   setCommunicatorMutation,
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
+import { awaitSignalCompletion } from "../../src/signal-stream.ts";
 import { getCurrentUser } from "../me/adapter.ts";
-import { applyBlueprint, loadWorkspaceBlueprint } from "./blueprint-recompile.ts";
 import {
   buildWorkspaceBundleBytes,
   isOnDiskWorkspace,
@@ -88,7 +86,6 @@ import {
 } from "./draft-helpers.ts";
 import { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
 import { mapMutationError } from "./mutation-errors.ts";
-import { resourceRoutes } from "./resources.ts";
 import {
   addWorkspaceBatchSchema,
   addWorkspaceSchema,
@@ -302,129 +299,6 @@ export function extractJobIntegrations(
  * can detect and resolve them during export/import.
  */
 export { injectBundledAgentRefs } from "./inject-bundled-agents.ts";
-
-// Zod schemas for parsing Ledger version data per resource type.
-// Ledger stores schema/data as `unknown` — parse here instead of casting.
-const ProseSchemaShape = z.object({ type: z.literal("string"), format: z.literal("markdown") });
-const DocumentSchemaShape = z.record(z.string(), z.unknown());
-const ArtifactRefDataShape = z.object({ artifact_id: z.string() });
-const ExternalRefDataShape = z.object({
-  provider: z.string(),
-  ref: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-/**
- * Reconstruct a resource declaration from Ledger metadata + version data.
- * Prose resources are stored as type "document" with a markdown schema —
- * detect by checking the schema shape.
- */
-export function toConfigResourceDeclaration(
-  metadata: ResourceMetadata,
-  version: ResourceVersion,
-): NonNullable<WorkspaceConfig["resources"]>[number] {
-  const base = { slug: metadata.slug, name: metadata.name, description: metadata.description };
-
-  switch (metadata.type) {
-    case "document": {
-      const schemaResult = DocumentSchemaShape.safeParse(version.schema);
-      const schema = schemaResult.success ? schemaResult.data : {};
-      if (ProseSchemaShape.safeParse(schema).success) {
-        return { type: "prose" as const, ...base };
-      }
-      return { type: "document" as const, ...base, schema };
-    }
-    case "artifact_ref": {
-      const parsed = ArtifactRefDataShape.safeParse(version.data);
-      return {
-        type: "artifact_ref" as const,
-        ...base,
-        artifactId: parsed.success ? parsed.data.artifact_id : "",
-      };
-    }
-    case "external_ref": {
-      const parsed = ExternalRefDataShape.safeParse(version.data);
-      if (!parsed.success) {
-        return { type: "external_ref" as const, ...base, provider: "" };
-      }
-      return {
-        type: "external_ref" as const,
-        ...base,
-        provider: parsed.data.provider,
-        ...(parsed.data.ref !== undefined && { ref: parsed.data.ref }),
-        ...(parsed.data.metadata !== undefined && { metadata: parsed.data.metadata }),
-      };
-    }
-  }
-}
-
-/**
- * Provision resources from workspace config into Ledger.
- * Maps config-level resource declarations to Ledger provision calls.
- */
-export async function provisionConfigResources(
-  workspaceId: string,
-  userId: string,
-  resources: NonNullable<WorkspaceConfig["resources"]>,
-  provisionLogger: ReturnType<typeof createLogger>,
-): Promise<string[]> {
-  const ledger = createLedgerClient();
-  const errors: string[] = [];
-
-  for (const resource of resources) {
-    try {
-      let ledgerType: "document" | "artifact_ref" | "external_ref";
-      let schema: unknown;
-      let initialData: unknown;
-
-      switch (resource.type) {
-        case "document":
-          ledgerType = "document";
-          schema = resource.schema;
-          initialData = [];
-          break;
-        case "prose":
-          ledgerType = "document";
-          schema = { type: "string", format: "markdown" };
-          initialData = "";
-          break;
-        case "artifact_ref":
-          ledgerType = "artifact_ref";
-          schema = {};
-          initialData = { artifact_id: resource.artifactId };
-          break;
-        case "external_ref":
-          ledgerType = "external_ref";
-          schema = {};
-          initialData = {
-            provider: resource.provider,
-            ...(resource.ref !== undefined && { ref: resource.ref }),
-            ...(resource.metadata !== undefined && { metadata: resource.metadata }),
-          };
-          break;
-      }
-
-      await ledger.provision(
-        workspaceId,
-        {
-          userId,
-          slug: resource.slug,
-          name: resource.name,
-          description: resource.description,
-          type: ledgerType,
-          schema,
-        },
-        initialData,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      provisionLogger.warn("Failed to provision resource", { slug: resource.slug, error: message });
-      errors.push(`${resource.slug}: ${message}`);
-    }
-  }
-
-  return errors;
-}
 
 // Create and mount routes
 const workspacesRoutes = daemonFactory
@@ -718,21 +592,9 @@ const workspacesRoutes = daemonFactory
           workspace.metadata = { ...workspace.metadata, requires_setup: true };
         }
 
-        // Provision resources declared in the imported config
-        let resourceErrors: string[] | undefined;
-        if (validatedConfig.resources && validatedConfig.resources.length > 0 && created) {
-          const importResourceLogger = createLogger({ component: "workspace-import-resources" });
-          const provisionUserId = userId ?? "local";
-          const errors = await provisionConfigResources(
-            workspace.id,
-            provisionUserId,
-            validatedConfig.resources,
-            importResourceLogger,
-          );
-          if (errors.length > 0) {
-            resourceErrors = errors;
-          }
-        }
+        // Resources subsystem was deleted (Ledger). Any incoming `resources:`
+        // block in the imported config is silently dropped — no-op in the new
+        // world. The schema parser also strips it before we get here.
 
         return c.json(
           {
@@ -751,7 +613,6 @@ const workspacesRoutes = daemonFactory
             ...(unresolvedCredentialPaths && unresolvedCredentialPaths.length > 0
               ? { unresolvedCredentials: unresolvedCredentialPaths }
               : {}),
-            ...(resourceErrors && resourceErrors.length > 0 ? { resourceErrors } : {}),
           },
           201,
         );
@@ -1086,32 +947,6 @@ const workspacesRoutes = daemonFactory
         return c.json({ error: `Failed to load workspace configuration: ${workspace.id}` }, 500);
       }
 
-      // Fetch resource declarations from Ledger to include in the export.
-      // Resources are stored in Ledger (not workspace.yml), so we reconstruct
-      // declarations from metadata + published version data.
-      let exportResources: NonNullable<WorkspaceConfig["resources"]> | undefined;
-      try {
-        const ledger = createLedgerClient();
-        const metadataList = await ledger.listResources(workspaceId);
-        if (metadataList.length > 0) {
-          const withData = await Promise.all(
-            metadataList.map(async (meta) => {
-              const full = await ledger.getResource(workspaceId, meta.slug, { published: true });
-              return { metadata: meta, version: full?.version };
-            }),
-          );
-          exportResources = withData
-            .filter(
-              (r): r is { metadata: ResourceMetadata; version: ResourceVersion } => !!r.version,
-            )
-            .map((r) => toConfigResourceDeclaration(r.metadata, r.version));
-        }
-      } catch (resourceError) {
-        exportLogger.warn("Failed to fetch resources for export, continuing without them", {
-          error: stringifyError(resourceError),
-        });
-      }
-
       // Inject missing credential refs from bundled agent registry so they
       // appear in the exported YAML even if the user never configured them.
       const configWithAgentRefs = injectBundledAgentRefs(config.workspace);
@@ -1162,11 +997,7 @@ const workspacesRoutes = daemonFactory
 
       // Strip workspace.id - it will be regenerated on import
       const { id: _id, ...workspaceIdentity } = portableConfig.workspace;
-      const exportConfig = {
-        ...portableConfig,
-        workspace: workspaceIdentity,
-        ...(exportResources && exportResources.length > 0 && { resources: exportResources }),
-      };
+      const exportConfig = { ...portableConfig, workspace: workspaceIdentity };
 
       const yamlContent = stringify(exportConfig, { indent: 2, lineWidth: 100 });
 
@@ -1440,22 +1271,19 @@ const workspacesRoutes = daemonFactory
             await manager.updateWorkspaceStatus(workspace.id, workspace.status, { name: ymlName });
           }
 
-          const runtime = ctx.getWorkspaceRuntime(workspace.id);
-          if (runtime) {
-            await ctx.destroyWorkspaceRuntime(workspace.id);
-            return c.json({
-              success: true,
-              workspace,
-              runtimeReloaded: true,
-              runtimeDestroyed: true,
-            });
-          }
-
+          // We do NOT call destroyWorkspaceRuntime here, even on success. The
+          // file watcher detects the workspace.yml write and routes the change
+          // through WorkspaceManager.handleWatcherChange, which defers the
+          // runtime swap until any active session or in-flight execution
+          // finishes (handleWorkspaceConfigChange → stopRuntimeIfActive). When
+          // the chat agent itself triggers the update, that deferral is what
+          // keeps the chat alive — the prior implementation tore down the
+          // runtime synchronously and killed the conversation mid-stream.
           return c.json({
             success: true,
             workspace,
-            runtimeReloaded: false,
-            message: "No active runtime",
+            runtimeReloaded: ctx.getWorkspaceRuntime(workspace.id) !== undefined,
+            message: "Config written; runtime reload deferred to file-watcher path",
           });
         } catch (updateError) {
           return c.json(
@@ -1509,8 +1337,6 @@ const workspacesRoutes = daemonFactory
         name: z.string().min(1).optional(),
         color: ColorSchema.optional(),
         description: z.string().optional(),
-        blueprintArtifactId: z.string().optional(),
-        blueprintRevision: z.number().optional(),
       }),
     ),
     async (c) => {
@@ -1725,70 +1551,6 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  // Recompile workspace.yml from blueprint artifact
-  .post(
-    "/:workspaceId/recompile",
-    zValidator("param", z.object({ workspaceId: z.string() })),
-    zValidator(
-      "json",
-      z.object({ artifactId: z.string().optional(), revision: z.number().optional() }),
-    ),
-    async (c) => {
-      const { workspaceId } = c.req.valid("param");
-      const body = c.req.valid("json");
-      const ctx = c.get("app");
-
-      try {
-        const manager = ctx.getWorkspaceManager();
-        const workspace = await manager.find({ id: workspaceId });
-        if (!workspace) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-
-        // Resolve artifact ID: explicit param > workspace metadata > error
-        const artifactId = body.artifactId ?? workspace.metadata?.blueprintArtifactId;
-        if (!artifactId) {
-          return c.json(
-            {
-              error:
-                "No blueprint artifact ID provided and workspace has no linked blueprint. " +
-                "Pass artifactId in the request body.",
-            },
-            400,
-          );
-        }
-
-        const loaded = await loadWorkspaceBlueprint(workspace, {
-          artifactId,
-          revision: body.revision,
-        });
-        if (!loaded.ok) {
-          return c.json({ error: loaded.error }, loaded.status);
-        }
-
-        const result = await applyBlueprint(
-          workspace,
-          loaded.blueprint,
-          loaded.artifactId,
-          loaded.revision,
-          ctx,
-        );
-        if (!result.ok) {
-          return c.json({ error: result.error }, result.status);
-        }
-
-        return c.json({
-          ok: true,
-          workspaceId,
-          artifactId: loaded.artifactId,
-          revision: loaded.revision,
-        });
-      } catch (error) {
-        logger.error("Failed to recompile workspace", { workspaceId, error });
-        return c.json({ error: `Recompile failed: ${stringifyError(error)}` }, 500);
-      }
-    },
-  )
   // Trigger a workspace signal (SSE mode)
   // Registered as a separate middleware before the JSON handler so the SSE return
   // type doesn't widen the JSON handler's inferred type (Hono RPC client derives
@@ -1825,83 +1587,146 @@ const workspacesRoutes = daemonFactory
     }
 
     const encoder = new TextEncoder();
+    const correlationId = crypto.randomUUID();
+    const nc = ctx.daemon.getNatsConnection();
+
+    // Subscribe to both subjects BEFORE publishing so a fast worker doesn't
+    // beat us to either. The stream subscription forwards every chunk the
+    // worker publishes; the response subscription delivers the terminal
+    // {ok, result} envelope and triggers SSE close.
+    const streamSub = nc.subscribe(`signals.stream.${correlationId}`);
+    const responsePromise = awaitSignalCompletion(nc, correlationId, 600_000);
+
+    // Capture the spawned session's id from the live stream so we can cancel
+    // it on client disconnect. Without this, an aborted chat-tool fetch only
+    // tears down the SSE response — the daemon-side session keeps running
+    // and any side-effects already in flight (send-email, post-to-slack,
+    // etc.) finish anyway. Caused observed email storms when chat follow-ups
+    // aborted prior turns mid-job.
+    let spawnedSessionId: string | undefined;
+    // The Hono request's underlying AbortSignal fires when the client
+    // disconnects (browser navigates away, fetch is aborted, etc.).
+    const clientAbort = c.req.raw.signal;
+    const onClientAbort = () => {
+      if (!spawnedSessionId) return;
+      try {
+        const runtime = ctx.getWorkspaceRuntime(workspaceId);
+        runtime?.cancelSession(spawnedSessionId);
+      } catch (err) {
+        logger.warn("Failed to cancel spawned session on client disconnect", {
+          workspaceId,
+          signalId,
+          sessionId: spawnedSessionId,
+          error: stringifyError(err),
+        });
+      }
+    };
+    clientAbort.addEventListener("abort", onClientAbort, { once: true });
 
     const sseStream = new ReadableStream({
-      start(controller) {
-        ctx.daemon
-          .triggerWorkspaceSignal(
+      async start(controller) {
+        const safeEnqueue = (bytes: Uint8Array) => {
+          try {
+            controller.enqueue(bytes);
+            return true;
+          } catch (err) {
+            logger.debug("Client disconnected during signal SSE stream", {
+              workspaceId,
+              signalId,
+              error: err,
+            });
+            return false;
+          }
+        };
+
+        // Forward NATS-published chunks to the SSE client AND watch for the
+        // session-start chunk so we know which session to cancel if the
+        // client later disconnects mid-run.
+        const forward = (async () => {
+          for await (const msg of streamSub) {
+            const decoded = new TextDecoder().decode(msg.data);
+            if (!spawnedSessionId) {
+              try {
+                const parsed = JSON.parse(decoded) as {
+                  type?: string;
+                  data?: { sessionId?: string };
+                };
+                if (parsed.type === "data-session-start" && parsed.data?.sessionId) {
+                  spawnedSessionId = parsed.data.sessionId;
+                }
+              } catch {
+                // Not JSON or schema mismatch — keep streaming.
+              }
+            }
+            if (!safeEnqueue(encoder.encode(`data: ${decoded}\n\n`))) {
+              break;
+            }
+          }
+        })();
+
+        try {
+          await ctx.daemon.publishSignalToJetStream({
             workspaceId,
             signalId,
-            body.payload,
-            body.streamId,
-            (chunk) => {
-              try {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-              } catch (error) {
-                logger.debug("Client disconnected during signal SSE stream", {
-                  workspaceId,
-                  signalId,
-                  error,
-                });
-              }
-            },
-            body.skipStates,
-          )
-          .then((result) => {
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    type: "job-complete",
-                    data: {
-                      success: true,
-                      sessionId: result.sessionId,
-                      status: "completed",
-                      output: result.output,
-                    },
-                  })}\n\n`,
-                ),
-              );
-              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-              controller.close();
-            } catch (enqueueError) {
-              logger.debug("Client disconnected before job-complete event", {
-                workspaceId,
-                signalId,
-                error: enqueueError,
-              });
-            }
-          })
-          .catch((error) => {
-            const errorMessage = stringifyError(error);
+            payload: body.payload,
+            streamId: body.streamId,
+            correlationId,
+          });
+
+          const response = await responsePromise;
+
+          if (response.ok) {
+            const result = response.result as {
+              sessionId: string;
+              output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+            };
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "job-complete",
+                  data: {
+                    success: true,
+                    sessionId: result.sessionId,
+                    status: "completed",
+                    output: result.output,
+                  },
+                })}\n\n`,
+              ),
+            );
+          } else {
             logger.error("Signal trigger SSE error", {
-              error: errorMessage,
+              error: response.error,
               workspaceId,
               signalId,
             });
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
-                ),
-              );
-              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-              controller.close();
-            } catch (enqueueError) {
-              logger.debug("Client disconnected before job-error event", {
-                workspaceId,
-                signalId,
-                error: enqueueError,
-              });
-            }
-          })
-          .finally(() => {
-            try {
-              controller.close();
-            } catch {
-              /* already closed */
-            }
-          });
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "job-error", data: { error: response.error } })}\n\n`,
+              ),
+            );
+          }
+          safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Signal trigger SSE error", { error: errorMessage, workspaceId, signalId });
+          safeEnqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
+            ),
+          );
+          safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+        } finally {
+          streamSub.unsubscribe();
+          await forward.catch(() => undefined);
+          // SSE finished cleanly — the session has already terminated, so
+          // there's nothing to cancel on client abort. Drop the listener.
+          clientAbort.removeEventListener("abort", onClientAbort);
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+        }
       },
     });
 
@@ -1913,35 +1738,94 @@ const workspacesRoutes = daemonFactory
       },
     });
   })
-  // Trigger a workspace signal (JSON mode)
+  // Trigger a workspace signal (JSON mode).
+  //
+  // Publishes onto the SIGNALS JetStream stream with a correlationId, then
+  // awaits the response on signals.responses.<correlationId>. The shared
+  // SignalConsumer in the daemon (or a future cross-process worker) dispatches
+  // the cascade and publishes the result. Cascade behavior is unchanged from
+  // the legacy in-process path; the difference is durability + worker-pool
+  // dispatchability, plus skipStates is no longer plumbed through (cron / fs-
+  // watch / HTTP all converge on the same envelope shape now).
   .post(
     "/:workspaceId/signals/:signalId",
     zValidator("param", signalParamSchema),
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
-      const { payload, streamId, skipStates } = c.req.valid("json");
+      const { payload, streamId, skipStates: _skipStates } = c.req.valid("json");
       const ctx = c.get("app");
 
+      const correlationId = crypto.randomUUID();
+      const nc = ctx.daemon.getNatsConnection();
+
+      // Same client-disconnect-cancels-spawned-session protection as the SSE
+      // handler above. Capture sessionId from the live stream subject (we
+      // don't forward the chunks anywhere — this subscription is purely for
+      // discovery), and cancel on `c.req.raw.signal` abort.
+      let spawnedSessionId: string | undefined;
+      const discoverySub = nc.subscribe(`signals.stream.${correlationId}`);
+      const discovery = (async () => {
+        for await (const msg of discoverySub) {
+          if (spawnedSessionId) break;
+          try {
+            const parsed = JSON.parse(new TextDecoder().decode(msg.data)) as {
+              type?: string;
+              data?: { sessionId?: string };
+            };
+            if (parsed.type === "data-session-start" && parsed.data?.sessionId) {
+              spawnedSessionId = parsed.data.sessionId;
+              break;
+            }
+          } catch {
+            /* keep listening */
+          }
+        }
+      })();
+      discovery.catch(() => undefined);
+      const clientAbort = c.req.raw.signal;
+      const onClientAbort = () => {
+        if (!spawnedSessionId) return;
+        try {
+          const runtime = ctx.getWorkspaceRuntime(workspaceId);
+          runtime?.cancelSession(spawnedSessionId);
+        } catch (err) {
+          logger.warn("Failed to cancel spawned session on client disconnect", {
+            workspaceId,
+            signalId,
+            sessionId: spawnedSessionId,
+            error: stringifyError(err),
+          });
+        }
+      };
+      clientAbort.addEventListener("abort", onClientAbort, { once: true });
+
       try {
-        const result = await ctx.daemon.triggerWorkspaceSignal(
+        // Subscribe BEFORE publishing — a fast consumer could otherwise
+        // beat us to the response subject and we'd miss the reply.
+        const responsePromise = awaitSignalCompletion(nc, correlationId, 600_000);
+        await ctx.daemon.publishSignalToJetStream({
           workspaceId,
           signalId,
           payload,
           streamId,
-          undefined,
-          skipStates,
-        );
+          correlationId,
+        });
+        const response = await responsePromise;
+
+        if (!response.ok) {
+          throw new Error(response.error);
+        }
+        const result = response.result as {
+          sessionId: string;
+          output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+        };
         return c.json({
           message: "Signal completed",
           status: "completed" as const,
           workspaceId,
           signalId,
           sessionId: result.sessionId,
-          // Surface the FSM's final output documents (agent outputTo results,
-          // user-declared document types). Callers like the workspace-chat
-          // job tool need this to render the agent's actual answer — without
-          // it, the caller only sees a success flag with no content.
           output: result.output,
         });
       } catch (error) {
@@ -1989,6 +1873,10 @@ const workspacesRoutes = daemonFactory
           return c.json({ error: errorMessage }, 409);
         }
         return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
+      } finally {
+        clientAbort.removeEventListener("abort", onClientAbort);
+        discoverySub.unsubscribe();
+        await discovery.catch(() => undefined);
       }
     },
   )
@@ -2202,7 +2090,6 @@ const workspacesRoutes = daemonFactory
       }
     },
   )
-  .route("/:workspaceId/resources", resourceRoutes)
   // ─── WORKSPACE SKILLS (resolved) ──────────────────────────────────────────
   .get(
     "/:workspaceId/skills",

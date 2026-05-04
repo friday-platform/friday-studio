@@ -67,7 +67,11 @@
       ],
       "project": ["src/**/*.{ts,tsx,js,jsx}!"]
     },
-    "apps/atlasd": { "entry": ["**/*.test.ts"], "project": ["**/*.{ts,tsx,js,jsx}!"] },
+    "apps/atlasd": {
+      "entry": ["**/*.test.ts", "src/migrations/m_*.ts!"],
+      "project": ["**/*.{ts,tsx,js,jsx}!"],
+      "ignore": ["src/tool-worker-launcher.ts"]
+    },
     "tools/evals": {
       "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
       "project": ["**/*.{ts,tsx,js,jsx}!"]
@@ -83,14 +87,7 @@
       }
     },
     "tools/agent-playground": {
-      "entry": [
-        "cli.ts!",
-        "mod.ts!",
-        "static-server.ts!",
-        "src/routes/**/*.svelte!",
-        "src/**/*.test.ts"
-      ],
-      "ignore": ["src/lib/cheatsheet-commands.ts", "src/lib/components/shared/cheatsheet.svelte"],
+      "entry": ["mod.ts!", "static-server.ts!", "src/routes/**/*.svelte!", "src/**/*.test.ts"],
       "project": ["src/**/*.{ts,tsx,js,jsx,svelte}!", "*.ts!", "*.js!"],
       "paths": {
         "$lib": ["./src/lib"],
@@ -112,7 +109,7 @@
     }
   },
   "ignoreDependencies": ["@types/deno", "@anthropic-ai/claude-agent-sdk"],
-  "ignoreBinaries": ["svelte-kit", "svelte-package", "prettier"],
+  "ignoreBinaries": ["svelte-kit", "svelte-package"],
   "ignoreExportsUsedInFile": { "interface": true, "type": true, "function": true, "class": true },
   "rules": {
     "files": "error",
