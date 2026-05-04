@@ -212,10 +212,18 @@
     <img src={imageUrl} alt={resolvedTitle} class="artifact-image" />
   {:else if htmlUrl}
     <div class="iframe-scaler" bind:this={scalerEl}>
+      <!--
+        `sandbox="allow-scripts"` (no `allow-same-origin`) drops the
+        iframe into an opaque origin so embedded JS can't reach the
+        chat UI's cookies, storage, or DOM via SOP — but `allow-scripts`
+        lets agent-rendered HTML actually run (Leaflet maps, charts,
+        etc). Pair with the daemon's `Content-Security-Policy: sandbox
+        allow-scripts; …` header on the /content route.
+      -->
       <iframe
         title={resolvedTitle}
         src={htmlUrl}
-        sandbox=""
+        sandbox="allow-scripts"
         class="artifact-iframe"
         style="--scale: {iframeScale}"
       ></iframe>

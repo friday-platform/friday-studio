@@ -765,7 +765,12 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("Content-Type")).toEqual("text/html");
-    expect(contentResponse.headers.get("Content-Security-Policy")).toContain("sandbox");
+    // HTML gets `allow-scripts` so legit agent-rendered pages (Leaflet,
+    // charts, embedded viewers) can run. The opaque-origin sandbox is
+    // what isolates them from the parent.
+    const htmlCsp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(htmlCsp).toContain("sandbox");
+    expect(htmlCsp).toContain("allow-scripts");
   });
 
   it("sandboxes SVG artifact content (X-Content-Type-Options does not stop SVG scripts)", async () => {
@@ -796,7 +801,11 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("Content-Type")).toEqual("image/svg+xml");
-    expect(contentResponse.headers.get("Content-Security-Policy")).toContain("sandbox");
+    // SVG renders as an image — no `<script>` should ever execute.
+    // Sandbox stays on, but `allow-scripts` is intentionally absent.
+    const svgCsp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(svgCsp).toContain("sandbox");
+    expect(svgCsp).not.toContain("allow-scripts");
   });
 });
 
