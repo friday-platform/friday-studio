@@ -14,6 +14,7 @@ export type {
   DisconnectedIntegration,
   DisconnectedIntegrationKind,
   MCPToolsResult,
+  ScrubToolResult,
 } from "./src/create-mcp-tools.ts";
 export { createMCPTools, MCPStartupError } from "./src/create-mcp-tools.ts";
 export type {
