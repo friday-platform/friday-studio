@@ -9,6 +9,7 @@
  */
 
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
+import { markdownToHTML } from "@atlas/ui/markdown";
 import type { ArtifactSummary } from "../../artifacts/model.ts";
 import type { Chat } from "./../storage.ts";
 import { buildSegments } from "./render.ts";
@@ -197,7 +198,10 @@ function renderToolBurstSegment(
 
 /**
  * Render one assistant/user/system/tool message by walking its segments in
- * document order. Tracer-bullet text rendering (T14 will markdown-ify it).
+ * document order. Text segments go through `markdownToHTML` (same path the
+ * live chat UI uses) so code blocks, links, lists, and inline formatting
+ * survive the export. `markdownToHTML` produces already-safe HTML — do not
+ * `escapeHtml` its output or you'll double-escape `<p>` into `&lt;p&gt;`.
  */
 function renderMessage(msg: AtlasUIMessage): string {
   const segments: Segment[] = buildSegments(msg);
@@ -205,7 +209,7 @@ function renderMessage(msg: AtlasUIMessage): string {
   for (const segment of segments) {
     if (segment.type === "text") {
       if (segment.content.length > 0) {
-        body.push(`<div class="content">${escapeHtml(segment.content)}</div>`);
+        body.push(`<div class="content">${markdownToHTML(segment.content)}</div>`);
       }
       continue;
     }

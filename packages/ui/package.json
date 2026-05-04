@@ -34,6 +34,11 @@
       "svelte": "./src/lib/index.ts"
     },
     "./colors.css": "./src/lib/colors.css",
+    "./markdown": {
+      "types": "./src/lib/markdown/markdown.ts",
+      "svelte": "./src/lib/markdown/markdown.ts",
+      "default": "./src/lib/markdown/markdown.ts"
+    },
     "./markdown.css": "./src/lib/markdown/markdown.css",
     "./tokens.css": "./src/lib/tokens.css",
     "./eslint": "./eslint.config.base.js",
