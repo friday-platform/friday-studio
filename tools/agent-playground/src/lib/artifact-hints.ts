@@ -28,12 +28,6 @@ export interface ArtifactInputHint {
  * Keyed by agent id from the bundled-agents registry.
  */
 const ARTIFACT_INPUT_HINTS: Record<string, ArtifactInputHint> = {
-"csv-filter-sampler": {
-    accept: [".csv"],
-    required: true,
-    label: "CSV file to filter and sample",
-    mode: "artifact-ref",
-  },
   "get-summary": {
     accept: [".txt", ".md", ".csv", ".json"],
     required: false,
