@@ -10,6 +10,9 @@
 
 import process from "node:process";
 import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { ArtifactStorage } from "@atlas/core/artifacts/server";
+import { deriveDownloadFilename } from "@atlas/core/artifacts/file-upload";
+import type { ArtifactSummary } from "@atlas/core/artifacts";
 import { renderChatToHTML } from "@atlas/core/chat/export/export-html";
 import { buildExportZip } from "@atlas/core/chat/export/export-zip";
 import { ChatStorage } from "@atlas/core/chat/storage";
@@ -19,6 +22,64 @@ import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
+
+/**
+ * Slugify a derived filename to ASCII-safe characters before it lands in the
+ * zip. `deriveDownloadFilename` reads `originalName` straight from artifact
+ * metadata, which can carry any unicode the user/agent wrote — strip control
+ * chars and path separators so the zip never grows nested directories or
+ * non-portable names.
+ */
+function slugifyZipBasename(name: string): string {
+  const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return cleaned.length > 0 ? cleaned : "artifact";
+}
+
+/**
+ * Bundle the chat's registered artifacts for export. Returns the zip-ready
+ * file entries (`assets/artifacts/<id>/<basename>` paths plus bytes) and a
+ * `{artifactId → assetPath}` map so the HTML renderer can emit download
+ * links. Artifacts whose blob can't be read are logged and excluded from the
+ * map; the renderer surfaces them as `[artifact file unavailable]`.
+ */
+async function bundleChatArtifacts(
+  artifacts: ArtifactSummary[],
+): Promise<{ files: Array<{ path: string; bytes: Uint8Array }>; pathMap: Map<string, string> }> {
+  const uniqueById = new Map<string, ArtifactSummary>();
+  for (const summary of artifacts) {
+    if (!uniqueById.has(summary.id)) uniqueById.set(summary.id, summary);
+  }
+
+  const reads = await Promise.all(
+    [...uniqueById.values()].map(async (summary) => {
+      const result = await ArtifactStorage.readBinaryContents({ id: summary.id });
+      return { summary, result };
+    }),
+  );
+
+  const files: Array<{ path: string; bytes: Uint8Array }> = [];
+  const pathMap = new Map<string, string>();
+  for (const { summary, result } of reads) {
+    if (!result.ok) {
+      logger.error("Failed to read artifact for chat export", {
+        artifactId: summary.id,
+        error: result.error,
+      });
+      continue;
+    }
+    const basename = slugifyZipBasename(
+      deriveDownloadFilename({
+        mimeType: summary.mimeType,
+        originalName: summary.originalName,
+        title: summary.title,
+      }),
+    );
+    const path = `assets/artifacts/${summary.id}/${basename}`;
+    files.push({ path, bytes: result.data });
+    pathMap.set(summary.id, path);
+  }
+  return { files, pathMap };
+}
 
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
@@ -191,11 +252,23 @@ const workspaceChatRoutes = daemonFactory
       return c.json({ error: "Chat not found" }, 404);
     }
 
+    const artifactsResult = await ArtifactStorage.listByChat({ chatId });
+    if (!artifactsResult.ok) {
+      logger.error("Failed to list artifacts for chat export", {
+        chatId,
+        error: artifactsResult.error,
+      });
+      return c.json({ error: artifactsResult.error }, 500);
+    }
+    const artifacts = artifactsResult.data;
+    const { files: artifactFiles, pathMap: artifactPathMap } =
+      await bundleChatArtifacts(artifacts);
+
     // Export uses the full message list — unlike GET /:chatId which trims to
     // the last 100 for UI rehydrate.
     const chat = chatResult.data;
-    const html = renderChatToHTML(chat, []);
-    const zipStream = await buildExportZip(html, chat, []);
+    const html = renderChatToHTML(chat, artifacts, artifactPathMap);
+    const zipStream = await buildExportZip(html, chat, artifactFiles);
 
     return c.body(zipStream, 200, {
       "Content-Type": "application/zip",
