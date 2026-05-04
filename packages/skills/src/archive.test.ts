@@ -26,6 +26,32 @@ describe("packExportArchive", () => {
     expect(parsed.data.instructions).toBe(instructions.trim());
   });
 
+  it("does not double-write frontmatter when instructions already contain a frontmatter block", async () => {
+    // Reproduces the JSON-publish path where the body was stored verbatim
+    // with frontmatter still embedded; the `frontmatter` column is empty.
+    const instructionsWithEmbeddedFm =
+      "---\nname: workspace-sparring\ndescription: Acts as a sparring partner. Use when designing workspaces.\n---\n\n# Workspace Sparring\n\nBody here.\n";
+
+    const result = await packExportArchive({
+      instructions: instructionsWithEmbeddedFm,
+      frontmatter: {},
+      archive: null,
+    });
+
+    const contents = await extractArchiveContents(result);
+    const skillMd = contents["SKILL.md"] as string;
+
+    // The output must have exactly one frontmatter block, not two.
+    const frontmatterDelimiters = skillMd.match(/^---$/gm);
+    expect(frontmatterDelimiters?.length ?? 0).toBe(2);
+
+    const parsed = parseSkillMd(skillMd);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.data.frontmatter.name).toBe("workspace-sparring");
+    expect(parsed.data.frontmatter.description).toContain("sparring partner");
+  });
+
   it("preserves bundled reference files alongside SKILL.md", async () => {
     const refDir = makeTempDir({ prefix: "atlas-export-test-refs-" });
     const refContent = "# Foo reference\n\nDetails here.\n";
