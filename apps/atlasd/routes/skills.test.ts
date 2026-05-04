@@ -403,18 +403,12 @@ describe("Skills API Routes - Global Catalog", () => {
         description: "Imported skill for round-trip test. Use when testing import.",
       };
       const instructions = "# Imported\n\nDo the thing.";
-      const archiveBytes = await packExportArchive({
-        instructions,
-        frontmatter,
-        archive: null,
-      });
+      const archiveBytes = await packExportArchive({ instructions, frontmatter, archive: null });
 
       const formData = new FormData();
       formData.append(
         "archive",
-        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", {
-          type: "application/gzip",
-        }),
+        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
       );
 
       const response = await skillsRoutes.request("/import-archive", {
@@ -448,9 +442,7 @@ describe("Skills API Routes - Global Catalog", () => {
       const formData = new FormData();
       formData.append(
         "archive",
-        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", {
-          type: "application/gzip",
-        }),
+        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
       );
 
       const response = await skillsRoutes.request("/import-archive", {
@@ -479,9 +471,7 @@ describe("Skills API Routes - Global Catalog", () => {
       const formData = new FormData();
       formData.append(
         "archive",
-        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", {
-          type: "application/gzip",
-        }),
+        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
       );
 
       const response = await skillsRoutes.request("/import-archive?namespace=eric", {

@@ -625,8 +625,7 @@ export const skillsRoutes = daemonFactory
       );
     }
 
-    const description =
-      typeof frontmatter.description === "string" ? frontmatter.description : "";
+    const description = typeof frontmatter.description === "string" ? frontmatter.description : "";
 
     const input = PublishSkillInputSchema.safeParse({
       description,
