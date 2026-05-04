@@ -10,6 +10,8 @@
 
 import process from "node:process";
 import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
+import { renderChatToHTML } from "@atlas/core/chat/export/export-html";
+import { buildExportZip } from "@atlas/core/chat/export/export-zip";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
@@ -174,6 +176,30 @@ const workspaceChatRoutes = daemonFactory
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+    });
+  })
+
+  .get("/:chatId/export", async (c) => {
+    const chatId = c.req.param("chatId");
+    const workspaceId = c.req.param("workspaceId");
+
+    const chatResult = await ChatStorage.getChat(chatId, workspaceId);
+    if (!chatResult.ok) {
+      return c.json({ error: chatResult.error }, 500);
+    }
+    if (!chatResult.data) {
+      return c.json({ error: "Chat not found" }, 404);
+    }
+
+    // Export uses the full message list — unlike GET /:chatId which trims to
+    // the last 100 for UI rehydrate.
+    const chat = chatResult.data;
+    const html = renderChatToHTML(chat, []);
+    const zipStream = await buildExportZip(html, chat, []);
+
+    return c.body(zipStream, 200, {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="friday-chat-${chatId.slice(0, 8)}.zip"`,
     });
   })
 
