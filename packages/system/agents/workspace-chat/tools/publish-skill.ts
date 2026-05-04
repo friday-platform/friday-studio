@@ -30,10 +30,7 @@ const PublishSkillErrorResponse = z.object({
 });
 
 const PublishSkillSuccessResponse = z.object({
-  published: z.object({
-    skillId: z.string(),
-    version: z.number().int().positive(),
-  }),
+  published: z.object({ skillId: z.string(), version: z.number().int().positive() }),
 });
 
 async function readResponseBody(res: Response): Promise<{ text: string; json: unknown }> {

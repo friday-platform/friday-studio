@@ -338,30 +338,30 @@ describe("writeSkillFiles", () => {
 
   it("rejects paths containing ..", async () => {
     const dir = createTempDir();
-    await expect(
-      writeSkillFiles(dir, [{ path: "../etc/passwd", content: "bad" }]),
-    ).rejects.toThrow("Invalid file path: ../etc/passwd");
+    await expect(writeSkillFiles(dir, [{ path: "../etc/passwd", content: "bad" }])).rejects.toThrow(
+      "Invalid file path: ../etc/passwd",
+    );
   });
 
   it("rejects absolute paths", async () => {
     const dir = createTempDir();
-    await expect(
-      writeSkillFiles(dir, [{ path: "/etc/passwd", content: "bad" }]),
-    ).rejects.toThrow("Invalid file path: /etc/passwd");
+    await expect(writeSkillFiles(dir, [{ path: "/etc/passwd", content: "bad" }])).rejects.toThrow(
+      "Invalid file path: /etc/passwd",
+    );
   });
 
   it("rejects SKILL.md by default", async () => {
     const dir = createTempDir();
-    await expect(
-      writeSkillFiles(dir, [{ path: "SKILL.md", content: "bad" }]),
-    ).rejects.toThrow("SKILL.md is reserved for the canonical skill instructions");
+    await expect(writeSkillFiles(dir, [{ path: "SKILL.md", content: "bad" }])).rejects.toThrow(
+      "SKILL.md is reserved for the canonical skill instructions",
+    );
   });
 
   it("rejects SKILL.md after normalizing current-directory segments", async () => {
     const dir = createTempDir();
-    await expect(
-      writeSkillFiles(dir, [{ path: "././SKILL.md", content: "bad" }]),
-    ).rejects.toThrow("SKILL.md is reserved for the canonical skill instructions");
+    await expect(writeSkillFiles(dir, [{ path: "././SKILL.md", content: "bad" }])).rejects.toThrow(
+      "SKILL.md is reserved for the canonical skill instructions",
+    );
   });
 
   it("allows SKILL.md when opted in", async () => {
