@@ -709,6 +709,10 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
+    // The CSP sandbox is mime-keyed to active-content responses
+    // (HTML/XHTML/SVG). Benign images must NOT inherit the restriction —
+    // a future refactor that broadens the gate would be caught here.
+    expect(contentResponse.headers.get("Content-Security-Policy")).toBeNull();
     // Disposition carries a filename hint after the type, so split on the
     // first `;` and check the leading token. The full header looks like
     // `inline; filename="sec.png"; filename*=UTF-8''sec.png` — see
@@ -736,6 +740,8 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
+    // No CSP for application/json: JSON is not active content.
+    expect(contentResponse.headers.get("Content-Security-Policy")).toBeNull();
     const cd = contentResponse.headers.get("Content-Disposition") ?? "";
     expect(cd.split(";")[0]?.trim()).toEqual("attachment");
     expect(cd).toContain('filename="data.json"');
@@ -838,44 +844,6 @@ describe("Content endpoint", () => {
     const csp = contentResponse.headers.get("Content-Security-Policy") ?? "";
     expect(csp).toContain("sandbox");
     expect(csp).toContain("allow-scripts");
-  });
-
-  it("does not set a CSP for benign mimes (PNG)", async () => {
-    // Locks the contract that the CSP sandbox is mime-keyed: ordinary
-    // image/audio/document responses must not inherit the active-content
-    // restrictions, otherwise a future refactor that broadens the gate
-    // would ship without breaking the HTML/SVG tests.
-    const pngBytes = new Uint8Array([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
-      0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
-      0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0x00,
-      0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ]);
-    const createResponse = await artifactsApp.request("/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: "Benign image",
-        summary: "PNG that should not receive a CSP header",
-        data: {
-          type: "file",
-          content: btoa(String.fromCharCode(...pngBytes)),
-          contentEncoding: "base64",
-          mimeType: "image/png",
-          originalName: "tiny.png",
-        },
-      }),
-    });
-    expect(createResponse.status).toEqual(201);
-    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
-
-    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
-      method: "GET",
-    });
-
-    expect(contentResponse.status).toEqual(200);
-    expect(contentResponse.headers.get("Content-Security-Policy")).toBeNull();
   });
 
   it("sandboxes SVG artifact content (X-Content-Type-Options does not stop SVG scripts)", async () => {
