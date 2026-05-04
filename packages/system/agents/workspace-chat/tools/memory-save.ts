@@ -3,6 +3,7 @@ import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import { tool } from "ai";
 import { z } from "zod";
+import { envelope, type ReadResponse } from "./envelope.ts";
 
 const MemorySaveInput = z.object({
   memoryName: z
@@ -71,10 +72,16 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
 
     memory_read: tool({
       description:
-        "Read entries from a named memory in this workspace, newest-first. " +
-        "Note: narrative memory is auto-injected into the system prompt — call this only for explicit lookup, time filtering, or reading beyond the default window.",
+        "Read entries from a named memory store in this workspace, newest-first. " +
+        "Use for explicit lookup of prior preferences/notes/facts, time-filtered " +
+        "queries, or reading beyond the default auto-injection window. Returns " +
+        "a ReadResponse envelope: {items, provenance: 'user-authored', ...}.",
       inputSchema: MemoryReadInput,
-      execute: async ({ memoryName, since, limit }) => {
+      execute: async ({
+        memoryName,
+        since,
+        limit,
+      }): Promise<ReadResponse<unknown> | { error: string }> => {
         const params = new URLSearchParams();
         if (since) params.set("since", since);
         if (limit !== undefined) params.set("limit", String(limit));
@@ -83,8 +90,9 @@ export function createMemorySaveTool(workspaceId: string, logger: Logger): Atlas
         try {
           const res = await fetch(url);
           if (!res.ok) return { error: `Failed to read: HTTP ${res.status}` };
-          const entries: unknown = await res.json();
-          return { entries, count: Array.isArray(entries) ? entries.length : 0 };
+          const raw: unknown = await res.json();
+          const items = Array.isArray(raw) ? raw : [];
+          return envelope({ items, source: "user-authored", origin: `memory:${memoryName}` });
         } catch (err) {
           logger.error("memory_read fetch error", { workspaceId, memoryName, error: err });
           return { error: "Failed to read: network error" };

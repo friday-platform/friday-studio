@@ -48,6 +48,7 @@ import { createConnectCommunicatorTool } from "./tools/connect-communicator.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDelegateTool } from "./tools/delegate/index.ts";
+import { createDescribeWorkspaceTool } from "./tools/describe-workspace.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
@@ -55,6 +56,7 @@ import { createFileIOTools } from "./tools/file-io.ts";
 import { createInstallMcpServerTool } from "./tools/install-mcp-server.ts";
 import { createJobTools } from "./tools/job-tools.ts";
 import { createListCapabilitiesTool } from "./tools/list-capabilities.ts";
+import { createListIntegrationsTool } from "./tools/list-integrations.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
@@ -694,6 +696,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           }),
           ...createMemorySaveTool(workspaceId, logger),
           ...createSetUserIdentityTool(session.userId, logger),
+          ...createDescribeWorkspaceTool(workspaceId, logger),
+          ...createListIntegrationsTool(logger),
           ...webFetchTool,
           ...webSearchTool,
           ...runCodeTool,

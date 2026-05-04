@@ -84,13 +84,18 @@ describe("memory_read", () => {
     expect(url).toContain("limit=10");
   });
 
-  it("returns entries and count", async () => {
+  it("returns ReadResponse envelope with items + provenance", async () => {
     const entries = [{ id: "e1", text: "a", createdAt: "2026-01-01T00:00:00Z" }];
     mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(entries), { status: 200 }));
 
     const { memory_read } = createMemorySaveTool("ws-1", logger);
-    const result = await memory_read!.execute!({ memoryName: "notes" }, OPTS);
-    expect(result).toMatchObject({ entries, count: 1 });
+    const result = (await memory_read!.execute!({ memoryName: "notes" }, OPTS)) as {
+      items?: unknown[];
+      provenance?: { source?: string; origin?: string };
+    };
+    expect(result.items).toEqual(entries);
+    expect(result.provenance?.source).toBe("user-authored");
+    expect(result.provenance?.origin).toBe("memory:notes");
   });
 
   it("returns error on HTTP failure", async () => {
