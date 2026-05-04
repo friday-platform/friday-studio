@@ -709,7 +709,13 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
-    expect(contentResponse.headers.get("Content-Disposition")).toEqual("inline");
+    // Disposition carries a filename hint after the type, so split on the
+    // first `;` and check the leading token. The full header looks like
+    // `inline; filename="sec.png"; filename*=UTF-8''sec.png` — see
+    // `deriveDownloadFilename` in @atlas/core/artifacts/file-upload.
+    const cd = contentResponse.headers.get("Content-Disposition") ?? "";
+    expect(cd.split(";")[0]?.trim()).toEqual("inline");
+    expect(cd).toContain('filename="sec.png"');
   });
 
   it("returns attachment disposition for non-image content", async () => {
@@ -730,7 +736,9 @@ describe("Content endpoint", () => {
 
     expect(contentResponse.status).toEqual(200);
     expect(contentResponse.headers.get("X-Content-Type-Options")).toEqual("nosniff");
-    expect(contentResponse.headers.get("Content-Disposition")).toEqual("attachment");
+    const cd = contentResponse.headers.get("Content-Disposition") ?? "";
+    expect(cd.split(";")[0]?.trim()).toEqual("attachment");
+    expect(cd).toContain('filename="data.json"');
   });
 });
 
