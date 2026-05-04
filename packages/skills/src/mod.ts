@@ -3,6 +3,7 @@ export {
   extractArchiveContents,
   extractSkillArchive,
   listArchiveFiles,
+  packExportArchive,
   packSkillArchive,
   readArchiveFile,
   validateSkillReferences,

@@ -39,6 +39,10 @@
   let needsNamespace = $state(false);
   let namespaceInput = $state("tempest");
   let pendingSkill = $state<PendingSkill | null>(null);
+  /** Tarball waiting on a namespace prompt. Separate from `pendingSkill`
+   *  because the server (not the client) is parsing SKILL.md, so we don't
+   *  have parsed fields yet — only the raw archive and the suggested name. */
+  let pendingTarball = $state<{ file: File; defaultName: string } | null>(null);
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
@@ -70,10 +74,51 @@
     const file = e.dataTransfer?.files[0];
     if (!file) return;
 
-    if (file.name === "SKILL.md" || file.name.endsWith(".md")) {
+    if (file.name.endsWith(".tar.gz") || file.name.endsWith(".tgz")) {
+      await loadTarball(file);
+    } else if (file.name === "SKILL.md" || file.name.endsWith(".md")) {
       await loadSkillMd(file);
     } else {
-      error = "Drop a SKILL.md file or a folder containing one";
+      error = "Drop a SKILL.md file, a folder containing one, or a .tar.gz archive";
+    }
+  }
+
+  /** Send an exported tar.gz to the import-archive endpoint. Server parses
+   *  SKILL.md inside and publishes. Falls back to the namespace prompt when
+   *  the tarball's frontmatter has no `@<ns>/<name>` prefix. */
+  async function loadTarball(file: File, namespaceOverride?: string) {
+    loading = true;
+    error = null;
+    try {
+      const formData = new FormData();
+      formData.append("archive", file);
+      const url = namespaceOverride
+        ? `/api/daemon/api/skills/import-archive?namespace=${encodeURIComponent(namespaceOverride)}`
+        : `/api/daemon/api/skills/import-archive`;
+      const res = await fetch(url, { method: "POST", body: formData });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        needsNamespace?: boolean;
+        defaultName?: string;
+        published?: { namespace: string; name: string };
+      };
+
+      if (res.status === 400 && body.needsNamespace && body.defaultName) {
+        pendingTarball = { file, defaultName: body.defaultName };
+        needsNamespace = true;
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(body.error ?? `Import failed: ${res.status}`);
+      }
+      if (!body.published) {
+        throw new Error("Import succeeded but response was malformed");
+      }
+      await onPublishSuccess(body.published.namespace, body.published.name);
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to import archive";
+    } finally {
+      loading = false;
     }
   }
 
@@ -232,13 +277,23 @@
 
   /** Submit the namespace form and publish. */
   async function submitNamespace() {
-    if (!pendingSkill || !namespaceInput.trim()) return;
+    if (!namespaceInput.trim()) return;
+    const ns = namespaceInput.trim();
+
+    if (pendingTarball) {
+      const tarball = pendingTarball;
+      pendingTarball = null;
+      needsNamespace = false;
+      await loadTarball(tarball.file, ns);
+      return;
+    }
+
+    if (!pendingSkill) return;
     loading = true;
     error = null;
     needsNamespace = false;
 
     try {
-      const ns = namespaceInput.trim();
       if (pendingSkill.files) {
         await publishWithArchive(
           ns,
@@ -501,11 +556,12 @@
 </script>
 
 {#if needsNamespace}
+  {@const promptName = pendingTarball?.defaultName ?? pendingSkill?.name ?? ""}
   <div class="drop-zone" class:inline>
     <div class="drop-content">
       <p class="drop-label">Skill namespace</p>
       <p class="drop-hint">
-        Enter the namespace for <strong>{pendingSkill?.name}</strong>
+        Enter the namespace for <strong>{promptName}</strong>
       </p>
       <div class="namespace-form">
         <span class="namespace-prefix">@</span>
@@ -519,7 +575,7 @@
           }}
         />
         <span class="namespace-sep">/</span>
-        <span class="namespace-name">{pendingSkill?.name}</span>
+        <span class="namespace-name">{promptName}</span>
       </div>
       <button class="browse-btn" onclick={submitNamespace} disabled={!namespaceInput.trim()}>
         Publish
@@ -535,6 +591,7 @@
         onclick={() => {
           needsNamespace = false;
           pendingSkill = null;
+          pendingTarball = null;
           onclose?.();
         }}
       >
@@ -556,7 +613,7 @@
       {#if loading}
         <p class="drop-label">Publishing skill...</p>
       {:else}
-        <p class="drop-label">Drop a skill folder here, or click to browse</p>
+        <p class="drop-label">Drop a skill folder or .tar.gz here, or click to browse</p>
       {/if}
 
       {#if error}

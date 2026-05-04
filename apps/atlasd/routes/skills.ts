@@ -10,6 +10,7 @@ import {
   lintSkill,
   listArchiveFiles,
   localAudit,
+  packExportArchive,
   packSkillArchive,
   parseSkillMd,
   readArchiveFile,
@@ -521,6 +522,135 @@ export const skillsRoutes = daemonFactory
       return c.body(null, 204);
     },
   )
+  // ─── IMPORT FROM EXPORTED TAR.GZ ────────────────────────────────────────────
+  // Inverse of GET /:namespace/:name/export. Accepts a self-contained tar.gz
+  // (SKILL.md at root + reference files) and publishes it. Namespace comes
+  // from `?namespace=` if provided, otherwise the `@<ns>/<name>` prefix in
+  // SKILL.md frontmatter. When neither yields a namespace, returns 400 with
+  // `needsNamespace: true` so the caller can prompt and re-POST.
+  // Must be registered before /:namespace/... so Hono doesn't match
+  // "import-archive" as a namespace param.
+  .post("/import-archive", async (c) => {
+    const auth = await requireUser();
+    if (!auth.ok) return c.json({ error: auth.error }, 401);
+
+    const formData = await c.req.formData();
+    const file = formData.get("archive");
+    if (!(file instanceof File)) {
+      return c.json({ error: "archive field is required and must be a File" }, 400);
+    }
+
+    const archiveBytes = new Uint8Array(await file.arrayBuffer());
+    const extracted = await extractArchiveContents(archiveBytes);
+    const skillMdContent = extracted["SKILL.md"];
+    if (!skillMdContent) {
+      return c.json({ error: "Archive must contain SKILL.md at root" }, 400);
+    }
+
+    const parsed = parseSkillMd(skillMdContent);
+    if (!parsed.ok) return c.json({ error: `SKILL.md parse failed: ${parsed.error}` }, 400);
+    const { frontmatter, instructions } = parsed.data;
+
+    // Derive (namespace, name). Query param wins; otherwise split `@ns/name`
+    // from frontmatter. The bare name (after the slash, or whole string when
+    // no slash) is always taken from frontmatter.
+    const fmName = typeof frontmatter.name === "string" ? frontmatter.name : "";
+    const queryNs = c.req.query("namespace");
+    let namespace: string | undefined;
+    let name: string;
+    if (fmName.startsWith("@") && fmName.includes("/")) {
+      const slash = fmName.indexOf("/");
+      namespace = fmName.slice(1, slash);
+      name = fmName.slice(slash + 1);
+    } else {
+      name = fmName;
+    }
+    if (queryNs) namespace = queryNs;
+
+    if (!name) {
+      return c.json({ error: "SKILL.md frontmatter must include a `name` field" }, 400);
+    }
+    if (!namespace) {
+      return c.json(
+        {
+          error:
+            "SKILL.md frontmatter has no namespace. Re-upload with ?namespace=<ns> to choose one.",
+          needsNamespace: true,
+          defaultName: name,
+        },
+        400,
+      );
+    }
+
+    const nsCheck = NamespaceSchema.safeParse(namespace);
+    if (!nsCheck.success) {
+      return c.json({ error: `Invalid namespace: ${nsCheck.error.message}` }, 400);
+    }
+    const nameCheck = SkillNameSchema.safeParse(name);
+    if (!nameCheck.success) {
+      return c.json({ error: `Invalid skill name: ${nameCheck.error.message}` }, 400);
+    }
+
+    if (isFridayNamespaceBlockedForUser(namespace, auth.userId)) {
+      return c.json({ error: "The @friday namespace is reserved for bundled system skills" }, 403);
+    }
+
+    // Storage-format archive excludes SKILL.md. Repack the rest into a fresh
+    // tar.gz, or skip the archive entirely if SKILL.md was the only entry.
+    const otherFiles = Object.entries(extracted).filter(([p]) => p !== "SKILL.md");
+    let storageArchive: Uint8Array | undefined;
+    if (otherFiles.length > 0) {
+      const tmpDir = makeTempDir({ prefix: "atlas-import-" });
+      try {
+        for (const [path, content] of otherFiles) {
+          const fullPath = join(tmpDir, path);
+          await mkdir(dirname(fullPath), { recursive: true });
+          await writeFile(fullPath, content, "utf-8");
+        }
+        storageArchive = new Uint8Array(await packSkillArchive(tmpDir));
+      } finally {
+        await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+
+    const archiveFiles = otherFiles.map(([p]) => p);
+    const deadLinks = validateSkillReferences(instructions, archiveFiles);
+    if (deadLinks.length > 0) {
+      return c.json(
+        {
+          error: `Skill instructions reference files not found in archive: ${deadLinks.join(", ")}`,
+          deadLinks,
+        },
+        400,
+      );
+    }
+
+    const description =
+      typeof frontmatter.description === "string" ? frontmatter.description : "";
+
+    const input = PublishSkillInputSchema.safeParse({
+      description,
+      instructions,
+      frontmatter,
+      archive: storageArchive,
+    });
+    if (!input.success) return c.json({ error: input.error.message }, 400);
+
+    const result = await SkillStorage.publish(namespace, name, auth.userId, input.data);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    return c.json(
+      {
+        published: {
+          id: result.data.id,
+          skillId: result.data.skillId,
+          namespace,
+          name: result.data.name,
+          version: result.data.version,
+        },
+      },
+      201,
+    );
+  })
   // ─── GET LATEST ─────────────────────────────────────────────────────────────
   .get(
     "/:namespace/:name",
@@ -547,6 +677,32 @@ export const skillsRoutes = daemonFactory
     const result = await SkillStorage.listVersions(namespace, name);
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ versions: result.data });
+  })
+  // ─── EXPORT AS SELF-CONTAINED TAR.GZ ───────────────────────────────────────
+  // Reconstructs SKILL.md from frontmatter + instructions and packs it
+  // alongside any reference files from the stored archive. The result is a
+  // single tar.gz the user can download, share, or re-import.
+  // Must be registered before /:version to avoid Hono matching "export" as a version.
+  .get("/:namespace/:name/export", zValidator("param", NamespacedParams), async (c) => {
+    const { namespace, name } = c.req.valid("param");
+    const result = await SkillStorage.get(namespace, name);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    if (!result.data) return c.json({ error: "Skill not found" }, 404);
+
+    const bytes = await packExportArchive({
+      instructions: result.data.instructions,
+      frontmatter: result.data.frontmatter,
+      archive: result.data.archive,
+    });
+    const body = new Uint8Array(bytes);
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/gzip",
+        "Content-Disposition": `attachment; filename="@${namespace}-${name}-v${String(result.data.version)}.tar.gz"`,
+        "Content-Length": String(body.byteLength),
+      },
+    });
   })
   // ─── AUTO-FIX A LINT FINDING ───────────────────────────────────────────────
   // Applies a one-shot fix for a single lint rule. Deterministic rules

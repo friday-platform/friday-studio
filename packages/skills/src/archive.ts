@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
+import { stringify as stringifyYaml } from "@std/yaml";
 import MarkdownIt from "markdown-it";
 import { create, extract, list, type WriteEntry } from "tar";
 
@@ -43,6 +44,31 @@ export async function packSkillArchive(dirPath: string): Promise<Buffer> {
     logger.debug("cleanup failed", { error: stringifyError(e) }),
   );
   return Buffer.from(buf);
+}
+
+/**
+ * Reconstructs SKILL.md from `frontmatter` + `instructions` and packs it
+ * alongside any reference files from `archive` (a tar.gz that excludes
+ * SKILL.md, matching how skills are stored). Returns a self-contained
+ * tar.gz suitable for sharing or re-importing.
+ */
+export async function packExportArchive(input: {
+  instructions: string;
+  frontmatter: Record<string, unknown>;
+  archive: Uint8Array | null;
+}): Promise<Buffer> {
+  const skillMd = `---\n${stringifyYaml(input.frontmatter)}---\n\n${input.instructions}`;
+  const dir = input.archive
+    ? await extractSkillArchive(Buffer.from(input.archive), "atlas-export-")
+    : makeTempDir({ prefix: "atlas-export-" });
+  try {
+    await writeFile(join(dir, "SKILL.md"), skillMd);
+    return await packSkillArchive(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch((e) =>
+      logger.debug("export cleanup failed", { error: stringifyError(e) }),
+    );
+  }
 }
 
 /**
