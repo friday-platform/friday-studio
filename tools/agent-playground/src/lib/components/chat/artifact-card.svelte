@@ -220,11 +220,11 @@
       ></iframe>
     </div>
   {:else if pdfUrl}
-    <!-- loading="lazy" defers the fetch until near the viewport. With many
-         PDF artifacts in chat history (Goodwin invoices etc.), a fresh
-         page load otherwise stampedes the daemon for every card whether
-         the user scrolls past it or not — and pre-inline-disposition,
-         that triggered a download dialog per card. -->
+    <!-- loading="lazy" defers the fetch until near the viewport. A chat
+         history with multiple PDF artifacts otherwise stampedes the
+         daemon for every card on a fresh page load whether the user
+         scrolls past it or not — and pre-inline-disposition, that
+         triggered a download dialog per card. -->
     <iframe
       title={resolvedTitle}
       src={pdfUrl}
