@@ -65,4 +65,22 @@ describe("artifacts_create", () => {
       }),
     );
   });
+
+  it("omits mimeType for unknown extensions (storage layer falls back to magic-byte sniff)", async () => {
+    const tools = createArtifactsCreateTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    await tools.artifacts_create!.execute!(
+      { path: "data.weirdext", title: "A blob", summary: "A test artifact with unknown ext." },
+      TOOL_CALL_OPTS,
+    );
+
+    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as
+      | { json: { data: Record<string, unknown> } }
+      | undefined;
+    expect(call?.json.data).not.toHaveProperty("mimeType");
+  });
 });

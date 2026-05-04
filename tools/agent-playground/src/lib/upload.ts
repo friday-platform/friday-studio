@@ -47,7 +47,7 @@ export function validateFile(file: File): { valid: true } | { valid: false; erro
     return { valid: false, error: `${ext.slice(1).toUpperCase()} files must be under ${maxMB}MB.` };
   }
 
-  const mimeForExt = EXTENSION_TO_MIME.get(ext);
+  const mimeForExt = EXTENSION_TO_MIME.get(ext)?.mime;
   if (mimeForExt && isImageMimeType(mimeForExt) && file.size > MAX_IMAGE_SIZE) {
     return { valid: false, error: "Image files must be under 5MB." };
   }
