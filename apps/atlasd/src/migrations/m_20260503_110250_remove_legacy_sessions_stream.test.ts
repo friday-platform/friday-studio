@@ -8,22 +8,14 @@
  * one record per published event.
  */
 
-import {
-  startNatsTestServer,
-  type TestNatsServer,
-} from "@atlas/core/test-utils/nats-test-server";
-import type { Logger } from "@atlas/logger";
-import { createJetStreamFacade, enc } from "jetstream";
-import {
-  connect,
-  type NatsConnection,
-  RetentionPolicy,
-  StorageType,
-} from "nats";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
+import type { Logger } from "@atlas/logger";
+import { createJetStreamFacade, enc } from "jetstream";
+import { connect, type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { migration } from "./m_20260503_110250_remove_legacy_sessions_stream.ts";
 
@@ -81,37 +73,17 @@ async function createLegacySessionsStream(): Promise<void> {
   });
 }
 
-async function publishLegacy(
-  sessionId: string,
-  payload: unknown,
-): Promise<void> {
-  await nc
-    .jetstream()
-    .publish(
-      `sessions.${sessionId}.events`,
-      enc.encode(JSON.stringify(payload)),
-    );
+async function publishLegacy(sessionId: string, payload: unknown): Promise<void> {
+  await nc.jetstream().publish(`sessions.${sessionId}.events`, enc.encode(JSON.stringify(payload)));
 }
 
 describe("m_20260503_110250_remove_legacy_sessions_stream", () => {
   it("dumps messages to a JSONL backup, then deletes the stream", async () => {
     const home = await freshHome();
     await createLegacySessionsStream();
-    await publishLegacy("alpha", {
-      type: "session:start",
-      sessionId: "alpha",
-      n: 1,
-    });
-    await publishLegacy("alpha", {
-      type: "step:start",
-      sessionId: "alpha",
-      n: 2,
-    });
-    await publishLegacy("beta", {
-      type: "session:start",
-      sessionId: "beta",
-      n: 3,
-    });
+    await publishLegacy("alpha", { type: "session:start", sessionId: "alpha", n: 1 });
+    await publishLegacy("alpha", { type: "step:start", sessionId: "alpha", n: 2 });
+    await publishLegacy("beta", { type: "session:start", sessionId: "beta", n: 3 });
 
     const facade = createJetStreamFacade(nc);
     await migration.run({ nc, js: facade, logger: noopLogger });
@@ -135,9 +107,7 @@ describe("m_20260503_110250_remove_legacy_sessions_stream", () => {
       expect(typeof r.data).toBe("string");
       expect(typeof r.time).toBe("string");
       expect(r.time).toMatch(/Z$/);
-      expect(JSON.parse(r.data as string)).toMatchObject({
-        sessionId: expect.any(String),
-      });
+      expect(JSON.parse(r.data as string)).toMatchObject({ sessionId: expect.any(String) });
     }
   });
 
@@ -145,9 +115,7 @@ describe("m_20260503_110250_remove_legacy_sessions_stream", () => {
     const home = await freshHome();
     const facade = createJetStreamFacade(nc);
 
-    await expect(
-      migration.run({ nc, js: facade, logger: noopLogger }),
-    ).resolves.toBeUndefined();
+    await expect(migration.run({ nc, js: facade, logger: noopLogger })).resolves.toBeUndefined();
 
     const isoDate = new Date().toISOString().slice(0, 10);
     const backupPath = join(home, `legacy-sessions-backup-${isoDate}.jsonl`);
@@ -157,11 +125,7 @@ describe("m_20260503_110250_remove_legacy_sessions_stream", () => {
   it("preserves an existing same-day backup file by suffixing the new one", async () => {
     const home = await freshHome();
     await createLegacySessionsStream();
-    await publishLegacy("gamma", {
-      type: "session:start",
-      sessionId: "gamma",
-      n: 1,
-    });
+    await publishLegacy("gamma", { type: "session:start", sessionId: "gamma", n: 1 });
 
     // Plant a prior backup at the canonical path — simulates a rerun
     // after a previous crash between backup-write and stream-delete.
@@ -178,9 +142,7 @@ describe("m_20260503_110250_remove_legacy_sessions_stream", () => {
     // A second backup file written with an epoch suffix.
     const files = await readdir(home);
     const suffixed = files.filter(
-      (f) =>
-        f.startsWith(`legacy-sessions-backup-${isoDate}-`) &&
-        f.endsWith(".jsonl"),
+      (f) => f.startsWith(`legacy-sessions-backup-${isoDate}-`) && f.endsWith(".jsonl"),
     );
     expect(suffixed).toHaveLength(1);
 

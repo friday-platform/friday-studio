@@ -19,13 +19,13 @@
  *     millisecond suffix so the prior backup is preserved.
  */
 
-import { stringifyError } from "@atlas/utils";
-import { getFridayHome } from "@atlas/utils/paths.server";
-import { dec } from "jetstream";
-import type { Migration } from "jetstream";
-import { AckPolicy, DeliverPolicy } from "nats";
 import { rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { stringifyError } from "@atlas/utils";
+import { getFridayHome } from "@atlas/utils/paths.server";
+import type { Migration } from "jetstream";
+import { dec } from "jetstream";
+import { AckPolicy, DeliverPolicy } from "nats";
 
 const STREAM_NAME = "SESSIONS";
 const FETCH_BATCH = 500;
@@ -65,10 +65,7 @@ export const migration: Migration = {
     }
 
     const isoDate = new Date().toISOString().slice(0, 10);
-    const baseBackupPath = join(
-      getFridayHome(),
-      `legacy-sessions-backup-${isoDate}.jsonl`,
-    );
+    const baseBackupPath = join(getFridayHome(), `legacy-sessions-backup-${isoDate}.jsonl`);
     const backupPath = await uniqueBackupPath(baseBackupPath);
     const tmpPath = `${backupPath}.tmp`;
 
@@ -117,28 +114,22 @@ export const migration: Migration = {
       try {
         await jsm.consumers.delete(STREAM_NAME, consumerName);
       } catch (err) {
-        logger.warn(
-          "Failed to delete backup consumer; relying on inactive_threshold",
-          {
-            consumerName,
-            error: stringifyError(err),
-          },
-        );
+        logger.warn("Failed to delete backup consumer; relying on inactive_threshold", {
+          consumerName,
+          error: stringifyError(err),
+        });
       }
     }
 
     // Atomic-ish write: dump to .tmp then rename, so a crash mid-write
     // never leaves a partial file standing in for a successful backup.
-    const body = records.map((r) => JSON.stringify(r)).join("\n") +
-      (records.length > 0 ? "\n" : "");
+    const body =
+      records.map((r) => JSON.stringify(r)).join("\n") + (records.length > 0 ? "\n" : "");
     await writeFile(tmpPath, body, { encoding: "utf-8" });
     await rename(tmpPath, backupPath);
 
     await js.stream.delete(STREAM_NAME);
 
-    logger.info("Retired legacy SESSIONS stream", {
-      backupPath,
-      messagesBackedUp: records.length,
-    });
+    logger.info("Retired legacy SESSIONS stream", { backupPath, messagesBackedUp: records.length });
   },
 };
