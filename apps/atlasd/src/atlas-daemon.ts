@@ -2164,14 +2164,21 @@ export class AtlasDaemon {
       this.signalHandlers.push({ signal: "SIGTERM", handler: sigtermHandler });
     }
 
-    // Best-effort persistence flush on uncaught crashes. We can't recover the
-    // process state, but if we have time before exit we want in-flight chat
-    // turns to drain just like a graceful shutdown — same code path, tighter
-    // budget. SIGKILL still loses everything.
-    const crashHandler = (label: string) => (err: unknown) => {
-      logger.error("Daemon crashing — attempting best-effort drain", {
+    // Best-effort persistence flush on uncaughtException. The process state
+    // is unrecoverable at this point; we want in-flight chat turns to
+    // drain — same code path as graceful shutdown but on a tight budget —
+    // before exiting. SIGKILL still loses everything.
+    //
+    // NOTE: This is intentionally NOT installed for `unhandledRejection`.
+    // Stray rejections from background tasks are common in long-running
+    // daemons and shouldn't kill the process; they're logged below for
+    // visibility but don't trigger a drain or an exit.
+    process.on("uncaughtException", (err) => {
+      // If a graceful shutdown is already in progress, let it finish.
+      // Re-entering here would race with the existing _doShutdown.
+      if (this.shutdownPromise) return;
+      logger.error("uncaughtException — attempting best-effort drain", {
         daemonId,
-        label,
         error: err instanceof Error ? err.message : String(err),
       });
       const crashTimeout = setTimeout(() => process.exit(1), 3000);
@@ -2182,9 +2189,13 @@ export class AtlasDaemon {
           clearTimeout(crashTimeout);
           process.exit(1);
         });
-    };
-    process.on("uncaughtException", crashHandler("uncaughtException"));
-    process.on("unhandledRejection", crashHandler("unhandledRejection"));
+    });
+    process.on("unhandledRejection", (reason) => {
+      logger.error("unhandledRejection (logged, not fatal)", {
+        daemonId,
+        error: reason instanceof Error ? reason.message : String(reason),
+      });
+    });
   }
 
   async start() {
@@ -2433,11 +2444,7 @@ export class AtlasDaemon {
     // any in-flight delegate calls / streaming text vanish on reboot. The
     // 9s outer ceiling covers the registry's 8s internal budget plus a
     // small buffer; real persistence completes in low ms once abort fires.
-    await withShutdownTimeout(
-      "chat turn drain",
-      this.chatTurnRegistry?.drainShutdown(8000),
-      9000,
-    );
+    await withShutdownTimeout("chat turn drain", this.chatTurnRegistry?.drainShutdown(8000), 9000);
 
     // Phase 2 — tear down domain layer in parallel. destroyWorkspaceRuntime
     // calls workspaceManager.updateWorkspaceStatus (which goes through NATS)

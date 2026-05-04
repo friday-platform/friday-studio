@@ -76,19 +76,24 @@ interface ScrubContext {
   chatId: string;
   logger: Logger;
   /**
-   * Per-call cache: base64 → UploadResult. Some MCP servers wrap their
-   * results in formats that duplicate the payload (e.g. FastMCP returns
-   * both `content[].text` and `structuredContent.result` with the same
-   * bytes). The recursive walker would otherwise upload the same blob
-   * twice, producing two artifact metadata records pointing at the same
-   * Object Store entry. Caching by base64 string dedupes within a call.
+   * Per-call cache: base64 → in-flight or resolved upload promise. Some
+   * MCP servers wrap their results in formats that duplicate the payload
+   * (e.g. FastMCP returns both `content[].text` and
+   * `structuredContent.result` with the same bytes). The recursive walker
+   * would otherwise upload the same blob twice, producing two artifact
+   * metadata records pointing at the same Object Store entry.
    *
-   * Keyed by the base64 string itself (cheap hash; identical bytes are
-   * already the dedup key in Object Store via SHA-256). Cache lives only
-   * for the duration of one tool's scrub — no cross-call invalidation
-   * concerns.
+   * Caching the *promise* (not the resolved result) handles two cases:
+   *   - Sequential (object branch of scrubValue): the second access sees
+   *     the resolved promise via cache hit.
+   *   - Parallel (array branch via Promise.all): both callers fall into
+   *     `uploadBlob` before either await resolves; whichever sets the
+   *     cache first, the other gets the same in-flight promise back and
+   *     awaits it instead of issuing a duplicate request.
+   *
+   * Cache is per-tool-call — no cross-call invalidation concerns.
    */
-  uploads: Map<string, UploadResult>;
+  uploads: Map<string, Promise<UploadResult | null>>;
 }
 
 interface UploadResult {
@@ -97,19 +102,33 @@ interface UploadResult {
   mimeType: string;
 }
 
-async function uploadBlob(
+function uploadBlob(
   base64: string,
   mimeType: string | undefined,
   filename: string,
   ctx: ScrubContext,
   toolCtx: { serverId: string; toolName: string },
 ): Promise<UploadResult | null> {
-  // Per-call dedup. Identical base64 within one tool result (e.g. FastMCP's
-  // content[].text + structuredContent.result mirror) reuses the same
-  // artifact instead of creating a second metadata record.
+  // Per-call dedup that's race-safe across concurrent callers (the array
+  // branch of `scrubValue` runs siblings via Promise.all; both could land
+  // on the same base64 between cache miss and resolved Set otherwise).
+  // Caching the in-flight promise — not the resolved result — means the
+  // second caller awaits the same upload instead of issuing a duplicate.
   const cached = ctx.uploads.get(base64);
   if (cached) return cached;
 
+  const promise = doUploadBlob(base64, mimeType, filename, ctx, toolCtx);
+  ctx.uploads.set(base64, promise);
+  return promise;
+}
+
+async function doUploadBlob(
+  base64: string,
+  mimeType: string | undefined,
+  filename: string,
+  ctx: ScrubContext,
+  toolCtx: { serverId: string; toolName: string },
+): Promise<UploadResult | null> {
   const data = {
     type: "file" as const,
     content: base64,
@@ -140,13 +159,11 @@ async function uploadBlob(
   // adapter's mime-sniff path; prefer those for the marker text.
   const a = response.data.artifact;
   const fileData = a.data?.type === "file" ? a.data : null;
-  const result: UploadResult = {
+  return {
     artifactId: a.id,
     bytes: fileData?.size ?? Math.ceil((base64.length * 3) / 4),
     mimeType: fileData?.mimeType ?? mimeType ?? "application/octet-stream",
   };
-  ctx.uploads.set(base64, result);
-  return result;
 }
 
 function refMarker(r: UploadResult, toolCtx: { serverId: string; toolName: string }): string {

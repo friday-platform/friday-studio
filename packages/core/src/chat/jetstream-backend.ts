@@ -589,6 +589,10 @@ export function createJetStreamChatBackend(
       } catch (err) {
         if (!isStreamNotFound(err)) throw err;
       }
+      // Drop the layout cache entry — chat IDs aren't reused in practice
+      // but a stale entry would mis-route a freshly-created stream's
+      // appendMessage to the legacy subject.
+      streamLayouts.delete(name);
       await k.delete(kvKey(workspaceId, chatId));
       logger.debug("Deleted chat", { chatId, workspaceId });
       return success(undefined);
