@@ -2163,6 +2163,28 @@ export class AtlasDaemon {
       Deno.addSignalListener("SIGTERM", sigtermHandler);
       this.signalHandlers.push({ signal: "SIGTERM", handler: sigtermHandler });
     }
+
+    // Best-effort persistence flush on uncaught crashes. We can't recover the
+    // process state, but if we have time before exit we want in-flight chat
+    // turns to drain just like a graceful shutdown — same code path, tighter
+    // budget. SIGKILL still loses everything.
+    const crashHandler = (label: string) => (err: unknown) => {
+      logger.error("Daemon crashing — attempting best-effort drain", {
+        daemonId,
+        label,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const crashTimeout = setTimeout(() => process.exit(1), 3000);
+      this.chatTurnRegistry
+        ?.drainShutdown(2500)
+        .catch(() => undefined)
+        .finally(() => {
+          clearTimeout(crashTimeout);
+          process.exit(1);
+        });
+    };
+    process.on("uncaughtException", crashHandler("uncaughtException"));
+    process.on("unhandledRejection", crashHandler("unhandledRejection"));
   }
 
   async start() {
@@ -2403,6 +2425,20 @@ export class AtlasDaemon {
 
     shutdownChunkedUpload();
 
+    // Drain in-flight chat turns BEFORE Phase 2. Aborts every active chat
+    // turn and waits (bounded) for each turn's onFinish to run — which is
+    // where partial assistant messages get persisted to JetStream. Without
+    // this drain, SIGTERM would race the agent's onFinish: aborts fire, but
+    // process.exit lands before the partial message reaches storage, and
+    // any in-flight delegate calls / streaming text vanish on reboot. The
+    // 9s outer ceiling covers the registry's 8s internal budget plus a
+    // small buffer; real persistence completes in low ms once abort fires.
+    await withShutdownTimeout(
+      "chat turn drain",
+      this.chatTurnRegistry?.drainShutdown(8000),
+      9000,
+    );
+
     // Phase 2 — tear down domain layer in parallel. destroyWorkspaceRuntime
     // calls workspaceManager.updateWorkspaceStatus (which goes through NATS)
     // so NATS + WorkspaceManager must remain alive until this phase ends.
@@ -2425,7 +2461,10 @@ export class AtlasDaemon {
     ]);
     this.cronManager = null;
 
-    // Synchronous registries + interval/timer cleanup.
+    // Synchronous registries + interval/timer cleanup. Chat turn registry
+    // was drained above; the shutdown() here clears any controllers added
+    // between the drain and now (defensive — shouldn't happen since the
+    // signals consumer is already stopped).
     this.streamRegistry?.shutdown();
     this.chatTurnRegistry?.shutdown();
     for (const timeoutId of this.idleTimeouts.values()) clearTimeout(timeoutId);

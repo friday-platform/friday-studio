@@ -158,6 +158,40 @@ describe("ChatStorage (JetStream-backed)", () => {
     expect(get.ok && get.data?.messages.length).toBe(1);
   });
 
+  it("snapshot replacement: re-appending same id with new content overwrites prior", async () => {
+    const chatId = crypto.randomUUID();
+    await createTestChat(chatId);
+
+    // First snapshot — partial assistant message with one part.
+    const msgId = crypto.randomUUID();
+    const v1: AtlasUIMessage = {
+      id: msgId,
+      role: "assistant",
+      parts: [{ type: "text", text: "hello" }],
+    };
+    await ChatStorage.appendMessage(chatId, v1);
+
+    // Second snapshot — same id, more content. This is the incremental
+    // snapshot path: the agent's onFinish callback running after an abort
+    // would re-publish the message with whatever was assembled at that point.
+    const v2: AtlasUIMessage = {
+      id: msgId,
+      role: "assistant",
+      parts: [
+        { type: "text", text: "hello" },
+        { type: "text", text: " world" },
+      ],
+    };
+    await ChatStorage.appendMessage(chatId, v2);
+
+    const get = await ChatStorage.getChat(chatId);
+    expect(get.ok && get.data?.messages.length).toBe(1);
+    if (get.ok && get.data) {
+      const stored = get.data.messages[0];
+      expect(stored?.parts.length).toBe(2);
+    }
+  });
+
   it("listChatsByWorkspace returns chats for one workspace", async () => {
     const wsId = `list-test-${crypto.randomUUID()}`;
     const a = crypto.randomUUID();
