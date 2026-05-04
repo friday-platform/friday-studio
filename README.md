@@ -1,9 +1,6 @@
 # Friday Studio
 
-[![Test](https://github.com/friday-platform/friday-studio/actions/workflows/test.yml/badge.svg)](https://github.com/friday-platform/friday-studio/actions/workflows/test.yml)
-[![Type check](https://github.com/friday-platform/friday-studio/actions/workflows/type-check.yml/badge.svg)](https://github.com/friday-platform/friday-studio/actions/workflows/type-check.yml)
-[![Lint JS](https://github.com/friday-platform/friday-studio/actions/workflows/js-lint.yml/badge.svg)](https://github.com/friday-platform/friday-studio/actions/workflows/js-lint.yml)
-[![Go CI](https://github.com/friday-platform/friday-studio/actions/workflows/go-ci.yml/badge.svg)](https://github.com/friday-platform/friday-studio/actions/workflows/go-ci.yml)
+[![CI](https://github.com/friday-platform/friday-studio/actions/workflows/test.yml/badge.svg)](https://github.com/friday-platform/friday-studio/actions)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/uczJyp5FMH)
 
 AI agent orchestration platform. Workspaces run autonomous agents triggered by
