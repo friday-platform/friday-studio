@@ -54,6 +54,12 @@
         return { icon: Icons.Link, label: "Connecting", color: "var(--text-faded)", category: "connect" };
       case "display_artifact":
         return { icon: Icons.DocumentText, label: "Displaying", color: "var(--color-accent)", category: "file" };
+      case "artifacts_get":
+        return { icon: Icons.DocumentText, label: "Reading artifact", color: "var(--color-accent)", category: "file" };
+      case "artifacts_create":
+        return { icon: Icons.DocumentArrowUp, label: "Saving artifact", color: "var(--color-accent)", category: "file" };
+      case "parse_artifact":
+        return { icon: Icons.DocumentText, label: "Parsing", color: "var(--color-accent)", category: "file" };
       case "list_capabilities":
         return { icon: Icons.RectangleStack, label: "Checking tools", color: "var(--text-faded)", category: "generic" };
       default:

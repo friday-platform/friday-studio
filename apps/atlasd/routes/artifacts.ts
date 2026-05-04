@@ -793,7 +793,16 @@ const artifactsApp = daemonFactory
       }
 
       const { mimeType } = artifact.data;
-      const disposition = isImageMimeType(mimeType) ? "inline" : "attachment";
+      // Mimes the browser renders inline in an `<iframe>` or `<img>`. Anything
+      // else triggers a download. PDFs and HTML need `inline` so the chat
+      // UI's artifact-card iframe shows a preview instead of pulling down a
+      // copy and leaving the iframe blank.
+      const isInlineRenderable =
+        isImageMimeType(mimeType) ||
+        mimeType === "application/pdf" ||
+        mimeType === "text/html" ||
+        mimeType === "text/plain";
+      const disposition = isInlineRenderable ? "inline" : "attachment";
 
       const body = new Uint8Array(binaryResult.data);
       return new Response(body, {
