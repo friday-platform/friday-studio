@@ -1080,7 +1080,22 @@ export const skillsRoutes = daemonFactory
           403,
         );
       }
-      const input = c.req.valid("json");
+      const rawInput = c.req.valid("json");
+
+      // Storage invariant: `instructions` is body-only, `frontmatter` is the
+      // parsed YAML. Callers (the editor's Save button, the SKILL.md drop in
+      // SkillLoader) often POST `instructions` containing an embedded
+      // frontmatter block — split it here so the column gets populated and
+      // the body stored without the YAML preamble. Explicit `input.frontmatter`
+      // wins on key conflicts (it's the caller's deliberate signal).
+      const parsedSkillMd = parseSkillMd(rawInput.instructions);
+      const input = parsedSkillMd.ok
+        ? {
+            ...rawInput,
+            instructions: parsedSkillMd.data.instructions,
+            frontmatter: { ...parsedSkillMd.data.frontmatter, ...(rawInput.frontmatter ?? {}) },
+          }
+        : rawInput;
 
       // Validate references against the text files that will actually be
       // extracted to the sandbox — not the full archive (which includes binaries

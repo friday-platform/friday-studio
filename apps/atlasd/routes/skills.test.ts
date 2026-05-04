@@ -121,6 +121,29 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(body.published).toMatchObject({ namespace: "atlas", name: "code-review", version: 1 });
     });
 
+    it("splits embedded frontmatter into the frontmatter column on JSON publish", async () => {
+      const fullSkillMd =
+        "---\nname: split-me\ndescription: This is a test skill description.\n---\n\n# Split Me\n\nBody content.\n";
+      const publishRes = await skillsRoutes.request("/@atlas/split-me", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions: fullSkillMd }),
+      });
+      expect(publishRes.status).toBe(201);
+
+      const getRes = await skillsRoutes.request("/@atlas/split-me");
+      expect(getRes.status).toBe(200);
+      const body = (await getRes.json()) as {
+        skill: { instructions: string; frontmatter: Record<string, unknown>; description: string };
+      };
+      expect(body.skill.frontmatter).toMatchObject({
+        name: "split-me",
+        description: "This is a test skill description.",
+      });
+      expect(body.skill.instructions).not.toContain("---");
+      expect(body.skill.instructions).toContain("# Split Me");
+    });
+
     it("auto-increments version on subsequent publish", async () => {
       const response = await skillsRoutes.request("/@atlas/code-review", {
         method: "POST",

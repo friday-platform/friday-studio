@@ -319,16 +319,15 @@
 
   // ── Publish methods ─────────────────────────────────────────────────────
 
-  /** Publish a single SKILL.md (no archive) via JSON endpoint. */
+  /** Publish a single SKILL.md (no archive) via JSON endpoint. The server
+   *  splits embedded frontmatter into the `frontmatter` column, so we send
+   *  the full SKILL.md text rather than stripping it client-side. */
   async function publishJsonSkill(
     namespace: string,
     name: string,
     description: string,
     skillMdContent: string,
   ) {
-    const parsed = parseFrontmatter(skillMdContent);
-    const instructions = parsed.instructions;
-
     // If description contains < or >, the server rejects it (XML injection guard).
     // Omit it so the server auto-generates one from instructions via LLM.
     const safeDescription =
@@ -339,7 +338,7 @@
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: safeDescription, instructions }),
+        body: JSON.stringify({ description: safeDescription, instructions: skillMdContent }),
       },
     );
 
