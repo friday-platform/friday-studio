@@ -36,7 +36,10 @@ describe("memory_save", () => {
     mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
 
     const { memory_save } = createMemorySaveTool("al-dente_vanilla", logger);
-    await memory_save!.execute!({ memoryName: "notes", text: "Ken won 45/40" }, OPTS);
+    await memory_save!.execute!(
+      { memoryName: "notes", text: "Ken won 45/40", why: "track race outcomes" },
+      OPTS,
+    );
 
     const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost:3000/api/memory/al-dente_vanilla/narrative/notes");
@@ -47,26 +50,33 @@ describe("memory_save", () => {
 
     const { memory_save } = createMemorySaveTool("ws-1", logger);
     await memory_save!.execute!(
-      { memoryName: "notes", text: "hello", metadata: { kind: "note" } },
+      { memoryName: "notes", text: "hello", why: "trivial test", metadata: { kind: "note" } },
       OPTS,
     );
 
     const [, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(opts.body as string) as { metadata: unknown };
-    expect(body.metadata).toEqual({ kind: "note" });
+    const body = JSON.parse(opts.body as string) as { metadata: { kind?: string; why?: string } };
+    expect(body.metadata.kind).toBe("note");
+    expect(body.metadata.why).toBe("trivial test");
   });
 
   it("returns error on HTTP failure", async () => {
     mockFetch.mockResolvedValueOnce(new Response("error", { status: 500 }));
     const { memory_save } = createMemorySaveTool("ws-1", logger);
-    const result = await memory_save!.execute!({ memoryName: "notes", text: "x" }, OPTS);
+    const result = await memory_save!.execute!(
+      { memoryName: "notes", text: "x", why: "test" },
+      OPTS,
+    );
     expect(result).toHaveProperty("error");
   });
 
   it("returns error on network failure", async () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const { memory_save } = createMemorySaveTool("ws-1", logger);
-    const result = await memory_save!.execute!({ memoryName: "notes", text: "x" }, OPTS);
+    const result = await memory_save!.execute!(
+      { memoryName: "notes", text: "x", why: "test" },
+      OPTS,
+    );
     expect(result).toHaveProperty("error");
   });
 });
