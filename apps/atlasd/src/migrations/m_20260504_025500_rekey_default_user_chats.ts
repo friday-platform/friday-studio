@@ -40,11 +40,24 @@ export const migration: Migration = {
     const localUserId = localUserResult.data;
 
     const kv = await ensureChatsKVBucket(nc);
-    const keysIter = await kv.keys();
+
+    // Collect ALL keys first. The original implementation interleaved
+    // kv.get / kv.update calls inside the for-await loop on kv.keys() —
+    // the NATS JS-KV consumer multiplexes the keys-stream with
+    // request/reply traffic on the same subscription, so reads
+    // performed mid-iteration caused later keys to silently drop out
+    // of the iterator. Mirrors chat-jetstream-backend.ts:listAllMetadata.
+    const allKeys: string[] = [];
+    {
+      const keysIter = await kv.keys();
+      for await (const key of keysIter) {
+        allKeys.push(key);
+      }
+    }
 
     let scanned = 0;
     let rewritten = 0;
-    for await (const key of keysIter) {
+    for (const key of allKeys) {
       scanned++;
       try {
         const entry = await kv.get(key);
