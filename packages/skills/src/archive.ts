@@ -68,7 +68,8 @@ export async function packExportArchive(input: {
   const embeddedFm = parsed.ok ? parsed.data.frontmatter : {};
   const body = parsed.ok ? parsed.data.instructions : input.instructions;
   const mergedFm = { ...embeddedFm, ...input.frontmatter };
-  const skillMd = `---\n${stringifyYaml(mergedFm)}---\n\n${body}`;
+  const fmYaml = Object.keys(mergedFm).length > 0 ? `---\n${stringifyYaml(mergedFm)}---\n\n` : "";
+  const skillMd = `${fmYaml}${body}`;
   const dir = input.archive
     ? await extractSkillArchive(Buffer.from(input.archive), "atlas-export-")
     : makeTempDir({ prefix: "atlas-export-" });

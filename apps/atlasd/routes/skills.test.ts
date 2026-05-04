@@ -381,6 +381,7 @@ describe("Skills API Routes - Global Catalog", () => {
       const bytes = new Uint8Array(await response.arrayBuffer());
       const contents = await extractArchiveContents(bytes);
       expect(contents["SKILL.md"]).toBeDefined();
+      expect(contents["SKILL.md"]).toContain("Review the code more carefully.");
     });
 
     it("returns 404 for non-existent skill", async () => {
@@ -485,6 +486,60 @@ describe("Skills API Routes - Global Catalog", () => {
 
       const getRes = await skillsRoutes.request("/@eric/just-a-name");
       expect(getRes.status).toBe(200);
+    });
+
+    it("returns 400 when SKILL.md has malformed frontmatter", async () => {
+      const { packSkillArchive } = await import("@atlas/skills/archive");
+      const tmpDir = join(testDir, `malformed-import-${Date.now()}`);
+      mkdirSync(tmpDir, { recursive: true });
+      try {
+        writeFileSync(join(tmpDir, "SKILL.md"), "---\nname: [unclosed\n---\n\nBody.\n");
+        const archiveBytes = await packSkillArchive(tmpDir);
+
+        const formData = new FormData();
+        formData.append(
+          "archive",
+          new File([new Uint8Array(archiveBytes)], "bad.tar.gz", { type: "application/gzip" }),
+        );
+
+        const response = await skillsRoutes.request("/import-archive", {
+          method: "POST",
+          body: formData,
+        });
+        expect(response.status).toBe(400);
+        const body = ErrorSchema.parse(await response.json());
+        expect(body.error).toContain("SKILL.md parse failed");
+      } finally {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("returns 400 with deadLinks when instructions reference missing files", async () => {
+      const { packExportArchive } = await import("@atlas/skills/archive");
+      const archiveBytes = await packExportArchive({
+        instructions: "# Skill\n\nUses [missing](references/missing.md).\n",
+        frontmatter: {
+          name: "@atlas/dead-links",
+          description: "Skill with dead links. Use when testing dead link validation.",
+        },
+        archive: null,
+      });
+
+      const formData = new FormData();
+      formData.append(
+        "archive",
+        new File([new Uint8Array(archiveBytes)], "dead-links.tar.gz", { type: "application/gzip" }),
+      );
+
+      const response = await skillsRoutes.request("/import-archive", {
+        method: "POST",
+        body: formData,
+      });
+      expect(response.status).toBe(400);
+      const body = z
+        .object({ error: z.string(), deadLinks: z.array(z.string()) })
+        .parse(await response.json());
+      expect(body.deadLinks).toContain("references/missing.md");
     });
   });
 

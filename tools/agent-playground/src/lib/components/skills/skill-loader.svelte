@@ -151,8 +151,12 @@
       const ns = forceNamespace ?? namespaceOverride;
       const formData = new FormData();
       formData.append("archive", new File([blob], filename, { type: "application/gzip" }));
-      const url = ns
-        ? `/api/daemon/api/skills/import-archive?namespace=${encodeURIComponent(ns)}`
+      const params = new URLSearchParams();
+      if (ns) params.set("namespace", ns);
+      if (forceName) params.set("name", forceName);
+      const query = params.toString();
+      const url = query
+        ? `/api/daemon/api/skills/import-archive?${query}`
         : `/api/daemon/api/skills/import-archive`;
       const res = await fetch(url, { method: "POST", body: formData });
       const body = (await res.json().catch(() => ({}))) as {
