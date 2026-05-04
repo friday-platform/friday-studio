@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/environment";
+  import { stripMimeParams } from "@atlas/core/artifacts/file-upload";
   import { z } from "zod";
 
   interface Props {
@@ -98,12 +99,18 @@
     artifactId ? `/api/daemon/api/artifacts/${encodeURIComponent(artifactId)}/content` : null,
   );
 
+  // Storage adapters can round-trip text mimes with a charset parameter
+  // (`text/html; charset=utf-8`); equality checks against literal mimes
+  // would silently miss the parameterised form, falling through to the
+  // download tile instead of the inline iframe.
+  const baseMime = $derived(mimeType ? stripMimeParams(mimeType) : undefined);
+
   const imageUrl = $derived(
-    serveUrl && mimeType?.startsWith("image/") ? serveUrl : null,
+    serveUrl && baseMime?.startsWith("image/") ? serveUrl : null,
   );
 
   const htmlUrl = $derived(
-    serveUrl && mimeType === "text/html" ? serveUrl : null,
+    serveUrl && baseMime === "text/html" ? serveUrl : null,
   );
 
   // PDFs render natively in an iframe via the browser's built-in PDF
@@ -111,7 +118,7 @@
   // button for full-screen. No extra deps; this works in Chrome/Edge/
   // Safari/Firefox out of the box.
   const pdfUrl = $derived(
-    serveUrl && mimeType === "application/pdf" ? serveUrl : null,
+    serveUrl && baseMime === "application/pdf" ? serveUrl : null,
   );
 
   function mimeLabel(mt: string | undefined): string {
@@ -175,7 +182,7 @@
     <div class="artifact-title-wrap">
       <span class="artifact-title">{resolvedTitle}</span>
       {#if mimeType}
-        <span class="mime-badge">{mimeLabel(mimeType)}</span>
+        <span class="mime-badge">{mimeLabel(baseMime)}</span>
       {/if}
     </div>
 
@@ -240,8 +247,8 @@
       class="artifact-pdf"
       loading="lazy"
     ></iframe>
-  {:else if contents && isTextPreviewable(mimeType)}
-    <pre class="artifact-preview">{previewContents(contents, mimeType)}</pre>
+  {:else if contents && isTextPreviewable(baseMime)}
+    <pre class="artifact-preview">{previewContents(contents, baseMime)}</pre>
   {/if}
 
   {#if !loading && !fetchError && (originalName || sizeLabel || mimeType)}

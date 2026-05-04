@@ -4,6 +4,7 @@ import {
   deriveDownloadFilename,
   getValidatedMimeType,
   inferMimeFromFilename,
+  stripMimeParams,
 } from "./file-upload.ts";
 
 describe("deriveDownloadFilename", () => {
@@ -180,5 +181,26 @@ describe("ALLOWED_EXTENSIONS", () => {
     expect(ALLOWED_EXTENSIONS.has(".ts")).toBe(false);
     expect(ALLOWED_EXTENSIONS.has(".html")).toBe(false);
     expect(ALLOWED_EXTENSIONS.has(".sh")).toBe(false);
+  });
+});
+
+describe("stripMimeParams", () => {
+  it("returns the canonical type/subtype when a parameter is present", () => {
+    expect(stripMimeParams("text/html; charset=utf-8")).toBe("text/html");
+  });
+
+  it("trims whitespace before the parameter separator", () => {
+    expect(stripMimeParams("text/markdown ; charset=utf-8")).toBe("text/markdown");
+  });
+
+  it("returns the input unchanged when no parameter is present", () => {
+    expect(stripMimeParams("application/pdf")).toBe("application/pdf");
+  });
+
+  it("falls back to the original on a malformed empty-prefix mime", () => {
+    // `;…` has no type/subtype before the separator. Returning the raw
+    // input is the right tradeoff vs. silently producing an empty string
+    // that could match unrelated equality checks downstream.
+    expect(stripMimeParams("; charset=utf-8")).toBe("; charset=utf-8");
   });
 });

@@ -30,6 +30,7 @@ import {
   MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
   MAX_PDF_SIZE,
+  stripMimeParams,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { type PlatformModels, smallLLM } from "@atlas/llm";
@@ -800,7 +801,7 @@ const artifactsApp = daemonFactory
       // checks below silently miss and the CSP sandbox fails to apply on
       // what the browser still parses as HTML. The response `Content-Type`
       // keeps the original value so the browser sees the charset.
-      const baseMime = mimeType.split(";")[0]?.trim() || mimeType;
+      const baseMime = stripMimeParams(mimeType);
       // Mimes the browser renders inline in an `<iframe>` or `<img>`. Anything
       // else triggers a download. PDFs and HTML need `inline` so the chat
       // UI's artifact-card iframe shows a preview instead of pulling down a

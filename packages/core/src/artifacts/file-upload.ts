@@ -224,6 +224,18 @@ export function isTextMimeType(mimeType: string): boolean {
 }
 
 /**
+ * Drop any mime parameters (`; charset=…`, `; boundary=…`) and return the
+ * canonical `type/subtype`. Storage adapters can round-trip text mimes with
+ * a charset attached (`text/markdown; charset=utf-8`); equality checks
+ * against literal mime strings would silently miss the parameterised form.
+ * Use this helper anywhere the mime is gating a security predicate or
+ * routing decision.
+ */
+export function stripMimeParams(mimeType: string): string {
+  return mimeType.split(";")[0]?.trim() || mimeType;
+}
+
+/**
  * Mime types we have a stream-based markdown converter for. The
  * `parse_artifact` endpoint runs these through the matching converter
  * and returns the markdown.
@@ -322,7 +334,7 @@ export function deriveDownloadFilename(opts: {
   // that round-trip text mimes with a charset attached. Without this,
   // `notes.md` + stored `text/markdown; charset=utf-8` silently rewrote
   // to `notes.markdown`.
-  const baseMime = opts.mimeType.split(";")[0]?.trim() || opts.mimeType;
+  const baseMime = stripMimeParams(opts.mimeType);
   const fromOriginal = opts.originalName?.trim();
   if (fromOriginal) {
     const dot = fromOriginal.lastIndexOf(".");
