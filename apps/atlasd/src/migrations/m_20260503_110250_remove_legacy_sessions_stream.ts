@@ -65,7 +65,10 @@ export const migration: Migration = {
     }
 
     const isoDate = new Date().toISOString().slice(0, 10);
-    const baseBackupPath = join(getFridayHome(), `legacy-sessions-backup-${isoDate}.jsonl`);
+    const baseBackupPath = join(
+      getFridayHome(),
+      `legacy-sessions-backup-${isoDate}.jsonl`,
+    );
     const backupPath = await uniqueBackupPath(baseBackupPath);
     const tmpPath = `${backupPath}.tmp`;
 
@@ -114,16 +117,20 @@ export const migration: Migration = {
       try {
         await jsm.consumers.delete(STREAM_NAME, consumerName);
       } catch (err) {
-        logger.warn("Failed to delete backup consumer; relying on inactive_threshold", {
-          consumerName,
-          error: stringifyError(err),
-        });
+        logger.warn(
+          "Failed to delete backup consumer; relying on inactive_threshold",
+          {
+            consumerName,
+            error: stringifyError(err),
+          },
+        );
       }
     }
 
     // Atomic-ish write: dump to .tmp then rename, so a crash mid-write
     // never leaves a partial file standing in for a successful backup.
-    const body = records.map((r) => JSON.stringify(r)).join("\n") + (records.length > 0 ? "\n" : "");
+    const body = records.map((r) => JSON.stringify(r)).join("\n") +
+      (records.length > 0 ? "\n" : "");
     await writeFile(tmpPath, body, { encoding: "utf-8" });
     await rename(tmpPath, backupPath);
 
