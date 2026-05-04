@@ -38,10 +38,6 @@ function isLocalhostUrl(url: string): boolean {
   }
 }
 
-function isSystemStream(name: string): boolean {
-  return name.startsWith("$JS") || name.startsWith("$SYS");
-}
-
 /**
  * Resolve the JetStream on-disk store directory for the embedded broker.
  * Mirrors the resolution in `apps/atlasd/src/nats-manager.ts`: env override
@@ -74,13 +70,23 @@ async function clearExternalBroker(force: boolean): Promise<void> {
   try {
     const jsm = await nc.jetstreamManager();
     let deleted = 0;
+    let failed = 0;
     for await (const info of jsm.streams.list()) {
       const name = info.config.name;
-      if (isSystemStream(name)) continue;
-      await jsm.streams.delete(name);
-      deleted++;
+      try {
+        await jsm.streams.delete(name);
+        deleted++;
+      } catch (error) {
+        // A stream can vanish between list() and delete() if another
+        // client is racing us — don't let one race-condition skip the
+        // rest of the wipe. Same logic shields against transient broker
+        // hiccups on individual deletes.
+        failed++;
+        console.warn(`Failed to delete stream ${name}: ${stringifyError(error)}`);
+      }
     }
-    console.log(`Broker state cleared: deleted ${deleted} stream(s) on ${url}.`);
+    const failedSuffix = failed > 0 ? ` (${failed} failed)` : "";
+    console.log(`Broker state cleared: deleted ${deleted} stream(s) on ${url}${failedSuffix}.`);
   } finally {
     try {
       await nc.drain();
