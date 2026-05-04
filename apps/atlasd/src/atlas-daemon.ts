@@ -47,7 +47,7 @@ import { StreamableHTTPTransport } from "@hono/mcp";
 import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { type RunMigrationsResult, readJetStreamConfig, runMigrations } from "jetstream";
-import { type NatsConnection, RetentionPolicy, StorageType } from "nats";
+import type { NatsConnection } from "nats";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { artifactsApp } from "../routes/artifacts.ts";
 import chatRoutes from "../routes/chat.ts";
@@ -403,12 +403,6 @@ export class AtlasDaemon {
     // SIGNALS land in the same log surface. Wildcard matches every
     // (stream, consumer) pair.
     this.subscribeMaxDeliveriesAdvisory(nc);
-
-    // Ensure the SESSIONS JetStream stream exists (durable session event store).
-    // For NEW installs this creates File + 30d directly; for upgraded installs
-    // the matching migration entry (`m_a6ab40b_sessions_stream_upgrade`) does
-    // the streams.update / Memory-storage warning.
-    await this.ensureSessionsStream(nc);
 
     // Ensure the SIGNALS JetStream stream exists. Triggers (HTTP, cron, chat,
     // future cross-cascade emits) can publish onto this for durable, redeliver-
@@ -978,31 +972,6 @@ export class AtlasDaemon {
   /** Get the ProcessAgentExecutor (available after NATS initializes). */
   public getProcessAgentExecutor(): ProcessAgentExecutor | null {
     return this.processAgentExecutor;
-  }
-
-  /**
-   * Create the SESSIONS JetStream stream if missing. New installs get
-   * File storage + 30d retention. Existing installs are upgraded by the
-   * `m_a6ab40b_sessions_stream_upgrade` migration entry, which adds
-   * `max_age` to streams created without one and warns if storage is
-   * still Memory (storage type can't be changed via update).
-   */
-  private async ensureSessionsStream(nc: NatsConnection): Promise<void> {
-    const jsm = await nc.jetstreamManager();
-    const THIRTY_DAYS_NS = 30 * 24 * 60 * 60 * 1_000_000_000;
-    try {
-      await jsm.streams.info("SESSIONS");
-      // Already exists — leave it. Upgrade path is the migration entry.
-    } catch {
-      await jsm.streams.add({
-        name: "SESSIONS",
-        subjects: ["sessions.*.events"],
-        retention: RetentionPolicy.Limits,
-        storage: StorageType.File,
-        max_age: THIRTY_DAYS_NS,
-      });
-      logger.info("Created SESSIONS JetStream stream (file storage, 30d retention)");
-    }
   }
 
   /**

@@ -1,13 +1,13 @@
 /**
- * NATS JetStream-backed session event stream.
+ * NATS-backed session event stream.
  *
- * Publishes durable events to the SESSIONS JetStream stream so they survive
- * daemon restarts and are replayable by SSE subscribers. Also maintains an
- * in-memory buffer for fast access (list/get endpoints) and persists events
- * via the disk adapter.
+ * Persists durable events through the JetStream-backed history adapter
+ * (which publishes them to the SESSION_EVENTS stream with per-event
+ * `Nats-Msg-Id` dedup). Also maintains an in-memory buffer for fast
+ * access by list/get endpoints.
  *
- * Ephemeral chunks (streaming LLM tokens) go to a NATS core subject — live
- * only, no persistence, no replay.
+ * Ephemeral chunks (streaming LLM tokens) go to a NATS core subject —
+ * live only, no persistence, no replay.
  *
  * @module
  */
@@ -19,38 +19,26 @@ import type {
   SessionSummary,
 } from "@atlas/core";
 import { logger } from "@atlas/logger";
-import type { JetStreamClient, NatsConnection } from "nats";
+import type { NatsConnection } from "nats";
 
 export class NatsSessionStream {
   private readonly events: SessionStreamEvent[] = [];
   private active = true;
   private pendingWriteCount = 0;
   private readonly flushResolvers: Array<() => void> = [];
-  private readonly js: JetStreamClient;
 
   constructor(
     private readonly sessionId: string,
     private readonly adapter: SessionHistoryAdapter,
     private readonly nc: NatsConnection,
-  ) {
-    this.js = nc.jetstream();
-  }
+  ) {}
 
   /**
-   * Emit a durable event: buffer it, publish to JetStream, and persist to disk.
+   * Emit a durable event: buffer it and persist via the history adapter.
    */
   emit(event: SessionStreamEvent): void {
     this.events.push(event);
 
-    // Publish to JetStream (durable, replayable by SSE subscribers on reconnect)
-    this.js.publish(`sessions.${this.sessionId}.events`, JSON.stringify(event)).catch((err) => {
-      logger.warn("Failed to publish session event to NATS", {
-        sessionId: this.sessionId,
-        error: String(err),
-      });
-    });
-
-    // Persist to disk adapter
     this.pendingWriteCount++;
     this.adapter
       .appendEvent(this.sessionId, event)
