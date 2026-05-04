@@ -794,15 +794,22 @@ const artifactsApp = daemonFactory
       }
 
       const { mimeType, originalName } = artifact.data;
+      // Strip mime parameters (`; charset=…`) for predicates. Storage adapters
+      // can round-trip text mimes with a charset attached (e.g.
+      // `text/html; charset=utf-8`); without normalization the equality
+      // checks below silently miss and the CSP sandbox fails to apply on
+      // what the browser still parses as HTML. The response `Content-Type`
+      // keeps the original value so the browser sees the charset.
+      const baseMime = mimeType.split(";")[0]?.trim() || mimeType;
       // Mimes the browser renders inline in an `<iframe>` or `<img>`. Anything
       // else triggers a download. PDFs and HTML need `inline` so the chat
       // UI's artifact-card iframe shows a preview instead of pulling down a
       // copy and leaving the iframe blank.
       const isInlineRenderable =
-        isImageMimeType(mimeType) ||
-        mimeType === "application/pdf" ||
-        mimeType === "text/html" ||
-        mimeType === "text/plain";
+        isImageMimeType(baseMime) ||
+        baseMime === "application/pdf" ||
+        baseMime === "text/html" ||
+        baseMime === "text/plain";
       const disposition = isInlineRenderable ? "inline" : "attachment";
 
       // Filename hint so the browser uses something meaningful when the user
@@ -841,10 +848,10 @@ const artifactsApp = daemonFactory
       // XHTML is rendered as a document and executes `<script>` exactly
       // like text/html, so it gets the same sandbox treatment.
       let contentSecurityPolicy: string | undefined;
-      if (mimeType === "text/html" || mimeType === "application/xhtml+xml") {
+      if (baseMime === "text/html" || baseMime === "application/xhtml+xml") {
         contentSecurityPolicy =
           "sandbox allow-scripts; default-src https: data: blob: 'unsafe-inline' 'unsafe-eval'";
-      } else if (mimeType === "image/svg+xml") {
+      } else if (baseMime === "image/svg+xml") {
         contentSecurityPolicy =
           "sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'";
       }

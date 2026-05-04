@@ -806,6 +806,78 @@ describe("Content endpoint", () => {
     expect(xhtmlCsp).toContain("allow-scripts");
   });
 
+  it("sandboxes HTML artifact content even when mime carries a charset parameter", async () => {
+    // Storage adapters that round-trip text mimes with a charset (e.g.
+    // `text/html; charset=utf-8`) used to bypass the sandbox because the
+    // route keyed the CSP gate off raw `mimeType` equality. The browser
+    // still parses such responses as HTML, so the sandbox MUST apply.
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "HTML with charset",
+        summary: "HTML report whose stored mime carries a charset parameter",
+        data: {
+          type: "file",
+          content: "<script>parent.document.body.dataset.pwned = 'true'</script>",
+          mimeType: "text/html; charset=utf-8",
+          originalName: "report.html",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    // Response Content-Type preserves the charset for the browser.
+    expect(contentResponse.headers.get("Content-Type")).toEqual("text/html; charset=utf-8");
+    const csp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("sandbox");
+    expect(csp).toContain("allow-scripts");
+  });
+
+  it("does not set a CSP for benign mimes (PNG)", async () => {
+    // Locks the contract that the CSP sandbox is mime-keyed: ordinary
+    // image/audio/document responses must not inherit the active-content
+    // restrictions, otherwise a future refactor that broadens the gate
+    // would ship without breaking the HTML/SVG tests.
+    const pngBytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+      0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+      0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0x00,
+      0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Benign image",
+        summary: "PNG that should not receive a CSP header",
+        data: {
+          type: "file",
+          content: btoa(String.fromCharCode(...pngBytes)),
+          contentEncoding: "base64",
+          mimeType: "image/png",
+          originalName: "tiny.png",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Security-Policy")).toBeNull();
+  });
+
   it("sandboxes SVG artifact content (X-Content-Type-Options does not stop SVG scripts)", async () => {
     // SVG served same-origin can execute embedded `<script>` regardless
     // of `nosniff`. The CSP sandbox directive is the only thing that
