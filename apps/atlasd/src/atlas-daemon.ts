@@ -109,6 +109,7 @@ import {
 } from "./signal-stream.ts";
 import { initScratchpadStorage } from "./storage/scratchpad.ts";
 import { StreamRegistry } from "./stream-registry.ts";
+import { sweepOrphanedAgentBrowserSessions } from "./sweep-agent-browser-sessions.ts";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -334,6 +335,15 @@ export class AtlasDaemon {
     if (this.isInitialized) return;
 
     logger.info("Initializing Atlas daemon...");
+
+    // Sweep orphaned `agent-browser` daemons left by a previous atlasd that
+    // died without running the bundled web agent's stopSession cleanup
+    // (SIGKILL, crash, OOM, host reboot). Scoped to the atlas-web-<uuid>
+    // namespace, so user-launched agent-browser sessions are untouched.
+    // Pre-NATS so a sweep failure can't poison anything important.
+    await sweepOrphanedAgentBrowserSessions(logger).catch((error) => {
+      logger.warn("agent-browser session sweep failed", { error: String(error) });
+    });
 
     // Load platform model configuration (friday.yml) and construct the resolver.
     // Runs eager validation — throws on malformed config or missing credentials.
@@ -2365,6 +2375,16 @@ export class AtlasDaemon {
       }
       this.signalConsumer = null;
     }
+
+    // Reap orphaned agent-browser daemons. Done early in shutdown — after
+    // the SIGNALS consumer stops (no new agent invocations can start) but
+    // before runtime/MCP teardown (which can hang past the 30s shutdown
+    // budget). Force-closes any in-flight web sessions; the bundled agents
+    // were about to be SIGTERM'd anyway, and the next-startup sweep
+    // (layer 2) is the long-stop for anything that slips through here.
+    await sweepOrphanedAgentBrowserSessions(logger).catch((error) => {
+      logger.warn("agent-browser session sweep failed at shutdown", { error: String(error) });
+    });
 
     // Stop chunked upload cleanup
     shutdownChunkedUpload();
