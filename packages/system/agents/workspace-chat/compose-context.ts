@@ -1,16 +1,12 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
-import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
 import { z } from "zod";
-import {
-  fetchWorkspaceDetails,
-  formatWorkspaceSection,
-  type WorkspaceDetails,
-} from "./workspace-chat.agent.ts";
+import { getBlock2Inputs } from "./block2-cache.ts";
+import { formatWorkspaceSection, type WorkspaceDetails } from "./workspace-chat.agent.ts";
 
 export interface ComposedForegroundContext {
   workspaceId: string;
@@ -25,15 +21,12 @@ export async function fetchForegroundContexts(
 ): Promise<ComposedForegroundContext[]> {
   const results = await Promise.allSettled(
     foregroundIds.map(async (workspaceId) => {
-      const [details, wsConfigResult, skills] = await Promise.all([
-        fetchWorkspaceDetails(workspaceId, logger),
-        parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
+      const [block2, skills] = await Promise.all([
+        getBlock2Inputs(workspaceId, logger),
         resolveVisibleSkills(workspaceId, SkillStorage),
       ]);
 
-      const config = wsConfigResult.ok ? wsConfigResult.data.config : undefined;
-
-      return { workspaceId, details, config, skills };
+      return { workspaceId, details: block2.details, config: block2.config, skills };
     }),
   );
 

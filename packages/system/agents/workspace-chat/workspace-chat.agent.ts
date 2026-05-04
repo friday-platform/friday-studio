@@ -31,6 +31,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
+import { getBlock2Inputs } from "./block2-cache.ts";
 import {
   composeMemoryBlocks,
   composeSkills,
@@ -493,33 +494,19 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           workspaceId,
           foregroundCount: foregroundIds.length,
         });
-        const [
-          workspaceDetails,
-          wsConfigResult,
-          linkSummary,
-          userIdentitySection,
-          foregrounds,
-          profileState,
-        ] = await Promise.all([
-          fetchWorkspaceDetails(workspaceId, logger),
-          parseResult(client.workspace[":workspaceId"].config.$get({ param: { workspaceId } })),
-          fetchLinkSummary(logger),
-          fetchUserIdentitySection(session.userId, logger),
-          foregroundIds.length > 0
-            ? fetchForegroundContexts(foregroundIds, logger)
-            : Promise.resolve([]),
-          fetchUserProfileState(session.userId, logger),
-        ]);
+        const [block2, linkSummary, userIdentitySection, foregrounds, profileState] =
+          await Promise.all([
+            getBlock2Inputs(workspaceId, logger),
+            fetchLinkSummary(logger),
+            fetchUserIdentitySection(session.userId, logger),
+            foregroundIds.length > 0
+              ? fetchForegroundContexts(foregroundIds, logger)
+              : Promise.resolve([]),
+            fetchUserProfileState(session.userId, logger),
+          ]);
 
-        let wsConfig: WorkspaceConfig | undefined;
-        if (wsConfigResult.ok) {
-          wsConfig = wsConfigResult.data.config;
-        } else {
-          logger.warn("Failed to fetch workspace config", {
-            workspaceId,
-            error: wsConfigResult.error,
-          });
-        }
+        const workspaceDetails = block2.details;
+        const wsConfig = block2.config;
 
         // Format sections — compose with foreground workspaces. wsConfig
         // carries the workspace.yml details (signal triggers, MCP server names)
