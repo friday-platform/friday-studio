@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
-import { chmod, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, posix, resolve } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
@@ -8,6 +8,41 @@ import MarkdownIt from "markdown-it";
 import { create, extract, list, type WriteEntry } from "tar";
 
 const logger = createLogger({ name: "skill-archive" });
+
+/**
+ * Writes a list of skill files to a directory, creating parent directories
+ * as needed. Rejects paths that escape the base directory (absolute paths or
+ * containing `..`). Optionally rejects entries whose normalized path is
+ * "SKILL.md" to prevent overwriting the canonical skill instructions file.
+ *
+ * @param dir Base directory to write into.
+ * @param files Array of `{ path, content }` entries. Paths are relative.
+ * @param options.allowSkillMd When true, permits a `SKILL.md` entry. Default false.
+ */
+export async function writeSkillFiles(
+  dir: string,
+  files: Array<{ path: string; content: string }>,
+  options: { allowSkillMd?: boolean } = {},
+): Promise<void> {
+  const resolvedDir = resolve(dir);
+  for (const entry of files) {
+    const normalized = posix.normalize(entry.path);
+    if (normalized === "." || normalized.startsWith("/") || entry.path.split("/").includes("..")) {
+      throw new Error(`Invalid file path: ${entry.path}`);
+    }
+    const target = join(dir, normalized);
+    const resolvedSkillMd = resolve(dir, "SKILL.md");
+    if (!options.allowSkillMd && resolve(target) === resolvedSkillMd) {
+      throw new Error("SKILL.md is reserved for the canonical skill instructions");
+    }
+    const resolvedTarget = resolve(target);
+    if (!resolvedTarget.startsWith(resolvedDir + "/") && resolvedTarget !== resolvedDir) {
+      throw new Error(`Path escapes base directory: ${entry.path}`);
+    }
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, entry.content);
+  }
+}
 
 /**
  * Packs a skill directory into a gzipped tarball.

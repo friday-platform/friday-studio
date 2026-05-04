@@ -9,6 +9,7 @@ import {
   injectSkillDir,
   packSkillArchive,
   validateSkillReferences,
+  writeSkillFiles,
 } from "../src/archive.ts";
 
 describe("packSkillArchive", () => {
@@ -305,5 +306,80 @@ See ![diagram](references/diagram.png) and [guide](references/guide.md).
     const archiveFiles = ["references/guide.md"];
     const deadLinks = validateSkillReferences(instructions, archiveFiles);
     expect(deadLinks).toEqual(["references/diagram.png"]);
+  });
+});
+
+describe("writeSkillFiles", () => {
+  let tempDirs: string[] = [];
+
+  function createTempDir(prefix?: string): string {
+    const dir = makeTempDir({ prefix: prefix ?? "archive-test-" });
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(async () => {
+    for (const dir of tempDirs) {
+      await rm(dir, { recursive: true, force: true });
+    }
+    tempDirs = [];
+  });
+
+  it("writes files and creates nested directories", async () => {
+    const dir = createTempDir();
+    await writeSkillFiles(dir, [
+      { path: "README.md", content: "# Hello" },
+      { path: "scripts/build.sh", content: "#!/bin/sh\necho hi" },
+    ]);
+
+    expect(await readFile(join(dir, "README.md"), "utf-8")).toBe("# Hello");
+    expect(await readFile(join(dir, "scripts", "build.sh"), "utf-8")).toBe("#!/bin/sh\necho hi");
+  });
+
+  it("rejects paths containing ..", async () => {
+    const dir = createTempDir();
+    await expect(
+      writeSkillFiles(dir, [{ path: "../etc/passwd", content: "bad" }]),
+    ).rejects.toThrow("Invalid file path: ../etc/passwd");
+  });
+
+  it("rejects absolute paths", async () => {
+    const dir = createTempDir();
+    await expect(
+      writeSkillFiles(dir, [{ path: "/etc/passwd", content: "bad" }]),
+    ).rejects.toThrow("Invalid file path: /etc/passwd");
+  });
+
+  it("rejects SKILL.md by default", async () => {
+    const dir = createTempDir();
+    await expect(
+      writeSkillFiles(dir, [{ path: "SKILL.md", content: "bad" }]),
+    ).rejects.toThrow("SKILL.md is reserved for the canonical skill instructions");
+  });
+
+  it("rejects SKILL.md after normalizing current-directory segments", async () => {
+    const dir = createTempDir();
+    await expect(
+      writeSkillFiles(dir, [{ path: "././SKILL.md", content: "bad" }]),
+    ).rejects.toThrow("SKILL.md is reserved for the canonical skill instructions");
+  });
+
+  it("allows SKILL.md when opted in", async () => {
+    const dir = createTempDir();
+    await writeSkillFiles(dir, [{ path: "SKILL.md", content: "# Skill" }], { allowSkillMd: true });
+    expect(await readFile(join(dir, "SKILL.md"), "utf-8")).toBe("# Skill");
+  });
+
+  it("rejects paths that escape the base directory via ..", async () => {
+    const dir = createTempDir();
+    await expect(
+      writeSkillFiles(dir, [{ path: "foo/../../etc/passwd", content: "bad" }]),
+    ).rejects.toThrow("Invalid file path: foo/../../etc/passwd");
+  });
+
+  it("strips leading ./ before writing", async () => {
+    const dir = createTempDir();
+    await writeSkillFiles(dir, [{ path: "./guide.md", content: "# Guide" }]);
+    expect(await readFile(join(dir, "guide.md"), "utf-8")).toBe("# Guide");
   });
 });

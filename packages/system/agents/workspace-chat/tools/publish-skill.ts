@@ -1,20 +1,50 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AtlasTools } from "@atlas/agent-sdk";
+import { NamespaceSchema, SkillNameSchema } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
-import { packSkillArchive } from "@atlas/skills/archive";
+import { packSkillArchive, writeSkillFiles } from "@atlas/skills/archive";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
 import { tool } from "ai";
 import { z } from "zod";
 
 const PublishSkillInput = z.object({
-  namespace: z.string().describe("kebab-case, no @ prefix; 'friday' is reserved"),
-  name: z.string(),
-  content: z.string(),
-  files: z.array(z.object({ path: z.string(), content: z.string() })).optional(),
+  namespace: NamespaceSchema.describe("kebab-case, no @ prefix; 'friday' is reserved"),
+  name: SkillNameSchema.describe("skill name from SKILL.md frontmatter"),
+  content: z.string().describe("full SKILL.md content, including frontmatter"),
+  files: z
+    .array(
+      z.object({
+        path: z.string().describe("relative support file path; must not be SKILL.md"),
+        content: z.string(),
+      }),
+    )
+    .optional(),
 });
+
+const PublishSkillErrorResponse = z.object({
+  error: z.string().optional(),
+  deadLinks: z.array(z.string()).optional(),
+});
+
+const PublishSkillSuccessResponse = z.object({
+  published: z.object({
+    skillId: z.string(),
+    version: z.number().int().positive(),
+  }),
+});
+
+async function readResponseBody(res: Response): Promise<{ text: string; json: unknown }> {
+  const text = await res.text();
+  if (!text.trim()) return { text, json: undefined };
+  try {
+    return { text, json: JSON.parse(text) };
+  } catch {
+    return { text, json: undefined };
+  }
+}
 
 /**
  * Publishes a skill to the daemon's skill upload endpoint.
@@ -38,11 +68,7 @@ export function createPublishSkillTool(logger: Logger): AtlasTools {
         const tmpDir = makeTempDir({ prefix: "atlas-publish-skill-" });
         try {
           await writeFile(join(tmpDir, "SKILL.md"), content);
-          for (const entry of files ?? []) {
-            const target = join(tmpDir, entry.path);
-            await mkdir(dirname(target), { recursive: true });
-            await writeFile(target, entry.content);
-          }
+          await writeSkillFiles(tmpDir, files ?? []);
           const archive = await packSkillArchive(tmpDir);
 
           const formData = new FormData();
@@ -53,42 +79,51 @@ export function createPublishSkillTool(logger: Logger): AtlasTools {
           formData.append("skillMd", content);
 
           const url = `${daemonUrl}/api/skills/@${namespace}/${name}/upload`;
-          const res = await fetch(url, { method: "POST", body: formData });
+          let res: Response;
+          try {
+            res = await fetch(url, { method: "POST", body: formData });
+          } catch (err) {
+            logger.error("publish_skill fetch failed", {
+              namespace,
+              name,
+              error: stringifyError(err),
+            });
+            return { success: false as const, error: "publish_skill failed: network error" };
+          }
+
+          const { text, json } = await readResponseBody(res);
           if (!res.ok) {
-            const body = (await res.json()) as unknown;
+            const body = PublishSkillErrorResponse.safeParse(json);
             const error =
-              typeof body === "object" &&
-              body !== null &&
-              typeof (body as { error?: unknown }).error === "string"
-                ? (body as { error: string }).error
-                : `publish_skill failed with status ${res.status}`;
-            const rawDeadLinks =
-              typeof body === "object" && body !== null
-                ? (body as { deadLinks?: unknown }).deadLinks
-                : undefined;
-            const deadLinks =
-              Array.isArray(rawDeadLinks) && rawDeadLinks.every((v) => typeof v === "string")
-                ? (rawDeadLinks as string[])
-                : undefined;
+              body.data?.error ??
+              `publish_skill failed with status ${res.status}${text ? `: ${text}` : ""}`;
             logger.warn("publish_skill failed", { namespace, name, status: res.status, error });
-            if (deadLinks && deadLinks.length > 0) {
-              return { success: false as const, error, deadLinks };
+            if (body.success && body.data.deadLinks && body.data.deadLinks.length > 0) {
+              return { success: false as const, error, deadLinks: body.data.deadLinks };
             }
             return { success: false as const, error };
           }
-          const json = (await res.json()) as { published: { skillId: string; version: number } };
+
+          const body = PublishSkillSuccessResponse.safeParse(json);
+          if (!body.success) {
+            const error = `publish_skill returned invalid response: ${body.error.message}`;
+            logger.warn("publish_skill returned invalid response", { namespace, name, error });
+            return { success: false as const, error };
+          }
+
           logger.info("publish_skill succeeded", { namespace, name });
           return {
             success: true as const,
             skill: {
               ref: `@${namespace}/${name}`,
-              skillId: json.published.skillId,
-              version: json.published.version,
+              skillId: body.data.published.skillId,
+              version: body.data.published.version,
             },
           };
         } catch (err) {
-          logger.error("publish_skill threw", { namespace, name, error: stringifyError(err) });
-          return { success: false as const, error: "publish_skill failed: network error" };
+          const error = `publish_skill failed: ${stringifyError(err)}`;
+          logger.error("publish_skill failed before upload", { namespace, name, error });
+          return { success: false as const, error };
         } finally {
           await rm(tmpDir, { recursive: true, force: true }).catch((e) =>
             logger.debug("publish_skill cleanup failed", { error: stringifyError(e) }),

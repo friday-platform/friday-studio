@@ -6,6 +6,7 @@ export {
   packSkillArchive,
   readArchiveFile,
   validateSkillReferences,
+  writeSkillFiles,
 } from "./archive.ts";
 // Canonical content hash for system-skill reconciliation.
 export { computeSkillHash } from "./content-hash.ts";

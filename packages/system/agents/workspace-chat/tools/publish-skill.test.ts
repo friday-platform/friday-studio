@@ -148,4 +148,42 @@ describe("publish_skill", () => {
       deadLinks: ["MISSING.md", "OTHER.md"],
     });
   });
+
+  it("returns HTTP status and body when daemon rejects with non-JSON", async () => {
+    const content = "---\nname: demo-skill\ndescription: Test. Use when X.\n---\n\nBody.";
+
+    mockFetch.mockResolvedValueOnce(new Response("bad gateway", { status: 502 }));
+
+    const { publish_skill } = createPublishSkillTool(logger);
+    const result = await publish_skill!.execute!(
+      { namespace: "tempest", name: "demo-skill", content },
+      OPTS,
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: "publish_skill failed with status 502: bad gateway",
+    });
+  });
+
+  it("returns local validation errors without calling fetch", async () => {
+    const content = "---\nname: demo-skill\ndescription: Test. Use when X.\n---\n\nBody.";
+
+    const { publish_skill } = createPublishSkillTool(logger);
+    const result = await publish_skill!.execute!(
+      {
+        namespace: "tempest",
+        name: "demo-skill",
+        content,
+        files: [{ path: "././SKILL.md", content: "bad" }],
+      },
+      OPTS,
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: "publish_skill failed: SKILL.md is reserved for the canonical skill instructions",
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });
