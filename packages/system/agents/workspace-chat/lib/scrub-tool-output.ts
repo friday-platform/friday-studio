@@ -206,5 +206,64 @@ export function createScrubber(opts: ScrubberOptions): ScrubToolResult {
   return (result, toolCtx) => scrubValue(result, ctx, toolCtx, 0);
 }
 
+/**
+ * Pre-persist scrubber — defense-in-depth for anything that slipped past
+ * the MCP-boundary scrubber. Walks an assistant message's `tool-*` part
+ * outputs (and `data-delegate-chunk` chunks, which can carry tool-result
+ * envelopes from sub-agents) and lifts oversized binary into artifacts.
+ *
+ * Mutates the passed message; returns the count of fields rewritten so
+ * the caller can decide whether to log.
+ */
+export async function scrubAssistantMessage(
+  parts: Array<Record<string, unknown>>,
+  opts: ScrubberOptions,
+): Promise<{ scanned: number; rewritten: number }> {
+  const ctx: ScrubContext = {
+    workspaceId: opts.workspaceId,
+    chatId: opts.chatId,
+    logger: opts.logger,
+  };
+  let scanned = 0;
+  let rewritten = 0;
+  for (const part of parts) {
+    const type = typeof part.type === "string" ? part.type : "";
+    // Tool call outputs from the parent's own tool-use steps.
+    if (type.startsWith("tool-") && "output" in part) {
+      scanned++;
+      const before = JSON.stringify(part.output);
+      const after = await scrubValue(
+        part.output,
+        ctx,
+        { serverId: "pre-persist", toolName: type },
+        0,
+      );
+      if (JSON.stringify(after) !== before) {
+        part.output = after;
+        rewritten++;
+      }
+    }
+    // Sub-agent stream envelopes — chunk may carry an embedded tool result.
+    if (type === "data-delegate-chunk" && part.data && typeof part.data === "object") {
+      scanned++;
+      const data = part.data as Record<string, unknown>;
+      if ("chunk" in data) {
+        const before = JSON.stringify(data.chunk);
+        const after = await scrubValue(
+          data.chunk,
+          ctx,
+          { serverId: "pre-persist", toolName: "delegate-chunk" },
+          0,
+        );
+        if (JSON.stringify(after) !== before) {
+          data.chunk = after;
+          rewritten++;
+        }
+      }
+    }
+  }
+  return { scanned, rewritten };
+}
+
 // Exported for unit tests.
 export const __test = { looksLikeBase64, DATA_URL_RE, SIZE_THRESHOLD_CHARS };

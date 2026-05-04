@@ -38,6 +38,7 @@ import {
   composeWorkspaceSections,
   fetchForegroundContexts,
 } from "./compose-context.ts";
+import { scrubAssistantMessage } from "./lib/scrub-tool-output.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
@@ -466,6 +467,32 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               stripped,
             });
           }
+
+          // Defense-in-depth: lift any binary that escaped the MCP-boundary
+          // scrubber (LLM-fabricated base64, future tool surfaces) into
+          // artifacts before append. Same scrub logic as the boundary
+          // wrapper; just runs against the assembled assistant message.
+          try {
+            const { rewritten } = await scrubAssistantMessage(
+              lastMessage.parts as Array<Record<string, unknown>>,
+              { workspaceId, chatId: session.streamId, logger },
+            );
+            if (rewritten > 0) {
+              logger.info("Scrubbed binary out of assistant parts before persist", {
+                streamId: session.streamId,
+                messageId: lastMessage.id,
+                rewritten,
+              });
+            }
+          } catch (err) {
+            // Persistence path must continue regardless. The MCP-boundary
+            // scrubber is the primary defense; this is best-effort.
+            logger.warn("Pre-persist scrub failed (continuing with append)", {
+              streamId: session.streamId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+
           const appendResult = await ChatStorage.appendMessage(
             session.streamId,
             lastMessage,
