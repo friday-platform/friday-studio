@@ -158,6 +158,35 @@ function refMarker(r: UploadResult, toolCtx: { serverId: string; toolName: strin
   );
 }
 
+/**
+ * Magic-byte prefixes for common binary formats, mapped to the base64
+ * prefix they produce. Used by {@link sniffMimeFromBase64} to guess the
+ * mime when an embedded base64 blob shows up with no surrounding mime
+ * hint (Gmail's get_gmail_attachment_content envelope is the typical
+ * source). Without this the scrubber uploads with no mime, the artifact
+ * gets a ".bin" extension in its synthesized filename, and downloads
+ * land as `foo.bin` instead of `foo.pdf`.
+ *
+ * Standard base64 alphabet — Gmail's _format_base64_content_block converts
+ * URL-safe to standard before emitting, so we only need the standard form.
+ */
+const BASE64_MAGIC_PREFIXES: Array<[string, string]> = [
+  ["JVBERi", "application/pdf"], //  %PDF-
+  ["iVBORw0K", "image/png"], //  PNG signature
+  ["/9j/", "image/jpeg"], //  JPEG SOI + JFIF/EXIF marker
+  ["R0lGOD", "image/gif"], //  GIF87a / GIF89a
+  ["UklGR", "image/webp"], //  RIFF…WEBP (also matches WAV; PDF case is what we care about)
+  ["UEsDB", "application/zip"], //  ZIP local file header (DOCX/PPTX/XLSX use this)
+];
+
+function sniffMimeFromBase64(base64: string): string | undefined {
+  const head = base64.slice(0, 12);
+  for (const [prefix, mime] of BASE64_MAGIC_PREFIXES) {
+    if (head.startsWith(prefix)) return mime;
+  }
+  return undefined;
+}
+
 /** Synthetic filename when the source didn't carry one. */
 function defaultFilename(mime: string | undefined, toolCtx: { toolName: string }): string {
   const ext = mime?.split("/")[1]?.split(";")[0]?.split("+")[0] || "bin";
@@ -193,8 +222,9 @@ async function scrubString(
     const m = EMBEDDED_BASE64_RE.exec(result);
     if (!m) break;
     const block = m[0];
-    const filename = defaultFilename(undefined, toolCtx);
-    const upload = await uploadBlob(block, undefined, filename, ctx, toolCtx);
+    const sniffed = sniffMimeFromBase64(block);
+    const filename = defaultFilename(sniffed, toolCtx);
+    const upload = await uploadBlob(block, sniffed, filename, ctx, toolCtx);
     if (!upload) {
       // Move past this match to avoid an infinite loop on transient
       // upload failure; another scrub pass (e.g. pre-persist) can retry.
