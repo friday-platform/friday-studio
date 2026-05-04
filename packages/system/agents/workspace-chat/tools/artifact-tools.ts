@@ -14,6 +14,7 @@ import { basename } from "node:path";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { createLogger } from "@atlas/logger";
+import { stringifyError } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
 import { tool } from "ai";
 import { z } from "zod";
@@ -26,9 +27,18 @@ const logger = createLogger({ name: "workspace-chat-artifacts" });
  * Direct tool for retrieving an artifact by ID.
  * Mirrors the MCP `artifacts_get` tool (packages/mcp-server/src/tools/artifacts/get.ts)
  * so workspace-chat can use it without platform tool passthrough.
+ *
+ * For text-like artifacts (json/yaml/text/*) the response includes the
+ * decoded contents inline. For binary artifacts (PDF/image/etc.) the
+ * server returns metadata + a `hint` directing you to the right
+ * follow-up tool — `parse_artifact` to extract text from PDF/DOCX/PPTX,
+ * `display_artifact` to surface visually. This avoids round-tripping
+ * decoded-as-UTF-8 bytes through the LLM, which is both expensive and
+ * useless (the model can't reason about random bytes).
  */
 const artifactsGet = tool({
-  description: "Get artifact by ID",
+  description:
+    "Get artifact by ID. For binary artifacts (PDF/image/etc.), use the returned `hint` to choose the right follow-up tool; the response will not include raw bytes.",
   inputSchema: z.object({
     artifactId: z.string().describe("Artifact ID"),
     revision: z
@@ -52,8 +62,36 @@ const artifactsGet = tool({
       return { success: false, error: `Failed to retrieve artifact: ${artifactId}` };
     }
 
-    const { artifact, contents } = response.data;
-    return { ...artifact, contents };
+    const { artifact, contents, hint } = response.data;
+    return { ...artifact, contents, hint };
+  },
+});
+
+/**
+ * Direct tool for extracting text from a binary artifact (PDF/DOCX/PPTX).
+ * Runs the bytes through the same converters used at upload time and
+ * returns markdown. Use this instead of fetching artifact bytes and
+ * piping them through `run_code` — that pattern costs thousands of
+ * prompt tokens per page and frequently fails on multi-page documents.
+ */
+const parseArtifact = tool({
+  description:
+    "Extract text from a binary artifact (PDF, DOCX, or PPTX) as markdown. Use whenever you need the *contents* of a binary artifact for reasoning. Returns `{ markdown, mimeType, filename }`.",
+  inputSchema: z.object({ artifactId: z.string().describe("Artifact ID of a PDF/DOCX/PPTX file") }),
+  execute: async ({ artifactId }) => {
+    logger.info("parse_artifact called", { artifactId });
+
+    const response = await parseResult(
+      client.artifactsStorage[":id"].parse.$get({ param: { id: artifactId } }),
+    );
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `Failed to parse artifact: ${stringifyError(response.error)}`,
+      };
+    }
+    return response.data;
   },
 });
 
@@ -61,6 +99,7 @@ const artifactsGet = tool({
 export const artifactTools: AtlasTools = {
   display_artifact: displayArtifact,
   artifacts_get: artifactsGet,
+  parse_artifact: parseArtifact,
 };
 
 /**

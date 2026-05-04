@@ -102,11 +102,52 @@ function wrapToolWithTimeout(tool: Tool, serverId: string): Tool {
   };
 }
 
+/**
+ * Optional post-processor for tool results. Receives whatever the MCP tool
+ * returned, plus context about which server/tool produced it, and returns a
+ * possibly-rewritten value. Used by chat callers to lift oversized binary
+ * (PDF base64, data URLs, etc.) out of tool outputs before they enter the
+ * AI SDK message buffer — keeps prompt tokens down and avoids
+ * `MAX_PAYLOAD_EXCEEDED` at chat-message persist time.
+ *
+ * Generic (non-chat) callers leave this unset and get the unmodified result.
+ */
+export type ScrubToolResult = (
+  result: unknown,
+  ctx: { serverId: string; toolName: string },
+) => Promise<unknown>;
+
+/** Wrap a tool's execute with timeout + optional result scrubbing. */
+function wrapTool(tool: Tool, serverId: string, toolName: string, scrub?: ScrubToolResult): Tool {
+  const timed = wrapToolWithTimeout(tool, serverId);
+  if (!scrub) return timed;
+  return {
+    ...timed,
+    execute: async (args, opts) => {
+      const result = await timed.execute!(args, opts);
+      try {
+        return await scrub(result, { serverId, toolName });
+      } catch {
+        // Scrub failures must not break tool execution — pass through the
+        // original result. The caller's pre-persist scrubber (if present)
+        // is the second line of defense.
+        return result;
+      }
+    },
+  };
+}
+
 export interface CreateMCPToolsOptions {
   /** Signal to abort connection attempts early (e.g., on agent cancellation). */
   signal?: AbortSignal;
   /** Prefix all tool keys with `{toolPrefix}_` in the returned tools map. */
   toolPrefix?: string;
+  /**
+   * Post-processor for tool results — see {@link ScrubToolResult}. Set by
+   * chat callers to lift oversized binary into a side store. Omit for
+   * caller-agnostic / non-chat use.
+   */
+  scrubResult?: ScrubToolResult;
 }
 
 /** Internal result of attempting to connect a single server. */
@@ -227,7 +268,7 @@ export async function createMCPTools(
     const wrappedTools = Object.fromEntries(
       Object.entries(value.tools).map(([name, tool]) => [
         name,
-        wrapToolWithTimeout(tool, value.serverId),
+        wrapTool(tool, value.serverId, name, options?.scrubResult),
       ]),
     );
 

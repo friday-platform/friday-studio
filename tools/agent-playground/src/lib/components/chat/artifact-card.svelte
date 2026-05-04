@@ -106,6 +106,14 @@
     serveUrl && mimeType === "text/html" ? serveUrl : null,
   );
 
+  // PDFs render natively in an iframe via the browser's built-in PDF
+  // viewer. Same affordance as html — embed for inline preview, "Open"
+  // button for full-screen. No extra deps; this works in Chrome/Edge/
+  // Safari/Firefox out of the box.
+  const pdfUrl = $derived(
+    serveUrl && mimeType === "application/pdf" ? serveUrl : null,
+  );
+
   function mimeLabel(mt: string | undefined): string {
     if (!mt) return "file";
     const map: Record<string, string> = {
@@ -172,9 +180,20 @@
     </div>
 
     {#if serveUrl && !loading}
-      <a class="open-btn" href={serveUrl} target="_blank" rel="noopener noreferrer" title="Open">
-        Open
-      </a>
+      <div class="artifact-actions">
+        <!-- `download` (no value) defers to the server's
+             Content-Disposition filename, which `deriveDownloadFilename`
+             rewrites to match the actual mime type — so legacy `.bin`
+             artifacts still save with the correct extension. The
+             `download` attribute also forces save (rather than render)
+             even for inline-disposition mimes like PDF. -->
+        <a class="download-btn" href={serveUrl} download title="Download">
+          Download
+        </a>
+        <a class="open-btn" href={serveUrl} target="_blank" rel="noopener noreferrer" title="Open in new tab">
+          Open
+        </a>
+      </div>
     {/if}
   </div>
 
@@ -200,6 +219,18 @@
         style="--scale: {iframeScale}"
       ></iframe>
     </div>
+  {:else if pdfUrl}
+    <!-- loading="lazy" defers the fetch until near the viewport. A chat
+         history with multiple PDF artifacts otherwise stampedes the
+         daemon for every card on a fresh page load whether the user
+         scrolls past it or not — and pre-inline-disposition, that
+         triggered a download dialog per card. -->
+    <iframe
+      title={resolvedTitle}
+      src={pdfUrl}
+      class="artifact-pdf"
+      loading="lazy"
+    ></iframe>
   {:else if contents && isTextPreviewable(mimeType)}
     <pre class="artifact-preview">{previewContents(contents, mimeType)}</pre>
   {/if}
@@ -282,6 +313,13 @@
     padding: 1px 6px;
   }
 
+  .artifact-actions {
+    align-items: center;
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--size-1, 4px);
+  }
+
   .open-btn {
     background: var(--color-accent);
     border: 1px solid var(--color-accent);
@@ -293,6 +331,7 @@
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     padding: 3px 10px;
+    text-decoration: none;
     transition: opacity 100ms ease;
   }
 
@@ -302,6 +341,27 @@
 
   .open-btn:disabled {
     opacity: 0.5;
+  }
+
+  /* Secondary action — same shape as Open but neutral so the chat header
+     doesn't sprout two equally-loud accent buttons next to each other. */
+  .download-btn {
+    background: transparent;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    color: var(--text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: inherit;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: 3px 10px;
+    text-decoration: none;
+    transition: background 100ms ease;
+  }
+
+  .download-btn:hover {
+    background: var(--surface-bright, var(--surface));
   }
 
   .artifact-summary {
@@ -357,6 +417,14 @@
     inline-size: 1200px;
     transform: scale(var(--scale));
     transform-origin: top left;
+  }
+
+  .artifact-pdf {
+    block-size: 480px;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    display: block;
+    inline-size: 100%;
   }
 
   .artifact-preview {

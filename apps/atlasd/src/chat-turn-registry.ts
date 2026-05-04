@@ -73,6 +73,50 @@ export class ChatTurnRegistry {
     }
     this.controllers.clear();
   }
+
+  /**
+   * Graceful drain for daemon shutdown. Fires abort on every in-flight turn,
+   * then waits (bounded by `timeoutMs`) for each turn to call `release()` —
+   * which it does after its `onFinish` has run, including any partial-message
+   * persistence. After timeout the remaining controllers are cleared and the
+   * shutdown proceeds; any turns still in flight at that point lose their
+   * partial message.
+   *
+   * Why this exists: without a drain, daemon shutdown would race the agent's
+   * `onFinish` callback. Aborts fire, but the process exits before the agent
+   * has time to write its partial assistant message to chat storage. With the
+   * drain in place, in-flight delegate calls / partial assistant turns survive
+   * a SIGTERM and reappear on next daemon boot.
+   */
+  async drainShutdown(timeoutMs: number): Promise<void> {
+    if (this.controllers.size === 0) return;
+
+    logger.info("Draining in-flight chat turns for shutdown", {
+      inFlight: this.controllers.size,
+      timeoutMs,
+    });
+
+    for (const controller of this.controllers.values()) {
+      if (!controller.signal.aborted) controller.abort(new ChatTurnShutdownError());
+    }
+
+    const start = Date.now();
+    // Poll instead of subscribing — set membership changes via release() are
+    // synchronous and the loop body runs frequently enough that the latency
+    // tax is bounded by the poll interval, not the persistence latency.
+    while (this.controllers.size > 0) {
+      if (Date.now() - start > timeoutMs) {
+        logger.warn("Drain timeout — clearing remaining controllers", {
+          remaining: this.controllers.size,
+        });
+        this.controllers.clear();
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    logger.info("Drain complete", { elapsedMs: Date.now() - start });
+  }
 }
 
 export class ChatTurnSupersededError extends Error {

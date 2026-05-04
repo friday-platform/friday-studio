@@ -16,11 +16,14 @@ import {
   USER_FACING_ERROR_CODES,
 } from "@atlas/core/artifacts/converters";
 import {
+  deriveDownloadFilename,
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
   isAudioMimeType,
   isImageMimeType,
   isInvalidChatId,
+  isParseableMimeType,
+  isTextMimeType,
   LEGACY_FORMAT_ERRORS,
   MAX_AUDIO_SIZE,
   MAX_FILE_SIZE,
@@ -621,22 +624,84 @@ const artifactsApp = daemonFactory
 
       const artifact = result.data;
       let contents: string | undefined;
+      let hint: string | undefined;
 
-      // For file artifacts, include contents inline
+      // Only return decoded contents for text-like mime types. Binary
+      // formats (PDF, images, audio, zip, etc.) get a hint instead — the
+      // model can't usefully reason about TextDecoder-mangled bytes, and
+      // shipping them through the prompt is expensive. Binary callers
+      // should use `parse_artifact` for PDF/DOCX/PPTX text extraction or
+      // `display_artifact` for visual rendering.
       if (artifact.data.type === "file") {
-        const contentsResult = await ArtifactStorage.readFileContents({
-          id,
-          revision: query?.revision,
-        });
-        if (contentsResult.ok) {
-          contents = contentsResult.data;
+        const mime = artifact.data.mimeType;
+        if (isTextMimeType(mime)) {
+          const contentsResult = await ArtifactStorage.readFileContents({
+            id,
+            revision: query?.revision,
+          });
+          if (contentsResult.ok) {
+            contents = contentsResult.data;
+          }
+        } else if (isParseableMimeType(mime)) {
+          hint = `Binary artifact (${mime}). Call parse_artifact with this artifactId to extract text contents, or display_artifact to show the user.`;
+        } else if (isImageMimeType(mime)) {
+          hint = `Image artifact (${mime}). Call display_artifact to show the user — the model cannot reason about image bytes directly.`;
+        } else {
+          hint = `Binary artifact (${mime}). Call display_artifact to show the user, or fetch /api/artifacts/${id}/content from run_code to process the bytes server-side.`;
         }
-        // If read fails (binary file, etc.), still return artifact metadata
       }
 
-      return c.json({ artifact, contents }, 200);
+      return c.json({ artifact, contents, hint }, 200);
     },
   )
+  /**
+   * Server-side text extraction for binary artifacts. Routes the bytes
+   * through whichever converter matches the mime type — same converters
+   * used at upload time. Saves the model from trying to do PDF parsing
+   * itself by round-tripping bytes through `run_code`, which costs
+   * thousands of prompt tokens per page and frequently fails on larger
+   * documents. Result is markdown text, suitable for direct LLM reasoning.
+   */
+  .get("/:id/parse", zValidator("param", z.object({ id: z.string() })), async (c) => {
+    const { id } = c.req.valid("param");
+    const meta = await ArtifactStorage.get({ id });
+    if (!meta.ok) return c.json({ error: meta.error }, 500);
+    if (!meta.data) return c.json({ error: "Artifact not found" }, 404);
+    if (meta.data.data.type !== "file") {
+      return c.json({ error: "Artifact is not a file" }, 400);
+    }
+    const mime = meta.data.data.mimeType;
+    if (!isParseableMimeType(mime)) {
+      return c.json(
+        {
+          error: `parse_artifact does not support mime type ${mime}. Supported: PDF, DOCX, PPTX. For text artifacts use artifacts_get; for images use display_artifact.`,
+        },
+        400,
+      );
+    }
+    const bytes = await ArtifactStorage.readBinaryContents({ id });
+    if (!bytes.ok) return c.json({ error: bytes.error }, 500);
+    const filename = meta.data.data.originalName ?? meta.data.title ?? id;
+    try {
+      let markdown: string;
+      if (mime === "application/pdf") {
+        markdown = await pdfToMarkdown(bytes.data, filename);
+      } else if (
+        mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
+        markdown = await docxToMarkdown(bytes.data, filename);
+      } else {
+        markdown = await pptxToMarkdown(bytes.data, filename);
+      }
+      return c.json({ markdown, mimeType: mime, filename }, 200);
+    } catch (err) {
+      if (err instanceof ConverterError) {
+        return c.json({ error: err.message, code: err.code }, 422);
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: `Failed to parse artifact: ${msg}` }, 500);
+    }
+  })
   /** List artifacts - optionally filter by workspace or chat */
   .get("/", zValidator("query", ListArtifactsQuery), async (c) => {
     const query = c.req.valid("query");
@@ -728,8 +793,36 @@ const artifactsApp = daemonFactory
         return c.json({ error: binaryResult.error }, 500);
       }
 
-      const { mimeType } = artifact.data;
-      const disposition = isImageMimeType(mimeType) ? "inline" : "attachment";
+      const { mimeType, originalName } = artifact.data;
+      // Mimes the browser renders inline in an `<iframe>` or `<img>`. Anything
+      // else triggers a download. PDFs and HTML need `inline` so the chat
+      // UI's artifact-card iframe shows a preview instead of pulling down a
+      // copy and leaving the iframe blank.
+      const isInlineRenderable =
+        isImageMimeType(mimeType) ||
+        mimeType === "application/pdf" ||
+        mimeType === "text/html" ||
+        mimeType === "text/plain";
+      const disposition = isInlineRenderable ? "inline" : "attachment";
+
+      // Filename hint so the browser uses something meaningful when the user
+      // saves (Right-click → Save As, or attachment-disposition downloads).
+      // Without it the browser falls back to the URL's last path segment —
+      // every download lands as "content", "content (1)", etc.
+      //
+      // `deriveDownloadFilename` reconciles the stored `originalName` with
+      // the actual `mimeType`. Legacy artifacts where the scrubber stamped
+      // a `.bin` filename pre-mime-sniff get their extension repaired at
+      // download time; future scrubber lifts already pick the right
+      // extension via base64 magic-byte detection.
+      //
+      // RFC 6266: `filename=` is the ASCII fallback (quotes/backslashes
+      // escaped); `filename*=UTF-8''…` carries the real value for any
+      // non-ASCII. Modern browsers prefer filename*.
+      const rawName = deriveDownloadFilename({ mimeType, originalName, title: artifact.title });
+      const asciiName = rawName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
+      const utf8Name = encodeURIComponent(rawName);
+      const contentDisposition = `${disposition}; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
 
       const body = new Uint8Array(binaryResult.data);
       return new Response(body, {
@@ -737,7 +830,7 @@ const artifactsApp = daemonFactory
         headers: {
           "Content-Type": mimeType,
           "Content-Length": String(body.byteLength),
-          "Content-Disposition": disposition,
+          "Content-Disposition": contentDisposition,
           "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, max-age=31536000, immutable",
         },

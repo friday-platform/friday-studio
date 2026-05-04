@@ -164,6 +164,36 @@ function workspaceHasBroadcastDestination(workspace: {
 }
 
 /**
+ * Race a shutdown step against a per-step deadline. A slow step (NATS drain,
+ * MCP subprocess refusing SIGTERM, runtime hang) gets force-skipped on its
+ * own ceiling instead of eating the global shutdown budget. Errors and
+ * timeouts are logged and swallowed — the rest of shutdown continues.
+ */
+async function withShutdownTimeout<T>(
+  label: string,
+  task: Promise<T> | undefined | null,
+  ms: number,
+): Promise<void> {
+  if (!task) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      task,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`shutdown step "${label}" exceeded ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]);
+  } catch (error) {
+    logger.warn("Shutdown step failed or timed out", { label, error: String(error) });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * AtlasDaemon - Single daemon managing multiple workspaces with on-demand runtime creation
  * Replaces the per-workspace WorkspaceServer architecture
  */
@@ -2105,21 +2135,23 @@ export class AtlasDaemon {
     const daemonId = crypto.randomUUID().slice(0, 8);
 
     const handleShutdown = (signal: string) => {
-      // Re-entry guard — the same handler can fire twice in quick succession.
-      // Guarded by `shutdownPromise` (set inside shutdown()) so that any
-      // other caller racing this path (e.g. the CLI's own SIGTERM handler in
-      // apps/atlas-cli/src/commands/daemon/start.tsx) awaits the same
-      // in-flight work instead of calling process.exit(0) on top of it.
-      if (this.shutdownPromise) return;
+      // Second signal during in-flight shutdown — user wants out NOW. The
+      // CLI's own SIGTERM handler (apps/atlas-cli/src/commands/daemon/start.tsx)
+      // is also coalesced via shutdownPromise; the *third* signal here
+      // fast-exits past any straggling teardown work.
+      if (this.shutdownPromise) {
+        logger.warn("Second signal received during shutdown, forcing exit", { daemonId, signal });
+        process.exit(130);
+      }
 
       logger.info("Daemon received signal, shutting down gracefully", { daemonId, signal });
 
-      // Handle async shutdown in a promise to ensure proper cleanup
-      // Add a timeout to prevent hanging indefinitely
+      // Per-step timeouts in _doShutdown bound each phase; this is a
+      // belt-and-suspenders global cap for anything that escapes them.
       const shutdownTimeout = setTimeout(() => {
-        logger.error("Shutdown timeout, forcing exit", { timeoutSeconds: 30 });
+        logger.error("Shutdown timeout, forcing exit", { timeoutSeconds: 10 });
         process.exit(1);
-      }, 30000);
+      }, 10000);
 
       this.shutdown()
         .then(() => {
@@ -2144,6 +2176,39 @@ export class AtlasDaemon {
       Deno.addSignalListener("SIGTERM", sigtermHandler);
       this.signalHandlers.push({ signal: "SIGTERM", handler: sigtermHandler });
     }
+
+    // Best-effort persistence flush on uncaughtException. The process state
+    // is unrecoverable at this point; we want in-flight chat turns to
+    // drain — same code path as graceful shutdown but on a tight budget —
+    // before exiting. SIGKILL still loses everything.
+    //
+    // NOTE: This is intentionally NOT installed for `unhandledRejection`.
+    // Stray rejections from background tasks are common in long-running
+    // daemons and shouldn't kill the process; they're logged below for
+    // visibility but don't trigger a drain or an exit.
+    process.on("uncaughtException", (err) => {
+      // If a graceful shutdown is already in progress, let it finish.
+      // Re-entering here would race with the existing _doShutdown.
+      if (this.shutdownPromise) return;
+      logger.error("uncaughtException — attempting best-effort drain", {
+        daemonId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const crashTimeout = setTimeout(() => process.exit(1), 3000);
+      this.chatTurnRegistry
+        ?.drainShutdown(2500)
+        .catch(() => undefined)
+        .finally(() => {
+          clearTimeout(crashTimeout);
+          process.exit(1);
+        });
+    });
+    process.on("unhandledRejection", (reason) => {
+      logger.error("unhandledRejection (logged, not fatal)", {
+        daemonId,
+        error: reason instanceof Error ? reason.message : String(reason),
+      });
+    });
   }
 
   async start() {
@@ -2351,105 +2416,94 @@ export class AtlasDaemon {
   private async _doShutdown(): Promise<void> {
     logger.info("Shutting down Atlas daemon...");
 
-    // Stop the Discord Gateway service FIRST so the WebSocket closes cleanly
-    // before the HTTP server (its forwardUrl target) goes away.
-    if (this.discordGatewayService) {
-      try {
-        await this.discordGatewayService.stop();
-      } catch (error) {
-        logger.error("Error stopping Discord Gateway service", { error });
-      }
-      this.discordGatewayService = null;
-    }
-
-    // Remove signal handlers
+    // Drop our signal handlers up front — a second SIGINT/SIGTERM now hits
+    // the OS default and force-exits, which is the desired escape hatch.
     for (const { signal, handler } of this.signalHandlers) {
       Deno.removeSignalListener(signal, handler);
     }
     this.signalHandlers = [];
 
-    // Stop tool workers so in-flight dispatches can finish or fail cleanly.
-    for (const worker of this.toolWorkers) {
-      try {
-        await worker.stop();
-      } catch (error) {
-        logger.error("Error stopping tool worker", { toolId: worker.toolId, error });
-      }
-    }
+    // Phase 1 — close the door, in parallel. server.shutdown() drains
+    // in-flight HTTP requests while runtimes/NATS are still up (handlers
+    // need them); the rest just stop accepting new work. Each step has its
+    // own ceiling so a hung component can't block the others.
+    await Promise.allSettled([
+      withShutdownTimeout("http server drain", this.server?.shutdown(), 3000),
+      withShutdownTimeout("discord gateway", this.discordGatewayService?.stop(), 1500),
+      withShutdownTimeout("signals consumer", this.signalConsumer?.stop(), 1500),
+      withShutdownTimeout("tool workers", Promise.all(this.toolWorkers.map((w) => w.stop())), 1500),
+    ]);
+    this.server = null;
+    this.discordGatewayService = null;
+    this.signalConsumer = null;
     this.toolWorkers = [];
 
-    // Stop the SIGNALS consumer before tearing down runtimes so in-flight
-    // dispatches can finish against live workspaces.
-    if (this.signalConsumer) {
-      try {
-        await this.signalConsumer.stop();
-      } catch (error) {
-        logger.error("Error stopping SIGNALS consumer", { error });
-      }
-      this.signalConsumer = null;
-    }
+    // Reap orphaned agent-browser daemons after Phase 1 (no new agent
+    // invocations can start now) and before runtime/MCP teardown (which
+    // can hang). The next-startup sweep is the long-stop.
+    await withShutdownTimeout(
+      "agent-browser sweep",
+      sweepOrphanedAgentBrowserSessions(logger),
+      3000,
+    );
 
-    // Reap orphaned agent-browser daemons. Done early in shutdown — after
-    // the SIGNALS consumer stops (no new agent invocations can start) but
-    // before runtime/MCP teardown (which can hang past the 30s shutdown
-    // budget). Force-closes any in-flight web sessions; the bundled agents
-    // were about to be SIGTERM'd anyway, and the next-startup sweep
-    // (layer 2) is the long-stop for anything that slips through here.
-    await sweepOrphanedAgentBrowserSessions(logger).catch((error) => {
-      logger.warn("agent-browser session sweep failed at shutdown", { error: String(error) });
-    });
-
-    // Stop chunked upload cleanup
     shutdownChunkedUpload();
 
-    // Shutdown all workspace runtimes
-    const shutdownPromises = Array.from(this.runtimes.keys()).map((workspaceId) =>
-      this.destroyWorkspaceRuntime(workspaceId),
-    );
-    await Promise.all(shutdownPromises);
+    // Drain in-flight chat turns BEFORE Phase 2. Aborts every active chat
+    // turn and waits (bounded) for each turn's onFinish to run — which is
+    // where partial assistant messages get persisted to JetStream. Without
+    // this drain, SIGTERM would race the agent's onFinish: aborts fire, but
+    // process.exit lands before the partial message reaches storage, and
+    // any in-flight delegate calls / streaming text vanish on reboot. The
+    // 9s outer ceiling covers the registry's 8s internal budget plus a
+    // small buffer; real persistence completes in low ms once abort fires.
+    await withShutdownTimeout("chat turn drain", this.chatTurnRegistry?.drainShutdown(8000), 9000);
 
-    // SIGTERM (then SIGKILL after grace) any shared MCP subprocesses still
-    // alive — workspace-mcp instances on fixed ports owned by the
-    // daemon-scoped process registry. Done after runtimes shut down so no
-    // new MCP connections can race the kill.
-    try {
-      await sharedMCPProcesses.shutdown();
-    } catch (error) {
-      logger.error("Error shutting down shared MCP processes", { error });
-    }
+    // Phase 2 — tear down domain layer in parallel. destroyWorkspaceRuntime
+    // calls workspaceManager.updateWorkspaceStatus (which goes through NATS)
+    // so NATS + WorkspaceManager must remain alive until this phase ends.
+    await Promise.allSettled([
+      withShutdownTimeout(
+        "workspace runtimes",
+        Promise.all(Array.from(this.runtimes.keys()).map((id) => this.destroyWorkspaceRuntime(id))),
+        5000,
+      ),
+      withShutdownTimeout("shared MCP", sharedMCPProcesses.shutdown(), 2000),
+      withShutdownTimeout("session stream registry", this.sessionStreamRegistry?.shutdown(), 2000),
+      withShutdownTimeout(
+        "agent sessions",
+        Promise.all(
+          Array.from(this.agentSessions.keys()).map((id) => this.cleanupAgentSession(id)),
+        ),
+        1500,
+      ),
+      withShutdownTimeout("cron manager", this.cronManager?.shutdown(), 1500),
+    ]);
+    this.cronManager = null;
 
-    // Shutdown StreamRegistry
+    // Synchronous registries + interval/timer cleanup. Chat turn registry
+    // was drained above; the shutdown() here clears any controllers added
+    // between the drain and now (defensive — shouldn't happen since the
+    // signals consumer is already stopped).
     this.streamRegistry?.shutdown();
     this.chatTurnRegistry?.shutdown();
-
-    // Shutdown SessionStreamRegistry
-    await this.sessionStreamRegistry?.shutdown();
-
-    // Clear all idle timeouts
-    for (const timeoutId of this.idleTimeouts.values()) {
-      clearTimeout(timeoutId);
-    }
+    for (const timeoutId of this.idleTimeouts.values()) clearTimeout(timeoutId);
     this.idleTimeouts.clear();
-
-    // Stop SSE health check
     if (this.sseHealthCheckInterval) {
       clearInterval(this.sseHealthCheckInterval);
       this.sseHealthCheckInterval = null;
     }
-
-    // Stop agent session cleanup
     if (this.agentSessionCleanupInterval) {
       clearInterval(this.agentSessionCleanupInterval);
       this.agentSessionCleanupInterval = null;
     }
-
-    // Stop platform session cleanup
     if (this.platformSessionCleanupInterval) {
       clearInterval(this.platformSessionCleanupInterval);
       this.platformSessionCleanupInterval = null;
     }
 
-    // Close all SSE connections
+    // SSE clients — the HTTP server already drained in Phase 1, but any
+    // controller still held open by app code gets force-closed here.
     for (const [sessionId, clients] of this.sseClients.entries()) {
       for (const client of clients) {
         try {
@@ -2461,19 +2515,9 @@ export class AtlasDaemon {
     }
     this.sseClients.clear();
     this.sseStreams.clear();
-
-    // Clean up agent sessions
-    for (const sessionId of this.agentSessions.keys()) {
-      try {
-        await this.cleanupAgentSession(sessionId);
-      } catch (error) {
-        logger.debug("Error cleaning up agent session", { error, sessionId });
-      }
-    }
     this.agentSessions.clear();
     this.agentSSEConnections.clear();
 
-    // Clean up platform sessions
     for (const sessionId of this.platformMcpSessions.keys()) {
       try {
         this.cleanupPlatformSession(sessionId);
@@ -2483,38 +2527,19 @@ export class AtlasDaemon {
     }
     this.platformMcpSessions.clear();
 
-    // Shutdown CronManager
-    if (this.cronManager) {
-      await this.cronManager.shutdown();
-      this.cronManager = null;
-    }
-
-    // Stop capability handlers then NATS
     if (this.capabilityRegistry) {
       this.capabilityRegistry.stop();
       this.capabilityRegistry = null;
     }
     this.processAgentExecutor = null;
-    if (this.natsManager) {
-      await this.natsManager.stop();
-      this.natsManager = null;
-    }
 
-    // Shutdown WorkspaceManager
-    if (this.workspaceManager) {
-      await this.workspaceManager.close();
-      this.workspaceManager = null;
-    }
+    // Phase 3 — bottom of the stack. WorkspaceManager.close() may flush
+    // through NATS, so close it before NATS stops.
+    await withShutdownTimeout("workspace manager", this.workspaceManager?.close(), 2000);
+    this.workspaceManager = null;
 
-    // Shutdown HTTP server
-    if (this.server) {
-      try {
-        // Deno.serve() returns a server with a shutdown() method
-        await this.server.shutdown();
-      } catch (error) {
-        logger.error("Error shutting down HTTP server", { error });
-      }
-    }
+    await withShutdownTimeout("NATS", this.natsManager?.stop(), 2000);
+    this.natsManager = null;
 
     logger.info("Atlas daemon shutdown complete");
   }
