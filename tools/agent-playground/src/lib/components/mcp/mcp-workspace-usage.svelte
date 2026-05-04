@@ -8,8 +8,8 @@
 
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import { workspaceQueries } from "../../queries/workspace-queries";
   import { workspaceMcpQueries } from "../../queries/workspace-mcp-queries";
+  import { workspaceQueries } from "../../queries/workspace-queries";
 
   interface Props {
     serverId: string;
@@ -23,8 +23,6 @@
 </script>
 
 <section class="workspace-usage-section">
-  <h3 class="section-title">Workspace Usage</h3>
-
   {#if workspaceListQuery.isLoading}
     <div class="loading-state">Loading workspaces…</div>
   {:else if workspaces.length === 0}
@@ -67,17 +65,9 @@
 
 <style>
   .workspace-usage-section {
-    border-block-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-    padding-block-start: var(--size-4);
-  }
-
-  .section-title {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin: 0;
   }
 
   .loading-state {

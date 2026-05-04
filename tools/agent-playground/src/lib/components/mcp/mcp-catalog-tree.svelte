@@ -81,19 +81,17 @@
     );
   });
 
-  const builtInServers = $derived(filteredInstalled.filter((s) => s.source === "static"));
-  const registryInstalled = $derived(filteredInstalled.filter((s) => s.source === "registry"));
-  const otherInstalled = $derived(
-    filteredInstalled.filter((s) => s.source !== "static" && s.source !== "registry"),
+  const sortedInstalled = $derived(
+    [...filteredInstalled].sort((a, b) => {
+      const aBundled = a.source === "static" ? 0 : 1;
+      const bBundled = b.source === "static" ? 0 : 1;
+      return aBundled - bBundled;
+    }),
   );
 
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-
-  function transportBadge(server: (typeof allServers)[number]): string {
-    return server.configTemplate.transport?.type ?? "unknown";
-  }
 
   function securityColor(rating: string | undefined): string {
     switch (rating) {
@@ -108,12 +106,15 @@
     }
   }
 
-  function isOfficialServer(server: (typeof allServers)[number]): boolean {
-    if (server.source === "static") return true;
-    if (server.upstream?.canonicalName) {
-      return isOfficialCanonicalName(server.upstream.canonicalName);
+  type ServerTag = "bundled" | "registry" | "official" | null;
+
+  function serverTag(server: (typeof allServers)[number]): ServerTag {
+    if (server.source === "static") return "bundled";
+    if (server.source === "registry") return "registry";
+    if (server.upstream?.canonicalName && isOfficialCanonicalName(server.upstream.canonicalName)) {
+      return "official";
     }
-    return false;
+    return null;
   }
 </script>
 
@@ -135,11 +136,6 @@
 
   <!-- Installed servers -->
   <div class="tree-section">
-    <div class="section-header">
-      <span class="section-label">Installed</span>
-      <span class="section-count">{filteredInstalled.length}</span>
-    </div>
-
     {#if catalogQuery.isLoading}
       <div class="tree-skeleton">
         {#each Array.from({ length: 4 }) as _, i (i)}
@@ -149,74 +145,29 @@
     {:else if filteredInstalled.length === 0 && urlQuery.length > 0}
       <p class="tree-empty">No installed servers match "{urlQuery}"</p>
     {:else}
-      {#if builtInServers.length > 0}
-        <div class="group">
-          <span class="group-label">Built-in</span>
-          {#each builtInServers as server (server.id)}
-            <button
-              class="tree-item"
-              class:active={selectedServerId === server.id}
-              onclick={() => onSelectServer(server.id)}
-            >
-              <span
-                class="security-dot"
-                style:--dot-color={securityColor(server.securityRating)}
-              ></span>
-              <span class="item-name">{server.name}</span>
-              <span class="item-meta">{transportBadge(server)}</span>
-              {#if isOfficialServer(server)}
-                <span class="official-pill">Official</span>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-
-      {#if registryInstalled.length > 0}
-        <div class="group">
-          <span class="group-label">From Registry</span>
-          {#each registryInstalled as server (server.id)}
-            <button
-              class="tree-item"
-              class:active={selectedServerId === server.id}
-              onclick={() => onSelectServer(server.id)}
-            >
-              <span
-                class="security-dot"
-                style:--dot-color={securityColor(server.securityRating)}
-              ></span>
-              <span class="item-name">{server.name}</span>
-              <span class="item-meta">{transportBadge(server)}</span>
-              {#if isOfficialServer(server)}
-                <span class="official-pill">Official</span>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-
-      {#if otherInstalled.length > 0}
-        <div class="group">
-          <span class="group-label">Other</span>
-          {#each otherInstalled as server (server.id)}
-            <button
-              class="tree-item"
-              class:active={selectedServerId === server.id}
-              onclick={() => onSelectServer(server.id)}
-            >
-              <span
-                class="security-dot"
-                style:--dot-color={securityColor(server.securityRating)}
-              ></span>
-              <span class="item-name">{server.name}</span>
-              <span class="item-meta">{transportBadge(server)}</span>
-              {#if isOfficialServer(server)}
-                <span class="official-pill">Official</span>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
+      <div class="group">
+        {#each sortedInstalled as server (server.id)}
+          {@const tag = serverTag(server)}
+          <button
+            class="tree-item"
+            class:active={selectedServerId === server.id}
+            onclick={() => onSelectServer(server.id)}
+          >
+            <span
+              class="security-dot"
+              style:--dot-color={securityColor(server.securityRating)}
+            ></span>
+            <span class="item-name">{server.name}</span>
+            {#if tag === "bundled"}
+              <span class="tag-pill">Bundled</span>
+            {:else if tag === "registry"}
+              <span class="tag-pill">Registry</span>
+            {:else if tag === "official"}
+              <span class="tag-pill">Official</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
     {/if}
   </div>
 </div>
@@ -239,10 +190,6 @@
     gap: var(--size-2);
     padding: 0 var(--size-3);
     transition: background-color 120ms ease;
-  }
-
-  .search-field.focused {
-    /* No visual change on focus — the caret is enough */
   }
 
   .search-icon {
@@ -271,28 +218,6 @@
   .tree-section {
     display: flex;
     flex-direction: column;
-    gap: var(--size-1);
-  }
-
-  .section-header {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-    padding: 0 var(--size-1);
-  }
-
-  .section-label {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-6);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .section-count {
-    color: color-mix(in srgb, var(--color-text), transparent 65%);
-    font-size: var(--font-size-0);
-    font-variant-numeric: tabular-nums;
   }
 
   /* ─── Groups ───────────────────────────────────────────────────────────── */
@@ -300,14 +225,6 @@
   .group {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-  }
-
-  .group-label {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-1) var(--size-2);
   }
 
   /* ─── Tree items ───────────────────────────────────────────────────────── */
@@ -315,31 +232,28 @@
   .tree-item {
     align-items: center;
     background: none;
-    border: none;
+    block-size: var(--size-7-5);
     border-radius: var(--radius-2);
-    color: var(--color-text);
+    border: none;
+    color: var(--text);
     cursor: pointer;
     display: flex;
     font-size: var(--font-size-3);
-    font-weight: var(--font-weight-4);
+    font-weight: var(--font-weight-4-5);
     gap: var(--size-1-5);
     inline-size: 100%;
-    opacity: 0.85;
     padding: var(--size-1) var(--size-2);
     text-align: start;
-    transition:
-      background-color 100ms ease,
-      opacity 100ms ease;
+    transition: color 150ms ease;
   }
 
   .tree-item:hover {
-    background-color: var(--highlight);
-    opacity: 1;
+    color: var(--text-bright);
   }
 
   .tree-item.active {
     background-color: var(--highlight);
-    font-weight: var(--font-weight-5);
+    color: var(--text-bright);
     opacity: 1;
   }
 
@@ -358,23 +272,10 @@
     white-space: nowrap;
   }
 
-  .official-pill {
-    background-color: color-mix(in srgb, var(--color-accent), transparent 88%);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-accent), var(--color-text) 35%);
+  .tag-pill {
+    color: var(--text-faded);
     flex-shrink: 0;
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.04em;
-    padding: 2px 6px;
-    text-transform: uppercase;
-  }
-
-  .item-meta {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    flex-shrink: 0;
+    font-size: var(--font-size-1);
   }
 
   /* ─── Skeleton / Empty ─────────────────────────────────────────────────── */

@@ -18,23 +18,17 @@
 -->
 
 <script lang="ts">
-  import { browser } from "$app/environment";
-  import {
-    Button,
-    Dialog,
-    IconSmall,
-    MarkdownRendered,
-    markdownToHTML,
-  } from "@atlas/ui";
-  import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
-  import { writable } from "svelte/store";
-  import DOMPurify from "dompurify";
   import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
+  import { Button, Dialog, IconSmall, MarkdownRendered, markdownToHTML } from "@atlas/ui";
+  import { browser } from "$app/environment";
   import type { SearchResult } from "$lib/queries/mcp-queries";
+  import DOMPurify from "dompurify";
+  import { writable } from "svelte/store";
   import McpConnectionTest from "./mcp-connection-test.svelte";
-  import McpWorkspaceUsage from "./mcp-workspace-usage.svelte";
+  import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
   import McpTestChat from "./mcp-test-chat.svelte";
+  import McpWorkspaceUsage from "./mcp-workspace-usage.svelte";
 
   interface Props {
     server?: MCPServerMetadata | null;
@@ -80,28 +74,23 @@
   const description = $derived(server?.description ?? registryResult?.description ?? null);
   const source = $derived(server?.source ?? null);
   const isInstalled = $derived(server !== null);
-  const isRegistry = $derived(source === "registry" || registryResult !== null);
   const readme = $derived(server?.readme ?? null);
 
-  const isOfficial = $derived.by(() => {
-    if (server?.source === "static") return true;
-    if (server?.upstream?.canonicalName) {
-      return isOfficialCanonicalName(server.upstream.canonicalName);
-    }
-    if (registryResult?.isOfficial) return true;
-    return false;
-  });
+  type ServerTag = "bundled" | "official" | null;
 
-  const repoUrl = $derived.by(() => {
-    // For registry results, we don't have the repo URL in the search response yet
-    // For installed servers, we can construct from upstream canonical name if needed
+  const tag = $derived.by<ServerTag>(() => {
+    if (server?.source === "static") return "bundled";
+    if (server?.upstream?.canonicalName && isOfficialCanonicalName(server.upstream.canonicalName)) {
+      return "official";
+    }
+    if (registryResult?.isOfficial) return "official";
     return null;
   });
 
   function sourceLabel(src: string): string {
     switch (src) {
       case "static":
-        return "Built-in";
+        return "Bundled";
       case "registry":
         return "Registry";
       case "web":
@@ -116,7 +105,7 @@
   function sourceColor(src: string): string {
     switch (src) {
       case "static":
-        return "var(--color-success)";
+        return "var(--color-accent)";
       case "registry":
         return "var(--color-accent)";
       case "web":
@@ -176,205 +165,198 @@
       </div>
       <h2 class="empty-title">MCP Catalog</h2>
       <p class="empty-desc">
-        Select a server from the list to view details, or search the upstream
-        registry to discover new servers.
+        Select a server from the list to view details, or search the upstream registry to discover
+        new servers.
       </p>
     </div>
   {:else}
     <!-- Header -->
-    <div class="detail-header">
-      <div class="header-main">
-        <h1 class="server-name">{displayName}</h1>
+    <article>
+      <header>
+        <h1>{displayName}</h1>
+
         <div class="header-badges">
           {#if source}
             <span class="badge" style:--badge-color={sourceColor(source)}>
               {sourceLabel(source)}
             </span>
           {:else if registryResult}
-            <span class="badge" style:--badge-color="var(--color-accent)">
-              Registry
-            </span>
+            <span class="badge" style:--badge-color="var(--color-accent)">Registry</span>
           {/if}
-          {#if server?.securityRating}
-            <span class="badge security-{server.securityRating}">
-              {securityLabel(server.securityRating)}
-            </span>
-          {/if}
-          {#if server?.configTemplate.transport?.type}
-            <span class="badge transport-badge">
-              {server.configTemplate.transport.type}
-            </span>
-          {/if}
-          {#if isOfficial}
+
+          {#if tag === "official"}
             <span class="badge official-badge">Official</span>
           {/if}
         </div>
-      </div>
 
-      <!-- Actions -->
-      <div class="header-actions">
-        {#if !isInstalled && registryResult && onInstall}
-          <Button
-            variant="primary"
-            onclick={() => onInstall(registryResult.name)}
-            disabled={installing || registryResult.alreadyInstalled}
-          >
-            {#snippet prepend()}
-              <IconSmall.Plus />
-            {/snippet}
-            {installing
-              ? "Installing…"
-              : registryResult.alreadyInstalled
-                ? "Already installed"
-                : "Install"}
-          </Button>
-        {/if}
+        <div class="header-actions">
+          {#if !isInstalled && registryResult && onInstall}
+            <Button
+              variant="primary"
+              onclick={() => onInstall(registryResult.name)}
+              disabled={installing || registryResult.alreadyInstalled}
+            >
+              {#snippet prepend()}
+                <IconSmall.Plus />
+              {/snippet}
+              {installing
+                ? "Installing…"
+                : registryResult.alreadyInstalled
+                  ? "Already installed"
+                  : "Install"}
+            </Button>
+          {/if}
 
-        {#if isInstalled && server?.source === "registry"}
-          {#if onCheckUpdate}
+          {#if isInstalled && server?.source === "registry"}
+            {#if onCheckUpdate}
+              <Button
+                size="small"
+                variant="secondary"
+                onclick={onCheckUpdate}
+                disabled={checking || pulling}
+              >
+                {checking ? "Checking…" : "Check for updates"}
+              </Button>
+            {/if}
+
+            {#if hasUpdate && onPullUpdate}
+              <Button size="small" variant="primary" onclick={onPullUpdate} disabled={pulling}>
+                {pulling ? "Updating…" : "Pull update"}
+              </Button>
+            {/if}
+          {/if}
+
+          {#if isInstalled && server?.source !== "static" && onDelete}
             <Button
               size="small"
               variant="secondary"
-              onclick={onCheckUpdate}
-              disabled={checking || pulling}
+              onclick={() => deleteDialogOpen.set(true)}
+              disabled={deleting}
             >
-              {checking ? "Checking…" : "Check for updates"}
+              {deleting ? "Removing…" : "Remove"}
             </Button>
           {/if}
-          {#if hasUpdate && onPullUpdate}
-            <Button
-              size="small"
-              variant="primary"
-              onclick={onPullUpdate}
-              disabled={pulling}
-            >
-              {pulling ? "Updating…" : "Pull update"}
-            </Button>
-          {/if}
-        {/if}
 
-        {#if isInstalled && server?.source !== "static" && onDelete}
-          <Button
-            size="small"
-            variant="secondary"
-            onclick={() => deleteDialogOpen.set(true)}
-            disabled={deleting}
-          >
-            {deleting ? "Removing…" : "Remove"}
-          </Button>
-        {/if}
-
-        <Dialog.Root open={deleteDialogOpen}>
-          {#snippet children()}
+          <Dialog.Root open={deleteDialogOpen}>
             <Dialog.Content>
               <Dialog.Close />
               {#snippet header()}
                 <Dialog.Title>Remove server</Dialog.Title>
                 <Dialog.Description>
-                  {displayName} will be uninstalled and no longer available to your agents. You can
-                  reinstall it from the registry at any time.
+                  {displayName} will be uninstalled and no longer available to your agents. You can reinstall
+                  it from the registry at any time.
                 </Dialog.Description>
               {/snippet}
               {#snippet footer()}
-                <Dialog.Button
-                  onclick={onDelete}
-                  disabled={deleting}
-                  closeOnClick={false}
-                >
+                <Dialog.Button onclick={onDelete} disabled={deleting} closeOnClick={false}>
                   {deleting ? "Removing…" : "Remove"}
                 </Dialog.Button>
                 <Dialog.Cancel onclick={() => deleteDialogOpen.set(false)}>Cancel</Dialog.Cancel>
               {/snippet}
             </Dialog.Content>
-          {/snippet}
-        </Dialog.Root>
-      </div>
-    </div>
-
-    <!-- Content -->
-    <div class="detail-content">
-      {#if description}
-        <section class="content-section">
+          </Dialog.Root>
+        </div>
+      </header>
+      <!-- Content -->
+      <div class="detail-content">
+        {#if description}
           <p class="description">{description}</p>
-        </section>
-      {/if}
+        {/if}
 
-      {#if isInstalled && server}
-        <!-- Transport -->
-        <section class="content-section">
-          <h3 class="section-title">Transport</h3>
-          <code class="transport-code">{transportInfo(server)}</code>
-        </section>
-
-        <!-- Required config -->
-        {#if server.requiredConfig && server.requiredConfig.length > 0}
-          <section class="content-section">
-            <h3 class="section-title">Required Configuration</h3>
-            <div class="config-table">
-              {#each server.requiredConfig as field (field.key)}
-                <div class="config-row">
-                  <span class="config-key">{field.key}</span>
-                  <span class="config-desc">{field.description}</span>
-                  {#if field.examples && field.examples.length > 0}
-                    <span class="config-example">e.g. {field.examples[0]}</span>
-                  {/if}
-                </div>
-              {/each}
+        {#if server?.securityRating}
+          <div class="content-section">
+            <h3 class="section-title">Security</h3>
+            <div>
+              <span class="badge security-{server.securityRating}">
+                {securityLabel(server.securityRating)}
+              </span>
             </div>
-          </section>
-        {/if}
-
-        <!-- Credentials -->
-        {#if server.configTemplate}
-          <McpCredentialsPanel
-            serverId={server.id}
-            configTemplate={server.configTemplate}
-          />
-        {/if}
-
-        <!-- Connection Test -->
-        <McpConnectionTest serverId={server.id} />
-
-        <!-- Workspace Usage -->
-        <McpWorkspaceUsage serverId={server.id} />
-
-        <!-- Test Chat -->
-        <McpTestChat serverId={server.id} />
-
-        <!-- Upstream info -->
-        {#if server.upstream}
-          <section class="content-section">
-            <h3 class="section-title">Upstream</h3>
-            <div class="meta-grid">
-              <div class="meta-item">
-                <span class="meta-label">Canonical name</span>
-                <span class="meta-value">{server.upstream.canonicalName}</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-label">Version</span>
-                <span class="meta-value">{server.upstream.version}</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-label">Updated</span>
-                <span class="meta-value">{formatDate(server.upstream.updatedAt)}</span>
-              </div>
-            </div>
-          </section>
-        {/if}
-      {/if}
-
-      <!-- README -->
-      {#if readme}
-        <section class="content-section readme-section">
-          <h3 class="section-title">README</h3>
-          <div class="readme-content">
-            <MarkdownRendered>
-              {@html browser ? DOMPurify.sanitize(markdownToHTML(readme)) : markdownToHTML(readme)}
-            </MarkdownRendered>
           </div>
-        </section>
-      {/if}
-    </div>
+        {/if}
+
+        {#if isInstalled && server}
+          <div>
+            <McpConnectionTest serverId={server.id} />
+          </div>
+          <!-- Transport -->
+          <div class="content-section">
+            <h3 class="section-title">Transport</h3>
+            <div class="transport-info">
+              {#if server.configTemplate.transport?.type}
+                <span class="transport-type">{server.configTemplate.transport.type}</span>
+              {/if}
+              <code class="transport-code">{transportInfo(server)}</code>
+            </div>
+          </div>
+
+          <!-- Required config -->
+          {#if server.requiredConfig && server.requiredConfig.length > 0}
+            <div class="content-section">
+              <h3 class="section-title">Required configuration</h3>
+              <div class="config-table">
+                {#each server.requiredConfig as field (field.key)}
+                  <div class="config-row">
+                    <span class="config-key">{field.key}</span>
+                    <span class="config-desc">{field.description}</span>
+                    {#if field.examples && field.examples.length > 0}
+                      <span class="config-example">e.g. {field.examples[0]}</span>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if server.configTemplate}
+            <div class="content-section">
+              <h3 class="section-title">Credentials</h3>
+              <McpCredentialsPanel serverId={server.id} configTemplate={server.configTemplate} />
+            </div>
+          {/if}
+
+          <div class="content-section">
+            <h3 class="section-title">Workspaces</h3>
+            <McpWorkspaceUsage serverId={server.id} />
+          </div>
+
+          <McpTestChat serverId={server.id} />
+
+          {#if server.upstream}
+            <div class="content-section">
+              <h3 class="section-title">Upstream</h3>
+              <div class="meta-grid">
+                <div class="meta-item">
+                  <span class="meta-label">Canonical name</span>
+                  <span class="meta-value">{server.upstream.canonicalName}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Version</span>
+                  <span class="meta-value">{server.upstream.version}</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">Updated</span>
+                  <span class="meta-value">{formatDate(server.upstream.updatedAt)}</span>
+                </div>
+              </div>
+            </div>
+          {/if}
+        {/if}
+
+        <!-- README -->
+        {#if readme}
+          <div class="content-section readme-section">
+            <h3 class="section-title">README</h3>
+            <div class="readme-content">
+              <MarkdownRendered>
+                {@html browser
+                  ? DOMPurify.sanitize(markdownToHTML(readme))
+                  : markdownToHTML(readme)}
+              </MarkdownRendered>
+            </div>
+          </div>
+        {/if}
+      </div>
+    </article>
   {/if}
 </div>
 
@@ -424,33 +406,28 @@
     text-align: center;
   }
 
+  article {
+    padding: var(--size-12);
+
+    header {
+      align-items: flex-start;
+      display: flex;
+      flex-shrink: 0;
+      gap: var(--size-4);
+      justify-content: space-between;
+
+      h1 {
+        color: var(--text-bright);
+        font-size: var(--font-size-8);
+        font-weight: var(--font-weight-6);
+        letter-spacing: -0.01em;
+        margin: 0;
+        word-break: break-word;
+      }
+    }
+  }
+
   /* ─── Header ─────────────────────────────────────────────────────────────── */
-
-  .detail-header {
-    align-items: flex-start;
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    flex-shrink: 0;
-    gap: var(--size-4);
-    justify-content: space-between;
-    padding: var(--size-6) var(--size-8);
-  }
-
-  .header-main {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: var(--size-2);
-    min-inline-size: 0;
-  }
-
-  .server-name {
-    font-size: var(--font-size-6);
-    font-weight: var(--font-weight-6);
-    letter-spacing: -0.01em;
-    margin: 0;
-    word-break: break-word;
-  }
 
   .header-badges {
     display: flex;
@@ -485,11 +462,6 @@
     --badge-color: color-mix(in srgb, var(--color-text), transparent 45%);
   }
 
-  .transport-badge {
-    --badge-color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-family: var(--font-family-monospace);
-  }
-
   .official-badge {
     --badge-color: var(--color-accent);
   }
@@ -508,7 +480,6 @@
     flex: 1;
     flex-direction: column;
     gap: var(--size-6);
-    padding: var(--size-4) var(--size-8) var(--size-10);
   }
 
   .content-section {
@@ -518,14 +489,14 @@
   }
 
   .section-title {
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-6);
-    margin: 0;
+    color: var(--text-faded);
+    font-size: var(--font-size-4);
+    font-weight: var(--font-weight-5);
   }
 
   .description {
     color: color-mix(in srgb, var(--color-text), transparent 15%);
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-5);
     line-height: 1.55;
     margin: 0;
     max-inline-size: 72ch;
@@ -533,10 +504,33 @@
 
   /* ─── Transport ──────────────────────────────────────────────────────────── */
 
-  .transport-code {
+  .transport-info {
+    align-items: stretch;
     background: var(--color-surface-2);
     border-radius: var(--radius-2);
+    display: flex;
+    gap: var(--size-2);
+    overflow: hidden;
+  }
+
+  .transport-type {
+    align-items: center;
+    background: color-mix(in srgb, var(--color-text), transparent 88%);
+    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    display: flex;
+    flex-shrink: 0;
+    font-family: var(--font-family-monospace);
+    font-size: var(--font-size-0);
+    font-weight: var(--font-weight-5);
+    letter-spacing: 0.04em;
+    padding: 0 var(--size-3);
+    text-transform: uppercase;
+  }
+
+  .transport-code {
+    background: transparent;
     color: var(--color-text);
+    flex: 1;
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
     line-break: anywhere;

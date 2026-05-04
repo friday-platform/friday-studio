@@ -11,19 +11,19 @@
 -->
 
 <script lang="ts">
-  import { browser } from "$app/environment";
-  import { Button, Dialog } from "@atlas/ui";
-  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { writable } from "svelte/store";
   import type { LinkCredentialRef } from "@atlas/agent-sdk";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-  import CredentialSecretForm from "../credential-secret-form.svelte";
-  import { useCredentialConnect } from "../../use-credential-connect.svelte.ts";
-  import { linkProviderQueries } from "../../queries/link-provider-queries.ts";
+  import { Button, Dialog } from "@atlas/ui";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { browser } from "$app/environment";
+  import { writable } from "svelte/store";
   import {
     useDeleteCredential,
     useUpdateCredentialSecret,
   } from "../../queries/link-credentials.ts";
+  import { linkProviderQueries } from "../../queries/link-provider-queries.ts";
+  import { useCredentialConnect } from "../../use-credential-connect.svelte.ts";
+  import CredentialSecretForm from "../credential-secret-form.svelte";
 
   // ─── Props ─────────────────────────────────────────────────────────────────
 
@@ -37,9 +37,7 @@
   // ─── Server-as-provider check ──────────────────────────────────────────────
   // HTTP OAuth remotes (e.g. Stripe) have no configTemplate.env but DO have
   // a Link OAuth provider registered under the server ID itself.
-  const serverProviderQuery = createQuery(() =>
-    linkProviderQueries.providerDetails(serverId),
-  );
+  const serverProviderQuery = createQuery(() => linkProviderQueries.providerDetails(serverId));
 
   // ─── Discovery ─────────────────────────────────────────────────────────────
 
@@ -77,16 +75,12 @@
     }
 
     // Deduplicate providers by ID
-    const uniqueProviders = [
-      ...new Map(providers.map((p) => [p.providerId, p])).values(),
-    ];
+    const uniqueProviders = [...new Map(providers.map((p) => [p.providerId, p])).values()];
 
     return { providers: uniqueProviders, idRefs };
   });
 
-  const hasCredentialRefs = $derived(
-    discovery.providers.length > 0 || discovery.idRefs.length > 0,
-  );
+  const hasCredentialRefs = $derived(discovery.providers.length > 0 || discovery.idRefs.length > 0);
 
   // ─── Query client & mutations ──────────────────────────────────────────────
 
@@ -217,23 +211,20 @@
 
 {#if hasCredentialRefs}
   <section class="credentials-panel">
-    <h3 class="panel-title">Credentials</h3>
-
     <!-- ID-based refs — read-only notice -->
     {#if discovery.idRefs.length > 0}
       <div class="id-ref-notice">
         <p>
           This server references a credential by ID. Manage it in
-          <strong>Settings &gt; Connections</strong>.
+          <strong>Settings &gt; Connections</strong>
+          .
         </p>
       </div>
     {/if}
 
     <!-- Per-provider subsections -->
     {#each discovery.providers as { providerId } (providerId)}
-      {@const providerQuery = createQuery(() =>
-        linkProviderQueries.providerDetails(providerId),
-      )}
+      {@const providerQuery = createQuery(() => linkProviderQueries.providerDetails(providerId))}
       {@const credentialsQuery = createQuery(() =>
         linkProviderQueries.credentialsByProvider(providerId),
       )}
@@ -270,27 +261,15 @@
 
                 <div class="credential-actions">
                   {#if details?.type === "apikey"}
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={() => handleReplace(cred.id)}
-                    >
+                    <Button variant="secondary" size="small" onclick={() => handleReplace(cred.id)}>
                       Replace
                     </Button>
                   {:else if details?.type === "oauth"}
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={connect.startOAuth}
-                    >
+                    <Button variant="secondary" size="small" onclick={connect.startOAuth}>
                       Re-authenticate
                     </Button>
                   {:else if details?.type === "app_install"}
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={connect.startAppInstall}
-                    >
+                    <Button variant="secondary" size="small" onclick={connect.startAppInstall}>
                       Re-install
                     </Button>
                   {/if}
@@ -348,55 +327,33 @@
                   Cancel
                 </Button>
               {:else if details?.type === "oauth"}
-                <Button variant="primary" size="small" onclick={connect.startOAuth}>
-                  Connect
-                </Button>
+                <Button variant="primary" size="small" onclick={connect.startOAuth}>Connect</Button>
                 {#if connect.popupBlocked && connect.blockedUrl}
                   <div class="popup-blocked">
                     <p>Popup was blocked.</p>
-                    <a href={connect.blockedUrl} class="fallback-link">
-                      Continue in this tab
-                    </a>
+                    <a href={connect.blockedUrl} class="fallback-link">Continue in this tab</a>
                   </div>
                 {/if}
-                <Button
-                  variant="secondary"
-                  size="small"
-                  onclick={handleAddNewCancel}
-                >
+                <Button variant="secondary" size="small" onclick={handleAddNewCancel}>
                   Cancel
                 </Button>
               {:else if details?.type === "app_install"}
-                <Button
-                  variant="primary"
-                  size="small"
-                  onclick={connect.startAppInstall}
-                >
+                <Button variant="primary" size="small" onclick={connect.startAppInstall}>
                   Install
                 </Button>
                 {#if connect.popupBlocked && connect.blockedUrl}
                   <div class="popup-blocked">
                     <p>Popup was blocked.</p>
-                    <a href={connect.blockedUrl} class="fallback-link">
-                      Continue in this tab
-                    </a>
+                    <a href={connect.blockedUrl} class="fallback-link">Continue in this tab</a>
                   </div>
                 {/if}
-                <Button
-                  variant="secondary"
-                  size="small"
-                  onclick={handleAddNewCancel}
-                >
+                <Button variant="secondary" size="small" onclick={handleAddNewCancel}>
                   Cancel
                 </Button>
               {/if}
             </div>
           {:else}
-            <Button
-              variant="secondary"
-              size="small"
-              onclick={() => handleAddNew(providerId)}
-            >
+            <Button variant="secondary" size="small" onclick={() => handleAddNew(providerId)}>
               {#if credentials.length === 0}
                 Add one
               {:else if details?.type === "apikey"}
@@ -417,40 +374,33 @@
 
   <!-- Remove confirmation dialog -->
   <Dialog.Root open={removeDialogOpen}>
-    {#snippet children()}
-      <Dialog.Content>
-        <Dialog.Close />
-        {#snippet header()}
-          <Dialog.Title>Remove credential</Dialog.Title>
-          <Dialog.Description>
-            This credential will be permanently removed and will no longer be
-            available to workspaces.
-          </Dialog.Description>
-        {/snippet}
-        {#snippet footer()}
-          <Dialog.Button
-            onclick={handleRemoveExecute}
-            disabled={deleteMutation.isPending}
-            closeOnClick={false}
-          >
-            {deleteMutation.isPending ? "Removing…" : "Remove"}
-          </Dialog.Button>
-          <Dialog.Cancel onclick={() => (removingId = null)}>
-            Cancel
-          </Dialog.Cancel>
-        {/snippet}
-      </Dialog.Content>
-    {/snippet}
+    <Dialog.Content>
+      <Dialog.Close />
+      {#snippet header()}
+        <Dialog.Title>Remove credential</Dialog.Title>
+        <Dialog.Description>
+          This credential will be permanently removed and will no longer be available to workspaces.
+        </Dialog.Description>
+      {/snippet}
+      {#snippet footer()}
+        <Dialog.Button
+          onclick={handleRemoveExecute}
+          disabled={deleteMutation.isPending}
+          closeOnClick={false}
+        >
+          {deleteMutation.isPending ? "Removing…" : "Remove"}
+        </Dialog.Button>
+        <Dialog.Cancel onclick={() => (removingId = null)}>Cancel</Dialog.Cancel>
+      {/snippet}
+    </Dialog.Content>
   </Dialog.Root>
 {/if}
 
 <style>
   .credentials-panel {
-    border-block-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
-    padding-block-start: var(--size-4);
   }
 
   .panel-title {

@@ -164,7 +164,7 @@
       {#snippet prepend()}
         <IconSmall.Plus />
       {/snippet}
-      Add
+      Add New
     </Button>
   {/snippet}
 
@@ -192,4 +192,3 @@
   onInstall={handleInstall}
   installing={installMut.isPending}
 />
-
