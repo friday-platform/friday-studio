@@ -40,8 +40,15 @@ function emptyStatus(): UpdateStatus {
 /* eslint-disable prefer-const */
 // deno-lint-ignore prefer-const
 let status: UpdateStatus = $state(emptyStatus());
+// `dismiss` is loaded lazily on first read of `bannerDismissed.value` —
+// not at module-import time. Reading localStorage at import time hits
+// Deno's SQLite-backed storage and can throw `database is locked` when
+// parallel test workers all import this module at once. Deferring also
+// matches the contract of the rest of this module: `loadUpdateStatus`
+// is the explicit "do I/O now" entry point.
 // deno-lint-ignore prefer-const
-let dismiss: Dismiss | null = $state(loadDismiss());
+let dismiss: Dismiss | null = $state(null);
+let dismissLoadAttempted = false;
 // deno-lint-ignore prefer-const
 let now: number = $state(Date.now());
 // deno-lint-ignore prefer-const
@@ -73,16 +80,40 @@ export function isDismissed(
 
 function loadDismiss(): Dismiss | null {
   if (typeof localStorage === "undefined") return null;
-  const raw = localStorage.getItem(DISMISS_KEY);
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(DISMISS_KEY);
+  } catch (err) {
+    // localStorage I/O failed — Deno's SQLite-backed storage hits WAL
+    // lock contention in CI, browsers can throw on disabled storage or
+    // quota issues. Treat as "no dismissal"; the banner reappearing is
+    // a benign degradation.
+    logger.warn("update-status: localStorage read failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
   if (!raw) return null;
   try {
     const parsed = DismissSchema.safeParse(JSON.parse(raw));
     if (parsed.success) return parsed.data;
+  } catch {
+    // JSON.parse failed — fall through to cleanup below.
+  }
+  // Best-effort tidy of a corrupt entry; tolerate failure.
+  try {
     localStorage.removeItem(DISMISS_KEY);
   } catch {
-    localStorage.removeItem(DISMISS_KEY);
+    /* ignore */
   }
   return null;
+}
+
+/** Read `dismiss` from storage on first access; cached afterward. */
+function ensureDismissLoaded(): void {
+  if (dismissLoadAttempted) return;
+  dismissLoadAttempted = true;
+  dismiss = loadDismiss();
 }
 
 function ensureClock(): void {
@@ -103,6 +134,7 @@ export const updateStatus: UpdateStatus = status;
  */
 export const bannerDismissed = {
   get value(): boolean {
+    ensureDismissLoaded();
     return isDismissed(dismiss, status.latest, now);
   },
 };
@@ -151,8 +183,18 @@ export function dismissBanner(): void {
   if (status.latest === null) return;
   const next: Dismiss = { version: status.latest, until: Date.now() + DISMISS_WINDOW_MS };
   dismiss = next;
+  // Mark loaded — writing past the lazy-load is the source of truth now.
+  dismissLoadAttempted = true;
   if (typeof localStorage !== "undefined") {
-    localStorage.setItem(DISMISS_KEY, JSON.stringify(next));
+    try {
+      localStorage.setItem(DISMISS_KEY, JSON.stringify(next));
+    } catch (err) {
+      // I/O failed — in-memory `dismiss` still hides the banner for the
+      // current session; persistence across reloads is best-effort.
+      logger.warn("update-status: localStorage write failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 
