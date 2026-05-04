@@ -397,48 +397,52 @@ export class AtlasDaemon {
 
     // Run all 0.1.1 → current migrations through the consolidated runner.
     // Idempotent: each entry checks the `_FRIDAY_MIGRATIONS` KV bucket and
-    // skips if already applied. First failure aborts the queue. Backgrounded
-    // so daemon startup isn't gated on (potentially slow) data migrations —
-    // the chat / memory backends are wired before this kicks off so reads
-    // against not-yet-migrated chats just see "no chat" until migration
-    // catches up. Operators can also run `atlas migrate` from the CLI.
-    getAllMigrations()
-      .then((migrations) => runMigrations(nc, migrations, logger))
-      .then(
-        (result) => {
-          this.migrationStatus = { state: "complete", result };
-          if (result.failed.length > 0) {
-            // ERROR (not WARN) so log filters/dashboards surface this. A
-            // half-migrated install is a correctness hazard — the operator
-            // needs to re-run `atlas migrate` (or restart the daemon, which
-            // re-runs the failed entry) and inspect the per-migration error
-            // recorded in the `_FRIDAY_MIGRATIONS` audit-trail KV.
-            logger.error("Migrations completed with failures", {
-              ran: result.ran,
-              skipped: result.skipped,
-              failed: result.failed,
-              hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
-            });
-          } else {
-            logger.info("Migrations summary", { ...result });
-          }
-        },
-        (err: unknown) => {
-          const error = String(err);
-          // The runner itself threw before producing a per-entry result —
-          // most often a transient broker disconnect mid-walk. Same severity
-          // bump: operator needs visibility, not a buried warning.
-          this.migrationStatus = {
-            state: "complete",
-            result: { ran: [], skipped: [], failed: ["__runner__"] },
-            error,
-          };
-          logger.error("Migration runner failed", {
-            error,
-            hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
-          });
-        },
-      );
+    // skips if already applied. First failure aborts the queue. Awaited
+    // synchronously: WorkspaceManager.initialize() and CronManager.start()
+    // below both depend on the registry / cron timer migrations having
+    // landed first — without that, the on-disk workspace scan invents
+    // fresh runtime IDs that orphan every per-workspace migration's data
+    // (registry duplicates, cron timers re-registered with empty history,
+    // memory readable only at the dead legacy id). Steady-state cost is
+    // microseconds (audit shows everything skipped); upgrade-boot cost is
+    // bounded by legacy data volume. Operators can still run `atlas
+    // migrate` standalone for recovery — the lock in `runMigrations`
+    // serializes us against them.
+    try {
+      const migrations = await getAllMigrations();
+      const result = await runMigrations(nc, migrations, logger, { runner: "daemon" });
+      this.migrationStatus = { state: "complete", result };
+      if (result.failed.length > 0) {
+        // ERROR (not WARN) so log filters/dashboards surface this. A
+        // half-migrated install is a correctness hazard — the operator
+        // needs to re-run `atlas migrate` (or restart the daemon, which
+        // re-runs the failed entry) and inspect the per-migration error
+        // recorded in the `_FRIDAY_MIGRATIONS` audit-trail KV.
+        logger.error("Migrations completed with failures", {
+          ran: result.ran,
+          skipped: result.skipped,
+          failed: result.failed,
+          hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
+        });
+      } else {
+        logger.info("Migrations summary", { ...result });
+      }
+    } catch (err) {
+      const error = String(err);
+      // The runner itself threw before producing a per-entry result —
+      // most often a transient broker disconnect mid-walk, or another
+      // process holding the migration lock. Same severity bump:
+      // operator needs visibility, not a buried warning.
+      this.migrationStatus = {
+        state: "complete",
+        result: { ran: [], skipped: [], failed: ["__runner__"] },
+        error,
+      };
+      logger.error("Migration runner failed", {
+        error,
+        hint: "Inspect via `atlas migrate --list`; re-run with `atlas migrate`.",
+      });
+    }
 
     // Start capability handlers (wildcard subscribers for agent back-channel)
     this.capabilityRegistry = new CapabilityHandlerRegistry();

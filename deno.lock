@@ -6251,7 +6251,8 @@
       "packages/jetstream": {
         "packageJson": {
           "dependencies": [
-            "npm:nats@^2.29.3"
+            "npm:nats@^2.29.3",
+            "npm:vitest@^4.1.0"
           ]
         }
       },

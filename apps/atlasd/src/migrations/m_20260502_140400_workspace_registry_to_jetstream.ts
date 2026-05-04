@@ -20,13 +20,33 @@
  */
 
 import { join } from "node:path";
-import { createJetStreamKVStorage } from "@atlas/storage";
+import { createJetStreamKVStorage, type KVStorage } from "@atlas/storage";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
 import type { Migration } from "jetstream";
 
 const KV_PREFIX = ["workspaces"] as const;
 const TARGET_BUCKET = "WORKSPACE_REGISTRY";
+
+/**
+ * Walk the registry bucket looking for an entry with `path === target`
+ * but `id !== legacyId`. Returns the colliding id, or null if none.
+ * Bounded by workspace cardinality (≤100 per install in practice).
+ */
+async function findRegistryIdByPath(
+  storage: KVStorage,
+  target: string,
+  legacyId: string,
+): Promise<string | null> {
+  for await (const entry of storage.list<{ id?: unknown; path?: unknown }>([...KV_PREFIX])) {
+    const value = entry.value;
+    if (!value || typeof value !== "object") continue;
+    if (typeof value.path !== "string" || typeof value.id !== "string") continue;
+    if (value.id === legacyId) continue;
+    if (value.path === target) return value.id;
+  }
+  return null;
+}
 
 export const migration: Migration = {
   id: "20260502_140400_workspace_registry_to_jetstream",
@@ -56,6 +76,7 @@ export const migration: Migration = {
 
       let migrated = 0;
       let skipped = 0;
+      let displaced = 0;
       let failed = 0;
       let droppedIndices = 0;
 
@@ -92,6 +113,41 @@ export const migration: Migration = {
           continue;
         }
 
+        // Defensive path-dedupe. The legacy id is the source of truth
+        // for any per-workspace data already in JetStream KV (memory,
+        // cron timers, document store buckets, workspace state buckets
+        // — all keyed by runtime id). If the runtime registry already
+        // holds a different id pointing at this workspace's path —
+        // typically a fresh id assigned by `WorkspaceManager.importExistingWorkspaces`
+        // before this migration ran — replace it with the legacy id so
+        // the runtime resolves to the data the rest of the migrations
+        // wrote. The daemon now awaits this migration before that scan,
+        // so this branch is belt-and-suspenders, but cheap and worth
+        // keeping for resilience against future ordering regressions.
+        const legacyPath = (value as { path?: unknown }).path;
+        if (typeof legacyPath === "string") {
+          const collidingId = await findRegistryIdByPath(targetStorage, legacyPath, workspaceId);
+          if (collidingId) {
+            try {
+              await targetStorage.delete([...KV_PREFIX, collidingId]);
+              displaced++;
+              logger.warn(
+                "Workspace already registered with a different runtime id; preserving legacy id",
+                { legacyId: workspaceId, displacedId: collidingId, path: legacyPath },
+              );
+            } catch (err) {
+              logger.warn("Failed to delete colliding workspace registry entry", {
+                collidingId,
+                path: legacyPath,
+                error: stringifyError(err),
+              });
+              // Fall through — `set` below may still recover the legacy
+              // id, leaving the colliding entry as a duplicate the
+              // operator can clean up manually.
+            }
+          }
+        }
+
         try {
           await targetStorage.set([...KV_PREFIX, workspaceId], value);
           migrated++;
@@ -107,6 +163,7 @@ export const migration: Migration = {
       logger.info("Workspace registry migration complete", {
         migrated,
         skipped,
+        displaced,
         failed,
         droppedIndices,
       });

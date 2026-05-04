@@ -35,6 +35,7 @@ export {
   MIGRATIONS_BUCKET,
   type Migration,
   type MigrationContext,
+  MigrationLockError,
   type MigrationRecord,
   type RunMigrationsOptions,
   type RunMigrationsResult,

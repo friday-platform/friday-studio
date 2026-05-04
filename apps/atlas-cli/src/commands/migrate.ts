@@ -32,6 +32,7 @@ import {
   type ConnectionHandle,
   connectOrSpawn,
   listMigrationRecords,
+  MigrationLockError,
   type MigrationRecord,
   readJetStreamConfig,
   resolveNatsUrl,
@@ -88,6 +89,21 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   const cfg = readJetStreamConfig();
   const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
 
+  // For mutating runs only: refuse if a daemon is reachable. The daemon
+  // runs the same queue at startup under the same lock, so racing it
+  // would just produce a `MigrationLockError` later — fail early with a
+  // friendlier message. `--list` and `--dry-run` are read-only and stay
+  // available for inspection while the daemon is up.
+  const isReadOnly = argv.list || argv.dryRun;
+  if (!isReadOnly && (await isDaemonRunning())) {
+    errorOutput(
+      "Daemon is running on http://localhost:8080 — restart it to apply pending " +
+        "migrations (`atlas daemon restart`), or stop it to run them standalone. " +
+        "`atlas migrate --list` and `--dry-run` work while the daemon is up.",
+    );
+    process.exit(1);
+  }
+
   let handle: ConnectionHandle;
   try {
     handle = await connectOrSpawn({
@@ -123,7 +139,10 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
       return;
     }
 
-    const result = await runMigrations(nc, migrations, logger, { dryRun: !!argv.dryRun });
+    const result = await runMigrations(nc, migrations, logger, {
+      dryRun: !!argv.dryRun,
+      runner: "cli",
+    });
     if (argv.json) {
       console.log(JSON.stringify(result, null, 2));
       return;
@@ -141,12 +160,35 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
       `ran ${result.ran.length} migration(s); skipped ${result.skipped.length} already applied`,
     );
   } catch (err) {
+    if (err instanceof MigrationLockError) {
+      errorOutput(
+        `${err.message}\n` +
+          "If a daemon is starting up, wait for it to finish; otherwise the lock " +
+          "auto-expires after 10 minutes.",
+      );
+      process.exit(1);
+    }
     errorOutput(stringifyError(err));
     process.exit(1);
   } finally {
     await cleanup();
   }
 };
+
+/**
+ * Cheap probe of the daemon's /health endpoint. 500ms timeout is enough
+ * on localhost; failure modes (DNS, connection refused, timeout) all
+ * fall through to "no daemon" which is the safe default — the lock in
+ * `runMigrations` is the actual correctness guard.
+ */
+async function isDaemonRunning(): Promise<boolean> {
+  try {
+    const res = await fetch("http://localhost:8080/health", { signal: AbortSignal.timeout(500) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 interface MigrationEntry {
   id: string;

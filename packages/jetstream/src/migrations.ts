@@ -22,14 +22,51 @@
  * on an earlier one's output and shouldn't run on dirty state.
  */
 
+import { hostname } from "node:os";
+import process from "node:process";
 import type { Logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
-import type { NatsConnection } from "nats";
+import type { KV, NatsConnection } from "nats";
 import { createJetStreamFacade, type JetStreamFacade } from "./facade.ts";
-import { dec, enc, readKvJson } from "./helpers.ts";
+import { dec, enc, isCASConflict, readKvJson } from "./helpers.ts";
 
 /** KV bucket holding the migration audit trail. Internal — don't read by hand. */
 export const MIGRATIONS_BUCKET = "_FRIDAY_MIGRATIONS";
+
+/**
+ * Lock key inside the audit bucket. A leading underscore keeps it out of
+ * the way of migration-id keys (which are timestamp-prefixed slugs).
+ */
+const LOCK_KEY = "_lock";
+
+/**
+ * Generous TTL — covers any plausible upgrade-boot run on legacy data.
+ * The lock is auto-recovered after expiry, so a daemon crash mid-migration
+ * doesn't leave a permanent block requiring manual KV surgery.
+ */
+const LOCK_TTL_MS = 10 * 60_000;
+
+interface LockRecord {
+  holder: string;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+/**
+ * Thrown when another runner holds the migration lock. Caught by call
+ * sites that want to surface a friendlier message ("daemon is starting
+ * up, wait or restart it"); otherwise it propagates as a regular error.
+ */
+export class MigrationLockError extends Error {
+  constructor(
+    message: string,
+    public readonly holder: string,
+    public readonly expiresAt: string,
+  ) {
+    super(message);
+    this.name = "MigrationLockError";
+  }
+}
 
 export interface Migration {
   /**
@@ -77,9 +114,16 @@ export interface RunMigrationsResult {
 export interface RunMigrationsOptions {
   /**
    * Don't actually run migrations or write records — just report what
-   * would happen. Used by `atlas migrate --dry-run`.
+   * would happen. Used by `atlas migrate --dry-run`. Skips the lock
+   * because the operation is read-only.
    */
   dryRun?: boolean;
+  /**
+   * Short label identifying who is running migrations — `"daemon"` for
+   * the boot-time hook, `"cli"` for `atlas migrate`. Recorded in the
+   * lock record so contention errors point at the right process.
+   */
+  runner?: string;
 }
 
 /**
@@ -120,66 +164,190 @@ export async function runMigrations(
   const js = createJetStreamFacade(nc);
   const kv = await js.kv.getOrCreate(MIGRATIONS_BUCKET, { history: 5 });
 
+  // Read-only paths skip the lock — they don't mutate audit state and
+  // shouldn't block on another runner.
+  const acquireLock = !opts.dryRun;
+  const runner = opts.runner ?? "unknown";
+  let releaseLock: (() => Promise<void>) | null = null;
+  if (acquireLock) {
+    releaseLock = await acquireMigrationLock(kv, runner, logger);
+  }
+
   const result: RunMigrationsResult = { ran: [], skipped: [], failed: [] };
 
-  for (const m of migrations) {
-    const existing = await readKvJson<MigrationRecord>(kv, m.id);
-    if (existing?.success) {
-      result.skipped.push(m.id);
-      logger.debug("Migration already applied, skipping", {
-        id: m.id,
-        name: m.name,
-        ranAt: existing.ranAt,
-      });
-      continue;
-    }
-
-    if (opts.dryRun) {
-      result.ran.push(m.id);
-      logger.info("[dry-run] Would run migration", { id: m.id, name: m.name });
-      continue;
-    }
-
-    const startedAt = Date.now();
-    logger.info("Running migration", { id: m.id, name: m.name });
-    try {
-      await m.run({ nc, js, logger });
-      const record: MigrationRecord = {
-        id: m.id,
-        name: m.name,
-        ranAt: new Date().toISOString(),
-        durationMs: Date.now() - startedAt,
-        success: true,
-      };
-      await kv.put(m.id, enc.encode(JSON.stringify(record)));
-      result.ran.push(m.id);
-      logger.info("Migration complete", { id: m.id, name: m.name, durationMs: record.durationMs });
-    } catch (err) {
-      const record: MigrationRecord = {
-        id: m.id,
-        name: m.name,
-        ranAt: new Date().toISOString(),
-        durationMs: Date.now() - startedAt,
-        success: false,
-        error: stringifyError(err),
-      };
-      // Best-effort write — if this also fails the operator still gets
-      // the error in logs, just no audit trail.
-      try {
-        await kv.put(m.id, enc.encode(JSON.stringify(record)));
-      } catch {
-        // Swallow — primary error already surfaced below.
+  try {
+    for (const m of migrations) {
+      const existing = await readKvJson<MigrationRecord>(kv, m.id);
+      if (existing?.success) {
+        result.skipped.push(m.id);
+        logger.debug("Migration already applied, skipping", {
+          id: m.id,
+          name: m.name,
+          ranAt: existing.ranAt,
+        });
+        continue;
       }
-      result.failed.push(m.id);
-      logger.error("Migration failed", { id: m.id, name: m.name, error: stringifyError(err) });
-      // First failure aborts the rest — later migrations may depend on
-      // earlier output. Operator fixes and reruns; idempotent ones that
-      // succeeded above stay marked done and won't repeat.
-      break;
+
+      if (opts.dryRun) {
+        result.ran.push(m.id);
+        logger.info("[dry-run] Would run migration", { id: m.id, name: m.name });
+        continue;
+      }
+
+      const startedAt = Date.now();
+      logger.info("Running migration", { id: m.id, name: m.name });
+      try {
+        await m.run({ nc, js, logger });
+        const record: MigrationRecord = {
+          id: m.id,
+          name: m.name,
+          ranAt: new Date().toISOString(),
+          durationMs: Date.now() - startedAt,
+          success: true,
+        };
+        await kv.put(m.id, enc.encode(JSON.stringify(record)));
+        result.ran.push(m.id);
+        logger.info("Migration complete", {
+          id: m.id,
+          name: m.name,
+          durationMs: record.durationMs,
+        });
+      } catch (err) {
+        const record: MigrationRecord = {
+          id: m.id,
+          name: m.name,
+          ranAt: new Date().toISOString(),
+          durationMs: Date.now() - startedAt,
+          success: false,
+          error: stringifyError(err),
+        };
+        // Best-effort write — if this also fails the operator still gets
+        // the error in logs, just no audit trail.
+        try {
+          await kv.put(m.id, enc.encode(JSON.stringify(record)));
+        } catch {
+          // Swallow — primary error already surfaced below.
+        }
+        result.failed.push(m.id);
+        logger.error("Migration failed", { id: m.id, name: m.name, error: stringifyError(err) });
+        // First failure aborts the rest — later migrations may depend on
+        // earlier output. Operator fixes and reruns; idempotent ones that
+        // succeeded above stay marked done and won't repeat.
+        break;
+      }
     }
+  } finally {
+    if (releaseLock) await releaseLock();
   }
 
   return result;
+}
+
+/**
+ * Acquire the migration lock atomically via NATS KV `create` (succeeds
+ * only when the key doesn't yet exist). Recovers from expired locks —
+ * if the existing record's `expiresAt` is in the past we take it over
+ * via CAS-on-revision. Otherwise throws `MigrationLockError` with the
+ * current holder so callers can render a helpful message.
+ *
+ * Returns a release function the caller invokes in `finally` to delete
+ * the lock. Failure to release is logged but doesn't throw — the TTL is
+ * the safety net.
+ */
+async function acquireMigrationLock(
+  kv: KV,
+  runner: string,
+  logger: Logger,
+): Promise<() => Promise<void>> {
+  const holder = `${runner}/${process.pid}@${hostname()}`;
+  const now = Date.now();
+  const record: LockRecord = {
+    holder,
+    acquiredAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + LOCK_TTL_MS).toISOString(),
+  };
+  const payload = enc.encode(JSON.stringify(record));
+
+  // Fast path: key doesn't exist yet, `create` succeeds.
+  try {
+    await kv.create(LOCK_KEY, payload);
+    logger.debug("Acquired migration lock", { holder, expiresAt: record.expiresAt });
+    return () => releaseMigrationLock(kv, holder, logger);
+  } catch (err) {
+    if (!isCASConflict(err)) throw err;
+  }
+
+  // Slow path: a record exists. Read it; if expired, take over via CAS
+  // on the existing revision.
+  const existing = await kv.get(LOCK_KEY);
+  if (existing && existing.operation === "PUT") {
+    let parsed: LockRecord | null = null;
+    try {
+      parsed = JSON.parse(dec.decode(existing.value)) as LockRecord;
+    } catch {
+      parsed = null;
+    }
+    const expired = !parsed || Date.parse(parsed.expiresAt) <= now;
+    if (expired) {
+      try {
+        await kv.update(LOCK_KEY, payload, existing.revision);
+        logger.warn("Took over expired migration lock", {
+          previousHolder: parsed?.holder,
+          previousExpiresAt: parsed?.expiresAt,
+          newHolder: holder,
+        });
+        return () => releaseMigrationLock(kv, holder, logger);
+      } catch (err) {
+        if (!isCASConflict(err)) throw err;
+        // Lost the race to take over the expired lock — fall through to
+        // the "still held" error using whoever beat us (re-read below).
+      }
+    }
+    if (parsed && !expired) {
+      throw new MigrationLockError(
+        `Migration lock held by ${parsed.holder} (expires ${parsed.expiresAt}). ` +
+          "Another runner is in progress; wait for it to finish or restart it.",
+        parsed.holder,
+        parsed.expiresAt,
+      );
+    }
+  }
+
+  // Either the entry was a tombstone or a concurrent acquirer beat us.
+  // Re-read once for the error message; if even that fails, fall back
+  // to a generic message.
+  const recheck = await readKvJson<LockRecord>(kv, LOCK_KEY);
+  throw new MigrationLockError(
+    recheck
+      ? `Migration lock held by ${recheck.holder} (expires ${recheck.expiresAt}). ` +
+          "Another runner is in progress; wait for it to finish or restart it."
+      : "Could not acquire migration lock; another runner is in progress.",
+    recheck?.holder ?? "unknown",
+    recheck?.expiresAt ?? new Date(now + LOCK_TTL_MS).toISOString(),
+  );
+}
+
+async function releaseMigrationLock(kv: KV, holder: string, logger: Logger): Promise<void> {
+  try {
+    // Best-effort: only delete if WE still hold it. Reading first
+    // catches the rare case where our lock expired and another runner
+    // took over — deleting unconditionally would yank theirs.
+    const current = await readKvJson<LockRecord>(kv, LOCK_KEY);
+    if (current && current.holder === holder) {
+      await kv.delete(LOCK_KEY);
+      logger.debug("Released migration lock", { holder });
+    } else if (current) {
+      logger.warn("Migration lock no longer ours; not releasing", {
+        ourHolder: holder,
+        currentHolder: current.holder,
+      });
+    }
+  } catch (err) {
+    logger.warn("Failed to release migration lock; relying on TTL", {
+      holder,
+      error: stringifyError(err),
+    });
+  }
 }
 
 /**
