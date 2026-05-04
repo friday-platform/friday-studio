@@ -21,9 +21,14 @@ export async function fetchUserIdentitySection(
   userId: string,
   logger: Logger,
 ): Promise<string | undefined> {
+  // Probe: this log line proves the post-`2e77ef9` code is running.
+  // Remove once auto-sync is confirmed working in production.
+  logger.info("[probe v3] fetchUserIdentitySection entered", { userId });
+
   let name: string | undefined;
   let email: string | undefined;
   let userNameStatus: "unknown" | "provided" | "declined" | undefined;
+  let userRecordExists = false;
 
   try {
     const result = await UserStorage.getUser(userId);
@@ -31,6 +36,7 @@ export async function fetchUserIdentitySection(
       name = result.data.identity.name;
       email = result.data.identity.email;
       userNameStatus = result.data.identity.nameStatus;
+      userRecordExists = true;
     } else if (!result.ok) {
       logger.warn("UserStorage.getUser failed", { userId, error: result.error });
     }
@@ -56,6 +62,17 @@ export async function fetchUserIdentitySection(
       logger.debug("api/me threw", { error: err });
     }
   }
+
+  // Probe: print the values feeding into the auto-sync condition.
+  logger.info("[probe v3] auto-sync gate", {
+    userId,
+    userRecordExists,
+    userNameStatus,
+    apiMeNameSet: Boolean(apiMeName),
+    apiMeEmailSet: Boolean(apiMeEmail),
+    finalName: name,
+    finalEmail: email,
+  });
 
   // Sync /api/me identity into USERS if the User record's nameStatus is
   // still "unknown" and /api/me has a name. Idempotent — once
