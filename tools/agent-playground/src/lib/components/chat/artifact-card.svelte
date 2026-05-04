@@ -106,6 +106,14 @@
     serveUrl && mimeType === "text/html" ? serveUrl : null,
   );
 
+  // PDFs render natively in an iframe via the browser's built-in PDF
+  // viewer. Same affordance as html — embed for inline preview, "Open"
+  // button for full-screen. No extra deps; this works in Chrome/Edge/
+  // Safari/Firefox out of the box.
+  const pdfUrl = $derived(
+    serveUrl && mimeType === "application/pdf" ? serveUrl : null,
+  );
+
   function mimeLabel(mt: string | undefined): string {
     if (!mt) return "file";
     const map: Record<string, string> = {
@@ -200,6 +208,8 @@
         style="--scale: {iframeScale}"
       ></iframe>
     </div>
+  {:else if pdfUrl}
+    <iframe title={resolvedTitle} src={pdfUrl} class="artifact-pdf"></iframe>
   {:else if contents && isTextPreviewable(mimeType)}
     <pre class="artifact-preview">{previewContents(contents, mimeType)}</pre>
   {/if}
@@ -357,6 +367,14 @@
     inline-size: 1200px;
     transform: scale(var(--scale));
     transform-origin: top left;
+  }
+
+  .artifact-pdf {
+    block-size: 480px;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    display: block;
+    inline-size: 100%;
   }
 
   .artifact-preview {

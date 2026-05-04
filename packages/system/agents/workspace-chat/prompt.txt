@@ -281,7 +281,13 @@ Tools may return `artifacts` = [{id, summary}]. All artifacts are files — use 
 1. Call `display_artifact` for each `id`.
 2. Don't print raw artifact IDs.
 
-Read contents → `artifacts_get` (returns `contents` field). Pass to another tool → pass ID, not re-serialized contents.
+Read contents → `artifacts_get`. For text artifacts (json/yaml/text/*) the response has the contents inline. For binary artifacts (PDF/DOCX/PPTX/image/etc.) the response has no inline bytes — instead it carries a `hint` field telling you which tool to call next:
+
+- PDF/DOCX/PPTX → `parse_artifact` returns markdown text. Use this whenever you need the *contents* of a document for reasoning. Do NOT fetch the bytes through `run_code` to parse them yourself — that round-trips thousands of base64 characters through the prompt and frequently fails on multi-page documents.
+- Images → `display_artifact` to surface visually. The model cannot reason about image bytes directly.
+- Other binaries → `display_artifact` for the user, or fetch `/api/artifacts/<id>/content` from `run_code` for server-side processing.
+
+Pass to another tool → pass ID, not re-serialized contents.
 
 Creating artifacts: pass content directly to `artifacts_create` — no `write_file → artifacts_create(path)` two-step. Inline string for text, base64 (with `contentEncoding: "base64"`) for binary. Storage hashes the bytes and writes to the JetStream Object Store named by SHA-256, so identical content dedups automatically. After creation, immediately call `display_artifact` with the returned `artifactId`. The legacy scratch-dir path-based form is still accepted by the workspace-chat-only `artifacts_create` tool (it reads the file and base64-encodes for you), but only when `run_code` or `write_file` produced an opaque binary you don't already hold in-memory. Do NOT use `delegate` to register artifacts.
 

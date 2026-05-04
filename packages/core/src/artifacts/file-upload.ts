@@ -146,6 +146,46 @@ export function isAudioMimeType(mimeType: string): boolean {
   return SUPPORTED_AUDIO_MIMES.has(mimeType);
 }
 
+/**
+ * Mime types whose contents the agent can read directly as text. Anything
+ * else is opaque bytes — the GET artifact route omits `contents` for these
+ * to avoid round-tripping decoded-as-UTF-8 garbage through the LLM. Use
+ * `parse_artifact` for PDF/DOCX/PPTX content extraction or
+ * `display_artifact` for visual rendering.
+ */
+const TEXT_MIME_PREFIXES = ["text/"];
+const TEXT_MIME_EXACT = new Set([
+  "application/json",
+  "application/yaml",
+  "application/x-yaml",
+  "application/xml",
+  "application/javascript",
+  "application/typescript",
+  "application/sql",
+  "application/x-sh",
+  "application/x-python",
+]);
+
+export function isTextMimeType(mimeType: string): boolean {
+  if (TEXT_MIME_EXACT.has(mimeType)) return true;
+  return TEXT_MIME_PREFIXES.some((p) => mimeType.startsWith(p));
+}
+
+/**
+ * Mime types we have a stream-based markdown converter for. The
+ * `parse_artifact` endpoint runs these through the matching converter
+ * and returns the markdown.
+ */
+const PARSEABLE_MIMES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
+export function isParseableMimeType(mimeType: string): boolean {
+  return PARSEABLE_MIMES.has(mimeType);
+}
+
 export function getValidatedMimeType(fileName: string): string | undefined {
   const dotIdx = fileName.lastIndexOf(".");
   if (dotIdx < 0) return undefined;

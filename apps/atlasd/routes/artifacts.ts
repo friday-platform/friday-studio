@@ -21,6 +21,8 @@ import {
   isAudioMimeType,
   isImageMimeType,
   isInvalidChatId,
+  isParseableMimeType,
+  isTextMimeType,
   LEGACY_FORMAT_ERRORS,
   MAX_AUDIO_SIZE,
   MAX_FILE_SIZE,
@@ -621,22 +623,84 @@ const artifactsApp = daemonFactory
 
       const artifact = result.data;
       let contents: string | undefined;
+      let hint: string | undefined;
 
-      // For file artifacts, include contents inline
+      // Only return decoded contents for text-like mime types. Binary
+      // formats (PDF, images, audio, zip, etc.) get a hint instead — the
+      // model can't usefully reason about TextDecoder-mangled bytes, and
+      // shipping them through the prompt is expensive. Binary callers
+      // should use `parse_artifact` for PDF/DOCX/PPTX text extraction or
+      // `display_artifact` for visual rendering.
       if (artifact.data.type === "file") {
-        const contentsResult = await ArtifactStorage.readFileContents({
-          id,
-          revision: query?.revision,
-        });
-        if (contentsResult.ok) {
-          contents = contentsResult.data;
+        const mime = artifact.data.mimeType;
+        if (isTextMimeType(mime)) {
+          const contentsResult = await ArtifactStorage.readFileContents({
+            id,
+            revision: query?.revision,
+          });
+          if (contentsResult.ok) {
+            contents = contentsResult.data;
+          }
+        } else if (isParseableMimeType(mime)) {
+          hint = `Binary artifact (${mime}). Call parse_artifact with this artifactId to extract text contents, or display_artifact to show the user.`;
+        } else if (isImageMimeType(mime)) {
+          hint = `Image artifact (${mime}). Call display_artifact to show the user — the model cannot reason about image bytes directly.`;
+        } else {
+          hint = `Binary artifact (${mime}). Call display_artifact to show the user, or fetch /api/artifacts/${id}/content from run_code to process the bytes server-side.`;
         }
-        // If read fails (binary file, etc.), still return artifact metadata
       }
 
-      return c.json({ artifact, contents }, 200);
+      return c.json({ artifact, contents, hint }, 200);
     },
   )
+  /**
+   * Server-side text extraction for binary artifacts. Routes the bytes
+   * through whichever converter matches the mime type — same converters
+   * used at upload time. Saves the model from trying to do PDF parsing
+   * itself by round-tripping bytes through `run_code`, which costs
+   * thousands of prompt tokens per page and frequently fails on larger
+   * documents. Result is markdown text, suitable for direct LLM reasoning.
+   */
+  .get("/:id/parse", zValidator("param", z.object({ id: z.string() })), async (c) => {
+    const { id } = c.req.valid("param");
+    const meta = await ArtifactStorage.get({ id });
+    if (!meta.ok) return c.json({ error: meta.error }, 500);
+    if (!meta.data) return c.json({ error: "Artifact not found" }, 404);
+    if (meta.data.data.type !== "file") {
+      return c.json({ error: "Artifact is not a file" }, 400);
+    }
+    const mime = meta.data.data.mimeType;
+    if (!isParseableMimeType(mime)) {
+      return c.json(
+        {
+          error: `parse_artifact does not support mime type ${mime}. Supported: PDF, DOCX, PPTX. For text artifacts use artifacts_get; for images use display_artifact.`,
+        },
+        400,
+      );
+    }
+    const bytes = await ArtifactStorage.readBinaryContents({ id });
+    if (!bytes.ok) return c.json({ error: bytes.error }, 500);
+    const filename = meta.data.data.originalName ?? meta.data.title ?? id;
+    try {
+      let markdown: string;
+      if (mime === "application/pdf") {
+        markdown = await pdfToMarkdown(bytes.data, filename);
+      } else if (
+        mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
+        markdown = await docxToMarkdown(bytes.data, filename);
+      } else {
+        markdown = await pptxToMarkdown(bytes.data, filename);
+      }
+      return c.json({ markdown, mimeType: mime, filename }, 200);
+    } catch (err) {
+      if (err instanceof ConverterError) {
+        return c.json({ error: err.message, code: err.code }, 422);
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: `Failed to parse artifact: ${msg}` }, 500);
+    }
+  })
   /** List artifacts - optionally filter by workspace or chat */
   .get("/", zValidator("query", ListArtifactsQuery), async (c) => {
     const query = c.req.valid("query");
