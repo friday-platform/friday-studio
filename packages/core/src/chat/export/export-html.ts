@@ -593,15 +593,11 @@ function renderToolCall(call: ToolCallDisplay, ctx: RenderContext): string {
   const hasInput =
     call.input !== undefined && !(isRecord(call.input) && Object.keys(call.input).length === 0);
   if (hasInput) {
-    parts.push(
-      `<pre class="tool-input">${escapeHtml(stringifyForPre(call.input))}</pre>`,
-    );
+    parts.push(`<pre class="tool-input">${escapeHtml(stringifyForPre(call.input))}</pre>`);
   }
 
   if (call.output !== undefined) {
-    parts.push(
-      `<pre class="tool-output">${escapeHtml(stringifyForPre(call.output))}</pre>`,
-    );
+    parts.push(`<pre class="tool-output">${escapeHtml(stringifyForPre(call.output))}</pre>`);
   }
 
   if (call.state === "output-error" && typeof call.errorText === "string") {
@@ -634,8 +630,7 @@ function renderToolCall(call: ToolCallDisplay, ctx: RenderContext): string {
  * delegate trees don't dump every descendant into the outer burst body.
  */
 function renderChildBurstDetails(call: ToolCallDisplay, ctx: RenderContext): string {
-  const summary =
-    `${escapeHtml(statusIcon(call.state))} ${escapeHtml(call.toolName)}`;
+  const summary = `${escapeHtml(statusIcon(call.state))} ${escapeHtml(call.toolName)}`;
   return (
     `<details class="tool-burst tool-burst-nested">` +
     `<summary>${summary}</summary>` +

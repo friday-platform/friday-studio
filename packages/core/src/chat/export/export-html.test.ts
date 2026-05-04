@@ -13,11 +13,7 @@ import { renderChatToHTML } from "./export-html.ts";
 // `as unknown as AtlasUIMessage`. The renderer re-narrows defensively.
 // ---------------------------------------------------------------------------
 
-function message(
-  role: AtlasUIMessage["role"],
-  parts: unknown[],
-  id = "msg-1",
-): AtlasUIMessage {
+function message(role: AtlasUIMessage["role"], parts: unknown[], id = "msg-1"): AtlasUIMessage {
   return { id, role, parts } as unknown as AtlasUIMessage;
 }
 
@@ -64,9 +60,7 @@ function render(
 describe("renderChatToHTML", () => {
   describe("user messages", () => {
     it("wraps user text in a role=user message bubble", () => {
-      const html = render([
-        message("user", [{ type: "text", text: "hello world" }]),
-      ]);
+      const html = render([message("user", [{ type: "text", text: "hello world" }])]);
 
       expect(html).toContain('<div class="message" data-role="user">');
       expect(html).toContain('<div class="role">user</div>');
@@ -75,13 +69,9 @@ describe("renderChatToHTML", () => {
     });
 
     it("renders the user role label", () => {
-      const html = render([
-        message("user", [{ type: "text", text: "hello" }]),
-      ]);
+      const html = render([message("user", [{ type: "text", text: "hello" }])]);
 
-      expect(html).toMatch(
-        /<div class="message" data-role="user"><div class="role">user<\/div>/,
-      );
+      expect(html).toMatch(/<div class="message" data-role="user"><div class="role">user<\/div>/);
     });
   });
 

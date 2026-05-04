@@ -24,12 +24,12 @@ const { mockChatStorage, mockArtifactStorage, mockValidateMessages } = vi.hoiste
     updateChatTitle: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
   },
   mockArtifactStorage: {
-    listByChat: vi.fn<
-      (input: { chatId: string }) => Promise<{ ok: boolean; data?: unknown; error?: string }>
-    >(),
-    readBinaryContents: vi.fn<
-      (input: { id: string }) => Promise<{ ok: boolean; data?: unknown; error?: string }>
-    >(),
+    listByChat:
+      vi.fn<
+        (input: { chatId: string }) => Promise<{ ok: boolean; data?: unknown; error?: string }>
+      >(),
+    readBinaryContents:
+      vi.fn<(input: { id: string }) => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
   },
   mockValidateMessages: vi
     .fn<(msgs: unknown[]) => Promise<unknown[]>>()
@@ -450,13 +450,7 @@ function makeChat(overrides: Partial<Record<string, unknown>> = {}): Record<stri
     title: "Export Test Chat",
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
-    messages: [
-      {
-        id: "msg-1",
-        role: "user",
-        parts: [{ type: "text", text: "hello world" }],
-      },
-    ],
+    messages: [{ id: "msg-1", role: "user", parts: [{ type: "text", text: "hello world" }] }],
     ...overrides,
   };
 }
@@ -517,12 +511,8 @@ describe("GET /:workspaceId/chat/:chatId/export — zip export", () => {
     const a2 = makeArtifactSummary("art-bbbb", { mimeType: "text/plain", originalName: "b.txt" });
     mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: makeChat() });
     mockArtifactStorage.listByChat.mockResolvedValueOnce({ ok: true, data: [a1, a2] });
-    mockArtifactStorage.readBinaryContents.mockImplementation(
-      ({ id }: { id: string }) =>
-        Promise.resolve({
-          ok: true,
-          data: new TextEncoder().encode(`bytes-for-${id}`),
-        }),
+    mockArtifactStorage.readBinaryContents.mockImplementation(({ id }: { id: string }) =>
+      Promise.resolve({ ok: true, data: new TextEncoder().encode(`bytes-for-${id}`) }),
     );
     const { app } = createTestApp();
 

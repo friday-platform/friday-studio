@@ -10,9 +10,9 @@
 
 import process from "node:process";
 import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
-import { ArtifactStorage } from "@atlas/core/artifacts/server";
-import { deriveDownloadFilename } from "@atlas/core/artifacts/file-upload";
 import type { ArtifactSummary } from "@atlas/core/artifacts";
+import { deriveDownloadFilename } from "@atlas/core/artifacts/file-upload";
+import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { renderChatToHTML } from "@atlas/core/chat/export/export-html";
 import { buildExportZip } from "@atlas/core/chat/export/export-zip";
 import { ChatStorage } from "@atlas/core/chat/storage";
@@ -340,8 +340,11 @@ const workspaceChatRoutes = daemonFactory
       const artifactsResult = await ArtifactStorage.listByChat({ chatId });
       if (!artifactsResult.ok) return { kind: "list-error" as const, error: artifactsResult.error };
       const artifacts = artifactsResult.data;
-      const { files: artifactFiles, pathMap: artifactPathMap, skippedArtifactIds } =
-        await bundleChatArtifacts(artifacts);
+      const {
+        files: artifactFiles,
+        pathMap: artifactPathMap,
+        skippedArtifactIds,
+      } = await bundleChatArtifacts(artifacts);
       // Export uses the full message list — unlike GET /:chatId which trims
       // to the last 100 for UI rehydrate.
       const html = renderChatToHTML(chat, artifacts, artifactPathMap, skippedArtifactIds);
@@ -351,11 +354,7 @@ const workspaceChatRoutes = daemonFactory
 
     const raced = await withTimeout(exportWork, EXPORT_TIMEOUT_MS);
     if (!raced.ok) {
-      logger.warn("Chat export timed out", {
-        chatId,
-        workspaceId,
-        timeoutMs: EXPORT_TIMEOUT_MS,
-      });
+      logger.warn("Chat export timed out", { chatId, workspaceId, timeoutMs: EXPORT_TIMEOUT_MS });
       return c.json({ error: "Chat too large to export" }, 503);
     }
     const outcome = raced.value;
@@ -371,16 +370,10 @@ const workspaceChatRoutes = daemonFactory
       // migration-shaped error anyway, prefer 503 over 500 so callers can
       // retry cleanly instead of treating it as a permanent failure.
       if (/migrating/i.test(outcome.error)) {
-        logger.warn("Chat export hit artifact migration shim", {
-          chatId,
-          error: outcome.error,
-        });
+        logger.warn("Chat export hit artifact migration shim", { chatId, error: outcome.error });
         return c.json({ error: "Chat artifacts are being migrated; try again shortly" }, 503);
       }
-      logger.error("Failed to list artifacts for chat export", {
-        chatId,
-        error: outcome.error,
-      });
+      logger.error("Failed to list artifacts for chat export", { chatId, error: outcome.error });
       return c.json({ error: outcome.error }, 500);
     }
     return c.body(outcome.stream, 200, {
