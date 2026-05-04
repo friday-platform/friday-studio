@@ -838,8 +838,10 @@ const artifactsApp = daemonFactory
       //
       // SVG stays scriptless: when a user views what's nominally an
       // image, no `<script>` should ever execute, regardless of source.
+      // XHTML is rendered as a document and executes `<script>` exactly
+      // like text/html, so it gets the same sandbox treatment.
       let contentSecurityPolicy: string | undefined;
-      if (mimeType === "text/html") {
+      if (mimeType === "text/html" || mimeType === "application/xhtml+xml") {
         contentSecurityPolicy =
           "sandbox allow-scripts; default-src https: data: blob: 'unsafe-inline' 'unsafe-eval'";
       } else if (mimeType === "image/svg+xml") {

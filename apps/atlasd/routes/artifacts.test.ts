@@ -773,6 +773,39 @@ describe("Content endpoint", () => {
     expect(htmlCsp).toContain("allow-scripts");
   });
 
+  it("sandboxes XHTML artifact content the same as HTML", async () => {
+    // XHTML is rendered as a document and executes `<script>` exactly like
+    // text/html. Without the sandbox the embedded script would run
+    // same-origin against the daemon.
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "XHTML report",
+        summary: "XHTML report with active content",
+        data: {
+          type: "file",
+          content:
+            '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><script>parent.document.body.dataset.pwned = "true"</script></body></html>',
+          mimeType: "application/xhtml+xml",
+          originalName: "report.xhtml",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Type")).toEqual("application/xhtml+xml");
+    const xhtmlCsp = contentResponse.headers.get("Content-Security-Policy") ?? "";
+    expect(xhtmlCsp).toContain("sandbox");
+    expect(xhtmlCsp).toContain("allow-scripts");
+  });
+
   it("sandboxes SVG artifact content (X-Content-Type-Options does not stop SVG scripts)", async () => {
     // SVG served same-origin can execute embedded `<script>` regardless
     // of `nosniff`. The CSP sandbox directive is the only thing that
