@@ -2,8 +2,9 @@
  * Server-side renderer that turns a {@link Chat} into a self-contained HTML
  * transcript. Walks {@link buildSegments} output in document order, emitting
  * text segments inline and tool-call bursts as collapsible `<details>`
- * elements. Subsequent tasks (T14–T17) layer in markdown rendering, image
- * support, system message chips, and full styling.
+ * elements. The output is a single HTML document with an inline `<style>`
+ * block — no external CSS or font loads, so the file works offline once
+ * unzipped alongside its `assets/` directory.
  *
  * @module
  */
@@ -14,6 +15,406 @@ import type { ArtifactSummary } from "../../artifacts/model.ts";
 import type { Chat } from "./../storage.ts";
 import { buildSegments, extractImages } from "./render.ts";
 import type { ImageDisplay, Segment, ToolCallDisplay } from "./types.ts";
+
+/**
+ * Inlined stylesheet for the exported HTML document. Mirrors the live chat UI
+ * (see `tools/agent-playground/src/lib/components/chat/chat-message-list.svelte`
+ * `<style>` block and `tool-call-card.svelte`) plus the design tokens from
+ * `packages/ui/src/lib/tokens.css` that we actually consume here. Keep these
+ * in rough visual sync with those files — exact pixel parity is not required,
+ * but the exported transcript should read as a sibling of the live chat.
+ *
+ * Light/dark mode: `color-scheme: light dark` plus `light-dark()` per the
+ * W3C CSS Color Adjust Module §2 — same approach the live UI uses, so the
+ * OS preference flips both surfaces and accents automatically.
+ */
+const EXPORT_STYLES = `
+:root {
+  color-scheme: light dark;
+
+  --size-1: 0.25rem;
+  --size-1-5: 0.375rem;
+  --size-2: 0.5rem;
+  --size-2-5: 0.625rem;
+  --size-3: 0.75rem;
+  --size-4: 1rem;
+  --size-6: 1.5rem;
+
+  --radius-1: 0.25rem;
+  --radius-2: 0.375rem;
+  --radius-3: 0.625rem;
+
+  --font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --font-size-0: 0.6875rem;
+  --font-size-1: 0.75rem;
+  --font-size-2: 0.8125rem;
+  --font-size-3: 0.875rem;
+
+  --color-text: light-dark(hsl(230 32% 14%), hsl(40 12% 95%));
+  --color-text-faded: light-dark(hsl(220 10% 40%), hsl(40 8% 65%));
+  --color-primary: light-dark(hsl(212 97% 40%), hsl(212 80% 55%));
+  --color-error: light-dark(hsl(10 100% 38%), hsl(10 100% 65%));
+  --color-info: light-dark(hsl(217 91% 50%), hsl(217 91% 65%));
+
+  --color-surface-1: light-dark(hsl(0 0% 100%), hsl(228 2% 7%));
+  --color-surface-2: light-dark(hsl(240 12% 95%), hsl(228 2% 9%));
+  --color-surface-3: light-dark(hsl(220 16% 93%), hsl(228 4% 16%));
+  --color-code-bg: light-dark(hsl(220 16% 90%), hsl(228 4% 12%));
+
+  --color-border-1: light-dark(hsl(220 24% 90%), hsl(230 10% 24%));
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--color-surface-1);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-3);
+  line-height: 1.55;
+  margin: 0 auto;
+  max-inline-size: 860px;
+  padding: var(--size-6) var(--size-4);
+}
+
+/* ─── Messages ───────────────────────────────────────────────────────── */
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  margin-block-end: var(--size-4);
+  max-inline-size: 95%;
+}
+
+.message[data-role="user"] {
+  align-self: flex-end;
+  margin-inline-start: auto;
+}
+
+.message[data-role="assistant"] {
+  margin-inline-end: auto;
+  inline-size: 100%;
+}
+
+.message[data-role="system"] {
+  align-self: center;
+  margin-inline: auto;
+  max-inline-size: 90%;
+}
+
+.role {
+  color: var(--color-text-faded);
+  font-size: var(--font-size-0);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Bubble around assistant/user text */
+.content {
+  background-color: var(--color-surface-3);
+  border-radius: var(--radius-3);
+  padding: var(--size-2-5) var(--size-3);
+  word-break: break-word;
+}
+
+.message[data-role="user"] .content {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.content > p { margin-block: 0.4em; }
+.content > p:first-child { margin-block-start: 0; }
+.content > p:last-child { margin-block-end: 0; }
+
+.content ul, .content ol {
+  margin-block: 0.4em;
+  padding-inline-start: 1.4em;
+}
+.content ul { list-style-type: disc; }
+.content ol { list-style-type: decimal; }
+.content li { margin-block: 0.15em; }
+
+.content code {
+  background-color: var(--color-code-bg);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+}
+
+.content pre {
+  background-color: var(--color-code-bg);
+  border-radius: var(--radius-2);
+  margin-block: 0.5em;
+  overflow-x: auto;
+  padding: var(--size-2);
+}
+
+.content pre code {
+  background-color: transparent;
+  font-size: var(--font-size-1);
+  padding: 0;
+}
+
+.content h1, .content h2, .content h3, .content h4 {
+  font-weight: 600;
+  margin-block: 0.6em 0.3em;
+}
+.content h1 { font-size: 1.2em; }
+.content h2 { font-size: 1.1em; }
+.content h3 { font-size: 1.05em; }
+
+.content blockquote {
+  border-inline-start: 3px solid var(--color-border-1);
+  color: var(--color-text-faded);
+  margin-block: 0.4em;
+  margin-inline: 0;
+  padding-inline-start: var(--size-3);
+}
+
+.content table {
+  border-collapse: collapse;
+  font-size: var(--font-size-1);
+  margin-block: 0.5em;
+}
+.content th, .content td {
+  border: 1px solid var(--color-border-1);
+  padding: var(--size-1) var(--size-2);
+  text-align: start;
+}
+.content th { font-weight: 600; }
+
+a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+/* User bubble inverts link/code colors so they read on the primary fill */
+.message[data-role="user"] .content a,
+.message[data-role="user"] .content code {
+  color: inherit;
+}
+.message[data-role="user"] .content code {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+/* System chip — centered, italic, info-tinted */
+.system-content {
+  background-color: light-dark(hsl(217 80% 95%), color-mix(in srgb, var(--color-info), transparent 85%));
+  border: 1px solid light-dark(hsl(217 60% 85%), color-mix(in srgb, var(--color-info), transparent 70%));
+  border-radius: var(--radius-3);
+  color: light-dark(hsl(217 30% 35%), color-mix(in srgb, var(--color-text), transparent 20%));
+  font-size: var(--font-size-1);
+  font-style: italic;
+  padding: var(--size-2) var(--size-3);
+  text-align: center;
+}
+
+/* ─── Tool bursts ────────────────────────────────────────────────────── */
+
+.tool-burst {
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border-1);
+  border-radius: var(--radius-3);
+  font-size: var(--font-size-2);
+  margin-block: var(--size-2);
+  overflow: hidden;
+}
+
+.tool-burst > summary {
+  align-items: center;
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-1);
+  gap: var(--size-2);
+  list-style: none;
+  padding: var(--size-1-5) var(--size-2-5);
+  user-select: none;
+}
+
+.tool-burst > summary::-webkit-details-marker { display: none; }
+.tool-burst > summary::marker { content: ""; }
+
+.tool-burst > summary::before {
+  color: var(--color-text-faded);
+  content: "▸";
+  display: inline-block;
+  font-size: 0.8em;
+  inline-size: 1em;
+  transition: transform 120ms ease;
+}
+
+.tool-burst[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.tool-burst-nested {
+  background-color: transparent;
+  border: none;
+  margin-block: var(--size-1);
+}
+
+.tool-call {
+  border-block-start: 1px solid var(--color-border-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  padding: var(--size-2) var(--size-2-5);
+}
+
+.tool-burst-nested .tool-call {
+  border-block-start: none;
+  padding-block-start: 0;
+}
+
+.tool-call-header {
+  align-items: center;
+  display: flex;
+  gap: var(--size-2);
+  justify-content: space-between;
+}
+
+.tool-call-name {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-1);
+  font-weight: 500;
+}
+
+.tool-call-state {
+  color: var(--color-text-faded);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-0);
+}
+
+.tool-call[data-state="output-error"] .tool-call-state { color: var(--color-error); }
+.tool-call[data-state="output-denied"] .tool-call-state { color: var(--color-error); }
+
+.tool-call-children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  padding-inline-start: var(--size-2);
+}
+
+.tool-input,
+.tool-output,
+.tool-error {
+  background-color: var(--color-code-bg);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-0);
+  margin: 0;
+  max-block-size: 400px;
+  overflow: auto;
+  padding: var(--size-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-error { color: var(--color-error); }
+
+.reasoning {
+  color: var(--color-text-faded);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-0);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+/* ─── Inline images ──────────────────────────────────────────────────── */
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2);
+}
+
+.message-image {
+  border: 1px solid var(--color-border-1);
+  border-radius: var(--radius-2);
+  display: block;
+  max-block-size: 300px;
+  max-inline-size: 100%;
+  object-fit: contain;
+}
+
+/* ─── Artifacts ──────────────────────────────────────────────────────── */
+
+.artifact-ref {
+  align-items: center;
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border-1);
+  border-radius: var(--radius-2);
+  display: flex;
+  font-size: var(--font-size-1);
+  gap: var(--size-2);
+  justify-content: space-between;
+  padding: var(--size-1-5) var(--size-2-5);
+}
+
+.artifact-title {
+  color: var(--color-text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-download {
+  color: var(--color-primary);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-0);
+  text-decoration: none;
+}
+.artifact-download:hover { text-decoration: underline; }
+
+.artifact-unavailable {
+  color: var(--color-text-faded);
+  font-size: var(--font-size-0);
+  font-style: italic;
+}
+
+.artifacts {
+  border-block-start: 1px solid var(--color-border-1);
+  margin-block-start: var(--size-6);
+  padding-block-start: var(--size-4);
+}
+
+.artifacts h2 {
+  font-size: var(--font-size-3);
+  font-weight: 600;
+  margin-block: 0 var(--size-2);
+}
+
+.artifact-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1-5);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media print {
+  body { max-inline-size: none; }
+  .tool-burst[open] > summary::before { transform: rotate(90deg); }
+  .tool-burst:not([open]) > summary::before { transform: none; }
+  .tool-burst > summary { cursor: default; }
+}
+`;
 
 /**
  * Render the artifact reference block for a `display_artifact` tool call.
@@ -387,7 +788,9 @@ export function renderChatToHTML(
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chat ${escapeHtml(titleId)}</title>
+<style>${EXPORT_STYLES}</style>
 </head>
 <body>
 ${messageHtml}
