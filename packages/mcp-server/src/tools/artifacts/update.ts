@@ -1,6 +1,6 @@
 import { unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
-import { ArtifactDataInputSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
+import { ArtifactDataInputWireSchema, ArtifactTypeSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -18,7 +18,7 @@ export function registerArtifactsUpdateTool(server: McpServer, ctx: ToolContext)
         type: ArtifactTypeSchema.describe("Artifact type is required but should not be changed"),
         artifactId: z.string().describe("Artifact ID"),
         data: z
-          .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)
+          .preprocess(unstringifyNestedJson, ArtifactDataInputWireSchema)
           .describe(
             "Replacement file payload: { type: 'file', content, mimeType?, originalName?, contentEncoding? }. " +
               "`content` is the new file body (UTF-8 string for text, or base64 with `contentEncoding: 'base64'` " +

@@ -1,6 +1,6 @@
 import { unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
 import { client, parseResult } from "@atlas/client/v2";
-import { ArtifactDataInputSchema } from "@atlas/core/artifacts";
+import { ArtifactDataInputWireSchema } from "@atlas/core/artifacts";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -17,7 +17,7 @@ export function registerArtifactsCreateTool(server: McpServer, ctx: ToolContext)
         "Create a new file artifact. Pass file content directly (string for text, base64 for binary) and associate it with the current chat or workspace.",
       inputSchema: {
         data: z
-          .preprocess(unstringifyNestedJson, ArtifactDataInputSchema)
+          .preprocess(unstringifyNestedJson, ArtifactDataInputWireSchema)
           .describe(
             "File payload: { type: 'file', content, mimeType?, originalName?, contentEncoding? }. " +
               "`content` is the file body — a UTF-8 string for text, OR a base64-encoded string with " +
