@@ -14,6 +14,7 @@
     "./errors": "./src/errors.ts",
     "./chat/storage": "./src/chat/storage.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
+    "./chat/export/render": "./src/chat/export/render.ts",
     "./session/session-events": "./src/session/session-events.ts",
     "./session/session-reducer": "./src/session/session-reducer.ts",
     "./mcp-registry/discovery": "./src/mcp-registry/discovery.ts",

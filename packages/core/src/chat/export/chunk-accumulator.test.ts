@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import { describe, expect, it } from "vitest";
 import { accumulateChunks } from "./chunk-accumulator.ts";
 
 // ---------------------------------------------------------------------------
@@ -31,11 +31,7 @@ function toolOutputAvailable(toolCallId: string, output: unknown): AtlasUIMessag
 }
 
 function toolOutputError(toolCallId: string, errorText: string): AtlasUIMessageChunk {
-  return {
-    type: "tool-output-error",
-    toolCallId,
-    errorText,
-  } as unknown as AtlasUIMessageChunk;
+  return { type: "tool-output-error", toolCallId, errorText } as unknown as AtlasUIMessageChunk;
 }
 
 // ---------------------------------------------------------------------------

@@ -2,9 +2,9 @@
  * Pure tree builder that converts a flat `Map` of `ToolCallDisplay` entries
  * (each carrying an optional `parentToolCallId`) into a forest of trees.
  *
- * Replaces the previous string-splitting approach (`buildNestedChildren` in
- * `extract-tool-calls.ts`) with explicit parent pointers. Parentage is now
- * unambiguous regardless of `toolCallId` formatting.
+ * Replaces the previous string-splitting approach with explicit parent
+ * pointers. Parentage is now unambiguous regardless of `toolCallId`
+ * formatting.
  *
  * @module
  */
@@ -57,7 +57,8 @@ export function buildToolCallTree(
       }
 
       if (pathIds.has(current.toolCallId)) {
-        const cycleStart = path.findIndex((e) => e.toolCallId === current!.toolCallId);
+        const cursor = current;
+        const cycleStart = path.findIndex((e) => e.toolCallId === cursor.toolCallId);
         const cycle = path.slice(cycleStart);
         const promoted = cycle.reduce((a, b) => (a.toolCallId < b.toolCallId ? a : b));
         if (!roots.includes(promoted)) {

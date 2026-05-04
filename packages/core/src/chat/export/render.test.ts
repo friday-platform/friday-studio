@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
-import { extractToolCalls } from "./extract-tool-calls.ts";
+import { describe, expect, it } from "vitest";
+import { extractToolCalls } from "./render.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -19,48 +19,27 @@ import { extractToolCalls } from "./extract-tool-calls.ts";
 // ---------------------------------------------------------------------------
 
 function makeMessage(parts: unknown[], extra: Record<string, unknown> = {}): AtlasUIMessage {
-  return {
-    id: "msg-1",
-    role: "assistant",
-    parts,
-    ...extra,
-  } as unknown as AtlasUIMessage;
+  return { id: "msg-1", role: "assistant", parts, ...extra } as unknown as AtlasUIMessage;
 }
 
 /** Top-level `tool-delegate` part in the shape AI SDK v6 writes to `msg.parts`. */
 function delegatePart(toolCallId: string, state: string, input?: unknown, output?: unknown) {
-  return {
-    type: "tool-delegate",
-    toolCallId,
-    state,
-    input,
-    output,
-  };
+  return { type: "tool-delegate", toolCallId, state, input, output };
 }
 
 /** A plain static tool part (non-delegate) used as a non-target parent. */
 function staticToolPart(toolName: string, toolCallId: string, state: string) {
-  return {
-    type: `tool-${toolName}`,
-    toolCallId,
-    state,
-  };
+  return { type: `tool-${toolName}`, toolCallId, state };
 }
 
 /** A `data-nested-chunk` envelope for direct (non-delegate) agent calls. */
 function nestedChunk(parentToolCallId: string, chunk: unknown) {
-  return {
-    type: "data-nested-chunk",
-    data: { parentToolCallId, chunk },
-  };
+  return { type: "data-nested-chunk", data: { parentToolCallId, chunk } };
 }
 
 /** A `data-delegate-chunk` envelope wrapping a raw child chunk. */
 function delegateChunk(delegateToolCallId: string, chunk: unknown) {
-  return {
-    type: "data-delegate-chunk",
-    data: { delegateToolCallId, chunk },
-  };
+  return { type: "data-delegate-chunk", data: { delegateToolCallId, chunk } };
 }
 
 /** A `data-delegate-chunk` envelope wrapping a double-wrapped `nested-chunk`. */
@@ -69,10 +48,7 @@ function delegateNestedChunk(delegateToolCallId: string, parentToolCallId: strin
     type: "data-delegate-chunk",
     data: {
       delegateToolCallId,
-      chunk: {
-        type: "data-nested-chunk",
-        data: { parentToolCallId, chunk },
-      },
+      chunk: { type: "data-nested-chunk", data: { parentToolCallId, chunk } },
     },
   };
 }
@@ -81,10 +57,7 @@ function delegateNestedChunk(delegateToolCallId: string, parentToolCallId: strin
 function delegateEndEnvelope(delegateToolCallId: string) {
   return {
     type: "data-delegate-chunk",
-    data: {
-      delegateToolCallId,
-      chunk: { type: "delegate-end" },
-    },
+    data: { delegateToolCallId, chunk: { type: "delegate-end" } },
   };
 }
 
@@ -195,7 +168,10 @@ describe("extractToolCalls", () => {
         { type: "tool-agent_web", toolCallId: "aw1", state: "input-available" },
         nestedChunk("aw1", { type: "reasoning-delta", id: "r1", delta: "Let me check " }),
         nestedChunk("aw1", { type: "reasoning-delta", id: "r1", delta: "the weather..." }),
-        nestedChunk("aw1", { type: "data-tool-progress", data: { toolName: "agent_web", content: "Analyzing..." } }),
+        nestedChunk("aw1", {
+          type: "data-tool-progress",
+          data: { toolName: "agent_web", content: "Analyzing..." },
+        }),
         nestedChunk("aw1", toolInputStart("f1", "fetch")),
         nestedChunk("aw1", toolInputAvailable("f1", "fetch", { url: "https://x" })),
         nestedChunk("aw1", toolOutputAvailable("f1", { status: 200 })),
@@ -224,11 +200,12 @@ describe("extractToolCalls", () => {
       const calls = extractToolCalls(msg);
       expect(calls).toHaveLength(1);
       const [f1] = calls;
-      expect(f1?.toolCallId).toBe("f1");
-      expect(f1?.toolName).toBe("fetch");
-      expect(f1?.state).toBe("input-available");
+      if (!f1) throw new Error("expected one call");
+      expect(f1.toolCallId).toBe("f1");
+      expect(f1.toolName).toBe("fetch");
+      expect(f1.state).toBe("input-available");
       // parentToolCallId is stripped from output shape.
-      expect("parentToolCallId" in f1!).toBe(false);
+      expect("parentToolCallId" in f1).toBe(false);
     });
 
     it("ignores malformed nested-chunk envelopes", () => {
@@ -461,7 +438,11 @@ describe("extractToolCalls", () => {
         delegatePart("d1", "input-available", { goal: "research", handoff: "..." }),
         // agent_web as direct child of delegate (nested-chunk inside delegate-chunk)
         delegateNestedChunk("d1", "aw1", toolInputStart("aw1", "agent_web")),
-        delegateNestedChunk("d1", "aw1", toolInputAvailable("aw1", "agent_web", { prompt: "go to craigslist" })),
+        delegateNestedChunk(
+          "d1",
+          "aw1",
+          toolInputAvailable("aw1", "agent_web", { prompt: "go to craigslist" }),
+        ),
         // fetch nested under agent_web
         delegateNestedChunk("d1", "aw1", toolInputStart("f1", "fetch")),
         delegateNestedChunk("d1", "aw1", toolInputAvailable("f1", "fetch", { url: "https://..." })),
@@ -492,7 +473,11 @@ describe("extractToolCalls", () => {
       const msg = makeMessage([
         delegatePart("d1", "input-available"),
         delegateNestedChunk("d1", "aw1", toolInputStart("aw1", "agent_web")),
-        delegateNestedChunk("d1", "aw1", toolInputAvailable("aw1", "agent_web", { prompt: "search" })),
+        delegateNestedChunk(
+          "d1",
+          "aw1",
+          toolInputAvailable("aw1", "agent_web", { prompt: "search" }),
+        ),
         delegateNestedChunk("d1", "aw1", toolInputStart("f1", "fetch")),
         delegateNestedChunk("d1", "aw1", toolInputAvailable("f1", "fetch", { url: "https://a" })),
         delegateNestedChunk("d1", "aw1", toolOutputAvailable("f1", { status: 200 })),
@@ -517,8 +502,16 @@ describe("extractToolCalls", () => {
         delegatePart("d1", "input-available"),
         delegateNestedChunk("d1", "aw1", toolInputStart("aw1", "agent_web")),
         delegateNestedChunk("d1", "aw2", toolInputStart("aw2", "agent_web")),
-        delegateNestedChunk("d1", "aw1", toolInputAvailable("aw1", "agent_web", { prompt: "search A" })),
-        delegateNestedChunk("d1", "aw2", toolInputAvailable("aw2", "agent_web", { prompt: "search B" })),
+        delegateNestedChunk(
+          "d1",
+          "aw1",
+          toolInputAvailable("aw1", "agent_web", { prompt: "search A" }),
+        ),
+        delegateNestedChunk(
+          "d1",
+          "aw2",
+          toolInputAvailable("aw2", "agent_web", { prompt: "search B" }),
+        ),
         delegateNestedChunk("d1", "aw1", toolInputStart("f1", "fetch")),
         delegateNestedChunk("d1", "aw2", toolInputStart("f2", "fetch")),
         delegateNestedChunk("d1", "aw1", toolOutputAvailable("f1", { status: 200 })),

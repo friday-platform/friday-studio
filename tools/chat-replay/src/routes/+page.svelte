@@ -4,7 +4,7 @@ import { IconSmall, Icons } from "@atlas/ui";
 import { onMount, tick } from "svelte";
 import { z } from "zod";
 import ChatMessageList from "$lib/components/chat/chat-message-list.svelte";
-import { extractToolCalls, flattenToolCalls } from "$lib/components/chat/extract-tool-calls.ts";
+import { extractToolCalls, flattenToolCalls } from "@atlas/core/chat/export/render";
 import type { ChatMessage, Segment, ToolCallDisplay } from "$lib/components/chat/types";
 
 const RawMessageSchema = z

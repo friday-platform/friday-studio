@@ -13,14 +13,14 @@
   import ChatMessageList from "./chat-message-list.svelte";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
-  import { extractToolCalls, flattenToolCalls } from "./extract-tool-calls.ts";
+  import { buildSegments, extractImages } from "@atlas/core/chat/export/render";
   import {
     extractDisconnectedIntegrations,
     extractErrorText,
     hasErrorPart,
     hasRenderableContent,
   } from "./message-error.ts";
-  import type { ChatMessage, ImageDisplay, Segment, ToolCallDisplay } from "./types";
+  import type { ChatMessage, ToolCallDisplay } from "./types";
   import { GetChatResponseSchema } from "./types";
   import {
     accumulateValidationAttempts,
@@ -764,134 +764,6 @@
     return [...textParts, ...credentialParts].join(" ");
   }
 
-  /**
-   * Build chronological {@link Segment}s from an {@link AtlasUIMessage}'s
-   * `parts[]` array.  Consecutive text parts coalesce into a single `text`
-   * segment; consecutive tool-call parts (and any reasoning that arrived
-   * between them) group into a `tool-burst` segment.  This preserves the
-   * true stream order so the UI can render prose and tool activity exactly
-   * where they happened.
-   */
-  function buildSegments(msg: AtlasUIMessage): Segment[] {
-    if (!Array.isArray(msg.parts)) return [];
-    const allToolCalls = extractToolCalls(msg);
-    const toolMap = flattenToolCalls(allToolCalls);
-
-    const segments: Segment[] = [];
-    let textBuffer = "";
-    let toolBuffer: ToolCallDisplay[] = [];
-    let reasoningBuffer = "";
-    let burstIndex = 0;
-
-    function flushText() {
-      if (textBuffer.length > 0) {
-        segments.push({ type: "text", content: textBuffer });
-        textBuffer = "";
-      }
-    }
-
-    function flushBurst() {
-      if (toolBuffer.length > 0) {
-        segments.push({
-          type: "tool-burst",
-          id: `${msg.id}-burst-${burstIndex++}`,
-          calls: [...toolBuffer],
-          reasoning: reasoningBuffer || undefined,
-        });
-        toolBuffer = [];
-        reasoningBuffer = "";
-      }
-    }
-
-    for (const part of msg.parts) {
-      if (typeof part !== "object" || part === null || !("type" in part)) continue;
-      const type = (part as { type: string }).type;
-
-      if (type === "text" && "text" in part && typeof (part as { text: string }).text === "string") {
-        flushBurst();
-        textBuffer += (part as { text: string }).text;
-        continue;
-      }
-
-      if (type === "reasoning" || type === "reasoning-delta") {
-        const delta =
-          type === "reasoning"
-            ? "text" in part && typeof (part as { text: string }).text === "string"
-              ? (part as { text: string }).text
-              : ""
-            : "delta" in part && typeof (part as { delta: string }).delta === "string"
-              ? (part as { delta: string }).delta
-              : "";
-        if (toolBuffer.length > 0) {
-          reasoningBuffer += delta;
-        } else {
-          textBuffer += delta;
-        }
-        continue;
-      }
-
-      if (type === "data-credential-linked") {
-        const data = (part as { data?: unknown }).data;
-        if (
-          typeof data === "object" &&
-          data !== null &&
-          "displayName" in data &&
-          typeof (data as Record<string, unknown>).displayName === "string"
-        ) {
-          flushBurst();
-          textBuffer += `Connected ${(data as Record<string, unknown>).displayName as string}.`;
-        }
-        continue;
-      }
-
-      const isTool = type.startsWith("tool-") || type === "dynamic-tool";
-      if (isTool) {
-        const toolCallId =
-          "toolCallId" in part && typeof (part as { toolCallId: string }).toolCallId === "string"
-            ? (part as { toolCallId: string }).toolCallId
-            : "";
-        const display = toolMap.get(toolCallId);
-        if (display) {
-          flushText();
-          toolBuffer.push(display);
-        }
-        continue;
-      }
-    }
-
-    flushText();
-    flushBurst();
-    return segments;
-  }
-
-  /**
-   * True if a message has anything worth rendering — a text part, a tool
-   * call (in any state), or a reasoning part. Used as the phantom filter
-   * replacement: the old version required a text part, which hid
-   * tool-in-progress messages for 2–6 s while web_fetch / run_code ran.
-   * Empty assistants with only `[data-session-start]` (the AI SDK +
-   * Svelte $state race-bug phantom) still get filtered because their
-   * only part is data-*.
-   */
-  function extractImages(msg: AtlasUIMessage): ImageDisplay[] {
-    if (!Array.isArray(msg.parts)) return [];
-    const imgs: ImageDisplay[] = [];
-    for (const part of msg.parts) {
-      if (typeof part !== "object" || part === null || !("type" in part)) continue;
-      const p = part as { type: unknown; url?: unknown; mediaType?: unknown; filename?: unknown };
-      if (p.type !== "file" || typeof p.url !== "string") continue;
-      const mediaType = typeof p.mediaType === "string" ? p.mediaType : "image/png";
-      if (!mediaType.startsWith("image/")) continue;
-      imgs.push({
-        url: p.url,
-        mediaType,
-        filename: typeof p.filename === "string" ? p.filename : undefined,
-      });
-    }
-    return imgs;
-  }
-
-
   // Stable per-message first-seen fallback for messages whose metadata
   // carries no timestamp (legacy user messages written before we started
   // stamping, with no following assistant turn to borrow from). A plain
@@ -995,6 +867,9 @@
           provider: typeof m.provider === "string" ? m.provider : undefined,
           modelId: typeof m.modelId === "string" ? m.modelId : undefined,
           sessionId: typeof m.sessionId === "string" ? m.sessionId : undefined,
+          startTimestamp: typeof m.startTimestamp === "string" ? m.startTimestamp : undefined,
+          timestamp: typeof m.timestamp === "string" ? m.timestamp : undefined,
+          endTimestamp: typeof m.endTimestamp === "string" ? m.endTimestamp : undefined,
         },
       };
     });

@@ -7,30 +7,7 @@
   import { IconSmall } from "@atlas/ui";
   import ValidationPillRow from "./validation-pill-row.svelte";
   import type { ValidationAttemptDisplay } from "./validation-accumulator.ts";
-
-  // Message timestamp for the per-message "…" menu.
-  //   • same calendar day → "Today, 12:31 PM"
-  //   • any other day     → "Apr 20, 11:31 PM"
-  const TIME_FMT = new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  const DATETIME_FMT = new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  function formatMessageTimestamp(timestamp: number): string {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const sameDay =
-      date.getFullYear() === now.getFullYear() &&
-      date.getMonth() === now.getMonth() &&
-      date.getDate() === now.getDate();
-    if (sameDay) return `Today, ${TIME_FMT.format(date)}`;
-    return DATETIME_FMT.format(date);
-  }
+  import { formatMessageTimestamp } from "@atlas/core/chat/export/render";
 
   interface Props {
     messages: ChatMessage[];
@@ -455,7 +432,7 @@
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content>
                   <DropdownMenu.Label>
-                    {formatMessageTimestamp(message.timestamp)}
+                    {formatMessageTimestamp(message.metadata)}
                   </DropdownMenu.Label>
                 </DropdownMenu.Content>
               {/snippet}
