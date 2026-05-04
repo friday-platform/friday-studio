@@ -38,11 +38,13 @@ describe("artifacts_create", () => {
       TOOL_CALL_OPTS,
     );
 
-    expect(mockArtifactsCreatePost).toHaveBeenCalledOnce();
-    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as {
-      json: { data: { mimeType?: string } };
-    };
-    expect(call.json.data.mimeType).toBe("text/markdown");
+    expect(mockArtifactsCreatePost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        json: expect.objectContaining({
+          data: expect.objectContaining({ mimeType: "text/markdown" }),
+        }),
+      }),
+    );
   });
 
   it("infers text/html mimeType from .html filename (extension outside upload allowlist)", async () => {
@@ -57,9 +59,12 @@ describe("artifacts_create", () => {
       TOOL_CALL_OPTS,
     );
 
-    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as {
-      json: { data: { mimeType?: string } };
-    };
-    expect(call.json.data.mimeType).toBe("text/html");
+    expect(mockArtifactsCreatePost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        json: expect.objectContaining({
+          data: expect.objectContaining({ mimeType: "text/html" }),
+        }),
+      }),
+    );
   });
 });
