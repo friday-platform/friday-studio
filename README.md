@@ -251,30 +251,6 @@ Reference:
   [`apps/atlasd/src/agent-spawn.ts`](apps/atlasd/src/agent-spawn.ts) —
   three-tier fallback (uv-run → `FRIDAY_AGENT_PYTHON` → bare `python3`)
 
-## AI Workflow
-
-Claude Code skills support a structured planning-to-execution pipeline:
-
-1. **Design** — `/brainstorming` refines a rough idea into a design doc via
-   Socratic questioning. Outputs to `docs/plans/`.
-
-2. **Iterate** — `/improving-plans` critiques the design, surfaces gaps, and
-   outputs an improved version. Keep iterating until the questions become
-   trivial.
-
-3. **Tasks** — `/creating-tasks` converts the validated design into tracked
-   work items with dependency graphs.
-
-4. **Execute** — `/implementing-tasks` spawns parallel agents. Each claims a
-   task, implements, commits, moves on.
-
-5. **Polish** — `/polishing` runs a self-review team (lint, slop, tests,
-   design) before PR.
-
-6. **Ship** — `/opening-pr` creates a PR with summary and test plan.
-
-Post-ship: `/reviewing-code` for reviewing others' PRs.
-
 ## Learn more
 
 - [docs.hellofriday.ai](https://docs.hellofriday.ai) — full documentation
