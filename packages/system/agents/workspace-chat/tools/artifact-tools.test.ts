@@ -61,9 +61,7 @@ describe("artifacts_create", () => {
 
     expect(mockArtifactsCreatePost).toHaveBeenCalledWith(
       expect.objectContaining({
-        json: expect.objectContaining({
-          data: expect.objectContaining({ mimeType: "text/html" }),
-        }),
+        json: expect.objectContaining({ data: expect.objectContaining({ mimeType: "text/html" }) }),
       }),
     );
   });
