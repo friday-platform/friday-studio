@@ -33,6 +33,10 @@ vi.mock("@atlas/core/credentials", () => ({
 
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
 
+vi.mock("@atlas/core/users/storage", () => ({
+  UserStorage: { getCachedLocalUserId: () => "test-local-user" },
+}));
+
 vi.mock("@atlas/agent-sdk", () => ({
   validateAtlasUIMessages: mockValidateMessages,
   normalizeToUIMessages: (message: unknown) => [message],
@@ -198,7 +202,7 @@ describe("POST /:workspaceId/chat — create chat (Chat SDK path)", () => {
 
     // Verify the forwarded Request carries the body and userId header
     const forwarded = mockWebhooksAtlas.mock.calls[0]?.[0] as Request;
-    expect(forwarded.headers.get("X-Atlas-User-Id")).toBe("default-user");
+    expect(forwarded.headers.get("X-Atlas-User-Id")).toBe("test-local-user");
     const body = JSON.parse(await forwarded.text()) as Record<string, unknown>;
     expect(body.id).toBe("chat-1");
   });

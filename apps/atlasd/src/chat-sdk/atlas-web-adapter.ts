@@ -12,6 +12,7 @@ import {
   normalizeToUIMessages,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
+import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
 import type {
   Adapter,
@@ -224,7 +225,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
 
     const chatId = parsed.data.id;
     const messageText = joinTextParts(uiMessage);
-    const userId = request.headers.get("X-Atlas-User-Id") ?? "default-user";
+    const userId = request.headers.get("X-Atlas-User-Id") ?? UserStorage.getCachedLocalUserId();
     const { datetime, foreground_workspace_ids: foregroundWorkspaceIds } = parsed.data;
 
     // Create the buffer BEFORE dispatching so we don't lose early events.

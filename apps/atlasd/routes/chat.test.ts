@@ -34,6 +34,10 @@ vi.mock("@atlas/core/credentials", () => ({
 
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
 
+vi.mock("@atlas/core/users/storage", () => ({
+  UserStorage: { getCachedLocalUserId: () => "test-local-user" },
+}));
+
 vi.mock("@atlas/agent-sdk", () => ({ validateAtlasUIMessages: mockValidateMessages }));
 
 import chatRoutes from "./chat.ts";

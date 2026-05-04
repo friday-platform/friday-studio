@@ -89,7 +89,18 @@ export interface JetStreamUserBackend {
   ensureUser(userId: string, init?: Partial<UserIdentity>): Promise<Result<User, string>>;
   setUserIdentity(userId: string, patch: Partial<UserIdentity>): Promise<Result<User, string>>;
   markOnboardingComplete(userId: string, version: number): Promise<Result<User, string>>;
+  /**
+   * Resolve the local single-tenant user id. First call generates a
+   * nanoid, creates the User record, and writes the `_local` pointer.
+   * Subsequent calls return the cached id without hitting KV.
+   */
   resolveLocalUserId(): Promise<Result<string, string>>;
+  /**
+   * Synchronous accessor for the cached local user id. Throws if
+   * `resolveLocalUserId()` has not been awaited yet — callers in the
+   * request hot-path rely on daemon startup to warm the cache.
+   */
+  getCachedLocalUserId(): string;
 }
 
 export async function ensureUsersKVBucket(nc: NatsConnection): Promise<KV> {
@@ -99,6 +110,7 @@ export async function ensureUsersKVBucket(nc: NatsConnection): Promise<KV> {
 
 export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBackend {
   let cachedKV: KV | null = null;
+  let cachedLocalUserId: string | null = null;
 
   async function kv(): Promise<KV> {
     if (cachedKV) return cachedKV;
@@ -208,14 +220,16 @@ export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBac
   /**
    * Resolve the local single-tenant user's id. On first call (no `_local`
    * pointer in KV), generates a nanoid, creates an empty User record, and
-   * stores the pointer. Subsequent calls return the same id.
+   * stores the pointer. Subsequent calls return the cached id.
    */
   async function resolveLocalUserId(): Promise<Result<string, string>> {
+    if (cachedLocalUserId) return success(cachedLocalUserId);
     try {
       const k = await kv();
       const existing = await k.get(LOCAL_USER_KEY);
       if (existing && existing.operation === "PUT") {
-        return success(dec.decode(existing.value));
+        cachedLocalUserId = dec.decode(existing.value);
+        return success(cachedLocalUserId);
       }
       const userId = generateId();
       // Create the User record first so the pointer never points at a
@@ -223,12 +237,14 @@ export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBac
       await updateUser(userId, (u) => u, { nameStatus: "unknown" });
       try {
         await k.create(LOCAL_USER_KEY, enc.encode(userId));
+        cachedLocalUserId = userId;
       } catch (err) {
         if (isCASConflict(err)) {
           // Another caller raced us. Read and return their id.
           const winner = await k.get(LOCAL_USER_KEY);
           if (winner && winner.operation === "PUT") {
-            return success(dec.decode(winner.value));
+            cachedLocalUserId = dec.decode(winner.value);
+            return success(cachedLocalUserId);
           }
         }
         throw err;
@@ -239,5 +255,21 @@ export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBac
     }
   }
 
-  return { getUser, ensureUser, setUserIdentity, markOnboardingComplete, resolveLocalUserId };
+  function getCachedLocalUserId(): string {
+    if (!cachedLocalUserId) {
+      throw new Error(
+        "UserStorage: local user id not yet resolved — await resolveLocalUserId() at daemon startup",
+      );
+    }
+    return cachedLocalUserId;
+  }
+
+  return {
+    getUser,
+    ensureUser,
+    setUserIdentity,
+    markOnboardingComplete,
+    resolveLocalUserId,
+    getCachedLocalUserId,
+  };
 }

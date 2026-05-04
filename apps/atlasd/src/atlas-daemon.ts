@@ -17,6 +17,7 @@ import {
 import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
+import { ensureUsersKVBucket, initUserStorage, UserStorage } from "@atlas/core/users/storage";
 import { CronManager } from "@atlas/cron";
 import { initDocumentStore } from "@atlas/document-store";
 import { createPlatformModels, type PlatformModels, prewarmCatalog } from "@atlas/llm";
@@ -398,6 +399,18 @@ export class AtlasDaemon {
       duplicateWindowNs: jsCfg.stream.duplicateWindowNs.value,
     });
     await ensureChatsKVBucket(nc);
+
+    // Wire user-identity storage and warm the local-user-id cache so
+    // synchronous request handlers can read it via getCachedLocalUserId().
+    initUserStorage(nc);
+    await ensureUsersKVBucket(nc);
+    {
+      const localUser = await UserStorage.resolveLocalUserId();
+      if (!localUser.ok) {
+        throw new Error(`Failed to resolve local user id: ${localUser.error}`);
+      }
+      logger.info("Resolved local user id", { userId: localUser.data });
+    }
 
     // Wire MCP registry to JetStream KV. Routes / discovery code call
     // the zero-arg `getMCPRegistryAdapter()` and get back the JS-KV-backed
@@ -1729,7 +1742,7 @@ export class AtlasDaemon {
     }
 
     const workspace = await manager.find({ id: workspaceId });
-    const userId = workspace?.metadata?.createdBy ?? "default-user";
+    const userId = workspace?.metadata?.createdBy ?? UserStorage.getCachedLocalUserId();
 
     let credentials: PlatformCredentials[] | undefined;
     try {
@@ -2288,7 +2301,7 @@ export class AtlasDaemon {
         }
         if (!discordConfig) continue;
 
-        const userId = workspace.metadata?.createdBy ?? "default-user";
+        const userId = workspace.metadata?.createdBy ?? UserStorage.getCachedLocalUserId();
         const creds = await resolveDiscordCredentials(workspace.id, userId, discordConfig);
         if (!creds || creds.credentials.kind !== "discord") continue;
         const { botToken, publicKey, applicationId } = creds.credentials;

@@ -4,6 +4,10 @@ import { StreamRegistry } from "../stream-registry.ts";
 import type { WebChatPayload } from "./atlas-web-adapter.ts";
 import { AtlasWebAdapter } from "./atlas-web-adapter.ts";
 
+vi.mock("@atlas/core/users/storage", () => ({
+  UserStorage: { getCachedLocalUserId: () => "test-local-user" },
+}));
+
 /** Mock ChatInstance — processMessage is fire-and-forget. */
 function createMockChat() {
   return {
@@ -186,7 +190,7 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     await adapter.handleWebhook(request);
 
     const message = chat.processMessage.mock.calls[0]?.[2] as Message<WebChatPayload>;
-    expect(message.author.userId).toBe("default-user");
+    expect(message.author.userId).toBe("test-local-user");
   });
 
   it("streams events written to StreamRegistry through the SSE response", async () => {

@@ -3,6 +3,7 @@ import { validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { extractTempestUserId } from "@atlas/core/credentials";
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
+import { UserStorage } from "@atlas/core/users/storage";
 import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
@@ -17,11 +18,13 @@ const listChatsQuerySchema = z.object({
 
 /**
  * Extract userId from FRIDAY_KEY JWT.
- * Falls back to "default-user" in dev mode (no FRIDAY_KEY).
+ * Falls back to the daemon's resolved local-tenant user id (a nanoid
+ * generated on first daemon start, cached after `resolveLocalUserId()`
+ * runs in atlas-daemon.ts startup).
  */
 function getUserId(): string {
   const atlasKey = process.env.FRIDAY_KEY;
-  return (atlasKey && extractTempestUserId(atlasKey)) || "default-user";
+  return (atlasKey && extractTempestUserId(atlasKey)) || UserStorage.getCachedLocalUserId();
 }
 
 /**

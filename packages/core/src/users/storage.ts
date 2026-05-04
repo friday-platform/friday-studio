@@ -63,10 +63,15 @@ function resolveLocalUserId(): Promise<Result<string, string>> {
   return b().resolveLocalUserId();
 }
 
+function getCachedLocalUserId(): string {
+  return b().getCachedLocalUserId();
+}
+
 export const UserStorage = {
   getUser,
   ensureUser,
   setUserIdentity,
   markOnboardingComplete,
   resolveLocalUserId,
+  getCachedLocalUserId,
 };
