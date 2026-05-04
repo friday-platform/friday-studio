@@ -5,11 +5,7 @@ const mockArtifactsCreatePost = vi.hoisted(() => vi.fn<(args: unknown) => Promis
 const mockReadFile = vi.hoisted(() => vi.fn<(path: string) => Promise<Uint8Array>>());
 
 vi.mock("@atlas/client/v2", () => ({
-  client: {
-    artifactsStorage: {
-      index: { $post: mockArtifactsCreatePost },
-    },
-  },
+  client: { artifactsStorage: { index: { $post: mockArtifactsCreatePost } } },
   parseResult: async (p: Promise<unknown>) => {
     await p;
     return { ok: true, data: { artifact: { id: "art-1" } } };
@@ -43,7 +39,9 @@ describe("artifacts_create", () => {
     );
 
     expect(mockArtifactsCreatePost).toHaveBeenCalledOnce();
-    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as { json: { data: { mimeType?: string } } };
+    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as {
+      json: { data: { mimeType?: string } };
+    };
     expect(call.json.data.mimeType).toBe("text/markdown");
   });
 
@@ -59,7 +57,9 @@ describe("artifacts_create", () => {
       TOOL_CALL_OPTS,
     );
 
-    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as { json: { data: { mimeType?: string } } };
+    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as {
+      json: { data: { mimeType?: string } };
+    };
     expect(call.json.data.mimeType).toBe("text/html");
   });
 });
