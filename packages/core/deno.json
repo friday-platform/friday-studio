@@ -20,6 +20,7 @@
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
     "./chat/storage": "./src/chat/storage.ts",
     "./chat/sse-manager": "./src/chat/sse-manager.ts",
+    "./users/storage": "./src/users/storage.ts",
     "./session/session-events": "./src/session/session-events.ts",
     "./session/session-reducer": "./src/session/session-reducer.ts",
     "./mcp-registry/discovery": "./src/mcp-registry/discovery.ts",
