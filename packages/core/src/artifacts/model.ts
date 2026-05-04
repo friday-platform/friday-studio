@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FileDataInputSchema, FileDataSchema } from "./primitives.ts";
+import { FileDataInputSchema, FileDataInputWireSchema, FileDataSchema } from "./primitives.ts";
 
 /** Slug: lowercase alphanumeric + hyphens, with optional path segments separated by `/`. */
 const SlugSchema = z.string().regex(/^[a-z0-9-]+(\/[a-z0-9-]+)*$/);
@@ -34,6 +34,18 @@ export const ArtifactDataInputSchema = z.object({
 
 export type ArtifactDataInput = z.infer<typeof ArtifactDataInputSchema>;
 
+/**
+ * Wire-level artifact data input — JSON-safe, no `Uint8Array` branch.
+ * Use at HTTP/MCP boundaries; in-process callers can keep
+ * {@link ArtifactDataInputSchema}.
+ */
+export const ArtifactDataInputWireSchema = z.object({
+  type: z.literal("file"),
+  ...FileDataInputWireSchema.shape,
+});
+
+export type ArtifactDataInputWire = z.infer<typeof ArtifactDataInputWireSchema>;
+
 /** Schema for valid artifact type */
 export const ArtifactTypeSchema = z.literal("file");
 
@@ -56,6 +68,17 @@ export const CreateArtifactSchema = z.object({
 
 export type CreateArtifactInput = z.infer<typeof CreateArtifactSchema>;
 
+/** Wire-level create-artifact request — JSON-safe, for HTTP/MCP. */
+export const CreateArtifactWireSchema = z.object({
+  data: ArtifactDataInputWireSchema,
+  title: z.string().min(1).max(200),
+  summary: z.string().min(1).max(5000),
+  workspaceId: z.string().optional(),
+  chatId: z.string().optional(),
+  slug: SlugSchema.optional(),
+  source: z.string().optional(),
+});
+
 /**
  * Update an artifact's content + metadata. Creates a new revision.
  * `slug` and `source` are immutable after creation — carried forward
@@ -64,6 +87,15 @@ export type CreateArtifactInput = z.infer<typeof CreateArtifactSchema>;
 export const UpdateArtifactSchema = z.object({
   type: ArtifactTypeSchema,
   data: ArtifactDataInputSchema,
+  title: z.string().min(1).max(200).optional(),
+  summary: z.string().min(1).max(5000),
+  revisionMessage: z.string().optional(),
+});
+
+/** Wire-level update-artifact request — JSON-safe, for HTTP/MCP. */
+export const UpdateArtifactWireSchema = z.object({
+  type: ArtifactTypeSchema,
+  data: ArtifactDataInputWireSchema,
   title: z.string().min(1).max(200).optional(),
   summary: z.string().min(1).max(5000),
   revisionMessage: z.string().optional(),

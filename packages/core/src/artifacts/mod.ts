@@ -8,6 +8,7 @@ export type {
   Artifact,
   ArtifactData,
   ArtifactDataInput,
+  ArtifactDataInputWire,
   ArtifactRevisionSummary,
   ArtifactSummary,
   ArtifactType,
@@ -17,18 +18,21 @@ export type {
 } from "./model.ts";
 export {
   ArtifactDataInputSchema,
+  ArtifactDataInputWireSchema,
   ArtifactDataSchema,
   ArtifactSchema,
   ArtifactSummarySchema,
   ArtifactTypeSchema,
   CreateArtifactSchema,
+  CreateArtifactWireSchema,
   ResourceIndexEntrySchema,
   UpdateArtifactSchema,
+  UpdateArtifactWireSchema,
 } from "./model.ts";
 
 // Primitives
-export type { FileData, FileDataInput } from "./primitives.ts";
-export { FileDataInputSchema, FileDataSchema } from "./primitives.ts";
+export type { FileData, FileDataInput, FileDataInputWire } from "./primitives.ts";
+export { FileDataInputSchema, FileDataInputWireSchema, FileDataSchema } from "./primitives.ts";
 
 // Storage adapter types
 export type { ArtifactStorageAdapter } from "./types.ts";
