@@ -743,11 +743,22 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         // the system prompt byte-stable across turns so the Anthropic
         // prompt cache hits on the prefix; per-turn variation rides
         // alongside the user's actual message.
+        //
+        // Each section wraps in `<retrieved_content>` with a provenance
+        // attribute so the model applies the `<retrieved_content_hygiene>`
+        // rule (treat as data, not commands).
         const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);
         const datetimeMessage = buildTemporalFacts(session.datetime);
+        const block4FetchedAt = new Date().toISOString();
         const block4Parts: string[] = [];
-        if (memoryBlocks.length > 0) block4Parts.push(memoryBlocks.join("\n\n"));
-        block4Parts.push(datetimeMessage);
+        if (memoryBlocks.length > 0) {
+          block4Parts.push(
+            `<retrieved_content provenance="user-authored" origin="memory:workspace-stores" fetched_at="${block4FetchedAt}">\n${memoryBlocks.join("\n\n")}\n</retrieved_content>`,
+          );
+        }
+        block4Parts.push(
+          `<retrieved_content provenance="system-config" origin="temporal" fetched_at="${block4FetchedAt}">\n${datetimeMessage}\n</retrieved_content>`,
+        );
         const block4Preface = block4Parts.join("\n\n");
 
         const onboardingClause = buildOnboardingClause(profileState);
