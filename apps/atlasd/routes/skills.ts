@@ -17,6 +17,7 @@ import {
   readArchiveFile,
   SkillStorage,
   SkillsShClient,
+  splitSkillMd,
   validateSkillReferences,
 } from "@atlas/skills";
 import { PublishSkillInputSchema, SkillSortSchema } from "@atlas/skills/schemas";
@@ -723,7 +724,7 @@ export const skillsRoutes = daemonFactory
       status: 200,
       headers: {
         "Content-Type": "application/gzip",
-        "Content-Disposition": `attachment; filename="@${namespace.replace(/["\r\n\0]/g, "")}-${name.replace(/["\r\n\0]/g, "")}-v${String(result.data.version)}.tar.gz"`,
+        "Content-Disposition": `attachment; filename="@${namespace}-${name}-v${String(result.data.version)}.tar.gz"`,
         "Content-Length": String(body.byteLength),
       },
     });
@@ -1112,14 +1113,12 @@ export const skillsRoutes = daemonFactory
       // frontmatter block — split it here so the column gets populated and
       // the body stored without the YAML preamble. Explicit `input.frontmatter`
       // wins on key conflicts (it's the caller's deliberate signal).
-      const parsedSkillMd = parseSkillMd(rawInput.instructions);
-      const input = parsedSkillMd.ok
-        ? {
-            ...rawInput,
-            instructions: parsedSkillMd.data.instructions,
-            frontmatter: { ...parsedSkillMd.data.frontmatter, ...(rawInput.frontmatter ?? {}) },
-          }
-        : rawInput;
+      const { frontmatter: embedded, instructions: body } = splitSkillMd(rawInput.instructions);
+      const input = {
+        ...rawInput,
+        instructions: body,
+        frontmatter: { ...embedded, ...(rawInput.frontmatter ?? {}) },
+      };
 
       // Validate references against the text files that will actually be
       // extracted to the sandbox — not the full archive (which includes binaries

@@ -52,6 +52,33 @@ describe("packExportArchive", () => {
     expect(parsed.data.frontmatter.description).toContain("sparring partner");
   });
 
+  it("splits embedded frontmatter even when it lacks a description (legacy row shape)", async () => {
+    // Legacy rows from before the JSON-publish split fix have an embedded
+    // `---...---` block in `instructions` and an empty `frontmatter` column.
+    // The strict parser rejects these (no `description` key), so the export
+    // path used to fall back to raw input and emit two frontmatter blocks.
+    const instructionsWithLegacyFm =
+      "---\nname: legacy-skill\n---\n\n# Legacy Skill\n\nBody here.\n";
+
+    const result = await packExportArchive({
+      instructions: instructionsWithLegacyFm,
+      frontmatter: {},
+      archive: null,
+    });
+
+    const contents = await extractArchiveContents(result);
+    const skillMd = contents["SKILL.md"] as string;
+
+    // Exactly one frontmatter block: 2 `---` delimiters, not 4.
+    const frontmatterDelimiters = skillMd.match(/^---$/gm);
+    expect(frontmatterDelimiters?.length ?? 0).toBe(2);
+
+    // Body must not start with a frontmatter delimiter.
+    const body = skillMd.split(/^---$/gm).slice(2).join("---").trimStart();
+    expect(body.startsWith("---")).toBe(false);
+    expect(body).toContain("# Legacy Skill");
+  });
+
   it("preserves bundled reference files alongside SKILL.md", async () => {
     const refDir = makeTempDir({ prefix: "atlas-export-test-refs-" });
     const refContent = "# Foo reference\n\nDetails here.\n";

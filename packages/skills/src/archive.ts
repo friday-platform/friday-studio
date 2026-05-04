@@ -7,7 +7,7 @@ import { makeTempDir } from "@atlas/utils/temp.server";
 import { stringify as stringifyYaml } from "@std/yaml";
 import MarkdownIt from "markdown-it";
 import { create, extract, list, type WriteEntry } from "tar";
-import { parseSkillMd } from "./skill-md-parser.ts";
+import { splitSkillMd } from "./skill-md-parser.ts";
 
 const logger = createLogger({ name: "skill-archive" });
 
@@ -64,9 +64,7 @@ export async function packExportArchive(input: {
   frontmatter: Record<string, unknown>;
   archive: Uint8Array | null;
 }): Promise<Buffer> {
-  const parsed = parseSkillMd(input.instructions);
-  const embeddedFm = parsed.ok ? parsed.data.frontmatter : {};
-  const body = parsed.ok ? parsed.data.instructions : input.instructions;
+  const { frontmatter: embeddedFm, instructions: body } = splitSkillMd(input.instructions);
   const mergedFm = { ...embeddedFm, ...input.frontmatter };
   const fmYaml = Object.keys(mergedFm).length > 0 ? `---\n${stringifyYaml(mergedFm)}---\n\n` : "";
   const skillMd = `${fmYaml}${body}`;
