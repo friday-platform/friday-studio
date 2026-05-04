@@ -452,6 +452,13 @@
               <DropdownMenu.Item onclick={() => uploadDialogOpen.set(true)}>
                 Replace
               </DropdownMenu.Item>
+              <DropdownMenu.Item
+                onclick={() => {
+                  window.location.href = `/api/daemon/api/skills/@${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/export`;
+                }}
+              >
+                Export
+              </DropdownMenu.Item>
               <DropdownMenu.Separator />
               <DropdownMenu.Item class="delete-item" onclick={handleDeleteClick}>
                 {deleteChecking ? "Checking..." : "Remove skill"}

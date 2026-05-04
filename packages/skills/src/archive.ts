@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
+import { stringify as stringifyYaml } from "@std/yaml";
 import MarkdownIt from "markdown-it";
 import { create, extract, list, type WriteEntry } from "tar";
+import { splitSkillMd } from "./skill-md-parser.ts";
 
 const logger = createLogger({ name: "skill-archive" });
 
@@ -43,6 +45,40 @@ export async function packSkillArchive(dirPath: string): Promise<Buffer> {
     logger.debug("cleanup failed", { error: stringifyError(e) }),
   );
   return Buffer.from(buf);
+}
+
+/**
+ * Reconstructs SKILL.md from `frontmatter` + `instructions` and packs it
+ * alongside any reference files from `archive` (a tar.gz that excludes
+ * SKILL.md, matching how skills are stored). Returns a self-contained
+ * tar.gz suitable for sharing or re-importing.
+ *
+ * Skills published via the JSON path (`POST /:namespace/:name`) are stored
+ * with the `instructions` body verbatim — including any leading frontmatter
+ * block — and an empty `frontmatter` column. To avoid emitting a double
+ * frontmatter, we always re-parse `instructions` first; embedded fields are
+ * the base, and the column-extracted `frontmatter` overlays them.
+ */
+export async function packExportArchive(input: {
+  instructions: string;
+  frontmatter: Record<string, unknown>;
+  archive: Uint8Array | null;
+}): Promise<Buffer> {
+  const { frontmatter: embeddedFm, instructions: body } = splitSkillMd(input.instructions);
+  const mergedFm = { ...embeddedFm, ...input.frontmatter };
+  const fmYaml = Object.keys(mergedFm).length > 0 ? `---\n${stringifyYaml(mergedFm)}---\n\n` : "";
+  const skillMd = `${fmYaml}${body}`;
+  const dir = input.archive
+    ? await extractSkillArchive(Buffer.from(input.archive), "atlas-export-")
+    : makeTempDir({ prefix: "atlas-export-" });
+  try {
+    await writeFile(join(dir, "SKILL.md"), skillMd);
+    return await packSkillArchive(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch((e) =>
+      logger.debug("export cleanup failed", { error: stringifyError(e) }),
+    );
+  }
 }
 
 /**

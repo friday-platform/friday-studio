@@ -3,6 +3,7 @@ export {
   extractArchiveContents,
   extractSkillArchive,
   listArchiveFiles,
+  packExportArchive,
   packSkillArchive,
   readArchiveFile,
   validateSkillReferences,
@@ -38,7 +39,7 @@ export {
 export type { LintFinding, LintInput, LintMode, LintResult, LintSeverity } from "./skill-linter.ts";
 export { invalidateLintCache, lintCache, lintSkill } from "./skill-linter.ts";
 export type { SkillFrontmatter } from "./skill-md-parser.ts";
-export { parseSkillMd, SkillFrontmatterSchema } from "./skill-md-parser.ts";
+export { parseSkillMd, SkillFrontmatterSchema, splitSkillMd } from "./skill-md-parser.ts";
 // skills.sh client
 export type {
   SkillsShDownloadResult,
