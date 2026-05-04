@@ -74,6 +74,10 @@ export async function startToolWorkerProcess(opts?: {
   logger.info("Tool worker connecting", { natsUrl, tools: selected.map((s) => s.toolId) });
   const nc = await connect({ servers: natsUrl });
   const workers = selected.map((s) => registerToolWorker(nc, s.toolId, s.handle));
+  // Wait for all SUB protocol messages to flush before signalling readiness —
+  // otherwise a caller dispatching immediately after this resolves can race
+  // the server-side subscription registration and see NatsError 503.
+  await Promise.all(workers.map((w) => w.ready));
   logger.info("Tool worker registered", { tools: workers.map((w) => w.toolId) });
 
   return {
