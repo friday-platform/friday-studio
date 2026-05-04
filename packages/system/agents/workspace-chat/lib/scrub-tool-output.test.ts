@@ -8,9 +8,9 @@ const mockFetch = vi.hoisted(() =>
 vi.stubGlobal("fetch", mockFetch);
 vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: () => "http://localhost:3000" }));
 
-import { __test, createScrubber } from "./scrub-tool-output.ts";
+import { __test, createScrubber, scrubAssistantMessage } from "./scrub-tool-output.ts";
 
-const { looksLikeBase64, DATA_URL_RE, SIZE_THRESHOLD_CHARS } = __test;
+const { DATA_URL_RE, EMBEDDED_BASE64_RE, SIZE_THRESHOLD_CHARS } = __test;
 
 const logger: Logger = {
   info: vi.fn(),
@@ -50,24 +50,23 @@ function mockArtifactCreate(artifactId: string, size: number, mimeType: string) 
   );
 }
 
-describe("looksLikeBase64", () => {
-  it("rejects short strings under threshold", () => {
-    expect(looksLikeBase64(bigBase64(SIZE_THRESHOLD_CHARS - 1))).toBe(false);
+describe("EMBEDDED_BASE64_RE", () => {
+  it("matches a pure base64 run at threshold", () => {
+    EMBEDDED_BASE64_RE.lastIndex = 0;
+    expect(EMBEDDED_BASE64_RE.exec(bigBase64(SIZE_THRESHOLD_CHARS))).not.toBeNull();
   });
 
-  it("accepts long pure-base64 strings at threshold", () => {
-    expect(looksLikeBase64(bigBase64(SIZE_THRESHOLD_CHARS))).toBe(true);
+  it("rejects a base64 run shorter than threshold", () => {
+    EMBEDDED_BASE64_RE.lastIndex = 0;
+    expect(EMBEDDED_BASE64_RE.exec(bigBase64(SIZE_THRESHOLD_CHARS - 1))).toBeNull();
   });
 
-  it("rejects long strings with prose mixed in", () => {
-    const s = `${bigBase64(100)} The PDF is shown below. ${bigBase64(SIZE_THRESHOLD_CHARS)}`;
-    expect(looksLikeBase64(s)).toBe(false);
-  });
-
-  it("rejects long human-language text even if length is over threshold", () => {
-    // Synthesize a long English paragraph; punctuation breaks the base64 class.
-    const sentence = "The quick brown fox jumps over the lazy dog. ";
-    expect(looksLikeBase64(sentence.repeat(2000))).toBe(false);
+  it("matches base64 embedded inside a larger envelope", () => {
+    const envelope = `Attachment downloaded successfully!\n\nBase64 content (${SIZE_THRESHOLD_CHARS} chars, standard base64):\n${bigBase64(SIZE_THRESHOLD_CHARS)}\n\nGoodbye.`;
+    EMBEDDED_BASE64_RE.lastIndex = 0;
+    const m = EMBEDDED_BASE64_RE.exec(envelope);
+    expect(m).not.toBeNull();
+    expect(m?.[0].length).toBe(SIZE_THRESHOLD_CHARS);
   });
 });
 
@@ -83,7 +82,7 @@ describe("DATA_URL_RE", () => {
   });
 });
 
-describe("createScrubber", () => {
+describe("createScrubber (MCP-boundary)", () => {
   it("passes through small string results untouched", async () => {
     const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
     const result = await scrub({ content: [{ type: "text", text: "hello world" }] }, TOOL_CTX);
@@ -103,21 +102,26 @@ describe("createScrubber", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(result.content[0]?.data).toMatch(/artifact art_42/);
     expect(result.content[0]?.data).toMatch(/display_artifact/);
-    // Other fields preserved.
     expect(result.content[0]?.type).toBe("image");
     expect(result.content[0]?.mimeType).toBe("image/png");
   });
 
-  it("lifts oversized standalone base64 to artifacts", async () => {
-    mockArtifactCreate("art_99", 48_000, "application/octet-stream");
+  it("lifts a base64 block embedded inside a Gmail-style envelope", async () => {
+    mockArtifactCreate("art_pdf", 24_000, "application/pdf");
     const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
-    const result = (await scrub(
-      { content: [{ type: "text", text: bigBase64(SIZE_THRESHOLD_CHARS + 100) }] },
-      TOOL_CTX,
-    )) as { content: Array<{ type: string; text: string }> };
+    const blob = bigBase64(SIZE_THRESHOLD_CHARS + 200);
+    const text = `Attachment downloaded successfully!\nMessage ID: 123\nSize: 24.4 KB (24942 bytes)\n\nBase64-encoded content:\n${blob}\n\nDone.`;
+    const result = (await scrub({ content: [{ type: "text", text }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(result.content[0]?.text).toMatch(/artifact art_99/);
+    const out = result.content[0]?.text ?? "";
+    expect(out).toContain("Attachment downloaded successfully!");
+    expect(out).toContain("Done.");
+    expect(out).toMatch(/artifact art_pdf/);
+    // The original blob should be gone from the rewritten string.
+    expect(out).not.toContain(blob);
   });
 
   it("recurses into nested objects and arrays", async () => {
@@ -148,11 +152,94 @@ describe("createScrubber", () => {
     expect(result.content[0]?.data).toBe(dataUrl);
   });
 
-  it("leaves prose-with-base64-fragment alone", async () => {
+  it("leaves short base64 fragments alone", async () => {
     const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
-    const text = `The attachment data is: ${bigBase64(200)} but here's some explanation text after it that breaks the base64 character class.`;
+    // Below threshold — no lift, no rewrite.
+    const text = `Here's a small chunk: ${bigBase64(SIZE_THRESHOLD_CHARS - 1)} that fits inline.`;
     const result = await scrub({ content: [{ type: "text", text }] }, TOOL_CTX);
     expect(result).toEqual({ content: [{ type: "text", text }] });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("scrubAssistantMessage (pre-persist)", () => {
+  it("scrubs tool-call output", async () => {
+    mockArtifactCreate("art_out", 32_000, "application/pdf");
+    const parts: Array<Record<string, unknown>> = [
+      { type: "step-start" },
+      {
+        type: "tool-get_gmail_attachment_content",
+        toolCallId: "t1",
+        state: "output-available",
+        input: { message_id: "m1" },
+        output: {
+          content: [
+            { type: "text", text: `prefix ${bigBase64(SIZE_THRESHOLD_CHARS + 50)} suffix` },
+          ],
+        },
+      },
+    ];
+    const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
+    expect(r.rewritten).toBe(1);
+    const out = (parts[1] as { output: { content: Array<{ text: string }> } }).output;
+    expect(out.content[0]?.text).toMatch(/artifact art_out/);
+  });
+
+  it("scrubs tool-call input — catches model-embedded base64 in run_code", async () => {
+    mockArtifactCreate("art_in", 24_000, "application/pdf");
+    const blob = bigBase64(SIZE_THRESHOLD_CHARS + 200);
+    const parts: Array<Record<string, unknown>> = [
+      {
+        type: "tool-run_code",
+        toolCallId: "t2",
+        state: "input-streaming",
+        input: { language: "python", source: `b64 = "${blob}"\nprint(b64[:10])` },
+      },
+    ];
+    const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
+    expect(r.rewritten).toBe(1);
+    const inp = (parts[0] as { input: { source: string } }).input;
+    expect(inp.source).toMatch(/artifact art_in/);
+    expect(inp.source).not.toContain(blob);
+  });
+
+  it("scrubs delegate-chunk envelopes", async () => {
+    mockArtifactCreate("art_delegate", 16_000, "application/pdf");
+    const parts: Array<Record<string, unknown>> = [
+      {
+        type: "data-delegate-chunk",
+        data: {
+          delegateToolCallId: "del1",
+          chunk: {
+            type: "tool-output-available",
+            output: {
+              content: [{ type: "text", text: `oh ${bigBase64(SIZE_THRESHOLD_CHARS + 50)} hi` }],
+            },
+          },
+        },
+      },
+    ];
+    const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
+    expect(r.rewritten).toBe(1);
+    const chunk = (
+      parts[0] as { data: { chunk: { output: { content: Array<{ text: string }> } } } }
+    ).data.chunk;
+    expect(chunk.output.content[0]?.text).toMatch(/artifact art_delegate/);
+  });
+
+  it("leaves clean messages untouched", async () => {
+    const parts: Array<Record<string, unknown>> = [
+      { type: "text", text: "hello" },
+      {
+        type: "tool-write_file",
+        toolCallId: "t3",
+        state: "output-available",
+        input: { path: "x.md", content: "small file" },
+        output: { ok: true },
+      },
+    ];
+    const r = await scrubAssistantMessage(parts, { workspaceId: "ws", chatId: "ch", logger });
+    expect(r.rewritten).toBe(0);
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });

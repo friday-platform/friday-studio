@@ -29,11 +29,19 @@ import type { Logger } from "@atlas/logger";
 import type { ScrubToolResult } from "@atlas/mcp";
 
 /**
- * Strings shorter than this are left alone. ~64 KB chars of base64 ≈ 48 KB
- * of decoded bytes. Below this size, inlining is cheap and persistence
- * never gets close to the 8 MB JetStream message limit.
+ * Below this size in chars, base64 stays inline. ~4 KB chars of base64 ≈
+ * 3 KB of decoded bytes — small attachments stay in the prompt; larger
+ * ones get lifted to artifacts before the model has a chance to emit them
+ * back into the next tool call.
+ *
+ * Why so much lower than the 8 MB JetStream message limit: persistence
+ * isn't the only cost. A model that sees inline base64 may decide to
+ * forward those bytes into a subsequent tool call (e.g. embedding them
+ * as a string literal in run_code), which costs prompt tokens, output
+ * tokens, and turn latency. 4 KB is the floor below which those costs
+ * are minor; above it, lift.
  */
-const SIZE_THRESHOLD_CHARS = 64 * 1024;
+const SIZE_THRESHOLD_CHARS = 4 * 1024;
 
 /**
  * Recursion depth ceiling. MCP results are usually shallow JSON; this is a
@@ -45,29 +53,23 @@ const MAX_DEPTH = 16;
 const DATA_URL_RE = /^data:([^;,]+);base64,(.+)$/s;
 
 /**
- * Loose base64 character-class check. Doesn't validate strict base64 (which
- * would reject internal whitespace) — just confirms the string is plausibly
- * an opaque base64 blob, not human-readable text. Combined with the size
- * threshold this keeps the false-positive rate low.
+ * Match a contiguous run of base64 characters of at least
+ * `SIZE_THRESHOLD_CHARS` length, with optional `=` padding. Used to find
+ * base64 blobs *embedded* inside larger strings — Gmail's
+ * `get_gmail_attachment_content`, for example, returns base64 inside a
+ * text envelope ("Attachment downloaded ...\nBase64 content (XXX chars):\n
+ * <base64>\n"). Whole-string detection misses those because the
+ * surrounding prose breaks the character class.
+ *
+ * The regex is intentionally strict (no internal whitespace) — that
+ * matches the single-line format MCPs use in practice and keeps false
+ * positives low. Multi-line base64 (RFC-2045 76-char wrap) would need
+ * a different match shape; not seen in the wild from the MCPs Friday
+ * talks to today.
+ *
+ * Built lazily because the threshold is referenced as a number of chars.
  */
-const BASE64_BODY_RE = /^[A-Za-z0-9+/_=\-\s]+$/;
-
-/** Heuristic: a base64-looking string that's mostly base64 chars (>95%). */
-function looksLikeBase64(s: string): boolean {
-  if (s.length < SIZE_THRESHOLD_CHARS) return false;
-  if (!BASE64_BODY_RE.test(s)) return false;
-  // Belt-and-suspenders: count non-base64-ish chars in case the regex passed
-  // but the string is just a long word with the right char class.
-  let bad = 0;
-  for (let i = 0; i < Math.min(s.length, 4096); i++) {
-    const c = s.charCodeAt(i);
-    const isAlnum = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
-    const isBase64Punct = c === 43 || c === 47 || c === 61 || c === 95 || c === 45; // + / = _ -
-    const isWS = c === 32 || c === 9 || c === 10 || c === 13;
-    if (!isAlnum && !isBase64Punct && !isWS) bad++;
-  }
-  return bad === 0;
-}
+const EMBEDDED_BASE64_RE = new RegExp(`[A-Za-z0-9+/]{${SIZE_THRESHOLD_CHARS},}={0,2}`, "g");
 
 interface ScrubContext {
   workspaceId: string;
@@ -145,7 +147,7 @@ async function scrubString(
   ctx: ScrubContext,
   toolCtx: { serverId: string; toolName: string },
 ): Promise<string> {
-  // Data URL: pull mime + base64 body out of the prefix.
+  // Whole-string data URL — preserve the mime hint when uploading.
   const dataUrlMatch = s.match(DATA_URL_RE);
   if (dataUrlMatch) {
     const [, mime, body] = dataUrlMatch;
@@ -156,15 +158,32 @@ async function scrubString(
     }
     return s;
   }
-  // Standalone base64-looking blob.
-  if (looksLikeBase64(s)) {
+  // Embedded base64 blocks. Find every contiguous run >= threshold,
+  // upload it, and splice the marker into its place. Done left-to-right
+  // by re-matching from a moving offset so the splice doesn't invalidate
+  // subsequent match indices.
+  let result = s;
+  let cursor = 0;
+  // Bound iterations defensively — pathological input could in theory
+  // produce many matches; in practice tool outputs have one block.
+  for (let i = 0; i < 32; i++) {
+    EMBEDDED_BASE64_RE.lastIndex = cursor;
+    const m = EMBEDDED_BASE64_RE.exec(result);
+    if (!m) break;
+    const block = m[0];
     const filename = defaultFilename(undefined, toolCtx);
-    // Strip whitespace so the artifact storage gets clean base64.
-    const clean = s.replace(/\s+/g, "");
-    const result = await uploadBlob(clean, undefined, filename, ctx, toolCtx);
-    if (result) return refMarker(result, toolCtx);
+    const upload = await uploadBlob(block, undefined, filename, ctx, toolCtx);
+    if (!upload) {
+      // Move past this match to avoid an infinite loop on transient
+      // upload failure; another scrub pass (e.g. pre-persist) can retry.
+      cursor = m.index + block.length;
+      continue;
+    }
+    const marker = refMarker(upload, toolCtx);
+    result = result.slice(0, m.index) + marker + result.slice(m.index + block.length);
+    cursor = m.index + marker.length;
   }
-  return s;
+  return result;
 }
 
 async function scrubValue(
@@ -226,39 +245,52 @@ export async function scrubAssistantMessage(
   };
   let scanned = 0;
   let rewritten = 0;
+
+  /** Run the scrub on a value; replace via the writeback fn if it changed. */
+  const scrubField = async (
+    value: unknown,
+    serverId: string,
+    toolName: string,
+    writeback: (next: unknown) => void,
+  ) => {
+    scanned++;
+    const before = JSON.stringify(value);
+    const after = await scrubValue(value, ctx, { serverId, toolName }, 0);
+    if (JSON.stringify(after) !== before) {
+      writeback(after);
+      rewritten++;
+    }
+  };
+
   for (const part of parts) {
     const type = typeof part.type === "string" ? part.type : "";
-    // Tool call outputs from the parent's own tool-use steps.
-    if (type.startsWith("tool-") && "output" in part) {
-      scanned++;
-      const before = JSON.stringify(part.output);
-      const after = await scrubValue(
-        part.output,
-        ctx,
-        { serverId: "pre-persist", toolName: type },
-        0,
-      );
-      if (JSON.stringify(after) !== before) {
-        part.output = after;
-        rewritten++;
+    // Tool calls from the parent's own tool-use steps. Both `input` and
+    // `output` get scrubbed — `output` covers MCP-server returns that
+    // bypassed the boundary scrubber; `input` covers the case where the
+    // model embedded base64 *into* a tool call (e.g. assigning bytes to a
+    // string literal in `run_code`'s source argument). Without input scrub,
+    // those bytes survive into chat history and into the next turn's prompt.
+    if (type.startsWith("tool-")) {
+      if ("output" in part) {
+        await scrubField(part.output, "pre-persist", type, (next) => {
+          part.output = next;
+        });
+      }
+      if ("input" in part) {
+        await scrubField(part.input, "pre-persist", `${type}.input`, (next) => {
+          part.input = next;
+        });
       }
     }
-    // Sub-agent stream envelopes — chunk may carry an embedded tool result.
+    // Sub-agent stream envelopes — chunk may carry an embedded tool
+    // result OR an embedded tool input (the sub-agent emitting bytes into
+    // its own next tool call). Walk the whole chunk; scrubValue recurses.
     if (type === "data-delegate-chunk" && part.data && typeof part.data === "object") {
-      scanned++;
       const data = part.data as Record<string, unknown>;
       if ("chunk" in data) {
-        const before = JSON.stringify(data.chunk);
-        const after = await scrubValue(
-          data.chunk,
-          ctx,
-          { serverId: "pre-persist", toolName: "delegate-chunk" },
-          0,
-        );
-        if (JSON.stringify(after) !== before) {
-          data.chunk = after;
-          rewritten++;
-        }
+        await scrubField(data.chunk, "pre-persist", "delegate-chunk", (next) => {
+          data.chunk = next;
+        });
       }
     }
   }
@@ -266,4 +298,4 @@ export async function scrubAssistantMessage(
 }
 
 // Exported for unit tests.
-export const __test = { looksLikeBase64, DATA_URL_RE, SIZE_THRESHOLD_CHARS };
+export const __test = { DATA_URL_RE, EMBEDDED_BASE64_RE, SIZE_THRESHOLD_CHARS };
