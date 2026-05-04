@@ -109,6 +109,7 @@ import {
 } from "./signal-stream.ts";
 import { initScratchpadStorage } from "./storage/scratchpad.ts";
 import { StreamRegistry } from "./stream-registry.ts";
+import { sweepOrphanedAgentBrowserSessions } from "./sweep-agent-browser-sessions.ts";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -185,7 +186,7 @@ export class AtlasDaemon {
     new Map();
   // Private properties
   private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
-  private isShuttingDown = false;
+  private shutdownPromise: Promise<void> | null = null;
   private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
@@ -334,6 +335,15 @@ export class AtlasDaemon {
     if (this.isInitialized) return;
 
     logger.info("Initializing Atlas daemon...");
+
+    // Sweep orphaned `agent-browser` daemons left by a previous atlasd that
+    // died without running the bundled web agent's stopSession cleanup
+    // (SIGKILL, crash, OOM, host reboot). Scoped to the atlas-web-<uuid>
+    // namespace, so user-launched agent-browser sessions are untouched.
+    // Pre-NATS so a sweep failure can't poison anything important.
+    await sweepOrphanedAgentBrowserSessions(logger).catch((error) => {
+      logger.warn("agent-browser session sweep failed", { error: String(error) });
+    });
 
     // Load platform model configuration (friday.yml) and construct the resolver.
     // Runs eager validation — throws on malformed config or missing credentials.
@@ -2082,8 +2092,12 @@ export class AtlasDaemon {
     const daemonId = crypto.randomUUID().slice(0, 8);
 
     const handleShutdown = (signal: string) => {
-      if (this.isShuttingDown) return;
-      this.isShuttingDown = true;
+      // Re-entry guard — the same handler can fire twice in quick succession.
+      // Guarded by `shutdownPromise` (set inside shutdown()) so that any
+      // other caller racing this path (e.g. the CLI's own SIGTERM handler in
+      // apps/atlas-cli/src/commands/daemon/start.tsx) awaits the same
+      // in-flight work instead of calling process.exit(0) on top of it.
+      if (this.shutdownPromise) return;
 
       logger.info("Daemon received signal, shutting down gracefully", { daemonId, signal });
 
@@ -2311,10 +2325,17 @@ export class AtlasDaemon {
     return { botToken, publicKey, applicationId };
   }
 
-  async shutdown(): Promise<void> {
-    if (this.isShuttingDown) return;
-    this.isShuttingDown = true;
+  shutdown(): Promise<void> {
+    // Memoize so concurrent callers (signal handlers in this file and in
+    // apps/atlas-cli/src/commands/daemon/start.tsx, plus any tests/HTTP
+    // routes) await the same in-flight teardown instead of racing on
+    // process.exit(0) and tearing down work mid-flight.
+    if (this.shutdownPromise) return this.shutdownPromise;
+    this.shutdownPromise = this._doShutdown();
+    return this.shutdownPromise;
+  }
 
+  private async _doShutdown(): Promise<void> {
     logger.info("Shutting down Atlas daemon...");
 
     // Stop the Discord Gateway service FIRST so the WebSocket closes cleanly
@@ -2354,6 +2375,16 @@ export class AtlasDaemon {
       }
       this.signalConsumer = null;
     }
+
+    // Reap orphaned agent-browser daemons. Done early in shutdown — after
+    // the SIGNALS consumer stops (no new agent invocations can start) but
+    // before runtime/MCP teardown (which can hang past the 30s shutdown
+    // budget). Force-closes any in-flight web sessions; the bundled agents
+    // were about to be SIGTERM'd anyway, and the next-startup sweep
+    // (layer 2) is the long-stop for anything that slips through here.
+    await sweepOrphanedAgentBrowserSessions(logger).catch((error) => {
+      logger.warn("agent-browser session sweep failed at shutdown", { error: String(error) });
+    });
 
     // Stop chunked upload cleanup
     shutdownChunkedUpload();
