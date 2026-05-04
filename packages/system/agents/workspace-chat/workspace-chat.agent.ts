@@ -300,6 +300,11 @@ ${entries.join("\n")}
 
 /**
  * Build workspace-chat system prompt.
+ *
+ * Block 4 (memory contents, temporal facts) is NOT injected here — it
+ * rides as a synthetic user-message preface so the system prompt stays
+ * byte-stable across turns and the Anthropic prompt cache hits the
+ * prefix.
  */
 export function getSystemPrompt(
   workspaceSection: string,
@@ -308,17 +313,12 @@ export function getSystemPrompt(
     skills?: string;
     userIdentity?: string;
     resources?: string;
-    memory?: string;
     onboarding?: string;
   },
 ): string {
   let prompt = SYSTEM_PROMPT;
 
   prompt = `${prompt}\n\n${workspaceSection}`;
-
-  if (options?.memory) {
-    prompt = `${prompt}\n\n${options.memory}`;
-  }
 
   if (options?.onboarding) {
     prompt = `${prompt}\n\n${options.onboarding}`;
@@ -738,9 +738,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const resourceSection =
           resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
 
-        // Compose memory blocks from primary + foreground workspaces (always load primary)
+        // Block 4 (turn-local): memory + temporal facts injected as a
+        // synthetic user-message preface, NOT in the system prompt. Keeps
+        // the system prompt byte-stable across turns so the Anthropic
+        // prompt cache hits on the prefix; per-turn variation rides
+        // alongside the user's actual message.
         const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);
-        const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
+        const datetimeMessage = buildTemporalFacts(session.datetime);
+        const block4Parts: string[] = [];
+        if (memoryBlocks.length > 0) block4Parts.push(memoryBlocks.join("\n\n"));
+        block4Parts.push(datetimeMessage);
+        const block4Preface = block4Parts.join("\n\n");
 
         const onboardingClause = buildOnboardingClause(profileState);
 
@@ -749,11 +757,8 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           skills: skillsSection,
           userIdentity: userIdentitySection,
           resources: resourceSection,
-          memory: memorySection,
           onboarding: onboardingClause,
         });
-
-        const datetimeMessage = buildTemporalFacts(session.datetime);
 
         // Capture system prompt context on every turn (fire-and-forget). The
         // stored snapshot reflects what the model actually saw on the latest
@@ -761,7 +766,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         if (session.streamId) {
           ChatStorage.setSystemPromptContext(
             session.streamId,
-            { systemMessages: [systemPrompt, datetimeMessage] },
+            { systemMessages: [systemPrompt, block4Preface] },
             workspaceId,
           ).catch((err: unknown) =>
             logger.warn("Failed to capture system prompt context", { error: err }),
@@ -810,15 +815,24 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           return !hasReasoning;
         });
 
-        // Use AI SDK's `system` parameter rather than `role: "system"`
-        // entries inside `messages`. The latter triggers a security
-        // warning ("System messages in the prompt or messages fields
-        // can be a security risk … may enable prompt injection attacks")
-        // because some providers don't isolate them from user content.
-        // Concatenating the two system blocks keeps the same content;
-        // the datetime block is a tiny suffix.
-        const combinedSystem = `${systemPrompt}\n\n${datetimeMessage}`;
-        const modelMessages = await convertToModelMessages(sanitizedMessages, {
+        // Block 4 preface (memory + datetime) injected as a synthetic
+        // user-message at position 0 — NOT inside `system`. This keeps
+        // `system` byte-stable across turns so the Anthropic prompt
+        // cache hits the prefix; turn-local variation lives in the
+        // messages array where it doesn't poison the cacheable prefix.
+        // The synthetic message is ephemeral — it isn't appended to
+        // ChatStorage so it doesn't accumulate in the conversation.
+        const messagesWithBlock4Preface: AtlasUIMessage[] = block4Preface
+          ? [
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                parts: [{ type: "text", text: block4Preface }],
+              },
+              ...sanitizedMessages,
+            ]
+          : sanitizedMessages;
+        const modelMessages = await convertToModelMessages(messagesWithBlock4Preface, {
           convertDataPart: (part) => {
             if (part.type === "data-credential-linked") {
               const data = (
@@ -835,7 +849,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           const result = streamText({
             model: conversationalModel,
             experimental_repairToolCall: repairToolCall,
-            system: combinedSystem,
+            system: systemPrompt,
             messages: modelMessages,
             tools: allTools,
             toolChoice: "auto",
