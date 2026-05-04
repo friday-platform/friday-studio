@@ -823,10 +823,14 @@ const artifactsApp = daemonFactory
       const asciiName = rawName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
       const utf8Name = encodeURIComponent(rawName);
       const contentDisposition = `${disposition}; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
-      const contentSecurityPolicy =
-        mimeType === "text/html"
-          ? "sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'"
-          : undefined;
+      // Active-content mimes that the browser will execute scripts for
+      // when fetched same-origin. `X-Content-Type-Options: nosniff` does
+      // NOT stop an SVG `<script>` element from running, so SVG needs
+      // the same CSP sandbox as HTML.
+      const isActiveContentMime = mimeType === "text/html" || mimeType === "image/svg+xml";
+      const contentSecurityPolicy = isActiveContentMime
+        ? "sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'"
+        : undefined;
 
       const body = new Uint8Array(binaryResult.data);
       return new Response(body, {

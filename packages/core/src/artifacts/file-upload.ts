@@ -209,6 +209,13 @@ const TEXT_MIME_EXACT = new Set([
   "application/sql",
   "application/x-sh",
   "application/x-python",
+  // SVG is XML text. Treating it as text means agents stamp the mime
+  // explicitly at artifact-create time, which keeps the daemon's CSP
+  // sandbox firing on the /content route. Without this, .svg falls
+  // through to the binary-byte sniff and stores as octet-stream — at
+  // which point the sandbox key (`mimeType === "image/svg+xml"`) misses
+  // and an SVG `<script>` would execute same-origin.
+  "image/svg+xml",
 ]);
 
 export function isTextMimeType(mimeType: string): boolean {
@@ -269,6 +276,18 @@ const MIME_TO_EXT: Record<string, string> = {
   "text/csv": "csv",
   "text/markdown": "md",
   "text/yaml": "yaml",
+  // Hyphenated source/config mimes the agent-side inference can stamp.
+  // The fallback `tail` regex (`^[a-z0-9]+$`) rejects hyphens and falls
+  // through to `bin`, so without these the scrubber `.bin` repair
+  // produces e.g. `tool-12345.bin` instead of `tool-12345.ts`.
+  "text/x-typescript": "ts",
+  "text/x-python": "py",
+  "text/x-go": "go",
+  "text/x-rust": "rs",
+  "text/x-shellscript": "sh",
+  "text/x-sql": "sql",
+  "text/x-toml": "toml",
+  "text/tab-separated-values": "tsv",
 };
 
 /** Best-guess file extension for a mime type. Falls back to `bin` for unknowns. */
@@ -298,6 +317,12 @@ export function deriveDownloadFilename(opts: {
   originalName?: string;
   title: string;
 }): string {
+  // Strip mime parameters (`; charset=…`) up front so the equality
+  // check against the filename-inferred mime survives storage adapters
+  // that round-trip text mimes with a charset attached. Without this,
+  // `notes.md` + stored `text/markdown; charset=utf-8` silently rewrote
+  // to `notes.markdown`.
+  const baseMime = opts.mimeType.split(";")[0]?.trim() || opts.mimeType;
   const fromOriginal = opts.originalName?.trim();
   if (fromOriginal) {
     const dot = fromOriginal.lastIndexOf(".");
@@ -306,18 +331,18 @@ export function deriveDownloadFilename(opts: {
       const currentExt = fromOriginal.slice(dot + 1).toLowerCase();
       // Scrubber path: `.bin` placeholder → swap to real ext.
       if (currentExt === "bin") {
-        return `${fromOriginal.slice(0, dot)}.${extFromMime(opts.mimeType)}`;
+        return `${fromOriginal.slice(0, dot)}.${extFromMime(baseMime)}`;
       }
 
       const originalMime = inferMimeFromFilename(fromOriginal);
-      if (opts.mimeType === "application/octet-stream" || originalMime === opts.mimeType) {
+      if (baseMime === "application/octet-stream" || originalMime === baseMime) {
         return fromOriginal;
       }
-      return `${fromOriginal.slice(0, dot)}.${extFromMime(opts.mimeType)}`;
+      return `${fromOriginal.slice(0, dot)}.${extFromMime(baseMime)}`;
     }
-    return `${fromOriginal}.${extFromMime(opts.mimeType)}`;
+    return `${fromOriginal}.${extFromMime(baseMime)}`;
   }
-  return `${opts.title}.${extFromMime(opts.mimeType)}`;
+  return `${opts.title}.${extFromMime(baseMime)}`;
 }
 
 function lookupExtension(fileName: string): { mime: string; uploadable: boolean } | undefined {

@@ -52,6 +52,42 @@ describe("deriveDownloadFilename", () => {
     expect(result).toBe("misnamed.png");
   });
 
+  it("preserves originalName when stored mime carries a charset parameter", () => {
+    // Storage adapters that normalize text mimes with charset round-trip
+    // them as `text/markdown; charset=utf-8`. The extension comparison
+    // must ignore the parameter — otherwise `notes.md` silently rewrites
+    // to `notes.markdown` because `extFromMime` strips the parameter
+    // while the equality check did not.
+    const result = deriveDownloadFilename({
+      mimeType: "text/markdown; charset=utf-8",
+      originalName: "notes.md",
+      title: "Notes",
+    });
+    expect(result).toBe("notes.md");
+  });
+
+  // Scrubber path with the hyphenated source-code mimes this PR
+  // introduces. Without reverse-map entries, `extFromMime` falls back
+  // to the alnum-only regex, rejects the hyphenated tail, and returns
+  // `bin` — leaving the placeholder unrepaired.
+  it.each([
+    ["text/x-typescript", "ts"],
+    ["text/x-python", "py"],
+    ["text/x-go", "go"],
+    ["text/x-rust", "rs"],
+    ["text/x-shellscript", "sh"],
+    ["text/x-sql", "sql"],
+    ["text/x-toml", "toml"],
+    ["text/tab-separated-values", "tsv"],
+  ])("repairs scrubber-stamped .bin for mime %s → .%s", (mime, ext) => {
+    const result = deriveDownloadFilename({
+      mimeType: mime,
+      originalName: "scrubber_tool-12345.bin",
+      title: "irrelevant",
+    });
+    expect(result).toBe(`scrubber_tool-12345.${ext}`);
+  });
+
   // Round-trip lock: every mime the agent-side inference can stamp on
   // an artifact must result in a download filename that preserves the
   // original extension. This blocks the regression Ken's reviewer

@@ -84,6 +84,30 @@ describe("artifacts_create", () => {
     expect(call?.json.data).not.toHaveProperty("mimeType");
   });
 
+  it("stamps image/svg+xml mimeType for .svg filename so the CSP sandbox applies", async () => {
+    // SVG is text-encoded XML and the daemon CSP keys off mimeType.
+    // Letting storage fall back to octet-stream loses the sandbox —
+    // an attacker-supplied SVG with `<script>` would execute same-origin.
+    const tools = createArtifactsCreateTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    await tools.artifacts_create!.execute!(
+      { path: "icon.svg", title: "An icon", summary: "A test SVG artifact." },
+      TOOL_CALL_OPTS,
+    );
+
+    expect(mockArtifactsCreatePost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        json: expect.objectContaining({
+          data: expect.objectContaining({ mimeType: "image/svg+xml" }),
+        }),
+      }),
+    );
+  });
+
   it("omits mimeType for binary extensions so storage can sniff the bytes", async () => {
     const tools = createArtifactsCreateTool({
       sessionId: "session-1",

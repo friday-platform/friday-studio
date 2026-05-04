@@ -767,6 +767,37 @@ describe("Content endpoint", () => {
     expect(contentResponse.headers.get("Content-Type")).toEqual("text/html");
     expect(contentResponse.headers.get("Content-Security-Policy")).toContain("sandbox");
   });
+
+  it("sandboxes SVG artifact content (X-Content-Type-Options does not stop SVG scripts)", async () => {
+    // SVG served same-origin can execute embedded `<script>` regardless
+    // of `nosniff`. The CSP sandbox directive is the only thing that
+    // blocks it — ship it on `image/svg+xml` for parity with text/html.
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "SVG icon",
+        summary: "SVG with embedded script that should be sandboxed",
+        data: {
+          type: "file",
+          content:
+            '<svg xmlns="http://www.w3.org/2000/svg"><script>parent.document.body.dataset.pwned = "true"</script></svg>',
+          mimeType: "image/svg+xml",
+          originalName: "icon.svg",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Type")).toEqual("image/svg+xml");
+    expect(contentResponse.headers.get("Content-Security-Policy")).toContain("sandbox");
+  });
 });
 
 describe("PDF upload integration", () => {
