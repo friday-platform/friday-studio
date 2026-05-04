@@ -152,6 +152,31 @@ describe("createScrubber (MCP-boundary)", () => {
     expect(result.content[0]?.data).toBe(dataUrl);
   });
 
+  it("dedupes identical base64 within one tool result (FastMCP wrap_result)", async () => {
+    // Mock ONE artifact create — if dedup works the second match reuses
+    // the first upload's artifactId without hitting the endpoint again.
+    mockArtifactCreate("art_dedup", 24_000, "application/pdf");
+
+    const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
+    const blob = bigBase64(SIZE_THRESHOLD_CHARS + 200);
+    // FastMCP shape: same payload in `content[].text` and `structuredContent.result`.
+    const result = (await scrub(
+      {
+        _meta: { fastmcp: { wrap_result: true } },
+        content: [{ type: "text", text: `prefix ${blob} suffix` }],
+        structuredContent: { result: `prefix ${blob} suffix` },
+        isError: false,
+      },
+      TOOL_CTX,
+    )) as { content: Array<{ type: string; text: string }>; structuredContent: { result: string } };
+
+    // Only one upload should have happened.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // Both copies got the same marker (so the model can still see the ref).
+    expect(result.content[0]?.text).toMatch(/artifact art_dedup/);
+    expect(result.structuredContent.result).toMatch(/artifact art_dedup/);
+  });
+
   it("leaves short base64 fragments alone", async () => {
     const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
     // Below threshold — no lift, no rewrite.

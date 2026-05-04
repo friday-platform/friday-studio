@@ -75,6 +75,20 @@ interface ScrubContext {
   workspaceId: string;
   chatId: string;
   logger: Logger;
+  /**
+   * Per-call cache: base64 → UploadResult. Some MCP servers wrap their
+   * results in formats that duplicate the payload (e.g. FastMCP returns
+   * both `content[].text` and `structuredContent.result` with the same
+   * bytes). The recursive walker would otherwise upload the same blob
+   * twice, producing two artifact metadata records pointing at the same
+   * Object Store entry. Caching by base64 string dedupes within a call.
+   *
+   * Keyed by the base64 string itself (cheap hash; identical bytes are
+   * already the dedup key in Object Store via SHA-256). Cache lives only
+   * for the duration of one tool's scrub — no cross-call invalidation
+   * concerns.
+   */
+  uploads: Map<string, UploadResult>;
 }
 
 interface UploadResult {
@@ -90,6 +104,12 @@ async function uploadBlob(
   ctx: ScrubContext,
   toolCtx: { serverId: string; toolName: string },
 ): Promise<UploadResult | null> {
+  // Per-call dedup. Identical base64 within one tool result (e.g. FastMCP's
+  // content[].text + structuredContent.result mirror) reuses the same
+  // artifact instead of creating a second metadata record.
+  const cached = ctx.uploads.get(base64);
+  if (cached) return cached;
+
   const data = {
     type: "file" as const,
     content: base64,
@@ -120,11 +140,13 @@ async function uploadBlob(
   // adapter's mime-sniff path; prefer those for the marker text.
   const a = response.data.artifact;
   const fileData = a.data?.type === "file" ? a.data : null;
-  return {
+  const result: UploadResult = {
     artifactId: a.id,
     bytes: fileData?.size ?? Math.ceil((base64.length * 3) / 4),
     mimeType: fileData?.mimeType ?? mimeType ?? "application/octet-stream",
   };
+  ctx.uploads.set(base64, result);
+  return result;
 }
 
 function refMarker(r: UploadResult, toolCtx: { serverId: string; toolName: string }): string {
@@ -217,12 +239,18 @@ export interface ScrubberOptions {
 
 /** Build a scrub function bound to a workspace + chat for artifact-tagging. */
 export function createScrubber(opts: ScrubberOptions): ScrubToolResult {
-  const ctx: ScrubContext = {
-    workspaceId: opts.workspaceId,
-    chatId: opts.chatId,
-    logger: opts.logger,
+  return (result, toolCtx) => {
+    // Fresh upload cache per tool-call so dedup is scoped to one result
+    // tree (FastMCP and similar wrappers duplicate payloads inside a
+    // single response — no cross-call sharing needed).
+    const ctx: ScrubContext = {
+      workspaceId: opts.workspaceId,
+      chatId: opts.chatId,
+      logger: opts.logger,
+      uploads: new Map(),
+    };
+    return scrubValue(result, ctx, toolCtx, 0);
   };
-  return (result, toolCtx) => scrubValue(result, ctx, toolCtx, 0);
 }
 
 /**
@@ -238,10 +266,14 @@ export async function scrubAssistantMessage(
   parts: Array<Record<string, unknown>>,
   opts: ScrubberOptions,
 ): Promise<{ scanned: number; rewritten: number }> {
+  // Single cache spans the whole message so duplicated payloads across
+  // parts (e.g. a tool-output AND a sibling delegate-chunk carrying the
+  // same wrapped result) collapse to one artifact.
   const ctx: ScrubContext = {
     workspaceId: opts.workspaceId,
     chatId: opts.chatId,
     logger: opts.logger,
+    uploads: new Map(),
   };
   let scanned = 0;
   let rewritten = 0;
