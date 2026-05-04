@@ -40,7 +40,7 @@ Don't write:
 - State that's stale in a week — current task, in-progress thing
 - Anything already in memory — read first, update or skip
 
-Entry shape: include `metadata.why` — what future request would benefit from remembering this. If you can't articulate why, don't write.
+Entry shape: pass the top-level `why` parameter on `memory_save` — what future request would benefit from remembering this. Required by the schema; if you can't articulate why, don't write.
 
 Stores: `notes` (short-term, narrative), `memory` (long-term, narrative).
 </memory_writes>

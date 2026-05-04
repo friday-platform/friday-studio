@@ -149,14 +149,16 @@ automatically — no MCP declaration needed. Most-used:
 
 ```python
 # Append a single fact. The store handles persistence + ordering.
+# `why` is required — articulate which future request benefits.
 ctx.tools.call("memory_save", {
     "memoryName": "preferences",
     "text": "Always archive newsletters from substack.com",
+    "why": "future newsletter-handling decisions skip the prompt + use this rule",
 })
 
 # Read recent entries. (The 20 most recent narrative entries are
-# auto-injected into the LLM-side system prompt every turn — Python
-# agents don't see those, so call memory_read explicitly when you need
+# auto-injected into the LLM-side prompt every turn — Python agents
+# don't see those, so call memory_read explicitly when you need
 # durable state across runs.)
 result = ctx.tools.call("memory_read", {
     "memoryName": "preferences",
@@ -168,15 +170,19 @@ result = ctx.tools.call("memory_read", {
 
 ```python
 # ✅ Correct — one fact per call. Concurrent writers compose cleanly.
-for fact in new_preferences:
-    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
+for fact, reason in new_preferences:
+    ctx.tools.call("memory_save", {
+        "memoryName": "preferences", "text": fact, "why": reason,
+    })
 
 # ❌ Wrong — read-concat-write. Concurrent writers clobber each other,
 #    fights the platform's append/dedup logic, and the next run starts
 #    from a stale snapshot.
 existing = ctx.tools.call("memory_read", {"memoryName": "preferences"})
-combined = existing["text"] + "\n" + "\n".join(new_preferences)
-ctx.tools.call("memory_save", {"memoryName": "preferences", "text": combined})
+combined = existing["text"] + "\n" + "\n".join(p[0] for p in new_preferences)
+ctx.tools.call("memory_save", {
+    "memoryName": "preferences", "text": combined, "why": "rollup",
+})
 ```
 
 **Footgun: `ToolCallError` on validation failure.** `ctx.tools.call`
@@ -189,7 +195,9 @@ the error through `err()` or let it propagate.
 from friday_agent_sdk import ToolCallError
 
 try:
-    ctx.tools.call("memory_save", {"memoryName": "preferences", "text": fact})
+    ctx.tools.call("memory_save", {
+        "memoryName": "preferences", "text": fact, "why": "user just stated this preference",
+    })
 except ToolCallError as e:
     return err(f"memory_save failed: {e}")
 ```
