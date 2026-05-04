@@ -1,6 +1,7 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env --allow-net
 
-import { readdir, rm } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { isErrnoException, stringifyError } from "@atlas/utils";
@@ -89,21 +90,54 @@ async function clearExternalBroker(force: boolean): Promise<void> {
   }
 }
 
-async function clearEmbeddedBroker(): Promise<void> {
-  const storeDir = resolveEmbeddedStoreDir();
-  // Defensive guard against a misconfigured FRIDAY_JETSTREAM_STORE_DIR
-  // pointing somewhere catastrophic. The real daemon paths always
-  // contain "jetstream" or "nats" in the final segments.
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/**
+ * Wipe one JetStream store dir. Returns true if the dir existed and was
+ * removed, false if it didn't exist. Refuses paths that don't look like
+ * a NATS store dir (defense against a misconfigured env var).
+ */
+async function wipeStoreDir(storeDir: string): Promise<boolean> {
   if (!/nats|jetstream/i.test(storeDir)) {
     console.error(`Refusing to delete JetStream store dir that doesn't look like one: ${storeDir}`);
     process.exit(1);
   }
+  const existed = await pathExists(storeDir);
+  if (!existed) {
+    console.log(`JetStream store dir not present: ${storeDir}`);
+    return false;
+  }
   try {
     await rm(storeDir, { recursive: true, force: true });
     console.log(`JetStream store dir cleared: ${storeDir}`);
+    return true;
   } catch (error) {
     console.error(`Error clearing JetStream store dir: ${stringifyError(error)}`);
     process.exit(1);
+  }
+}
+
+async function clearEmbeddedBroker(): Promise<void> {
+  // Wipe the configured store dir AND the legacy `$TMPDIR/nats/jetstream`
+  // location nats-server uses by default. Pre-#164 daemons spawned the
+  // broker without `--store_dir` so JetStream data landed in the legacy
+  // path; on next boot the daemon's orphan-detection points operators
+  // there but doesn't auto-migrate. If the user is still on legacy and
+  // we only wiped the new path, the legacy data would survive clean —
+  // and the broker would happily resume from it on next start.
+  const newDir = resolveEmbeddedStoreDir();
+  const legacyDir = join(tmpdir(), "nats", "jetstream");
+  await wipeStoreDir(newDir);
+  if (legacyDir !== newDir) {
+    await wipeStoreDir(legacyDir);
   }
 }
 
