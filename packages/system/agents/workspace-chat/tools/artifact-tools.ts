@@ -13,6 +13,7 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
+import { inferMimeFromFilename, isTextMimeType } from "@atlas/core/artifacts/file-upload";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { encodeBase64 } from "@std/encoding/base64";
@@ -149,11 +150,14 @@ export function createArtifactsCreateTool({
         // FileDataInput parser decodes when contentEncoding === "base64".
         const base64 = encodeBase64(bytes);
 
+        const filename = basename(path);
+        const inferredMime = inferMimeFromFilename(filename);
         const data = {
           type: "file" as const,
           content: base64,
           contentEncoding: "base64" as const,
-          originalName: basename(path),
+          originalName: filename,
+          ...(inferredMime && isTextMimeType(inferredMime) ? { mimeType: inferredMime } : {}),
         };
 
         logger.info("artifacts_create called", { sessionId, path, workspaceId });

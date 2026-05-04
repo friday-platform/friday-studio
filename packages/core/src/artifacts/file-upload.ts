@@ -29,37 +29,82 @@ export const LEGACY_FORMAT_ERRORS = new Map([
 ]);
 
 /**
- * Extension to MIME type mapping for allowed file types.
+ * Extension → mime + upload-allowlist flag.
  *
- * Covers text formats (CSV, JSON, TXT, MD, YAML), documents (PDF, DOCX, PPTX),
- * images (PNG, JPEG, WebP, GIF), and audio (MP3, MP4, M4A, WAV, WebM, OGG, FLAC).
- * Images and audio are stored as-is (no conversion).
+ * Single source of truth for both extension-driven mime inference and
+ * the UI upload allowlist. `uploadable: true` entries gate
+ * `getValidatedMimeType` and `ALLOWED_EXTENSIONS`; `uploadable: false`
+ * entries are agent-side inferences only — markup/source/config text
+ * formats that agents commonly write to scratch and register as
+ * artifacts. Adding such an extension here does NOT widen the UI
+ * upload allowlist.
  */
-export const EXTENSION_TO_MIME = new Map([
-  [".csv", "text/csv"],
-  [".json", "application/json"],
-  [".txt", "text/plain"],
-  [".md", "text/markdown"],
-  [".markdown", "text/markdown"],
-  [".yml", "text/yaml"],
-  [".yaml", "text/yaml"],
-  [".pdf", "application/pdf"],
-  [".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-  [".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
-  [".png", "image/png"],
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".webp", "image/webp"],
-  [".gif", "image/gif"],
-  [".mp3", "audio/mpeg"],
-  [".mp4", "audio/mp4"],
-  [".m4a", "audio/x-m4a"],
-  [".wav", "audio/wav"],
-  [".webm", "audio/webm"],
-  [".ogg", "audio/ogg"],
-  [".flac", "audio/flac"],
-  [".mpeg", "audio/mpeg"],
-  [".mpga", "audio/mpeg"],
+export const EXTENSION_TO_MIME = new Map<string, { mime: string; uploadable: boolean }>([
+  // Uploadable: text/data
+  [".csv", { mime: "text/csv", uploadable: true }],
+  [".json", { mime: "application/json", uploadable: true }],
+  [".txt", { mime: "text/plain", uploadable: true }],
+  [".md", { mime: "text/markdown", uploadable: true }],
+  [".markdown", { mime: "text/markdown", uploadable: true }],
+  [".yml", { mime: "text/yaml", uploadable: true }],
+  [".yaml", { mime: "text/yaml", uploadable: true }],
+  // Uploadable: documents
+  [".pdf", { mime: "application/pdf", uploadable: true }],
+  [
+    ".docx",
+    {
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      uploadable: true,
+    },
+  ],
+  [
+    ".pptx",
+    {
+      mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      uploadable: true,
+    },
+  ],
+  // Uploadable: images
+  [".png", { mime: "image/png", uploadable: true }],
+  [".jpg", { mime: "image/jpeg", uploadable: true }],
+  [".jpeg", { mime: "image/jpeg", uploadable: true }],
+  [".webp", { mime: "image/webp", uploadable: true }],
+  [".gif", { mime: "image/gif", uploadable: true }],
+  // Uploadable: audio
+  [".mp3", { mime: "audio/mpeg", uploadable: true }],
+  [".mp4", { mime: "audio/mp4", uploadable: true }],
+  [".m4a", { mime: "audio/x-m4a", uploadable: true }],
+  [".wav", { mime: "audio/wav", uploadable: true }],
+  [".webm", { mime: "audio/webm", uploadable: true }],
+  [".ogg", { mime: "audio/ogg", uploadable: true }],
+  [".flac", { mime: "audio/flac", uploadable: true }],
+  [".mpeg", { mime: "audio/mpeg", uploadable: true }],
+  [".mpga", { mime: "audio/mpeg", uploadable: true }],
+  // Agent-inference only: markup
+  [".html", { mime: "text/html", uploadable: false }],
+  [".htm", { mime: "text/html", uploadable: false }],
+  [".xml", { mime: "application/xml", uploadable: false }],
+  [".svg", { mime: "image/svg+xml", uploadable: false }],
+  [".css", { mime: "text/css", uploadable: false }],
+  // Agent-inference only: source code
+  [".ts", { mime: "text/x-typescript", uploadable: false }],
+  [".tsx", { mime: "text/x-typescript", uploadable: false }],
+  [".js", { mime: "text/javascript", uploadable: false }],
+  [".jsx", { mime: "text/javascript", uploadable: false }],
+  [".mjs", { mime: "text/javascript", uploadable: false }],
+  [".cjs", { mime: "text/javascript", uploadable: false }],
+  [".py", { mime: "text/x-python", uploadable: false }],
+  [".go", { mime: "text/x-go", uploadable: false }],
+  [".rs", { mime: "text/x-rust", uploadable: false }],
+  [".sh", { mime: "text/x-shellscript", uploadable: false }],
+  [".bash", { mime: "text/x-shellscript", uploadable: false }],
+  [".sql", { mime: "text/x-sql", uploadable: false }],
+  // Agent-inference only: config/log
+  [".toml", { mime: "text/x-toml", uploadable: false }],
+  [".ini", { mime: "text/plain", uploadable: false }],
+  [".conf", { mime: "text/plain", uploadable: false }],
+  [".log", { mime: "text/plain", uploadable: false }],
+  [".tsv", { mime: "text/tab-separated-values", uploadable: false }],
 ]);
 
 /**
@@ -164,11 +209,30 @@ const TEXT_MIME_EXACT = new Set([
   "application/sql",
   "application/x-sh",
   "application/x-python",
+  // SVG is XML text. Treating it as text means agents stamp the mime
+  // explicitly at artifact-create time, which keeps the daemon's CSP
+  // sandbox firing on the /content route. Without this, .svg falls
+  // through to the binary-byte sniff and stores as octet-stream — at
+  // which point the sandbox key (`mimeType === "image/svg+xml"`) misses
+  // and an SVG `<script>` would execute same-origin.
+  "image/svg+xml",
 ]);
 
 export function isTextMimeType(mimeType: string): boolean {
   if (TEXT_MIME_EXACT.has(mimeType)) return true;
   return TEXT_MIME_PREFIXES.some((p) => mimeType.startsWith(p));
+}
+
+/**
+ * Drop any mime parameters (`; charset=…`, `; boundary=…`) and return the
+ * canonical `type/subtype`. Storage adapters can round-trip text mimes with
+ * a charset attached (`text/markdown; charset=utf-8`); equality checks
+ * against literal mime strings would silently miss the parameterised form.
+ * Use this helper anywhere the mime is gating a security predicate or
+ * routing decision.
+ */
+export function stripMimeParams(mimeType: string): string {
+  return mimeType.split(";")[0]?.trim() || mimeType;
 }
 
 /**
@@ -224,6 +288,18 @@ const MIME_TO_EXT: Record<string, string> = {
   "text/csv": "csv",
   "text/markdown": "md",
   "text/yaml": "yaml",
+  // Hyphenated source/config mimes the agent-side inference can stamp.
+  // The fallback `tail` regex (`^[a-z0-9]+$`) rejects hyphens and falls
+  // through to `bin`, so without these the scrubber `.bin` repair
+  // produces e.g. `tool-12345.bin` instead of `tool-12345.ts`.
+  "text/x-typescript": "ts",
+  "text/x-python": "py",
+  "text/x-go": "go",
+  "text/x-rust": "rs",
+  "text/x-shellscript": "sh",
+  "text/x-sql": "sql",
+  "text/x-toml": "toml",
+  "text/tab-separated-values": "tsv",
 };
 
 /** Best-guess file extension for a mime type. Falls back to `bin` for unknowns. */
@@ -237,46 +313,79 @@ export function extFromMime(mimeType: string): string {
 }
 
 /**
- * Reconcile a stored `originalName` with the artifact's actual `mimeType`,
- * returning a filename whose extension matches the bytes. When the
- * scrubber lifts an embedded base64 blob without knowing the format yet,
- * it stamps the artifact with `<tool>-<ts>.bin`; the storage adapter
- * later sniffs the real mime, but `originalName` keeps its `.bin`. This
- * helper rewrites the extension at download time so the user gets
- * `foo.pdf` instead of `foo.bin` even for legacy artifacts.
+ * Pick a download filename for an artifact.
  *
- * Logic:
- * 1. Compute the correct extension from the mime.
- * 2. If `originalName` already ends in that extension, keep it.
- * 3. If `originalName` ends in a different extension, swap it.
- * 4. If `originalName` has no extension, append.
- * 5. If no `originalName`, use `<title>.<ext>`.
+ * `originalName` is the source of truth when it carries a usable
+ * extension that agrees with the stored mime. The scrubber path still
+ * gets repaired: when the scrubber lifts an embedded base64 blob without
+ * knowing the format, it stamps `<tool>-<ts>.bin`; later the real mime
+ * is known and we rewrite the `.bin` to the right extension.
+ *
+ * Unknown/octet-stream artifacts keep their original extension because
+ * the stored mime carries no better information.
  */
 export function deriveDownloadFilename(opts: {
   mimeType: string;
   originalName?: string;
   title: string;
 }): string {
-  const ext = extFromMime(opts.mimeType);
+  // Strip mime parameters (`; charset=…`) up front so the equality
+  // check against the filename-inferred mime survives storage adapters
+  // that round-trip text mimes with a charset attached. Without this,
+  // `notes.md` + stored `text/markdown; charset=utf-8` silently rewrote
+  // to `notes.markdown`.
+  const baseMime = stripMimeParams(opts.mimeType);
   const fromOriginal = opts.originalName?.trim();
   if (fromOriginal) {
     const dot = fromOriginal.lastIndexOf(".");
-    if (dot > 0 && dot < fromOriginal.length - 1) {
+    const hasExt = dot > 0 && dot < fromOriginal.length - 1;
+    if (hasExt) {
       const currentExt = fromOriginal.slice(dot + 1).toLowerCase();
-      if (currentExt === ext.toLowerCase()) return fromOriginal;
-      return `${fromOriginal.slice(0, dot)}.${ext}`;
+      // Scrubber path: `.bin` placeholder → swap to real ext.
+      if (currentExt === "bin") {
+        return `${fromOriginal.slice(0, dot)}.${extFromMime(baseMime)}`;
+      }
+
+      const originalMime = inferMimeFromFilename(fromOriginal);
+      if (baseMime === "application/octet-stream" || originalMime === baseMime) {
+        return fromOriginal;
+      }
+      return `${fromOriginal.slice(0, dot)}.${extFromMime(baseMime)}`;
     }
-    return `${fromOriginal}.${ext}`;
+    return `${fromOriginal}.${extFromMime(baseMime)}`;
   }
-  return `${opts.title}.${ext}`;
+  return `${opts.title}.${extFromMime(baseMime)}`;
 }
 
-export function getValidatedMimeType(fileName: string): string | undefined {
+function lookupExtension(fileName: string): { mime: string; uploadable: boolean } | undefined {
   const dotIdx = fileName.lastIndexOf(".");
   if (dotIdx < 0) return undefined;
-  const ext = fileName.slice(dotIdx).toLowerCase();
-  return EXTENSION_TO_MIME.get(ext);
+  return EXTENSION_TO_MIME.get(fileName.slice(dotIdx).toLowerCase());
 }
 
-export const ALLOWED_EXTENSIONS = new Set(EXTENSION_TO_MIME.keys());
+/**
+ * Mime for a UI-uploadable extension, or `undefined` for any extension
+ * that is unknown or restricted to agent-side inference. Gates the
+ * upload allowlist.
+ */
+export function getValidatedMimeType(fileName: string): string | undefined {
+  const entry = lookupExtension(fileName);
+  return entry?.uploadable ? entry.mime : undefined;
+}
+
+/**
+ * Mime for any known extension, including agent-only ones. Used at
+ * `artifacts_create` time so text/markup/source-code files persist
+ * with a meaningful mime instead of falling through to the storage
+ * layer's binary-only magic-byte sniff and ending up as
+ * `application/octet-stream`. Returns `undefined` for unknown
+ * extensions — caller should let the storage layer decide.
+ */
+export function inferMimeFromFilename(fileName: string): string | undefined {
+  return lookupExtension(fileName)?.mime;
+}
+
+export const ALLOWED_EXTENSIONS = new Set(
+  [...EXTENSION_TO_MIME].filter(([, v]) => v.uploadable).map(([k]) => k),
+);
 export const ALLOWED_EXTENSION_LIST = [...ALLOWED_EXTENSIONS];
