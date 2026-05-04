@@ -7,6 +7,7 @@
 # Atlas local data
 .atlas/
 .local-dev/
+.friday-home/
 
 # Per-user platform config loaded from process.cwd() at daemon startup —
 # holds model preferences, MCP creds, rate limits.
