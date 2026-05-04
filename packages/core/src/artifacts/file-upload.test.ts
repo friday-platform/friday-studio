@@ -43,6 +43,15 @@ describe("deriveDownloadFilename", () => {
     expect(result).toBe("script.ts");
   });
 
+  it("rewrites originalName when stored mime proves the extension is wrong", () => {
+    const result = deriveDownloadFilename({
+      mimeType: "image/png",
+      originalName: "misnamed.txt",
+      title: "Misnamed image",
+    });
+    expect(result).toBe("misnamed.png");
+  });
+
   // Round-trip lock: every mime the agent-side inference can stamp on
   // an artifact must result in a download filename that preserves the
   // original extension. This blocks the regression Ken's reviewer

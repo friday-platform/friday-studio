@@ -83,4 +83,22 @@ describe("artifacts_create", () => {
       | undefined;
     expect(call?.json.data).not.toHaveProperty("mimeType");
   });
+
+  it("omits mimeType for binary extensions so storage can sniff the bytes", async () => {
+    const tools = createArtifactsCreateTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    await tools.artifacts_create!.execute!(
+      { path: "image.png", title: "An image", summary: "A test image artifact." },
+      TOOL_CALL_OPTS,
+    );
+
+    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as
+      | { json: { data: Record<string, unknown> } }
+      | undefined;
+    expect(call?.json.data).not.toHaveProperty("mimeType");
+  });
 });

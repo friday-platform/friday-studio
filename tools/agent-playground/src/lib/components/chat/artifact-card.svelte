@@ -215,6 +215,7 @@
       <iframe
         title={resolvedTitle}
         src={htmlUrl}
+        sandbox=""
         class="artifact-iframe"
         style="--scale: {iframeScale}"
       ></iframe>

@@ -823,6 +823,10 @@ const artifactsApp = daemonFactory
       const asciiName = rawName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
       const utf8Name = encodeURIComponent(rawName);
       const contentDisposition = `${disposition}; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
+      const contentSecurityPolicy =
+        mimeType === "text/html"
+          ? "sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'"
+          : undefined;
 
       const body = new Uint8Array(binaryResult.data);
       return new Response(body, {
@@ -833,6 +837,7 @@ const artifactsApp = daemonFactory
           "Content-Disposition": contentDisposition,
           "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, max-age=31536000, immutable",
+          ...(contentSecurityPolicy ? { "Content-Security-Policy": contentSecurityPolicy } : {}),
         },
       });
     },

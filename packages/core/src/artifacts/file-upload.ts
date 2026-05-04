@@ -285,15 +285,13 @@ export function extFromMime(mimeType: string): string {
  * Pick a download filename for an artifact.
  *
  * `originalName` is the source of truth when it carries a usable
- * extension. The only case where we override it is the scrubber path:
- * when the scrubber lifts an embedded base64 blob without knowing the
- * format, it stamps `<tool>-<ts>.bin`; later the real mime is known
- * and we rewrite the `.bin` to the right extension.
+ * extension that agrees with the stored mime. The scrubber path still
+ * gets repaired: when the scrubber lifts an embedded base64 blob without
+ * knowing the format, it stamps `<tool>-<ts>.bin`; later the real mime
+ * is known and we rewrite the `.bin` to the right extension.
  *
- * Trusting `originalName` keeps the contract simple — extensions don't
- * have to round-trip through `extFromMime` for every mime we ever
- * choose, which is a contract no extension→mime table can hold without
- * a perfectly invertible inverse.
+ * Unknown/octet-stream artifacts keep their original extension because
+ * the stored mime carries no better information.
  */
 export function deriveDownloadFilename(opts: {
   mimeType: string;
@@ -310,7 +308,12 @@ export function deriveDownloadFilename(opts: {
       if (currentExt === "bin") {
         return `${fromOriginal.slice(0, dot)}.${extFromMime(opts.mimeType)}`;
       }
-      return fromOriginal;
+
+      const originalMime = inferMimeFromFilename(fromOriginal);
+      if (opts.mimeType === "application/octet-stream" || originalMime === opts.mimeType) {
+        return fromOriginal;
+      }
+      return `${fromOriginal.slice(0, dot)}.${extFromMime(opts.mimeType)}`;
     }
     return `${fromOriginal}.${extFromMime(opts.mimeType)}`;
   }

@@ -740,6 +740,33 @@ describe("Content endpoint", () => {
     expect(cd.split(";")[0]?.trim()).toEqual("attachment");
     expect(cd).toContain('filename="data.json"');
   });
+
+  it("sandboxes inline HTML artifact content", async () => {
+    const createResponse = await artifactsApp.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "HTML report",
+        summary: "HTML report with active content",
+        data: {
+          type: "file",
+          content: "<script>parent.document.body.dataset.pwned = 'true'</script>",
+          mimeType: "text/html",
+          originalName: "report.html",
+        },
+      }),
+    });
+    expect(createResponse.status).toEqual(201);
+    const { artifact } = ArtifactResponseSchema.parse(await createResponse.json());
+
+    const contentResponse = await artifactsApp.request(`/${artifact.id}/content`, {
+      method: "GET",
+    });
+
+    expect(contentResponse.status).toEqual(200);
+    expect(contentResponse.headers.get("Content-Type")).toEqual("text/html");
+    expect(contentResponse.headers.get("Content-Security-Policy")).toContain("sandbox");
+  });
 });
 
 describe("PDF upload integration", () => {
