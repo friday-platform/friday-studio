@@ -24,10 +24,8 @@ export {
   ArtifactSummarySchema,
   ArtifactTypeSchema,
   CreateArtifactSchema,
-  CreateArtifactWireSchema,
   ResourceIndexEntrySchema,
   UpdateArtifactSchema,
-  UpdateArtifactWireSchema,
 } from "./model.ts";
 
 // Primitives

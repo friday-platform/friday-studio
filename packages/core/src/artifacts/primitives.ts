@@ -29,11 +29,15 @@ export type FileData = z.infer<typeof FileDataSchema>;
 /**
  * File artifact data (input, wire-level — JSON-safe).
  *
- * Use this at HTTP/MCP boundaries where the payload is JSON: `content`
- * must be a string. Binary callers base64-encode and set
- * `contentEncoding: "base64"`. JSON Schema generation works on this
- * variant (no `z.instanceof` / custom types), so MCP `tools/list`
- * succeeds.
+ * Use this at the MCP boundary where MCP `tools/list` calls
+ * `z.toJSONSchema()` on every input schema and chokes on `z.instanceof`
+ * / custom types. `content` must be a string; binary callers base64-
+ * encode and set `contentEncoding: "base64"`.
+ *
+ * The HTTP route (`apps/atlasd/routes/artifacts.ts`) still validates
+ * with {@link FileDataInputSchema} — over JSON the union picks the
+ * string branch fine, so a separate wire schema there hasn't been
+ * needed.
  */
 export const FileDataInputWireSchema = z.object({
   /**
