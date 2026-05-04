@@ -24,6 +24,28 @@ import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 
 /**
+ * Hard ceiling on the entire export route. Hit this and the route bails
+ * with a 503 before constructing the zip — the spec for "Chat too large
+ * to export" in `docs/plans/2026-05-03-chat-export-design.md` § Export Route.
+ */
+const EXPORT_TIMEOUT_MS = 10_000;
+
+/**
+ * Total artifact byte budget for one export. When adding the next artifact
+ * would push the running total over this, we skip it (and every subsequent
+ * artifact larger than the remaining budget) and surface a placeholder in
+ * the rendered HTML instead. Mirrors § Asset Bundling § Size cap.
+ */
+const EXPORT_SIZE_LIMIT_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Per-artifact ceiling on `readBinaryContents`. Slow blobs are dropped with
+ * a placeholder rather than starving the global 10s budget. Mirrors
+ * § Performance Considerations § Artifact read cost.
+ */
+const ARTIFACT_READ_TIMEOUT_MS = 5_000;
+
+/**
  * Slugify a derived filename to ASCII-safe characters before it lands in the
  * zip. `deriveDownloadFilename` reads `originalName` straight from artifact
  * metadata, which can carry any unicode the user/agent wrote — strip control
@@ -36,15 +58,50 @@ function slugifyZipBasename(name: string): string {
 }
 
 /**
- * Bundle the chat's registered artifacts for export. Returns the zip-ready
- * file entries (`assets/artifacts/<id>/<basename>` paths plus bytes) and a
- * `{artifactId → assetPath}` map so the HTML renderer can emit download
- * links. Artifacts whose blob can't be read are logged and excluded from the
- * map; the renderer surfaces them as `[artifact file unavailable]`.
+ * Race a promise against a fixed timeout. Resolves to `{ ok: true, value }`
+ * if the work finishes first, `{ ok: false }` on timeout. The timer is
+ * cleared in either case so a long-lived caller doesn't accumulate dangling
+ * `setTimeout` handles.
  */
-async function bundleChatArtifacts(
-  artifacts: ArtifactSummary[],
-): Promise<{ files: Array<{ path: string; bytes: Uint8Array }>; pathMap: Map<string, string> }> {
+async function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ ok: false }>((resolve) => {
+    timer = setTimeout(() => resolve({ ok: false }), timeoutMs);
+  });
+  try {
+    return await Promise.race([work.then((value) => ({ ok: true as const, value })), timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+interface ChatArtifactBundle {
+  files: Array<{ path: string; bytes: Uint8Array }>;
+  pathMap: Map<string, string>;
+  /**
+   * Artifacts intentionally excluded from the bundle — either oversized
+   * (would push the running total over `EXPORT_SIZE_LIMIT_BYTES`) or slow
+   * to read (`readBinaryContents` exceeded `ARTIFACT_READ_TIMEOUT_MS`). The
+   * HTML renderer emits a `[skipped: ...]` placeholder for these. Failed
+   * reads (err Result) are logged but NOT added here — the renderer treats
+   * those as `[artifact file unavailable]`, a distinct UX signal.
+   */
+  skippedArtifactIds: Set<string>;
+}
+
+/**
+ * Bundle the chat's registered artifacts for export under a fixed total
+ * byte budget and per-artifact read timeout. Returns the zip-ready file
+ * entries (`assets/artifacts/<id>/<basename>` paths plus bytes), a
+ * `{artifactId → assetPath}` map for the renderer, and the set of artifact
+ * ids that were intentionally skipped. Read failures are logged and
+ * excluded from `pathMap` but not added to `skippedArtifactIds` — they
+ * surface as `[artifact file unavailable]` rather than `[skipped]`.
+ */
+async function bundleChatArtifacts(artifacts: ArtifactSummary[]): Promise<ChatArtifactBundle> {
   const uniqueById = new Map<string, ArtifactSummary>();
   for (const summary of artifacts) {
     if (!uniqueById.has(summary.id)) uniqueById.set(summary.id, summary);
@@ -52,19 +109,44 @@ async function bundleChatArtifacts(
 
   const reads = await Promise.all(
     [...uniqueById.values()].map(async (summary) => {
-      const result = await ArtifactStorage.readBinaryContents({ id: summary.id });
-      return { summary, result };
+      const raced = await withTimeout(
+        ArtifactStorage.readBinaryContents({ id: summary.id }),
+        ARTIFACT_READ_TIMEOUT_MS,
+      );
+      return { summary, raced };
     }),
   );
 
   const files: Array<{ path: string; bytes: Uint8Array }> = [];
   const pathMap = new Map<string, string>();
-  for (const { summary, result } of reads) {
+  const skippedArtifactIds = new Set<string>();
+  let bytesUsed = 0;
+
+  for (const { summary, raced } of reads) {
+    if (!raced.ok) {
+      logger.error("Artifact read timed out during chat export", {
+        artifactId: summary.id,
+        timeoutMs: ARTIFACT_READ_TIMEOUT_MS,
+      });
+      skippedArtifactIds.add(summary.id);
+      continue;
+    }
+    const result = raced.value;
     if (!result.ok) {
       logger.error("Failed to read artifact for chat export", {
         artifactId: summary.id,
         error: result.error,
       });
+      continue;
+    }
+    if (bytesUsed + result.data.byteLength > EXPORT_SIZE_LIMIT_BYTES) {
+      logger.warn("Skipping artifact: export size cap reached", {
+        artifactId: summary.id,
+        artifactBytes: result.data.byteLength,
+        bytesUsed,
+        limitBytes: EXPORT_SIZE_LIMIT_BYTES,
+      });
+      skippedArtifactIds.add(summary.id);
       continue;
     }
     const basename = slugifyZipBasename(
@@ -77,8 +159,9 @@ async function bundleChatArtifacts(
     const path = `assets/artifacts/${summary.id}/${basename}`;
     files.push({ path, bytes: result.data });
     pathMap.set(summary.id, path);
+    bytesUsed += result.data.byteLength;
   }
-  return { files, pathMap };
+  return { files, pathMap, skippedArtifactIds };
 }
 
 const listChatsQuerySchema = z.object({
@@ -244,33 +327,63 @@ const workspaceChatRoutes = daemonFactory
     const chatId = c.req.param("chatId");
     const workspaceId = c.req.param("workspaceId");
 
-    const chatResult = await ChatStorage.getChat(chatId, workspaceId);
-    if (!chatResult.ok) {
-      return c.json({ error: chatResult.error }, 500);
+    // Wrap the full pipeline (chat fetch → artifact list → bundle → render
+    // → zip) in a 10s race so a pathological chat or hung upstream can't
+    // pin the daemon. We never construct the response body until the work
+    // resolves, so a timeout returns a clean 503 with no half-written zip.
+    const exportWork = (async () => {
+      const chatResult = await ChatStorage.getChat(chatId, workspaceId);
+      if (!chatResult.ok) return { kind: "chat-error" as const, error: chatResult.error };
+      if (!chatResult.data) return { kind: "not-found" as const };
+      const chat = chatResult.data;
+
+      const artifactsResult = await ArtifactStorage.listByChat({ chatId });
+      if (!artifactsResult.ok) return { kind: "list-error" as const, error: artifactsResult.error };
+      const artifacts = artifactsResult.data;
+      const { files: artifactFiles, pathMap: artifactPathMap, skippedArtifactIds } =
+        await bundleChatArtifacts(artifacts);
+      // Export uses the full message list — unlike GET /:chatId which trims
+      // to the last 100 for UI rehydrate.
+      const html = renderChatToHTML(chat, artifacts, artifactPathMap, skippedArtifactIds);
+      const stream = await buildExportZip(html, chat, artifactFiles);
+      return { kind: "ok" as const, stream };
+    })();
+
+    const raced = await withTimeout(exportWork, EXPORT_TIMEOUT_MS);
+    if (!raced.ok) {
+      logger.warn("Chat export timed out", {
+        chatId,
+        workspaceId,
+        timeoutMs: EXPORT_TIMEOUT_MS,
+      });
+      return c.json({ error: "Chat too large to export" }, 503);
     }
-    if (!chatResult.data) {
+    const outcome = raced.value;
+    if (outcome.kind === "chat-error") {
+      return c.json({ error: outcome.error }, 500);
+    }
+    if (outcome.kind === "not-found") {
       return c.json({ error: "Chat not found" }, 404);
     }
-
-    const artifactsResult = await ArtifactStorage.listByChat({ chatId });
-    if (!artifactsResult.ok) {
+    if (outcome.kind === "list-error") {
+      // Post-#164 the artifact migration is awaited at daemon boot, so this
+      // branch is largely unreachable — but if the upstream surfaces a
+      // migration-shaped error anyway, prefer 503 over 500 so callers can
+      // retry cleanly instead of treating it as a permanent failure.
+      if (/migrating/i.test(outcome.error)) {
+        logger.warn("Chat export hit artifact migration shim", {
+          chatId,
+          error: outcome.error,
+        });
+        return c.json({ error: "Chat artifacts are being migrated; try again shortly" }, 503);
+      }
       logger.error("Failed to list artifacts for chat export", {
         chatId,
-        error: artifactsResult.error,
+        error: outcome.error,
       });
-      return c.json({ error: artifactsResult.error }, 500);
+      return c.json({ error: outcome.error }, 500);
     }
-    const artifacts = artifactsResult.data;
-    const { files: artifactFiles, pathMap: artifactPathMap } =
-      await bundleChatArtifacts(artifacts);
-
-    // Export uses the full message list — unlike GET /:chatId which trims to
-    // the last 100 for UI rehydrate.
-    const chat = chatResult.data;
-    const html = renderChatToHTML(chat, artifacts, artifactPathMap);
-    const zipStream = await buildExportZip(html, chat, artifactFiles);
-
-    return c.body(zipStream, 200, {
+    return c.body(outcome.stream, 200, {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="friday-chat-${chatId.slice(0, 8)}.zip"`,
     });

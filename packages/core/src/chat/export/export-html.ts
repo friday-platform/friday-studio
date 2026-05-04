@@ -387,6 +387,12 @@ a {
   font-style: italic;
 }
 
+.artifact-skipped {
+  color: var(--color-text-faded);
+  font-size: var(--font-size-0);
+  font-style: italic;
+}
+
 .artifacts {
   border-block-start: 1px solid var(--color-border-1);
   margin-block-start: var(--size-6);
@@ -418,12 +424,16 @@ a {
 
 /**
  * Render the artifact reference block for a `display_artifact` tool call.
- * Emits a download link if the path map has an entry, or a placeholder when
- * the underlying blob couldn't be read at export time.
+ * Three branches: a download link when the blob bundled successfully, a
+ * "skipped" placeholder when the artifact was intentionally excluded (size
+ * cap or per-artifact read timeout), or an "unavailable" placeholder when the
+ * blob read errored. Skipped vs. unavailable are distinct UX signals — one is
+ * a quota decision, the other is an upstream failure.
  */
 function renderArtifactReference(
   summary: ArtifactSummary,
   artifactPathMap: Map<string, string>,
+  skippedArtifactIds: ReadonlySet<string>,
 ): string {
   const title = escapeHtml(summary.title);
   const path = artifactPathMap.get(summary.id);
@@ -432,6 +442,14 @@ function renderArtifactReference(
       `<div class="artifact-ref">` +
       `<span class="artifact-title">${title}</span>` +
       `<a class="artifact-download" href="${escapeHtml(path)}" download>Download</a>` +
+      `</div>`
+    );
+  }
+  if (skippedArtifactIds.has(summary.id)) {
+    return (
+      `<div class="artifact-ref">` +
+      `<span class="artifact-title">${title}</span>` +
+      `<span class="artifact-skipped">[skipped: artifact too large for export]</span>` +
       `</div>`
     );
   }
@@ -543,12 +561,16 @@ function stringifyForPre(value: unknown): string {
  * resolve their references without globals. `artifactsById` is a lookup of
  * every artifact `listByChat` returned for this chat; `artifactPathMap` maps
  * artifact id → relative zip asset path. Artifacts that failed to read have
- * a metadata entry in `artifactsById` but no path entry, which the renderer
- * surfaces as an `[artifact file unavailable]` placeholder.
+ * a metadata entry in `artifactsById` but no path entry and are not in
+ * `skippedArtifactIds` — they render as `[artifact file unavailable]`.
+ * Artifacts intentionally excluded by the route's size cap or per-artifact
+ * read timeout appear in `skippedArtifactIds` and render as a `[skipped: ...]`
+ * placeholder instead.
  */
 interface RenderContext {
   artifactsById: Map<string, ArtifactSummary>;
   artifactPathMap: Map<string, string>;
+  skippedArtifactIds: ReadonlySet<string>;
   /** Mutated as artifacts get rendered inline so the trailing list skips them. */
   renderedArtifactIds: Set<string>;
 }
@@ -591,7 +613,7 @@ function renderToolCall(call: ToolCallDisplay, ctx: RenderContext): string {
     const summary = ctx.artifactsById.get(displayedId);
     if (summary) {
       ctx.renderedArtifactIds.add(displayedId);
-      parts.push(renderArtifactReference(summary, ctx.artifactPathMap));
+      parts.push(renderArtifactReference(summary, ctx.artifactPathMap, ctx.skippedArtifactIds));
     }
   }
 
@@ -746,7 +768,10 @@ function renderArtifactList(ctx: RenderContext): string {
   if (remaining.length === 0) return "";
 
   const items = remaining
-    .map((summary) => `<li>${renderArtifactReference(summary, ctx.artifactPathMap)}</li>`)
+    .map(
+      (summary) =>
+        `<li>${renderArtifactReference(summary, ctx.artifactPathMap, ctx.skippedArtifactIds)}</li>`,
+    )
     .join("");
   return (
     `<section class="artifacts">` +
@@ -760,15 +785,18 @@ function renderArtifactList(ctx: RenderContext): string {
  * Render a {@link Chat} to a complete HTML document string. `artifacts` is
  * the deduped result of `ArtifactStorage.listByChat({ chatId })`; entries
  * with no matching `artifactPathMap` value are rendered as
- * `[artifact file unavailable]` placeholders. Tool-call cards whose output
- * is a successful `display_artifact` consume their referenced artifact
- * inline; anything left over surfaces in a trailing list at the end of the
- * document.
+ * `[artifact file unavailable]` placeholders unless their id appears in
+ * `skippedArtifactIds`, in which case the renderer emits a
+ * `[skipped: artifact too large for export]` placeholder. Tool-call cards
+ * whose output is a successful `display_artifact` consume their referenced
+ * artifact inline; anything left over surfaces in a trailing list at the
+ * end of the document.
  */
 export function renderChatToHTML(
   chat: Chat,
   artifacts: ArtifactSummary[],
   artifactPathMap: Map<string, string>,
+  skippedArtifactIds: ReadonlySet<string> = new Set<string>(),
 ): string {
   const artifactsById = new Map<string, ArtifactSummary>();
   for (const summary of artifacts) {
@@ -777,6 +805,7 @@ export function renderChatToHTML(
   const ctx: RenderContext = {
     artifactsById,
     artifactPathMap,
+    skippedArtifactIds,
     renderedArtifactIds: new Set<string>(),
   };
 
