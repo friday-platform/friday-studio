@@ -180,9 +180,20 @@
     </div>
 
     {#if serveUrl && !loading}
-      <a class="open-btn" href={serveUrl} target="_blank" rel="noopener noreferrer" title="Open">
-        Open
-      </a>
+      <div class="artifact-actions">
+        <!-- `download` (no value) defers to the server's
+             Content-Disposition filename, which `deriveDownloadFilename`
+             rewrites to match the actual mime type — so legacy `.bin`
+             artifacts still save with the correct extension. The
+             `download` attribute also forces save (rather than render)
+             even for inline-disposition mimes like PDF. -->
+        <a class="download-btn" href={serveUrl} download title="Download">
+          Download
+        </a>
+        <a class="open-btn" href={serveUrl} target="_blank" rel="noopener noreferrer" title="Open in new tab">
+          Open
+        </a>
+      </div>
     {/if}
   </div>
 
@@ -302,6 +313,13 @@
     padding: 1px 6px;
   }
 
+  .artifact-actions {
+    align-items: center;
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--size-1, 4px);
+  }
+
   .open-btn {
     background: var(--color-accent);
     border: 1px solid var(--color-accent);
@@ -313,6 +331,7 @@
     font-size: var(--font-size-1);
     font-weight: var(--font-weight-5);
     padding: 3px 10px;
+    text-decoration: none;
     transition: opacity 100ms ease;
   }
 
@@ -322,6 +341,27 @@
 
   .open-btn:disabled {
     opacity: 0.5;
+  }
+
+  /* Secondary action — same shape as Open but neutral so the chat header
+     doesn't sprout two equally-loud accent buttons next to each other. */
+  .download-btn {
+    background: transparent;
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-1);
+    color: var(--text);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: inherit;
+    font-size: var(--font-size-1);
+    font-weight: var(--font-weight-5);
+    padding: 3px 10px;
+    text-decoration: none;
+    transition: background 100ms ease;
+  }
+
+  .download-btn:hover {
+    background: var(--surface-bright, var(--surface));
   }
 
   .artifact-summary {

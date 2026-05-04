@@ -186,6 +186,91 @@ export function isParseableMimeType(mimeType: string): boolean {
   return PARSEABLE_MIMES.has(mimeType);
 }
 
+/**
+ * Common mime → file-extension lookup for download-filename derivation.
+ * The fallback (`mimeType.split("/")[1]`) gives reasonable strings for
+ * simple types (`application/pdf` → "pdf") but produces ugly results
+ * for compound types (Office formats, image/svg+xml). Map the messy
+ * cases explicitly; let everything else fall through to the suffix.
+ */
+const MIME_TO_EXT: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/json": "json",
+  "application/yaml": "yaml",
+  "application/x-yaml": "yaml",
+  "application/xml": "xml",
+  "application/zip": "zip",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/octet-stream": "bin",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/wav": "wav",
+  "audio/webm": "webm",
+  "audio/ogg": "ogg",
+  "audio/flac": "flac",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "text/plain": "txt",
+  "text/html": "html",
+  "text/css": "css",
+  "text/csv": "csv",
+  "text/markdown": "md",
+  "text/yaml": "yaml",
+};
+
+/** Best-guess file extension for a mime type. Falls back to `bin` for unknowns. */
+export function extFromMime(mimeType: string): string {
+  const direct = MIME_TO_EXT[mimeType];
+  if (direct) return direct;
+  // Fall back to the part after `/`, stripped of parameters (`; charset=…`)
+  // and `+suffix` qualifiers (`image/svg+xml` → `svg`).
+  const tail = mimeType.split("/")[1]?.split(";")[0]?.split("+")[0]?.trim();
+  return tail && /^[a-z0-9]+$/i.test(tail) ? tail : "bin";
+}
+
+/**
+ * Reconcile a stored `originalName` with the artifact's actual `mimeType`,
+ * returning a filename whose extension matches the bytes. When the
+ * scrubber lifts an embedded base64 blob without knowing the format yet,
+ * it stamps the artifact with `<tool>-<ts>.bin`; the storage adapter
+ * later sniffs the real mime, but `originalName` keeps its `.bin`. This
+ * helper rewrites the extension at download time so the user gets
+ * `foo.pdf` instead of `foo.bin` even for legacy artifacts.
+ *
+ * Logic:
+ * 1. Compute the correct extension from the mime.
+ * 2. If `originalName` already ends in that extension, keep it.
+ * 3. If `originalName` ends in a different extension, swap it.
+ * 4. If `originalName` has no extension, append.
+ * 5. If no `originalName`, use `<title>.<ext>`.
+ */
+export function deriveDownloadFilename(opts: {
+  mimeType: string;
+  originalName?: string;
+  title: string;
+}): string {
+  const ext = extFromMime(opts.mimeType);
+  const fromOriginal = opts.originalName?.trim();
+  if (fromOriginal) {
+    const dot = fromOriginal.lastIndexOf(".");
+    if (dot > 0 && dot < fromOriginal.length - 1) {
+      const currentExt = fromOriginal.slice(dot + 1).toLowerCase();
+      if (currentExt === ext.toLowerCase()) return fromOriginal;
+      return `${fromOriginal.slice(0, dot)}.${ext}`;
+    }
+    return `${fromOriginal}.${ext}`;
+  }
+  return `${opts.title}.${ext}`;
+}
+
 export function getValidatedMimeType(fileName: string): string | undefined {
   const dotIdx = fileName.lastIndexOf(".");
   if (dotIdx < 0) return undefined;

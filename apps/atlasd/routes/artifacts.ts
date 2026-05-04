@@ -16,6 +16,7 @@ import {
   USER_FACING_ERROR_CODES,
 } from "@atlas/core/artifacts/converters";
 import {
+  deriveDownloadFilename,
   FILE_TYPE_NOT_ALLOWED_ERROR,
   getValidatedMimeType,
   isAudioMimeType,
@@ -806,16 +807,19 @@ const artifactsApp = daemonFactory
 
       // Filename hint so the browser uses something meaningful when the user
       // saves (Right-click → Save As, or attachment-disposition downloads).
-      // Without it the browser falls back to the URL's last path segment,
-      // which is the literal string "content" — every download lands as
-      // "content", "content (1)", etc. We prefer originalName, falling back
-      // to artifact title with a mime-derived extension.
+      // Without it the browser falls back to the URL's last path segment —
+      // every download lands as "content", "content (1)", etc.
       //
-      // RFC 6266 escaping: `filename=` is the ASCII fallback (quotes and
-      // backslashes escaped); `filename*=UTF-8''…` carries the real value
-      // for any non-ASCII characters. Modern browsers prefer filename*.
-      const extFromMime = mimeType.split("/")[1]?.split(";")[0]?.split("+")[0] ?? "bin";
-      const rawName = originalName ?? `${artifact.title}.${extFromMime}`;
+      // `deriveDownloadFilename` reconciles the stored `originalName` with
+      // the actual `mimeType`. Legacy artifacts where the scrubber stamped
+      // a `.bin` filename pre-mime-sniff get their extension repaired at
+      // download time; future scrubber lifts already pick the right
+      // extension via base64 magic-byte detection.
+      //
+      // RFC 6266: `filename=` is the ASCII fallback (quotes/backslashes
+      // escaped); `filename*=UTF-8''…` carries the real value for any
+      // non-ASCII. Modern browsers prefer filename*.
+      const rawName = deriveDownloadFilename({ mimeType, originalName, title: artifact.title });
       const asciiName = rawName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
       const utf8Name = encodeURIComponent(rawName);
       const contentDisposition = `${disposition}; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
