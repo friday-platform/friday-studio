@@ -10,6 +10,7 @@ import { registerAgentsListTool } from "./agents/list.ts";
 import { registerArtifactsCreateTool } from "./artifacts/create.ts";
 import { registerArtifactsGetTool } from "./artifacts/get.ts";
 import { registerArtifactsGetByChatTool } from "./artifacts/get-by-chat.ts";
+import { registerArtifactsParseTool } from "./artifacts/parse.ts";
 import { registerArtifactsUpdateTool } from "./artifacts/update.ts";
 // Data processing tools
 import { registerCsvTool } from "./data-processing/csv/index.ts";
@@ -91,6 +92,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerArtifactsUpdateTool(server, context);
   registerArtifactsGetTool(server, context);
   registerArtifactsGetByChatTool(server, context);
+  registerArtifactsParseTool(server, context);
 
   // State tools
   registerStateAppendTool(server, context);

@@ -78,8 +78,32 @@ function streamName(workspaceId: string, chatId: string): string {
   return `CHAT_${sanitizeForStreamName(workspaceId)}_${sanitizeForStreamName(chatId)}`;
 }
 
-function subject(workspaceId: string, chatId: string): string {
+/**
+ * Legacy flat subject used by streams created before per-message rollup.
+ * Old streams stay on this subject so their existing messages remain
+ * matched by the stream's `subjects` config.
+ */
+function flatSubject(workspaceId: string, chatId: string): string {
   return `chats.${workspaceId}.${chatId}.messages`;
+}
+
+/**
+ * Per-message subject used by streams created with per-message rollup.
+ * Combined with `max_msgs_per_subject: 1` on the stream, publishing again
+ * to the same `<msgId>` subject auto-purges the prior copy — turning each
+ * `appendMessage` into a snapshot of "the latest state of this message."
+ *
+ * Why this matters: the agent can call `appendMessage` repeatedly during
+ * a turn (e.g. on shutdown abort) and each call replaces the previous
+ * snapshot rather than creating a new entry or dedupe-dropping.
+ */
+function messageSubject(workspaceId: string, chatId: string, messageId: string): string {
+  return `chats.${workspaceId}.${chatId}.messages.${messageId}`;
+}
+
+/** Wildcard the new stream config registers, accepting any per-message subject. */
+function messagesWildcardSubject(workspaceId: string, chatId: string): string {
+  return `chats.${workspaceId}.${chatId}.messages.>`;
 }
 
 function kvKey(workspaceId: string, chatId: string): string {
@@ -152,29 +176,60 @@ function enqueue<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return next as Promise<T>;
 }
 
+/**
+ * Records the subject layout of a chat stream so {@link appendMessage} knows
+ * whether to publish to the per-message subject (new layout — supports
+ * snapshot replacement) or the flat legacy subject (old layout — preserves
+ * pre-rollup behavior). Cached per stream name to avoid an info-fetch on
+ * every append.
+ */
+interface StreamLayout {
+  /** True when the stream was created with per-message subjects + max_msgs_per_subject:1. */
+  perMessage: boolean;
+}
+const streamLayouts = new Map<string, StreamLayout>();
+
 async function ensureChatStream(
   jsm: JetStreamManager,
   workspaceId: string,
   chatId: string,
   limits: ChatStreamLimits,
-): Promise<void> {
+): Promise<StreamLayout> {
   const name = streamName(workspaceId, chatId);
+  const cached = streamLayouts.get(name);
+  if (cached) return cached;
   try {
-    await jsm.streams.info(name);
-    return;
+    const info = await jsm.streams.info(name);
+    const subjects = info.config.subjects ?? [];
+    const wildcard = messagesWildcardSubject(workspaceId, chatId);
+    const layout: StreamLayout = { perMessage: subjects.includes(wildcard) };
+    streamLayouts.set(name, layout);
+    return layout;
   } catch (err) {
     if (!isStreamNotFound(err)) throw err;
   }
+  // Fresh stream — create with the per-message rollup layout. Existing
+  // chats hit the path above and keep whatever layout they had, so no
+  // in-place migration is required.
   const dup = limits.duplicateWindowNs ?? DEFAULT_DUPLICATE_WINDOW_NS;
   await jsm.streams.add({
     name,
-    subjects: [subject(workspaceId, chatId)],
+    subjects: [messagesWildcardSubject(workspaceId, chatId)],
     retention: RetentionPolicy.Limits,
     storage: StorageType.File,
     max_msg_size: limits.maxMsgSize ?? DEFAULT_MAX_MSG_SIZE,
+    // One message per subject — each per-message subject only ever
+    // retains its latest snapshot. Resnapshots auto-purge prior copies.
+    max_msgs_per_subject: 1,
+    // Permits Nats-Rollup headers (not currently used; carried for future
+    // explicit-rollup needs without requiring another stream-config update).
+    allow_rollup_hdrs: true,
     duplicate_window: typeof dup === "bigint" ? Number(dup) : dup,
   });
-  logger.info("Created chat stream", { workspaceId, chatId, name });
+  logger.info("Created chat stream", { workspaceId, chatId, name, layout: "per-message" });
+  const layout: StreamLayout = { perMessage: true };
+  streamLayouts.set(name, layout);
+  return layout;
 }
 
 export interface JetStreamChatBackend {
@@ -386,16 +441,29 @@ export function createJetStreamChatBackend(
       await enqueue(`${workspaceId}/${chatId}`, async () => {
         await validateAtlasUIMessages([message]);
         const jsm = await nc.jetstreamManager();
-        await ensureChatStream(jsm, workspaceId, chatId, limits);
+        const layout = await ensureChatStream(jsm, workspaceId, chatId, limits);
 
         const c = js();
         const envelope = { message, ts: new Date().toISOString() };
         const h = natsHeaders();
         h.set("Friday-Schema-Version", SCHEMA_VERSION);
         h.set("Friday-Message-Id", message.id);
-        await c.publish(subject(workspaceId, chatId), enc.encode(JSON.stringify(envelope)), {
+        // New streams use a per-message subject + max_msgs_per_subject:1 so
+        // each `appendMessage` for the same `message.id` snapshot-replaces
+        // the prior copy. We deliberately do NOT set `msgID` here — that
+        // would trigger the stream's 24h dedup window and silently drop
+        // resnapshots. The subject-rollup semantics are sufficient: if a
+        // network retry causes two publishes of the identical envelope,
+        // the broker stores one and auto-purges the other.
+        //
+        // Old streams keep their flat subject + msgID dedup so existing
+        // chats persist exactly as before.
+        const publishSubject = layout.perMessage
+          ? messageSubject(workspaceId, chatId, message.id)
+          : flatSubject(workspaceId, chatId);
+        await c.publish(publishSubject, enc.encode(JSON.stringify(envelope)), {
           headers: h,
-          msgID: message.id,
+          ...(layout.perMessage ? {} : { msgID: message.id }),
         });
 
         const ts = envelope.ts;
@@ -521,6 +589,10 @@ export function createJetStreamChatBackend(
       } catch (err) {
         if (!isStreamNotFound(err)) throw err;
       }
+      // Drop the layout cache entry — chat IDs aren't reused in practice
+      // but a stale entry would mis-route a freshly-created stream's
+      // appendMessage to the legacy subject.
+      streamLayouts.delete(name);
       await k.delete(kvKey(workspaceId, chatId));
       logger.debug("Deleted chat", { chatId, workspaceId });
       return success(undefined);

@@ -27,6 +27,7 @@ import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 import { rebindAgentTool } from "../../../workspace-chat/tools/bundled-agent-tools.ts";
+import { createScrubber } from "../../lib/scrub-tool-output.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
 
@@ -189,6 +190,19 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             if (c) selectedConfigs[id] = c.mergedConfig;
           }
 
+          // Scrub binary out of MCP tool results before they enter the AI
+          // SDK message buffer. Bytes get lifted to artifacts; the model
+          // sees a short ref string. Avoids the prompt-token tax + chat
+          // persistence MAX_PAYLOAD_EXCEEDED on attachment-bearing tools
+          // (Gmail's `get_gmail_attachment_content` with return_base64=true,
+          // image responses, etc.). Pre-persist scrubbing in the parent
+          // agent acts as a backstop for anything that slips past.
+          const scrubResult = createScrubber({
+            workspaceId: session.workspaceId,
+            chatId: session.streamId,
+            logger,
+          });
+
           const serverEntries = Object.entries(selectedConfigs);
           const serverResults = await Promise.allSettled(
             serverEntries.map(([serverId, config]) => {
@@ -196,6 +210,7 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
               return createMCPTools({ [serverId]: config }, logger, {
                 signal: abortSignal,
                 toolPrefix: prefix,
+                scrubResult,
               });
             }),
           );

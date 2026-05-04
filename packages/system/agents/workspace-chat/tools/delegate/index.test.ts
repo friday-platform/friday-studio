@@ -954,7 +954,11 @@ describe("createDelegateTool", () => {
     expect(mockCreateMCPTools).toHaveBeenCalledWith(
       { "server-a": { transport: { type: "stdio", command: "a" } } },
       expect.any(Object),
-      { signal: undefined, toolPrefix: undefined },
+      // The delegate now plumbs a `scrubResult` post-processor so MCP tool
+      // outputs get oversized binary lifted to artifacts at the boundary
+      // (see scrub-tool-output.ts). Asserted as a function here; behavior
+      // is covered in scrub-tool-output.test.ts.
+      { signal: undefined, toolPrefix: undefined, scrubResult: expect.any(Function) },
     );
     const tools = captured.args?.tools as Record<string, unknown> | undefined;
     expect(tools?.tool_a).toBeDefined();
@@ -1010,13 +1014,13 @@ describe("createDelegateTool", () => {
       1,
       { s1: { transport: { type: "stdio", command: "s1" } } },
       expect.any(Object),
-      { signal: undefined, toolPrefix: "s1" },
+      { signal: undefined, toolPrefix: "s1", scrubResult: expect.any(Function) },
     );
     expect(mockCreateMCPTools).toHaveBeenNthCalledWith(
       2,
       { s2: { transport: { type: "stdio", command: "s2" } } },
       expect.any(Object),
-      { signal: undefined, toolPrefix: "s2" },
+      { signal: undefined, toolPrefix: "s2", scrubResult: expect.any(Function) },
     );
 
     const tools = captured.args?.tools as Record<string, unknown> | undefined;
