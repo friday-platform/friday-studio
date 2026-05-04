@@ -264,6 +264,12 @@ export function deriveDownloadFilename(opts: {
     if (dot > 0 && dot < fromOriginal.length - 1) {
       const currentExt = fromOriginal.slice(dot + 1).toLowerCase();
       if (currentExt === ext.toLowerCase()) return fromOriginal;
+      // Stored mime is octet-stream but originalName carries a real
+      // extension — the mime is wrong, trust the original. (Scrubber
+      // path goes the other way: bin originalName, real mime → rewrite.)
+      if (opts.mimeType === "application/octet-stream" && currentExt !== "bin") {
+        return fromOriginal;
+      }
       return `${fromOriginal.slice(0, dot)}.${ext}`;
     }
     return `${fromOriginal}.${ext}`;
@@ -280,3 +286,55 @@ export function getValidatedMimeType(fileName: string): string | undefined {
 
 export const ALLOWED_EXTENSIONS = new Set(EXTENSION_TO_MIME.keys());
 export const ALLOWED_EXTENSION_LIST = [...ALLOWED_EXTENSIONS];
+
+/**
+ * Additional extension→mime mappings for *agent-side inference only*.
+ *
+ * Deliberately separate from `EXTENSION_TO_MIME`, which doubles as the
+ * UI upload allowlist (`ALLOWED_EXTENSIONS`). Agents commonly write
+ * source code, markup, and config files to scratch and register them as
+ * artifacts; without an inferred mime they persist as
+ * `application/octet-stream` and download as `.bin`.
+ */
+const INFERRED_TEXT_EXTENSION_TO_MIME = new Map([
+  [".html", "text/html"],
+  [".htm", "text/html"],
+  [".xml", "application/xml"],
+  [".svg", "image/svg+xml"],
+  [".css", "text/css"],
+  [".ts", "text/x-typescript"],
+  [".tsx", "text/x-typescript"],
+  [".js", "text/javascript"],
+  [".jsx", "text/javascript"],
+  [".mjs", "text/javascript"],
+  [".cjs", "text/javascript"],
+  [".py", "text/x-python"],
+  [".go", "text/x-go"],
+  [".rs", "text/x-rust"],
+  [".sh", "text/x-shellscript"],
+  [".bash", "text/x-shellscript"],
+  [".sql", "text/x-sql"],
+  [".toml", "text/x-toml"],
+  [".ini", "text/plain"],
+  [".conf", "text/plain"],
+  [".log", "text/plain"],
+  [".tsv", "text/tab-separated-values"],
+]);
+
+/**
+ * Infer mime type from a filename for storage purposes. Consults the
+ * upload allowlist first, then a broader text-format map. Returns
+ * `undefined` for truly unknown extensions — caller should let the
+ * storage layer fall back to magic-byte sniff or octet-stream.
+ *
+ * Distinct from `getValidatedMimeType`, which gates UI uploads against
+ * a security-conscious allowlist.
+ */
+export function inferMimeFromFilename(fileName: string): string | undefined {
+  const allowlisted = getValidatedMimeType(fileName);
+  if (allowlisted) return allowlisted;
+  const dotIdx = fileName.lastIndexOf(".");
+  if (dotIdx < 0) return undefined;
+  const ext = fileName.slice(dotIdx).toLowerCase();
+  return INFERRED_TEXT_EXTENSION_TO_MIME.get(ext);
+}

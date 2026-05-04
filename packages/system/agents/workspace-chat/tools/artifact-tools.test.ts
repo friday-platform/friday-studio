@@ -46,4 +46,20 @@ describe("artifacts_create", () => {
     const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as { json: { data: { mimeType?: string } } };
     expect(call.json.data.mimeType).toBe("text/markdown");
   });
+
+  it("infers text/html mimeType from .html filename (extension outside upload allowlist)", async () => {
+    const tools = createArtifactsCreateTool({
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      streamId: undefined,
+    });
+
+    await tools.artifacts_create!.execute!(
+      { path: "report.html", title: "A report", summary: "A test HTML artifact." },
+      TOOL_CALL_OPTS,
+    );
+
+    const call = mockArtifactsCreatePost.mock.calls[0]?.[0] as { json: { data: { mimeType?: string } } };
+    expect(call.json.data.mimeType).toBe("text/html");
+  });
 });
