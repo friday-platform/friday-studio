@@ -13,14 +13,7 @@ const PublishSkillInput = z.object({
   namespace: z.string().describe("kebab-case, no @ prefix; 'friday' is reserved"),
   name: z.string(),
   content: z.string(),
-  files: z
-    .array(
-      z.object({
-        path: z.string(),
-        content: z.string(),
-      }),
-    )
-    .optional(),
+  files: z.array(z.object({ path: z.string(), content: z.string() })).optional(),
 });
 
 /**
@@ -64,7 +57,9 @@ export function createPublishSkillTool(logger: Logger): AtlasTools {
           if (!res.ok) {
             const body = (await res.json()) as unknown;
             const error =
-              typeof body === "object" && body !== null && typeof (body as { error?: unknown }).error === "string"
+              typeof body === "object" &&
+              body !== null &&
+              typeof (body as { error?: unknown }).error === "string"
                 ? (body as { error: string }).error
                 : `publish_skill failed with status ${res.status}`;
             const rawDeadLinks =
@@ -93,10 +88,7 @@ export function createPublishSkillTool(logger: Logger): AtlasTools {
           };
         } catch (err) {
           logger.error("publish_skill threw", { namespace, name, error: stringifyError(err) });
-          return {
-            success: false as const,
-            error: "publish_skill failed: network error",
-          };
+          return { success: false as const, error: "publish_skill failed: network error" };
         } finally {
           await rm(tmpDir, { recursive: true, force: true }).catch((e) =>
             logger.debug("publish_skill cleanup failed", { error: stringifyError(e) }),
