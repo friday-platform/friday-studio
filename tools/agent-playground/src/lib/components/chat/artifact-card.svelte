@@ -209,7 +209,17 @@
       ></iframe>
     </div>
   {:else if pdfUrl}
-    <iframe title={resolvedTitle} src={pdfUrl} class="artifact-pdf"></iframe>
+    <!-- loading="lazy" defers the fetch until near the viewport. With many
+         PDF artifacts in chat history (Goodwin invoices etc.), a fresh
+         page load otherwise stampedes the daemon for every card whether
+         the user scrolls past it or not — and pre-inline-disposition,
+         that triggered a download dialog per card. -->
+    <iframe
+      title={resolvedTitle}
+      src={pdfUrl}
+      class="artifact-pdf"
+      loading="lazy"
+    ></iframe>
   {:else if contents && isTextPreviewable(mimeType)}
     <pre class="artifact-preview">{previewContents(contents, mimeType)}</pre>
   {/if}
