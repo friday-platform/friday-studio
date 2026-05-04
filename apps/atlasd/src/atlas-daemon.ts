@@ -2410,7 +2410,7 @@ export class AtlasDaemon {
     this.chatTurnRegistry?.shutdown();
 
     // Shutdown SessionStreamRegistry
-    this.sessionStreamRegistry?.shutdown();
+    await this.sessionStreamRegistry?.shutdown();
 
     // Clear all idle timeouts
     for (const timeoutId of this.idleTimeouts.values()) {
