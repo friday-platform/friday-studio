@@ -42,7 +42,7 @@ aroundEach(async (run) => {
   registry = new SessionStreamRegistry(mockNatsConnection());
   registry.start();
   await run();
-  registry.shutdown();
+  await registry.shutdown();
   vi.useRealTimers();
 });
 
@@ -158,12 +158,12 @@ describe("TTL cleanup", () => {
 // ---------------------------------------------------------------------------
 
 describe("shutdown", () => {
-  test("clears all streams", () => {
+  test("clears all streams", async () => {
     const adapter = mockAdapter();
     registry.create("sess-1", adapter);
     registry.create("sess-2", adapter);
 
-    registry.shutdown();
+    await registry.shutdown();
 
     expect(registry.get("sess-1")).toBeUndefined();
     expect(registry.get("sess-2")).toBeUndefined();

@@ -43,12 +43,14 @@ export class SessionStreamRegistry {
     logger.info("SessionStreamRegistry started");
   }
 
-  /** Shutdown: clear all streams, stop cleanup. */
-  shutdown(): void {
+  /** Shutdown: flush in-flight writes, clear all streams, stop cleanup. */
+  async shutdown(): Promise<void> {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
+    const pending = Array.from(this.streams.values(), (e) => e.stream.flush());
+    await Promise.all(pending);
     this.streams.clear();
     logger.info("SessionStreamRegistry shutdown");
   }
