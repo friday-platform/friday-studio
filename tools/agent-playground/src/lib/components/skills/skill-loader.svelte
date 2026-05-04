@@ -1,9 +1,11 @@
 <!--
-  Skill upload drop zone — accepts SKILL.md files or skill directories.
+  Skill upload drop zone — accepts SKILL.md files, skill folders, or .tar.gz archives.
 
-  Single SKILL.md: publishes instructions via JSON endpoint (no archive).
-  Directory with references: packs a tar.gz in the browser and uploads
-  via the multipart endpoint so reference files are included.
+  Every drop becomes a tar.gz POSTed to /import-archive. The server owns SKILL.md
+  parsing, namespace derivation, and the prompt-when-missing protocol. When the
+  archive's frontmatter has no `@<ns>/<name>` prefix, the server returns 400 with
+  `{ needsNamespace, defaultName }` and we re-POST with `?namespace=<ns>` after
+  prompting the user.
 
   @component
 -->
@@ -11,14 +13,13 @@
   import { useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { skillQueries } from "$lib/queries";
-  import { parse as parseYaml } from "yaml";
 
   interface Props {
     inline?: boolean;
     onclose?: () => void;
-    /** When set, uploads publish as a new version of this skill (skips namespace/name extraction). */
+    /** When set, uploads publish as a new version of this skill (server uses ?namespace= override). */
     forceNamespace?: string;
-    /** When set, uploads publish as a new version of this skill (skips namespace/name extraction). */
+    /** When set, uploads publish as a new version of this skill (used for filename hint only). */
     forceName?: string;
   }
 
@@ -26,23 +27,14 @@
 
   const queryClient = useQueryClient();
 
-  interface PendingSkill {
-    name: string;
-    description: string;
-    skillMdContent: string;
-    files: File[] | null; // null = single SKILL.md (JSON publish), File[] = directory (multipart upload)
-  }
-
   let dragOver = $state(false);
   let error = $state<string | null>(null);
   let loading = $state(false);
   let needsNamespace = $state(false);
   let namespaceInput = $state("tempest");
-  let pendingSkill = $state<PendingSkill | null>(null);
-  /** Tarball waiting on a namespace prompt. Separate from `pendingSkill`
-   *  because the server (not the client) is parsing SKILL.md, so we don't
-   *  have parsed fields yet — only the raw archive and the suggested name. */
-  let pendingTarball = $state<{ file: File; defaultName: string } | null>(null);
+  /** Archive waiting on a namespace prompt. The server parses SKILL.md, so we
+   *  only have the raw blob and the suggested name — re-POST with ?namespace=. */
+  let pendingArchive = $state<{ blob: Blob; filename: string; defaultName: string } | null>(null);
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
@@ -65,7 +57,7 @@
       // webkitGetAsEntry is the standard way to detect directories
       const entry = firstItem.webkitGetAsEntry?.();
       if (entry?.isDirectory) {
-        await loadDirectory(entry as FileSystemDirectoryEntry);
+        await loadDirectoryEntry(entry as FileSystemDirectoryEntry);
         return;
       }
     }
@@ -75,25 +67,92 @@
     if (!file) return;
 
     if (file.name.endsWith(".tar.gz") || file.name.endsWith(".tgz")) {
-      await loadTarball(file);
+      await loadArchive(file, file.name);
     } else if (file.name === "SKILL.md" || file.name.endsWith(".md")) {
-      await loadSkillMd(file);
+      loading = true;
+      try {
+        const tarball = await createTarGz([new File([file], "SKILL.md", { type: file.type })]);
+        await loadArchive(tarball, file.name);
+      } catch (err) {
+        error = err instanceof Error ? err.message : "Failed to package SKILL.md";
+        loading = false;
+      }
     } else {
       error = "Drop a SKILL.md file, a folder containing one, or a .tar.gz archive";
     }
   }
 
-  /** Send an exported tar.gz to the import-archive endpoint. Server parses
-   *  SKILL.md inside and publishes. Falls back to the namespace prompt when
-   *  the tarball's frontmatter has no `@<ns>/<name>` prefix. */
-  async function loadTarball(file: File, namespaceOverride?: string) {
+  async function handleFolderInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const fileList = input.files;
+    if (!fileList || fileList.length === 0) return;
+    error = null;
+    loading = true;
+
+    try {
+      // webkitdirectory gives us a flat FileList with webkitRelativePath set
+      const files: File[] = [];
+      let dirName = "skill";
+      let hasSkillMd = false;
+
+      for (let i = 0; i < fileList.length; i++) {
+        const f = fileList[i];
+        // webkitRelativePath is "dirname/path/to/file" — strip the root dir prefix
+        const relPath = f.webkitRelativePath;
+        const slashIdx = relPath.indexOf("/");
+        if (slashIdx >= 0 && i === 0) dirName = relPath.slice(0, slashIdx);
+        const innerPath = slashIdx >= 0 ? relPath.slice(slashIdx + 1) : f.name;
+
+        if (innerPath === "SKILL.md") hasSkillMd = true;
+
+        files.push(new File([f], innerPath, { type: f.type }));
+      }
+
+      if (!hasSkillMd) {
+        error = "Folder must contain a SKILL.md file";
+        return;
+      }
+
+      const tarball = await createTarGz(files);
+      await loadArchive(tarball, `${dirName}.tar.gz`);
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to read folder";
+    } finally {
+      loading = false;
+      input.value = "";
+    }
+  }
+
+  /** Walk a dropped directory, build a tar.gz, and ship to /import-archive. */
+  async function loadDirectoryEntry(dirEntry: FileSystemDirectoryEntry) {
+    loading = true;
+    try {
+      const files = await readDirectoryEntries(dirEntry);
+      if (!files.some((f) => f.name === "SKILL.md")) {
+        error = "Directory must contain a SKILL.md file";
+        return;
+      }
+      const tarball = await createTarGz(files);
+      await loadArchive(tarball, `${dirEntry.name}.tar.gz`);
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Failed to read directory";
+    } finally {
+      loading = false;
+    }
+  }
+
+  /** POST a tar.gz to /import-archive. Server parses SKILL.md, derives namespace,
+   *  and either publishes or returns 400 with `{ needsNamespace, defaultName }`. */
+  async function loadArchive(blob: Blob, filename: string, namespaceOverride?: string) {
     loading = true;
     error = null;
     try {
+      // Force-namespace from Replace flow takes precedence over any caller-supplied override.
+      const ns = forceNamespace ?? namespaceOverride;
       const formData = new FormData();
-      formData.append("archive", file);
-      const url = namespaceOverride
-        ? `/api/daemon/api/skills/import-archive?namespace=${encodeURIComponent(namespaceOverride)}`
+      formData.append("archive", new File([blob], filename, { type: "application/gzip" }));
+      const url = ns
+        ? `/api/daemon/api/skills/import-archive?namespace=${encodeURIComponent(ns)}`
         : `/api/daemon/api/skills/import-archive`;
       const res = await fetch(url, { method: "POST", body: formData });
       const body = (await res.json().catch(() => ({}))) as {
@@ -104,7 +163,7 @@
       };
 
       if (res.status === 400 && body.needsNamespace && body.defaultName) {
-        pendingTarball = { file, defaultName: body.defaultName };
+        pendingArchive = { blob, filename, defaultName: body.defaultName };
         needsNamespace = true;
         return;
       }
@@ -122,269 +181,14 @@
     }
   }
 
-  async function handleFolderInput(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const fileList = input.files;
-    if (!fileList || fileList.length === 0) return;
-    error = null;
-    loading = true;
-
-    try {
-      // webkitdirectory gives us a flat FileList with webkitRelativePath set
-      const files: File[] = [];
-      let skillMdFile: File | undefined;
-
-      for (let i = 0; i < fileList.length; i++) {
-        const f = fileList[i];
-        // webkitRelativePath is "dirname/path/to/file" — strip the root dir prefix
-        const relPath = f.webkitRelativePath;
-        const slashIdx = relPath.indexOf("/");
-        const innerPath = slashIdx >= 0 ? relPath.slice(slashIdx + 1) : f.name;
-
-        if (innerPath === "SKILL.md") {
-          skillMdFile = f;
-        }
-
-        files.push(new File([f], innerPath, { type: f.type }));
-      }
-
-      if (!skillMdFile) {
-        error = "Folder must contain a SKILL.md file";
-        return;
-      }
-
-      const skillMdText = await skillMdFile.text();
-      const parsed = parseFrontmatter(skillMdText);
-
-      // When forced namespace/name are set, skip frontmatter name validation
-      if (forceNamespace && forceName) {
-        await publishWithArchive(forceNamespace, forceName, skillMdText, files);
-        return;
-      }
-
-      if (!parsed.name) {
-        error = "SKILL.md frontmatter must include a 'name' field";
-        return;
-      }
-
-      const { namespace, skillName } = splitRef(parsed.name);
-
-      if (!namespace) {
-        pendingSkill = {
-          name: skillName,
-          description: parsed.description ?? "",
-          skillMdContent: skillMdText,
-          files,
-        };
-        needsNamespace = true;
-        return;
-      }
-
-      await publishWithArchive(namespace, skillName, skillMdText, files);
-    } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to read folder";
-    } finally {
-      loading = false;
-      input.value = "";
-    }
-  }
-
-  /** Parse a single SKILL.md file and publish via JSON endpoint. */
-  async function loadSkillMd(file: File) {
-    loading = true;
-    try {
-      const text = await file.text();
-      const parsed = parseFrontmatter(text);
-
-      // When forced namespace/name are set, skip frontmatter name validation
-      if (forceNamespace && forceName) {
-        await publishJsonSkill(forceNamespace, forceName, parsed.description ?? "", text);
-        return;
-      }
-
-      if (!parsed.name) {
-        error = "SKILL.md frontmatter must include a 'name' field";
-        return;
-      }
-
-      const { namespace, skillName } = splitRef(parsed.name);
-
-      if (!namespace) {
-        pendingSkill = {
-          name: skillName,
-          description: parsed.description ?? "",
-          skillMdContent: text,
-          files: null,
-        };
-        needsNamespace = true;
-        return;
-      }
-
-      await publishJsonSkill(namespace, skillName, parsed.description ?? "", text);
-    } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to parse SKILL.md";
-    } finally {
-      loading = false;
-    }
-  }
-
-  /** Load a dropped directory — find SKILL.md and upload with all files as archive. */
-  async function loadDirectory(dirEntry: FileSystemDirectoryEntry) {
-    loading = true;
-    try {
-      const files = await readDirectoryEntries(dirEntry);
-      const skillMdFile = files.find((f) => f.name === "SKILL.md");
-
-      if (!skillMdFile) {
-        error = "Directory must contain a SKILL.md file";
-        return;
-      }
-
-      const skillMdText = await skillMdFile.text();
-      const parsed = parseFrontmatter(skillMdText);
-
-      // When forced namespace/name are set, skip frontmatter name validation
-      if (forceNamespace && forceName) {
-        await publishWithArchive(forceNamespace, forceName, skillMdText, files);
-        return;
-      }
-
-      if (!parsed.name) {
-        error = "SKILL.md frontmatter must include a 'name' field";
-        return;
-      }
-
-      const { namespace, skillName } = splitRef(parsed.name);
-
-      if (!namespace) {
-        pendingSkill = {
-          name: skillName,
-          description: parsed.description ?? "",
-          skillMdContent: skillMdText,
-          files,
-        };
-        needsNamespace = true;
-        return;
-      }
-
-      await publishWithArchive(namespace, skillName, skillMdText, files);
-    } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to read directory";
-    } finally {
-      loading = false;
-    }
-  }
-
-  /** Submit the namespace form and publish. */
+  /** Submit the namespace form — re-POST the stashed archive with ?namespace=. */
   async function submitNamespace() {
-    if (!namespaceInput.trim()) return;
+    if (!namespaceInput.trim() || !pendingArchive) return;
     const ns = namespaceInput.trim();
-
-    if (pendingTarball) {
-      const tarball = pendingTarball;
-      pendingTarball = null;
-      needsNamespace = false;
-      await loadTarball(tarball.file, ns);
-      return;
-    }
-
-    if (!pendingSkill) return;
-    loading = true;
-    error = null;
+    const archive = pendingArchive;
+    pendingArchive = null;
     needsNamespace = false;
-
-    try {
-      if (pendingSkill.files) {
-        await publishWithArchive(
-          ns,
-          pendingSkill.name,
-          pendingSkill.skillMdContent,
-          pendingSkill.files,
-        );
-      } else {
-        await publishJsonSkill(
-          ns,
-          pendingSkill.name,
-          pendingSkill.description,
-          pendingSkill.skillMdContent,
-        );
-      }
-    } catch (err) {
-      error = err instanceof Error ? err.message : "Failed to publish skill";
-    } finally {
-      loading = false;
-      pendingSkill = null;
-    }
-  }
-
-  // ── Publish methods ─────────────────────────────────────────────────────
-
-  /** Publish a single SKILL.md (no archive) via JSON endpoint. The server
-   *  splits embedded frontmatter into the `frontmatter` column, so we send
-   *  the full SKILL.md text rather than stripping it client-side. */
-  async function publishJsonSkill(
-    namespace: string,
-    name: string,
-    description: string,
-    skillMdContent: string,
-  ) {
-    // If description contains < or >, the server rejects it (XML injection guard).
-    // Omit it so the server auto-generates one from instructions via LLM.
-    const safeDescription =
-      description.includes("<") || description.includes(">") ? undefined : description || undefined;
-
-    const res = await fetch(
-      `/api/daemon/api/skills/@${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: safeDescription, instructions: skillMdContent }),
-      },
-    );
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: `Publish failed: ${res.status}` }));
-      throw new Error(
-        typeof body.error === "string" ? body.error : `Publish failed: ${res.status}`,
-      );
-    }
-
-    await onPublishSuccess(namespace, name);
-  }
-
-  /** Publish a skill directory with all reference files as a tar.gz archive. */
-  async function publishWithArchive(
-    namespace: string,
-    name: string,
-    skillMdContent: string,
-    files: File[],
-  ) {
-    // Exclude SKILL.md from the archive — its content is sent separately as skillMd
-    const archiveFiles = files.filter((f) => f.name !== "SKILL.md");
-    const archive = await createTarGz(archiveFiles);
-
-    const formData = new FormData();
-    formData.append("archive", new File([archive], "skill.tar.gz", { type: "application/gzip" }));
-    formData.append("skillMd", skillMdContent);
-
-    // Extract description from frontmatter and send separately if safe
-    const parsed = parseFrontmatter(skillMdContent);
-    const desc = parsed.description ?? "";
-    if (desc && !desc.includes("<") && !desc.includes(">")) {
-      formData.append("description", desc);
-    }
-
-    const res = await fetch(
-      `/api/daemon/api/skills/@${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/upload`,
-      { method: "POST", body: formData },
-    );
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: `Upload failed: ${res.status}` }));
-      throw new Error(typeof body.error === "string" ? body.error : `Upload failed: ${res.status}`);
-    }
-
-    await onPublishSuccess(namespace, name);
+    await loadArchive(archive.blob, archive.filename, ns);
   }
 
   async function onPublishSuccess(namespace: string, name: string) {
@@ -398,40 +202,6 @@
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-
-  function splitRef(ref: string): { namespace: string | null; skillName: string } {
-    const match = ref.match(/^@([a-z0-9-]+)\/([a-z0-9-]+)$/);
-    return match
-      ? { namespace: match[1], skillName: match[2] }
-      : { namespace: null, skillName: ref };
-  }
-
-  function parseFrontmatter(content: string): {
-    name: string | null;
-    description: string | null;
-    instructions: string;
-  } {
-    if (!content.startsWith("---")) {
-      return { name: null, description: null, instructions: content.trim() };
-    }
-
-    const closingIndex = content.indexOf("\n---", 3);
-    if (closingIndex === -1) {
-      return { name: null, description: null, instructions: content.trim() };
-    }
-
-    const yamlBlock = content.slice(4, closingIndex);
-    const body = content.slice(closingIndex + 4).trim();
-
-    const parsed = parseYaml(yamlBlock);
-    const fields = typeof parsed === "object" && parsed !== null ? parsed : {};
-
-    return {
-      name: typeof fields.name === "string" ? fields.name : null,
-      description: typeof fields.description === "string" ? fields.description : null,
-      instructions: body,
-    };
-  }
 
   /**
    * Creates a gzipped tarball from a list of files in the browser.
@@ -555,7 +325,7 @@
 </script>
 
 {#if needsNamespace}
-  {@const promptName = pendingTarball?.defaultName ?? pendingSkill?.name ?? ""}
+  {@const promptName = pendingArchive?.defaultName ?? ""}
   <div class="drop-zone" class:inline>
     <div class="drop-content">
       <p class="drop-label">Skill namespace</p>
@@ -589,8 +359,7 @@
         class="close-btn"
         onclick={() => {
           needsNamespace = false;
-          pendingSkill = null;
-          pendingTarball = null;
+          pendingArchive = null;
           onclose?.();
         }}
       >
