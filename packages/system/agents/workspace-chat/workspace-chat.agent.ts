@@ -769,8 +769,10 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
 
         const datetimeMessage = buildTemporalFacts(session.datetime);
 
-        // Capture system prompt context on first turn (fire-and-forget)
-        if (messages.length <= 1 && session.streamId) {
+        // Capture system prompt context on every turn (fire-and-forget). The
+        // stored snapshot reflects what the model actually saw on the latest
+        // turn — useful for debugging stale-context bugs and replays.
+        if (session.streamId) {
           ChatStorage.setSystemPromptContext(
             session.streamId,
             { systemMessages: [systemPrompt, datetimeMessage] },

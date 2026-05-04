@@ -535,14 +535,11 @@ export function createJetStreamChatBackend(
     workspaceId: string,
   ): Promise<Result<void, string>> {
     try {
-      await updateMetadata(workspaceId, chatId, (m) => {
-        if (m.systemPromptContext) return m; // Idempotent — only set first time
-        return {
-          ...m,
-          systemPromptContext: { timestamp: new Date().toISOString(), ...context },
-          updatedAt: new Date().toISOString(),
-        };
-      });
+      await updateMetadata(workspaceId, chatId, (m) => ({
+        ...m,
+        systemPromptContext: { timestamp: new Date().toISOString(), ...context },
+        updatedAt: new Date().toISOString(),
+      }));
       return success(undefined);
     } catch (error) {
       const msg = stringifyError(error);
