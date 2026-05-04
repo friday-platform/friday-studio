@@ -4,10 +4,17 @@
  * Sources from the USERS KV bucket (the persistent, user-scoped record),
  * falling back to `/api/me` for fields the User record doesn't carry.
  * Returns undefined when no identity at all is available.
+ *
+ * Auto-sync: if USERS has `nameStatus: "unknown"` but `/api/me` returns
+ * a name, write the auth-derived name through to USERS and mark
+ * onboarding complete. Stops the onboarding clause from firing on
+ * users with auth identity but no explicit `set_user_identity` call —
+ * the legacy migration only catches memory entries tagged with
+ * `metadata.type: "user-name"`, missing organically-stored names.
  */
 
 import { client, parseResult } from "@atlas/client/v2";
-import { UserStorage } from "@atlas/core/users/storage";
+import { ONBOARDING_VERSION, UserStorage } from "@atlas/core/users/storage";
 import type { Logger } from "@atlas/logger";
 
 export async function fetchUserIdentitySection(
@@ -16,13 +23,14 @@ export async function fetchUserIdentitySection(
 ): Promise<string | undefined> {
   let name: string | undefined;
   let email: string | undefined;
+  let userNameStatus: "unknown" | "provided" | "declined" | undefined;
 
-  // USERS KV is the user-scoped source of truth.
   try {
     const result = await UserStorage.getUser(userId);
     if (result.ok && result.data) {
       name = result.data.identity.name;
       email = result.data.identity.email;
+      userNameStatus = result.data.identity.nameStatus;
     } else if (!result.ok) {
       logger.warn("UserStorage.getUser failed", { userId, error: result.error });
     }
@@ -30,22 +38,51 @@ export async function fetchUserIdentitySection(
     logger.warn("fetchUserIdentitySection: UserStorage threw", { userId, error: err });
   }
 
-  // Fall back to /api/me for any auth-derived fields the User record
-  // doesn't carry yet (typically email + display_name on first run
-  // before the user has explicitly provided them).
+  let apiMeName: string | undefined;
+  let apiMeEmail: string | undefined;
   if (!name || !email) {
     try {
       const apiMe = await parseResult(client.me.index.$get());
       if (apiMe.ok && apiMe.data.user) {
         const u = apiMe.data.user;
-        name = name ?? u.display_name ?? u.full_name;
-        email = email ?? u.email;
+        apiMeName = u.display_name ?? u.full_name;
+        apiMeEmail = u.email;
+        name = name ?? apiMeName;
+        email = email ?? apiMeEmail;
       } else if (!apiMe.ok) {
         logger.debug("api/me unavailable", { error: apiMe.error });
       }
     } catch (err) {
       logger.debug("api/me threw", { error: err });
     }
+  }
+
+  // Sync /api/me identity into USERS if the User record's nameStatus is
+  // still "unknown" and /api/me has a name. Idempotent — once
+  // nameStatus flips to "provided" the next call short-circuits. Fire-
+  // and-forget so we don't block prompt assembly on the write.
+  if (userNameStatus === "unknown" && apiMeName) {
+    void (async () => {
+      try {
+        const set = await UserStorage.setUserIdentity(userId, {
+          name: apiMeName,
+          email: apiMeEmail,
+          nameStatus: "provided",
+        });
+        if (!set.ok) {
+          logger.warn("auto-sync setUserIdentity failed", { userId, error: set.error });
+          return;
+        }
+        const mark = await UserStorage.markOnboardingComplete(userId, ONBOARDING_VERSION);
+        if (!mark.ok) {
+          logger.warn("auto-sync markOnboardingComplete failed", { userId, error: mark.error });
+          return;
+        }
+        logger.info("auto-sync USERS from /api/me", { userId, name: apiMeName });
+      } catch (err) {
+        logger.warn("auto-sync USERS threw", { userId, error: err });
+      }
+    })();
   }
 
   if (!name && !email) return undefined;
