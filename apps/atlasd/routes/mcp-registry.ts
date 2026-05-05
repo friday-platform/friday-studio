@@ -2,11 +2,6 @@ import process from "node:process";
 import type { LinkCredentialRef, MCPServerConfig } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import { buildBearerAuthConfig } from "@atlas/core/mcp-registry/auth-config";
-import {
-  LinkCredentialExpiredError,
-  LinkCredentialNotFoundError,
-  NoDefaultCredentialError,
-} from "@atlas/core/mcp-registry/credential-resolver";
 import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import {
   getOfficialOverride,
@@ -25,11 +20,11 @@ import { MCPUpstreamClient } from "@atlas/core/mcp-registry/upstream-client";
 import { createLogger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
 import { zValidator } from "@hono/zod-validator";
-import { RetryError } from "@std/async/retry";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import {
+  classifyProbeError,
   getCachedTools,
   getInFlightPrewarm,
   invalidateCache,
@@ -49,83 +44,6 @@ function deriveId(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 64);
-}
-
-/**
- * Classify an MCP tool probe error into a user-facing phase.
- */
-function classifyProbeError(error: unknown): {
-  error: string;
-  phase: "dns" | "connect" | "auth" | "tools";
-} {
-  // Unwrap RetryError so we classify the underlying failure, not the retry wrapper.
-  let inner = error;
-  if (error instanceof RetryError && error.cause) {
-    inner = error.cause;
-  }
-
-  if (
-    inner instanceof LinkCredentialNotFoundError ||
-    inner instanceof LinkCredentialExpiredError ||
-    inner instanceof NoDefaultCredentialError
-  ) {
-    return { error: error instanceof Error ? error.message : String(error), phase: "auth" };
-  }
-
-  if (
-    inner instanceof Error &&
-    inner.name === "MCPStartupError" &&
-    "kind" in inner &&
-    typeof inner.kind === "string"
-  ) {
-    const msg = inner.message + (inner.cause instanceof Error ? ` ${inner.cause.message}` : "");
-    if (isDnsPattern(msg)) {
-      return { error: inner.message, phase: "dns" };
-    }
-    return { error: inner.message, phase: "connect" };
-  }
-
-  if (inner instanceof Error) {
-    const msg = inner.message + (inner.cause instanceof Error ? ` ${inner.cause.message}` : "");
-    if (isDnsPattern(msg)) {
-      return { error: inner.message, phase: "dns" };
-    }
-    if (isConnectPattern(msg)) {
-      return { error: inner.message, phase: "connect" };
-    }
-    if (
-      msg.toLowerCase().includes("tool") &&
-      (msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("timed out"))
-    ) {
-      return { error: inner.message, phase: "tools" };
-    }
-    return { error: inner.message, phase: "connect" };
-  }
-
-  return { error: String(inner), phase: "connect" };
-}
-
-function isDnsPattern(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return (
-    lower.includes("enotfound") ||
-    lower.includes("getaddrinfo") ||
-    lower.includes("eai_again") ||
-    lower.includes("eai_nodata") ||
-    lower.includes("name or service not known")
-  );
-}
-
-function isConnectPattern(msg: string): boolean {
-  const lower = msg.toLowerCase();
-  return (
-    lower.includes("econnrefused") ||
-    lower.includes("econnreset") ||
-    lower.includes("etimedout") ||
-    lower.includes("connection refused") ||
-    lower.includes("connect etimedout") ||
-    lower.includes("network is unreachable")
-  );
 }
 
 /**
@@ -741,20 +659,37 @@ export const mcpRegistryRouter = daemonFactory
       // If a prewarm is already in flight (just-added server, cold install
       // still downloading), wait for it instead of spawning a duplicate
       // npx/uvx process. Race-cap the wait at 5s — if the cold install runs
-      // longer than that, tell the user to retry shortly rather than block
-      // for the prewarm's 60s budget.
+      // longer, return a retryable hint rather than block for the prewarm's
+      // full 60s budget.
       const inFlight = getInFlightPrewarm(id);
       if (inFlight) {
-        await Promise.race([inFlight, new Promise<void>((resolve) => setTimeout(resolve, 5000))]);
-        const afterWait = getCachedTools(id, server.configTemplate);
-        if (afterWait) {
-          return c.json({ ok: true as const, tools: afterWait });
-        }
-        return c.json({
-          ok: false as const,
-          error: "MCP server is still starting up. Retry in a few seconds.",
-          phase: "connect" as const,
+        const TIMED_OUT = Symbol("timeout");
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timed = new Promise<typeof TIMED_OUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMED_OUT), 5000);
         });
+        const winner = await Promise.race([inFlight, timed]);
+        if (timer) clearTimeout(timer);
+
+        if (winner === TIMED_OUT) {
+          return c.json({
+            ok: false as const,
+            retryable: true as const,
+            error: "MCP server is still starting up. Retry in a few seconds.",
+          });
+        }
+        if (winner.ok) {
+          return c.json({ ok: true as const, tools: winner.tools });
+        }
+        // Prewarm finished with a classified error (DNS, auth, etc.) — surface
+        // it directly instead of forcing the user to retry into the foreground
+        // probe just to learn what went wrong.
+        logger.warn("MCP tool probe failed", {
+          serverId: id,
+          phase: winner.phase,
+          error: winner.error,
+        });
+        return c.json({ ok: false as const, error: winner.error, phase: winner.phase });
       }
 
       try {

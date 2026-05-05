@@ -39,13 +39,18 @@ vi.mock("@atlas/core/mcp-registry/upstream-client", () => ({
 
 // Mock createMCPTools for tool probe tests
 type MockTool = { description?: string };
+type MockDisconnected = { serverId: string; kind: string; message: string };
 const mockCreateMCPTools =
   vi.fn<
     (
       configs: Record<string, unknown>,
       logger: unknown,
       options?: { signal?: AbortSignal; toolPrefix?: string },
-    ) => Promise<{ tools: Record<string, MockTool>; dispose: () => Promise<void> }>
+    ) => Promise<{
+      tools: Record<string, MockTool>;
+      dispose: () => Promise<void>;
+      disconnected: MockDisconnected[];
+    }>
   >();
 
 vi.mock("@atlas/mcp", () => ({
@@ -1935,6 +1940,7 @@ describe("MCP Registry Routes", () => {
           "send-data": { description: "Send data to the server" },
         },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
@@ -2062,6 +2068,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "static-tool": { description: "A static tool" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       const res = await mcpRegistryRouter.request(`/${blessedId}/tools`);
@@ -2084,6 +2091,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "bare-tool": {} },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       const res = await mcpRegistryRouter.request(`/${entry.id}/tools`);
@@ -2099,6 +2107,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "cached-tool": { description: "cached" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       await mcpRegistryRouter.request("/", {
@@ -2147,6 +2156,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValueOnce({
         tools: { "recovered-tool": { description: "ok" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
       const ok = await mcpRegistryRouter.request(`/${entry.id}/tools`);
       const okBody = ToolProbeSuccessSchema.parse(await ok.json());
@@ -2163,6 +2173,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "warmed-tool": { description: "warmed" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       const entry = createTestEntry("prewarm-create");
@@ -2188,6 +2199,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "v1-tool": { description: "v1" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
       await mcpRegistryRouter.request("/", {
         method: "POST",
@@ -2206,6 +2218,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "v2-tool": { description: "v2" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
       await mcpRegistryRouter.request("/", {
         method: "POST",
@@ -2227,6 +2240,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValueOnce({
         tools: { "v1-tool": { description: "v1" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
       const installRes = await mcpRegistryRouter.request("/install", {
         method: "POST",
@@ -2249,6 +2263,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValueOnce({
         tools: { "v2-tool": { description: "v2" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
       const updateRes = await mcpRegistryRouter.request(`/${storedId}/update`, { method: "POST" });
       expect(updateRes.status).toBe(200);
@@ -2262,6 +2277,104 @@ describe("MCP Registry Routes", () => {
       const body = ToolProbeSuccessSchema.parse(await probe.json());
       expect(body.tools[0]?.name).toBe("v2-tool");
       expect(mockCreateMCPTools.mock.calls.length).toBe(callsAfterInstall + 1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // GET /:id/tools — in-flight prewarm dedup
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("GET /:id/tools dedup", () => {
+    it("waits for in-flight prewarm instead of spawning a duplicate probe", async () => {
+      const entry = createTestEntry("dedup-wait");
+      // Defer the prewarm's createMCPTools so the GET races into the dedup branch.
+      let resolvePrewarm: (() => void) | undefined;
+      mockCreateMCPTools.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePrewarm = () =>
+              resolve({
+                tools: { "warmed-tool": { description: "warmed" } },
+                dispose: vi.fn().mockResolvedValue(undefined),
+                disconnected: [],
+              });
+          }),
+      );
+
+      // Add — prewarm starts but does not resolve yet.
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      // Click "list tools" while prewarm is still pending.
+      const probePromise = mcpRegistryRouter.request(`/${entry.id}/tools`);
+
+      // Now resolve the prewarm. The pending GET awaits the same in-flight
+      // promise — must not have spawned its own probe.
+      resolvePrewarm!();
+      const probe = await probePromise;
+      await _flushPrewarmsForTest();
+
+      expect(probe.status).toBe(200);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("warmed-tool");
+      // Exactly one probe — no duplicate spawned by the GET.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+
+    it("disconnected probe surfaces as auth phase, not cached as []", async () => {
+      const entry = createTestEntry("disconnected-probe");
+      mockCreateMCPTools.mockResolvedValue({
+        tools: {},
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [
+          { serverId: entry.id, kind: "credential_not_found", message: "no credential" },
+        ],
+      });
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+
+      // Foreground GET — prewarm finished with auth error, surfaced via the dedup
+      // path or via foreground probe (both get classified as auth).
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      const body = ToolProbeErrorSchema.parse(await probe.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("auth");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // mcp-tool-cache.ts — direct unit tests
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe("mcp-tool-cache direct", () => {
+    it("invalidateCache(id) clears the entry — getCachedTools returns null", async () => {
+      const { putCachedTools, getCachedTools, invalidateCache } = await import(
+        "./mcp-tool-cache.ts"
+      );
+      const config = { transport: { type: "stdio" as const, command: "echo", args: ["x"] } };
+      putCachedTools("direct-id", config, [
+        { name: "t1", description: "first", inputSchema: null },
+      ]);
+      expect(getCachedTools("direct-id", config)?.[0]?.name).toBe("t1");
+      invalidateCache("direct-id");
+      expect(getCachedTools("direct-id", config)).toBeNull();
+    });
+
+    it("getCachedTools returns null when configHash differs", async () => {
+      const { putCachedTools, getCachedTools } = await import("./mcp-tool-cache.ts");
+      const v1 = { transport: { type: "stdio" as const, command: "echo", args: ["1"] } };
+      const v2 = { transport: { type: "stdio" as const, command: "echo", args: ["2"] } };
+      putCachedTools("hash-id", v1, [{ name: "t-v1", inputSchema: null }]);
+      expect(getCachedTools("hash-id", v1)?.[0]?.name).toBe("t-v1");
+      expect(getCachedTools("hash-id", v2)).toBeNull();
     });
   });
 
@@ -2343,6 +2456,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "fetch-data": { description: "Fetch data" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       mockStreamText.mockReturnValue(
@@ -2439,6 +2553,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "fetch-data": { description: "Fetch data" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       mockStreamText.mockReturnValue(
@@ -2525,6 +2640,7 @@ describe("MCP Registry Routes", () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "fetch-data": { description: "Fetch data" } },
         dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
       });
 
       mockStreamText.mockReturnValue(
