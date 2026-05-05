@@ -75,7 +75,13 @@ const GOOGLE_SCOPES = {
   ],
   drive: ["https://www.googleapis.com/auth/drive"],
   gmail: ["https://www.googleapis.com/auth/gmail.modify"],
-  sheets: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  sheets: [
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    // Required by workspace-mcp's `list_spreadsheets` tool (it queries Drive
+    // for files of mimeType=spreadsheet). Without it, list-style tools 403
+    // even though raw sheet reads succeed.
+    "https://www.googleapis.com/auth/drive.readonly",
+  ],
 } as const;
 
 type GoogleService = keyof typeof GOOGLE_SCOPES;
