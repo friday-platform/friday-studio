@@ -2391,12 +2391,17 @@ describe("MCP Registry Routes", () => {
 
       // GET while prewarm is still pending — must enter the dedup branch.
       const probePromise = mcpRegistryRouter.request(`/${entry.id}/tools`);
-      // Wait for the handler to advance past `await adapter.get` and into
-      // `await Promise.race(...)` before the prewarm settles — otherwise the
+      // Wait for the handler to advance past `await getMCPRegistryAdapter()`
+      // and `await adapter.get(id)` (in-memory KV, normally <1ms) and reach
+      // `await Promise.race(...)` BEFORE the prewarm settles. Otherwise the
       // IIFE's microtasks (dispose → throw → catch → classify → finally →
-      // delete) can finish first, evicting `inFlightPrewarm` before the
-      // handler ever consults it. 50ms is generous; KV lookup is fast.
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // delete) finish first, evicting `inFlightPrewarm` before the handler
+      // consults it; the GET then falls through to the foreground probe
+      // path, which still classifies disconnect to "auth" via mockResolved
+      // carry-over OR fails on the exhausted `mockImplementationOnce`. Use
+      // 250ms to stay well clear of GC pauses / loaded-CI jitter — failure
+      // mode (`expected "auth" got "connect"`) doesn't point at timing.
+      await new Promise((resolve) => setTimeout(resolve, 250));
       resolveDisconnected!();
       const probe = await probePromise;
 
@@ -2412,7 +2417,9 @@ describe("MCP Registry Routes", () => {
     it("returns retryable hint when in-flight prewarm exceeds the race cap", async () => {
       _setRaceCapForTest(50);
       const entry = createTestEntry("dedup-retryable");
-      // Prewarm hangs forever — race cap will fire first.
+      // Prewarm hangs forever — race cap will fire first. The pending IIFE
+      // is GC-eligible after `_resetCacheForTest` clears `inFlightPrewarm`
+      // in the next test's beforeEach (the map holds the only live ref).
       mockCreateMCPTools.mockImplementationOnce(() => new Promise(() => {}));
 
       await mcpRegistryRouter.request("/", {
