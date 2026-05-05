@@ -123,10 +123,7 @@ describe("PUT /env on-disk format", () => {
   });
 
   test("multiple keys are joined by newlines, no trailing newline", async () => {
-    await putEnv({
-      ANTHROPIC_API_KEY: "sk-ant-foo",
-      OPENAI_API_KEY: "sk-proj-bar",
-    });
+    await putEnv({ ANTHROPIC_API_KEY: "sk-ant-foo", OPENAI_API_KEY: "sk-proj-bar" });
 
     const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
     expect(onDisk).toBe("ANTHROPIC_API_KEY=sk-ant-foo\nOPENAI_API_KEY=sk-proj-bar");
@@ -178,7 +175,8 @@ describe("PUT → GET round-trip", () => {
 
     // Round-trip back through PUT — the value parsed cleanly, the
     // re-write must NOT re-introduce the quotes.
-    await putEnv(before.envVars!);
+    if (!before.envVars) throw new Error("envVars missing from GET response");
+    await putEnv(before.envVars);
 
     const onDisk = await readFile(envPath, "utf-8");
     expect(onDisk).toBe("ANTHROPIC_API_KEY=sk-ant-legacy");
