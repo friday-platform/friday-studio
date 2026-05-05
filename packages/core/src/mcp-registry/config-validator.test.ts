@@ -497,4 +497,151 @@ describe("validateWorkspaceConfig", () => {
       expect(report.issues.find((i) => i.code === "unreachable_agent")).toBeUndefined();
     });
   });
+
+  describe("unknown_bundled_agent (atlas baseAgentId resolution)", () => {
+    // Regression: Yena's "Daily Flash Analysis & Reporting" workspace was
+    // built via workspace-chat after the `email` bundled agent was deleted
+    // (commit 11667073e). Stale skill content told the meta-agent that
+    // `agent: "email"` existed, so the workspace.yml referenced it. Schema
+    // validation accepted the freeform string; only at registration time did
+    // atlas-daemon log "Base agent not found: email" and silently drop the
+    // agent. The FSM step that delegated to it stalled in production.
+    //
+    // This pass catches the broken reference at create/lint/publish time,
+    // before the workspace.yml ever lands in the daemon's load path.
+    it("rejects an atlas agent that references a non-existent bundled id", async () => {
+      const config = makeConfig({
+        agents: {
+          "flash-report-email-sender": {
+            type: "atlas",
+            agent: "email",
+            description: "Send the flash report",
+            prompt: "Send the report to the team.",
+          },
+        },
+        signals: { tick: { provider: "http", config: { path: "/tick" } } },
+        jobs: {
+          send: {
+            triggers: [{ signal: "tick" }],
+            execution: { strategy: "sequential", agents: ["flash-report-email-sender"] },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.status).toBe("hard_fail");
+      const issue = report.issues.find((i) => i.code === "unknown_bundled_agent");
+      expect(issue).toBeDefined();
+      expect(issue?.path).toBe("agents.flash-report-email-sender.agent");
+      expect(issue?.value).toBe("email");
+      // Recovery path is shouted at the LLM in the message body.
+      expect(issue?.message).toMatch(/list_capabilities/);
+    });
+
+    it("accepts a real bundled id (`web`)", async () => {
+      const config = makeConfig({
+        agents: {
+          "news-scout": {
+            type: "atlas",
+            agent: "web",
+            description: "Scrape headlines",
+            prompt: "Pull the top 5 headlines.",
+          },
+        },
+        signals: { tick: { provider: "http", config: { path: "/tick" } } },
+        jobs: {
+          scrape: {
+            triggers: [{ signal: "tick" }],
+            execution: { strategy: "sequential", agents: ["news-scout"] },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.issues.find((i) => i.code === "unknown_bundled_agent")).toBeUndefined();
+    });
+
+    it("accepts the `browser`/`research` aliases (still in registry)", async () => {
+      const config = makeConfig({
+        agents: {
+          legacy: { type: "atlas", agent: "browser", description: "old workspace", prompt: "..." },
+        },
+        signals: { tick: { provider: "http", config: { path: "/tick" } } },
+        jobs: {
+          run: {
+            triggers: [{ signal: "tick" }],
+            execution: { strategy: "sequential", agents: ["legacy"] },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.issues.find((i) => i.code === "unknown_bundled_agent")).toBeUndefined();
+    });
+
+    it("does not report on type:llm or type:user agents (only atlas)", async () => {
+      const config = makeConfig({
+        agents: {
+          "csv-parser": { type: "user", agent: "csv-parser-not-bundled", prompt: "..." },
+          decider: {
+            type: "llm",
+            description: "decide",
+            config: { provider: "anthropic", model: "claude-sonnet-4-6", prompt: "..." },
+          },
+        },
+        signals: { tick: { provider: "http", config: { path: "/tick" } } },
+        jobs: {
+          run: {
+            triggers: [{ signal: "tick" }],
+            execution: { strategy: "sequential", agents: ["csv-parser", "decider"] },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.issues.find((i) => i.code === "unknown_bundled_agent")).toBeUndefined();
+    });
+
+    it("rejects an empty-string agent id (silent-failure shape)", async () => {
+      // Zod owns the missing-field case; this pass owns the empty-string
+      // case. Without this branch, an empty `agent: ""` would pass the
+      // validator, save to disk, and fail at workspace registration with
+      // the same `Base agent not found:` symptom this whole pass exists to
+      // prevent.
+      const config = makeConfig({
+        agents: { broken: { type: "atlas", agent: "", description: "broken", prompt: "..." } },
+        signals: { tick: { provider: "http", config: { path: "/tick" } } },
+        jobs: {
+          run: {
+            triggers: [{ signal: "tick" }],
+            execution: { strategy: "sequential", agents: ["broken"] },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      expect(report.status).toBe("hard_fail");
+      const issue = report.issues.find((i) => i.code === "unknown_bundled_agent");
+      expect(issue?.path).toBe("agents.broken.agent");
+      expect(issue?.value).toBe("");
+    });
+
+    it("suggests a near-match when the agent id is a typo", async () => {
+      const config = makeConfig({
+        agents: {
+          poster: {
+            type: "atlas",
+            agent: "slak", // typo of `slack`
+            description: "Post to Slack",
+            prompt: "Post the standup.",
+          },
+        },
+        signals: { tick: { provider: "http", config: { path: "/tick" } } },
+        jobs: {
+          post: {
+            triggers: [{ signal: "tick" }],
+            execution: { strategy: "sequential", agents: ["poster"] },
+          },
+        },
+      } as never);
+      const report = await validateWorkspaceConfig(config, makeCtx());
+      const issue = report.issues.find((i) => i.code === "unknown_bundled_agent");
+      expect(issue?.suggest).toContain("slack");
+    });
+  });
 });
