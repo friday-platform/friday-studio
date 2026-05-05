@@ -219,17 +219,92 @@ export class CascadeConsumer {
    * earlier entries silently overwritten on subsequent dispatches.
    * For `skip` / `queue` / `replace` the set holds at most one in
    * steady state.
+   *
+   * A cascade is added here as soon as `runCascade` is called, before
+   * it acquires a dispatch slot. So `totalInFlight()` includes both
+   * cascades currently dispatching AND cascades queued at the
+   * concurrency-cap semaphore.
    */
   private readonly inFlight = new Map<string, Set<InFlightCascade>>();
   /** Tail of the queue policy chain per key. */
   private readonly queueTails = new Map<string, Promise<void>>();
+  /**
+   * Per-key lock for the policy-decide-and-register critical section
+   * inside `handleMessage`. Without this, two messages for the same
+   * `(workspaceId, signalId)` arriving in the same fetch batch would
+   * race on the inFlight check — both would observe size=0, both
+   * would proceed (leaking past `skip` / clobbering `replace`'s abort
+   * intent / overwriting `queue`'s prevTail). The lock serializes the
+   * *decision*; cascades themselves still run with the configured
+   * concurrency.
+   */
+  private readonly policyLocks = new Map<string, Promise<void>>();
   private saturated = false;
 
-  /** Total cascades currently dispatched, summed across all keys. */
+  /**
+   * Cascade-execution semaphore. Distinct from JetStream's
+   * `max_ack_pending`: that bounds *delivered-but-unacked* messages
+   * (essentially in-flight handleMessage calls, which are fast). This
+   * one bounds in-flight cascade dispatch — the actually expensive
+   * thing (LLM calls, MCP roundtrips). Without it, a burst of N acks
+   * fires N concurrent cascades regardless of the configured cap.
+   */
+  private cascadeInFlight = 0;
+  private readonly cascadeWaiters: Array<() => void> = [];
+
+  /** Total cascades registered (running + waiting for slot). */
   private totalInFlight(): number {
     let n = 0;
     for (const set of this.inFlight.values()) n += set.size;
     return n;
+  }
+
+  /** Acquire a cascade-execution slot. Resolves when a slot is free. */
+  private acquireSlot(): Promise<void> {
+    if (this.cascadeInFlight < this.maxAckPending) {
+      this.cascadeInFlight++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.cascadeWaiters.push(() => {
+        this.cascadeInFlight++;
+        resolve();
+      });
+    });
+  }
+
+  /** Release a cascade-execution slot. Wakes the next waiter, FIFO. */
+  private releaseSlot(): void {
+    this.cascadeInFlight--;
+    const next = this.cascadeWaiters.shift();
+    if (next) next();
+  }
+
+  /**
+   * Run `fn` while holding the per-key policy lock. The lock chain
+   * serializes the policy-decide-and-register window for a given
+   * `(workspaceId, signalId)`; same-key handleMessages from the same
+   * fetch batch run their decisions one at a time. Different keys are
+   * independent. Lock entries grow monotonically — at typical
+   * cardinalities (<100 distinct keys per workspace) the memory cost
+   * is negligible.
+   */
+  private async withPolicyLock<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
+    const prev = this.policyLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((r) => {
+      release = r;
+    });
+    this.policyLocks.set(
+      key,
+      prev.then(() => next),
+    );
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
   }
 
   constructor(
@@ -405,66 +480,74 @@ export class CascadeConsumer {
       policy = "skip";
     }
 
-    const existingSet = this.inFlight.get(key);
-    const existingCount = existingSet?.size ?? 0;
+    // The policy decision + register-or-skip + queueTail update have
+    // to happen atomically per key. Two messages for the same
+    // `(workspace, signal)` arriving in the same fetch batch would
+    // otherwise race on the inFlight check and both proceed past
+    // `skip`, clobber `replace`'s abort intent, or overwrite
+    // `queue`'s prevTail. Different keys still decide in parallel.
+    await this.withPolicyLock(key, () => {
+      const existingSet = this.inFlight.get(key);
+      const existingCount = existingSet?.size ?? 0;
 
-    if (existingCount > 0 && policy === "skip") {
-      logger.info("Cascade skipped — concurrency=skip and same-key cascade in flight", {
-        workspaceId: envelope.workspaceId,
-        signalId: envelope.signalId,
-      });
-      if (envelope.correlationId) {
-        this.publishResponse(envelope.correlationId, {
-          ok: false,
-          error: "skipped-duplicate: a cascade for this signal is already running",
+      if (existingCount > 0 && policy === "skip") {
+        logger.info("Cascade skipped — concurrency=skip and same-key cascade in flight", {
+          workspaceId: envelope.workspaceId,
+          signalId: envelope.signalId,
         });
+        if (envelope.correlationId) {
+          this.publishResponse(envelope.correlationId, {
+            ok: false,
+            error: "skipped-duplicate: a cascade for this signal is already running",
+          });
+        }
+        msg.ack();
+        return;
       }
-      msg.ack();
-      return;
-    }
 
-    let replacedExisting: InFlightCascade[] = [];
-    if (existingCount > 0 && policy === "replace" && existingSet) {
-      // Singleton intent: abort EVERY in-flight cascade for this key.
-      // In steady-state replace usage there's at most one, but the set
-      // could carry several if the workspace was previously running
-      // `concurrent` and switched to `replace`.
-      replacedExisting = Array.from(existingSet);
-      logger.info("Cascade replacing in-flight cascade(s) — concurrency=replace", {
-        workspaceId: envelope.workspaceId,
-        signalId: envelope.signalId,
-        cancelledCount: replacedExisting.length,
-        cancelledSessionIds: replacedExisting.map((c) => c.sessionId).filter(Boolean),
-      });
-      for (const cascade of replacedExisting) {
-        cascade.controller.abort("replaced by newer cascade");
+      let replacedExisting: InFlightCascade[] = [];
+      if (existingCount > 0 && policy === "replace" && existingSet) {
+        // Singleton intent: abort EVERY in-flight cascade for this key.
+        // In steady-state replace usage there's at most one, but the
+        // set could carry several if the workspace was previously
+        // running `concurrent` and switched to `replace`.
+        replacedExisting = Array.from(existingSet);
+        logger.info("Cascade replacing in-flight cascade(s) — concurrency=replace", {
+          workspaceId: envelope.workspaceId,
+          signalId: envelope.signalId,
+          cancelledCount: replacedExisting.length,
+          cancelledSessionIds: replacedExisting.map((c) => c.sessionId).filter(Boolean),
+        });
+        for (const cascade of replacedExisting) {
+          cascade.controller.abort("replaced by newer cascade");
+        }
+        // Don't await — that would re-introduce head-of-line blocking.
+        // The runtime's abort path settles cancelled cascades
+        // independently. `cascade.replaced` events publish once the
+        // new cascade has its sessionId.
       }
-      // Don't await — that would re-introduce head-of-line blocking.
-      // The runtime's abort path settles cancelled cascades independently.
-      // `cascade.replaced` events publish once the new cascade has its
-      // sessionId.
-    }
 
-    if (policy === "queue") {
-      // Per-key serialization. Chain onto the previous tail so
-      // envelopes for the same (workspace, signal) run in arrival
-      // order. ack happens after policy decision (here) — the cascade
-      // result still flows through response/stream subjects when the
-      // chain gets there.
-      const prevTail = this.queueTails.get(key) ?? Promise.resolve();
-      const next = prevTail.then(() => this.runCascade(envelope, key, []));
-      this.queueTails.set(
-        key,
-        next.catch(() => undefined),
-      );
+      if (policy === "queue") {
+        // Per-key serialization. Chain onto the previous tail so
+        // envelopes for the same (workspace, signal) run in arrival
+        // order. ack happens after policy decision (here) — the
+        // cascade result still flows through response/stream subjects
+        // when the chain gets there.
+        const prevTail = this.queueTails.get(key) ?? Promise.resolve();
+        const next = prevTail.then(() => this.runCascade(envelope, key, []));
+        this.queueTails.set(
+          key,
+          next.catch(() => undefined),
+        );
+        msg.ack();
+        return;
+      }
+
+      // skip with no existing, concurrent always, or replace (we
+      // already aborted existing above and are starting fresh now).
+      void this.runCascade(envelope, key, replacedExisting);
       msg.ack();
-      return;
-    }
-
-    // skip with no existing, concurrent always, or replace (we already
-    // aborted existing above and are starting fresh now).
-    void this.runCascade(envelope, key, replacedExisting);
-    msg.ack();
+    });
   }
 
   /**
@@ -510,7 +593,16 @@ export class CascadeConsumer {
       : undefined;
 
     cascade.done = (async () => {
+      // Acquire a cascade-execution slot before dispatching. This is
+      // the actual cap on concurrent LLM/MCP load — JetStream's
+      // max_ack_pending caps fast-handleMessage delivery, not cascade
+      // duration. Bursts queue at the semaphore; the registered Set
+      // entry above means `totalInFlight()` reflects "queued + running"
+      // for saturation accounting.
+      let slotHeld = false;
       try {
+        await this.acquireSlot();
+        slotHeld = true;
         const result = await this.dispatch(envelope, {
           onStreamEvent,
           abortSignal: controller.signal,
@@ -545,6 +637,9 @@ export class CascadeConsumer {
           this.publishResponse(envelope.correlationId, { ok: false, error: msg });
         }
       } finally {
+        // Release the cascade-execution slot first so a queued waiter
+        // can acquire promptly; deregistration happens after.
+        if (slotHeld) this.releaseSlot();
         // Remove this specific cascade from the per-key set. The set is
         // keyed-but-multi-valued so concurrent dispatches don't clobber
         // each other; each cascade always finds itself by identity here
@@ -617,8 +712,29 @@ export class CascadeConsumer {
     }
   }
 
-  /** Instrumentation — used by daemon status API. */
-  getStats(): { inFlight: number; cap: number; saturated: boolean } {
-    return { inFlight: this.totalInFlight(), cap: this.maxAckPending, saturated: this.saturated };
+  /**
+   * Instrumentation — used by daemon status API.
+   *
+   * - `inFlight` — registered cascades (running + waiting at the
+   *   concurrency cap semaphore).
+   * - `running` — currently dispatching to the runtime.
+   * - `waiting` — queued behind the cap.
+   * - `cap` — concurrent-cascade ceiling (FRIDAY_CASCADE_CONCURRENCY).
+   */
+  getStats(): {
+    inFlight: number;
+    running: number;
+    waiting: number;
+    cap: number;
+    saturated: boolean;
+  } {
+    const total = this.totalInFlight();
+    return {
+      inFlight: total,
+      running: this.cascadeInFlight,
+      waiting: total - this.cascadeInFlight,
+      cap: this.maxAckPending,
+      saturated: this.saturated,
+    };
   }
 }

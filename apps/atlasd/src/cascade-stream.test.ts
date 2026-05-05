@@ -320,6 +320,110 @@ describe("CascadeConsumer correlated callers", () => {
   });
 });
 
+describe("CascadeConsumer concurrency cap", () => {
+  it("caps simultaneous cascade dispatch at maxAckPending — bursts queue", async () => {
+    // Regression: the cap was meant to bound concurrent LLM/MCP load.
+    // With ack-fast-then-fork-cascade, the cap previously didn't
+    // actually cap cascades — handleMessage acked in milliseconds and
+    // forked Promises unbounded. The semaphore introduced in this fix
+    // holds a slot for the cascade duration, so a burst of N envelopes
+    // with cap=2 should see at most 2 cascades running concurrently.
+    const cap = 2;
+    let peak = 0;
+    let active = 0;
+    const consumer = new CascadeConsumer(
+      nc,
+      async (env) => {
+        active++;
+        peak = Math.max(peak, active);
+        try {
+          await new Promise((r) => setTimeout(r, 100));
+          return { sessionId: `s-${env.signalId}`, output: [] };
+        } finally {
+          active--;
+        }
+      },
+      () => Promise.resolve("concurrent" as ConcurrencyPolicy),
+      { expiresMs: 1000, maxAckPending: cap },
+    );
+    await consumer.start();
+
+    // Fire 5 envelopes for distinct keys so the policy registry
+    // doesn't itself dedupe — the cap is the only thing limiting
+    // parallelism here.
+    for (let i = 0; i < 5; i++) {
+      await publishCascade(
+        nc,
+        envelope(`ws-${i}`, "tick", { publishedAt: new Date(Date.now() + i).toISOString() }),
+      );
+    }
+
+    await waitFor(() => active === 0 && consumer.getStats().inFlight === 0, 5000);
+    await consumer.destroy();
+    expect(peak).toBeLessThanOrEqual(cap);
+    expect(peak).toBeGreaterThan(0);
+  });
+
+  it("getStats reports the cap value", async () => {
+    // Mostly a smoke test that the new fields are on the result. The
+    // cap-actually-caps assertion is covered by the test above.
+    const consumer = new CascadeConsumer(
+      nc,
+      (env) => Promise.resolve({ sessionId: `s-${env.signalId}`, output: [] }),
+      () => Promise.resolve("concurrent" as ConcurrencyPolicy),
+      { expiresMs: 1000, maxAckPending: 5 },
+    );
+    await consumer.start();
+    const stats = consumer.getStats();
+    expect(stats.cap).toBe(5);
+    expect(stats.running).toBe(0);
+    expect(stats.waiting).toBe(0);
+    expect(stats.inFlight).toBe(0);
+    await consumer.destroy();
+  });
+});
+
+describe("CascadeConsumer policy-decision race", () => {
+  it("two same-key envelopes in one fetch don't both pass concurrency=skip", async () => {
+    // Regression: handleMessage runs as `void this.handleMessage(msg)`
+    // per-batch-item, so two messages for the same (workspace, signal)
+    // arriving in the same fetch batch race on the inFlight check.
+    // Before the policy lock, both observed size=0 and both proceeded
+    // through skip; we'd get two cascades for what should be one.
+    let dispatched = 0;
+    const release: Array<() => void> = [];
+    const consumer = new CascadeConsumer(
+      nc,
+      (env) =>
+        new Promise<{ sessionId: string; output: never[] }>((resolve) => {
+          dispatched++;
+          release.push(() => resolve({ sessionId: `s-${env.signalId}`, output: [] }));
+        }),
+      () => Promise.resolve("skip" as ConcurrencyPolicy),
+      { expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    // Publish both in immediate succession with distinct publishedAt
+    // (otherwise msgID dedup at the broker would mask the race). The
+    // consumer fetches in batches; both should land together.
+    await publishCascade(nc, envelope("ws", "tick"));
+    await publishCascade(
+      nc,
+      envelope("ws", "tick", { publishedAt: new Date(Date.now() + 1).toISOString() }),
+    );
+
+    // Give the consumer a moment to process both. With `skip` the
+    // second must be dropped before reaching the dispatcher.
+    await waitFor(() => dispatched === 1, 2000);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(dispatched).toBe(1);
+
+    for (const r of release.splice(0)) r();
+    await consumer.destroy();
+  });
+});
+
 describe("CascadeConsumer head-of-line decoupling", () => {
   it("a slow cascade on workspace A does NOT block workspace B", async () => {
     const finishedAt = new Map<string, number>();
