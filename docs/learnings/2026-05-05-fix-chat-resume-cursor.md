@@ -32,12 +32,18 @@ Po's CRLF handling at `cursor-tracking-fetch.ts:120` (`if (line.endsWith("\r")) 
 - **Wave sequencing was conservative**: Task 4 and Task 2 both edit `user-chat.svelte` but in disjoint regions. I sequenced them defensively (Wave 1 vs Wave 2) to avoid merge risk. Parallel would have worked given the file's size and the disjoint edit regions — but the cost of sequencing was low.
 - **Teammate misunderstanding once**: Luka responded to my "claim Task 2" assignment by reporting Task 4 was already complete. They needed a second, more direct go-ahead. Watch for: when a teammate is wrapping up Task N and you message about Task N+1, they may interpret the message in Task N's frame. Be explicit: "Claim Task 2 now."
 
+## Wave 3 (recovery) outcome
+
+Late in the session I clobbered Luka's in-progress follow-up edits (strict-greater progress check + lower-id regression test + MAX_TURN_RESUMES JSDoc rewrite) by running `git checkout HEAD --` during what I thought was stash-leakage cleanup. The "stash leakage" was actually Luka's quietly-staged follow-up work; my cleanup wiped it between their `git add` and `git commit`. Luka noticed the loop and stopped before resubmitting. After the user requested fresh execution, I spawned **Storm** with explicit copy-paste-ready diffs and a sanity guard ("if files outside the listed three show as modified, do not stage them"). Storm landed the three changes cleanly in commit **bc3f077** — 10/10 reducer tests pass, working tree clean, no formatter churn on unrelated files.
+
+**Lesson for future sessions:** during cleanup, use `git stash list` and `git diff` *before* `git checkout HEAD --`. A working-tree dirty-file you don't recognise may be a teammate's WIP that hasn't been committed yet — clobbering it loses real work and makes you the one in the loop.
+
 ## Final state
 
-- 4 commits landed on `fix-chat-resume-cursor`: 625b7e7, a6b4234, ab6c98e, 1633be0
-- 204/204 tests pass on changed files
+- 6 commits landed on `fix-chat-resume-cursor`: 625b7e7, a6b4234, ab6c98e, 1633be0, 815ba06, bc3f077
+- 204/204 tests pass on changed files; 10/10 on `resume-budget.test.ts` after Wave 3
 - 0 svelte-check errors, 0 deno check errors
-- 4 of the original 5 review-derived tasks completed; #5 superseded
+- 4 of the original 5 review-derived tasks completed; #5 superseded; Task 2 hardened with a follow-up commit
 
 ## Pre-existing test failures (NOT from this session)
 
