@@ -258,6 +258,180 @@ describe("ProcessRegistry.acquire", () => {
   });
 });
 
+describe("ProcessRegistry.acquire spec eviction", () => {
+  it("env change for same serverId evicts the old child and respawns with new spec", async () => {
+    const oldChild = createMockChildProcess(1);
+    const newChild = createMockChildProcess(2);
+    const spawn = vi
+      .fn()
+      .mockImplementationOnce(() => oldChild)
+      .mockImplementationOnce(() => newChild);
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, ok: true } as Response);
+    const deps: ProcessRegistryDeps = { spawn, fetch: fetchImpl, pidFile: noopPidFile() };
+
+    // First acquire — old spec missing the registry's platformEnv, e.g. spawned
+    // by the buggy raw-config FSM path before the fix.
+    const a = await sharedMCPProcesses.acquire("gmail", makeSpec(), deps, fakeLogger);
+    expect(a.child).toBe(oldChild);
+
+    // Second acquire — same serverId, env now includes platformEnv vars.
+    const newSpec = makeSpec({
+      env: {
+        WORKSPACE_MCP_PORT: "8001",
+        MCP_ENABLE_OAUTH21: "true",
+        EXTERNAL_OAUTH21_PROVIDER: "true",
+      },
+    });
+    const b = await sharedMCPProcesses.acquire("gmail", newSpec, deps, fakeLogger);
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(oldChild.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(b.child).toBe(newChild);
+  });
+
+  it("command change for same serverId evicts and respawns", async () => {
+    const oldChild = createMockChildProcess(1);
+    const newChild = createMockChildProcess(2);
+    const spawn = vi
+      .fn()
+      .mockImplementationOnce(() => oldChild)
+      .mockImplementationOnce(() => newChild);
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, ok: true } as Response);
+    const deps: ProcessRegistryDeps = { spawn, fetch: fetchImpl, pidFile: noopPidFile() };
+
+    await sharedMCPProcesses.acquire("calendar", makeSpec({ command: "uvx" }), deps, fakeLogger);
+    const b = await sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec({ command: "/opt/homebrew/bin/uvx" }),
+      deps,
+      fakeLogger,
+    );
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(oldChild.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(b.child).toBe(newChild);
+  });
+
+  it("matching env+command+args reuses cached child even when poll timeouts differ", async () => {
+    // readyTimeoutMs / readyIntervalMs don't change subprocess behavior — only
+    // how long the registry waits for the child to come up. They must not
+    // count toward spec equality, otherwise every caller passing different
+    // timeout overrides would needlessly thrash the subprocess.
+    const child = createMockChildProcess();
+    const spawn = vi.fn().mockReturnValue(child);
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, ok: true } as Response);
+    const deps: ProcessRegistryDeps = { spawn, fetch: fetchImpl, pidFile: noopPidFile() };
+
+    await sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec({ readyTimeoutMs: 500, readyIntervalMs: 25 }),
+      deps,
+      fakeLogger,
+    );
+    const b = await sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec({ readyTimeoutMs: 30000, readyIntervalMs: 500 }),
+      deps,
+      fakeLogger,
+    );
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(b.child).toBe(child);
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("env-key reordering does not cause a false eviction", async () => {
+    const child = createMockChildProcess();
+    const spawn = vi.fn().mockReturnValue(child);
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, ok: true } as Response);
+    const deps: ProcessRegistryDeps = { spawn, fetch: fetchImpl, pidFile: noopPidFile() };
+
+    await sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec({ env: { A: "1", B: "2", C: "3" } }),
+      deps,
+      fakeLogger,
+    );
+    await sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec({ env: { C: "3", A: "1", B: "2" } }),
+      deps,
+      fakeLogger,
+    );
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("eviction SIGKILLs survivors that ignore SIGTERM, then respawns", async () => {
+    const stubbornChild = createMockChildProcess(1);
+    // Simulate a child that ignores SIGTERM but obeys SIGKILL.
+    (stubbornChild.kill as ReturnType<typeof vi.fn>).mockImplementation((sig: NodeJS.Signals) => {
+      if (sig === "SIGKILL") {
+        (stubbornChild as MockChildProcess)._emitExit(null, sig);
+      }
+      // SIGTERM ignored.
+      return true;
+    });
+    const newChild = createMockChildProcess(2);
+
+    const spawn = vi
+      .fn()
+      .mockImplementationOnce(() => stubbornChild)
+      .mockImplementationOnce(() => newChild);
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, ok: true } as Response);
+    const deps: ProcessRegistryDeps = { spawn, fetch: fetchImpl, pidFile: noopPidFile() };
+
+    await sharedMCPProcesses.acquire("calendar", makeSpec(), deps, fakeLogger);
+
+    // Trigger eviction by changing env. Run under fake timers so the 2s
+    // SIGTERM grace window doesn't real-wait.
+    vi.useFakeTimers();
+    const acquirePromise = sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec({ env: { WORKSPACE_MCP_PORT: "8001", FOO: "bar" } }),
+      deps,
+      fakeLogger,
+    );
+    await vi.advanceTimersByTimeAsync(2100);
+    const b = await acquirePromise;
+    vi.useRealTimers();
+
+    const calls = (stubbornChild.kill as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(calls).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(b.child).toBe(newChild);
+  });
+
+  it("eviction removes the old child's pid file before respawning", async () => {
+    const oldChild = createMockChildProcess(11);
+    const newChild = createMockChildProcess(22);
+    const spawn = vi
+      .fn()
+      .mockImplementationOnce(() => oldChild)
+      .mockImplementationOnce(() => newChild);
+    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, ok: true } as Response);
+    const pidFile = noopPidFile();
+
+    await sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec(),
+      { spawn, fetch: fetchImpl, pidFile },
+      fakeLogger,
+    );
+    await sharedMCPProcesses.acquire(
+      "calendar",
+      makeSpec({ env: { WORKSPACE_MCP_PORT: "8001", FOO: "bar" } }),
+      { spawn, fetch: fetchImpl, pidFile },
+      fakeLogger,
+    );
+
+    expect(pidFile.remove).toHaveBeenCalledWith("calendar");
+    // Both pid writes happened — old child's then the new one's.
+    const writtenPids = (pidFile.write as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    expect(writtenPids).toEqual([11, 22]);
+  });
+});
+
 describe("ProcessRegistry.shutdown", () => {
   it("SIGTERMs all registered children", async () => {
     const calChild = createMockChildProcess(1);
