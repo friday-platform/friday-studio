@@ -99,90 +99,27 @@
     }
   }
 
-  /**
-   * Playground chat wired to the `user` workspace via `@ai-sdk/svelte`'s
-   * {@link ChatImpl} and {@link DefaultChatTransport}. Minimal wiring without
-   * production concerns (X-Turn-Started-At timer, GA4 analytics, OAuth return
-   * flow, query-client sidebar invalidation, resume-stream abort wiring).
-   * Uses the same backend contract as production clients:
-   *
-   *   - `POST /api/workspaces/<wsId>/chat`          — first and follow-up turns
-   *   - `GET  /api/workspaces/<wsId>/chat/:chatId`  — rehydrate on mount
-   *
-   * The request body shape is controlled via `prepareSendMessagesRequest`
-   * and matches what `AtlasWebAdapter.handleWebhook` expects:
-   *   { id, message, datetime? }
-   *
-   * The Chat instance owns message state, streaming, and error handling.
-   *
-   */
   const CHAT_API = $derived(`/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat`);
   let initialMessages: AtlasUIMessage[] = $state([]);
   let rehydrationDone = $state(false);
   let rehydrating = $state(false);
-  /**
-   * Set when we rehydrate from localStorage — signals the "try to resume an
-   * in-flight stream" effect that this chatId may have a live turn on the
-   * server (user navigated away mid-response). The effect calls
-   * `chat.resumeStream()` once; the server returns 204 when no stream is
-   * active, so it's a no-op for finished chats.
-   */
+  /** Tries `chat.resumeStream()` once after rehydrate; 204 = no live stream. */
   let shouldResumeStream = $state(false);
-  /** Set when resumeStream returns 204 and the last loaded message was unanswered. */
+  /** True when resume returned 204 and the last loaded message was a user turn. */
   let wasInterrupted = $state(false);
 
   let error: string | null = $state(null);
 
   /**
-   * Bound on consecutive no-progress resume attempts within a single turn.
-   * Chrome's fetch streaming caps long-running responses at ~50–60s with
-   * `TypeError: network error` even when the server is healthy and bytes
-   * are flowing — comment-line keepalives, data-frame keepalives, and
-   * 5s/15s ping cadences all hit the same wall (same daemon over curl
-   * runs 85s+ fine). On `chat.error` mid-turn, `trackingFetch` plus the
-   * resume effect transparently call `chat.resumeStream()` against the
-   * server's StreamRegistry, which replays buffered events past
-   * `lastSeenEventId`.
-   *
-   * The budget is a tight-loop guard, not a turn-length guillotine: see
-   * `nextResumeBudgetStep` in `resume-budget.ts`. When the cursor advances
-   * between failures, the previous resume actually delivered events and
-   * the next failure is a NEW Chrome cap — `resumeAttempts` resets so a
-   * 25-minute tool call across 30+ caps doesn't run out at minute ~17.
-   * Only consecutive failures with no cursor advancement count toward
-   * exhaustion.
+   * Bound on *consecutive no-progress* resume attempts. Resets on forward
+   * progress (see {@link nextResumeBudgetStep}) so a multi-minute tool call
+   * across many Chrome ~50s fetch caps doesn't exhaust mid-stream.
    */
   const MAX_TURN_RESUMES = 20;
   let resumeAttempts = $state(0);
-
-  /**
-   * Highest SSE `id:` line seen on the active turn's response stream(s).
-   * Sent back as `Last-Event-ID` on resume so the server replays only
-   * events past this cursor — without it, full replay re-emits text-delta
-   * chunks the AI SDK has already merged into the in-flight assistant
-   * message, producing duplicated content. Reset on every fresh turn.
-   */
   let lastSeenEventId: number | undefined = $state(undefined);
-
-  /**
-   * Cursor value at the moment of the last `chat.error`. The resume budget
-   * (`resumeAttempts`) only exists to bound infinite loops against a stuck
-   * server — if the cursor has advanced since the last failure, the
-   * previous resume actually delivered events and the next failure is a
-   * NEW Chrome ~50s cap, not a retry of the same broken state. Resetting
-   * the counter on forward progress lets a long-running turn (a 25-minute
-   * tool call across 30 reconnects) finish cleanly. Without this, every
-   * Chrome cap drains one attempt regardless of whether the resume
-   * succeeded, and the budget runs out at minute ~17.
-   */
   let lastSeenEventIdAtLastFailure: number | undefined = $state(undefined);
 
-  /**
-   * `fetch` wrapper for the AI SDK's `DefaultChatTransport`. Threads
-   * `Last-Event-ID` onto resume requests and tracks SSE event ids in the
-   * response stream so cursored replay works. See
-   * {@link createCursorTrackingFetch} for the wire-level details.
-   */
   const trackingFetch = createCursorTrackingFetch({
     getCursor: () => lastSeenEventId,
     setCursor: (value) => {
@@ -377,64 +314,39 @@
     });
   });
 
-  // Transport — re-derived when CHAT_API / prepareSendMessagesRequest would
-  // change. Both are stable in this component so it effectively fires once.
-  // The custom `fetch` wrapper above tracks SSE event ids and threads
-  // `Last-Event-ID` onto resume requests so cursored replay works.
   const transport = $derived(
     new DefaultChatTransport({
       api: CHAT_API,
       fetch: trackingFetch,
       prepareSendMessagesRequest({ messages: msgs, id }) {
-        // The Atlas web adapter only needs the latest message plus the
-        // chatId and optional datetime context — it pulls history server-
-        // side from ChatStorage. Sending the full `msgs` array would be
-        // wasteful bandwidth on long threads.
+        // Adapter pulls history server-side; sending msgs[] would waste bandwidth.
         const body: Record<string, unknown> = { id, message: msgs.at(-1), datetime: buildDatetime() };
         return { body };
       },
     }),
   );
 
-  // Chat instance — re-derived when chatId or initialMessages change (new
-  // chat, post-rehydration). `rehydrationDone` gates creation so we don't
-  // spin up an empty Chat before we know whether we're resuming or starting
-  // fresh.
+  // `rehydrationDone` gates creation so we don't spin up an empty Chat
+  // before we know whether we're resuming or starting fresh.
   const chat = $derived(
     rehydrationDone && chatId.length > 0
       ? new ChatImpl<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport })
       : null,
   );
 
-  // Resume an in-flight stream after rehydrate. Fires once per chatId that
-  // came from localStorage: if the user navigated away mid-response the
-  // server's StreamRegistry still has the buffered chunks. `resumeStream()`
-  // hits `GET /api/workspaces/<wsId>/chat/<chatId>/stream` — returns 204 when
-  // no active stream, otherwise replays everything since the turn started so
-  // the assistant's partial message flows in live and finishes normally.
-  // Without this, navigating back showed only the persisted user message and
-  // the in-flight assistant response was invisible until the next page load
-  // (which could be after the stream completed and the message was flushed
-  // to ChatStorage).
+  // Pick up an in-flight turn the user navigated away from. 204 = no live
+  // stream; if the last loaded message was an unanswered user turn, surface
+  // the interrupted banner so they can resend.
   $effect(() => {
     if (chat && shouldResumeStream) {
       shouldResumeStream = false;
       const instance = chat;
-      // Capture before the async boundary — `initialMessages` is stable here
-      // (rehydrateChat already settled), but we can't read it after the await.
       const hadUnansweredUser =
         initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
       instance.resumeStream().catch(() => {
-        // The most common outcome is 204 (no active stream). When the session
-        // died mid-response the server has nothing to replay — show an
-        // interrupted indicator so the user knows to resend.
         if (hadUnansweredUser) wasInterrupted = true;
       });
-      // Effect cleanup: when `chat` is re-derived (wsId change, switchToChat,
-      // startNewChat) or the component unmounts, abort the old Chat's
-      // resume fetch instead of letting it run until the server hangs up.
-      // `chat.stop()` calls the AbortController inside `makeRequest` and
-      // rejects the resume promise — swallowed above, so it's safe.
+      // Abort the old Chat's resume fetch when re-derived or unmounted.
       return () => {
         void instance.stop().catch(() => {});
       };
@@ -454,28 +366,16 @@
     untrack(() => void handleSubmit(seed));
   });
 
-  // Propagate transport / Chat errors into the playground error banner, but
-  // only when there's no in-message error bubble for this turn. Session
-  // failures (e.g. invalid model) arrive via BOTH a `data-error` chunk and
-  // a rejected transport promise — rendering both is noisy duplication.
-  //
-  // Mid-turn fetch drops (Chrome's ~50s streaming cap) get an extra step:
-  // try `resumeStream()` against the server's buffered StreamRegistry
-  // before surfacing the error. Each user message gets MAX_TURN_RESUMES
-  // attempts; persistent failures fall through to the banner so the user
-  // isn't stuck in a silent loop on a genuinely broken server.
+  // Mid-turn fetch drops (Chrome's ~50s streaming cap) get an auto-resume
+  // before the banner. Skip if the SDK already rendered an in-message error
+  // bubble — session failures (e.g. invalid model) arrive via both a
+  // `data-error` chunk and a rejected transport promise.
   $effect(() => {
     if (!chat?.error) return;
     const last = chat.messages.at(-1);
     if (last && last.role === "assistant" && hasErrorPart(last as AtlasUIMessage)) {
       return;
     }
-    // Forward progress between failures means the previous resume actually
-    // delivered events. The budget guards against tight loops on a stuck
-    // server, not legitimate long turns — `nextResumeBudgetStep` resets
-    // the counter when the cursor advanced so a 25-minute tool call across
-    // 30 Chrome ~50s caps doesn't hit MAX_TURN_RESUMES at minute ~17 and
-    // silently truncate.
     const step = nextResumeBudgetStep({
       lastSeenEventId,
       lastSeenEventIdAtLastFailure,
@@ -488,11 +388,9 @@
     if (step.shouldResume) {
       const instance = chat;
       instance.clearError();
-      instance.resumeStream().catch(() => {
-        // Resume itself failed (server gone, 4xx, replayDisabled buffer,
-        // etc.). The next $effect tick will re-enter with the new error;
-        // if the budget is now exhausted it falls through to the banner.
-      });
+      // Failure here re-enters via chat.error on the next tick; if the
+      // budget is now exhausted it falls through to the banner.
+      instance.resumeStream().catch(() => {});
       return;
     }
     error = chat.error.message;
