@@ -10,7 +10,7 @@ import { createPlatformModels, getCatalog, PlatformModelsConfigError } from "@at
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { parse, stringify } from "@std/dotenv";
+import { parse } from "@std/dotenv";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import z from "zod";
@@ -25,6 +25,57 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Serialize env vars into `.env` format without unnecessary quoting.
+ *
+ * @std/dotenv's stringify wraps any value containing a non-word char
+ * (a `-` in an API key, a `/` in a URL, …) in single quotes. The
+ * launcher's loadDotEnv (tools/friday-launcher/project.go) reads the
+ * file as-is and forwards `KEY='sk-ant-foo'` verbatim to spawned
+ * services, so agents inherit the literal quotes and the API key
+ * fails to authenticate. The Tauri installer's render_env_lines also
+ * writes unquoted, so this matches the format the rest of the stack
+ * already expects.
+ *
+ * Quoting rules picked to round-trip through @std/dotenv's parse
+ * (used on the read side) and shell-style readers like the launcher:
+ *   - newline / CR / NUL  → double-quote with `\n`/`\r` escapes
+ *   - whitespace, `#`, `$`, leading `'`/`"`, or backslash
+ *                         → single-quote (literal, no expansion)
+ *   - anything with a `'` or that needs newline escaping
+ *                         → double-quote with backslash escapes
+ *   - otherwise           → unquoted
+ */
+function stringifyEnv(envVars: Record<string, string>): string {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(envVars)) {
+    if (key.startsWith("#")) continue;
+    const v = value ?? "";
+
+    const hasNewline = /[\r\n]/.test(v);
+    const needsQuoting = hasNewline || /[\s#$"'\\]/.test(v) || /^['"]/.test(v);
+
+    if (!needsQuoting) {
+      lines.push(`${key}=${v}`);
+      continue;
+    }
+
+    if (!hasNewline && !v.includes("'")) {
+      lines.push(`${key}='${v}'`);
+      continue;
+    }
+
+    const escaped = v
+      .replaceAll("\\", "\\\\")
+      .replaceAll('"', '\\"')
+      .replaceAll("\n", "\\n")
+      .replaceAll("\r", "\\r")
+      .replaceAll("\t", "\\t");
+    lines.push(`${key}="${escaped}"`);
+  }
+  return lines.join("\n");
 }
 
 import { daemonFactory } from "../src/factory.ts";
@@ -135,8 +186,7 @@ configRoutes.put(
         await mkdir(atlasDir, { recursive: true });
       }
 
-      // Write the file using @std/dotenv stringify
-      const content = stringify(envVars);
+      const content = stringifyEnv(envVars);
       await writeFile(envPath, content, "utf-8");
 
       logger.info("Environment variables updated successfully", {

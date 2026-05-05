@@ -163,6 +163,45 @@ func TestImportDotEnvIntoProcessEnv_PopulatesPortOverrides(t *testing.T) {
 	}
 }
 
+// TestImportDotEnvIntoProcessEnv_StripsSurroundingQuotes asserts that
+// values written with surrounding quotes by atlasd's pre-fix
+// stringify (or by hand-edited .env files using standard dotenv
+// quoting) reach spawned services unquoted. Regression guard: prior
+// to the fix, an API key like sk-ant-foo persisted via the Settings
+// UI ended up on disk as `'sk-ant-foo'`, which the launcher forwarded
+// verbatim to agents, so authentication failed with a literal-quoted
+// key.
+func TestImportDotEnvIntoProcessEnv_StripsSurroundingQuotes(t *testing.T) {
+	tmpHome := t.TempDir()
+	envDir := filepath.Join(tmpHome, ".friday", "local")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(envDir, ".env")
+	envContent := "ANTHROPIC_API_KEY='sk-ant-quoted-single'\nOPENAI_API_KEY=\"sk-proj-quoted-double\"\nMIXED_QUOTE='leftover\"\nPLAIN_KEY=sk-no-quotes\n"
+	if err := os.WriteFile(envFile, []byte(envContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", tmpHome)
+	for _, k := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MIXED_QUOTE", "PLAIN_KEY"} {
+		_ = os.Unsetenv(k)
+	}
+
+	importDotEnvIntoProcessEnv()
+
+	cases := map[string]string{
+		"ANTHROPIC_API_KEY": "sk-ant-quoted-single",
+		"OPENAI_API_KEY":    "sk-proj-quoted-double",
+		"MIXED_QUOTE":       "'leftover\"", // mismatched quotes left as-is
+		"PLAIN_KEY":         "sk-no-quotes",
+	}
+	for k, want := range cases {
+		if got := os.Getenv(k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+}
+
 // TestImportDotEnvIntoProcessEnv_PreservesExistingEnv asserts that an
 // already-set value (e.g. shell export) wins over the .env file. This
 // matches deno's --env-file precedence rule: process env > file. A
