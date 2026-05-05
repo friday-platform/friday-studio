@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DropdownMenu, markdownToHTML } from "@atlas/ui";
+  import { DropdownMenu, markdownToHTMLSafe } from "@atlas/ui";
   import { tick } from "svelte";
   import type { ChatMessage } from "./types";
   import { getExportContext } from "./export-context";
@@ -237,7 +237,7 @@
           {#each message.segments as segment}
             {#if segment.type === "text" && segment.content.length > 0}
               {#if message.role === "assistant"}
-                <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTML(segment.content)}</div>
+                <div class="message-content markdown-body" use:copyButtons>{@html markdownToHTMLSafe(segment.content)}</div>
               {:else}
                 <div class="message-content">{segment.content}</div>
               {/if}

@@ -42,6 +42,7 @@ vi.mock("@atlas/ui", async () => {
     DropdownMenu: proxy,
     MarkdownRendered: Stub,
     markdownToHTML: (text: string) => text,
+    markdownToHTMLSafe: (text: string) => text,
   };
 });
 

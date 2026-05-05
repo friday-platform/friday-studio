@@ -52,6 +52,7 @@
     "@lezer/common": "^1.5.2",
     "@lezer/markdown": "^1.6.3",
     "@melt-ui/svelte": "^0.86.6",
+    "isomorphic-dompurify": "^2.16.0",
     "marked": "^18.0.3",
     "shiki": "^4.0.2"
   },

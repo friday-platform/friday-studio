@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack, type Component } from "svelte";
-  import { Icons, IconSmall, markdownToHTML } from "@atlas/ui";
+  import { Icons, IconSmall, markdownToHTMLSafe } from "@atlas/ui";
   import ToolCallCard from "./tool-call-card.svelte";
   import { getExportContext } from "./export-context";
   import { jsonHighlighter } from "./json-highlighter";
@@ -403,7 +403,7 @@
           response
         </summary>
         <div class="delegate-text markdown-body">
-          {@html markdownToHTML(call.delegateText)}
+          {@html markdownToHTMLSafe(call.delegateText)}
         </div>
       </details>
     {/if}
