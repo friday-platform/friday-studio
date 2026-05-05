@@ -2094,10 +2094,8 @@ describe("MCP Registry Routes", () => {
       expect(body.tools[0]).toEqual({ name: "bare-tool", description: undefined });
     });
 
-    it("serves a cached tool list on the second probe without re-invoking createMCPTools", async () => {
+    it("serves cached tools — prewarm populates, GET is a hit, no second probe", async () => {
       const entry = createTestEntry("probe-cache-hit");
-      // Seed without prewarm side effects: prewarm uses createMCPTools too.
-      // Mock first to count both prewarm + probe calls.
       mockCreateMCPTools.mockResolvedValue({
         tools: { "cached-tool": { description: "cached" } },
         dispose: vi.fn().mockResolvedValue(undefined),
@@ -2109,25 +2107,22 @@ describe("MCP Registry Routes", () => {
         body: JSON.stringify({ entry }),
       });
       await _flushPrewarmsForTest();
-      const callsAfterAdd = mockCreateMCPTools.mock.calls.length;
+      // Prewarm probed exactly once.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
 
+      // First GET must be a cache hit — no new probe.
       const first = await mcpRegistryRouter.request(`/${entry.id}/tools`);
       expect(first.status).toBe(200);
       const firstBody = ToolProbeSuccessSchema.parse(await first.json());
       expect(firstBody.tools[0]?.name).toBe("cached-tool");
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
 
-      const callsAfterFirst = mockCreateMCPTools.mock.calls.length;
-      // Either prewarm filled the cache (first probe is a hit, no new call) or
-      // prewarm was racy and the foreground probe ran. Either way, a *second*
-      // /tools call must be a cache hit.
+      // Second GET also a cache hit.
       const second = await mcpRegistryRouter.request(`/${entry.id}/tools`);
       expect(second.status).toBe(200);
       const secondBody = ToolProbeSuccessSchema.parse(await second.json());
       expect(secondBody.tools[0]?.name).toBe("cached-tool");
-
-      expect(mockCreateMCPTools.mock.calls.length).toBe(callsAfterFirst);
-      // Sanity: at least the prewarm fired on add.
-      expect(callsAfterAdd).toBeGreaterThanOrEqual(1);
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
     });
 
     it("does not cache failed probes — retry sees a fresh probe", async () => {
@@ -2164,7 +2159,7 @@ describe("MCP Registry Routes", () => {
   // ═══════════════════════════════════════════════════════════════════════
 
   describe("prewarm on add", () => {
-    it("invokes createMCPTools after POST /", async () => {
+    it("populates the cache after POST / — follow-up GET is a hit", async () => {
       mockCreateMCPTools.mockResolvedValue({
         tools: { "warmed-tool": { description: "warmed" } },
         dispose: vi.fn().mockResolvedValue(undefined),
@@ -2177,12 +2172,18 @@ describe("MCP Registry Routes", () => {
         body: JSON.stringify({ entry }),
       });
       expect(res.status).toBe(201);
-
       await _flushPrewarmsForTest();
-      expect(mockCreateMCPTools).toHaveBeenCalled();
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+
+      // The follow-up GET must be a cache hit — call count stays at 1.
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(probe.status).toBe(200);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("warmed-tool");
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
     });
 
-    it("invalidates cache on DELETE /:id", async () => {
+    it("invalidates cache on DELETE /:id — same id+config re-add returns fresh tools", async () => {
       const entry = createTestEntry("prewarm-delete");
       mockCreateMCPTools.mockResolvedValue({
         tools: { "v1-tool": { description: "v1" } },
@@ -2198,11 +2199,10 @@ describe("MCP Registry Routes", () => {
       const del = await mcpRegistryRouter.request(`/${entry.id}`, { method: "DELETE" });
       expect(del.status).toBe(204);
 
-      // Re-add same id with a different config; must not serve stale cached tools.
-      const reAdded = {
-        ...entry,
-        configTemplate: { transport: { type: "stdio", command: "echo", args: ["different"] } },
-      };
+      // Re-add with the SAME configTemplate. configHash matches, so only
+      // invalidateCache(id) on DELETE can keep the cache from serving v1-tool
+      // (otherwise prewarmTools would short-circuit on the still-cached entry
+      // and skip probing — caller would see stale tools).
       mockCreateMCPTools.mockResolvedValue({
         tools: { "v2-tool": { description: "v2" } },
         dispose: vi.fn().mockResolvedValue(undefined),
@@ -2210,13 +2210,58 @@ describe("MCP Registry Routes", () => {
       await mcpRegistryRouter.request("/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entry: reAdded }),
+        body: JSON.stringify({ entry }),
       });
       await _flushPrewarmsForTest();
 
       const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
       const body = ToolProbeSuccessSchema.parse(await probe.json());
       expect(body.tools[0]?.name).toBe("v2-tool");
+    });
+
+    it("invalidates and reprewarms on POST /:id/update — old tools gone, new tools cached", async () => {
+      const canonicalName = "io.github.test/update-prewarm";
+      const v1 = createNpmStdioUpstreamEntry(canonicalName, "1.0.0");
+      mockFetchLatest.mockResolvedValueOnce(v1);
+
+      mockCreateMCPTools.mockResolvedValueOnce({
+        tools: { "v1-tool": { description: "v1" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+      const installRes = await mcpRegistryRouter.request("/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registryName: canonicalName }),
+      });
+      expect(installRes.status).toBe(201);
+      const storedId = InstallResponseSchema.parse(await installRes.json()).server.id;
+      await _flushPrewarmsForTest();
+      // Confirm v1 tools cached.
+      const beforeUpdate = await mcpRegistryRouter.request(`/${storedId}/tools`);
+      expect(ToolProbeSuccessSchema.parse(await beforeUpdate.json()).tools[0]?.name).toBe(
+        "v1-tool",
+      );
+      const callsAfterInstall = mockCreateMCPTools.mock.calls.length;
+
+      // Pull update to v2 — handler must invalidateCache + prewarm with new config.
+      const v2 = createNpmStdioUpstreamEntry(canonicalName, "2.0.0");
+      mockFetchLatest.mockResolvedValueOnce(v2);
+      mockCreateMCPTools.mockResolvedValueOnce({
+        tools: { "v2-tool": { description: "v2" } },
+        dispose: vi.fn().mockResolvedValue(undefined),
+      });
+      const updateRes = await mcpRegistryRouter.request(`/${storedId}/update`, { method: "POST" });
+      expect(updateRes.status).toBe(200);
+      await _flushPrewarmsForTest();
+
+      // Reprewarm probed exactly once after install.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(callsAfterInstall + 1);
+
+      // GET /tools must serve the new v2 tools and stay a cache hit.
+      const probe = await mcpRegistryRouter.request(`/${storedId}/tools`);
+      const body = ToolProbeSuccessSchema.parse(await probe.json());
+      expect(body.tools[0]?.name).toBe("v2-tool");
+      expect(mockCreateMCPTools.mock.calls.length).toBe(callsAfterInstall + 1);
     });
   });
 

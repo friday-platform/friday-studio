@@ -16,16 +16,20 @@ const PREWARM_TIMEOUT_MS = 60_000;
 const cache = new Map<string, Entry>();
 const inFlightPrewarm = new Map<string, Promise<void>>();
 
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
-}
-
 function hashConfig(config: MCPServerConfig): string {
-  return stableStringify(config);
+  // Native JSON.stringify drops `undefined` values inside objects, so two
+  // configs that differ only by an explicit-undefined vs missing key hash
+  // identically. The replacer makes object key ordering deterministic.
+  return JSON.stringify(config, (_key, val) => {
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(val).sort()) {
+        sorted[k] = (val as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return val;
+  });
 }
 
 export function getCachedTools(serverId: string, config: MCPServerConfig): CachedTool[] | null {
@@ -46,6 +50,10 @@ export function putCachedTools(
 
 export function invalidateCache(serverId: string): void {
   cache.delete(serverId);
+}
+
+export function getInFlightPrewarm(serverId: string): Promise<void> | undefined {
+  return inFlightPrewarm.get(serverId);
 }
 
 export function _resetCacheForTest(): void {

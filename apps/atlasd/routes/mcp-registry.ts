@@ -31,6 +31,7 @@ import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
 import {
   getCachedTools,
+  getInFlightPrewarm,
   invalidateCache,
   prewarmTools,
   probeAndExtract,
@@ -735,6 +736,25 @@ export const mcpRegistryRouter = daemonFactory
       const cached = getCachedTools(id, server.configTemplate);
       if (cached) {
         return c.json({ ok: true as const, tools: cached });
+      }
+
+      // If a prewarm is already in flight (just-added server, cold install
+      // still downloading), wait for it instead of spawning a duplicate
+      // npx/uvx process. Race-cap the wait at 5s — if the cold install runs
+      // longer than that, tell the user to retry shortly rather than block
+      // for the prewarm's 60s budget.
+      const inFlight = getInFlightPrewarm(id);
+      if (inFlight) {
+        await Promise.race([inFlight, new Promise<void>((resolve) => setTimeout(resolve, 5000))]);
+        const afterWait = getCachedTools(id, server.configTemplate);
+        if (afterWait) {
+          return c.json({ ok: true as const, tools: afterWait });
+        }
+        return c.json({
+          ok: false as const,
+          error: "MCP server is still starting up. Retry in a few seconds.",
+          phase: "connect" as const,
+        });
       }
 
       try {
