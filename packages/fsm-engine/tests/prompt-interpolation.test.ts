@@ -89,4 +89,48 @@ describe("interpolatePromptPlaceholders", () => {
     });
     expect(out).toBe("Save x");
   });
+
+  it("falls back to the `| default: '...'` literal when the path is missing", () => {
+    // Liquid/Jinja convention used by every prompt-templating framework users
+    // bring in. Without this, an optional input forced authors to either set
+    // every field on every invocation or get a literal `{{...}}` rendered
+    // into the agent prompt.
+    const out = interpolatePromptPlaceholders(
+      "Style: {{inputs.style | default: 'classic SNES/GBA style'}}",
+      { config: {} },
+    );
+    expect(out).toBe("Style: classic SNES/GBA style");
+  });
+
+  it("uses the resolved value over the default when both are present", () => {
+    const out = interpolatePromptPlaceholders(
+      "Style: {{inputs.style | default: 'classic'}}",
+      { config: { style: "fantasy anime" } },
+    );
+    expect(out).toBe("Style: fantasy anime");
+  });
+
+  it("supports double-quoted default literals", () => {
+    const out = interpolatePromptPlaceholders(
+      'Style: {{inputs.style | default: "classic"}}',
+      { config: {} },
+    );
+    expect(out).toBe("Style: classic");
+  });
+
+  it("applies defaults even when no prepareResult is provided", () => {
+    // Authors writing standalone prompts shouldn't need a prepareResult at
+    // all to get fallback values rendered.
+    const out = interpolatePromptPlaceholders(
+      "Style: {{inputs.style | default: 'classic'}}",
+      undefined,
+    );
+    expect(out).toBe("Style: classic");
+  });
+
+  it("still leaves an unresolved placeholder intact when no default is given and prepareResult is undefined", () => {
+    expect(interpolatePromptPlaceholders("Save {{inputs.content}}", undefined)).toBe(
+      "Save {{inputs.content}}",
+    );
+  });
 });

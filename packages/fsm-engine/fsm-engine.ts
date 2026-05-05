@@ -100,6 +100,11 @@ type PrepareResult = z.infer<typeof PrepareResultSchema>;
  * unresolved placeholders are kept verbatim so typos stay visible during
  * authoring rather than silently rendering as empty strings.
  *
+ * A Liquid-style `| default: 'fallback'` filter is supported on the placeholder
+ * itself (`{{inputs.style | default: 'classic'}}`); it kicks in when the path
+ * resolves to undefined/null so optional fields don't have to be set on every
+ * invocation. Both single- and double-quoted fallback literals are accepted.
+ *
  * Uses only properties already exposed via `PrepareResult` (`task`, `config`,
  * `artifactRefs`); does not reach into ambient FSM state, so there's no way
  * an agent's prompt can smuggle context from outside its invocation payload.
@@ -108,22 +113,29 @@ export function interpolatePromptPlaceholders(
   prompt: string,
   prepareResult: PrepareResult | undefined,
 ): string {
-  if (!prepareResult) return prompt;
-  const config = prepareResult.config ?? {};
+  const config = prepareResult?.config ?? {};
   // Expose the same bag under multiple well-known roots — different agent
   // frameworks use different names for this, and the cost of accepting all
   // three is one line per alias. `inputs.*` is the most common.
   const scopes: Record<string, unknown> = { inputs: config, config, signal: { payload: config } };
-  return prompt.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}/g, (original, path) => {
+  // Pattern: `{{ path[ | default: 'literal' ] }}`
+  // - path: dotted identifier
+  // - optional `| default: '...'` (single or double quoted) supplies a fallback
+  //   when the path is missing — matches Liquid/Jinja convention used by most
+  //   prompt-templating frameworks.
+  const placeholderRe =
+    /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:\|\s*default\s*:\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g;
+  return prompt.replace(placeholderRe, (original, path, sq, dq) => {
+    const fallback: string | undefined = sq ?? dq;
     const segments = String(path).split(".");
     let cursor: unknown = scopes;
     for (const segment of segments) {
       if (cursor === null || cursor === undefined || typeof cursor !== "object") {
-        return original;
+        return fallback ?? original;
       }
       cursor = (cursor as Record<string, unknown>)[segment];
     }
-    if (cursor === undefined || cursor === null) return original;
+    if (cursor === undefined || cursor === null) return fallback ?? original;
     if (typeof cursor === "string") return cursor;
     if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
     return JSON.stringify(cursor);
