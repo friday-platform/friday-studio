@@ -11,12 +11,12 @@
 -->
 
 <script lang="ts">
-  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import { IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { mcpQueries } from "$lib/queries/mcp-queries";
+  import { sourceLabel } from "./mcp-server-utils";
 
   interface Props {
     selectedServerId?: string | null;
@@ -106,16 +106,6 @@
     }
   }
 
-  type ServerTag = "bundled" | "registry" | "official" | null;
-
-  function serverTag(server: (typeof allServers)[number]): ServerTag {
-    if (server.source === "static") return "bundled";
-    if (server.source === "registry") return "registry";
-    if (server.upstream?.canonicalName && isOfficialCanonicalName(server.upstream.canonicalName)) {
-      return "official";
-    }
-    return null;
-  }
 </script>
 
 <div class="catalog-tree">
@@ -147,7 +137,6 @@
     {:else}
       <div class="group">
         {#each sortedInstalled as server (server.id)}
-          {@const tag = serverTag(server)}
           <button
             class="tree-item"
             class:active={selectedServerId === server.id}
@@ -158,13 +147,7 @@
               style:--dot-color={securityColor(server.securityRating)}
             ></span>
             <span class="item-name">{server.name}</span>
-            {#if tag === "bundled"}
-              <span class="tag-pill">Bundled</span>
-            {:else if tag === "registry"}
-              <span class="tag-pill">Registry</span>
-            {:else if tag === "official"}
-              <span class="tag-pill">Official</span>
-            {/if}
+            <span class="tag-pill">{sourceLabel(server.source)}</span>
           </button>
         {/each}
       </div>

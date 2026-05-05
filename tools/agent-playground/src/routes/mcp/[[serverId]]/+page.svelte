@@ -171,11 +171,9 @@
 
   <MCPServerDetail
     server={selectedServer}
-    onInstall={handleInstall}
     onCheckUpdate={handleCheckUpdate}
     onPullUpdate={handlePullUpdate}
     onDelete={handleDelete}
-    installing={installMut.isPending}
     checking={checkingId === selectedServerId}
     pulling={pullingId === selectedServerId}
     deleting={deletingId === selectedServerId}

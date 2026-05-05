@@ -4,7 +4,6 @@
   import { browser } from "$app/environment";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
-  import "@atlas/ui/markdown.css";
   import "../app.css";
   import favicon from "$lib/assets/favicon.png";
   import Sidebar from "$lib/components/shared/sidebar.svelte";

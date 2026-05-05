@@ -34,12 +34,18 @@
     hasContent?: boolean;
   }
 
-  let { serverId, configTemplate, hasContent = $bindable(false) }: Props = $props();
+  let {
+    serverId,
+    configTemplate,
+    hasContent = $bindable(false),
+  }: Props = $props();
 
   // ─── Server-as-provider check ──────────────────────────────────────────────
   // HTTP OAuth remotes (e.g. Stripe) have no configTemplate.env but DO have
   // a Link OAuth provider registered under the server ID itself.
-  const serverProviderQuery = createQuery(() => linkProviderQueries.providerDetails(serverId));
+  const serverProviderQuery = createQuery(() =>
+    linkProviderQueries.providerDetails(serverId),
+  );
 
   // ─── Discovery ─────────────────────────────────────────────────────────────
 
@@ -59,7 +65,8 @@
     const idRefs: IdRef[] = [];
 
     for (const [envKey, value] of Object.entries(env)) {
-      if (typeof value !== "object" || value === null || !("from" in value)) continue;
+      if (typeof value !== "object" || value === null || !("from" in value))
+        continue;
       const ref = value as LinkCredentialRef;
       if (ref.from !== "link") continue;
 
@@ -77,12 +84,16 @@
     }
 
     // Deduplicate providers by ID
-    const uniqueProviders = [...new Map(providers.map((p) => [p.providerId, p])).values()];
+    const uniqueProviders = [
+      ...new Map(providers.map((p) => [p.providerId, p])).values(),
+    ];
 
     return { providers: uniqueProviders, idRefs };
   });
 
-  const hasCredentialRefs = $derived(discovery.providers.length > 0 || discovery.idRefs.length > 0);
+  const hasCredentialRefs = $derived(
+    discovery.providers.length > 0 || discovery.idRefs.length > 0,
+  );
 
   $effect.pre(() => {
     hasContent = hasCredentialRefs;
@@ -115,7 +126,9 @@
       const connect = getConnect(providerId);
       cleanups.push(
         connect.listenForCallback(() => {
-          queryClient.invalidateQueries({ queryKey: linkProviderQueries.all() });
+          queryClient.invalidateQueries({
+            queryKey: linkProviderQueries.all(),
+          });
         }),
       );
     }
@@ -204,7 +217,9 @@
 
     <!-- Per-provider subsections -->
     {#each discovery.providers as { providerId } (providerId)}
-      {@const providerQuery = createQuery(() => linkProviderQueries.providerDetails(providerId))}
+      {@const providerQuery = createQuery(() =>
+        linkProviderQueries.providerDetails(providerId),
+      )}
       {@const credentialsQuery = createQuery(() =>
         linkProviderQueries.credentialsByProvider(providerId),
       )}
@@ -276,33 +291,57 @@
                   Cancel
                 </Button>
               {:else if details?.type === "oauth"}
-                <Button variant="primary" size="small" onclick={connect.startOAuth}>Connect</Button>
+                <Button
+                  variant="primary"
+                  size="small"
+                  onclick={connect.startOAuth}>Connect</Button
+                >
                 {#if connect.popupBlocked && connect.blockedUrl}
                   <div class="popup-blocked">
                     <p>Popup was blocked.</p>
-                    <a href={connect.blockedUrl} class="fallback-link">Continue in this tab</a>
+                    <a href={connect.blockedUrl} class="fallback-link"
+                      >Continue in this tab</a
+                    >
                   </div>
                 {/if}
-                <Button variant="secondary" size="small" onclick={handleAddNewCancel}>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onclick={handleAddNewCancel}
+                >
                   Cancel
                 </Button>
               {:else if details?.type === "app_install"}
-                <Button variant="primary" size="small" onclick={connect.startAppInstall}>
+                <Button
+                  variant="primary"
+                  size="small"
+                  onclick={connect.startAppInstall}
+                >
                   Install
                 </Button>
                 {#if connect.popupBlocked && connect.blockedUrl}
                   <div class="popup-blocked">
                     <p>Popup was blocked.</p>
-                    <a href={connect.blockedUrl} class="fallback-link">Continue in this tab</a>
+                    <a href={connect.blockedUrl} class="fallback-link"
+                      >Continue in this tab</a
+                    >
                   </div>
                 {/if}
-                <Button variant="secondary" size="small" onclick={handleAddNewCancel}>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onclick={handleAddNewCancel}
+                >
                   Cancel
                 </Button>
               {/if}
             </div>
           {:else}
-            <Button variant="secondary" size="small" onclick={() => handleAddNew(providerId)}>
+            <Button
+              variant="secondary"
+              size="small"
+              onclick={() => handleAddNew(providerId)}
+            >
               {#if credentials.length === 0}
                 Add one
               {:else if details?.type === "apikey"}
@@ -328,7 +367,8 @@
       {#snippet header()}
         <Dialog.Title>Remove credential</Dialog.Title>
         <Dialog.Description>
-          This credential will be permanently removed and will no longer be available to workspaces.
+          This credential will be permanently removed and will no longer be
+          available to workspaces.
         </Dialog.Description>
       {/snippet}
       {#snippet footer()}
@@ -339,7 +379,8 @@
         >
           {deleteMutation.isPending ? "Removing…" : "Remove"}
         </Dialog.Button>
-        <Dialog.Cancel onclick={() => (removingId = null)}>Cancel</Dialog.Cancel>
+        <Dialog.Cancel onclick={() => (removingId = null)}>Cancel</Dialog.Cancel
+        >
       {/snippet}
     </Dialog.Content>
   </Dialog.Root>
@@ -378,15 +419,15 @@
   }
 
   .loading-state {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-1);
+    color: var(--text-faded);
+    font-size: var(--font-size-3);
   }
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    color: var(--text-faded);
     display: flex;
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
     gap: var(--size-2);
   }
 
@@ -402,7 +443,11 @@
   }
 
   .popup-blocked {
-    background: color-mix(in srgb, var(--color-surface-2), var(--color-text) 5%);
+    background: color-mix(
+      in srgb,
+      var(--color-surface-2),
+      var(--color-text) 5%
+    );
     border-radius: var(--radius-2);
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-3);

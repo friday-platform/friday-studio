@@ -183,6 +183,7 @@
     select {
       all: revert;
       appearance: auto;
+      font-size: var(--font-size-3);
     }
   }
 

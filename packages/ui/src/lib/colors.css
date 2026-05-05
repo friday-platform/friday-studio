@@ -53,6 +53,9 @@
 
   --green-300: rgb(15 164 40);
   --green-600: rgb(59 232 146);
+
+  --purple-300: rgb(101 4 255);
+  --purple-600: rgb(172 120 255);
 }
 
 @media (color-gamut: p3) {
@@ -85,6 +88,11 @@
 
     --green-300: color(display-p3 0.0607 0.6426 0.1577);
     --green-600: color(display-p3 0.2314 0.9098 0.5725);
+
+    --purple-300: color(display-p3 0.3944 0.0169 1);
+  --purple-600: color(display-p3 0.6728 0.4688 1);
+  
+
   }
 }
 
@@ -116,4 +124,5 @@
   --red-primary: light-dark(var(--red-300), var(--red-600));
   --blue-primary: light-dark(var(--blue-300), var(--blue-600));
   --green-primary: light-dark(var(--green-300), var(--green-600));
+  --purple-primary: light-dark(var(--purple-300), var(--purple-600));
 }

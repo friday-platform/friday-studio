@@ -24,7 +24,7 @@
     font-size: var(--font-size-4);
     font-weight: var(--font-weight-4);
     padding-block: var(--size-2);
-    padding-inline: var(--size-4);
+    padding-inline: var(--size-3);
     text-align: start;
   }
 
@@ -41,12 +41,12 @@
 
   table :global(th:first-child),
   table :global(td:first-child) {
-    padding-inline-start: var(--size-3);
+    padding-inline-start: 0;
   }
 
   table :global(th:last-child),
   table :global(td:last-child) {
-    padding-inline-end: var(--size-3);
+    padding-inline-end: 0;
   }
 
   table :global(tr *:last-child),

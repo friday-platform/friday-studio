@@ -1,14 +1,13 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
-  import { IconSmall } from "./icons/small";
 
   type Props = {
     children: Snippet;
     prepend?: Snippet;
     append?: Snippet;
     isDropdown?: boolean;
-    variant?: "primary" | "secondary" | "destructive";
+    variant?: "primary" | "secondary" | "destructive" | "none";
     size?: "regular" | "small" | "icon";
     type?: "button" | "reset" | "submit";
     cursor?: "default" | "hand";
@@ -85,7 +84,7 @@
     align-items: center;
     block-size: var(--size-6-5);
     border-radius: var(--radius-2-5);
-    color: var(--text);
+    color: var(--text-bright);
     cursor: default;
     display: inline flex;
     flex: none;
@@ -130,11 +129,12 @@
       }
     }
 
-    & :global(.prepend) {
+    .prepend {
       color: var(--text-faded);
+      transition: color 150ms ease;
     }
 
-    & :global(.append) {
+    .append {
       opacity: 0.4;
       transition: all 150ms ease;
       transform: translate3d(0, 0, 0);
@@ -164,6 +164,14 @@
 
       &:hover {
         background-color: color-mix(in srgb, var(--highlight-bright), var(--color-text) 5%);
+      }
+    }
+
+    &.variant-none {
+      padding-inline: unset;
+
+      &:hover .prepend {
+        color: var(--text-bright);
       }
     }
 

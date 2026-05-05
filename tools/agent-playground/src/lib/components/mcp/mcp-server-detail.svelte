@@ -6,7 +6,7 @@
 
   @component
   @prop server - Installed server metadata (if selected)
-  @prop registryResult - Registry search result (if previewing uninstalled)
+
   @prop onInstall - Called to install a registry result
   @prop onCheckUpdate - Called to check for updates
   @prop onPullUpdate - Called to pull an update
@@ -18,7 +18,6 @@
 -->
 
 <script lang="ts">
-  import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
   import {
     Button,
@@ -29,22 +28,19 @@
     SimpleTable,
   } from "@atlas/ui";
   import { browser } from "$app/environment";
-  import type { SearchResult } from "$lib/queries/mcp-queries";
   import DOMPurify from "dompurify";
   import { writable } from "svelte/store";
   import McpConnectionTest from "./mcp-connection-test.svelte";
   import McpCredentialsPanel from "./mcp-credentials-panel.svelte";
+  import { isOfficialServer, sourceLabel } from "./mcp-server-utils";
   import McpTestChat from "./mcp-test-chat.svelte";
   import McpWorkspaceUsage from "./mcp-workspace-usage.svelte";
 
   interface Props {
     server?: MCPServerMetadata | null;
-    registryResult?: SearchResult | null;
-    onInstall?: (registryName: string) => void;
     onCheckUpdate?: () => void;
     onPullUpdate?: () => void;
     onDelete?: () => void;
-    installing?: boolean;
     checking?: boolean;
     pulling?: boolean;
     deleting?: boolean;
@@ -53,12 +49,9 @@
 
   let {
     server = null,
-    registryResult = null,
-    onInstall,
     onCheckUpdate,
     onPullUpdate,
     onDelete,
-    installing = false,
     checking = false,
     pulling = false,
     deleting = false,
@@ -78,52 +71,13 @@
   // Derived display values
   // ---------------------------------------------------------------------------
 
-  const displayName = $derived(server?.name ?? registryResult?.name ?? "");
-  const description = $derived(server?.description ?? registryResult?.description ?? null);
+  const displayName = $derived(server?.name ?? "");
+  const description = $derived(server?.description ?? null);
   const source = $derived(server?.source ?? null);
   const isInstalled = $derived(server !== null);
   const readme = $derived(server?.readme ?? null);
 
-  type ServerTag = "bundled" | "official" | null;
-
-  const tag = $derived.by<ServerTag>(() => {
-    if (server?.source === "static") return "bundled";
-    if (server?.upstream?.canonicalName && isOfficialCanonicalName(server.upstream.canonicalName)) {
-      return "official";
-    }
-    if (registryResult?.isOfficial) return "official";
-    return null;
-  });
-
-  function sourceLabel(src: string): string {
-    switch (src) {
-      case "static":
-        return "Bundled";
-      case "registry":
-        return "Registry";
-      case "web":
-        return "Web";
-      case "agents":
-        return "Agents";
-      default:
-        return src;
-    }
-  }
-
-  function sourceColor(src: string): string {
-    switch (src) {
-      case "static":
-        return "var(--color-accent)";
-      case "registry":
-        return "var(--color-accent)";
-      case "web":
-        return "var(--color-info)";
-      case "agents":
-        return "var(--color-warning)";
-      default:
-        return "var(--color-text)";
-    }
-  }
+  const isOfficial = $derived(server ? isOfficialServer(server) : false);
 
   function transportInfo(s: MCPServerMetadata): string {
     const t = s.configTemplate.transport;
@@ -152,7 +106,7 @@
 </script>
 
 <div class="detail-pane">
-  {#if !server && !registryResult}
+  {#if !server}
     <!-- Empty state -->
     <div class="empty-state">
       <div class="empty-icon">
@@ -165,51 +119,21 @@
       </p>
     </div>
   {:else}
-    <!-- Header -->
     <article>
-      <header>
-        <h1>{displayName}</h1>
-
-        <div class="header-badges">
-          {#if source}
-            <span class="badge" style:--badge-color={sourceColor(source)}>
-              {sourceLabel(source)}
-            </span>
-          {:else if registryResult}
-            <span class="badge" style:--badge-color="var(--color-accent)">Registry</span>
-          {/if}
-
-          {#if tag === "official"}
-            <span class="badge official-badge">Official</span>
-          {/if}
-        </div>
-
-        <div class="header-actions">
-          {#if !isInstalled && registryResult && onInstall}
-            <Button
-              variant="primary"
-              onclick={() => onInstall(registryResult.name)}
-              disabled={installing || registryResult.alreadyInstalled}
-            >
-              {#snippet prepend()}
-                <IconSmall.Plus />
-              {/snippet}
-              {installing
-                ? "Installing…"
-                : registryResult.alreadyInstalled
-                  ? "Already installed"
-                  : "Install"}
-            </Button>
-          {/if}
-
+      <div class="actions-bar">
+        <span class="actions-indent actions-indent-tl" aria-hidden="true"></span>
+        <div class="actions-int">
           {#if isInstalled && server?.source === "registry"}
             {#if onCheckUpdate}
               <Button
                 size="small"
-                variant="secondary"
+                variant="none"
                 onclick={onCheckUpdate}
                 disabled={checking || pulling}
               >
+                {#snippet prepend()}
+                  <IconSmall.ArrowsRotate />
+                {/snippet}
                 {checking ? "Checking…" : "Check for updates"}
               </Button>
             {/if}
@@ -220,14 +144,16 @@
               </Button>
             {/if}
           {/if}
-
           {#if isInstalled && server?.source !== "static" && onDelete}
             <Button
               size="small"
-              variant="secondary"
+              variant="none"
               onclick={() => deleteDialogOpen.set(true)}
               disabled={deleting}
             >
+              {#snippet prepend()}
+                <IconSmall.TrashBin />
+              {/snippet}
               {deleting ? "Removing…" : "Remove"}
             </Button>
           {/if}
@@ -251,12 +177,29 @@
             </Dialog.Content>
           </Dialog.Root>
         </div>
+        <span class="actions-indent actions-indent-br" aria-hidden="true"></span>
+      </div>
+
+      <header>
+        <h1>{displayName}</h1>
+
+        <div class="header-badges">
+          {#if source}
+            <span class="badge">
+              {sourceLabel(source)}
+
+              {#if isOfficial}
+                • Official
+              {/if}
+            </span>
+          {/if}
+        </div>
       </header>
       <!-- Content -->
       <div class="detail-content">
-        {#if description}
-          <p class="description">{description}</p>
-        {/if}
+        <p class="description" class:faded={!description}>
+          {description ?? "No description provided"}
+        </p>
 
         {#if isInstalled && server}
           <div>
@@ -366,6 +309,51 @@
     scrollbar-width: thin;
   }
 
+  .actions-bar {
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: var(--size-3);
+    position: absolute;
+    inset-block-start: var(--size-1-5);
+    inset-inline-end: var(--size-1-5);
+    z-index: 1;
+
+    .actions-int {
+      background-color: var(--surface-dark);
+      border-start-end-radius: var(--radius-6);
+      border-end-start-radius: var(--radius-6);
+      block-size: var(--size-8);
+      display: flex;
+      gap: var(--size-4);
+      padding-inline: var(--size-4);
+    }
+
+    .actions-indent {
+      background-color: var(--surface-dark);
+      position: absolute;
+    }
+
+    .actions-indent-tl {
+      block-size: 11px;
+      clip-path: path("M11 11C11 4.92487 6.07513 0 0 0H11V11Z");
+      inline-size: 11px;
+      inset-block-start: 0;
+      inset-inline-end: 100%;
+      position: absolute;
+    }
+
+    .actions-indent-br {
+      block-size: 12px;
+      clip-path: path("M12 12C12 5.37258 6.62742 0 0 0H12V12Z");
+      inline-size: 12px;
+      inset-block-start: 100%;
+      inset-inline-end: 0;
+      position: absolute;
+    }
+  }
+
   /* ─── Empty state ────────────────────────────────────────────────────────── */
 
   .empty-state {
@@ -409,7 +397,7 @@
       align-items: center;
       display: flex;
       flex-shrink: 0;
-      gap: var(--size-4);
+      gap: var(--size-3);
 
       h1 {
         color: var(--text-bright);
@@ -431,25 +419,18 @@
   }
 
   .badge {
-    background-color: color-mix(in srgb, var(--badge-color), transparent 88%);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--badge-color), var(--color-text) 35%);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.04em;
-    padding: 2px 6px;
-    text-transform: uppercase;
-  }
-
-  .official-badge {
-    --badge-color: var(--color-accent);
-  }
-
-  .header-actions {
+    --badge-bg-light: color-mix(in srgb, var(--purple-primary), transparent 94%);
+    --badge-bg-dark: color-mix(in srgb, var(--purple-primary), transparent 90%);
     align-items: center;
+    background-color: light-dark(var(--badge-bg-light), var(--badge-bg-dark));
+    border-radius: var(--radius-2-5);
+    block-size: var(--size-5-5);
     display: flex;
-    flex-shrink: 0;
-    gap: var(--size-2);
+    color: var(--purple-primary);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-5);
+    justify-content: center;
+    padding-inline: var(--size-2-5);
   }
 
   /* ─── Content ────────────────────────────────────────────────────────────── */
@@ -479,6 +460,10 @@
     line-height: var(--font-lineheight-3);
     margin: 0;
     max-inline-size: 72ch;
+
+    &.faded {
+      color: var(--text-faded);
+    }
   }
 
   /* ─── Transport ──────────────────────────────────────────────────────────── */
