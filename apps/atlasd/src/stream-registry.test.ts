@@ -129,6 +129,26 @@ describe("StreamRegistry", () => {
       const result = registry.appendEvent("chat-1", makeEvent(1));
       expect(result).toBe(false);
     });
+
+    // Identity check guards against cross-turn event leaks. The chatId-keyed
+    // lookup is shared across turns, so an aborted turn's late producer would
+    // otherwise write into the next turn's buffer — the UI then sees a
+    // text-delta with no preceding text-start and the AI SDK throws.
+    it("drops the event when expectedBuffer no longer matches the current buffer", () => {
+      const turn1 = registry.createStream("chat-1");
+      const turn2 = registry.createStream("chat-1"); // replaces turn1
+
+      const result = registry.appendEvent("chat-1", makeEvent(1), turn1);
+      expect(result).toBe(false);
+      expect(turn2.events).toHaveLength(0);
+    });
+
+    it("appends when expectedBuffer matches the current buffer", () => {
+      const turn = registry.createStream("chat-1");
+      const result = registry.appendEvent("chat-1", makeEvent(1), turn);
+      expect(result).toBe(true);
+      expect(turn.events).toHaveLength(1);
+    });
   });
 
   describe("buffer overflow", () => {
