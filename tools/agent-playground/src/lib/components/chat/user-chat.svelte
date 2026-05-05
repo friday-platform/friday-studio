@@ -1048,7 +1048,7 @@
       <button
         class="new-chat-button"
         onclick={() => {
-          window.location.href = `/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
+          window.location.href = `/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
         }}
       >Export chat</button>
       <button class="new-chat-button" onclick={startNewChat}>New Chat</button>
