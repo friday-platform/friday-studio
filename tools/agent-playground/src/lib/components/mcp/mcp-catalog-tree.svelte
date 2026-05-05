@@ -105,7 +105,6 @@
         return "color-mix(in srgb, var(--color-text), transparent 45%)";
     }
   }
-
 </script>
 
 <div class="catalog-tree">
@@ -142,10 +141,6 @@
             class:active={selectedServerId === server.id}
             onclick={() => onSelectServer(server.id)}
           >
-            <span
-              class="security-dot"
-              style:--dot-color={securityColor(server.securityRating)}
-            ></span>
             <span class="item-name">{server.name}</span>
             <span class="tag-pill">{sourceLabel(server.source)}</span>
           </button>
@@ -166,34 +161,38 @@
 
   .search-field {
     align-items: center;
-    background: var(--surface);
-    border: none;
-    border-radius: var(--radius-2);
+    background: var(--highlight);
+    border-radius: var(--radius-3);
+    block-size: var(--size-7-5);
     display: flex;
-    gap: var(--size-2);
-    padding: 0 var(--size-3);
+    gap: var(--size-1-5);
+    padding-inline: var(--size-3);
     transition: background-color 120ms ease;
-  }
 
-  .search-icon {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    display: flex;
-    flex-shrink: 0;
-  }
+    .search-icon {
+      color: var(--text-faded);
+      display: flex;
+      flex-shrink: 0;
+    }
 
-  .search-field input {
-    background: transparent;
-    border: none;
-    color: var(--color-text);
-    font-family: inherit;
-    font-size: var(--font-size-2);
-    inline-size: 100%;
-    outline: none;
-    padding: var(--size-2) 0;
-  }
+    input {
+      background: transparent;
+      block-size: 100%;
+      color: var(--text-bright);
+      font-family: inherit;
+      font-size: var(--font-size-3);
+      font-weight: var(--font-weight-4-5);
+      inline-size: 100%;
+      outline: none;
 
-  .search-field input::placeholder {
-    color: color-mix(in srgb, var(--color-text), transparent 70%);
+      &::placeholder {
+        color: var(--text-faded);
+      }
+    }
+
+    &:focus-within {
+      background: var(--highlight-bright);
+    }
   }
 
   /* ─── Tree sections ────────────────────────────────────────────────────── */
@@ -216,7 +215,7 @@
     align-items: center;
     background: none;
     block-size: var(--size-7-5);
-    border-radius: var(--radius-2);
+    border-radius: var(--radius-2-5);
     border: none;
     color: var(--text);
     cursor: pointer;
@@ -225,7 +224,7 @@
     font-weight: var(--font-weight-4-5);
     gap: var(--size-1-5);
     inline-size: 100%;
-    padding: var(--size-1) var(--size-2);
+    padding-inline: var(--size-3);
     text-align: start;
     transition: color 150ms ease;
   }
@@ -238,14 +237,6 @@
     background-color: var(--highlight);
     color: var(--text-bright);
     opacity: 1;
-  }
-
-  .security-dot {
-    background-color: var(--dot-color);
-    block-size: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    inline-size: 6px;
   }
 
   .item-name {
@@ -288,9 +279,10 @@
   }
 
   .tree-empty {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-size: var(--font-size-1);
-    margin: 0;
+    color: var(--text-faded);
+    font-size: var(--font-size-2);
     padding: var(--size-2) var(--size-1);
+    text-align: center;
+    word-break: break-all;
   }
 </style>
