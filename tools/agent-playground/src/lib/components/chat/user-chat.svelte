@@ -131,6 +131,115 @@
 
   let error: string | null = $state(null);
 
+  /**
+   * Resume budget for the current turn. Chrome's fetch streaming kills
+   * long-running responses at ~50–60s with `TypeError: network error` even
+   * when the server is healthy and bytes are flowing (verified empirically
+   * — comment-line keepalives, data-frame keepalives, and 5s/15s ping
+   * cadences all hit the same wall; same daemon over curl runs 85s+ fine).
+   * When that happens mid-turn, transparently call `chat.resumeStream()` —
+   * the server's StreamRegistry has the buffered events from the original
+   * turn and replays them past `lastSeenEventId` (see fetch wrapper below).
+   * A 2-min tool call across 30–60s connections needs ≥3 resumes; we keep
+   * a generous budget so a slow tool isn't silently truncated, but cap it
+   * to avoid infinite loops if the server is genuinely down.
+   */
+  const MAX_TURN_RESUMES = 20;
+  let resumeAttempts = $state(0);
+
+  /**
+   * Highest SSE `id:` line seen on the active turn's response stream(s).
+   * Sent back as `Last-Event-ID` on resume so the server replays only
+   * events past this cursor — without it, full replay re-emits text-delta
+   * chunks the AI SDK has already merged into the in-flight assistant
+   * message, producing duplicated content. Reset on every fresh turn.
+   */
+  let lastSeenEventId: number | undefined = $state(undefined);
+
+  /**
+   * `fetch` wrapper for the AI SDK's `DefaultChatTransport`. Two hooks:
+   *
+   *   1. Outgoing: when calling the resume endpoint (`GET …/stream`),
+   *      attach `Last-Event-ID: <lastSeenEventId>` so the server skips
+   *      events the client has already rendered.
+   *
+   *   2. Incoming: pipe the response body through a `TransformStream`
+   *      that scans for SSE `id: <n>` lines and updates `lastSeenEventId`
+   *      to the highest seen. The bytes pass through unchanged so the
+   *      AI SDK parser sees the same payload it always has — its
+   *      `parseJsonEventStream` only consumes `data:` lines and ignores
+   *      `id:`, which is why we have to track the cursor ourselves.
+   *
+   * Cursor-commit timing matters: an SSE event is `id: N\ndata: {…}\n\n`
+   * and the empty line is the dispatch boundary. We must only commit
+   * `lastSeenEventId = N` AFTER the empty line passes through — otherwise
+   * a connection drop between `id: N\n` and `data:`/terminator leaves the
+   * AI SDK without event N (it's still buffering in eventsource-parser),
+   * but our cursor already advanced past it. Resume then skips event N on
+   * the server side and the SDK throws "tool-input-delta for missing tool
+   * call with ID …" → error → resume → loop. Tracking a `pendingId` and
+   * promoting it on the empty-line terminator fixes this race.
+   */
+  const trackingFetch = (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
+    const isResumeReq =
+      typeof input === "string" || input instanceof URL
+        ? String(input).endsWith("/stream")
+        : input.url.endsWith("/stream");
+    let mergedInit = init;
+    if (isResumeReq && lastSeenEventId !== undefined) {
+      const headers = new Headers(init?.headers);
+      headers.set("Last-Event-ID", String(lastSeenEventId));
+      mergedInit = { ...init, headers };
+    }
+    return fetch(input as RequestInfo, mergedInit).then((response) => {
+      // Pass-through for non-success and bodyless responses. The
+      // null-body status check (204 No Content, 205 Reset, 304 Not
+      // Modified) matters because constructing `new Response(stream,
+      // {status: 204})` throws "Response with null body status cannot
+      // have body" — and the resume endpoint returns 204 when the chat
+      // has already finished, which we'd otherwise wrap on rehydrate.
+      const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
+      if (!response.ok || !response.body || NULL_BODY_STATUS.has(response.status)) {
+        return response;
+      }
+      const decoder = new TextDecoder();
+      let textBuf = "";
+      let pendingId: number | undefined;
+      const tracker = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          textBuf += decoder.decode(chunk, { stream: true });
+          let nl = textBuf.indexOf("\n");
+          while (nl !== -1) {
+            const line = textBuf.slice(0, nl);
+            textBuf = textBuf.slice(nl + 1);
+            if (line === "") {
+              // SSE event terminator: pendingId's full event has now been
+              // forwarded downstream. Safe to commit the cursor.
+              if (pendingId !== undefined) {
+                if (lastSeenEventId === undefined || pendingId > lastSeenEventId) {
+                  lastSeenEventId = pendingId;
+                }
+                pendingId = undefined;
+              }
+            } else if (line.startsWith("id:")) {
+              // SSE id field: 'id: <value>' (whitespace after colon optional
+              // per spec). Non-negative integer only — the server emits
+              // indices into its events buffer.
+              const raw = line.slice(3).trim();
+              const id = Number.parseInt(raw, 10);
+              if (Number.isFinite(id) && id >= 0) {
+                pendingId = id;
+              }
+            }
+            nl = textBuf.indexOf("\n");
+          }
+          controller.enqueue(chunk);
+        },
+      });
+      return new Response(response.body.pipeThrough(tracker), response);
+    });
+  };
+
 
 
   /**
@@ -318,9 +427,12 @@
 
   // Transport — re-derived when CHAT_API / prepareSendMessagesRequest would
   // change. Both are stable in this component so it effectively fires once.
+  // The custom `fetch` wrapper above tracks SSE event ids and threads
+  // `Last-Event-ID` onto resume requests so cursored replay works.
   const transport = $derived(
     new DefaultChatTransport({
       api: CHAT_API,
+      fetch: trackingFetch,
       prepareSendMessagesRequest({ messages: msgs, id }) {
         // The Atlas web adapter only needs the latest message plus the
         // chatId and optional datetime context — it pulls history server-
@@ -394,10 +506,27 @@
   // only when there's no in-message error bubble for this turn. Session
   // failures (e.g. invalid model) arrive via BOTH a `data-error` chunk and
   // a rejected transport promise — rendering both is noisy duplication.
+  //
+  // Mid-turn fetch drops (Chrome's ~50s streaming cap) get an extra step:
+  // try `resumeStream()` against the server's buffered StreamRegistry
+  // before surfacing the error. Each user message gets MAX_TURN_RESUMES
+  // attempts; persistent failures fall through to the banner so the user
+  // isn't stuck in a silent loop on a genuinely broken server.
   $effect(() => {
     if (!chat?.error) return;
     const last = chat.messages.at(-1);
     if (last && last.role === "assistant" && hasErrorPart(last as AtlasUIMessage)) {
+      return;
+    }
+    if (resumeAttempts < MAX_TURN_RESUMES) {
+      const instance = chat;
+      resumeAttempts++;
+      instance.clearError();
+      instance.resumeStream().catch(() => {
+        // Resume itself failed (server gone, 4xx, replayDisabled buffer,
+        // etc.). The next $effect tick will re-enter with the new error;
+        // if the budget is now exhausted it falls through to the banner.
+      });
       return;
     }
     error = chat.error.message;
@@ -1016,6 +1145,8 @@
     if (!chat) return;
     error = null;
     wasInterrupted = false;
+    resumeAttempts = 0;
+    lastSeenEventId = undefined;
 
     // Merge images from the input component + any dropped on the chat area
     const allImages = [...inputImages, ...pendingImages];

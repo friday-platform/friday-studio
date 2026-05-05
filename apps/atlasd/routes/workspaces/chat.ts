@@ -156,9 +156,23 @@ const workspaceChatRoutes = daemonFactory
 
     c.header("X-Turn-Started-At", String(buffer.createdAt));
 
+    // Honor `Last-Event-ID`: the client tracks SSE `id:` lines from the
+    // initial POST response and sends the highest one back when resuming.
+    // We replay only events past that cursor — full replay would re-emit
+    // text-delta chunks the AI SDK has already merged into the in-flight
+    // assistant message, producing visibly duplicated text.
+    const lastEventIdHeader = c.req.header("Last-Event-ID");
+    let lastEventId: number | undefined;
+    if (lastEventIdHeader !== undefined) {
+      const parsed = Number.parseInt(lastEventIdHeader, 10);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        lastEventId = parsed;
+      }
+    }
+
     const readableStream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const subscribed = ctx.streamRegistry.subscribe(chatId, controller);
+        const subscribed = ctx.streamRegistry.subscribe(chatId, controller, lastEventId);
         if (!subscribed) {
           controller.close();
           return;

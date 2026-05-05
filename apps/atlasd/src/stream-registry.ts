@@ -83,6 +83,45 @@ export interface StreamBuffer {
   createdAt: number;
   lastEventAt: number;
   subscribers: Set<StreamController>;
+  /**
+   * Map of `${kind}:${id}` → events-array index of the `*-start` chunk
+   * for parts that are still in flight (no matching `*-end` /
+   * `*-output-available` / `*-output-error` yet). Used to re-emit the
+   * `*-start` on resume even when its original index is before the
+   * client's cursor — the AI SDK's `resumeStream()` creates a *fresh*
+   * `activeResponse` state on reconnect, so its `activeToolInputs` /
+   * `activeTextParts` maps are empty. Without re-emit, the first
+   * `*-delta` past the cursor trips the SDK's "delta for missing part"
+   * validator and the turn errors out.
+   */
+  openParts: Map<string, number>;
+}
+
+/**
+ * Type-safe extraction of `(kind, id)` from chunks that open or close a
+ * UI message part. We treat tool calls (`tool-input-start` opens, both
+ * `tool-output-available` and `tool-output-error` close) and any
+ * `*-start`/`*-end` pair (text, reasoning) symmetrically. Returning
+ * `null` for chunks we don't track keeps `appendEvent`'s switch tight.
+ */
+function partKey(event: AtlasUIMessageChunk): { key: string; opens: boolean } | null {
+  switch (event.type) {
+    case "text-start":
+      return { key: `text:${event.id}`, opens: true };
+    case "text-end":
+      return { key: `text:${event.id}`, opens: false };
+    case "reasoning-start":
+      return { key: `reasoning:${event.id}`, opens: true };
+    case "reasoning-end":
+      return { key: `reasoning:${event.id}`, opens: false };
+    case "tool-input-start":
+      return { key: `tool:${event.toolCallId}`, opens: true };
+    case "tool-output-available":
+    case "tool-output-error":
+      return { key: `tool:${event.toolCallId}`, opens: false };
+    default:
+      return null;
+  }
 }
 
 export class StreamRegistry {
@@ -177,6 +216,7 @@ export class StreamRegistry {
       createdAt: now,
       lastEventAt: now,
       subscribers: new Set(),
+      openParts: new Map(),
     };
 
     this.streams.set(chatId, buffer);
@@ -243,15 +283,43 @@ export class StreamRegistry {
         }
       }
     }
+    let frameId: number | undefined;
     if (!buffer.replayDisabled) {
       buffer.events.push(event);
       this.totalEvents++;
+      // The event's index in `events[]` is its monotonic frame id. The wire
+      // format below emits this as the SSE `id:` line so clients can resume
+      // mid-turn via `Last-Event-ID` and replay only events past their cursor
+      // — without that, full replay re-emits already-seen text-delta chunks
+      // and the AI SDK appends them to the same text part, producing visibly
+      // duplicated message content.
+      frameId = buffer.events.length - 1;
+
+      // Track which parts are currently open so a resume past the cursor
+      // can re-emit their `*-start` chunks. See `subscribe()` for the
+      // replay-on-resume logic and {@link partKey} for which chunks open
+      // or close a part.
+      const part = partKey(event);
+      if (part !== null) {
+        if (part.opens) {
+          buffer.openParts.set(part.key, frameId);
+        } else {
+          buffer.openParts.delete(part.key);
+        }
+      }
     }
     buffer.lastEventAt = Date.now();
 
     // Broadcast to all subscribers regardless of buffer state — they've
     // already seen every prior event and can keep processing this one.
-    const data = StreamRegistry.ENCODER.encode(`data: ${JSON.stringify(event)}\n\n`);
+    // When replay is disabled (post-overflow buffer), we omit the `id:`
+    // line: replay is refused for these buffers anyway, so the cursor
+    // would never be honored, and emitting a stale id is misleading.
+    const data = StreamRegistry.ENCODER.encode(
+      frameId !== undefined
+        ? `id: ${frameId}\ndata: ${JSON.stringify(event)}\n\n`
+        : `data: ${JSON.stringify(event)}\n\n`,
+    );
 
     for (const controller of buffer.subscribers) {
       try {
@@ -265,21 +333,76 @@ export class StreamRegistry {
   }
 
   /**
-   * Subscribe a controller to a stream. Replays all buffered events immediately.
-   * Returns false if stream doesn't exist, is already finished, or replay was
+   * Subscribe a controller to a stream. Replays buffered events past the
+   * given `lastEventId` cursor, or all of them when omitted.
+   *
+   * Cursor semantics: `lastEventId` is the highest frame id the client has
+   * already seen (matches the SSE `id:` lines we emit in `appendEvent`).
+   * Replay starts at `lastEventId + 1` and continues to the buffer tail —
+   * the live broadcast then takes over for events arriving after subscribe
+   * returns. Without a cursor, full replay re-sends `text-delta` chunks the
+   * client already rendered, and the AI SDK accumulates them into the same
+   * text part, producing duplicated message content.
+   *
+   * Returns false if the stream doesn't exist, has finished, or replay was
    * disabled after a buffer overflow (replay would corrupt the UI message
    * protocol state on the joining client).
    */
-  subscribe(chatId: string, controller: StreamController): boolean {
+  subscribe(chatId: string, controller: StreamController, lastEventId?: number): boolean {
     const buffer = this.streams.get(chatId);
     if (!buffer?.active || buffer.replayDisabled) {
       return false;
     }
 
-    // Replay buffered events to this subscriber
-    for (const event of buffer.events) {
+    const startIdx =
+      lastEventId !== undefined && Number.isFinite(lastEventId)
+        ? Math.max(0, lastEventId + 1)
+        : 0;
+
+    // On a cursor-based resume (startIdx > 0), re-emit any `*-start`
+    // chunks for parts that are still open and whose start index is
+    // before the cursor. The AI SDK's `resumeStream()` creates a fresh
+    // `activeResponse` state on reconnect, so without this re-emit a
+    // `*-delta` past the cursor would arrive at an empty
+    // `activeToolInputs` / `activeTextParts` map and trip the
+    // "delta for missing part" validator.
+    //
+    // We emit each open `*-start` chunk with its ORIGINAL frame id so
+    // the client's cursor doesn't regress (the tracker only advances on
+    // higher ids). Replaying with a fresh id would also work, but using
+    // the original keeps the SSE id sequence honest about where each
+    // event came from.
+    if (startIdx > 0) {
+      const openIndicesBeforeCursor: number[] = [];
+      for (const startIndex of buffer.openParts.values()) {
+        if (startIndex < startIdx) openIndicesBeforeCursor.push(startIndex);
+      }
+      // Sort ascending so dependent parts (e.g. nested text inside a
+      // parent step) are opened in the same order the client originally
+      // saw them. Map iteration order is insertion order so this is a
+      // safety belt rather than a strict requirement.
+      openIndicesBeforeCursor.sort((a, b) => a - b);
+      for (const i of openIndicesBeforeCursor) {
+        const event = buffer.events[i];
+        if (event === undefined) continue;
+        try {
+          const data = StreamRegistry.ENCODER.encode(
+            `id: ${i}\ndata: ${JSON.stringify(event)}\n\n`,
+          );
+          controller.enqueue(data);
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    for (let i = startIdx; i < buffer.events.length; i++) {
+      const event = buffer.events[i];
+      if (event === undefined) continue;
       try {
-        const data = StreamRegistry.ENCODER.encode(`data: ${JSON.stringify(event)}\n\n`);
+        const data = StreamRegistry.ENCODER.encode(
+          `id: ${i}\ndata: ${JSON.stringify(event)}\n\n`,
+        );
         controller.enqueue(data);
       } catch {
         // Controller closed during replay
@@ -288,7 +411,13 @@ export class StreamRegistry {
     }
 
     buffer.subscribers.add(controller);
-    logger.debug("Subscriber added", { chatId, subscriberCount: buffer.subscribers.size });
+    logger.debug("Subscriber added", {
+      chatId,
+      subscriberCount: buffer.subscribers.size,
+      replayedFrom: startIdx,
+      replayedThrough: buffer.events.length - 1,
+      reEmittedOpenParts: startIdx > 0 ? buffer.openParts.size : 0,
+    });
     return true;
   }
 
