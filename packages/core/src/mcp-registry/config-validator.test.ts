@@ -621,6 +621,31 @@ describe("validateWorkspaceConfig", () => {
       expect(issue?.value).toBe("");
     });
 
+    it("rejects Object.prototype property names (prototype-chain bypass)", async () => {
+      // Regression: `id in registry` walks the prototype chain, so without
+      // own-property checking, `agent: "toString"`, `"constructor"`,
+      // `"hasOwnProperty"` etc. silently passed against a plain-object
+      // registry. Same shape as the silent-failure bug this pass prevents.
+      const protoNames = ["toString", "constructor", "hasOwnProperty", "valueOf"];
+      for (const name of protoNames) {
+        const config = makeConfig({
+          agents: { broken: { type: "atlas", agent: name, description: "x", prompt: "..." } },
+          signals: { tick: { provider: "http", config: { path: "/tick" } } },
+          jobs: {
+            run: {
+              triggers: [{ signal: "tick" }],
+              execution: { strategy: "sequential", agents: ["broken"] },
+            },
+          },
+        } as never);
+        const report = await validateWorkspaceConfig(config, makeCtx());
+        expect(
+          report.issues.find((i) => i.code === "unknown_bundled_agent" && i.value === name),
+          `expected '${name}' to be rejected`,
+        ).toBeDefined();
+      }
+    });
+
     it("suggests a near-match when the agent id is a typo", async () => {
       const config = makeConfig({
         agents: {

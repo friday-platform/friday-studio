@@ -363,6 +363,11 @@ function checkFsmStructures(config: WorkspaceConfig): ValidationIssue[] {
 function checkBundledAgentRefs(config: WorkspaceConfig): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const knownIds = Object.keys(bundledAgentsRegistry);
+  // Use a Set rather than `id in bundledAgentsRegistry` — the `in` operator
+  // walks the prototype chain, which would silently accept `agent: "toString"`,
+  // `agent: "constructor"`, `agent: "hasOwnProperty"`, etc. That's the same
+  // shape of silent-pass bug this whole pass exists to prevent.
+  const knownIdSet = new Set(knownIds);
 
   for (const [agentName, agent] of Object.entries(config.agents ?? {})) {
     const agentRecord = agent as { type?: unknown; agent?: unknown };
@@ -373,7 +378,7 @@ function checkBundledAgentRefs(config: WorkspaceConfig): ValidationIssue[] {
     // skipping (which is how the original `agent: "email"` regression
     // landed in production).
     if (typeof baseId !== "string") continue;
-    if (baseId in bundledAgentsRegistry) continue;
+    if (knownIdSet.has(baseId)) continue;
     issues.push({
       severity: "error",
       code: "unknown_bundled_agent",

@@ -1482,6 +1482,8 @@ export class AtlasDaemon {
               ...workspace.metadata,
               lastError,
               lastErrorAt: new Date().toISOString(),
+              // Counts load attempts that hit failures, not unique failures.
+              // A daemon restart on the same broken yml bumps it again.
               failureCount: (workspace.metadata?.failureCount ?? 0) + 1,
             },
           });
