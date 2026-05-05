@@ -225,12 +225,21 @@ Mount: `/api/activity`. Auth required.
 
 ## Daemon
 
-- `GET /api/daemon/status` — `{ status, activeWorkspaces, uptime, timestamp, version, memoryUsage, workspaces }`
+- `GET /api/daemon/status` — `{ status, activeWorkspaces, uptime, timestamp, version, memoryUsage, workspaces, cronManager, cascadeConsumer, migrations, configuration }`. `cascadeConsumer` is `{ inFlight, cap, saturated }` — point-in-time view of the CASCADES dispatch buffer.
 - `POST /api/daemon/shutdown` — initiates after 100ms delay
 
 ## Health
 
 - `GET /health` — `{ activeWorkspaces, uptime, timestamp, version }` (no `/api` prefix)
+
+## Instance events
+
+Operational feed of cross-workspace cascade events
+(`cascade.queue_saturated`, `cascade.queue_drained`, `cascade.queue_timeout`, `cascade.replaced`).
+Backed by the `INSTANCE_EVENTS` JetStream stream (Limits retention, 7-day max_age).
+
+- `GET /api/instance/events?stream=true&type=<filter>` — SSE feed; subscribes to `instance.>` (or `instance.<filter>` if `type` set) and forwards each event as a `data:` frame. UI consumers don't poll.
+- `GET /api/instance/events?since=<seq>&type=<filter>&limit=<n>` — replay; returns `{ events: [...] }` (newest first). Use for late joiners and reload-after-disconnect.
 
 ## Share / report
 
