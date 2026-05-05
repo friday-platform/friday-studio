@@ -134,17 +134,23 @@
   let error: string | null = $state(null);
 
   /**
-   * Resume budget for the current turn. Chrome's fetch streaming kills
-   * long-running responses at ~50–60s with `TypeError: network error` even
-   * when the server is healthy and bytes are flowing (verified empirically
-   * — comment-line keepalives, data-frame keepalives, and 5s/15s ping
-   * cadences all hit the same wall; same daemon over curl runs 85s+ fine).
-   * When that happens mid-turn, transparently call `chat.resumeStream()` —
-   * the server's StreamRegistry has the buffered events from the original
-   * turn and replays them past `lastSeenEventId` (see fetch wrapper below).
-   * A 2-min tool call across 30–60s connections needs ≥3 resumes; we keep
-   * a generous budget so a slow tool isn't silently truncated, but cap it
-   * to avoid infinite loops if the server is genuinely down.
+   * Bound on consecutive no-progress resume attempts within a single turn.
+   * Chrome's fetch streaming caps long-running responses at ~50–60s with
+   * `TypeError: network error` even when the server is healthy and bytes
+   * are flowing — comment-line keepalives, data-frame keepalives, and
+   * 5s/15s ping cadences all hit the same wall (same daemon over curl
+   * runs 85s+ fine). On `chat.error` mid-turn, `trackingFetch` plus the
+   * resume effect transparently call `chat.resumeStream()` against the
+   * server's StreamRegistry, which replays buffered events past
+   * `lastSeenEventId`.
+   *
+   * The budget is a tight-loop guard, not a turn-length guillotine: see
+   * `nextResumeBudgetStep` in `resume-budget.ts`. When the cursor advances
+   * between failures, the previous resume actually delivered events and
+   * the next failure is a NEW Chrome cap — `resumeAttempts` resets so a
+   * 25-minute tool call across 30+ caps doesn't run out at minute ~17.
+   * Only consecutive failures with no cursor advancement count toward
+   * exhaustion.
    */
   const MAX_TURN_RESUMES = 20;
   let resumeAttempts = $state(0);

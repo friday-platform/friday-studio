@@ -69,6 +69,23 @@ describe("nextResumeBudgetStep", () => {
     expect(step.nextResumeAttempts).toBe(8);
   });
 
+  it("does not reset when a lower id arrives mid-replay (re-emit, not progress)", () => {
+    // The server re-emits open `*-start` chunks with their ORIGINAL frame
+    // ids on resume — so cursor 30 followed by cursor 25 (an `*-start`
+    // re-emit during the next resume) is NOT forward progress, it's
+    // bookkeeping. The strict-greater check rules out this regression
+    // case. Without it the budget would reset on every cap cycle even
+    // when the resume only got the re-emit through before dying.
+    const step = nextResumeBudgetStep({
+      lastSeenEventId: 25,
+      lastSeenEventIdAtLastFailure: 30,
+      resumeAttempts: 5,
+      maxTurnResumes: MAX,
+    });
+    expect(step.nextResumeAttempts).toBe(6);
+    expect(step.shouldResume).toBe(true);
+  });
+
   it("treats first-defined-cursor failure as forward progress", () => {
     // Edge case: previous failure had no cursor (transport died before
     // any event), this failure has cursor=10 (the resume succeeded enough

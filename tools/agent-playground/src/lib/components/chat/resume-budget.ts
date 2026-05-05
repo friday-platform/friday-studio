@@ -58,17 +58,23 @@ export interface ResumeBudgetStep {
 /**
  * Compute the next step for the resume budget on a fresh `chat.error`.
  *
- * Forward-progress detection: `lastSeenEventId` is strictly different from
- * the cursor we recorded at the previous failure AND the current cursor is
- * defined. The "defined" check matters because an unset cursor at the first
- * failure of the turn is NOT progress over an unset cursor at the previous
- * failure (both are undefined; comparison would falsely report a reset).
+ * Forward-progress detection: the current cursor is defined AND either
+ * (a) the previous failure had no cursor (first defined-cursor failure
+ * of the turn is itself progress over the unset baseline) or (b) the
+ * current cursor is strictly greater than the previous one. The strict
+ * inequality matters because the StreamRegistry re-emits open `*-start`
+ * chunks with their ORIGINAL frame ids on resume — a lower id arriving
+ * mid-replay is NOT progress, just bookkeeping. The "defined" check on
+ * `lastSeenEventId` removes the undefined→undefined false positive at
+ * the very first failure of a turn that died before any event arrived.
  */
 export function nextResumeBudgetStep(input: ResumeBudgetInput): ResumeBudgetStep {
   const { lastSeenEventId, lastSeenEventIdAtLastFailure, resumeAttempts, maxTurnResumes } = input;
 
   const madeForwardProgress =
-    lastSeenEventId !== undefined && lastSeenEventId !== lastSeenEventIdAtLastFailure;
+    lastSeenEventId !== undefined &&
+    (lastSeenEventIdAtLastFailure === undefined ||
+      lastSeenEventId > lastSeenEventIdAtLastFailure);
 
   const baselineAttempts = madeForwardProgress ? 0 : resumeAttempts;
 
