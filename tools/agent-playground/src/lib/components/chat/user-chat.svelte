@@ -11,6 +11,7 @@
   import ChatInspector from "./chat-inspector.svelte";
   import ChatListPanel from "./chat-list-panel.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
+  import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
   import { extractToolCalls, flattenToolCalls } from "./extract-tool-calls.ts";
@@ -157,90 +158,21 @@
   let lastSeenEventId: number | undefined = $state(undefined);
 
   /**
-   * `fetch` wrapper for the AI SDK's `DefaultChatTransport`. Two hooks:
-   *
-   *   1. Outgoing: when calling the resume endpoint (`GET …/stream`),
-   *      attach `Last-Event-ID: <lastSeenEventId>` so the server skips
-   *      events the client has already rendered.
-   *
-   *   2. Incoming: pipe the response body through a `TransformStream`
-   *      that scans for SSE `id: <n>` lines and updates `lastSeenEventId`
-   *      to the highest seen. The bytes pass through unchanged so the
-   *      AI SDK parser sees the same payload it always has — its
-   *      `parseJsonEventStream` only consumes `data:` lines and ignores
-   *      `id:`, which is why we have to track the cursor ourselves.
-   *
-   * Cursor-commit timing matters: an SSE event is `id: N\ndata: {…}\n\n`
-   * and the empty line is the dispatch boundary. We must only commit
-   * `lastSeenEventId = N` AFTER the empty line passes through — otherwise
-   * a connection drop between `id: N\n` and `data:`/terminator leaves the
-   * AI SDK without event N (it's still buffering in eventsource-parser),
-   * but our cursor already advanced past it. Resume then skips event N on
-   * the server side and the SDK throws "tool-input-delta for missing tool
-   * call with ID …" → error → resume → loop. Tracking a `pendingId` and
-   * promoting it on the empty-line terminator fixes this race.
+   * `fetch` wrapper for the AI SDK's `DefaultChatTransport`. Threads
+   * `Last-Event-ID` onto resume requests and tracks SSE event ids in the
+   * response stream so cursored replay works. See
+   * {@link createCursorTrackingFetch} for the wire-level details.
    */
-  const trackingFetch = (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
-    const isResumeReq =
+  const trackingFetch = createCursorTrackingFetch({
+    getCursor: () => lastSeenEventId,
+    setCursor: (value) => {
+      lastSeenEventId = value;
+    },
+    isResumeRequest: (input) =>
       typeof input === "string" || input instanceof URL
         ? String(input).endsWith("/stream")
-        : input.url.endsWith("/stream");
-    let mergedInit = init;
-    if (isResumeReq && lastSeenEventId !== undefined) {
-      const headers = new Headers(init?.headers);
-      headers.set("Last-Event-ID", String(lastSeenEventId));
-      mergedInit = { ...init, headers };
-    }
-    return fetch(input as RequestInfo, mergedInit).then((response) => {
-      // Pass-through for non-success and bodyless responses. The
-      // null-body status check (204 No Content, 205 Reset, 304 Not
-      // Modified) matters because constructing `new Response(stream,
-      // {status: 204})` throws "Response with null body status cannot
-      // have body" — and the resume endpoint returns 204 when the chat
-      // has already finished, which we'd otherwise wrap on rehydrate.
-      const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
-      if (!response.ok || !response.body || NULL_BODY_STATUS.has(response.status)) {
-        return response;
-      }
-      const decoder = new TextDecoder();
-      let textBuf = "";
-      let pendingId: number | undefined;
-      const tracker = new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          textBuf += decoder.decode(chunk, { stream: true });
-          let nl = textBuf.indexOf("\n");
-          while (nl !== -1) {
-            const line = textBuf.slice(0, nl);
-            textBuf = textBuf.slice(nl + 1);
-            if (line === "") {
-              // SSE event terminator: pendingId's full event has now been
-              // forwarded downstream. Safe to commit the cursor.
-              if (pendingId !== undefined) {
-                if (lastSeenEventId === undefined || pendingId > lastSeenEventId) {
-                  lastSeenEventId = pendingId;
-                }
-                pendingId = undefined;
-              }
-            } else if (line.startsWith("id:")) {
-              // SSE id field: 'id: <value>' (whitespace after colon optional
-              // per spec). Non-negative integer only — the server emits
-              // indices into its events buffer.
-              const raw = line.slice(3).trim();
-              const id = Number.parseInt(raw, 10);
-              if (Number.isFinite(id) && id >= 0) {
-                pendingId = id;
-              }
-            }
-            nl = textBuf.indexOf("\n");
-          }
-          controller.enqueue(chunk);
-        },
-      });
-      return new Response(response.body.pipeThrough(tracker), response);
-    });
-  };
-
-
+        : input.url.endsWith("/stream"),
+  });
 
   /**
    * Cached geolocation — requested once on first chat message. The browser
