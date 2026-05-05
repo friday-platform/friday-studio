@@ -101,45 +101,61 @@
     if (!browser) return;
 
     let cancelled = false;
+    let es: EventSource | null = null;
 
-    // Hydrate first: scan recent cascade events to find the latest
-    // saturated/drained pair. Walks newest-first, so the first
-    // saturated/drained match wins. If the latest is a saturated
-    // without a later drained, we render the banner immediately on
-    // mount (no waiting for the next SSE publish).
+    // Hydrate FIRST, then open the SSE stream. Awaiting the replay
+    // resolves the ordering race where a `cascade.queue_drained`
+    // arrives over SSE before the hydrate's older snapshot lands —
+    // the snapshot would otherwise clobber the fresher SSE state and
+    // re-render a banner that should be cleared. The blind window
+    // equals hydrate latency (single round-trip to the local daemon),
+    // which is acceptable for cascade events.
     void (async () => {
       try {
         const res = await fetch("/api/daemon/api/instance/events?type=cascade.&limit=50");
-        if (!res.ok || cancelled) return;
-        const { events } = ReplayResponseSchema.parse(await res.json());
-        for (const ev of events) {
-          if (ev.type === "cascade.queue_saturated") {
-            saturatedState = ev;
-            break;
-          }
-          if (ev.type === "cascade.queue_drained") {
-            saturatedState = null;
-            break;
+        if (cancelled) return;
+        if (res.ok) {
+          const json = await res.json();
+          if (cancelled) return;
+          const parsed = ReplayResponseSchema.safeParse(json);
+          if (parsed.success) {
+            for (const ev of parsed.data.events) {
+              if (ev.type === "cascade.queue_saturated") {
+                saturatedState = ev;
+                break;
+              }
+              if (ev.type === "cascade.queue_drained") {
+                saturatedState = null;
+                break;
+              }
+            }
           }
         }
       } catch (err) {
         console.error("Failed to hydrate cascade state", err);
       }
-    })();
 
-    const es = new EventSource("/api/daemon/api/instance/events?stream=true");
-    es.addEventListener("message", (e) => {
-      try {
-        const parsed = InstanceEventSchema.safeParse(JSON.parse(e.data));
-        if (parsed.success) applyEvent(parsed.data);
-      } catch (err) {
-        console.error("Failed to parse instance SSE event", err);
-      }
-    });
+      if (cancelled) return;
+      es = new EventSource("/api/daemon/api/instance/events?stream=true");
+      es.addEventListener("message", (e) => {
+        try {
+          const parsed = InstanceEventSchema.safeParse(JSON.parse(e.data));
+          if (parsed.success) applyEvent(parsed.data);
+        } catch (err) {
+          console.error("Failed to parse instance SSE event", err);
+        }
+      });
+      // EventSource auto-reconnects on transient errors; surfacing
+      // them gives a developer running the playground a console
+      // signal that the live feed has stopped delivering.
+      es.addEventListener("error", () => {
+        console.error("Cascade SSE feed errored (EventSource will retry)");
+      });
+    })();
 
     return () => {
       cancelled = true;
-      es.close();
+      es?.close();
     };
   });
 </script>

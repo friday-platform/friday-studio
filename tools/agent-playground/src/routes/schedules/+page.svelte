@@ -96,6 +96,12 @@
   $effect(() => {
     if (!browser) return;
     const es = new EventSource("/api/daemon/api/events?stream=true");
+    es.addEventListener("error", () => {
+      // EventSource auto-reconnects; surfacing the error so a stale
+      // `/schedules` view is at least visible in devtools when the
+      // daemon's NATS connection is down or the SSE route 503s.
+      console.error("Schedules SSE feed errored (EventSource will retry)");
+    });
     es.addEventListener("message", (e) => {
       let parsed: ScheduleMissedEvent;
       try {

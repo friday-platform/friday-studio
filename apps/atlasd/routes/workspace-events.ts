@@ -156,8 +156,18 @@ export const eventsRoutes = daemonFactory
               controller.enqueue(enc.encode(`data: ${payload}\n\n`));
             }
           } catch {
-            // subscription closed — fall through to controller.close()
+            // for-await exited early — most often because the SSE
+            // controller threw in `enqueue` after the consumer cancelled
+            // (e.g. browser closed the EventSource). The abort listener
+            // normally tears down the NATS subscription on its own, but
+            // controller-cancel can land first; defense-in-depth in the
+            // finally below ensures we never leak the subscription.
           } finally {
+            try {
+              sub.unsubscribe();
+            } catch {
+              // already gone — abort listener fired first
+            }
             try {
               controller.close();
             } catch {
