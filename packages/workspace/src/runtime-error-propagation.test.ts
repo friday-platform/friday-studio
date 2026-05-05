@@ -139,6 +139,108 @@ describe("session error propagation", () => {
     expect(session.error).toBeUndefined();
   });
 
+  it("cancelSession unblocks the await even when engine.signal ignores AbortSignal", async () => {
+    // Repro: a workspace agent makes a blocking call (e.g. a fetch with no
+    // signal piped through) so `engine.signal` never settles. Without the
+    // `awaitWithAbort` race in processSignalForJob, `cancelSession` aborts
+    // the per-session controller but the await stays pending, the
+    // `activeAbortControllers` entry never clears, and the cascade-stream
+    // in-flight slot stays pinned — so the next trigger of the same signal
+    // hits skipped-duplicate forever. The fix: cancel must complete the
+    // outer await within ~1 tick of `controller.abort()` regardless of
+    // what the engine is doing inside.
+    await withTestRuntime(createSuccessConfig(), async (runtime) => {
+      // Hijack the FSM engine's signal method on the *next* engine the
+      // runtime creates so it returns a never-settling promise but exposes
+      // its onEvent / onStreamEvent callbacks to the test. Wrapping
+      // createJobEngine is the smallest seam — every signal trigger goes
+      // through it once. createJobEngine is private; cast via unknown.
+      const captured: { onEvent?: (e: unknown) => void; onStreamEvent?: (c: unknown) => void } = {};
+      const r = runtime as unknown as {
+        createJobEngine: (
+          ...args: unknown[]
+        ) => Promise<{ engine: { signal: (...args: unknown[]) => unknown } }>;
+      };
+      const original = r.createJobEngine.bind(r);
+      r.createJobEngine = async (...args: unknown[]) => {
+        const result = await original(...args);
+        result.engine.signal = (...args: unknown[]) => {
+          const ctx = args[1] as
+            | { onEvent?: (e: unknown) => void; onStreamEvent?: (c: unknown) => void }
+            | undefined;
+          captured.onEvent = ctx?.onEvent;
+          captured.onStreamEvent = ctx?.onStreamEvent;
+          return new Promise(() => {});
+        };
+        return result;
+      };
+
+      // Capture stream events emitted to the SSE-style outer callback so we
+      // can assert later events from the orphan engine are dropped.
+      const outerEvents: Array<{ type: string }> = [];
+      const sessionPromise = runtime.triggerSignalWithSession(
+        "test-signal",
+        {},
+        undefined,
+        (chunk) => {
+          outerEvents.push(chunk as { type: string });
+        },
+        undefined,
+        undefined,
+      );
+
+      // Wait until the controller is registered, then cancel.
+      const start = Date.now();
+      let activeId: string | undefined;
+      while (Date.now() - start < 5_000) {
+        const ids = (runtime as unknown as { activeAbortControllers: Map<string, unknown> })
+          .activeAbortControllers;
+        const first = ids.keys().next();
+        if (!first.done) {
+          activeId = first.value;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      expect(activeId).toBeTruthy();
+
+      runtime.cancelSession(activeId as string);
+
+      // The session must finalize promptly despite engine.signal being
+      // wedged — well under the 30s test timeout.
+      const session = await Promise.race([
+        sessionPromise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("processSignal did not resolve after cancel")), 5_000),
+        ),
+      ]);
+
+      expect(session.status).toBe("cancelled");
+      // hasActiveSession must clear so subsequent triggers aren't blocked.
+      expect(runtime.hasActiveSession(activeId as string)).toBe(false);
+
+      // Orphan engine.signal is still alive — simulate a late callback as
+      // the underlying work eventually progresses. The `finalized` gate
+      // must drop these so they can't land in JetStream after
+      // `session:complete` was emitted.
+      const eventsBefore = outerEvents.length;
+      captured.onEvent?.({
+        type: "data-fsm-state-transition",
+        data: {
+          sessionId: activeId,
+          workspaceId: "test-workspace-id",
+          jobName: "test-job",
+          fromState: "processing",
+          toState: "complete",
+          triggeringSignal: "test-signal",
+          timestamp: new Date().toISOString(),
+        },
+      });
+      captured.onStreamEvent?.({ type: "text-delta", id: "x", delta: "late" });
+      expect(outerEvents.length).toBe(eventsBefore);
+    });
+  });
+
   it("externally-passed abortSignal cancels the session — closes the cascade-replace abort chain", async () => {
     // Regression: `CascadeConsumer`'s `replace` policy aborts the
     // AbortController it created, then passes that signal through
