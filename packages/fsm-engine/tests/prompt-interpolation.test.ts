@@ -103,18 +103,16 @@ describe("interpolatePromptPlaceholders", () => {
   });
 
   it("uses the resolved value over the default when both are present", () => {
-    const out = interpolatePromptPlaceholders(
-      "Style: {{inputs.style | default: 'classic'}}",
-      { config: { style: "fantasy anime" } },
-    );
+    const out = interpolatePromptPlaceholders("Style: {{inputs.style | default: 'classic'}}", {
+      config: { style: "fantasy anime" },
+    });
     expect(out).toBe("Style: fantasy anime");
   });
 
   it("supports double-quoted default literals", () => {
-    const out = interpolatePromptPlaceholders(
-      'Style: {{inputs.style | default: "classic"}}',
-      { config: {} },
-    );
+    const out = interpolatePromptPlaceholders('Style: {{inputs.style | default: "classic"}}', {
+      config: {},
+    });
     expect(out).toBe("Style: classic");
   });
 
