@@ -139,8 +139,14 @@ describe("mcpServersRegistry", () => {
       expect(startup!.type).toBe("command");
       expect(startup!.command).toBe("uvx");
       expect(startup!.args).toEqual(
-        expect.arrayContaining(["workspace-mcp", "--tools", "--transport", "streamable-http"]),
+        expect.arrayContaining(["workspace-mcp", "--transport", "streamable-http"]),
       );
+      // Either tool-set filtering (--tools) or permission-level filtering
+      // (--permissions) — these flags are mutually exclusive in workspace-mcp.
+      const hasToolsFlag = startup!.args!.includes("--tools");
+      const hasPermissionsFlag = startup!.args!.includes("--permissions");
+      expect(hasToolsFlag || hasPermissionsFlag).toBe(true);
+      expect(hasToolsFlag && hasPermissionsFlag).toBe(false);
       expect(startup!.env).toBeDefined();
       // Per-server config only — OAuth vars live in platformEnv
       expect(startup!.env).toHaveProperty("WORKSPACE_MCP_PORT");

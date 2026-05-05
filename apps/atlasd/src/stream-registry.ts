@@ -195,6 +195,12 @@ export class StreamRegistry {
    * Append event to buffer. Broadcasts to subscribers.
    * Returns false if stream doesn't exist or is inactive.
    *
+   * Pass `expectedBuffer` to scope the write to a specific turn's buffer:
+   * if a follow-up turn has replaced the buffer for this chatId, the stale
+   * producer's late events are dropped instead of leaking into the new
+   * turn's stream (where they'd arrive without a matching `text-start` and
+   * trip the AI SDK's UI-message protocol validator).
+   *
    * Buffer overflow policy: we never evict recorded events. Dropping the
    * oldest chunk of a `text-start → text-delta* → text-end` triple breaks
    * the UI message protocol for any late subscriber that tries to replay.
@@ -202,9 +208,12 @@ export class StreamRegistry {
    * the buffer as non-replayable; live subscribers keep receiving events
    * via the broadcast below, but `subscribe()` refuses new joiners.
    */
-  appendEvent(chatId: string, event: AtlasUIMessageChunk): boolean {
+  appendEvent(chatId: string, event: AtlasUIMessageChunk, expectedBuffer?: StreamBuffer): boolean {
     const buffer = this.streams.get(chatId);
     if (!buffer?.active) {
+      return false;
+    }
+    if (expectedBuffer && buffer !== expectedBuffer) {
       return false;
     }
 

@@ -31,9 +31,15 @@ export type UpstreamEnvironmentVariable = z.infer<typeof UpstreamEnvironmentVari
 
 /**
  * Package entry from upstream registry.
+ *
+ * `registryType` is `z.string()` (not an enum) to match the upstream spec at
+ * `https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`,
+ * which documents it as an open-ended string with `npm`/`pypi`/`oci`/`nuget`/`mcpb`
+ * as examples. Closed enums here have caused production 502s when the registry
+ * adds a new type — the translator already filters by known values.
  */
 export const UpstreamPackageSchema = z.object({
-  registryType: z.enum(["npm", "pypi", "oci", "mcpb"]),
+  registryType: z.string(),
   identifier: z.string(),
   version: z.string().optional(),
   transport: z.object({ type: z.string() }),
@@ -133,15 +139,35 @@ export const UpstreamServerEntrySchema = z.object({
 export type UpstreamServerEntry = z.infer<typeof UpstreamServerEntrySchema>;
 
 /**
- * Full search response from upstream registry /v0.1/servers endpoint.
- * Each entry is a complete UpstreamServerEntry (server + _meta wrapper).
+ * Outer envelope for the upstream /v0.1/servers search response.
+ *
+ * Entries are intentionally typed as `unknown` here: `search()` parses each
+ * one with `UpstreamServerEntrySchema` individually, so a single malformed
+ * entry can't sink the whole response.
  */
-export const UpstreamSearchResponseSchema = z.object({
-  servers: z.array(UpstreamServerEntrySchema),
+const UpstreamSearchEnvelopeSchema = z.object({
+  servers: z.array(z.unknown()),
   metadata: z.object({ count: z.number() }).optional(),
 });
 
-export type UpstreamSearchResponse = z.infer<typeof UpstreamSearchResponseSchema>;
+/**
+ * Loose probe used only to extract `server.name` for log context when an
+ * entry fails strict parsing.
+ */
+const NameProbeSchema = z.object({ server: z.object({ name: z.string() }).partial() });
+
+/**
+ * Return shape of `search()`. Not a Zod schema — the wire response is parsed
+ * via `UpstreamSearchEnvelopeSchema` + per-entry `UpstreamServerEntrySchema`.
+ *
+ * `dropped` counts entries that failed strict parsing and were skipped, so
+ * callers can surface drift signals (metrics, headers, etc.) without parsing
+ * logs.
+ */
+export interface UpstreamSearchResponse {
+  servers: UpstreamServerEntry[];
+  dropped: number;
+}
 
 // ─── Client ──────────────────────────────────────────────────────────────────
 
@@ -195,15 +221,38 @@ export class MCPUpstreamClient {
     }
 
     const json: unknown = await response.json();
-    const parsed = UpstreamSearchResponseSchema.safeParse(json);
-    if (!parsed.success) {
-      logger.warn("upstream registry returned malformed search result", {
-        error: parsed.error.message,
+    const envelope = UpstreamSearchEnvelopeSchema.safeParse(json);
+    if (!envelope.success) {
+      logger.warn("upstream registry returned malformed search envelope", {
+        error: envelope.error.message,
       });
-      throw new Error(`upstream registry returned invalid response: ${parsed.error.message}`);
+      throw new Error(`upstream registry returned invalid response: ${envelope.error.message}`);
     }
 
-    return { servers: parsed.data.servers };
+    // Parse each entry independently so one malformed entry can't poison the
+    // whole response. This is the structural defense against upstream schema
+    // drift — when a new field/value appears, we lose only the affected entries
+    // instead of returning 502 for the whole search.
+    const servers: UpstreamServerEntry[] = [];
+    let dropped = 0;
+    for (const raw of envelope.data.servers) {
+      const parsed = UpstreamServerEntrySchema.safeParse(raw);
+      if (parsed.success) {
+        servers.push(parsed.data);
+      } else {
+        dropped++;
+        const probe = NameProbeSchema.safeParse(raw);
+        logger.warn("dropping malformed upstream registry entry", {
+          error: parsed.error.message,
+          name: probe.success ? (probe.data.server.name ?? "<unknown>") : "<unknown>",
+        });
+      }
+    }
+    if (dropped > 0) {
+      logger.info("upstream search dropped malformed entries", { dropped, kept: servers.length });
+    }
+
+    return { servers, dropped };
   }
 
   /**

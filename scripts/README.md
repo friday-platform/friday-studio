@@ -48,6 +48,85 @@ Accepts either a version tag or a full git SHA (every build is tagged with both)
 ./scripts/promote-latest.sh 0.0.17
 ```
 
+## Studio + Studio Installer
+
+Build and release are split: building only uploads versioned artifacts to GCS;
+publishing rewrites `manifest.json` (the pointer clients resolve to find the
+current version). This lets you smoke-test a build before promoting it.
+
+### `studio-release.sh` — Build or publish studio / installer
+
+One script for both pieces (studio = the daemon tarball, installer = the
+Tauri-wrapped DMG/EXE) and both phases (build, publish).
+
+```bash
+# Build (uploads versioned artifacts; manifest stays unchanged)
+./scripts/studio-release.sh build studio --watch
+./scripts/studio-release.sh build installer --watch
+
+# Publish (rewrites manifest.json → clients pick up the new version)
+./scripts/studio-release.sh publish studio              # latest successful build
+./scripts/studio-release.sh publish installer           # ditto
+./scripts/studio-release.sh publish studio 1234567890   # specific run id
+```
+
+`build` accepts `--ref BRANCH` to build from a non-default branch and `--watch`
+to block until the run completes (and print the matching `publish` command).
+
+`publish` with no run id picks the most recent successful build of that kind,
+auto-derives the version from the build's manifest-entry artifacts, and asks
+for confirmation before flipping the manifest. Build artifacts are kept 30d,
+so a build stays publishable for a month after it ran.
+
+### Typical workflow
+
+```bash
+# 1. Build a new studio version
+./scripts/studio-release.sh build studio --watch
+# → uploads to gs://…/studio/friday-studio_X.Y.Z_<target>.tar.zst
+#   manifest.json still points at the previous version
+
+# 2. Smoke-test by downloading the versioned tarball directly:
+#    https://download.fridayplatform.io/studio/friday-studio_X.Y.Z_<target>.tar.zst
+
+# 3. Promote it to clients
+./scripts/studio-release.sh publish studio
+# → confirms version + run, then rewrites studio/manifest.json
+```
+
+The installer pair (`build installer` / `publish installer`) is identical, but
+operates on `gs://…/installer/` and the Tauri DMG/EXE bundles.
+
+### `backfill-sha256.sh` — Backfill `.sha256` sidecars for old bundles
+
+The publish workflows expect a `.sha256` sidecar next to every bundle in
+GCS. Bundles uploaded before the build workflow started writing sidecars
+won't have one and will fail the publish-time verify. Run this once after
+upgrading to backfill them.
+
+```bash
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh --dry-run   # report only
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh             # actually do it
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh studio      # only studio/
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh installer   # only installer/
+```
+
+Idempotent: skips bundles whose sidecar already exists. Requires gsutil
+authenticated (`gcloud auth application-default login`). Each missing
+sidecar costs one full bundle download — so this is a one-shot, not a
+recurring task.
+
+### Underlying workflows
+
+- `studio-build.yml` / `studio-installer-build.yml` — build, sign, notarize,
+  upload versioned artifacts to GCS. Never touch `manifest.json`.
+- `studio-publish.yml` / `studio-installer-publish.yml` — take a build run id
+  + version, pull that run's manifest entries via `actions/download-artifact`,
+  verify every referenced URL exists in GCS, then upload the new manifest.
+
+You can dispatch them directly with `gh workflow run` if you need to, but the
+script is the supported path.
+
 ## HelloFriday
 
 ### `release-hellofriday.sh` — Cut a new HelloFriday release

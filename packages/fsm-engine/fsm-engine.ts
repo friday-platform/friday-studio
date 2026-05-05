@@ -860,7 +860,13 @@ export class FSMEngine {
           signalType: sig.type,
         });
       } else {
-        logger.error(`FSM error in ${transitionDescriptor}, signal ${sig.type}`, {
+        // `warn`, not `error`. FSM step failures are domain events
+        // (LLM API rejection, tool error, validation fail) that get
+        // re-thrown to the runtime and surfaced via the cascade
+        // dispatcher's warn-level `Cascade session failed`. Logging at
+        // error here turned every misconfigured workspace.yml model id
+        // into an infra-level alert.
+        logger.warn(`FSM error in ${transitionDescriptor}, signal ${sig.type}`, {
           error,
           state: failedState,
           fromState,

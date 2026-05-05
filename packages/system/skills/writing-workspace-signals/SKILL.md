@@ -138,6 +138,28 @@ signals:
 
 Missed-schedule events surface on the playground `/schedules` page under "Missed schedules" and persist in the JetStream `WORKSPACE_EVENTS` stream for 30 days. `manual` events that haven't been fired/dismissed show a pending badge + action buttons.
 
+### Concurrency policy
+
+`concurrency` controls what happens when a new envelope for the same `(workspace, signal)` arrives while a previous cascade is still running. Orthogonal to `onMissed` (which is the downtime catch-up policy). Lives on every signal provider, not just `schedule`.
+
+```yaml
+signals:
+  send-alert:
+    provider: schedule
+    config:
+      schedule: "*/5 * * * *"
+      concurrency: skip   # default; other options: queue | concurrent | replace
+```
+
+**Policies:**
+
+- `skip` (default) — drop the new envelope if a cascade is in flight for this `(workspace, signal)`. Right for cron jobs where the next tick will run anyway and you don't want pile-up if cascades exceed the schedule.
+- `queue` — serialize: chain the new envelope after the current one in arrival order. Right when every tick must eventually run; risks unbounded backlog on slow cascades.
+- `concurrent` — no overlap guard, full parallelism. Right for stateless / idempotent jobs that benefit from parallel runs (independent fetches, fan-out scrapes).
+- `replace` — abort the in-flight cascade and start the new one. Right for "freshest input wins" workloads (cancel-in-flight semantics for non-chat signals).
+
+For HTTP-trigger correlated callers, `skip` and `replace` publish `ok=false` on the response subject immediately so callers don't wait out their HTTP timeout. `queue` blocks the caller until the in-flight cascade settles. `concurrent` returns each cascade's own response.
+
 ### System trigger
 
 ```yaml

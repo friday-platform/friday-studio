@@ -1,6 +1,35 @@
 import { z } from "zod";
 import { DurationSchema, SchemaObjectSchema } from "./base.ts";
 
+/**
+ * Per-signal concurrency policy. Controls what happens when a new
+ * envelope for the same (workspace, signal) arrives while a previous
+ * cascade is still running. Orthogonal to `onMissed` — that's the
+ * downtime catch-up policy; this is the in-flight overlap policy.
+ *
+ * Applies uniformly to every signal provider (cron, HTTP, fs-watch,
+ * slack, …). Read at dispatch time by the cascade consumer in
+ * `apps/atlasd/src/cascade-stream.ts`.
+ *
+ * - `skip` (default) — drop the new envelope. Right for cron jobs
+ *                      where missing one tick is fine because the next
+ *                      tick will run; prevents pile-up if cascades
+ *                      exceed the schedule.
+ * - `queue`          — serialize: chain the new envelope to run after
+ *                      the current one. Right when every tick must
+ *                      eventually run in arrival order, but slow
+ *                      cascades cause unbounded backlog.
+ * - `concurrent`     — no overlap guard; fan out fully. Right for
+ *                      stateless / idempotent jobs where parallel runs
+ *                      are independent.
+ * - `replace`        — singleton execution: abort the in-flight
+ *                      cascade and start the new one. Right for
+ *                      "freshest input wins" workloads (chat-style
+ *                      cancel-in-flight semantics for non-chat signals).
+ */
+export const ConcurrencyPolicySchema = z.enum(["skip", "queue", "concurrent", "replace"]);
+export type ConcurrencyPolicy = z.infer<typeof ConcurrencyPolicySchema>;
+
 const BaseSignalConfigSchema = z.strictObject({
   description: z.string(),
   title: z
@@ -8,6 +37,11 @@ const BaseSignalConfigSchema = z.strictObject({
     .optional()
     .describe("Short human-readable title in verb-noun format (e.g., 'Reads messages from Slack')"),
   schema: SchemaObjectSchema.optional().describe("JSON Schema for signal payload validation"),
+  concurrency: ConcurrencyPolicySchema.optional().describe(
+    "What to do when a new envelope for this signal arrives while a previous cascade " +
+      "is still running. Defaults to 'skip'. Orthogonal to onMissed (which is the " +
+      "downtime catch-up policy).",
+  ),
 });
 
 export const HTTPProviderConfigSchema = z.strictObject({

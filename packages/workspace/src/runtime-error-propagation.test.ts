@@ -138,4 +138,34 @@ describe("session error propagation", () => {
     expect(session.status).toBe("completed");
     expect(session.error).toBeUndefined();
   });
+
+  it("externally-passed abortSignal cancels the session — closes the cascade-replace abort chain", async () => {
+    // Regression: `CascadeConsumer`'s `replace` policy aborts the
+    // AbortController it created, then passes that signal through
+    // `triggerWorkspaceSignal` → `triggerSignalWithSession`. The
+    // runtime composes it with its per-session controller at
+    // `runtime.ts:998-1009` and checks `effectiveAbortSignal.aborted`
+    // in the catch block at line 1191. This test covers the runtime
+    // half of that chain — that the externally-passed abortSignal
+    // really does steer status to `cancelled` instead of `failed`,
+    // even when an action throws for an unrelated reason.
+    //
+    // Uses the failing-FSM config (agent-not-found) so the action
+    // throws synchronously; with the abortSignal pre-aborted, the
+    // catch clause should classify as cancelled.
+    const session = await withTestRuntime(createFailingConfig(), (runtime) => {
+      const controller = new AbortController();
+      controller.abort("replaced by newer cascade");
+      return runtime.triggerSignalWithSession(
+        "test-signal",
+        {},
+        undefined,
+        undefined,
+        undefined,
+        controller.signal,
+      );
+    });
+
+    expect(session.status).toBe("cancelled");
+  });
 });

@@ -12,7 +12,6 @@
  * file is what they'll publish through.
  */
 
-import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import {
@@ -173,14 +172,19 @@ export async function publishSignal(
 }
 
 /**
- * Callback used by SignalConsumer to dispatch a received envelope to the
- * runtime. Returns a value the consumer publishes to the response subject
- * when the envelope carries a correlationId; ignored otherwise.
+ * Callback used by SignalConsumer to forward a received envelope onward.
+ *
+ * Historically this awaited the entire FSM cascade. As of the cascade
+ * decoupling, it's a thin forward-and-ack — the daemon wires it to
+ * `publishCascade` (cascade-stream.ts), which lands the envelope on the
+ * CASCADES stream where a separate consumer applies the per-signal
+ * concurrency policy and runs the cascade as a background Promise.
+ *
+ * This shape preserves the in-tree tests that stub a dispatcher; for
+ * the production wiring see `apps/atlasd/src/atlas-daemon.ts` where the
+ * dispatcher is `(env) => publishCascade(nc, env)`.
  */
-export type SignalDispatcher = (
-  envelope: SignalEnvelope,
-  ctx: { onStreamEvent?: (chunk: AtlasUIMessageChunk) => void },
-) => Promise<unknown>;
+export type SignalDispatcher = (envelope: SignalEnvelope) => Promise<unknown>;
 
 export interface SignalConsumerOptions {
   /** Logical name for the durable consumer; defaults to "atlasd-signals". */
@@ -320,49 +324,17 @@ export class SignalConsumer {
       return;
     }
 
-    const correlationId = envelope.correlationId;
+    // Forward onward (production wiring: publishCascade onto the
+    // CASCADES stream) and ack. Cascade execution is decoupled — the
+    // CascadeConsumer applies the per-signal concurrency policy and
+    // runs the cascade as a background Promise.
     try {
-      const onStreamEvent = correlationId
-        ? (chunk: AtlasUIMessageChunk) => {
-            try {
-              this.nc.publish(
-                signalStreamSubject(correlationId),
-                enc.encode(JSON.stringify(chunk)),
-              );
-            } catch (err) {
-              logger.warn("Failed to forward stream chunk", {
-                correlationId,
-                error: stringifyError(err),
-              });
-            }
-          }
-        : undefined;
-      const result = await this.dispatch(envelope, { onStreamEvent });
-      if (envelope.correlationId) {
-        this.publishResponse(envelope.correlationId, { ok: true, result });
-      }
+      await this.dispatch(envelope);
       msg.ack();
     } catch (err) {
       const info = msg.info;
-
-      // Correlated envelopes are sync-await callers (HTTP trigger). Their
-      // publisher is blocked on a single response — redelivery would mean
-      // the response arrives after the timeout. Surface the error
-      // immediately and term so we don't double-dispatch on retry.
-      if (envelope.correlationId) {
-        logger.warn("Correlated signal dispatch failed; surfacing error to publisher", {
-          subject: msg.subject,
-          seq: msg.seq,
-          correlationId: envelope.correlationId,
-          error: stringifyError(err),
-        });
-        this.publishResponse(envelope.correlationId, { ok: false, error: stringifyError(err) });
-        msg.term();
-        return;
-      }
-
       if (info.deliveryCount >= this.maxDeliver) {
-        logger.error("Signal dead-lettered after max deliveries", {
+        logger.error("Signal forward dead-lettered after max deliveries", {
           subject: msg.subject,
           seq: msg.seq,
           deliveryCount: info.deliveryCount,
@@ -372,24 +344,13 @@ export class SignalConsumer {
         msg.term();
         return;
       }
-      logger.warn("Signal dispatch failed; will redeliver", {
+      logger.warn("Signal forward failed; will redeliver", {
         subject: msg.subject,
         seq: msg.seq,
         deliveryCount: info.deliveryCount,
         error: stringifyError(err),
       });
       msg.nak();
-    }
-  }
-
-  private publishResponse(correlationId: string, response: SignalResponse): void {
-    try {
-      this.nc.publish(signalResponseSubject(correlationId), enc.encode(JSON.stringify(response)));
-    } catch (err) {
-      logger.warn("Failed to publish signal response", {
-        correlationId,
-        error: stringifyError(err),
-      });
     }
   }
 }
