@@ -102,8 +102,12 @@ type PrepareResult = z.infer<typeof PrepareResultSchema>;
  *
  * A Liquid-style `| default: 'fallback'` filter is supported on the placeholder
  * itself (`{{inputs.style | default: 'classic'}}`); it kicks in when the path
- * resolves to undefined/null so optional fields don't have to be set on every
- * invocation. Both single- and double-quoted fallback literals are accepted.
+ * resolves to undefined, null, or empty string, matching Liquid's default
+ * semantics. UI forms commonly submit "" for unfilled optional fields, and
+ * substituting an empty string instead of the fallback would make the filter
+ * useless for its primary use case. Both single- and double-quoted fallback
+ * literals are accepted. Numbers/booleans (including 0/false) are not treated
+ * as missing — those are legitimate values, not absence.
  *
  * Uses only properties already exposed via `PrepareResult` (`task`, `config`,
  * `artifactRefs`); does not reach into ambient FSM state, so there's no way
@@ -136,7 +140,11 @@ export function interpolatePromptPlaceholders(
       cursor = (cursor as Record<string, unknown>)[segment];
     }
     if (cursor === undefined || cursor === null) return fallback ?? original;
-    if (typeof cursor === "string") return cursor;
+    // Empty strings are treated as missing for the `default:` filter (Liquid
+    // convention). Without this, an explicit `default: 'classic'` would do
+    // nothing for the very case authors reach for it — a form field that
+    // arrives as "" rather than absent.
+    if (typeof cursor === "string") return cursor === "" ? (fallback ?? cursor) : cursor;
     if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
     return JSON.stringify(cursor);
   });

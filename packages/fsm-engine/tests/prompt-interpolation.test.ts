@@ -126,9 +126,29 @@ describe("interpolatePromptPlaceholders", () => {
     expect(out).toBe("Style: classic");
   });
 
-  it("still leaves an unresolved placeholder intact when no default is given and prepareResult is undefined", () => {
-    expect(interpolatePromptPlaceholders("Save {{inputs.content}}", undefined)).toBe(
-      "Save {{inputs.content}}",
+  it("uses default when the path resolves to null", () => {
+    const out = interpolatePromptPlaceholders("Style: {{inputs.style | default: 'classic'}}", {
+      config: { style: null },
+    });
+    expect(out).toBe("Style: classic");
+  });
+
+  it("uses default when the path resolves to an empty string", () => {
+    // Liquid convention: forms that submit "" for unfilled fields still get
+    // the fallback. Without this, `default:` would be useless for its primary
+    // use case.
+    const out = interpolatePromptPlaceholders("Style: {{inputs.style | default: 'classic'}}", {
+      config: { style: "" },
+    });
+    expect(out).toBe("Style: classic");
+  });
+
+  it("does NOT treat 0 or false as missing for default", () => {
+    // 0/false are legitimate values; only nil/empty-string trigger fallback.
+    const out = interpolatePromptPlaceholders(
+      "i={{inputs.i | default: '99'}} ok={{inputs.ok | default: 'yes'}}",
+      { config: { i: 0, ok: false } },
     );
+    expect(out).toBe("i=0 ok=false");
   });
 });
