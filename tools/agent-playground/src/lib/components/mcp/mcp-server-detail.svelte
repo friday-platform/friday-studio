@@ -80,6 +80,15 @@
 
   const isOfficial = $derived(server ? isOfficialServer(server) : false);
 
+  const canCheckUpdate = $derived(
+    isInstalled && server?.source === "registry" && !!onCheckUpdate,
+  );
+  const canPullUpdate = $derived(
+    isInstalled && server?.source === "registry" && hasUpdate && !!onPullUpdate,
+  );
+  const canDelete = $derived(isInstalled && server?.source !== "static" && !!onDelete);
+  const hasActions = $derived(canCheckUpdate || canPullUpdate || canDelete);
+
   function transportInfo(s: MCPServerMetadata): string {
     const t = s.configTemplate.transport;
     if (!t) return "unknown";
@@ -121,11 +130,11 @@
     </div>
   {:else}
     <article>
-      <div class="actions-bar">
-        <span class="actions-indent actions-indent-tl" aria-hidden="true"></span>
-        <div class="actions-int">
-          {#if isInstalled && server?.source === "registry"}
-            {#if onCheckUpdate}
+      {#if hasActions}
+        <div class="actions-bar">
+          <span class="actions-indent actions-indent-tl" aria-hidden="true"></span>
+          <div class="actions-int">
+            {#if canCheckUpdate}
               <Button
                 size="small"
                 variant="none"
@@ -139,47 +148,48 @@
               </Button>
             {/if}
 
-            {#if hasUpdate && onPullUpdate}
+            {#if canPullUpdate}
               <Button size="small" variant="primary" onclick={onPullUpdate} disabled={pulling}>
                 {pulling ? "Updating…" : "Pull update"}
               </Button>
             {/if}
-          {/if}
-          {#if isInstalled && server?.source !== "static" && onDelete}
-            <Button
-              size="small"
-              variant="none"
-              onclick={() => deleteDialogOpen.set(true)}
-              disabled={deleting}
-            >
-              {#snippet prepend()}
-                <IconSmall.TrashBin />
-              {/snippet}
-              {deleting ? "Removing…" : "Remove"}
-            </Button>
-          {/if}
 
-          <Dialog.Root open={deleteDialogOpen}>
-            <Dialog.Content>
-              <Dialog.Close />
-              {#snippet header()}
-                <Dialog.Title>Remove server</Dialog.Title>
-                <Dialog.Description>
-                  {displayName} will be uninstalled and no longer available to your agents. You can reinstall
-                  it from the registry at any time.
-                </Dialog.Description>
-              {/snippet}
-              {#snippet footer()}
-                <Dialog.Button onclick={onDelete} disabled={deleting} closeOnClick={false}>
-                  {deleting ? "Removing…" : "Remove"}
-                </Dialog.Button>
-                <Dialog.Cancel onclick={() => deleteDialogOpen.set(false)}>Cancel</Dialog.Cancel>
-              {/snippet}
-            </Dialog.Content>
-          </Dialog.Root>
+            {#if canDelete}
+              <Button
+                size="small"
+                variant="none"
+                onclick={() => deleteDialogOpen.set(true)}
+                disabled={deleting}
+              >
+                {#snippet prepend()}
+                  <IconSmall.TrashBin />
+                {/snippet}
+                {deleting ? "Removing…" : "Remove"}
+              </Button>
+            {/if}
+
+            <Dialog.Root open={deleteDialogOpen}>
+              <Dialog.Content>
+                <Dialog.Close />
+                {#snippet header()}
+                  <Dialog.Title>Remove server</Dialog.Title>
+                  <Dialog.Description>
+                    {displayName} will be uninstalled and no longer available to your agents. You can
+                    reinstall it from the registry at any time.
+                  </Dialog.Description>
+                {/snippet}
+                {#snippet footer()}
+                  <Dialog.Button onclick={onDelete} disabled={deleting} closeOnClick={false}>
+                    {deleting ? "Removing…" : "Remove"}
+                  </Dialog.Button>
+                  <Dialog.Cancel onclick={() => deleteDialogOpen.set(false)}>Cancel</Dialog.Cancel>
+                {/snippet}
+              </Dialog.Content>
+            </Dialog.Root>
+          </div>
+          <span class="actions-indent actions-indent-br" aria-hidden="true"></span>
         </div>
-        <span class="actions-indent actions-indent-br" aria-hidden="true"></span>
-      </div>
+      {/if}
 
       <header>
         <h1>{displayName}</h1>
