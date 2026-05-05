@@ -258,14 +258,23 @@ jobs:
           DMG_NAME: ${{ steps.mac-artifact.outputs.dmg_name }}
           DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
         run: |
+          set -euo pipefail
+          sha=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+          size=$(stat -f %z "$DMG_PATH")
+          # Sidecar checksum file alongside the bundle. The publish
+          # workflow reads this instead of re-downloading the bundle to
+          # hash it. Uploaded BEFORE the bundle so a partial failure
+          # under concurrent dispatch fails verification rather than
+          # silently passing it.
+          printf '%s  %s\n' "$sha" "$DMG_NAME" > "$DMG_PATH.sha256"
+          gsutil cp "$DMG_PATH.sha256" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$DMG_NAME.sha256"
           # Versioned upload — kept forever, served as immutable by studio-artifact.
           gsutil cp "$DMG_PATH" \
             "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$DMG_NAME"
           # Per-platform entry for the publish-manifest job to assemble later.
           mkdir -p manifest-entries
           encoded_name=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$DMG_NAME")
-          sha=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
-          size=$(stat -f %z "$DMG_PATH")
           printf '{"url":"https://download.fridayplatform.io/installer/%s/%s","sha256":"%s","size":%s}\n' \
             "${{ matrix.platform }}" "$encoded_name" "$sha" "$size" \
             > "manifest-entries/${{ matrix.platform }}.json"
@@ -277,12 +286,20 @@ jobs:
           EXE_NAME: ${{ steps.win-artifact.outputs.name }}
           EXE_PATH: ${{ steps.win-artifact.outputs.path }}
         run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $env:EXE_PATH).Hash.ToLower()
+          $size = (Get-Item $env:EXE_PATH).Length
+          # Sidecar checksum file. Same format as macOS (`<sha>  <name>`)
+          # so the publish-side `awk '{print $1}'` works uniformly.
+          # Sidecar uploaded BEFORE the bundle for the same conservative-
+          # partial-failure reasoning as the macOS leg.
+          $sidecar = "$env:EXE_PATH.sha256"
+          "$hash  $env:EXE_NAME" | Set-Content -Path $sidecar
+          gsutil cp $sidecar `
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$env:EXE_NAME.sha256"
           gsutil cp "$env:EXE_PATH" `
             "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$env:EXE_NAME"
           New-Item -ItemType Directory -Force -Path manifest-entries | Out-Null
           $encoded = [System.Uri]::EscapeDataString($env:EXE_NAME)
-          $hash = (Get-FileHash -Algorithm SHA256 -Path $env:EXE_PATH).Hash.ToLower()
-          $size = (Get-Item $env:EXE_PATH).Length
           $entry = @{ url = "https://download.fridayplatform.io/installer/${{ matrix.platform }}/$encoded"; sha256 = $hash; size = $size }
           $entry | ConvertTo-Json -Compress | Set-Content -NoNewline -Path "manifest-entries/${{ matrix.platform }}.json"
 

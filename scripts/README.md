@@ -97,6 +97,25 @@ so a build stays publishable for a month after it ran.
 The installer pair (`build installer` / `publish installer`) is identical, but
 operates on `gs://…/installer/` and the Tauri DMG/EXE bundles.
 
+### `backfill-sha256.sh` — Backfill `.sha256` sidecars for old bundles
+
+The publish workflows expect a `.sha256` sidecar next to every bundle in
+GCS. Bundles uploaded before the build workflow started writing sidecars
+won't have one and will fail the publish-time verify. Run this once after
+upgrading to backfill them.
+
+```bash
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh --dry-run   # report only
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh             # actually do it
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh studio      # only studio/
+GCS_BUCKET=my-bucket ./scripts/backfill-sha256.sh installer   # only installer/
+```
+
+Idempotent: skips bundles whose sidecar already exists. Requires gsutil
+authenticated (`gcloud auth application-default login`). Each missing
+sidecar costs one full bundle download — so this is a one-shot, not a
+recurring task.
+
 ### Underlying workflows
 
 - `studio-build.yml` / `studio-installer-build.yml` — build, sign, notarize,

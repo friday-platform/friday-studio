@@ -92,10 +92,13 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Verify referenced bundles match manifest SHAs in GCS
-        # Catches both the lifecycle-deleted-between-build-and-publish
-        # case and the two-unpublished-builds-collide-on-version race
-        # (where a later build overwrites the GCS object so the SHA in
-        # this run's manifest entry no longer matches the bytes).
+        # Reads the .sha256 sidecar uploaded alongside the bundle (cheap,
+        # ~70 bytes) instead of re-downloading the whole bundle to hash
+        # it. Catches the two-unpublished-builds-collide-on-version race
+        # where a later build overwrites both bundle and sidecar; an
+        # earlier build's manifest-entry SHA then disagrees with the
+        # current sidecar. Also confirms the bundle itself exists, since
+        # the build uploads the sidecar first.
         run: |
           set -euo pipefail
           python3 -c "
@@ -106,16 +109,13 @@ jobs:
           " | while IFS=$'\t' read -r url expected; do
             obj="gs://${GCS_BUCKET}/${url#https://download.fridayplatform.io/}"
             echo "verifying $obj"
-            gsutil -q stat "$obj"
-            actual=$(gsutil cat "$obj" | shasum -a 256 | awk '{print $1}')
+            actual=$(gsutil cat "$obj.sha256" | awk '{print $1}')
             if [[ "$expected" != "$actual" ]]; then
-              # `::error::` workflow commands must go to stdout — GitHub
-              # only parses them from there. Stderr also gets the human
-              # detail so it shows up in the raw log without the prefix.
-              echo "::error::SHA mismatch for $obj — expected $expected, got $actual. Likely a colliding build overwrote the bundle; rebuild before publishing."
+              echo "::error::SHA mismatch for $obj — expected $expected, got $actual (from $obj.sha256). Likely a colliding build overwrote the bundle; rebuild before publishing."
               echo "SHA mismatch for $obj (expected $expected, got $actual)" >&2
               exit 1
             fi
+            gsutil -q stat "$obj"
           done
 
       - name: Upload manifest to GCS
