@@ -2,6 +2,7 @@
   import { NotificationPortal } from "@atlas/ui";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
+  import { page } from "$app/state";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
   import "@atlas/ui/markdown.css";
@@ -14,6 +15,12 @@
   import { loadUpdateStatus } from "$lib/update-status.svelte";
 
   const { children } = $props();
+
+  // Routes that opt out of the playground app shell (sidebar, palette, etc.)
+  // and render their children directly. Today only the chat export preview
+  // uses this — the route is rendered with csr=false and packaged as a
+  // standalone HTML file, so the live-UI chrome is dead weight there.
+  const isChromeless = $derived(page.route.id?.endsWith("/export/preview") ?? false);
 
   if (browser) {
     startHealthPolling();
@@ -66,25 +73,29 @@
   <link rel="icon" href={favicon} sizes="32x32" />
 </svelte:head>
 
-<QueryClientProvider client={queryClient}>
-  <div class="app-root">
-    <UpdateBanner />
-    <div class="app-shell">
-      <Sidebar />
-      <main>
-        <div class="app-content">
-          {@render children?.()}
-        </div>
-      </main>
+{#if isChromeless}
+  {@render children?.()}
+{:else}
+  <QueryClientProvider client={queryClient}>
+    <div class="app-root">
+      <UpdateBanner />
+      <div class="app-shell">
+        <Sidebar />
+        <main>
+          <div class="app-content">
+            {@render children?.()}
+          </div>
+        </main>
+      </div>
     </div>
-  </div>
 
-  {#if paletteOpen}
-    <CommandPalette initialMode={paletteMode} onclose={() => (paletteOpen = false)} />
-  {/if}
-</QueryClientProvider>
+    {#if paletteOpen}
+      <CommandPalette initialMode={paletteMode} onclose={() => (paletteOpen = false)} />
+    {/if}
+  </QueryClientProvider>
 
-<NotificationPortal />
+  <NotificationPortal />
+{/if}
 
 <style>
   .app-root {

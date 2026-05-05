@@ -75,7 +75,7 @@ vi.mock("$lib/components/chat/connect-communicator.svelte", async () => {
 });
 
 const { load } = await import("./+page.server");
-const { default: Page } = await import("./+page.svelte");
+const { default: Page } = await import("./+page@.svelte");
 
 interface DaemonChatPayload {
   chat: {
