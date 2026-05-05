@@ -1,0 +1,136 @@
+name: studio-publish
+
+on:
+  # Promotes an existing studio-build run to clients by rewriting
+  # studio/manifest.json. Does NOT rebuild — pulls the per-platform
+  # manifest-entry artifacts the build job already produced and composes
+  # them into the published manifest.
+  #
+  # Run via:
+  #   gh workflow run studio-publish.yml \
+  #     -f build_run_id=<studio-build run id> \
+  #     -f version=<version that build produced, e.g. 0.0.10>
+  #
+  # The studio-build run prints both values as a workflow notice on
+  # success — copy them from there.
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'Run ID of the studio-build run whose artifacts to publish'
+        required: true
+        type: string
+      version:
+        description: 'Version of that build (e.g. 0.0.10) — must match the tarballs already in GCS'
+        required: true
+        type: string
+
+env:
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+jobs:
+  publish-manifest:
+    name: Publish studio/manifest.json
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Download manifest entries from build run
+        # `run-id` + `github-token` lets download-artifact pull from a
+        # different workflow run. The build artifacts are kept 30d
+        # (see studio-build.yml). Fails fast with a clear error if the
+        # run id is wrong or its artifacts have expired.
+        uses: actions/download-artifact@v8
+        with:
+          pattern: studio-manifest-entry-*
+          path: entries
+          merge-multiple: true
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose manifest
+        run: |
+          set -euo pipefail
+          # Each per-platform JSON contains a single { "<platform>": {...} }
+          # object. Merge them into { version, platforms: {...} } — same
+          # schema as installer/manifest.json so fetch_manifest.rs deserializes
+          # both with one Manifest struct.
+          python3 - <<'PY' "$RELEASE_VERSION" entries > manifest.json
+          import json, os, sys
+          version, dirpath = sys.argv[1], sys.argv[2]
+          platforms = {}
+          for fname in sorted(os.listdir(dirpath)):
+              if not fname.endswith(".json"):
+                  continue
+              with open(os.path.join(dirpath, fname)) as f:
+                  platforms.update(json.load(f))
+          json.dump({"version": version, "platforms": platforms}, sys.stdout, indent=2)
+          PY
+          cat manifest.json
+          # Sanity: refuse to publish if any of the expected platforms is
+          # missing — a half-broken manifest would 404 for some users.
+          # Cross-check the version input against URLs in entries: a
+          # mismatch means the user typed the wrong version for this run.
+          python3 - <<'PY' "$RELEASE_VERSION"
+          import json, sys
+          want_version = sys.argv[1]
+          m = json.load(open('manifest.json'))
+          # macos-intel temporarily out of the matrix (see studio-build) —
+          # restore to {'macos-arm', 'macos-intel', 'windows'} when
+          # re-enabling macos-intel before merge.
+          want = {'macos-arm', 'windows'}
+          got = set(m['platforms'].keys())
+          missing = want - got
+          if missing:
+              print(f'ERROR: missing platforms: {missing}', file=sys.stderr)
+              sys.exit(1)
+          for plat, entry in m['platforms'].items():
+              if f'_{want_version}_' not in entry['url']:
+                  print(f"ERROR: {plat} url {entry['url']} does not contain version {want_version}", file=sys.stderr)
+                  sys.exit(1)
+          PY
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Verify referenced tarballs exist in GCS
+        # Belt-and-suspenders before we flip the pointer: every URL in
+        # the assembled manifest must resolve. Catches the case where
+        # the build's GCS uploads were rolled back / lifecycle-deleted
+        # between build and publish.
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import json
+          m = json.load(open('manifest.json'))
+          for plat, entry in m['platforms'].items():
+              print(entry['url'])
+          " | while read -r url; do
+            obj="gs://${GCS_BUCKET}/${url#https://download.fridayplatform.io/}"
+            echo "checking $obj"
+            gsutil -q stat "$obj"
+          done
+
+      - name: Upload manifest to GCS
+        run: |
+          # Cache-Control: no-cache forces GCS's anonymous edge CDN to
+          # revalidate every fetch — the bucket default of max-age=3600
+          # caused installers to keep downloading the old version for an
+          # hour after publish on 2026-04-27 (v0.0.7 → v0.0.8 cutover).
+          # Manifests must always reflect the current truth; tarball
+          # objects are immutable so they keep the bucket-default cache.
+          gsutil -h "Content-Type:application/json" \
+                 -h "Cache-Control:no-cache, max-age=0, must-revalidate" \
+                 cp manifest.json \
+            "gs://${{ env.GCS_BUCKET }}/studio/manifest.json"

@@ -1,0 +1,111 @@
+name: studio-installer-publish
+
+on:
+  # Promotes an existing studio-installer-build run to clients by
+  # rewriting installer/manifest.json. Does NOT rebuild — pulls the
+  # per-platform manifest-entry artifacts the build job produced and
+  # composes them into the published manifest.
+  #
+  # Run via:
+  #   gh workflow run studio-installer-publish.yml \
+  #     -f build_run_id=<studio-installer-build run id> \
+  #     -f version=<version that build produced, e.g. 0.0.10>
+  #
+  # The studio-installer-build run prints both values as a workflow
+  # notice on success — copy them from there.
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'Run ID of the studio-installer-build run whose artifacts to publish'
+        required: true
+        type: string
+      version:
+        description: 'Version of that build (e.g. 0.0.10) — must match the bundles already in GCS'
+        required: true
+        type: string
+
+env:
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+jobs:
+  publish-manifest:
+    name: Publish installer/manifest.json
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Download manifest entries from build run
+        # `run-id` + `github-token` lets download-artifact pull from a
+        # different workflow run. Build artifacts are kept 30d (see
+        # studio-installer-build.yml).
+        uses: actions/download-artifact@v8
+        with:
+          pattern: manifest-entry-*
+          path: entries
+          merge-multiple: true
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose manifest
+        run: |
+          set -euo pipefail
+          # Combine per-platform entries into the schema the studio-installer's
+          # fetch_manifest.rs already understands: { version, platforms{...} }.
+          python3 - <<'PY' "$RELEASE_VERSION" entries > manifest.json
+          import json, os, sys
+          version, dirpath = sys.argv[1], sys.argv[2]
+          platforms = {}
+          for fname in sorted(os.listdir(dirpath)):
+              if not fname.endswith(".json"):
+                  continue
+              platform = fname[:-len(".json")]
+              with open(os.path.join(dirpath, fname)) as f:
+                  platforms[platform] = json.load(f)
+          json.dump({"version": version, "platforms": platforms}, sys.stdout, indent=2)
+          PY
+          cat manifest.json
+          # Cross-check the version input against URLs in entries: a
+          # mismatch means the user typed the wrong version for this run.
+          python3 - <<'PY' "$RELEASE_VERSION"
+          import json, sys
+          want_version = sys.argv[1]
+          m = json.load(open('manifest.json'))
+          for plat, entry in m['platforms'].items():
+              if f'_{want_version}_' not in entry['url']:
+                  print(f"ERROR: {plat} url {entry['url']} does not contain version {want_version}", file=sys.stderr)
+                  sys.exit(1)
+          PY
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Verify referenced bundles exist in GCS
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import json
+          m = json.load(open('manifest.json'))
+          for plat, entry in m['platforms'].items():
+              print(entry['url'])
+          " | while read -r url; do
+            obj="gs://${GCS_BUCKET}/${url#https://download.fridayplatform.io/}"
+            echo "checking $obj"
+            gsutil -q stat "$obj"
+          done
+
+      - name: Upload manifest to GCS
+        run: |
+          gsutil -h "Content-Type:application/json" cp manifest.json \
+            "gs://${{ env.GCS_BUCKET }}/installer/manifest.json"
