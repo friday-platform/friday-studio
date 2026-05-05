@@ -283,7 +283,9 @@ jobs:
           # Always (re)write the sidecar from the post-notarize archive so
           # macOS and Windows agree on format. The publish workflow reads
           # this instead of re-downloading the archive to hash it.
-          SHA=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+          # openssl is portable across macOS, Linux, and Git Bash on Windows;
+          # `shasum` is missing from the Windows runner's bash.
+          SHA=$(openssl dgst -sha256 -r "$ARCHIVE" | awk '{print $1}')
           printf '%s  %s\n' "$SHA" "$NAME" > "$ARCHIVE.sha256"
           # Sidecar BEFORE archive: under concurrent dispatch a partial
           # failure should leave state that fails verification (sidecar
