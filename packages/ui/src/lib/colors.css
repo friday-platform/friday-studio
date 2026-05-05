@@ -90,9 +90,7 @@
     --green-600: color(display-p3 0.2314 0.9098 0.5725);
 
     --purple-300: color(display-p3 0.3944 0.0169 1);
-  --purple-600: color(display-p3 0.6728 0.4688 1);
-  
-
+    --purple-600: color(display-p3 0.6728 0.4688 1);
   }
 }
 
