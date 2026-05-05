@@ -45,7 +45,7 @@
   let resolvedTitle = $state(prefetched?.title || "Artifact");
   let resolvedSummary = $state<string | undefined>(prefetched?.summary);
   let mimeType = $state<string | undefined>(prefetched?.mimeType);
-  let contents = $state<string | undefined>(prefetched?.contents);
+  let contents = $state<string | undefined>(undefined);
   let originalName = $state<string | undefined>(prefetched?.originalName);
   let sizeBytes = $state<number | undefined>(prefetched?.size);
   let loading = $state(exportCtx === undefined);

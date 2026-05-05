@@ -97,17 +97,25 @@ export interface ChatMessage {
  * Schema for `GET /api/workspaces/user/chat/:chatId` — used to rehydrate
  * messages after a page reload. Messages are typed as `z.unknown()` since
  * the component parses their `parts` array structurally at render time.
+ *
+ * Also reused by the chat-export preview load function and the export
+ * orchestrator route. The inner `chat` object uses `.passthrough()` so
+ * future daemon-side fields don't break either consumer (the live UI
+ * only reads known fields; the export path forwards the full object into
+ * `chat.json`).
  */
 export const GetChatResponseSchema = z.object({
-  chat: z.object({
-    id: z.string(),
-    userId: z.string(),
-    workspaceId: z.string(),
-    source: z.string(),
-    title: z.string().optional(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
+  chat: z
+    .object({
+      id: z.string(),
+      userId: z.string(),
+      workspaceId: z.string(),
+      source: z.string(),
+      title: z.string().optional(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    })
+    .passthrough(),
   messages: z.array(z.unknown()),
   systemPromptContext: z
     .object({

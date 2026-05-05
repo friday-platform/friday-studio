@@ -3,33 +3,8 @@ import { z } from "zod";
 import { type AtlasUIMessage, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ArtifactSummarySchema } from "@atlas/core/artifacts";
 import type { ArtifactPrefetch } from "$lib/components/chat/export-context";
+import { GetChatResponseSchema } from "$lib/components/chat/types";
 import type { PageServerLoad } from "./$types";
-
-/**
- * Daemon `GET /api/workspaces/:wsId/chat/:chatId?full=true` response shape.
- *
- * Mirrors `apps/atlasd/routes/workspaces/chat.ts` line ~415 — the legacy
- * rehydrate-only `GetChatResponseSchema` in `chat/types.ts` covers the
- * same envelope but isn't reused here so the export path can evolve
- * independently of the live UI's reload code.
- */
-const ChatResponseSchema = z.object({
-  chat: z
-    .object({
-      id: z.string(),
-      userId: z.string(),
-      workspaceId: z.string(),
-      source: z.string(),
-      title: z.string().optional(),
-      createdAt: z.string(),
-      updatedAt: z.string(),
-    })
-    .passthrough(),
-  messages: z.array(z.unknown()),
-  systemPromptContext: z
-    .object({ timestamp: z.string(), systemMessages: z.array(z.string()) })
-    .nullable(),
-});
 
 const ArtifactsResponseSchema = z.object({
   artifacts: z.array(ArtifactSummarySchema),
@@ -94,7 +69,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
   }
 
   const chatJson: unknown = await chatRes.json();
-  const chatParsed = ChatResponseSchema.safeParse(chatJson);
+  const chatParsed = GetChatResponseSchema.safeParse(chatJson);
   if (!chatParsed.success) {
     throw error(502, `Daemon chat response did not match schema: ${chatParsed.error.message}`);
   }

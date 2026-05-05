@@ -11,6 +11,11 @@
   }
 </script>
 
+<!--
+  The `browser &&` guards let the export preview route (csr=false) render
+  children during SSR. Without them, `daemonHealth.loading` starts true and
+  only flips on a client-side fetch, leaving SSR stuck on "Connecting…".
+-->
 {#if browser && daemonHealth.loading}
   <div class="gate-state">
     <p class="gate-message">Connecting to daemon...</p>

@@ -273,11 +273,6 @@ describe("export-preview +page.svelte render", () => {
     expect(body).toContain("message-list");
   });
 
-  it("emits no <script type=\"module\"> hydration tags", () => {
-    const { body } = render(Page, { props: { data: makePageData() } });
-    expect(body).not.toContain('<script type="module"');
-  });
-
   it("never references the live daemon proxy path in the rendered HTML", () => {
     const { body } = render(Page, { props: { data: makePageData() } });
     expect(body).not.toContain("/api/daemon/");

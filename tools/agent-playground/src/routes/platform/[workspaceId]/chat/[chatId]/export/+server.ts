@@ -1,6 +1,7 @@
 import { ArtifactSummarySchema } from "@atlas/core/artifacts";
 import type { RequestHandler } from "@sveltejs/kit";
 import { artifactZipPath } from "$lib/export/artifact-zip-path";
+import { GetChatResponseSchema } from "$lib/components/chat/types";
 import JSZip from "jszip";
 import { z } from "zod";
 
@@ -11,31 +12,6 @@ import { z } from "zod";
  * `EXPORT_TIMEOUT_MS` for recipient-facing parity.
  */
 const EXPORT_TIMEOUT_MS = 10_000;
-
-/**
- * Daemon `GET /api/workspaces/:wsId/chat/:chatId?full=true` response shape.
- * Mirrors the Zod schema used by the preview's `+page.server.ts`; we
- * `passthrough()` chat fields the orchestrator doesn't read so the
- * `chat.json` zip entry preserves anything the daemon adds in the future
- * without forcing a schema change here.
- */
-const ChatResponseSchema = z.object({
-  chat: z
-    .object({
-      id: z.string(),
-      userId: z.string(),
-      workspaceId: z.string(),
-      source: z.string(),
-      title: z.string().optional(),
-      createdAt: z.string(),
-      updatedAt: z.string(),
-    })
-    .passthrough(),
-  messages: z.array(z.unknown()),
-  systemPromptContext: z
-    .object({ timestamp: z.string(), systemMessages: z.array(z.string()) })
-    .nullable(),
-});
 
 const ArtifactsResponseSchema = z.object({ artifacts: z.array(ArtifactSummarySchema) });
 
@@ -131,7 +107,7 @@ export const GET: RequestHandler = async (event) => {
   }
 
   const chatJsonRaw: unknown = await chatRes.json();
-  const chatParsed = ChatResponseSchema.safeParse(chatJsonRaw);
+  const chatParsed = GetChatResponseSchema.safeParse(chatJsonRaw);
   if (!chatParsed.success) {
     return new Response(
       JSON.stringify({ error: `daemon chat schema mismatch: ${chatParsed.error.message}` }),

@@ -21,8 +21,6 @@ export type ArtifactPrefetch = {
   size: number;
   /** Original filename when the artifact was uploaded. */
   originalName?: string;
-  /** Inline contents for text-like artifacts (mirrors `contents` from the live response). */
-  contents?: string;
 };
 
 /**
