@@ -121,10 +121,32 @@ function defaultPidFileWriter(logger: Logger): PidFileWriter {
 
 interface InternalEntry {
   readonly promise: Promise<SharedProcessHandle>;
+  /** Stable hash of the spec that spawned this child. Used to detect when
+   * a subsequent `acquire` call passes a different env (e.g. registry
+   * `platformEnv` flipped on after a code path was fixed) so the old child
+   * can be evicted instead of silently serving a stale config. */
+  readonly specHash: string;
   /** Set once the spawn promise resolves. Used by `shutdown` to SIGTERM. */
   child?: ChildProcess;
   /** Set once the spawn promise resolves. Used by `shutdown` to clean up pid files. */
   pidFile?: PidFileWriter;
+}
+
+/** Stable JSON serialization for spec-hash equality. Sorts keys recursively. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+/** Hash the subset of spec that affects subprocess behavior. Ready-URL polling
+ * timeouts are excluded — they don't change what the child does, only how
+ * long we wait for it. */
+function hashSpec(spec: SharedProcessSpec): string {
+  return stableStringify({ command: spec.command, args: spec.args, env: spec.env });
 }
 
 /**
@@ -152,35 +174,51 @@ class ProcessRegistry {
    * On spawn failure or early exit, the cache entry is removed so a retry
    * can spawn fresh.
    */
-  acquire(
+  async acquire(
     serverId: string,
     spec: SharedProcessSpec,
     deps: ProcessRegistryDeps,
     logger: Logger,
   ): Promise<SharedProcessHandle> {
     if (this.disposed) {
-      return Promise.reject(
-        new MCPStartupError(
-          "spawn",
-          serverId,
-          spec.command,
-          new Error("process registry has been shut down"),
-        ),
+      throw new MCPStartupError(
+        "spawn",
+        serverId,
+        spec.command,
+        new Error("process registry has been shut down"),
       );
     }
 
+    const specHash = hashSpec(spec);
     const cached = this.entries.get(serverId);
     if (cached) {
-      logger.debug(`MCP shared process: reusing existing child for "${serverId}"`, {
-        operation: "mcp_shared_process_reuse",
+      if (cached.specHash === specHash) {
+        logger.debug(`MCP shared process: reusing existing child for "${serverId}"`, {
+          operation: "mcp_shared_process_reuse",
+          serverId,
+        });
+        return cached.promise;
+      }
+      // Spec drift — caller passed a different env/command than the cached
+      // child was spawned with. Common cause: a bug-fixed code path now
+      // applies registry `platformEnv` while the cached child was spawned
+      // before the fix. Tear down the stale child and respawn with the
+      // current spec. We MUST await full exit before falling through:
+      // workspace-mcp servers bind fixed ports (8001-8005), and a new
+      // spawn racing the old one through TIME_WAIT is the exact failure
+      // this registry was built to avoid (see file header).
+      logger.warn(`MCP shared process: spec mismatch, evicting child for "${serverId}"`, {
+        operation: "mcp_shared_process_evict",
         serverId,
+        reason: "spec_hash_changed",
       });
-      return cached.promise;
+      await this.evictEntry(serverId, cached, logger);
     }
 
     const pidFile = deps.pidFile ?? defaultPidFileWriter(logger);
 
     const entry: InternalEntry = {
+      specHash,
       promise: this.spawnAndWaitReady(serverId, spec, deps, logger).then(async (handle) => {
         entry.child = handle.child;
         entry.pidFile = pidFile;
@@ -211,6 +249,57 @@ class ProcessRegistry {
     });
 
     return entry.promise;
+  }
+
+  /**
+   * Stop a single entry's child and remove it from the cache. Awaits full
+   * exit so callers can spawn a replacement without racing TIME_WAIT on
+   * the child's bound port. Mirrors the SIGTERM-then-SIGKILL grace window
+   * used by `shutdown`.
+   */
+  private async evictEntry(serverId: string, entry: InternalEntry, logger: Logger): Promise<void> {
+    if (this.entries.get(serverId) === entry) {
+      this.entries.delete(serverId);
+    }
+
+    // The entry may still be spawning. Settle it first so we have a child
+    // handle (or a known failure) before we try to terminate it.
+    let child: ChildProcess | undefined;
+    try {
+      const handle = await entry.promise;
+      child = handle.child;
+    } catch {
+      child = entry.child;
+    }
+
+    if (child && child.exitCode === null && child.signalCode === null) {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // Already dead — fall through.
+      }
+      await Promise.race([
+        waitForExit(child),
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+      if (child.exitCode === null && child.signalCode === null) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // Already dead.
+        }
+        await waitForExit(child);
+      }
+    }
+
+    if (entry.pidFile) {
+      await entry.pidFile.remove(serverId).catch(() => {});
+    }
+
+    logger.info(`MCP shared process: evicted child for "${serverId}"`, {
+      operation: "mcp_shared_process_evicted",
+      serverId,
+    });
   }
 
   /**
