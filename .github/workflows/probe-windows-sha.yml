@@ -1,6 +1,9 @@
 name: probe-windows-sha
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/windows-shasum-portable]
+    paths: [.github/workflows/probe-windows-sha.yml]
 
 jobs:
   probe:
