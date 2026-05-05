@@ -29,6 +29,13 @@ import { RetryError } from "@std/async/retry";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { daemonFactory } from "../src/factory.ts";
+import {
+  getCachedTools,
+  invalidateCache,
+  prewarmTools,
+  probeAndExtract,
+  putCachedTools,
+} from "./mcp-tool-cache.ts";
 
 const logger = createLogger({ name: "mcp-registry-routes" });
 
@@ -270,6 +277,7 @@ export const mcpRegistryRouter = daemonFactory
     // Atomic add - throws if entry already exists
     try {
       await adapter.add(entry);
+      prewarmTools(entry.id, entry.configTemplate, logger);
       return c.json({ server: entry }, 201);
     } catch {
       const suggested = `${entry.id}-${Date.now().toString(36).slice(-4)}`;
@@ -409,6 +417,7 @@ export const mcpRegistryRouter = daemonFactory
 
       // Persist the entry
       await adapter.add(entry);
+      prewarmTools(entry.id, entry.configTemplate, logger);
 
       let warning: string | undefined;
 
@@ -532,6 +541,7 @@ export const mcpRegistryRouter = daemonFactory
     };
 
     await adapter.add(entry);
+    prewarmTools(entry.id, entry.configTemplate, logger);
 
     let warning: string | undefined;
     if (linkProvider) {
@@ -658,6 +668,9 @@ export const mcpRegistryRouter = daemonFactory
           return c.json({ error: "Server was modified concurrently." }, 409);
         }
 
+        invalidateCache(updatedEntry.id);
+        prewarmTools(updatedEntry.id, updatedEntry.configTemplate, logger);
+
         return c.json({ server: updatedEntry });
       } catch (error) {
         logger.error("pull-update failed", { error, id });
@@ -691,6 +704,7 @@ export const mcpRegistryRouter = daemonFactory
       }
 
       await adapter.delete(id);
+      invalidateCache(id);
       return new Response(null, { status: 204 });
     },
   )
@@ -718,22 +732,14 @@ export const mcpRegistryRouter = daemonFactory
         return c.json({ error: "Server not found" }, 404);
       }
 
+      const cached = getCachedTools(id, server.configTemplate);
+      if (cached) {
+        return c.json({ ok: true as const, tools: cached });
+      }
+
       try {
-        const result = await createMCPTools({ [id]: server.configTemplate }, logger, {
-          signal: AbortSignal.timeout(5000),
-        });
-
-        const tools = Object.entries(result.tools).map(([name, tool]) => {
-          const t = tool as Record<string, unknown>;
-          const schema = t.inputSchema as Record<string, unknown> | undefined;
-          return {
-            name,
-            description: typeof t.description === "string" ? t.description : undefined,
-            inputSchema: (schema?.jsonSchema ?? null) as Record<string, unknown> | null,
-          };
-        });
-
-        await result.dispose();
+        const tools = await probeAndExtract(id, server.configTemplate, logger, 5000);
+        putCachedTools(id, server.configTemplate, tools);
         return c.json({ ok: true as const, tools });
       } catch (error) {
         const classified = classifyProbeError(error);
