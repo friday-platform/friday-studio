@@ -6,7 +6,26 @@ import type { MCPServerMetadata, MCPServersRegistry } from "./schemas.ts";
  * Each service runs its own workspace-mcp instance with `--tools` filtering
  * for tool isolation. Bearer tokens are pulled from per-service Link providers.
  */
-const GOOGLE_WORKSPACE_SERVICES = [
+type GoogleWorkspaceServiceSpec = {
+  id: string;
+  name: string;
+  urlDomains: string[];
+  urlEnvKey: string;
+  defaultPort: number;
+  toolFlag: string;
+  description: string;
+  constraints: string;
+  /**
+   * Optional per-service permission level. When set, workspace-mcp is
+   * launched with `--permissions <toolFlag>:<level>` instead of
+   * `--tools <toolFlag>`, which restricts the registered tool catalog
+   * to operations the level allows. Levels per service: `readonly`,
+   * `full` (gmail also: `organize`, `drafts`, `send`).
+   * `--permissions` is mutually exclusive with `--tools`.
+   */
+  permissionLevel?: string;
+};
+const GOOGLE_WORKSPACE_SERVICES: GoogleWorkspaceServiceSpec[] = [
   {
     id: "google-calendar",
     name: "Google Calendar",
@@ -63,15 +82,17 @@ const GOOGLE_WORKSPACE_SERVICES = [
     defaultPort: 8005,
     toolFlag: "sheets",
     description:
-      "Full Google Sheets management via workspace-mcp — list spreadsheets, read/write cell values, create sheets, format cells, conditional formatting.",
+      "Read-only Google Sheets access via workspace-mcp — list spreadsheets, read cell values and ranges, get spreadsheet metadata. Write operations (create sheets, update cells, format) are not currently supported because the `spreadsheets` (write) scope is not in the verified GCP project Friday delegates OAuth through.",
     constraints:
-      "Requires OAuth. Use when data lives in Google Sheets. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=external GOOGLE_OAUTH_CLIENT_SECRET=external WORKSPACE_MCP_PORT=8005 uvx workspace-mcp --tools sheets --transport streamable-http",
+      "Requires OAuth. Read-only — no cell writes, sheet creation, or formatting. Use when data lives in Google Sheets and you need to read it. For analyzing data already uploaded as CSV/database artifacts, use the data-analyst agent instead. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=external GOOGLE_OAUTH_CLIENT_SECRET=external WORKSPACE_MCP_PORT=8005 uvx workspace-mcp --permissions sheets:readonly --transport streamable-http",
+    // Use --permissions instead of --tools so workspace-mcp filters out the
+    // 8 sheets-write tools (modify_sheet_values, create_*, format_*, etc.)
+    // that would 403 at runtime without the spreadsheets scope.
+    permissionLevel: "readonly",
   },
 ];
 
-function createGoogleWorkspaceEntry(
-  spec: (typeof GOOGLE_WORKSPACE_SERVICES)[number],
-): MCPServerMetadata {
+function createGoogleWorkspaceEntry(spec: GoogleWorkspaceServiceSpec): MCPServerMetadata {
   // Token env var: google-calendar -> GOOGLE_CALENDAR_ACCESS_TOKEN
   const tokenEnvKey = `${spec.id.toUpperCase().replace(/-/g, "_")}_ACCESS_TOKEN`;
   const defaultUrl = `http://localhost:${spec.defaultPort}/mcp`;
@@ -93,7 +114,14 @@ function createGoogleWorkspaceEntry(
       startup: {
         type: "command",
         command: "uvx",
-        args: ["workspace-mcp", "--tools", spec.toolFlag, "--transport", "streamable-http"],
+        args: [
+          "workspace-mcp",
+          ...(spec.permissionLevel
+            ? ["--permissions", `${spec.toolFlag}:${spec.permissionLevel}`]
+            : ["--tools", spec.toolFlag]),
+          "--transport",
+          "streamable-http",
+        ],
         env: { WORKSPACE_MCP_PORT: String(spec.defaultPort) },
         ready_url: defaultUrl,
       },

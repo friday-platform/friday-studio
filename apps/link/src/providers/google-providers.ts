@@ -60,6 +60,12 @@ function encodeGeminiState({
  * GCP project verified. See `gemini-cli-extensions/workspace`'s
  * `feature-config.ts` — anything outside that set will re-introduce the
  * unverified-app warning, defeating the purpose of this swap.
+ *
+ * Notably absent: `spreadsheets` (sheets write), `presentations` (slides
+ * write), and `tasks*`. These are flagged `defaultEnabled: false` in
+ * upstream `feature-config.ts` with the comment "not in published GCP
+ * project" — requesting them triggers Google's "This app is blocked"
+ * page for any external user. Sheets is therefore read-only here.
  */
 const GOOGLE_SCOPES = {
   calendar: ["https://www.googleapis.com/auth/calendar"],
@@ -70,7 +76,10 @@ const GOOGLE_SCOPES = {
   drive: ["https://www.googleapis.com/auth/drive"],
   gmail: ["https://www.googleapis.com/auth/gmail.modify"],
   sheets: [
-    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    // Required by workspace-mcp's `list_spreadsheets` tool (it queries Drive
+    // for files of mimeType=spreadsheet). Without it, list-style tools 403
+    // even though raw sheet reads succeed.
     "https://www.googleapis.com/auth/drive.readonly",
   ],
 } as const;
