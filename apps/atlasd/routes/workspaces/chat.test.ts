@@ -254,6 +254,31 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
     expect(res.status).toBe(204);
   });
 
+  test("returns 410 + X-Stream-Replay-Disabled when buffer is replay-disabled", async () => {
+    // A buffer that overflowed MAX_EVENTS flips replayDisabled=true and
+    // subscribe() refuses to attach. If we still committed 200 OK + an empty
+    // ReadableStream the AI SDK would treat the empty body as a clean finish
+    // and silently truncate the assistant message — the client can't tell
+    // this apart from a successful resume. 410 + header forces a real error
+    // path so the user gets a "reload chat" affordance instead.
+    const subscribe = vi.fn().mockReturnValue(false);
+    const { app } = createTestApp({
+      streamRegistry: {
+        getStream: vi
+          .fn()
+          .mockReturnValue({ active: true, replayDisabled: true, createdAt: Date.now() }),
+        subscribe,
+        unsubscribe: vi.fn(),
+      },
+    });
+
+    const res = await app.request("/ws-1/chat/chat-1/stream");
+
+    expect(res.status).toBe(410);
+    expect(res.headers.get("X-Stream-Replay-Disabled")).toBe("true");
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
   test("returns SSE response with correct headers when stream is active", async () => {
     const now = Date.now();
     const { app } = createTestApp({
@@ -270,6 +295,57 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
     expect(res.headers.get("Content-Type")).toBe("text/event-stream");
     expect(res.headers.get("Cache-Control")).toBe("no-cache");
     expect(res.headers.get("X-Turn-Started-At")).toBe(String(now));
+  });
+
+  test("forwards Last-Event-ID header to streamRegistry.subscribe as cursor", async () => {
+    const subscribe = vi.fn().mockReturnValue(true);
+    const { app } = createTestApp({
+      streamRegistry: {
+        getStream: vi.fn().mockReturnValue({ active: true, createdAt: Date.now() }),
+        subscribe,
+        unsubscribe: vi.fn(),
+      },
+    });
+
+    const res = await app.request("/ws-1/chat/chat-1/stream", {
+      headers: { "Last-Event-ID": "42" },
+    });
+
+    expect(res.status).toBe(200);
+    // 3rd argument is the parsed integer cursor — anything else lets
+    // resume fall back to full replay, which re-sends already-rendered
+    // text-deltas and produces duplicate content in the UI.
+    expect(subscribe).toHaveBeenCalledWith("chat-1", expect.anything(), 42);
+  });
+
+  test.each([
+    { header: "abc", reason: "non-numeric" },
+    { header: "-1", reason: "negative" },
+    {
+      header: "1.5",
+      reason: "fractional (parseInt truncates so this passes — included as documentation)",
+    },
+  ])("ignores invalid Last-Event-ID ($reason) — undefined cursor", async ({ header }) => {
+    const subscribe = vi.fn().mockReturnValue(true);
+    const { app } = createTestApp({
+      streamRegistry: {
+        getStream: vi.fn().mockReturnValue({ active: true, createdAt: Date.now() }),
+        subscribe,
+        unsubscribe: vi.fn(),
+      },
+    });
+
+    await app.request("/ws-1/chat/chat-1/stream", { headers: { "Last-Event-ID": header } });
+
+    const callArg = subscribe.mock.calls[0]?.[2];
+    if (header === "1.5") {
+      // parseInt("1.5", 10) === 1 — accepted as a valid non-negative int.
+      // This is intentional: any prefix-numeric header is fine; the cursor
+      // is clamped server-side and over-/under-shooting is harmless.
+      expect(callArg).toBe(1);
+    } else {
+      expect(callArg).toBeUndefined();
+    }
   });
 });
 

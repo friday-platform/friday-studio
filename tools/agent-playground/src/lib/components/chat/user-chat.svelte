@@ -11,7 +11,9 @@
   import ChatInspector from "./chat-inspector.svelte";
   import ChatListPanel from "./chat-list-panel.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
+  import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
+  import { nextResumeBudgetStep } from "./resume-budget.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
   import { extractToolCalls, flattenToolCalls } from "./extract-tool-calls.ts";
   import {
@@ -97,41 +99,54 @@
     }
   }
 
-  /**
-   * Playground chat wired to the `user` workspace via `@ai-sdk/svelte`'s
-   * {@link ChatImpl} and {@link DefaultChatTransport}. Minimal wiring without
-   * production concerns (X-Turn-Started-At timer, GA4 analytics, OAuth return
-   * flow, query-client sidebar invalidation, resume-stream abort wiring).
-   * Uses the same backend contract as production clients:
-   *
-   *   - `POST /api/workspaces/<wsId>/chat`          — first and follow-up turns
-   *   - `GET  /api/workspaces/<wsId>/chat/:chatId`  — rehydrate on mount
-   *
-   * The request body shape is controlled via `prepareSendMessagesRequest`
-   * and matches what `AtlasWebAdapter.handleWebhook` expects:
-   *   { id, message, datetime? }
-   *
-   * The Chat instance owns message state, streaming, and error handling.
-   *
-   */
   const CHAT_API = $derived(`/api/daemon/api/workspaces/${encodeURIComponent(wsId)}/chat`);
   let initialMessages: AtlasUIMessage[] = $state([]);
   let rehydrationDone = $state(false);
   let rehydrating = $state(false);
-  /**
-   * Set when we rehydrate from localStorage — signals the "try to resume an
-   * in-flight stream" effect that this chatId may have a live turn on the
-   * server (user navigated away mid-response). The effect calls
-   * `chat.resumeStream()` once; the server returns 204 when no stream is
-   * active, so it's a no-op for finished chats.
-   */
+  /** Tries `chat.resumeStream()` once after rehydrate; 204 = no live stream. */
   let shouldResumeStream = $state(false);
-  /** Set when resumeStream returns 204 and the last loaded message was unanswered. */
+  /** True when resume returned 204 and the last loaded message was a user turn. */
   let wasInterrupted = $state(false);
 
   let error: string | null = $state(null);
 
+  /**
+   * Bound on *consecutive no-progress* resume attempts. Resets on forward
+   * progress (see {@link nextResumeBudgetStep}) so a multi-minute tool call
+   * across many Chrome ~50s fetch caps doesn't exhaust mid-stream.
+   */
+  const MAX_TURN_RESUMES = 20;
+  let resumeAttempts = $state(0);
+  let lastSeenEventId: number | undefined = $state(undefined);
+  let lastSeenEventIdAtLastFailure: number | undefined = $state(undefined);
+  /**
+   * Set when the server signals the SSE buffer can't be replayed
+   * (`410 Gone` + `X-Stream-Replay-Disabled: true`). Short-circuits
+   * auto-resume so we surface the banner instead of burning the 20-attempt
+   * budget on a status that won't change.
+   */
+  let unrecoverableStream = $state(false);
 
+  function resetResumeState(): void {
+    resumeAttempts = 0;
+    lastSeenEventId = undefined;
+    lastSeenEventIdAtLastFailure = undefined;
+    unrecoverableStream = false;
+  }
+
+  const trackingFetch = createCursorTrackingFetch({
+    getCursor: () => lastSeenEventId,
+    setCursor: (value) => {
+      lastSeenEventId = value;
+    },
+    isResumeRequest: (input) =>
+      typeof input === "string" || input instanceof URL
+        ? String(input).endsWith("/stream")
+        : input.url.endsWith("/stream"),
+    onUnrecoverable: () => {
+      unrecoverableStream = true;
+    },
+  });
 
   /**
    * Cached geolocation — requested once on first chat message. The browser
@@ -316,65 +331,49 @@
     });
   });
 
-  // Transport — re-derived when CHAT_API / prepareSendMessagesRequest would
-  // change. Both are stable in this component so it effectively fires once.
   const transport = $derived(
     new DefaultChatTransport({
       api: CHAT_API,
+      fetch: trackingFetch,
       prepareSendMessagesRequest({ messages: msgs, id }) {
-        // The Atlas web adapter only needs the latest message plus the
-        // chatId and optional datetime context — it pulls history server-
-        // side from ChatStorage. Sending the full `msgs` array would be
-        // wasteful bandwidth on long threads.
+        // Adapter pulls history server-side; sending msgs[] would waste bandwidth.
         const body: Record<string, unknown> = { id, message: msgs.at(-1), datetime: buildDatetime() };
         return { body };
       },
     }),
   );
 
-  // Chat instance — re-derived when chatId or initialMessages change (new
-  // chat, post-rehydration). `rehydrationDone` gates creation so we don't
-  // spin up an empty Chat before we know whether we're resuming or starting
-  // fresh.
+  // `rehydrationDone` gates creation so we don't spin up an empty Chat
+  // before we know whether we're resuming or starting fresh.
   const chat = $derived(
     rehydrationDone && chatId.length > 0
       ? new ChatImpl<AtlasUIMessage>({ id: chatId, messages: initialMessages, transport })
       : null,
   );
 
-  // Resume an in-flight stream after rehydrate. Fires once per chatId that
-  // came from localStorage: if the user navigated away mid-response the
-  // server's StreamRegistry still has the buffered chunks. `resumeStream()`
-  // hits `GET /api/workspaces/<wsId>/chat/<chatId>/stream` — returns 204 when
-  // no active stream, otherwise replays everything since the turn started so
-  // the assistant's partial message flows in live and finishes normally.
-  // Without this, navigating back showed only the persisted user message and
-  // the in-flight assistant response was invisible until the next page load
-  // (which could be after the stream completed and the message was flushed
-  // to ChatStorage).
+  // Pick up an in-flight turn the user navigated away from. 204 = no live
+  // stream; if the last loaded message was an unanswered user turn, surface
+  // the interrupted banner so they can resend.
+  //
+  // Read `shouldResumeStream` via `untrack` so the synchronous self-write
+  // below can't queue a same-tick re-run whose cleanup would `instance.stop()`
+  // the just-fired resumeStream. The chatId-change effect sets the flag true
+  // BEFORE chat is created, so reading it untracked still observes the right
+  // value when this effect runs on the chat null→ChatImpl transition.
   $effect(() => {
-    if (chat && shouldResumeStream) {
-      shouldResumeStream = false;
-      const instance = chat;
-      // Capture before the async boundary — `initialMessages` is stable here
-      // (rehydrateChat already settled), but we can't read it after the await.
-      const hadUnansweredUser =
-        initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
-      instance.resumeStream().catch(() => {
-        // The most common outcome is 204 (no active stream). When the session
-        // died mid-response the server has nothing to replay — show an
-        // interrupted indicator so the user knows to resend.
-        if (hadUnansweredUser) wasInterrupted = true;
-      });
-      // Effect cleanup: when `chat` is re-derived (wsId change, switchToChat,
-      // startNewChat) or the component unmounts, abort the old Chat's
-      // resume fetch instead of letting it run until the server hangs up.
-      // `chat.stop()` calls the AbortController inside `makeRequest` and
-      // rejects the resume promise — swallowed above, so it's safe.
-      return () => {
-        void instance.stop().catch(() => {});
-      };
-    }
+    if (!chat) return;
+    if (!untrack(() => shouldResumeStream)) return;
+    shouldResumeStream = false;
+    const instance = chat;
+    const hadUnansweredUser =
+      initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
+    instance.resumeStream().catch(() => {
+      if (hadUnansweredUser) wasInterrupted = true;
+    });
+    // Abort the old Chat's resume fetch when re-derived or unmounted.
+    return () => {
+      void instance.stop().catch(() => {});
+    };
   });
 
   // One-shot: auto-submit a seed message planted by the overview start-chat card.
@@ -390,14 +389,43 @@
     untrack(() => void handleSubmit(seed));
   });
 
-  // Propagate transport / Chat errors into the playground error banner, but
-  // only when there's no in-message error bubble for this turn. Session
-  // failures (e.g. invalid model) arrive via BOTH a `data-error` chunk and
-  // a rejected transport promise — rendering both is noisy duplication.
+  // Mid-turn fetch drops (Chrome's ~50s streaming cap) get an auto-resume
+  // before the banner. Skip if the SDK already rendered an in-message error
+  // bubble — session failures (e.g. invalid model) arrive via both a
+  // `data-error` chunk and a rejected transport promise.
   $effect(() => {
     if (!chat?.error) return;
     const last = chat.messages.at(-1);
     if (last && last.role === "assistant" && hasErrorPart(last as AtlasUIMessage)) {
+      return;
+    }
+    if (unrecoverableStream) {
+      error = chat.error.message;
+      return;
+    }
+    // Terminal errors that fired before any SSE frame landed (e.g. 503
+    // no-responders from a downed daemon) won't be recovered by resuming —
+    // the GET /stream just 204s. Surface the banner immediately instead of
+    // burning the 20-attempt budget.
+    if (lastSeenEventId === undefined) {
+      error = chat.error.message;
+      return;
+    }
+    const step = nextResumeBudgetStep({
+      lastSeenEventId,
+      lastSeenEventIdAtLastFailure,
+      resumeAttempts,
+      maxTurnResumes: MAX_TURN_RESUMES,
+    });
+    resumeAttempts = step.nextResumeAttempts;
+    lastSeenEventIdAtLastFailure = step.nextLastSeenEventIdAtLastFailure;
+
+    if (step.shouldResume) {
+      const instance = chat;
+      instance.clearError();
+      // Failure here re-enters via chat.error on the next tick; if the
+      // budget is now exhausted it falls through to the banner.
+      instance.resumeStream().catch(() => {});
       return;
     }
     error = chat.error.message;
@@ -706,6 +734,7 @@
         if (step.toSend === null || !chat) break;
         queuedMessages = step.remainder;
         try {
+          resetResumeState();
           await chat.sendMessage({
             role: "user",
             parts: step.toSend,
@@ -1039,12 +1068,16 @@
     if (parts.length === 0) return;
 
     // Queue while the current turn is still streaming; the flush effect
-    // fires the next turn as soon as status returns to ready.
+    // fires the next turn as soon as status returns to ready. Resetting
+    // resume state here would zero the in-flight cursor and force the
+    // next Chrome drop into a duplicating full replay — only reset on
+    // the actual turn-start path below.
     if (streaming) {
       queuedMessages = [...queuedMessages, parts];
       return;
     }
 
+    resetResumeState();
     void chat.sendMessage({
       role: "user",
       parts,
@@ -1077,6 +1110,7 @@
       queuedMessages = [...queuedMessages, parts];
       return;
     }
+    resetResumeState();
     void chat.sendMessage({
       role: "user",
       parts,

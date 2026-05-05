@@ -250,7 +250,7 @@ describe("StreamRegistry", () => {
   });
 
   describe("subscribe", () => {
-    it("replays buffered events to new subscriber", () => {
+    it("replays buffered events to new subscriber with id: lines", () => {
       registry.createStream("chat-1");
       registry.appendEvent("chat-1", makeEvent(1));
       registry.appendEvent("chat-1", makeEvent(2));
@@ -264,11 +264,332 @@ describe("StreamRegistry", () => {
       // Should have received 2 events (replay)
       expect(received).toHaveLength(2);
 
-      // Verify the replayed data is SSE-formatted JSON
+      // Each frame starts with `id: <index>\n` (SSE event id line — clients
+      // use this for `Last-Event-ID` cursor on resume) and includes the JSON
+      // payload on the data line.
       const decoder = new TextDecoder();
       const firstData = decoder.decode(received[0]);
-      expect(firstData).toMatch(/^data: /);
+      expect(firstData).toMatch(/^id: 0\ndata: /);
       expect(firstData).toContain('"delta":"event-1"');
+      const secondData = decoder.decode(received[1]);
+      expect(secondData).toMatch(/^id: 1\ndata: /);
+      expect(secondData).toContain('"delta":"event-2"');
+    });
+
+    it("replays only events past lastEventId when given a cursor", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", makeEvent(1));
+      registry.appendEvent("chat-1", makeEvent(2));
+      registry.appendEvent("chat-1", makeEvent(3));
+
+      const received: Uint8Array[] = [];
+      const controller = createController({ onEnqueue: (data) => received.push(data) });
+
+      // Client says "I have id 0, send me only what's after."
+      registry.subscribe("chat-1", controller, 0);
+
+      expect(received).toHaveLength(2);
+      const decoder = new TextDecoder();
+      expect(decoder.decode(received[0])).toMatch(/^id: 1\ndata: /);
+      expect(decoder.decode(received[1])).toMatch(/^id: 2\ndata: /);
+    });
+
+    it("replays nothing when cursor is at the buffer tail (caught up)", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", makeEvent(1));
+      registry.appendEvent("chat-1", makeEvent(2));
+
+      const received: Uint8Array[] = [];
+      const controller = createController({ onEnqueue: (data) => received.push(data) });
+
+      // Client already has id 1 (the last one). Subscribing with that
+      // cursor must not replay anything — it just attaches for live events.
+      const ok = registry.subscribe("chat-1", controller, 1);
+      expect(ok).toBe(true);
+      expect(received).toHaveLength(0);
+
+      // Confirms attach worked: a fresh broadcast lands.
+      registry.appendEvent("chat-1", makeEvent(3));
+      expect(received).toHaveLength(1);
+      expect(new TextDecoder().decode(received[0])).toMatch(/^id: 2\ndata: /);
+    });
+
+    it("clamps a negative cursor to 0 (full replay)", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", makeEvent(1));
+      registry.appendEvent("chat-1", makeEvent(2));
+
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), -5);
+
+      expect(received).toHaveLength(2);
+    });
+
+    it("re-emits open *-start chunks before continuing past the cursor", () => {
+      // Simulate a turn that was mid tool-call when the connection dropped:
+      // text-start (closed) → tool-input-start → some deltas → drop. The
+      // client cursor is past the tool-input-start. On resume, the server
+      // must re-send tool-input-start so the AI SDK's fresh activeResponse
+      // can register the tool before processing the deltas.
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", { type: "text-start", id: "txt-1" } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", { type: "text-end", id: "txt-1" } as AtlasUIMessageChunk); // index 1
+      registry.appendEvent("chat-1", {
+        type: "tool-input-start",
+        toolCallId: "tc-1",
+        toolName: "do-thing",
+      } as AtlasUIMessageChunk); // index 2 — STILL OPEN
+      registry.appendEvent("chat-1", {
+        type: "tool-input-delta",
+        toolCallId: "tc-1",
+        inputTextDelta: "{",
+      } as AtlasUIMessageChunk); // index 3
+      registry.appendEvent("chat-1", {
+        type: "tool-input-delta",
+        toolCallId: "tc-1",
+        inputTextDelta: "}",
+      } as AtlasUIMessageChunk); // index 4
+
+      const received: Uint8Array[] = [];
+      const controller = createController({ onEnqueue: (d) => received.push(d) });
+
+      // Client says it has up to id 3 (the first delta). It does NOT
+      // have tool-input-start in its fresh activeResponse state.
+      registry.subscribe("chat-1", controller, 3);
+
+      // Expect: tool-input-start (re-emit) + index 4 delta. The
+      // closed text part (txt-1) does NOT get re-emitted.
+      expect(received).toHaveLength(2);
+      const decoder = new TextDecoder();
+      const first = decoder.decode(received[0]);
+      const second = decoder.decode(received[1]);
+      expect(first).toMatch(/^id: 2\n/);
+      expect(first).toContain('"type":"tool-input-start"');
+      expect(second).toMatch(/^id: 4\n/);
+      expect(second).toContain('"type":"tool-input-delta"');
+    });
+
+    it("does not re-emit *-start when no cursor is given (full replay covers it)", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-start",
+        toolCallId: "tc-1",
+        toolName: "do-thing",
+      } as AtlasUIMessageChunk);
+      registry.appendEvent("chat-1", {
+        type: "tool-input-delta",
+        toolCallId: "tc-1",
+        inputTextDelta: "{}",
+      } as AtlasUIMessageChunk);
+
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+
+      // Full replay sends both events. Re-emit logic only fires when
+      // startIdx > 0 — without a cursor we'd otherwise duplicate the
+      // tool-input-start (once via re-emit, once via the main loop).
+      expect(received).toHaveLength(2);
+    });
+
+    it("forgets parts once their close event is recorded", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-start",
+        toolCallId: "tc-1",
+        toolName: "do-thing",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "tool-output-available",
+        toolCallId: "tc-1",
+        output: "ok",
+      } as AtlasUIMessageChunk); // index 1 — CLOSES the part
+      registry.appendEvent("chat-1", {
+        type: "text-start",
+        id: "txt-after",
+      } as AtlasUIMessageChunk); // index 2
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "txt-after",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 3
+
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 2);
+
+      // Only text-start (open) gets re-emitted; tool-input-start does
+      // NOT, because its close event landed before the cursor.
+      // Expected: re-emit text-start at id 2, then text-delta at id 3.
+      expect(received).toHaveLength(2);
+      const decoder = new TextDecoder();
+      expect(decoder.decode(received[0])).toMatch(/^id: 2\ndata: .*"type":"text-start"/);
+      expect(decoder.decode(received[1])).toMatch(/^id: 3\ndata: .*"type":"text-delta"/);
+    });
+
+    // `tool-output-error` is the alternate close path for a tool part. The
+    // existing "forgets parts" test only exercises `tool-output-available`;
+    // a typo in `partKey` for the error case (e.g. wrong key shape) would
+    // leak the part into `openParts` forever and re-emit a stale
+    // `tool-input-start` past every subsequent cursor.
+    it("forgets a tool part when tool-output-error closes it", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-start",
+        toolCallId: "tc-err",
+        toolName: "do-thing",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "tool-output-error",
+        toolCallId: "tc-err",
+        errorText: "boom",
+      } as AtlasUIMessageChunk); // index 1 — CLOSES the part
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 2
+
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
+
+      // No open parts left — only the post-cursor text-delta replays.
+      expect(received).toHaveLength(1);
+      expect(new TextDecoder().decode(received[0])).toMatch(/^id: 2\ndata: .*"type":"text-delta"/);
+    });
+
+    // `reasoning-end` closes a reasoning part. Same risk as
+    // `tool-output-error`: untested = silent regression.
+    it("forgets a reasoning part when reasoning-end closes it", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", { type: "reasoning-start", id: "r-1" } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", { type: "reasoning-end", id: "r-1" } as AtlasUIMessageChunk); // index 1 — CLOSES
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 2
+
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
+
+      // Closed reasoning part must not re-emit.
+      expect(received).toHaveLength(1);
+      expect(new TextDecoder().decode(received[0])).toMatch(/^id: 2\ndata: .*"type":"text-delta"/);
+    });
+
+    // `tool-input-available` carries the fully-formed `input` for a tool
+    // call. The AI SDK transitions the tool part from `input-streaming`
+    // to `input-available` on this chunk and stores `input` on the part.
+    // If a resume cursor lands between `tool-input-available` and
+    // `tool-output-available`, re-emitting only the earlier
+    // `tool-input-start` would leave the resumed client's part stuck in
+    // `input-streaming` with no `input` recorded. We MUST re-emit the
+    // latest open frame (here, `tool-input-available`).
+    it("re-emits tool-input-available when cursor lands between it and tool-output-available", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-start",
+        toolCallId: "tc-1",
+        toolName: "do-thing",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "tool-input-delta",
+        toolCallId: "tc-1",
+        inputTextDelta: '{"x":1}',
+      } as AtlasUIMessageChunk); // index 1
+      registry.appendEvent("chat-1", {
+        type: "tool-input-available",
+        toolCallId: "tc-1",
+        toolName: "do-thing",
+        input: { x: 1 },
+      } as AtlasUIMessageChunk); // index 2 — UPDATES the open frame
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 3
+
+      const received: Uint8Array[] = [];
+      registry.subscribe(
+        "chat-1",
+        createController({ onEnqueue: (d) => received.push(d) }),
+        2, // client has up to tool-input-available
+      );
+
+      // Re-emit must be tool-input-available at index 2 (the LATEST open
+      // frame for this tool) — NOT tool-input-start at index 0. Replaying
+      // only `*-start` would lose the input registration.
+      expect(received).toHaveLength(2);
+      const decoder = new TextDecoder();
+      const first = decoder.decode(received[0]);
+      expect(first).toMatch(/^id: 2\n/);
+      expect(first).toContain('"type":"tool-input-available"');
+      const second = decoder.decode(received[1]);
+      expect(second).toMatch(/^id: 3\n/);
+      expect(second).toContain('"type":"text-delta"');
+    });
+
+    // Some tools emit `tool-input-available` directly without a preceding
+    // `tool-input-start` (non-streaming input path). The buffer should
+    // still register it as an opener so resume re-emits it past the
+    // cursor.
+    it("treats tool-input-available as an opener even without a prior tool-input-start", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-available",
+        toolCallId: "tc-direct",
+        toolName: "do-thing",
+        input: { y: 2 },
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 1
+
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 0);
+
+      // tool-input-available re-emits at its original frame id, then
+      // post-cursor text-delta lands.
+      expect(received).toHaveLength(2);
+      const decoder = new TextDecoder();
+      expect(decoder.decode(received[0])).toMatch(/^id: 0\ndata: .*"type":"tool-input-available"/);
+      expect(decoder.decode(received[1])).toMatch(/^id: 1\ndata: .*"type":"text-delta"/);
+    });
+
+    // Audit decision: `start-step` / `finish-step` are intentionally NOT
+    // tracked in `partKey`. They don't carry per-part state the AI SDK's
+    // `*-delta` validators check — missing one on resume only loses a
+    // `step-start` marker in `message.parts`, no protocol error. This
+    // test pins that decision so a well-meaning future edit (adding them
+    // to `partKey`) trips an obvious red and forces the author to revisit
+    // the rationale.
+    it("does NOT track start-step or finish-step in openParts", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", { type: "start-step" } as AtlasUIMessageChunk);
+      registry.appendEvent("chat-1", { type: "finish-step" } as AtlasUIMessageChunk);
+
+      const buffer = registry.getStream("chat-1");
+      expect.assert(buffer !== undefined, "buffer should exist");
+      expect(buffer.openParts.size).toBe(0);
+    });
+
+    it("replays nothing when cursor is past the buffer tail", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", makeEvent(1));
+
+      const received: Uint8Array[] = [];
+      const ok = registry.subscribe(
+        "chat-1",
+        createController({ onEnqueue: (d) => received.push(d) }),
+        99,
+      );
+
+      // Subscribe still succeeds (the buffer is active and replay isn't
+      // disabled) — the loop just has nothing to send. Live broadcasts
+      // resume from there.
+      expect(ok).toBe(true);
+      expect(received).toHaveLength(0);
     });
 
     it("adds controller to subscribers set", () => {
@@ -333,6 +654,42 @@ describe("StreamRegistry", () => {
       const decoder = new TextDecoder();
       expect(decoder.decode(received1[0])).toContain('"delta":"event-99"');
       expect(decoder.decode(received2[0])).toContain('"delta":"event-99"');
+    });
+
+    it("broadcasts new events with monotonic id: lines", () => {
+      registry.createStream("chat-1");
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+
+      registry.appendEvent("chat-1", makeEvent(1));
+      registry.appendEvent("chat-1", makeEvent(2));
+      registry.appendEvent("chat-1", makeEvent(3));
+
+      const decoder = new TextDecoder();
+      expect(decoder.decode(received[0])).toMatch(/^id: 0\ndata: /);
+      expect(decoder.decode(received[1])).toMatch(/^id: 1\ndata: /);
+      expect(decoder.decode(received[2])).toMatch(/^id: 2\ndata: /);
+    });
+
+    it("omits id: line when buffer is replay-disabled (post-overflow)", () => {
+      registry.createStream("chat-1");
+      const received: Uint8Array[] = [];
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }));
+
+      // Force the buffer past MAX_EVENTS to trip replayDisabled. The first
+      // MAX_EVENTS frames carry an id; subsequent broadcasts to live
+      // subscribers omit it because replay is no longer possible.
+      for (let i = 0; i < MAX_EVENTS + 2; i++) {
+        registry.appendEvent("chat-1", makeEvent(i));
+      }
+
+      const decoder = new TextDecoder();
+      // Last frame should be a no-id broadcast since buffer overflowed.
+      const lastBytes = received[received.length - 1];
+      if (!lastBytes) throw new Error("expected at least one frame");
+      const lastFrame = decoder.decode(lastBytes);
+      expect(lastFrame).toMatch(/^data: /);
+      expect(lastFrame).not.toMatch(/^id: /);
     });
 
     it("unsubscribing one does not affect others", () => {
