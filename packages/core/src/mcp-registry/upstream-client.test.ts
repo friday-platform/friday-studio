@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  MCPUpstreamClient,
-  UpstreamSearchResponseSchema,
-  UpstreamServerEntrySchema,
-} from "./upstream-client.ts";
+import { MCPUpstreamClient, UpstreamServerEntrySchema } from "./upstream-client.ts";
 
 describe("MCPUpstreamClient", () => {
   describe("search", () => {
@@ -454,65 +450,6 @@ describe("MCPUpstreamClient", () => {
 
       const parsed = UpstreamServerEntrySchema.safeParse(entry);
       expect(parsed.success).toBe(true);
-    });
-  });
-
-  describe("search response schema", () => {
-    it("validates search response with multiple results", () => {
-      const searchResponse = {
-        servers: [
-          {
-            server: {
-              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
-              name: "io.github.test/server-a",
-              description: "Server A",
-              version: "1.0.0",
-            },
-            _meta: {
-              "io.modelcontextprotocol.registry/official": {
-                status: "active",
-                statusChangedAt: "2025-01-01T00:00:00Z",
-                publishedAt: "2025-01-01T00:00:00Z",
-                updatedAt: "2025-01-01T00:00:00Z",
-                isLatest: true,
-              },
-            },
-          },
-          {
-            server: {
-              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
-              name: "io.github.test/server-b",
-              description: "Server B",
-              version: "2.0.0",
-            },
-            _meta: {
-              "io.modelcontextprotocol.registry/official": {
-                status: "active",
-                statusChangedAt: "2025-01-01T00:00:00Z",
-                publishedAt: "2025-01-01T00:00:00Z",
-                updatedAt: "2025-01-01T00:00:00Z",
-                isLatest: true,
-              },
-            },
-          },
-        ],
-      };
-
-      const parsed = UpstreamSearchResponseSchema.safeParse(searchResponse);
-      expect(parsed.success).toBe(true);
-      if (parsed.success) {
-        expect(parsed.data.servers).toHaveLength(2);
-      }
-    });
-
-    it("validates empty search response", () => {
-      const emptyResponse = { servers: [] };
-
-      const parsed = UpstreamSearchResponseSchema.safeParse(emptyResponse);
-      expect(parsed.success).toBe(true);
-      if (parsed.success) {
-        expect(parsed.data.servers).toHaveLength(0);
-      }
     });
   });
 

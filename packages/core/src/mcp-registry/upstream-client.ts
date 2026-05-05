@@ -151,15 +151,18 @@ const UpstreamSearchEnvelopeSchema = z.object({
 });
 
 /**
- * Full search response from upstream registry /v0.1/servers endpoint.
- * Each entry is a complete UpstreamServerEntry (server + _meta wrapper).
+ * Loose probe used only to extract `server.name` for log context when an
+ * entry fails strict parsing.
  */
-export const UpstreamSearchResponseSchema = z.object({
-  servers: z.array(UpstreamServerEntrySchema),
-  metadata: z.object({ count: z.number() }).optional(),
-});
+const NameProbeSchema = z.object({ server: z.object({ name: z.string() }).partial() });
 
-export type UpstreamSearchResponse = z.infer<typeof UpstreamSearchResponseSchema>;
+/**
+ * Return shape of `search()`. Not a Zod schema — the wire response is parsed
+ * via `UpstreamSearchEnvelopeSchema` + per-entry `UpstreamServerEntrySchema`.
+ */
+export interface UpstreamSearchResponse {
+  servers: UpstreamServerEntry[];
+}
 
 // ─── Client ──────────────────────────────────────────────────────────────────
 
@@ -227,8 +230,6 @@ export class MCPUpstreamClient {
     // instead of returning 502 for the whole search.
     const servers: UpstreamServerEntry[] = [];
     let dropped = 0;
-    // Loose schema used only for log context when an entry fails strict parse.
-    const NameProbeSchema = z.object({ server: z.object({ name: z.string() }).partial() });
     for (const raw of envelope.data.servers) {
       const parsed = UpstreamServerEntrySchema.safeParse(raw);
       if (parsed.success) {
