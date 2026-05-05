@@ -1413,8 +1413,12 @@ export class AtlasDaemon {
         validateMCPEnvironmentForWorkspace(mergedConfig, workspace.path);
       }
 
-      // Register workspace-level LLM agents with agent registry
+      // Register workspace-level LLM agents with agent registry. Collect
+      // failures and surface them via workspace metadata below — without
+      // that, a phantom-agent workspace.yml that bypassed validation loads
+      // silently with the broken agent missing from the registry.
       const workspaceAgents = mergedConfig.workspace?.agents || {};
+      const registrationFailures: Array<{ agentId: string; reason: string }> = [];
       for (const [agentId, agentConfig] of Object.entries(workspaceAgents)) {
         if (agentConfig.type === "llm") {
           try {
@@ -1423,11 +1427,13 @@ export class AtlasDaemon {
             await this.agentRegistry?.registerAgent(agent);
             logger.info("Registered workspace LLM agent", { workspaceId: workspace.id, agentId });
           } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
             logger.error("Failed to register workspace LLM agent", {
               workspaceId: workspace.id,
               agentId,
-              error: error instanceof Error ? error.message : String(error),
+              error: reason,
             });
+            registrationFailures.push({ agentId, reason });
           }
         } else if (agentConfig.type === "atlas") {
           try {
@@ -1460,13 +1466,45 @@ export class AtlasDaemon {
               baseAgentId: agentConfig.agent,
             });
           } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
             logger.error("Failed to register workspace Atlas agent wrapper", {
               workspaceId: workspace.id,
               wrapperId: agentId,
               baseAgentId: agentConfig.agent,
-              error: error instanceof Error ? error.message : String(error),
+              error: reason,
+            });
+            registrationFailures.push({
+              agentId: `${agentId} (atlas → ${agentConfig.agent})`,
+              reason,
             });
           }
+        }
+      }
+
+      // Surface registration failures via workspace metadata. Status is
+      // preserved (not flipped to inactive) so partial-failure tolerance is
+      // unchanged — only the visibility of the broken state changes.
+      if (registrationFailures.length > 0) {
+        const summary = registrationFailures.map((f) => `${f.agentId}: ${f.reason}`).join("; ");
+        const lastError =
+          `Agent registration: ${registrationFailures.length} failure(s) — ${summary}. ` +
+          `Edit workspace.yml or run validate_workspace to fix.`;
+        try {
+          await manager.updateWorkspaceStatus(workspace.id, workspace.status, {
+            metadata: {
+              ...workspace.metadata,
+              lastError,
+              lastErrorAt: new Date().toISOString(),
+              // Counts load attempts that hit failures, not unique failures.
+              // A daemon restart on the same broken yml bumps it again.
+              failureCount: (workspace.metadata?.failureCount ?? 0) + 1,
+            },
+          });
+        } catch (statusError) {
+          logger.error("Failed to record agent-registration failures on workspace metadata", {
+            workspaceId: workspace.id,
+            statusError: statusError instanceof Error ? statusError.message : String(statusError),
+          });
         }
       }
 

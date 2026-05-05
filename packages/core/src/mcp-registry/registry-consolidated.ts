@@ -48,7 +48,7 @@ const GOOGLE_WORKSPACE_SERVICES: GoogleWorkspaceServiceSpec[] = [
     description:
       "Read and manage Gmail via workspace-mcp — search messages, read email content and attachments, send emails, create drafts, manage labels and filters. Full inbox access. This is the ONLY way to read email.",
     constraints:
-      "Requires OAuth. This is the ONLY way to read email. For send-only notifications without OAuth, use the bundled email agent instead. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=external GOOGLE_OAUTH_CLIENT_SECRET=external WORKSPACE_MCP_PORT=8002 uvx workspace-mcp --tools gmail --transport streamable-http",
+      "Requires OAuth. This is the ONLY way to read email. Launch: MCP_ENABLE_OAUTH21=true EXTERNAL_OAUTH21_PROVIDER=true WORKSPACE_MCP_STATELESS_MODE=true GOOGLE_OAUTH_CLIENT_ID=external GOOGLE_OAUTH_CLIENT_SECRET=external WORKSPACE_MCP_PORT=8002 uvx workspace-mcp --tools gmail --transport streamable-http",
   },
   {
     id: "google-drive",

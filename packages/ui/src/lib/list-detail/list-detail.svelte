@@ -58,8 +58,9 @@
   }
 
   .header :global(h1) {
+    color: var(--text-bright);
     font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
+    font-weight: var(--font-weight-5);
     margin: 0;
   }
 

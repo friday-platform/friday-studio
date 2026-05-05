@@ -190,7 +190,7 @@ export function createListCapabilitiesTool(
   return {
     list_capabilities: tool({
       description:
-        "List every capability available to this workspace: bundled atlas agents (web, email, " +
+        "List every capability available to this workspace: bundled atlas agents (web, " +
         "slack, gh, etc.), enabled MCP servers, and MCP servers in the platform catalog. " +
         "Output is bundled-first, alphabetical within each kind. Scan top-down and pick the " +
         "first match — bundled agents are zero-config and should be your default when the " +
