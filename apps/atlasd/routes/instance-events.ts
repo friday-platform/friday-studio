@@ -51,6 +51,14 @@ export const instanceEventsRoutes = daemonFactory
     }
 
     // SSE path — live feed.
+    // Core NATS subscription, not a JetStream consumer — the daemon
+    // re-subscribes automatically on reconnect, but messages published
+    // while the daemon's NATS connection was disconnected are LOST.
+    // Acceptable here because the playground is a dev tool and the
+    // replay endpoint (`?since=<seq>`) covers reload-after-disconnect.
+    // For a production-grade ops UI an ordered ephemeral push consumer
+    // (DeliverPolicy=New) would survive disconnects with replay, at
+    // the cost of one consumer per HTTP client.
     const subject = type ? `instance.${type}` : "instance.>";
     const sub = nc.subscribe(subject);
     // The `subscribe()` call returns before the broker actually registers
@@ -86,8 +94,18 @@ export const instanceEventsRoutes = daemonFactory
               controller.enqueue(enc.encode(`data: ${payload}\n\n`));
             }
           } catch {
-            // subscription closed — fall through to controller.close()
+            // for-await exited early — most often because the SSE
+            // controller threw in `enqueue` after the consumer cancelled
+            // (e.g. browser closed the EventSource). The abort listener
+            // normally tears down the NATS subscription on its own, but
+            // controller-cancel can land first; defense-in-depth in the
+            // finally below ensures we never leak the subscription.
           } finally {
+            try {
+              sub.unsubscribe();
+            } catch {
+              // already gone — abort listener fired first
+            }
             try {
               controller.close();
             } catch {

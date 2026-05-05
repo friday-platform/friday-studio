@@ -125,6 +125,15 @@ export const eventsRoutes = daemonFactory
     // of new publishes only. After a fire/dismiss, the UI updates
     // optimistically — the KV write is the source of truth, the
     // stream just carries the original event.
+    // Core NATS subscription, not a JetStream consumer — the daemon
+    // re-subscribes automatically on reconnect, but messages published
+    // while the daemon's NATS connection was disconnected are LOST.
+    // Acceptable here because the playground is a dev tool and the
+    // replay endpoint covers reload-after-disconnect; the operator-
+    // action POSTs invalidate the query and refetch on every flip.
+    // For a production-grade ops UI an ordered ephemeral push consumer
+    // (DeliverPolicy=New) would survive disconnects with replay, at
+    // the cost of one consumer per HTTP client.
     const sub = nc.subscribe(`events.>`);
     // The `subscribe()` call returns before the broker actually
     // registers the subscription. Without this flush, an event
