@@ -710,7 +710,10 @@ export class AtlasDaemon {
           const manager = this.getWorkspaceManager();
           const cfg = await manager.getWorkspaceConfig(workspaceId);
           const sig = cfg?.workspace?.signals?.[signalId];
-          return (sig?.concurrency ?? "skip") as ConcurrencyPolicy;
+          // `sig.concurrency` is typed `ConcurrencyPolicy | undefined`
+          // through the WorkspaceSignalConfig schema in @atlas/config —
+          // no cast needed.
+          return sig?.concurrency ?? "skip";
         } catch {
           return "skip";
         }
