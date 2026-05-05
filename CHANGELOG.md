@@ -9,106 +9,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.2] - 2026-05-04
 
-This is a substantial release: persistence and signalling moved to NATS JetStream, several legacy CLI/HTTP surfaces were retired, and one default that affects scheduled signals changed. Read **Breaking changes** and **Migration** before upgrading.
+Persistence and signalling moved to NATS JetStream (#164). Read **Breaking changes** and **Migration** before upgrading.
 
 ### Breaking changes
 
-- **NATS is now a hard prerequisite.** The daemon spawns its own `nats-server` by default (solo-dev mode), but the `nats-server` binary must be on `PATH` (`brew install nats-server` on macOS, or grab a release from <https://github.com/nats-io/nats-server/releases>). To use an external broker instead, set `FRIDAY_NATS_URL=nats://…` — when set, the daemon will *not* spawn an embedded broker. (#164)
-- **Daemon startup now blocks on JetStream migrations.** First boot after upgrade is bounded by legacy data volume; subsequent boots see every migration as `skipped` and the cost is microseconds. The daemon refuses HTTP traffic until migrations finish — `GET /api/daemon/status` exposes `migrations.state` (`pending` / `complete` / `failed`) for monitoring. Callers of `atlas daemon start --detached` should poll that field before issuing requests on a fresh upgrade. (#164)
-- **Cron `onMissed` default flipped from `skip` to `manual`.** Existing cron timers and any `workspace.yml` files without an explicit `onMissed` will now surface a *pending* event in `/schedules` on first restart instead of silently skipping the missed slot. To preserve the old behaviour, add `onMissed: skip` to the signal definition. The `coalesce` and `catchup` policies are unchanged. (#164)
-- **`atlas library …` CLI removed**, along with all subcommands. Workspaces are authored via the workspace-chat meta-agent now; the workspace.yml templates / item registry surface is retired. (#164)
-- **HTTP routes removed:** `/library/*`, `/workspaces/blueprint-recompile`, `/workspaces/resources`, `/workspaces/resource-config`, `/activity`. Any client integration pointing at these endpoints needs to migrate. (#164)
-- **`skipStates` body field on `POST /api/workspaces/:workspaceId/signals/:signalId` is silently dropped.** The field is still accepted by the schema but no longer plumbed into the FSM. Anyone using it for state-skipping will see behaviour change without an error. (#164)
-- **Memory backends pruned to narrative-only.** `retrieval`, `dedup`, and `kv` memory strategies were removed. No in-tree `workspace.yml` referenced these, but any external workspace YAML using `memory.kind: retrieval | dedup | kv` will fail to load. Use `memory.kind: narrative` (or omit). (#164)
-- **Packages and storage adapters dropped.** Anything still importing these will fail to build. Apps/packages: `apps/ledger`, `packages/resources`, `packages/activity`, `packages/workspace-builder`, `packages/cortex`. Storage adapters: `@atlas/adapters-md` (md-memory / md-narrative); `@atlas/core/artifacts` local + cortex adapters; `@atlas/core/session/cortex-session-history-adapter`; `@atlas/core/mcp-registry/storage/cortex-adapter`; `@atlas/skills` local + cortex adapters; `@atlas/storage/library-storage-adapter`; all in-memory test adapters across packages. Module entry: `@atlas/document-store/node.ts` — import from the package root (`@atlas/document-store`). (#164)
-- **In-memory test adapters removed.** Downstream test suites that used them must migrate to a shared NATS test server (one `nats-server` per Vitest worker — see `vitest.setup.ts`). (#164)
-- **Signal `concurrency` policy added on `WorkspaceSignalConfig`** with `skip` as the default (matches old behaviour). New options: `queue` (per-key serial), `concurrent` (no overlap guard), `replace` (abort in-flight, start new). Existing `workspace.yml`s without the field pick up `skip` automatically — no action required, but the field is worth knowing about for new authoring. (#182)
+- **NATS is now a hard prerequisite.** The daemon spawns its own `nats-server` by default, but the binary must be on `PATH` (`brew install nats-server` on macOS, or grab a release from <https://github.com/nats-io/nats-server/releases>). Set `FRIDAY_NATS_URL=nats://…` to point at an external broker — when set, the daemon will *not* spawn an embedded one. (#164)
+- **Daemon startup blocks on JetStream migrations.** First boot after upgrade is bounded by legacy data volume; subsequent boots are microseconds. The daemon refuses HTTP traffic until migrations finish; `GET /api/daemon/status` exposes `migrations.state` for monitoring. Detached-start callers should poll that field on a fresh upgrade. (#164)
+- **Cron `onMissed` default flipped from `skip` to `manual`.** Existing timers without an explicit `onMissed` will now surface a *pending* event in `/schedules` on first restart instead of silently skipping. Add `onMissed: skip` to preserve the old behaviour. (#164)
+- **CLI removed:** `atlas library …`. **HTTP routes removed:** `/library/*`, `/workspaces/blueprint-recompile`, `/workspaces/resources`, `/workspaces/resource-config`, `/activity`. (#164)
+- **`skipStates` body field on `POST /api/workspaces/:workspaceId/signals/:signalId` is silently dropped** — still accepted by the schema, but no longer plumbed into the FSM. (#164)
+- **Memory backends pruned to narrative-only.** `retrieval`, `dedup`, and `kv` strategies were removed; external `workspace.yml` referencing them will fail to load. Use `memory.kind: narrative` (or omit). (#164)
+- **Packages and adapters dropped.** Build will fail on imports of: `apps/ledger`, `packages/{resources,activity,workspace-builder,cortex}`; `@atlas/adapters-md`; cortex/local adapters across artifacts/session/mcp-registry/skills; `@atlas/storage/library-storage-adapter`; in-memory test adapters; `@atlas/document-store/node.ts` (use the package root). (#164)
+- **Signal `concurrency` policy added** on `WorkspaceSignalConfig` (`skip` default — matches old behaviour; `queue` / `concurrent` / `replace` available). No action required for existing workspaces. (#182)
 
 ### Migration
 
-- **Pre-existing data is migrated transparently on first boot** — no manual export/import. Each subsystem (chat, memory, scratchpad, workspace registry, MCP registry, cron timers, artifacts, sessions, document store, skills, workspace state) has an idempotent migration audited in the `_FRIDAY_MIGRATIONS` JetStream KV. Restart mid-migration is safe.
-- **Legacy on-disk paths are no longer read.** Backup scripts or external tooling that read `~/.atlas/sessions-v2/<sid>/{events.jsonl,metadata.json}`, `state.db`, the on-disk artifacts dir, `~/.atlas/document-store/*.sqlite`, or per-workspace skills directories must switch to the JetStream KV / Object Store buckets. Legacy files remain on disk after migration but are dead — content lives in JetStream. (#164)
-- **`atlas migrate` CLI** runs the same migration queue the daemon runs at startup. Idempotent. Mutating runs refuse to proceed if a daemon is reachable on `localhost:8080`. Flags: `--list`, `--dry-run`, `--json`, `--nats-url <url>` (override broker), `--no-spawn` (refuse to auto-spawn an ephemeral nats-server, fail if no broker is reachable — useful in CI). Read-only flags work while the daemon is running. (#164)
-- **Legacy `SESSIONS` JetStream stream is auto-decommissioned** on first boot. Before deletion, every event is dumped to `~/.atlas/legacy-sessions-backup-<YYYY-MM-DD>.jsonl`. Sessions whose events lived only in the legacy stream return HTTP 410 (`outdated storage format`) instead of HTTP 500. (#170)
-- **If migrations fail:** the daemon surfaces `migrations.state: "failed"` and an ERROR-severity log line. Re-run via `atlas migrate` with the daemon stopped, or restart the daemon to retry.
+- **First-boot data migration is automatic** — no manual export/import. Subsystems (chat, memory, scratchpad, workspace/MCP registries, cron timers, artifacts, sessions, document store, skills, workspace state) migrate via idempotent steps audited in the `_FRIDAY_MIGRATIONS` KV. Restart mid-migration is safe; failures surface as `migrations.state: "failed"` with an ERROR log line. (#164)
+- **Legacy on-disk paths are no longer read.** External tooling that touches `~/.atlas/sessions-v2/`, `state.db`, the on-disk artifacts dir, `~/.atlas/document-store/*.sqlite`, or per-workspace skills dirs must switch to JetStream KV / Object Store. The files remain on disk but are dead. (#164)
+- **`atlas migrate` CLI** runs the same queue standalone — for recovery (daemon stopped) or CI. Flags: `--list`, `--dry-run`, `--json`, `--nats-url`, `--no-spawn`. Mutating runs refuse if a daemon is reachable on `localhost:8080`. (#164)
+- **Legacy `SESSIONS` stream auto-decommissioned** on first boot, with every event dumped to `~/.atlas/legacy-sessions-backup-<date>.jsonl` first. Sessions that lived only in the legacy stream now return HTTP 410 `outdated storage format` (was 500). (#170)
 
 ### Added
 
-- **NATS JetStream as the persistence and signalling backbone.** Chat history, memory, signals, tool dispatch, and artifacts all live in durable JetStream streams / KV / Object Store with at-least-once delivery, replay, and clean shutdown semantics. Lays the groundwork for multi-host deployments. (#164)
-- **`atlas migrate` CLI** for running the migration queue standalone (recovery, CI, pipelines that migrate before starting the daemon). Flags: `--list`, `--dry-run`, `--json`, `--nats-url`, `--no-spawn`. (#164)
-- **`/schedules` page** with per-cron Fire / Fire-all / Dismiss controls for missed firings, backed by a new `WORKSPACE_EVENTS` JetStream stream. (#164)
-- **Workspace-events HTTP API:** `GET /api/workspaces/:workspaceId/events`, `GET /api/workspaces/:workspaceId/events/group`, `POST /api/workspaces/events/fire`, `POST /api/workspaces/events/dismiss`, `POST /api/workspaces/events/group` — the surface that powers `/schedules` and is available to integrators automating Fire / Dismiss / Group actions. Plus a top-level events feed at `GET /api/events`. (#164)
-- **Cron control API:** `GET /api/cron/timers` lists registered timers; `POST /api/cron/timers/:workspaceId/:signalId/pause` and `…/resume` toggle timers at runtime without editing `workspace.yml`. (#164)
-- **Chunked upload API** at `/api/chunked-upload/{init,:uploadId/chunk/:chunkIndex,:uploadId/complete,:uploadId/status}` for streaming large attachments into JetStream Object Store. (#164)
-- **NATS-mediated tool dispatch.** Bash and webfetch route through `tool-dispatch`; the standalone `tool-worker` entry can subscribe externally. The public NATS contract is `tools.<id>` for invocation and `tools.<id>.cancel.<reqId>` for worker-side cancel propagation. `scripts/run-tool-worker.sh` ships as the sandbox-runtime entrypoint for external workers (i.e. `FRIDAY_TOOL_WORKERS=external`). (#164)
-- **`INSTANCE_EVENTS` JetStream stream + `GET /api/instance/events` SSE feed** for live cascade-backlog state — `cascade.queue_saturated`, `cascade.queue_drained`, `cascade.queue_timeout`, `cascade.replaced`. Replaces UI polling with a push feed. (#182)
-- **`cascadeConsumer` block on `GET /api/daemon/status`** — `inFlight`, `cap`, `saturated` for ops visibility. (#182)
-- **Workspace chat debug endpoint** at `GET /api/workspaces/:id/chat-debug` for inspecting a chat's JetStream + KV state during troubleshooting. (#164)
-- **Skill export and import.** Skills can be exported as gzipped bundles and imported back from a file, making it easy to share or back up workspace skills across machines. (#178)
-- **`publish_skill` tool in the workspace-chat agent** — promote a workspace-scoped skill to a published, reusable skill directly from chat without leaving the conversation. (#179)
-- **Chat attachment lifecycle.** A boundary scrubber lifts large embedded base64 blobs from MCP tool outputs into JetStream Object Store artifacts before they ever hit the AI SDK message buffer (fixes `MAX_PAYLOAD_EXCEEDED` on Gmail-PDF flows). A defense-in-depth pre-persist scrubber walks assistant message tool parts (input + output) and `data-delegate-chunk` envelopes for sub-agent results. Daemon shutdown drains in-flight chat turns so partial assistant messages survive a SIGTERM. (#169)
-- **`parse_artifact` builtin + MCP tool.** Extracts PDF / DOCX / PPTX to markdown server-side, so bytes never enter the model context. Both the workspace-chat builtin and the MCP twin are exposed; downstream MCP clients can call it as a stable tool. (#169)
-- **PDF inline preview + Download button** in the chat artifact card. Saved files get correct names + extensions via base64 magic-byte mime sniffing — no more `.bin` filenames. (#169)
+- **NATS JetStream as the persistence and signalling backbone** — chat, memory, signals, tool dispatch, and artifacts all live in durable JetStream streams / KV / Object Store. Lays the groundwork for multi-host deployments. (#164)
+- **`atlas migrate` CLI** for running the migration queue standalone. (#164)
+- **`/schedules` page** with Fire / Fire-all / Dismiss controls for missed cron firings, backed by a new `WORKSPACE_EVENTS` JetStream stream and a workspace-events HTTP API (`GET/POST /api/workspaces/:id/events*`, plus a top-level `GET /api/events` feed). (#164)
+- **Cron control API** — `GET /api/cron/timers`, `POST /api/cron/timers/:workspaceId/:signalId/{pause,resume}` — toggle timers at runtime without editing `workspace.yml`. (#164)
+- **Chunked upload API** under `/api/chunked-upload/*` for streaming large attachments into JetStream Object Store. (#164)
+- **NATS-mediated tool dispatch** with public contract `tools.<id>` (invoke) and `tools.<id>.cancel.<reqId>` (cancel). `scripts/run-tool-worker.sh` ships as the sandbox-runtime entrypoint for external workers (`FRIDAY_TOOL_WORKERS=external`). (#164)
+- **`/api/instance/events` SSE feed** for live cascade-backlog state (`cascade.queue_{saturated,drained,timeout}`, `cascade.replaced`); `GET /api/daemon/status` gains a `cascadeConsumer` block (`inFlight`, `cap`, `saturated`). (#182)
+- **Skill export/import** as gzipped bundles, plus a **`publish_skill`** tool in the workspace-chat agent for promoting a workspace skill to a published one from chat. (#178, #179)
+- **Chat attachment lifecycle.** Large embedded base64 blobs in MCP tool outputs are lifted to JetStream Object Store at the boundary (fixes `MAX_PAYLOAD_EXCEEDED` on Gmail-PDF flows). New `parse_artifact` builtin + MCP tool extracts PDF/DOCX/PPTX to markdown server-side. PDFs render inline in the chat with a Download button; mime-sniffed filenames replace `.bin`. Daemon shutdown drains in-flight chat turns so partial assistant messages survive SIGTERM. (#169)
+- **Workspace chat debug endpoint** at `GET /api/workspaces/:id/chat-debug`. (#164)
 
 ### Changed
 
-- **Studio release pipeline split.** Building the Studio app is now decoupled from publishing the update manifest, so each step can be re-run independently without forcing a full rebuild. (#185)
-- **Cascade execution decoupled from signal delivery.** A slow cascade on one workspace no longer blocks every other workspace's cron / HTTP signal — fixes a head-of-line regression introduced by the consolidated workQueue consumer in #164. Cascade in-flight is capped via `FRIDAY_CASCADE_CONCURRENCY` (default 32). (#182)
-- **Per-message chat-stream subjects** with `max_msgs_per_subject: 1` and `allow_rollup_hdrs: true`, so re-publishing a message with the same id snapshot-replaces the prior copy at the broker. New chats use the new layout; existing chats stay on the flat layout — no migration needed. (#169)
-- **Chat: cancel in-flight turn on follow-up message.** Sending a new message while the assistant is mid-turn now cancels the prior turn cleanly. (#164)
-- **Workspace YAML `inputs.<signal_field>` interpolation** is now reliably preserved through `inputFrom` chains in fsm-engine — placeholders no longer stay literal in chained steps. Behavioural fix for authored workspaces. (#164)
-- **Daemon log levels lowered for domain failures.** A single LLM API rejection used to produce two error-level log lines plus a warn; the inner two are now warn so operators scanning at error level see infra-level failures, not every misconfigured `model:` id. (#182)
-- **`deno task clean`** now purges JetStream state in addition to filesystem state, so a clean reset really is clean. (#172)
-- **CI:** dependabot configuration consolidated and `apps/ledger` brought under coverage (later removed entirely); `hono` and `zod` updates grouped to reduce PR noise. (#138, #151)
+- **Studio release pipeline split** — Studio build is decoupled from update-manifest publish, so either step can be re-run independently. (#185)
+- **Cascade execution decoupled from signal delivery.** A slow cascade on one workspace no longer head-of-lines every other workspace's cron / HTTP signals (regression introduced by the consolidated workQueue consumer in #164). In-flight cap is `FRIDAY_CASCADE_CONCURRENCY` (default 32). (#182)
+- **Chat:** sending a follow-up while the assistant is mid-turn now cancels the prior turn cleanly. New chat streams use per-message subjects with rollup so re-publishing a message snapshot-replaces the prior copy; existing chats stay on the flat layout. (#164, #169)
+- **Workspace YAML `inputs.<signal_field>` interpolation** is now preserved through `inputFrom` chains — placeholders no longer stay literal in chained steps. (#164)
+- **`deno task clean`** purges JetStream state in addition to filesystem state. (#172)
 
 ### Fixed
 
-- **Google Sheets is now read-only end-to-end.** Both the OAuth scope (`spreadsheets.readonly` + `drive.readonly`, instead of the previously-requested `spreadsheets` write scope which was not in the verified GCP project) and the MCP tool catalog (`--permissions sheets:readonly`, mutually exclusive with `--tools`) were tightened. Connecting Google Sheets no longer hits the "This app is blocked" page, and write tools no longer register only to 403 at runtime. (#188)
-- **Studio installer build** unblocked: lockfile resynced for the Tauri 2.11.0 bump so the installer builds and launches cleanly. (#186)
-- **Studio CI build portability:** sha256 verification on the Windows runner uses a portable `shasum` invocation, and the `ruzstd` import path is updated to `ruzstd::decoding::StreamingDecoder` after the 0.8 bump (compile fix, not a runtime change). (#187)
-- **Cascade execution decoupled from signal delivery** — see Changed. This was the fix for cron jobs occasionally not firing across workspaces post-#164. (#182)
-- Agent-created artifacts now persist with the correct MIME type, so previews, downloads, and thumbnails render correctly instead of falling back to `application/octet-stream`. (#176)
-- The MCP `tools/list` endpoint no longer fails when artifact tools are registered, restoring the full tool catalog for connected MCP clients. (#175)
-- Workspace chats: chat IDs are now sanitized before being written to JetStream KV, preventing corrupt or unreadable keys when a chat ID contains characters disallowed by JetStream subjects. (#181)
-- Daemon shutdown is faster and more responsive: phases run in parallel, and a second Ctrl-C triggers a fast quit. (#168)
-- In-flight session writes are flushed during daemon shutdown via the `SessionStreamRegistry`, so the last few messages of an active chat are no longer lost when Studio is quit mid-stream. (#167)
-- **Tool worker NATS SUB flush race fixed:** `startToolWorkerProcess` now awaits a flush after subscribing, so callers who dispatch tool work immediately after worker registration no longer hit `NatsError: 503 — no responders`. (#167)
-- Partial assistant turns survive a SIGTERM — the daemon drains in-flight chat turns before tearing down workspace runtimes, letting the agent's `onFinish` persist what was assembled. (#169)
-- **Orphaned Chrome processes from the web/browsing agent are now reaped.** New startup and shutdown sweeps scan for `atlas-web-*` PID files and terminate any survivors, so Chrome leaked by a SIGKILL'd or crashed daemon (or a system reboot mid-session) self-heals on the next launch — the prior `finally`-based cleanup didn't run on those paths. (#166)
-- AI SDK error reporting: the underlying API error (rate limit / auth / model deprecated) now reaches the user instead of a generic `NoOutputGeneratedError: No output generated`. The `streamText` callback now wires `cause` so `createErrorCause` sees the real reason. (#182)
-- Stricter MCP `readyUrl` check — 5xx responses are now treated as not-ready, so workspace-mcp during OAuth bootstrap can't pass the readiness probe before it's actually serving requests. (#182)
+- **Google Sheets is read-only end-to-end.** OAuth scope tightened to `spreadsheets.readonly` + `drive.readonly` (in the verified GCP project), and the MCP tool catalog is launched with `--permissions sheets:readonly`. Connecting Sheets no longer hits the "This app is blocked" page; write tools no longer register only to 403 at runtime. (#188)
+- **Studio installer build** unblocked — lockfile resynced for the Tauri 2.11.0 bump. (#186)
+- **Studio CI build portability** — Windows runner sha256 verification + `ruzstd::decoding::StreamingDecoder` import path after the 0.8 bump (compile fix, not runtime). (#187)
+- Agent-created artifacts persist with the correct MIME type — no more `application/octet-stream` fallback. (#176)
+- MCP `tools/list` no longer fails when artifact tools are registered. (#175)
+- Chat IDs are sanitized before being written to JetStream KV, preventing corrupt keys when a chat ID contains subject-disallowed characters. (#181)
+- Daemon shutdown is faster and more responsive: phases run in parallel, a second Ctrl-C triggers fast-quit, and in-flight session writes are flushed via `SessionStreamRegistry` so the last messages of an active chat survive. (#167, #168)
+- **Tool-worker NATS SUB flush race** — callers dispatching tool work immediately after worker registration no longer hit `NatsError: 503 — no responders`. (#167)
+- **Orphaned Chrome reaped on startup and shutdown.** Web-agent Chrome left behind by a SIGKILL'd / crashed daemon or a mid-session reboot now self-heals on next launch — the prior `finally`-based cleanup didn't run on those paths. (#166)
+- AI SDK error reporting now surfaces the underlying cause (rate limit / auth / model deprecated) instead of a generic `NoOutputGeneratedError`. (#182)
+- MCP `readyUrl` check now treats 5xx as not-ready, so half-initialised servers (e.g. workspace-mcp during OAuth bootstrap) can't pass the probe. (#182)
 - Add-skill dialog: `skills.sh` autocomplete works again. (#118)
-- Test suite: preserved an explicit `undefined`-or-empty-array assertion in `mcp-registry` tests that was being silently weakened by a refactor. (no PR)
 
 ### Security
 
-- **HTML artifact previews are now sandboxed.** The agent-playground artifact iframe sets `sandbox=""` and the daemon's content route serves HTML artifacts with `Content-Security-Policy: sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'`, so agent-authored HTML cannot execute as same-origin or escape its preview frame. Local-only daemon today, but worth the hardening if Studio is ever exposed remotely. (#176)
+- **HTML artifact previews are sandboxed.** The daemon's content route serves HTML artifacts with `Content-Security-Policy: sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'`, and the playground iframe sets `sandbox=""`. Agent-authored HTML cannot execute as same-origin. (#176)
 
 ### Removed
 
-- Apps/packages: `apps/ledger`, `packages/resources`, `packages/activity`, `packages/workspace-builder`, `packages/cortex`. (#164)
-- CLI: `atlas library …` and all subcommands. (#164)
+- Apps/packages: `apps/ledger`, `packages/{resources,activity,workspace-builder,cortex}`. (#164)
+- CLI: `atlas library …`. (#164)
 - HTTP routes: `/library/*`, `/workspaces/blueprint-recompile`, `/workspaces/resources`, `/workspaces/resource-config`, `/activity`. (#164)
-- Storage adapters: `@atlas/adapters-md` (md-memory + md-narrative), cortex adapters across artifacts/session/mcp-registry/skills, local artifact + skill adapters, `library-storage-adapter`, all in-memory test adapters. (#164)
-- Memory strategies: `retrieval`, `dedup`, `kv` — narrative-only now. (#164)
-- Module: `@atlas/document-store/node.ts` — use `@atlas/document-store`. (#164)
-- Legacy `SESSIONS` JetStream stream — auto-removed on first boot with a JSONL backup at `~/.atlas/legacy-sessions-backup-<date>.jsonl`. (#170)
+- Storage adapters: `@atlas/adapters-md`, cortex/local adapters across artifacts/session/mcp-registry/skills, `library-storage-adapter`, in-memory test adapters. (#164)
+- Memory strategies: `retrieval`, `dedup`, `kv`. (#164)
+- Module entry: `@atlas/document-store/node.ts` — use the package root. (#164)
+- Legacy `SESSIONS` JetStream stream — auto-removed on first boot with a JSONL backup. (#170)
 
 ### Configuration
 
-New environment variables introduced by this release. `.env.example` and `.env.ci` are not yet updated; this section is the source of truth.
-
-- **NATS connectivity:** `FRIDAY_NATS_URL` (external broker URL — when set, daemon will not spawn an embedded broker; default `nats://localhost:4222`); `FRIDAY_NATS_MONITOR=1` to enable nats-server's monitor port (8222), off by default.
-- **JetStream tuning** (logged at startup with provenance): `FRIDAY_JETSTREAM_MAX_PAYLOAD` (8MB), `FRIDAY_JETSTREAM_MAX_MEMORY` (256MB), `FRIDAY_JETSTREAM_MAX_FILE` (10GB), `FRIDAY_JETSTREAM_STORE_DIR` (nats-server default), `FRIDAY_JETSTREAM_MAX_STREAMS` / `FRIDAY_JETSTREAM_MAX_CONSUMERS` (telemetry only, 10000 / 100000), `FRIDAY_JETSTREAM_MAX_MSG_SIZE` (8MB), `FRIDAY_JETSTREAM_MAX_AGE` (no expiry), `FRIDAY_JETSTREAM_DUPLICATE_WINDOW` (24h), `FRIDAY_JETSTREAM_MAX_ACK_PENDING` (256), `FRIDAY_JETSTREAM_MAX_DELIVER` (5), `FRIDAY_JETSTREAM_ACK_WAIT` (5m).
-- **Tool dispatch:** `FRIDAY_TOOL_WORKERS=external` to skip in-process tool worker registration; `FRIDAY_TOOL_WORKER_RUNTIME` (`subprocess` default, `k8s` not implemented); `FRIDAY_WORKER_TOOLS` comma-separated allowlist forwarded to spawned workers; `FRIDAY_WORKER_CMD` overrides the worker entrypoint command.
-- **Cascade dispatch:** `FRIDAY_CASCADE_CONCURRENCY` total in-flight cascade cap (32); `FRIDAY_CASCADE_QUEUE_TIMEOUT` envelope pickup deadline (5m).
-- **Other:** `FRIDAY_ATLAS_PLATFORM_URL` overrides the daemon URL embedded in the atlas-platform MCP server config.
-
-### Documentation
-
-- README now shows CI status and Discord badges. (#180)
-- Fixed broken README paths and converted the GitHub issue templates to short, mostly-optional issue forms. (#119)
-- Removed the developer-only "AI Workflow" section from README. (no PR)
+New env vars (none required for default solo-dev mode). `FRIDAY_NATS_URL` (external broker; daemon won't spawn when set), `FRIDAY_NATS_MONITOR=1` (nats-server :8222 monitor port). `FRIDAY_TOOL_WORKERS=external` plus `FRIDAY_TOOL_WORKER_RUNTIME` / `FRIDAY_WORKER_TOOLS` / `FRIDAY_WORKER_CMD` for external tool workers. `FRIDAY_CASCADE_CONCURRENCY` (default 32) / `FRIDAY_CASCADE_QUEUE_TIMEOUT` (5m) tune cascade dispatch. `FRIDAY_JETSTREAM_*` (max-payload, max-memory, max-file, store-dir, max-msg-size, max-age, duplicate-window, max-ack-pending, max-deliver, ack-wait) tune the embedded broker — startup logs each value with its provenance.
 
 ### Dependencies
 
