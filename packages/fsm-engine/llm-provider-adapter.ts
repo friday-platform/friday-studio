@@ -85,6 +85,16 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       }
     }
 
+    // The AI SDK throws `NoOutputGeneratedError` (with NO `cause` set) when
+    // its stream errors before any step is recorded — see
+    // node_modules/.deno/ai@*/.../ai/dist/index.mjs flush block. The actual
+    // API failure (rate limit, auth, model deprecated, etc.) only reaches
+    // the `onError` callback. Without this capture, every stream-error path
+    // collapses to `{ code: UNKNOWN_ERROR, originalError: "No output
+    // generated. Check the stream for errors." }` — useless for diagnosis.
+    // Declared outside the try block so the catch can read it.
+    let streamErrorCause: unknown;
+
     try {
       const defaultUserProviderOptions = isDefaultOptsProvider(providerName)
         ? getDefaultProviderOpts(providerName)
@@ -112,6 +122,9 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
         abortSignal: params.abortSignal,
         ...(this.providerOptions || {}),
         ...(params.providerOptions || {}),
+        onError: ({ error }) => {
+          streamErrorCause = error;
+        },
         onChunk: emitChunk
           ? ({ chunk }) => {
               if (chunk.type === "tool-call") {
@@ -161,10 +174,14 @@ export class AtlasLLMProviderAdapter implements LLMProvider {
       } satisfies AgentExecutionSuccess<string, FSMLLMOutput>;
     } catch (error) {
       const toolCount = params.tools ? Object.keys(params.tools).length : 0;
-      const errorCause = createErrorCause(error);
+      // Prefer the underlying stream error captured via `onError` over the
+      // outer `NoOutputGeneratedError` wrapper — the wrapper has no `cause`
+      // set, so feeding it to `createErrorCause` always lands on
+      // `UNKNOWN_ERROR`. The stream error is the real APICallError.
+      const errorCause = createErrorCause(streamErrorCause ?? error);
       const reason = isAPIErrorCause(errorCause)
         ? getErrorDisplayMessage(errorCause)
-        : stringifyError(error);
+        : stringifyError(streamErrorCause ?? error);
 
       logger.error(`LLM call failed: ${reason}`, {
         errorCause,
