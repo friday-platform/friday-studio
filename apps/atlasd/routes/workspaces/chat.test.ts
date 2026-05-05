@@ -321,7 +321,10 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
   test.each([
     { header: "abc", reason: "non-numeric" },
     { header: "-1", reason: "negative" },
-    { header: "1.5", reason: "fractional (parseInt truncates so this passes — included as documentation)" },
+    {
+      header: "1.5",
+      reason: "fractional (parseInt truncates so this passes — included as documentation)",
+    },
   ])("ignores invalid Last-Event-ID ($reason) — undefined cursor", async ({ header }) => {
     const subscribe = vi.fn().mockReturnValue(true);
     const { app } = createTestApp({

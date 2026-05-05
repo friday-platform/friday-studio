@@ -320,11 +320,7 @@ describe("StreamRegistry", () => {
       registry.appendEvent("chat-1", makeEvent(2));
 
       const received: Uint8Array[] = [];
-      registry.subscribe(
-        "chat-1",
-        createController({ onEnqueue: (d) => received.push(d) }),
-        -5,
-      );
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), -5);
 
       expect(received).toHaveLength(2);
     });
@@ -336,14 +332,8 @@ describe("StreamRegistry", () => {
       // must re-send tool-input-start so the AI SDK's fresh activeResponse
       // can register the tool before processing the deltas.
       registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
-        type: "text-start",
-        id: "txt-1",
-      } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", {
-        type: "text-end",
-        id: "txt-1",
-      } as AtlasUIMessageChunk); // index 1
+      registry.appendEvent("chat-1", { type: "text-start", id: "txt-1" } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", { type: "text-end", id: "txt-1" } as AtlasUIMessageChunk); // index 1
       registry.appendEvent("chat-1", {
         type: "tool-input-start",
         toolCallId: "tc-1",
@@ -424,11 +414,7 @@ describe("StreamRegistry", () => {
       } as AtlasUIMessageChunk); // index 3
 
       const received: Uint8Array[] = [];
-      registry.subscribe(
-        "chat-1",
-        createController({ onEnqueue: (d) => received.push(d) }),
-        2,
-      );
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 2);
 
       // Only text-start (open) gets re-emitted; tool-input-start does
       // NOT, because its close event landed before the cursor.
@@ -463,31 +449,19 @@ describe("StreamRegistry", () => {
       } as AtlasUIMessageChunk); // index 2
 
       const received: Uint8Array[] = [];
-      registry.subscribe(
-        "chat-1",
-        createController({ onEnqueue: (d) => received.push(d) }),
-        1,
-      );
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
 
       // No open parts left — only the post-cursor text-delta replays.
       expect(received).toHaveLength(1);
-      expect(new TextDecoder().decode(received[0])).toMatch(
-        /^id: 2\ndata: .*"type":"text-delta"/,
-      );
+      expect(new TextDecoder().decode(received[0])).toMatch(/^id: 2\ndata: .*"type":"text-delta"/);
     });
 
     // `reasoning-end` closes a reasoning part. Same risk as
     // `tool-output-error`: untested = silent regression.
     it("forgets a reasoning part when reasoning-end closes it", () => {
       registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
-        type: "reasoning-start",
-        id: "r-1",
-      } as AtlasUIMessageChunk); // index 0
-      registry.appendEvent("chat-1", {
-        type: "reasoning-end",
-        id: "r-1",
-      } as AtlasUIMessageChunk); // index 1 — CLOSES
+      registry.appendEvent("chat-1", { type: "reasoning-start", id: "r-1" } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", { type: "reasoning-end", id: "r-1" } as AtlasUIMessageChunk); // index 1 — CLOSES
       registry.appendEvent("chat-1", {
         type: "text-delta",
         id: "msg-1",
@@ -495,17 +469,11 @@ describe("StreamRegistry", () => {
       } as AtlasUIMessageChunk); // index 2
 
       const received: Uint8Array[] = [];
-      registry.subscribe(
-        "chat-1",
-        createController({ onEnqueue: (d) => received.push(d) }),
-        1,
-      );
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 1);
 
       // Closed reasoning part must not re-emit.
       expect(received).toHaveLength(1);
-      expect(new TextDecoder().decode(received[0])).toMatch(
-        /^id: 2\ndata: .*"type":"text-delta"/,
-      );
+      expect(new TextDecoder().decode(received[0])).toMatch(/^id: 2\ndata: .*"type":"text-delta"/);
     });
 
     // `tool-input-available` carries the fully-formed `input` for a tool
@@ -579,22 +547,14 @@ describe("StreamRegistry", () => {
       } as AtlasUIMessageChunk); // index 1
 
       const received: Uint8Array[] = [];
-      registry.subscribe(
-        "chat-1",
-        createController({ onEnqueue: (d) => received.push(d) }),
-        0,
-      );
+      registry.subscribe("chat-1", createController({ onEnqueue: (d) => received.push(d) }), 0);
 
       // tool-input-available re-emits at its original frame id, then
       // post-cursor text-delta lands.
       expect(received).toHaveLength(2);
       const decoder = new TextDecoder();
-      expect(decoder.decode(received[0])).toMatch(
-        /^id: 0\ndata: .*"type":"tool-input-available"/,
-      );
-      expect(decoder.decode(received[1])).toMatch(
-        /^id: 1\ndata: .*"type":"text-delta"/,
-      );
+      expect(decoder.decode(received[0])).toMatch(/^id: 0\ndata: .*"type":"tool-input-available"/);
+      expect(decoder.decode(received[1])).toMatch(/^id: 1\ndata: .*"type":"text-delta"/);
     });
 
     // Audit decision: `start-step` / `finish-step` are intentionally NOT
@@ -606,12 +566,8 @@ describe("StreamRegistry", () => {
     // the rationale.
     it("does NOT track start-step or finish-step in openParts", () => {
       registry.createStream("chat-1");
-      registry.appendEvent("chat-1", {
-        type: "start-step",
-      } as AtlasUIMessageChunk);
-      registry.appendEvent("chat-1", {
-        type: "finish-step",
-      } as AtlasUIMessageChunk);
+      registry.appendEvent("chat-1", { type: "start-step" } as AtlasUIMessageChunk);
+      registry.appendEvent("chat-1", { type: "finish-step" } as AtlasUIMessageChunk);
 
       const buffer = registry.getStream("chat-1");
       expect.assert(buffer !== undefined, "buffer should exist");
@@ -729,7 +685,9 @@ describe("StreamRegistry", () => {
 
       const decoder = new TextDecoder();
       // Last frame should be a no-id broadcast since buffer overflowed.
-      const lastFrame = decoder.decode(received[received.length - 1]!);
+      const lastBytes = received[received.length - 1];
+      if (!lastBytes) throw new Error("expected at least one frame");
+      const lastFrame = decoder.decode(lastBytes);
       expect(lastFrame).toMatch(/^data: /);
       expect(lastFrame).not.toMatch(/^id: /);
     });

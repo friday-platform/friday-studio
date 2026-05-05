@@ -374,9 +374,7 @@ export class StreamRegistry {
     }
 
     const startIdx =
-      lastEventId !== undefined && Number.isFinite(lastEventId)
-        ? Math.max(0, lastEventId + 1)
-        : 0;
+      lastEventId !== undefined && Number.isFinite(lastEventId) ? Math.max(0, lastEventId + 1) : 0;
 
     // On a cursor-based resume (startIdx > 0), re-emit any `*-start`
     // chunks for parts that are still open and whose start index is
@@ -419,9 +417,7 @@ export class StreamRegistry {
       const event = buffer.events[i];
       if (event === undefined) continue;
       try {
-        const data = StreamRegistry.ENCODER.encode(
-          `id: ${i}\ndata: ${JSON.stringify(event)}\n\n`,
-        );
+        const data = StreamRegistry.ENCODER.encode(`id: ${i}\ndata: ${JSON.stringify(event)}\n\n`);
         controller.enqueue(data);
       } catch {
         // Controller closed during replay
