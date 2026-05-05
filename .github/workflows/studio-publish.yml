@@ -104,22 +104,34 @@ jobs:
       - name: Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Verify referenced tarballs exist in GCS
-        # Belt-and-suspenders before we flip the pointer: every URL in
-        # the assembled manifest must resolve. Catches the case where
-        # the build's GCS uploads were rolled back / lifecycle-deleted
-        # between build and publish.
+      - name: Verify referenced tarballs match manifest SHAs in GCS
+        # Belt-and-suspenders before we flip the pointer:
+        #   1. URL must resolve (catches lifecycle-deleted / rolled-back
+        #      uploads between build and publish).
+        #   2. The bytes currently in GCS must hash to the SHA recorded
+        #      in the manifest-entry artifact. Catches the
+        #      two-unpublished-builds-collide-on-version race: build A
+        #      writes the tarball with SHA_A and emits its entry artifact;
+        #      build B (same key, since version derives from the published
+        #      manifest, not from prior unpublished builds) overwrites
+        #      the GCS object with SHA_B. Existence alone passes — but
+        #      clients would fail signature verification on download.
         run: |
           set -euo pipefail
           python3 -c "
           import json
           m = json.load(open('manifest.json'))
           for plat, entry in m['platforms'].items():
-              print(entry['url'])
-          " | while read -r url; do
+              print(f\"{entry['url']}\t{entry['sha256']}\")
+          " | while IFS=$'\t' read -r url expected; do
             obj="gs://${GCS_BUCKET}/${url#https://download.fridayplatform.io/}"
-            echo "checking $obj"
+            echo "verifying $obj"
             gsutil -q stat "$obj"
+            actual=$(gsutil cat "$obj" | shasum -a 256 | awk '{print $1}')
+            if [[ "$expected" != "$actual" ]]; then
+              echo "::error::SHA mismatch for $obj — expected $expected, got $actual. Likely a colliding build overwrote the tarball; rebuild before publishing." >&2
+              exit 1
+            fi
           done
 
       - name: Upload manifest to GCS

@@ -68,6 +68,17 @@ publish_workflow_for() {
   esac
 }
 
+# UTC timestamp 60s in the past, used as a lower bound for finding a
+# just-dispatched workflow run. The buffer absorbs clock skew between
+# this machine and GitHub (createdAt is GitHub-side); without it, a
+# fast laptop clock leaves no run satisfying createdAt >= since and
+# find_new_run_id gives up while the dispatched run is fine.
+# macOS BSD date -v form first; falls back to GNU date -d on Linux.
+buffered_since() {
+  date -u -v-1M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ
+}
+
 # gh workflow run returns no run id, so poll the run list (filtered by
 # workflow file) right after dispatch. New runs appear within a couple
 # seconds; retry up to ~20s before giving up.
@@ -101,10 +112,11 @@ cmd_build() {
   local wf
   wf=$(build_workflow_for "$kind")
 
-  # Capture an ISO timestamp just before dispatch so we can disambiguate
-  # our run from any concurrent ones that may already be queued.
+  # Capture an ISO timestamp before dispatch (with a 60s past buffer
+  # to absorb clock skew vs. GitHub) so we can disambiguate our run
+  # from any concurrent ones that may already be queued.
   local since
-  since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  since=$(buffered_since)
 
   echo "→ Triggering $wf${ref:+ on $ref}…"
   if [[ -n "$ref" ]]; then
@@ -219,7 +231,7 @@ cmd_publish() {
 
   echo "→ Triggering $publish_wf…"
   local since
-  since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  since=$(buffered_since)
   gh workflow run "$publish_wf" \
     -f "build_run_id=$run_id" \
     -f "version=$version"

@@ -91,18 +91,27 @@ jobs:
       - name: Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Verify referenced bundles exist in GCS
+      - name: Verify referenced bundles match manifest SHAs in GCS
+        # Catches both the lifecycle-deleted-between-build-and-publish
+        # case and the two-unpublished-builds-collide-on-version race
+        # (where a later build overwrites the GCS object so the SHA in
+        # this run's manifest entry no longer matches the bytes).
         run: |
           set -euo pipefail
           python3 -c "
           import json
           m = json.load(open('manifest.json'))
           for plat, entry in m['platforms'].items():
-              print(entry['url'])
-          " | while read -r url; do
+              print(f\"{entry['url']}\t{entry['sha256']}\")
+          " | while IFS=$'\t' read -r url expected; do
             obj="gs://${GCS_BUCKET}/${url#https://download.fridayplatform.io/}"
-            echo "checking $obj"
+            echo "verifying $obj"
             gsutil -q stat "$obj"
+            actual=$(gsutil cat "$obj" | shasum -a 256 | awk '{print $1}')
+            if [[ "$expected" != "$actual" ]]; then
+              echo "::error::SHA mismatch for $obj — expected $expected, got $actual. Likely a colliding build overwrote the bundle; rebuild before publishing." >&2
+              exit 1
+            fi
           done
 
       - name: Upload manifest to GCS
