@@ -20,7 +20,14 @@
 <script lang="ts">
   import { isOfficialCanonicalName } from "@atlas/core/mcp-registry/official-servers";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-  import { Button, Dialog, IconSmall, MarkdownRendered, markdownToHTML } from "@atlas/ui";
+  import {
+    Button,
+    Dialog,
+    IconSmall,
+    MarkdownRendered,
+    markdownToHTML,
+    SimpleTable,
+  } from "@atlas/ui";
   import { browser } from "$app/environment";
   import type { SearchResult } from "$lib/queries/mcp-queries";
   import DOMPurify from "dompurify";
@@ -59,6 +66,7 @@
   }: Props = $props();
 
   const deleteDialogOpen = writable(false);
+  let hasCredentials = $state(false);
 
   // Reset delete dialog when navigating to a different server
   $effect(() => {
@@ -127,19 +135,6 @@
       return t.url ?? "HTTP endpoint";
     }
     return "unknown";
-  }
-
-  function securityLabel(rating: string | undefined): string {
-    switch (rating) {
-      case "high":
-        return "High";
-      case "medium":
-        return "Medium";
-      case "low":
-        return "Low";
-      default:
-        return "Unverified";
-    }
   }
 
   function formatDate(iso: string | undefined): string {
@@ -270,11 +265,11 @@
           <!-- Transport -->
           <div class="content-section">
             <h3 class="section-title">Transport</h3>
-            <div class="transport-info">
+            <div class="transport">
+              <span class="transport-url">{transportInfo(server)}</span>
               {#if server.configTemplate.transport?.type}
                 <span class="transport-type">{server.configTemplate.transport.type}</span>
               {/if}
-              <code class="transport-code">{transportInfo(server)}</code>
             </div>
           </div>
 
@@ -282,24 +277,33 @@
           {#if server.requiredConfig && server.requiredConfig.length > 0}
             <div class="content-section">
               <h3 class="section-title">Required configuration</h3>
-              <div class="config-table">
-                {#each server.requiredConfig as field (field.key)}
-                  <div class="config-row">
-                    <span class="config-key">{field.key}</span>
-                    <span class="config-desc">{field.description}</span>
-                    {#if field.examples && field.examples.length > 0}
-                      <span class="config-example">e.g. {field.examples[0]}</span>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
+              <SimpleTable>
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each server.requiredConfig as field (field.key)}
+                    <tr>
+                      <th scope="row">{field.key}</th>
+                      <td>{field.description}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </SimpleTable>
             </div>
           {/if}
 
           {#if server.configTemplate}
-            <div class="content-section">
+            <div class="content-section" style:display={hasCredentials ? null : "none"}>
               <h3 class="section-title">Credentials</h3>
-              <McpCredentialsPanel serverId={server.id} configTemplate={server.configTemplate} />
+              <McpCredentialsPanel
+                serverId={server.id}
+                configTemplate={server.configTemplate}
+                bind:hasContent={hasCredentials}
+              />
             </div>
           {/if}
 
@@ -336,7 +340,7 @@
 
         <!-- README -->
         {#if readme}
-          <div class="content-section readme-section">
+          <div class="content-section">
             <h3 class="section-title">Readme</h3>
             <div class="readme-content">
               <MarkdownRendered>
@@ -437,22 +441,6 @@
     text-transform: uppercase;
   }
 
-  .badge.security-high {
-    --badge-color: var(--color-success);
-  }
-
-  .badge.security-medium {
-    --badge-color: var(--color-warning);
-  }
-
-  .badge.security-low {
-    --badge-color: var(--color-error);
-  }
-
-  .badge.security-unverified {
-    --badge-color: color-mix(in srgb, var(--color-text), transparent 45%);
-  }
-
   .official-badge {
     --badge-color: var(--color-accent);
   }
@@ -495,84 +483,24 @@
 
   /* ─── Transport ──────────────────────────────────────────────────────────── */
 
-  .transport-info {
-    align-items: stretch;
-    background: var(--color-surface-2);
-    border-radius: var(--radius-2);
+  .transport {
     display: flex;
-    gap: var(--size-2);
-    overflow: hidden;
+    flex-direction: column;
+    gap: var(--size-px);
   }
 
-  .transport-type {
-    align-items: center;
-    background: color-mix(in srgb, var(--color-text), transparent 88%);
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    display: flex;
-    flex-shrink: 0;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
+  .transport-url {
+    color: var(--text-bright);
+    font-size: var(--font-size-4);
     font-weight: var(--font-weight-5);
-    letter-spacing: 0.04em;
-    padding: 0 var(--size-3);
-    text-transform: uppercase;
-  }
-
-  .transport-code {
-    background: transparent;
-    color: var(--color-text);
-    flex: 1;
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
     line-break: anywhere;
-    padding: var(--size-2) var(--size-3);
-    white-space: pre-wrap;
     word-break: break-word;
   }
 
-  /* ─── Config table ───────────────────────────────────────────────────────── */
-
-  .config-table {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .config-row {
-    align-items: baseline;
-    background: var(--color-surface-1);
-    display: grid;
-    gap: var(--size-3);
-    grid-template-columns: 180px 1fr auto;
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .config-row:first-child {
-    border-start-start-radius: var(--radius-2);
-    border-start-end-radius: var(--radius-2);
-  }
-
-  .config-row:last-child {
-    border-end-start-radius: var(--radius-2);
-    border-end-end-radius: var(--radius-2);
-  }
-
-  .config-key {
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-  }
-
-  .config-desc {
-    color: color-mix(in srgb, var(--color-text), transparent 15%);
-    font-size: var(--font-size-2);
-  }
-
-  .config-example {
-    color: color-mix(in srgb, var(--color-text), transparent 45%);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-0);
-    font-style: italic;
+  .transport-type {
+    color: var(--text-faded);
+    font-size: var(--font-size-3);
+    text-transform: lowercase;
   }
 
   /* ─── Meta grid ──────────────────────────────────────────────────────────── */
@@ -601,90 +529,5 @@
     color: var(--color-text);
     font-family: var(--font-family-monospace);
     font-size: var(--font-size-1);
-  }
-
-  /* ─── README ─────────────────────────────────────────────────────────────── */
-
-  .readme-section {
-    border-block-start: 1px solid var(--color-border-1);
-    margin-block-start: var(--size-2);
-    padding-block-start: var(--size-6);
-  }
-
-  .readme-content {
-    color: color-mix(in srgb, var(--color-text), transparent 10%);
-    font-size: var(--font-size-2);
-    line-height: 1.6;
-  }
-
-  .readme-content :global(h1) {
-    font-size: var(--font-size-5);
-    font-weight: var(--font-weight-6);
-    margin-block: var(--size-4) var(--size-2);
-  }
-
-  .readme-content :global(h2) {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
-    margin-block: var(--size-4) var(--size-2);
-  }
-
-  .readme-content :global(h3) {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin-block: var(--size-3) var(--size-1);
-  }
-
-  .readme-content :global(p) {
-    margin-block: var(--size-2);
-  }
-
-  .readme-content :global(pre) {
-    background: var(--color-surface-2);
-    border-radius: var(--radius-2);
-    font-size: var(--font-size-1);
-    overflow-x: auto;
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .readme-content :global(code) {
-    background: var(--color-surface-2);
-    border-radius: var(--radius-1);
-    font-family: var(--font-family-monospace);
-    font-size: 0.9em;
-    padding: 1px 4px;
-  }
-
-  .readme-content :global(pre code) {
-    background: none;
-    padding: 0;
-  }
-
-  .readme-content :global(ul),
-  .readme-content :global(ol) {
-    margin-block: var(--size-2);
-    padding-inline-start: var(--size-5);
-  }
-
-  .readme-content :global(li) {
-    margin-block: var(--size-0-5);
-  }
-
-  .readme-content :global(a) {
-    color: var(--color-accent);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
-  .readme-content :global(img) {
-    border-radius: var(--radius-2);
-    max-inline-size: 100%;
-  }
-
-  .readme-content :global(blockquote) {
-    border-inline-start: 3px solid var(--color-border-1);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    margin: var(--size-2) 0;
-    padding-inline-start: var(--size-3);
   }
 </style>

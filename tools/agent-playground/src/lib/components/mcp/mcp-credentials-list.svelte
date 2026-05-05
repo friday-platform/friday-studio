@@ -33,8 +33,14 @@
     onReinstall: () => void;
   }
 
-  let { credentials, providerType, onReplace, onRemove, onReauthenticate, onReinstall }: Props =
-    $props();
+  let {
+    credentials,
+    providerType,
+    onReplace,
+    onRemove,
+    onReauthenticate,
+    onReinstall,
+  }: Props = $props();
 
   const helper = createColumnHelper<StockFeatures, Credential>();
 
@@ -116,13 +122,23 @@
 {#snippet actionsCell({ cred }: { cred: Credential })}
   <div class="cred-actions">
     {#if providerType === "apikey"}
-      <Button variant="secondary" size="small" onclick={() => onReplace(cred.id)}>Replace</Button>
+      <Button
+        variant="secondary"
+        size="small"
+        onclick={() => onReplace(cred.id)}>Replace</Button
+      >
     {:else if providerType === "oauth"}
-      <Button variant="secondary" size="small" onclick={onReauthenticate}>Re-authenticate</Button>
+      <Button variant="secondary" size="small" onclick={onReauthenticate}
+        >Replace</Button
+      >
     {:else if providerType === "app_install"}
-      <Button variant="secondary" size="small" onclick={onReinstall}>Re-install</Button>
+      <Button variant="secondary" size="small" onclick={onReinstall}
+        >Re-install</Button
+      >
     {/if}
-    <Button variant="destructive" size="small" onclick={() => onRemove(cred.id)}>Remove</Button>
+    <Button variant="destructive" size="small" onclick={() => onRemove(cred.id)}
+      >Remove</Button
+    >
   </div>
 {/snippet}
 

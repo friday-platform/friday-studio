@@ -31,9 +31,10 @@
   interface Props {
     serverId: string;
     configTemplate: MCPServerMetadata["configTemplate"];
+    hasContent?: boolean;
   }
 
-  let { serverId, configTemplate }: Props = $props();
+  let { serverId, configTemplate, hasContent = $bindable(false) }: Props = $props();
 
   // ─── Server-as-provider check ──────────────────────────────────────────────
   // HTTP OAuth remotes (e.g. Stripe) have no configTemplate.env but DO have
@@ -82,6 +83,10 @@
   });
 
   const hasCredentialRefs = $derived(discovery.providers.length > 0 || discovery.idRefs.length > 0);
+
+  $effect.pre(() => {
+    hasContent = hasCredentialRefs;
+  });
 
   // ─── Query client & mutations ──────────────────────────────────────────────
 
