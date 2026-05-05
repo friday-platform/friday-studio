@@ -206,6 +206,36 @@ describe("ChatStorage (JetStream-backed)", () => {
     }
   });
 
+  it("supports chatIds with colons (telegram-shaped)", async () => {
+    // NATS KV keys reject `:` (`/^[-/=.\w]+$/`). Telegram chatIds carry the
+    // shape `telegram:<id>` — the storage must sanitize the lookup key while
+    // keeping the original id in metadata. Regression test for the broken
+    // path where appendMessage / getChat threw "invalid key:" on telegram
+    // chats and the agent ran with empty history.
+    const chatId = `telegram:${crypto.randomUUID()}`;
+    const wsId = `ws-colon-${crypto.randomUUID()}`;
+    const create = await ChatStorage.createChat({
+      chatId,
+      userId: "tg-user",
+      workspaceId: wsId,
+      source: "telegram",
+    });
+    expect(create.ok).toBe(true);
+
+    const append = await ChatStorage.appendMessage(chatId, createMessage("hi"), wsId);
+    expect(append.ok).toBe(true);
+
+    const get = await ChatStorage.getChat(chatId, wsId);
+    expect(get.ok && get.data).toBeTruthy();
+    if (get.ok && get.data) {
+      expect(get.data.id).toBe(chatId);
+      expect(get.data.messages.length).toBe(1);
+    }
+
+    const list = await ChatStorage.listChatsByWorkspace(wsId);
+    expect(list.ok && list.data.chats.length).toBe(1);
+  });
+
   it("sorts messages by metadata.startTimestamp / .timestamp on read", async () => {
     const chatId = crypto.randomUUID();
     await createTestChat(chatId);

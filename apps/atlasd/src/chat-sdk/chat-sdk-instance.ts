@@ -877,6 +877,16 @@ export function createMessageHandler(
           .filter((id) => options?.exposeKernel || id !== KERNEL_WORKSPACE_ID)
       : undefined;
 
+    // Capture the buffer this turn owns so stale producers can't bleed into
+    // a follow-up turn's buffer. The web adapter creates the buffer in
+    // `handleWebhook` before dispatching here; non-web adapters (Slack etc.)
+    // never create one and `getStream` returns undefined — appendEvent then
+    // returns false silently for those, matching prior behavior. Without this
+    // capture, a late event from an aborted turn would land in the next
+    // turn's buffer (same chatId key) and arrive at the UI without a matching
+    // `text-start`, tripping the AI SDK validator with a "text delta error".
+    const ownBuffer = streamRegistry.getStream(chatId);
+
     // signalToStream fans events two ways: the tap pushes ALL client-safe
     // events to StreamRegistry for the full web SSE stream, while the async
     // iterable feeds thread.post() → fromFullStream for platform adapters
@@ -888,7 +898,7 @@ export function createMessageHandler(
       streamId,
       (chunk: unknown) => {
         if (isClientSafeEvent(chunk)) {
-          const appended = streamRegistry.appendEvent(chatId, chunk);
+          const appended = streamRegistry.appendEvent(chatId, chunk, ownBuffer);
           if (!appended) {
             logger.warn("stream_event_dropped", {
               chatId,
@@ -964,7 +974,13 @@ export function createMessageHandler(
       });
       throw error;
     } finally {
-      streamRegistry.finishStream(chatId);
+      // Identity-checked finish: if a follow-up turn has already replaced our
+      // buffer, that turn owns its own cleanup — don't rip its subscribers
+      // out from under it. When `ownBuffer` is undefined (non-web adapter
+      // with no buffer at all), this is a no-op, matching prior behavior.
+      if (ownBuffer) {
+        streamRegistry.finishStreamIfCurrent(chatId, ownBuffer);
+      }
     }
   };
 }

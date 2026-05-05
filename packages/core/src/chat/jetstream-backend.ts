@@ -70,12 +70,22 @@ export interface ChatStreamLimits {
 
 const SAFE_NAME_RE = /[^A-Za-z0-9_-]/g;
 
-function sanitizeForStreamName(s: string): string {
+/**
+ * Sanitize a chat-id / workspace-id component for use in NATS-derived keys.
+ *
+ * Same rules used for both stream names and KV keys: nats.js's KV `validateKey`
+ * accepts `/^[-/=.\w]+$/` (no `:`), and stream names allow only word chars,
+ * `-`, `_`. The component IDs that flow through here can contain colons (e.g.
+ * Telegram chatIds shaped `telegram:6139663655`) and other punctuation, so we
+ * normalize to a single restricted alphabet for both targets. The original
+ * chatId is preserved in metadata (`Chat.id`) — only the lookup key is lossy.
+ */
+function sanitizeKeyComponent(s: string): string {
   return s.replace(SAFE_NAME_RE, "_");
 }
 
 function streamName(workspaceId: string, chatId: string): string {
-  return `CHAT_${sanitizeForStreamName(workspaceId)}_${sanitizeForStreamName(chatId)}`;
+  return `CHAT_${sanitizeKeyComponent(workspaceId)}_${sanitizeKeyComponent(chatId)}`;
 }
 
 /**
@@ -107,7 +117,11 @@ function messagesWildcardSubject(workspaceId: string, chatId: string): string {
 }
 
 function kvKey(workspaceId: string, chatId: string): string {
-  return `${workspaceId}/${chatId}`;
+  return `${sanitizeKeyComponent(workspaceId)}/${sanitizeKeyComponent(chatId)}`;
+}
+
+function kvPrefix(workspaceId: string): string {
+  return `${sanitizeKeyComponent(workspaceId)}/`;
 }
 
 function isStreamNotFound(err: unknown): boolean {
@@ -490,7 +504,7 @@ export function createJetStreamChatBackend(
 
   async function listAllMetadata(workspaceId?: string): Promise<ChatMetadata[]> {
     const k = await kv();
-    const prefix = workspaceId ? `${workspaceId}/` : null;
+    const prefix = workspaceId ? kvPrefix(workspaceId) : null;
     const it = await k.keys();
     const allKeys: string[] = [];
     for await (const key of it) {
