@@ -3,6 +3,7 @@ import { join } from "node:path";
 import process, { env } from "node:process";
 import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { ConcurrencyPolicy } from "@atlas/config";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
   AtlasAgentsMCPServer,
@@ -82,12 +83,7 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
-import {
-  CascadeConsumer,
-  type ConcurrencyPolicy,
-  ensureCascadesStream,
-  publishCascade,
-} from "./cascade-stream.ts";
+import { CascadeConsumer, ensureCascadesStream, publishCascade } from "./cascade-stream.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
 import { broadcastJobOutput } from "./chat-sdk/broadcast.ts";
 import {

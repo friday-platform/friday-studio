@@ -42,6 +42,7 @@
  */
 
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { ConcurrencyPolicy } from "@atlas/config";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import {
@@ -67,8 +68,12 @@ import {
   signalStreamSubject,
 } from "./signal-stream.ts";
 
-/** Per-signal concurrency policy read from workspace.yml. */
-export type ConcurrencyPolicy = "skip" | "queue" | "concurrent" | "replace";
+// `ConcurrencyPolicy` (`skip` | `queue` | `concurrent` | `replace`) is
+// the workspace-config schema type — imported from `@atlas/config` and
+// used locally below. Callsites should also import directly from
+// `@atlas/config` (re-exporting would push the discriminated-union
+// inference through this module and cause deep-type explosions
+// downstream).
 
 const STREAM_NAME = "CASCADES";
 const DEFAULT_MAX_AGE_NS = 60 * 60 * 1_000_000_000; // 1h
@@ -238,10 +243,22 @@ export class CascadeConsumer {
     this.batchSize = opts.batchSize ?? 16;
     this.maxAckPending = opts.maxAckPending ?? DEFAULT_MAX_ACK_PENDING;
     this.queueTimeoutMs = opts.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS;
-    // ack_wait should comfortably exceed the longest legitimate cascade.
-    // 30min covers most LLM jobs. A cascade outlasting this will be
-    // redelivered, but maxDeliver=1 means it's term'd on second receipt.
-    this.ackWaitNs = 30 * 60 * 1_000_000_000;
+    // ack_wait bounds crash-recovery, NOT cascade duration. We ack on
+    // the policy decision (parse → resolvePolicy → ack), all of which
+    // run synchronously inside `handleMessage` and finish in
+    // milliseconds. The cascade itself runs as a background Promise
+    // AFTER the ack — its runtime is irrelevant to the broker.
+    //
+    // What ack_wait actually controls: if the daemon dies between
+    // receive and ack (the small "in-flight, unacked" window), the
+    // broker holds the message for ack_wait before reclaiming the
+    // ack_pending slot. With ack_wait = 30min and max_ack_pending = 32,
+    // a crash during peak could stall the next daemon's consumer for
+    // 30 min waiting for those slots to free up. Setting it to 30s
+    // bounds that recovery window. With max_deliver=1 the message
+    // gets term'd on redelivery anyway — we don't lose more by
+    // shortening, we just unstuck the consumer faster.
+    this.ackWaitNs = 30 * 1_000_000_000;
   }
 
   async start(): Promise<void> {

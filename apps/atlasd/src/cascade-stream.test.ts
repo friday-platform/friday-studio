@@ -1,9 +1,9 @@
+import type { ConcurrencyPolicy } from "@atlas/config";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { connect, type NatsConnection } from "nats";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   CascadeConsumer,
-  type ConcurrencyPolicy,
   cascadeSubject,
   ensureCascadesStream,
   publishCascade,
