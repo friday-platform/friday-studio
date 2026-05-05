@@ -27,6 +27,18 @@
  * trivial no-op cron jobs. Splitting delivery from execution lets
  * one consumer drain SIGNALS quickly while a separate consumer
  * runs cascades concurrently.
+ *
+ * Crash semantics: max_deliver=1 on CASCADES, ack on policy decision.
+ * If the daemon crashes mid-cascade, the message is gone and the
+ * cascade does NOT replay. The session is left in active state and
+ * gets flipped to "interrupted" by the existing
+ * `markInterruptedSessions` sweep on next daemon startup. This is a
+ * deliberate behaviour change from pre-cascade-split (which would
+ * redeliver the same SIGNALS msg up to 5×): replays of crashed
+ * cascades are likely to fail again the same way and burn ack budget.
+ * Operators that need every-tick semantics should rely on the cron
+ * `onMissed: catchup` policy plus the in-runtime session lifecycle —
+ * the queue layer no longer hides crashes behind retries.
  */
 
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
@@ -237,6 +249,24 @@ export class CascadeConsumer {
     }
     this.running = true;
     this.loop = this.runLoop();
+
+    // Saturated state is in-memory only, so a previous daemon that
+    // crashed while saturated leaves a hanging `cascade.queue_saturated`
+    // event in INSTANCE_EVENTS with no matching `drained`. UI consumers
+    // walking the event log would interpret that as "still saturated".
+    // Emit a synthetic drained event on every startup — current inFlight
+    // is 0 by definition (we just initialised the map), so the assertion
+    // is honest.
+    void publishInstanceEvent(
+      this.nc,
+      {
+        type: "cascade.queue_drained",
+        at: new Date().toISOString(),
+        inFlight: 0,
+        cap: this.maxAckPending,
+      },
+      logger,
+    );
   }
 
   async stop(): Promise<void> {

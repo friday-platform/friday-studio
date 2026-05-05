@@ -328,14 +328,34 @@ class ProcessRegistry {
       }
 
       try {
-        await deps.fetch(readyUrl, { method: "GET" });
-        logger.info(`MCP shared process: child ready for "${serverId}"`, {
-          operation: "mcp_shared_process_ready",
-          serverId,
-          pid: child.pid,
-          elapsedMs: Date.now() - startTime,
-        });
-        return { child };
+        const response = await deps.fetch(readyUrl, { method: "GET" });
+        // Reject 5xx as still-starting. Servers that bind their port
+        // before completing init (workspace-mcp during OAuth bootstrap is
+        // the canonical example) answer GETs with 5xx until they're
+        // actually ready to serve tool calls. Accepting anything-non-throw
+        // — the prior behaviour — let those requests through and the very
+        // first tool call would error out with a misleading "credentials
+        // not configured" from the half-initialised server.
+        //
+        // 4xx (e.g. 405 Method Not Allowed for GET on a POST-only MCP
+        // endpoint) is a "server is up and replying intelligently"
+        // signal — kept as ready.
+        if (response.status >= 500) {
+          logger.debug(`MCP shared process: not ready (${response.status}) for "${serverId}"`, {
+            operation: "mcp_shared_process_ready_check",
+            serverId,
+            status: response.status,
+          });
+        } else {
+          logger.info(`MCP shared process: child ready for "${serverId}"`, {
+            operation: "mcp_shared_process_ready",
+            serverId,
+            pid: child.pid,
+            status: response.status,
+            elapsedMs: Date.now() - startTime,
+          });
+          return { child };
+        }
       } catch {
         // Not ready yet — continue polling.
       }

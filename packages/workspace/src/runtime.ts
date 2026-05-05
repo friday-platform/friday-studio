@@ -2289,15 +2289,6 @@ export class WorkspaceRuntime {
     return { id: agentId, type: config.type, description: config.description, config };
   }
 
-  /**
-   * Check if there are active sessions for a signal. With per-signal engines
-   * the canonical source is `this.sessions` (populated in finalizeSession);
-   * any active execution shows up there.
-   */
-  hasActiveSessionsForSignal(signalId: string): boolean {
-    return Array.from(this.sessions.values()).some((s) => s.signalId === signalId);
-  }
-
   getOrchestrator(): AgentOrchestrator {
     return this.orchestrator;
   }

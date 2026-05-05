@@ -2557,6 +2557,7 @@ export class AtlasDaemon {
 
   getStatus() {
     const cronStats = this.cronManager?.getStats();
+    const cascadeStats = this.cascadeConsumer?.getStats();
 
     return {
       activeWorkspaces: this.runtimes.size,
@@ -2564,6 +2565,7 @@ export class AtlasDaemon {
       cronManager: cronStats
         ? { isActive: this.cronManager?.isRunning || false, ...cronStats }
         : null,
+      cascadeConsumer: cascadeStats ?? null,
       migrations: this.migrationStatus,
       configuration: {
         maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
