@@ -129,7 +129,11 @@ jobs:
             gsutil -q stat "$obj"
             actual=$(gsutil cat "$obj" | shasum -a 256 | awk '{print $1}')
             if [[ "$expected" != "$actual" ]]; then
-              echo "::error::SHA mismatch for $obj — expected $expected, got $actual. Likely a colliding build overwrote the tarball; rebuild before publishing." >&2
+              # `::error::` workflow commands must go to stdout — GitHub
+              # only parses them from there. Stderr also gets the human
+              # detail so it shows up in the raw log without the prefix.
+              echo "::error::SHA mismatch for $obj — expected $expected, got $actual. Likely a colliding build overwrote the tarball; rebuild before publishing."
+              echo "SHA mismatch for $obj (expected $expected, got $actual)" >&2
               exit 1
             fi
           done
