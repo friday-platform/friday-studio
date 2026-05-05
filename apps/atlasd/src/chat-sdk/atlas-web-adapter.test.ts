@@ -222,8 +222,12 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
     const events = text
       .split("\n\n")
-      .filter((line) => line.startsWith("data: "))
-      .map((line) => line.slice("data: ".length));
+      .filter((c) => c.length > 0)
+      .map((c) => {
+        const dataLine = c.split("\n").find((l) => l.startsWith("data: "));
+        return dataLine?.slice("data: ".length) ?? null;
+      })
+      .filter((e): e is string => e !== null);
 
     expect(events).toContain("[DONE]");
     const dataEvents = events.filter((e) => e !== "[DONE]");
