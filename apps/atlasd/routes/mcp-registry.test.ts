@@ -2358,6 +2358,33 @@ describe("MCP Registry Routes", () => {
       expect(body.error).toBe("Credential 'github' was deleted. Reconnect to continue.");
     });
 
+    it("silently-failed probe (empty tools, no disconnected) surfaces as connect, not cached []", async () => {
+      // Mirrors the QA finding: createMCPTools warn-logs and silently drops
+      // servers that fail to start (typo'd npm package, MCPStartupError,
+      // connect error). No `disconnected` entry, just `tools: {}`. Without
+      // the empty-tools guard in probeAndExtract, the probe would cache `[]`
+      // and the user would see "no tools" instead of a real error.
+      const entry = createTestEntry("connect-failed-probe");
+      mockCreateMCPTools.mockResolvedValue({
+        tools: {},
+        dispose: vi.fn().mockResolvedValue(undefined),
+        disconnected: [],
+      });
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+      await _flushPrewarmsForTest();
+
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      const body = ToolProbeErrorSchema.parse(await probe.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("connect");
+      expect(body.error).toContain("failed to start");
+    });
+
     it("dedup branch surfaces classified prewarm failure when GET arrives mid-prewarm", async () => {
       const entry = createTestEntry("dedup-prewarm-error");
       // Defer the prewarm so the GET enters the dedup branch BEFORE the

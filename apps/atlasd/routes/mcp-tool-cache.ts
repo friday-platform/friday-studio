@@ -120,6 +120,16 @@ export async function probeAndExtract(
     err.message = entry.message;
     throw err;
   }
+  // createMCPTools also silently drops servers that fail to start (connect
+  // error, MCPStartupError, list-tools timeout) — they're warn-logged but
+  // don't appear in `disconnected`. For a single-server probe, an empty
+  // `tools` map with no `disconnected` entry means *this* probe failed
+  // silently. Throw so the classifier surfaces a real error rather than
+  // caching `[]` for an hour.
+  if (Object.keys(result.tools).length === 0) {
+    await result.dispose();
+    throw new Error(`MCP server "${serverId}" failed to start or expose tools`);
+  }
   const tools: CachedTool[] = Object.entries(result.tools).map(([name, tool]) => {
     const t = tool as Record<string, unknown>;
     const schema = t.inputSchema as Record<string, unknown> | undefined;
