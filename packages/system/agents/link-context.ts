@@ -46,14 +46,20 @@ export async function fetchLinkSummary(logger: Logger): Promise<SummaryResponse 
 
 /**
  * Format credentials into system prompt section.
- * Uses flat XML with status attributes for unambiguous service state.
- * Includes urlDomains for URL-to-MCP mapping.
+ *
+ * Phase 6 partial cut-over: only `status="ready"` entries are inlined.
+ * The `unconnected` set lives behind the `list_integrations` tool —
+ * the model pulls when the user mentions a service that isn't in the
+ * inlined block. This trims a long tail (30+ providers without any
+ * credentials) without losing operational visibility for services the
+ * user has actually connected.
  *
  * @param summary - Summary response from Link service
  * @param options - Formatting options
  * @param options.includeLabels - Include credential labels in output (default: true).
  *   Set to false for planner context where credential identity is irrelevant.
- * @returns Formatted XML section for system prompt
+ * @returns Formatted XML section for system prompt, or empty string when
+ *   no credentials are connected (skip the block entirely in that case).
  */
 export function formatIntegrationsSection(
   summary: SummaryResponse,
@@ -61,6 +67,8 @@ export function formatIntegrationsSection(
 ): string {
   const { credentials, providers } = summary;
   const includeLabels = options?.includeLabels ?? true;
+
+  if (credentials.length === 0) return "";
 
   // Group credentials by provider
   const credsByProvider = new Map<string, typeof credentials>();
@@ -70,24 +78,31 @@ export function formatIntegrationsSection(
     credsByProvider.set(cred.provider, list);
   }
 
-  // Build flat XML with urlDomains from MCP registry
-  let section = "<integrations>\n";
+  // Build flat XML with urlDomains from MCP registry. Only emit
+  // `status="ready"` entries — unconnected providers are pull-only via
+  // `list_integrations`.
+  const lines: string[] = ["<integrations>"];
   for (const provider of providers) {
+    const providerCreds = credsByProvider.get(provider.id);
+    if (!providerCreds || providerCreds.length === 0) continue;
+
     const mcpEntry = mcpServersRegistry.servers[provider.id];
     const urlDomains = mcpEntry?.urlDomains?.join(",") ?? "";
-    const providerCreds = credsByProvider.get(provider.id);
 
-    if (!providerCreds || providerCreds.length === 0) {
-      section += `  <service id="${provider.id}" status="unconnected" urlDomains="${urlDomains}"/>\n`;
-    } else if (!includeLabels) {
-      section += `  <service id="${provider.id}" status="ready" urlDomains="${urlDomains}"/>\n`;
+    if (!includeLabels) {
+      lines.push(`  <service id="${provider.id}" status="ready" urlDomains="${urlDomains}"/>`);
     } else {
       for (const cred of providerCreds) {
         const defaultAttr = cred.isDefault ? ` default="true"` : "";
-        section += `  <service id="${provider.id}" status="ready" label="${cred.label}"${defaultAttr} urlDomains="${urlDomains}"/>\n`;
+        lines.push(
+          `  <service id="${provider.id}" status="ready" label="${cred.label}"${defaultAttr} urlDomains="${urlDomains}"/>`,
+        );
       }
     }
   }
-  section += "</integrations>";
-  return section;
+  lines.push(
+    "<note>Only connected services are listed above. For services the user mentions that aren't shown, call `list_integrations({status: \"unconnected\"})` to check what's available to connect.</note>",
+  );
+  lines.push("</integrations>");
+  return lines.join("\n");
 }
