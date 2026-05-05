@@ -13,6 +13,7 @@
   import ChatMessageList from "./chat-message-list.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
+  import { nextResumeBudgetStep } from "./resume-budget.ts";
   import { nextSpeechChunk } from "./chat-tts.ts";
   import { extractToolCalls, flattenToolCalls } from "./extract-tool-calls.ts";
   import {
@@ -156,6 +157,19 @@
    * message, producing duplicated content. Reset on every fresh turn.
    */
   let lastSeenEventId: number | undefined = $state(undefined);
+
+  /**
+   * Cursor value at the moment of the last `chat.error`. The resume budget
+   * (`resumeAttempts`) only exists to bound infinite loops against a stuck
+   * server — if the cursor has advanced since the last failure, the
+   * previous resume actually delivered events and the next failure is a
+   * NEW Chrome ~50s cap, not a retry of the same broken state. Resetting
+   * the counter on forward progress lets a long-running turn (a 25-minute
+   * tool call across 30 reconnects) finish cleanly. Without this, every
+   * Chrome cap drains one attempt regardless of whether the resume
+   * succeeded, and the budget runs out at minute ~17.
+   */
+  let lastSeenEventIdAtLastFailure: number | undefined = $state(undefined);
 
   /**
    * `fetch` wrapper for the AI SDK's `DefaultChatTransport`. Threads
@@ -450,9 +464,23 @@
     if (last && last.role === "assistant" && hasErrorPart(last as AtlasUIMessage)) {
       return;
     }
-    if (resumeAttempts < MAX_TURN_RESUMES) {
+    // Forward progress between failures means the previous resume actually
+    // delivered events. The budget guards against tight loops on a stuck
+    // server, not legitimate long turns — `nextResumeBudgetStep` resets
+    // the counter when the cursor advanced so a 25-minute tool call across
+    // 30 Chrome ~50s caps doesn't hit MAX_TURN_RESUMES at minute ~17 and
+    // silently truncate.
+    const step = nextResumeBudgetStep({
+      lastSeenEventId,
+      lastSeenEventIdAtLastFailure,
+      resumeAttempts,
+      maxTurnResumes: MAX_TURN_RESUMES,
+    });
+    resumeAttempts = step.nextResumeAttempts;
+    lastSeenEventIdAtLastFailure = step.nextLastSeenEventIdAtLastFailure;
+
+    if (step.shouldResume) {
       const instance = chat;
-      resumeAttempts++;
       instance.clearError();
       instance.resumeStream().catch(() => {
         // Resume itself failed (server gone, 4xx, replayDisabled buffer,
@@ -1079,6 +1107,7 @@
     wasInterrupted = false;
     resumeAttempts = 0;
     lastSeenEventId = undefined;
+    lastSeenEventIdAtLastFailure = undefined;
 
     // Merge images from the input component + any dropped on the chat area
     const allImages = [...inputImages, ...pendingImages];
