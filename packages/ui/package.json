@@ -34,7 +34,6 @@
       "svelte": "./src/lib/index.ts"
     },
     "./colors.css": "./src/lib/colors.css",
-    "./markdown.css": "./src/lib/markdown/markdown.css",
     "./tokens.css": "./src/lib/tokens.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"

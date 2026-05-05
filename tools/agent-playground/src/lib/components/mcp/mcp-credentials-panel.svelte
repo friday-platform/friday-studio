@@ -11,19 +11,20 @@
 -->
 
 <script lang="ts">
-  import { browser } from "$app/environment";
-  import { Button, Dialog } from "@atlas/ui";
-  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { writable } from "svelte/store";
   import type { LinkCredentialRef } from "@atlas/agent-sdk";
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
-  import CredentialSecretForm from "../credential-secret-form.svelte";
-  import { useCredentialConnect } from "../../use-credential-connect.svelte.ts";
-  import { linkProviderQueries } from "../../queries/link-provider-queries.ts";
+  import { Button, Dialog } from "@atlas/ui";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { browser } from "$app/environment";
+  import { writable } from "svelte/store";
   import {
     useDeleteCredential,
     useUpdateCredentialSecret,
   } from "../../queries/link-credentials.ts";
+  import { linkProviderQueries } from "../../queries/link-provider-queries.ts";
+  import { useCredentialConnect } from "../../use-credential-connect.svelte.ts";
+  import CredentialSecretForm from "../credential-secret-form.svelte";
+  import McpCredentialsList from "./mcp-credentials-list.svelte";
 
   // ─── Props ─────────────────────────────────────────────────────────────────
 
@@ -59,7 +60,8 @@
     const idRefs: IdRef[] = [];
 
     for (const [envKey, value] of Object.entries(env)) {
-      if (typeof value !== "object" || value === null || !("from" in value)) continue;
+      if (typeof value !== "object" || value === null || !("from" in value))
+        continue;
       const ref = value as LinkCredentialRef;
       if (ref.from !== "link") continue;
 
@@ -115,7 +117,9 @@
       const connect = getConnect(providerId);
       cleanups.push(
         connect.listenForCallback(() => {
-          queryClient.invalidateQueries({ queryKey: linkProviderQueries.all() });
+          queryClient.invalidateQueries({
+            queryKey: linkProviderQueries.all(),
+          });
         }),
       );
     }
@@ -138,32 +142,6 @@
   let addingProvider = $state<string | null>(null);
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
-
-  function statusLabel(status: string | undefined): string {
-    switch (status) {
-      case "ready":
-        return "Ready";
-      case "expired":
-        return "Expired";
-      case "unknown":
-        return "Unknown";
-      default:
-        return "";
-    }
-  }
-
-  function statusClass(status: string | undefined): string {
-    switch (status) {
-      case "ready":
-        return "status-ready";
-      case "expired":
-        return "status-expired";
-      case "unknown":
-        return "status-unknown";
-      default:
-        return "";
-    }
-  }
 
   function handleRemoveConfirm(id: string) {
     removingId = id;
@@ -217,14 +195,13 @@
 
 {#if hasCredentialRefs}
   <section class="credentials-panel">
-    <h3 class="panel-title">Credentials</h3>
-
     <!-- ID-based refs — read-only notice -->
     {#if discovery.idRefs.length > 0}
       <div class="id-ref-notice">
         <p>
           This server references a credential by ID. Manage it in
-          <strong>Settings &gt; Connections</strong>.
+          <strong>Settings &gt; Connections</strong>
+          .
         </p>
       </div>
     {/if}
@@ -255,77 +232,34 @@
             No credentials connected for {providerName}.
           </div>
         {:else}
-          <ul class="credential-list">
-            {#each credentials as cred (cred.id)}
-              <li class="credential-row">
-                <div class="credential-info">
-                  <span class="credential-label">{cred.label}</span>
-                  <span class="credential-type">{cred.type}</span>
-                  {#if cred.status}
-                    <span class="status-badge {statusClass(cred.status)}">
-                      {statusLabel(cred.status)}
-                    </span>
-                  {/if}
-                </div>
-
-                <div class="credential-actions">
-                  {#if details?.type === "apikey"}
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={() => handleReplace(cred.id)}
-                    >
-                      Replace
-                    </Button>
-                  {:else if details?.type === "oauth"}
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={connect.startOAuth}
-                    >
-                      Re-authenticate
-                    </Button>
-                  {:else if details?.type === "app_install"}
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={connect.startAppInstall}
-                    >
-                      Re-install
-                    </Button>
-                  {/if}
-
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    onclick={() => handleRemoveConfirm(cred.id)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-
-                {#if replacingId === cred.id && details?.secretSchema}
-                  <div class="replace-form">
-                    <CredentialSecretForm
-                      secretSchema={details.secretSchema}
-                      initialLabel={cred.label}
-                      submitting={updateMutation.isPending}
-                      error={updateMutation.error?.message ?? null}
-                      onSubmit={handleReplaceSubmit}
-                    />
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={handleReplaceCancel}
-                      disabled={updateMutation.isPending}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                {/if}
-              </li>
-            {/each}
-          </ul>
+          {@const replacingCred = credentials.find((c) => c.id === replacingId)}
+          <McpCredentialsList
+            {credentials}
+            providerType={details?.type}
+            onReplace={handleReplace}
+            onRemove={handleRemoveConfirm}
+            onReauthenticate={connect.startOAuth}
+            onReinstall={connect.startAppInstall}
+          />
+          {#if replacingCred && details?.secretSchema}
+            <div class="replace-form">
+              <CredentialSecretForm
+                secretSchema={details.secretSchema}
+                initialLabel={replacingCred.label}
+                submitting={updateMutation.isPending}
+                error={updateMutation.error?.message ?? null}
+                onSubmit={handleReplaceSubmit}
+              />
+              <Button
+                variant="secondary"
+                size="small"
+                onclick={handleReplaceCancel}
+                disabled={updateMutation.isPending}
+              >
+                Cancel
+              </Button>
+            </div>
+          {/if}
         {/if}
 
         <!-- Add new — always available regardless of credential count -->
@@ -348,15 +282,17 @@
                   Cancel
                 </Button>
               {:else if details?.type === "oauth"}
-                <Button variant="primary" size="small" onclick={connect.startOAuth}>
-                  Connect
-                </Button>
+                <Button
+                  variant="primary"
+                  size="small"
+                  onclick={connect.startOAuth}>Connect</Button
+                >
                 {#if connect.popupBlocked && connect.blockedUrl}
                   <div class="popup-blocked">
                     <p>Popup was blocked.</p>
-                    <a href={connect.blockedUrl} class="fallback-link">
-                      Continue in this tab
-                    </a>
+                    <a href={connect.blockedUrl} class="fallback-link"
+                      >Continue in this tab</a
+                    >
                   </div>
                 {/if}
                 <Button
@@ -377,9 +313,9 @@
                 {#if connect.popupBlocked && connect.blockedUrl}
                   <div class="popup-blocked">
                     <p>Popup was blocked.</p>
-                    <a href={connect.blockedUrl} class="fallback-link">
-                      Continue in this tab
-                    </a>
+                    <a href={connect.blockedUrl} class="fallback-link"
+                      >Continue in this tab</a
+                    >
                   </div>
                 {/if}
                 <Button
@@ -417,46 +353,35 @@
 
   <!-- Remove confirmation dialog -->
   <Dialog.Root open={removeDialogOpen}>
-    {#snippet children()}
-      <Dialog.Content>
-        <Dialog.Close />
-        {#snippet header()}
-          <Dialog.Title>Remove credential</Dialog.Title>
-          <Dialog.Description>
-            This credential will be permanently removed and will no longer be
-            available to workspaces.
-          </Dialog.Description>
-        {/snippet}
-        {#snippet footer()}
-          <Dialog.Button
-            onclick={handleRemoveExecute}
-            disabled={deleteMutation.isPending}
-            closeOnClick={false}
-          >
-            {deleteMutation.isPending ? "Removing…" : "Remove"}
-          </Dialog.Button>
-          <Dialog.Cancel onclick={() => (removingId = null)}>
-            Cancel
-          </Dialog.Cancel>
-        {/snippet}
-      </Dialog.Content>
-    {/snippet}
+    <Dialog.Content>
+      <Dialog.Close />
+      {#snippet header()}
+        <Dialog.Title>Remove credential</Dialog.Title>
+        <Dialog.Description>
+          This credential will be permanently removed and will no longer be
+          available to workspaces.
+        </Dialog.Description>
+      {/snippet}
+      {#snippet footer()}
+        <Dialog.Button
+          onclick={handleRemoveExecute}
+          disabled={deleteMutation.isPending}
+          closeOnClick={false}
+        >
+          {deleteMutation.isPending ? "Removing…" : "Remove"}
+        </Dialog.Button>
+        <Dialog.Cancel onclick={() => (removingId = null)}>Cancel</Dialog.Cancel
+        >
+      {/snippet}
+    </Dialog.Content>
   </Dialog.Root>
 {/if}
 
 <style>
   .credentials-panel {
-    border-block-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
     gap: var(--size-4);
-    padding-block-start: var(--size-4);
-  }
-
-  .panel-title {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin: 0;
   }
 
   .id-ref-notice {
@@ -485,84 +410,16 @@
   }
 
   .loading-state {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-1);
+    color: var(--text-faded);
+    font-size: var(--font-size-3);
   }
 
   .empty-state {
     align-items: center;
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
+    color: var(--text-faded);
     display: flex;
-    font-size: var(--font-size-1);
+    font-size: var(--font-size-3);
     gap: var(--size-2);
-  }
-
-  .credential-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .credential-row {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .credential-info {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-2);
-  }
-
-  .credential-label {
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-  }
-
-  .credential-type {
-    background: var(--color-surface-3);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    padding: 2px 6px;
-    text-transform: uppercase;
-  }
-
-  .status-badge {
-    border-radius: var(--radius-1);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    padding: 2px 6px;
-  }
-
-  .status-badge.status-ready {
-    background: color-mix(in srgb, var(--color-success), transparent 85%);
-    color: var(--color-success);
-  }
-
-  .status-badge.status-expired {
-    background: color-mix(in srgb, var(--color-warning), transparent 85%);
-    color: var(--color-warning);
-  }
-
-  .status-badge.status-unknown {
-    background: color-mix(in srgb, var(--color-text), transparent 85%);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-  }
-
-  .credential-actions {
-    display: flex;
-    gap: var(--size-1);
   }
 
   .replace-form,
@@ -577,7 +434,11 @@
   }
 
   .popup-blocked {
-    background: color-mix(in srgb, var(--color-surface-2), var(--color-text) 5%);
+    background: color-mix(
+      in srgb,
+      var(--color-surface-2),
+      var(--color-text) 5%
+    );
     border-radius: var(--radius-2);
     font-size: var(--font-size-1);
     padding: var(--size-2) var(--size-3);

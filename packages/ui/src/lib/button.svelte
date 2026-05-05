@@ -8,7 +8,7 @@
     prepend?: Snippet;
     append?: Snippet;
     isDropdown?: boolean;
-    variant?: "primary" | "secondary";
+    variant?: "primary" | "secondary" | "destructive" | "none";
     size?: "regular" | "small" | "icon";
     type?: "button" | "reset" | "submit";
     cursor?: "default" | "hand";
@@ -82,21 +82,13 @@
 
 <style>
   .button {
-    --button-shadow-outline-color: rgb(238 238 239 / 0.5);
-
     align-items: center;
-    background: var(--color-surface-1);
     block-size: var(--size-6-5);
-    box-shadow:
-      var(--shadow-1),
-      0px 0px 0px 1px var(--button-shadow-outline-color);
     border-radius: var(--radius-2-5);
-    box-sizing: border-box;
-    color: var(--text-1);
+    color: var(--text-bright);
     cursor: default;
     display: inline flex;
     flex: none;
-    font-family: var(--font-family-sans);
     font-size: var(--font-size-3);
     font-weight: var(--font-weight-5);
     gap: var(--size-1);
@@ -110,34 +102,18 @@
     -webkit-user-select: none;
     user-select: none;
 
-    &.size-small {
-      font-size: var(--font-size-2);
-    }
-
-    &.size-icon {
-      block-size: var(--size-6);
-      inline-size: var(--size-6);
-      min-inline-size: unset;
-      padding-inline: 0;
-    }
-
-    &.variant-primary.size-small {
-      block-size: var(--size-6);
-      font-size: var(--font-size-2);
-    }
-
-    &.variant-secondary {
-      background-color: var(--highlight-bright);
-      box-shadow: none;
-
-      &:hover {
-        background-color: color-mix(in srgb, var(--highlight-bright), var(--color-text) 5%);
-      }
-    }
-
     &:focus-visible {
       outline: 1px solid var(--color-text);
       z-index: var(--layer-1);
+    }
+
+    &.cursor-hand {
+      cursor: pointer;
+    }
+
+    .contents {
+      position: relative;
+      z-index: 1;
     }
 
     &[disabled=""],
@@ -154,52 +130,58 @@
       }
     }
 
-    &.cursor-hand {
-      cursor: pointer;
+    .prepend {
+      color: var(--text-faded);
+      transition: color 150ms ease;
     }
 
-    .contents {
-      position: relative;
-      z-index: 1;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      & {
-        --button-shadow-outline-color: rgba(225, 225, 239, 0);
-        box-shadow:
-          0px 0px 0px 1px var(--button-shadow-outline-color),
-          var(--shadow-1);
-      }
-    }
-  }
-
-  /* DEFAULT */
-  .variant-primary {
-    --button-variant-default-color: var(--accent-1);
-
-    /* Due to snippets, this selector isn't captured without :global() */
-    & :global(.prepend) {
-      color: var(--button-variant-default-color);
-    }
-
-    /* disabled="" indicates that the button *is* disabled. Weird, I know. */
-    &[disabled=""] :global(.prepend) {
-      color: var(--border-3);
-    }
-
-    & :global(.append) {
+    .append {
       opacity: 0.4;
       transition: all 150ms ease;
       transform: translate3d(0, 0, 0);
     }
 
-    /* *Not* disabled. See above. */
-    &:not([disabled=""]):hover {
-      background-color: color-mix(
-        in srgb,
-        var(--background-1),
-        var(--button-variant-default-color) 3%
-      );
+    /* Variants */
+    &.variant-primary {
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    &.variant-secondary {
+      background-color: var(--highlight-bright);
+
+      &:hover {
+        background-color: color-mix(in srgb, var(--highlight-bright), var(--text) 5%);
+      }
+    }
+
+    &.variant-destructive {
+      background-color: var(--highlight-bright);
+      color: var(--red-primary);
+
+      &:hover {
+        background-color: color-mix(in srgb, var(--highlight-bright), var(--text) 5%);
+      }
+    }
+
+    &.variant-none {
+      padding-inline: unset;
+
+      &:hover .prepend {
+        color: var(--text-bright);
+      }
+    }
+
+    /* Sizes */
+    &.size-small {
+      font-size: var(--font-size-2);
+    }
+
+    &.size-icon {
+      block-size: var(--size-6);
+      inline-size: var(--size-6);
+      min-inline-size: unset;
+      padding-inline: 0;
     }
   }
 </style>
