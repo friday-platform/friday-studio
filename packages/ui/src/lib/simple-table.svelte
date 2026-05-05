@@ -49,7 +49,6 @@
     padding-inline-end: 0;
   }
 
-  table :global(tr *:last-child),
   table :global(tr *:last-child) {
     border-inline-end: none;
   }

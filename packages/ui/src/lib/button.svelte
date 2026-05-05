@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { IconSmall } from "./icons/small";
   import type { Snippet } from "svelte";
   import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
+  import { IconSmall } from "./icons/small";
 
   type Props = {
     children: Snippet;
@@ -143,19 +143,15 @@
 
     /* Variants */
     &.variant-primary {
-      --button-shadow-outline-color: rgb(238 238 239 / 0.5);
-
       background: var(--surface);
-      box-shadow:
-        var(--shadow-1),
-        0px 0px 0px 1px var(--button-shadow-outline-color);
+      box-shadow: var(--shadow-1);
     }
 
     &.variant-secondary {
       background-color: var(--highlight-bright);
 
       &:hover {
-        background-color: color-mix(in srgb, var(--highlight-bright), var(--color-text) 5%);
+        background-color: color-mix(in srgb, var(--highlight-bright), var(--text) 5%);
       }
     }
 
@@ -164,7 +160,7 @@
       color: var(--red-primary);
 
       &:hover {
-        background-color: color-mix(in srgb, var(--highlight-bright), var(--color-text) 5%);
+        background-color: color-mix(in srgb, var(--highlight-bright), var(--text) 5%);
       }
     }
 

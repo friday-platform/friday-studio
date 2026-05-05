@@ -45,8 +45,6 @@
   });
 
   let searchDebounce: ReturnType<typeof setTimeout> | undefined;
-  let searchFocused = $state(false);
-  let searchRef: HTMLInputElement | null = $state(null);
 
   function handleSearchInput(): void {
     clearTimeout(searchDebounce);
@@ -89,36 +87,29 @@
     }),
   );
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   function securityColor(rating: string | undefined): string {
     switch (rating) {
       case "high":
-        return "var(--color-success)";
+        return "var(--green-primary)";
       case "medium":
-        return "var(--color-warning)";
+        return "var(--yellow-primary)";
       case "low":
-        return "var(--color-error)";
+        return "var(--red-primary)";
       default:
-        return "color-mix(in srgb, var(--color-text), transparent 45%)";
+        return "var(--text-faded)";
     }
   }
 </script>
 
 <div class="catalog-tree">
   <!-- Search -->
-  <div class="search-field" class:focused={searchFocused}>
+  <div class="search-field">
     <span class="search-icon"><IconSmall.Search /></span>
     <input
       type="text"
       placeholder="Search"
       bind:value={searchInput}
-      bind:this={searchRef}
       oninput={handleSearchInput}
-      onfocus={() => (searchFocused = true)}
-      onblur={() => (searchFocused = false)}
       autocomplete="off"
     />
   </div>
@@ -141,6 +132,10 @@
             class:active={selectedServerId === server.id}
             onclick={() => onSelectServer(server.id)}
           >
+            <span
+              class="security-dot"
+              style:--dot-color={securityColor(server.securityRating)}
+            ></span>
             <span class="item-name">{server.name}</span>
             <span class="tag-pill">{sourceLabel(server.source)}</span>
           </button>
@@ -237,6 +232,14 @@
     background-color: var(--highlight);
     color: var(--text-bright);
     opacity: 1;
+  }
+
+  .security-dot {
+    background-color: var(--dot-color);
+    block-size: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    inline-size: 6px;
   }
 
   .item-name {

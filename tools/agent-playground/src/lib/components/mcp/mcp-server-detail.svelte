@@ -60,7 +60,6 @@
   }: Props = $props();
 
   const deleteDialogOpen = writable(false);
-  let hasCredentials = $state(false);
 
   // Reset delete dialog when navigating to a different server
   $effect(() => {
@@ -86,7 +85,9 @@
   const canPullUpdate = $derived(
     isInstalled && server?.source === "registry" && hasUpdate && !!onPullUpdate,
   );
-  const canDelete = $derived(isInstalled && server?.source !== "static" && !!onDelete);
+  const canDelete = $derived(
+    isInstalled && server?.source !== "static" && !!onDelete,
+  );
   const hasActions = $derived(canCheckUpdate || canPullUpdate || canDelete);
 
   function transportInfo(s: MCPServerMetadata): string {
@@ -124,15 +125,16 @@
       </div>
       <h2 class="empty-title">MCP Catalog</h2>
       <p class="empty-desc">
-        Select a server from the list to view details, or search the upstream registry to discover
-        new servers.
+        Select a server from the list to view details, or search the upstream
+        registry to discover new servers.
       </p>
     </div>
   {:else}
     <article>
       {#if hasActions}
         <div class="actions-bar">
-          <span class="actions-indent actions-indent-tl" aria-hidden="true"></span>
+          <span class="actions-indent actions-indent-tl" aria-hidden="true"
+          ></span>
           <div class="actions-int">
             {#if canCheckUpdate}
               <Button
@@ -149,7 +151,12 @@
             {/if}
 
             {#if canPullUpdate}
-              <Button size="small" variant="primary" onclick={onPullUpdate} disabled={pulling}>
+              <Button
+                size="small"
+                variant="primary"
+                onclick={onPullUpdate}
+                disabled={pulling}
+              >
                 {pulling ? "Updating…" : "Pull update"}
               </Button>
             {/if}
@@ -174,20 +181,27 @@
                 {#snippet header()}
                   <Dialog.Title>Remove server</Dialog.Title>
                   <Dialog.Description>
-                    {displayName} will be uninstalled and no longer available to your agents. You can
-                    reinstall it from the registry at any time.
+                    {displayName} will be uninstalled and no longer available to your
+                    agents. You can reinstall it from the registry at any time.
                   </Dialog.Description>
                 {/snippet}
                 {#snippet footer()}
-                  <Dialog.Button onclick={onDelete} disabled={deleting} closeOnClick={false}>
+                  <Dialog.Button
+                    onclick={onDelete}
+                    disabled={deleting}
+                    closeOnClick={false}
+                  >
                     {deleting ? "Removing…" : "Remove"}
                   </Dialog.Button>
-                  <Dialog.Cancel onclick={() => deleteDialogOpen.set(false)}>Cancel</Dialog.Cancel>
+                  <Dialog.Cancel onclick={() => deleteDialogOpen.set(false)}
+                    >Cancel</Dialog.Cancel
+                  >
                 {/snippet}
               </Dialog.Content>
             </Dialog.Root>
           </div>
-          <span class="actions-indent actions-indent-br" aria-hidden="true"></span>
+          <span class="actions-indent actions-indent-br" aria-hidden="true"
+          ></span>
         </div>
       {/if}
 
@@ -222,7 +236,9 @@
             <div class="transport">
               <span class="transport-url">{transportInfo(server)}</span>
               {#if server.configTemplate.transport?.type}
-                <span class="transport-type">{server.configTemplate.transport.type}</span>
+                <span class="transport-type"
+                  >{server.configTemplate.transport.type}</span
+                >
               {/if}
             </div>
           </div>
@@ -251,12 +267,11 @@
           {/if}
 
           {#if server.configTemplate}
-            <div class="content-section" style:display={hasCredentials ? null : "none"}>
+            <div class="content-section credentials-section">
               <h3 class="section-title">Credentials</h3>
               <McpCredentialsPanel
                 serverId={server.id}
                 configTemplate={server.configTemplate}
-                bind:hasContent={hasCredentials}
               />
             </div>
           {/if}
@@ -277,7 +292,8 @@
               <div class="meta-grid">
                 <div class="meta-item">
                   <span class="meta-label">Canonical name</span>
-                  <span class="meta-value">{server.upstream.canonicalName}</span>
+                  <span class="meta-value">{server.upstream.canonicalName}</span
+                  >
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">Version</span>
@@ -285,7 +301,9 @@
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">Updated</span>
-                  <span class="meta-value">{formatDate(server.upstream.updatedAt)}</span>
+                  <span class="meta-value"
+                    >{formatDate(server.upstream.updatedAt)}</span
+                  >
                 </div>
               </div>
             </div>
@@ -321,10 +339,8 @@
   }
 
   .actions-bar {
-    align-self: flex-end;
     display: flex;
     align-items: center;
-    flex-shrink: 0;
     gap: var(--size-3);
     position: absolute;
     inset-block-start: var(--size-1-5);
@@ -442,6 +458,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
+  }
+
+  .credentials-section:not(:has(> *:nth-child(2))) {
+    display: none;
   }
 
   .section-title {
