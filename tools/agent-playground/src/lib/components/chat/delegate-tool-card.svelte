@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Component } from "svelte";
+  import { untrack, type Component } from "svelte";
   import { Icons, IconSmall, markdownToHTML } from "@atlas/ui";
   import ToolCallCard from "./tool-call-card.svelte";
   import { jsonHighlighter } from "./json-highlighter";
@@ -168,32 +168,30 @@
 
   const status = $derived(statusBadgeContent(call.state, call.toolCallId, call.durationMs, call.errorText));
 
-  /* ─── Toggle latch ───────────────────────────────────────────────── */
-
-  /** Undefined = no user choice yet; true/false = explicit open/close. */
-  let userChoice: boolean | undefined = $state(undefined);
+  /* ─── Auto-open shim ─────────────────────────────────────────────── */
 
   /**
-   * Once children have been observed running, latch this so the card stays
-   * open after they finish.
+   * A delegate card is initially open if its children are already running
+   * — e.g. mounting mid-stream after delegation has begun. Computed once
+   * at render; native `<details>` owns state thereafter.
    */
-  let childrenWereRunning = $state(false);
+  const initialOpen = untrack(() => childrenAnyRunning(call.children ?? []));
 
+  const childrenRunningNow = $derived(childrenAnyRunning(call.children ?? []));
+
+  let detailsEl: HTMLDetailsElement | undefined = $state();
+
+  /**
+   * Live-only shim: when children begin running mid-stream, force the
+   * details element open. Effects do not run on the server, so this is a
+   * no-op during SSR. Edge case: if the user explicitly closes the card
+   * while children are still running, the next reactivity tick will
+   * re-open it — same behavior as the previous `childrenWereRunning` latch.
+   */
   $effect(() => {
-    if (call.children && childrenAnyRunning(call.children)) {
-      childrenWereRunning = true;
+    if (childrenRunningNow && detailsEl && !detailsEl.open) {
+      detailsEl.open = true;
     }
-  });
-
-  function handleToggleClick(e: Event, childrenRunning: boolean) {
-    const current = userChoice ?? (childrenAnyRunning(call.children ?? []) || childrenWereRunning);
-    userChoice = !current;
-  }
-
-  const delegateOpen = $derived.by(() => {
-    if (userChoice !== undefined) return userChoice;
-    if (call.children) return childrenAnyRunning(call.children) || childrenWereRunning;
-    return false;
   });
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
@@ -302,20 +300,14 @@
 {/snippet}
 
 {#if call.children && call.children.length > 0}
-  {@const childrenRunning = childrenAnyRunning(call.children)}
-  <div
+  <details
+    bind:this={detailsEl}
     class="delegate-card"
-    class:open={delegateOpen}
     class:in-progress={isInProgress(call.state)}
     class:error={isError(call.state)}
+    open={initialOpen}
   >
-    <div
-      class="delegate-header"
-      role="button"
-      tabindex="0"
-      onclick={(e) => handleToggleClick(e, childrenRunning)}
-      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") handleToggleClick(e, childrenRunning); }}
-    >
+    <summary class="delegate-header">
       <div class="delegate-header-inner">
         <div class="delegate-header-content">
           <div class="delegate-row-primary">
@@ -356,57 +348,51 @@
         </div>
       </div>
       <span class="delegate-chevron">
-        {#if delegateOpen}
-          <IconSmall.ChevronDown />
-        {:else}
-          <IconSmall.ChevronRight />
-        {/if}
+        <IconSmall.ChevronRight />
       </span>
-    </div>
-    {#if delegateOpen}
-      {#if call.reasoning || call.progress}
-        <div class="delegate-ephemeral">
-          {#if call.reasoning}
-            <div class="reasoning-feed">
-              {#each call.reasoning.split("\n").filter(l => l.trim()) as line}
-                <div class="reasoning-line">
-                  <span class="reasoning-dot" aria-hidden="true"></span>
-                  <span class="reasoning-text">{line}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-          {#if call.progress}
-            <div class="progress-feed">
-              {#each call.progress as line}
-                <div class="progress-line">
-                  <span class="progress-dot" aria-hidden="true"></span>
-                  <span class="progress-text">{line}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-      <div class="delegate-children" style="--depth: {depth}">
-        {#each call.children as child (child.toolCallId || child.toolName)}
-          <ToolCallCard call={child} {onCredentialConnected} depth={depth + 1} />
-        {/each}
-      </div>
-      {#if call.delegateText}
-        <details class="tool-card-details">
-          <summary>
-            <span class="chevron-icon"><IconSmall.ChevronRight /></span>
-            response
-          </summary>
-          <div class="delegate-text markdown-body">
-            {@html markdownToHTML(call.delegateText)}
+    </summary>
+    {#if call.reasoning || call.progress}
+      <div class="delegate-ephemeral">
+        {#if call.reasoning}
+          <div class="reasoning-feed">
+            {#each call.reasoning.split("\n").filter(l => l.trim()) as line}
+              <div class="reasoning-line">
+                <span class="reasoning-dot" aria-hidden="true"></span>
+                <span class="reasoning-text">{line}</span>
+              </div>
+            {/each}
           </div>
-        </details>
-      {/if}
-      {@render outputDrawer(call)}
+        {/if}
+        {#if call.progress}
+          <div class="progress-feed">
+            {#each call.progress as line}
+              <div class="progress-line">
+                <span class="progress-dot" aria-hidden="true"></span>
+                <span class="progress-text">{line}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
     {/if}
-  </div>
+    <div class="delegate-children" style="--depth: {depth}">
+      {#each call.children as child (child.toolCallId || child.toolName)}
+        <ToolCallCard call={child} {onCredentialConnected} depth={depth + 1} />
+      {/each}
+    </div>
+    {#if call.delegateText}
+      <details class="tool-card-details">
+        <summary>
+          <span class="chevron-icon"><IconSmall.ChevronRight /></span>
+          response
+        </summary>
+        <div class="delegate-text markdown-body">
+          {@html markdownToHTML(call.delegateText)}
+        </div>
+      </details>
+    {/if}
+    {@render outputDrawer(call)}
+  </details>
 {/if}
 
 <style>
@@ -421,7 +407,12 @@
     cursor: pointer;
     display: flex;
     gap: var(--size-1);
+    list-style: none;
     user-select: none;
+  }
+
+  .delegate-header::-webkit-details-marker {
+    display: none;
   }
 
   .delegate-header-inner {
@@ -490,6 +481,10 @@
   .delegate-chevron :global(svg) {
     inline-size: 100%;
     block-size: 100%;
+  }
+
+  .delegate-card[open] > .delegate-header .delegate-chevron {
+    transform: rotate(90deg);
   }
 
   .delegate-row-secondary {
@@ -676,16 +671,12 @@
   /* ─── Nested children ────────────────────────────────────────────── */
 
   .delegate-children {
-    display: none;
+    display: flex;
     flex-direction: column;
     gap: var(--size-1);
     margin-inline-start: calc(var(--size-3) + var(--depth, 0) * var(--size-1));
     padding-block-start: var(--size-1);
     padding-inline-start: var(--size-2);
-  }
-
-  .delegate-card.open > .delegate-children {
-    display: flex;
   }
 
   /* ─── Output drawer ────────────────────────────────────────────────── */
