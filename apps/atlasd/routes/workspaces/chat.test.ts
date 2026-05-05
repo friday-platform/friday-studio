@@ -254,6 +254,31 @@ describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () =>
     expect(res.status).toBe(204);
   });
 
+  test("returns 410 + X-Stream-Replay-Disabled when buffer is replay-disabled", async () => {
+    // A buffer that overflowed MAX_EVENTS flips replayDisabled=true and
+    // subscribe() refuses to attach. If we still committed 200 OK + an empty
+    // ReadableStream the AI SDK would treat the empty body as a clean finish
+    // and silently truncate the assistant message — the client can't tell
+    // this apart from a successful resume. 410 + header forces a real error
+    // path so the user gets a "reload chat" affordance instead.
+    const subscribe = vi.fn().mockReturnValue(false);
+    const { app } = createTestApp({
+      streamRegistry: {
+        getStream: vi
+          .fn()
+          .mockReturnValue({ active: true, replayDisabled: true, createdAt: Date.now() }),
+        subscribe,
+        unsubscribe: vi.fn(),
+      },
+    });
+
+    const res = await app.request("/ws-1/chat/chat-1/stream");
+
+    expect(res.status).toBe(410);
+    expect(res.headers.get("X-Stream-Replay-Disabled")).toBe("true");
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
   test("returns SSE response with correct headers when stream is active", async () => {
     const now = Date.now();
     const { app } = createTestApp({

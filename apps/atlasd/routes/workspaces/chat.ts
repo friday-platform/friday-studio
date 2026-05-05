@@ -154,6 +154,18 @@ const workspaceChatRoutes = daemonFactory
       return c.body(null, 204);
     }
 
+    // Refuse cursored resume against an overflow-disabled buffer. Without this
+    // guard we'd hand back a 200 OK ReadableStream that closes immediately
+    // (because subscribe() rejects replayDisabled buffers) — the AI SDK reads
+    // zero events, treats the stream as a clean finish, and silently truncates
+    // the user's mid-turn assistant message. Surfacing a 410 + header lets the
+    // client distinguish "no buffer" (204, expected on completed chats) from
+    // "buffer present but replay refused" (410, requires page reload).
+    if (buffer.replayDisabled) {
+      c.header("X-Stream-Replay-Disabled", "true");
+      return c.body(null, 410);
+    }
+
     c.header("X-Turn-Started-At", String(buffer.createdAt));
 
     // Honor `Last-Event-ID`: the client tracks SSE `id:` lines from the
