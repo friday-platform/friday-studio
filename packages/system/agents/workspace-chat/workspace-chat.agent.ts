@@ -50,6 +50,7 @@ import { createConnectCommunicatorTool } from "./tools/connect-communicator.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
 import { createDelegateTool } from "./tools/delegate/index.ts";
+import { createDescribeSkillTool } from "./tools/describe-skill.ts";
 import { createDescribeWorkspaceTool } from "./tools/describe-workspace.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
@@ -286,16 +287,24 @@ export function formatWorkspaceSection(
 
 /**
  * Build skills section from workspace skills.
+ *
+ * Phase 6 cut-over: only skill NAMES are inlined. Descriptions and
+ * full bodies are pull-only:
+ *   - `describe_skill(name)` → metadata (description, version) without
+ *     the body. Cheap on tokens.
+ *   - `load_skill(name)` → full body. Read this only after deciding
+ *     the skill applies to the task.
+ *
+ * Trades a couple of round-trips on first use for a much smaller and
+ * more cache-stable system prompt prefix.
  */
 export function buildSkillsSection(workspaceSkills: SkillSummary[]): string {
   if (workspaceSkills.length === 0) return "";
 
-  const entries = workspaceSkills.map(
-    (s) => `<skill name="@${s.namespace}/${s.name}">${s.description}</skill>`,
-  );
+  const entries = workspaceSkills.map((s) => `<skill name="@${s.namespace}/${s.name}"/>`);
 
   return `<available_skills>
-<instruction>Load skills with load_skill when task matches.</instruction>
+<instruction>Skill names only — call describe_skill(name) for descriptions, load_skill(name) for full body. Use describe_skill before load_skill when the name alone doesn't tell you whether it applies.</instruction>
 ${entries.join("\n")}
 </available_skills>`;
 }
@@ -713,6 +722,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...createMemorySaveTool(workspaceId, logger),
           ...createSetUserIdentityTool(session.userId, logger),
           ...createDescribeWorkspaceTool(workspaceId, logger),
+          ...createDescribeSkillTool(workspaceId, logger),
           ...createListIntegrationsTool(logger),
           ...webFetchTool,
           ...webSearchTool,
