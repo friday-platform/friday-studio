@@ -27,6 +27,7 @@ import {
   classifyProbeError,
   getCachedTools,
   getInFlightPrewarm,
+  getRaceCapMs,
   invalidateCache,
   prewarmTools,
   probeAndExtract,
@@ -666,7 +667,7 @@ export const mcpRegistryRouter = daemonFactory
         const TIMED_OUT = Symbol("timeout");
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timed = new Promise<typeof TIMED_OUT>((resolve) => {
-          timer = setTimeout(() => resolve(TIMED_OUT), 5000);
+          timer = setTimeout(() => resolve(TIMED_OUT), getRaceCapMs());
         });
         const winner = await Promise.race([inFlight, timed]);
         if (timer) clearTimeout(timer);

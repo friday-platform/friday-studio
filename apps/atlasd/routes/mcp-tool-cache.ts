@@ -25,6 +25,16 @@ type Entry = { configHash: string; tools: CachedTool[]; cachedAt: number };
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const PREWARM_TIMEOUT_MS = 60_000;
 
+// Time the GET handler waits on an in-flight prewarm before returning a
+// retryable hint. Module-level so tests can shorten it without faking timers.
+let raceCapMs = 5000;
+export function getRaceCapMs(): number {
+  return raceCapMs;
+}
+export function _setRaceCapForTest(ms: number): void {
+  raceCapMs = ms;
+}
+
 const cache = new Map<string, Entry>();
 const inFlightPrewarm = new Map<string, Promise<PrewarmResult>>();
 
@@ -75,6 +85,7 @@ export function getInFlightPrewarm(serverId: string): Promise<PrewarmResult> | u
 export function _resetCacheForTest(): void {
   cache.clear();
   inFlightPrewarm.clear();
+  raceCapMs = 5000;
 }
 
 export async function _flushPrewarmsForTest(): Promise<void> {
@@ -101,7 +112,13 @@ export async function probeAndExtract(
   if (result.disconnected.length > 0) {
     await result.dispose();
     const entry = result.disconnected[0]!;
-    throw new LinkCredentialNotFoundError(entry.serverId, entry.message);
+    // Throw a credential error so classifyProbeError routes this to phase:
+    // "auth". `entry.message` is already a complete user-facing sentence
+    // composed by buildDisconnectedEntry — preserve it verbatim instead of
+    // re-templating through the constructor.
+    const err = new LinkCredentialNotFoundError(entry.serverId);
+    err.message = entry.message;
+    throw err;
   }
   const tools: CachedTool[] = Object.entries(result.tools).map(([name, tool]) => {
     const t = tool as Record<string, unknown>;
@@ -164,7 +181,17 @@ export function classifyProbeError(error: unknown): { error: string; phase: Prob
     inner = error.cause;
   }
 
+  // Match by `name` as well as `instanceof` — tests that drive the prewarm
+  // through a deferred mock can produce instances whose prototype chain
+  // disagrees with this module's class reference (vitest module-graph
+  // quirk). The constructors all set `name` to a stable string.
+  const credName =
+    inner instanceof Error &&
+    (inner.name === "LinkCredentialNotFoundError" ||
+      inner.name === "LinkCredentialExpiredError" ||
+      inner.name === "NoDefaultCredentialError");
   if (
+    credName ||
     inner instanceof LinkCredentialNotFoundError ||
     inner instanceof LinkCredentialExpiredError ||
     inner instanceof NoDefaultCredentialError

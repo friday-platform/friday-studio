@@ -88,7 +88,9 @@ beforeEach(() => {
 
 // Import AFTER mock setup (vi.mock is hoisted, but this makes intent clear)
 const { mcpRegistryRouter } = await import("./mcp-registry.ts");
-const { _resetCacheForTest, _flushPrewarmsForTest } = await import("./mcp-tool-cache.ts");
+const { _resetCacheForTest, _flushPrewarmsForTest, _setRaceCapForTest } = await import(
+  "./mcp-tool-cache.ts"
+);
 
 /** Build a Hono app that wraps the MCP registry router with a partial mock app context. */
 function createWrappedRouter(context: Record<string, unknown>) {
@@ -2330,7 +2332,11 @@ describe("MCP Registry Routes", () => {
         tools: {},
         dispose: vi.fn().mockResolvedValue(undefined),
         disconnected: [
-          { serverId: entry.id, kind: "credential_not_found", message: "no credential" },
+          {
+            serverId: entry.id,
+            kind: "credential_not_found",
+            message: "Credential 'github' was deleted. Reconnect to continue.",
+          },
         ],
       });
 
@@ -2347,6 +2353,82 @@ describe("MCP Registry Routes", () => {
       const body = ToolProbeErrorSchema.parse(await probe.json());
       expect(body.ok).toBe(false);
       expect(body.phase).toBe("auth");
+      // Error must be the entry.message verbatim — not the constructor's
+      // template wrapped around it (which would produce nested gibberish).
+      expect(body.error).toBe("Credential 'github' was deleted. Reconnect to continue.");
+    });
+
+    it("dedup branch surfaces classified prewarm failure when GET arrives mid-prewarm", async () => {
+      const entry = createTestEntry("dedup-prewarm-error");
+      // Defer the prewarm so the GET enters the dedup branch BEFORE the
+      // prewarm settles. Resolves to disconnected — probeAndExtract throws
+      // inside prewarmTools, which classifies to auth and resolves the
+      // PrewarmResult with { ok: false, phase: "auth" }.
+      let resolveDisconnected: (() => void) | undefined;
+      mockCreateMCPTools.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveDisconnected = () =>
+              resolve({
+                tools: {},
+                dispose: vi.fn().mockResolvedValue(undefined),
+                disconnected: [
+                  {
+                    serverId: entry.id,
+                    kind: "credential_not_found",
+                    message: "Credential missing — reconnect to continue.",
+                  },
+                ],
+              });
+          }),
+      );
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      // GET while prewarm is still pending — must enter the dedup branch.
+      const probePromise = mcpRegistryRouter.request(`/${entry.id}/tools`);
+      // Wait for the handler to advance past `await adapter.get` and into
+      // `await Promise.race(...)` before the prewarm settles — otherwise the
+      // IIFE's microtasks (dispose → throw → catch → classify → finally →
+      // delete) can finish first, evicting `inFlightPrewarm` before the
+      // handler ever consults it. 50ms is generous; KV lookup is fast.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      resolveDisconnected!();
+      const probe = await probePromise;
+
+      const body = ToolProbeErrorSchema.parse(await probe.json());
+      expect(body.ok).toBe(false);
+      expect(body.phase).toBe("auth");
+      expect(body.error).toBe("Credential missing — reconnect to continue.");
+      // The dedup branch consumed the prewarm's classified result — no
+      // duplicate foreground probe was spawned.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+    });
+
+    it("returns retryable hint when in-flight prewarm exceeds the race cap", async () => {
+      _setRaceCapForTest(50);
+      const entry = createTestEntry("dedup-retryable");
+      // Prewarm hangs forever — race cap will fire first.
+      mockCreateMCPTools.mockImplementationOnce(() => new Promise(() => {}));
+
+      await mcpRegistryRouter.request("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entry }),
+      });
+
+      const probe = await mcpRegistryRouter.request(`/${entry.id}/tools`);
+      expect(probe.status).toBe(200);
+      const body = z
+        .object({ ok: z.literal(false), retryable: z.literal(true), error: z.string() })
+        .parse(await probe.json());
+      expect(body.retryable).toBe(true);
+      // The GET did not spawn its own probe — only the still-pending prewarm.
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
     });
   });
 
