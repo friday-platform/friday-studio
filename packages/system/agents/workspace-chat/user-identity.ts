@@ -21,10 +21,6 @@ export async function fetchUserIdentitySection(
   userId: string,
   logger: Logger,
 ): Promise<string | undefined> {
-  // Probe: this log line proves the post-`2e77ef9` code is running.
-  // Remove once auto-sync is confirmed working in production.
-  logger.info("[probe v3] fetchUserIdentitySection entered", { userId });
-
   let name: string | undefined;
   let email: string | undefined;
   let userNameStatus: "unknown" | "provided" | "declined" | undefined;
@@ -63,22 +59,21 @@ export async function fetchUserIdentitySection(
     }
   }
 
-  // Probe: print the values feeding into the auto-sync condition.
-  logger.info("[probe v3] auto-sync gate", {
-    userId,
-    userRecordExists,
-    userNameStatus,
-    apiMeNameSet: Boolean(apiMeName),
-    apiMeEmailSet: Boolean(apiMeEmail),
-    finalName: name,
-    finalEmail: email,
-  });
-
-  // Sync /api/me identity into USERS if the User record's nameStatus is
-  // still "unknown" and /api/me has a name. Idempotent — once
-  // nameStatus flips to "provided" the next call short-circuits. Fire-
-  // and-forget so we don't block prompt assembly on the write.
-  if (userNameStatus === "unknown" && apiMeName) {
+  // Sync /api/me identity into USERS when:
+  //   (a) the User record exists with nameStatus=unknown — typical
+  //       legacy state where the migration didn't backfill the name;
+  //       OR
+  //   (b) the User record doesn't exist yet — happens when getUserId
+  //       resolves to an auth-derived id (extractTempestUserId from
+  //       FRIDAY_KEY) but the USERS bucket only has the offline-
+  //       fallback nanoid record. setUserIdentity creates on the
+  //       missing-key path, so this also provisions the auth-id record
+  //       on first encounter.
+  // Idempotent — once nameStatus flips to "provided" the condition
+  // short-circuits. Fire-and-forget so prompt assembly doesn't wait
+  // on the write.
+  const shouldSync = Boolean(apiMeName) && (!userRecordExists || userNameStatus === "unknown");
+  if (shouldSync) {
     void (async () => {
       try {
         const set = await UserStorage.setUserIdentity(userId, {

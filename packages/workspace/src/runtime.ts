@@ -1644,6 +1644,7 @@ export class WorkspaceRuntime {
             : await this.orchestrator.executeAgent(runtimeAgentId, finalPrompt, {
                 sessionId,
                 workspaceId,
+                userId: typeof signal.data?.userId === "string" ? signal.data.userId : undefined,
                 streamId,
                 datetime,
                 memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
