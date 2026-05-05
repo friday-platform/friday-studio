@@ -1206,7 +1206,14 @@ export class WorkspaceRuntime {
               jobName: job.name,
             });
           } else {
-            logger.error("Signal processing failed", {
+            // `warn`, not `error`. Session-level domain failures (LLM API
+            // rejection, tool error, FSM step failure) are captured in the
+            // session record itself and surfaced again by the cascade
+            // dispatcher's `Cascade session failed` warn line. Logging at
+            // error here triggered duplicate alerts for the same event;
+            // operators reading at error level should see infra-level
+            // failures, not every workspace job that hit a domain error.
+            logger.warn("Signal processing failed", {
               sessionId: session.id,
               error: session.error,
               currentState: engine.state,
