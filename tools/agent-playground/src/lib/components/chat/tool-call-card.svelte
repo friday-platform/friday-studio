@@ -5,6 +5,7 @@
   import ConnectCommunicator from "./connect-communicator.svelte";
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
+  import { getExportContext } from "./export-context";
   import { jsonHighlighter } from "./json-highlighter";
   import {
     argPreview,
@@ -174,6 +175,13 @@
 
   /* ─── Copy to clipboard ──────────────────────────────────────────── */
 
+  /**
+   * Suppresses the clipboard buttons (which depend on JS) when the card
+   * is rendered inside an export. The data still renders; only the copy
+   * affordance is hidden.
+   */
+  const isExport = getExportContext() !== undefined;
+
   function copyToClipboard(value: unknown, btn: HTMLButtonElement) {
     let text: string;
     if (typeof value === "string") {
@@ -260,16 +268,20 @@
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
-  <div class="json-copy-wrapper">
-    <button
-      class="json-copy-btn"
-      aria-label={`Copy ${label}`}
-      onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
-    >
-      Copy
-    </button>
-    <pre>{@html formatRawOutput(data)}</pre>
-  </div>
+  {#if isExport}
+    <pre class="json-render">{@html formatRawOutput(data)}</pre>
+  {:else}
+    <div class="json-copy-wrapper">
+      <button
+        class="json-copy-btn"
+        aria-label={`Copy ${label}`}
+        onclick={(e: MouseEvent) => copyToClipboard(data, e.currentTarget as HTMLButtonElement)}
+      >
+        Copy
+      </button>
+      <pre class="json-render">{@html formatRawOutput(data)}</pre>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet outputDrawer(c: ToolCallDisplay)}
@@ -306,16 +318,20 @@
             <span class="chevron-icon"><IconSmall.ChevronRight /></span>
             error
           </summary>
-          <div class="json-copy-wrapper">
-            <button
-              class="json-copy-btn"
-              aria-label="Copy error"
-              onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
-            >
-              Copy
-            </button>
-            <pre class="error-text">{c.errorText}</pre>
-          </div>
+          {#if isExport}
+            <pre class="json-render error-text">{c.errorText}</pre>
+          {:else}
+            <div class="json-copy-wrapper">
+              <button
+                class="json-copy-btn"
+                aria-label="Copy error"
+                onclick={(e: MouseEvent) => copyToClipboard(c.errorText, e.currentTarget as HTMLButtonElement)}
+              >
+                Copy
+              </button>
+              <pre class="json-render error-text">{c.errorText}</pre>
+            </div>
+          {/if}
         </details>
       {/if}
     </div>
@@ -601,7 +617,7 @@
     position: relative;
   }
 
-  .json-copy-wrapper pre {
+  .json-render {
     background-color: var(--surface-bright);
     border-radius: var(--radius-1);
     font-family: var(--font-family-mono, ui-monospace, monospace);
@@ -614,7 +630,7 @@
     word-break: break-word;
   }
 
-  .json-copy-wrapper pre.error-text {
+  .json-render.error-text {
     color: var(--red-primary);
   }
 

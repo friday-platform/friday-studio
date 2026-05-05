@@ -2,6 +2,7 @@
   import { DropdownMenu, markdownToHTML } from "@atlas/ui";
   import { tick } from "svelte";
   import type { ChatMessage } from "./types";
+  import { getExportContext } from "./export-context";
   import ToolBurst from "./tool-burst.svelte";
   import ToolCallCard from "./tool-call-card.svelte";
   import { needsUserAction } from "./tool-call-utils";
@@ -144,11 +145,20 @@
   });
 
   /**
+   * Suppresses the markdown copy-button injection (which depends on JS)
+   * when the list renders inside an export. The markdown content still
+   * renders; only the per-block copy affordance is skipped.
+   */
+  const isExport = getExportContext() !== undefined;
+
+  /**
    * Svelte action: inject a "Copy" button on every <pre> and <table> inside
    * a `.markdown-body` container. Runs after initial render and re-scans
-   * when the DOM subtree changes (streaming content).
+   * when the DOM subtree changes (streaming content). No-ops in export
+   * mode so the static HTML is button-free.
    */
   function copyButtons(node: HTMLElement) {
+    if (isExport) return;
     function injectButtons() {
       for (const el of node.querySelectorAll("pre, table")) {
         // Skip if already wrapped
