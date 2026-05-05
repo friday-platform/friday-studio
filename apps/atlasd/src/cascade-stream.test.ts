@@ -95,14 +95,25 @@ describe("CascadeConsumer concurrency policies", () => {
     expect(dispatched).toEqual(["tick"]);
   });
 
-  it("concurrent — runs duplicates in parallel", async () => {
+  it("concurrent — runs duplicates in parallel and the registry tracks every one", async () => {
+    // Regression: when the inFlight registry was a single-slot map per
+    // key, `concurrent` dispatches for the same (workspace, signal)
+    // overwrote each other in the slot. inFlight.size stayed at 1 even
+    // with N actually-running cascades — saturation accounting
+    // undercounted, the orphaned cascades' finally-block guard
+    // (`get(key) === self`) failed so they never deregistered, and the
+    // drained event could miss firing. Assert both the dispatcher
+    // invocation count AND the registry's reported inFlight track the
+    // real cardinality.
     let peak = 0;
     let active = 0;
+    let registryPeak = 0;
     const consumer = new CascadeConsumer(
       nc,
       async (env) => {
         active++;
         peak = Math.max(peak, active);
+        registryPeak = Math.max(registryPeak, consumer.getStats().inFlight);
         try {
           await new Promise((r) => setTimeout(r, 150));
           return { sessionId: `s-${env.signalId}`, output: [] };
@@ -123,8 +134,12 @@ describe("CascadeConsumer concurrency policies", () => {
     }
     await waitFor(() => peak >= 3, 3000);
     await waitFor(() => active === 0, 3000);
-    await consumer.destroy();
     expect(peak).toBe(3);
+    expect(registryPeak).toBe(3);
+    // Once everything settles, the registry must drain to zero — a
+    // missed deregistration would leave a phantom in-flight count.
+    expect(consumer.getStats().inFlight).toBe(0);
+    await consumer.destroy();
   });
 
   it("queue — serializes per (workspace, signal)", async () => {

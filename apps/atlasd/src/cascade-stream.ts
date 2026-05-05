@@ -207,10 +207,25 @@ export class CascadeConsumer {
   private readonly ackWaitNs: number;
   private readonly queueTimeoutMs: number;
 
-  private readonly inFlight = new Map<string, InFlightCascade>();
+  /**
+   * In-flight cascades grouped by `${workspaceId}:${signalId}`. A Set
+   * (not a single slot) so the `concurrent` policy — which legitimately
+   * runs N cascades for the same key at once — doesn't have its
+   * earlier entries silently overwritten on subsequent dispatches.
+   * For `skip` / `queue` / `replace` the set holds at most one in
+   * steady state.
+   */
+  private readonly inFlight = new Map<string, Set<InFlightCascade>>();
   /** Tail of the queue policy chain per key. */
   private readonly queueTails = new Map<string, Promise<void>>();
   private saturated = false;
+
+  /** Total cascades currently dispatched, summed across all keys. */
+  private totalInFlight(): number {
+    let n = 0;
+    for (const set of this.inFlight.values()) n += set.size;
+    return n;
+  }
 
   constructor(
     private readonly nc: NatsConnection,
@@ -279,10 +294,12 @@ export class CascadeConsumer {
       }
       this.loop = null;
     }
-    // Best-effort: abort any in-flight cascades so the daemon can
+    // Best-effort: abort every in-flight cascade so the daemon can
     // shut down without waiting on long LLM calls.
-    for (const cascade of this.inFlight.values()) {
-      cascade.controller.abort("daemon shutdown");
+    for (const set of this.inFlight.values()) {
+      for (const cascade of set) {
+        cascade.controller.abort("daemon shutdown");
+      }
     }
   }
 
@@ -371,9 +388,10 @@ export class CascadeConsumer {
       policy = "skip";
     }
 
-    const existing = this.inFlight.get(key);
+    const existingSet = this.inFlight.get(key);
+    const existingCount = existingSet?.size ?? 0;
 
-    if (existing && policy === "skip") {
+    if (existingCount > 0 && policy === "skip") {
       logger.info("Cascade skipped — concurrency=skip and same-key cascade in flight", {
         workspaceId: envelope.workspaceId,
         signalId: envelope.signalId,
@@ -388,17 +406,26 @@ export class CascadeConsumer {
       return;
     }
 
-    if (existing && policy === "replace") {
-      logger.info("Cascade replacing in-flight cascade — concurrency=replace", {
+    let replacedExisting: InFlightCascade[] = [];
+    if (existingCount > 0 && policy === "replace" && existingSet) {
+      // Singleton intent: abort EVERY in-flight cascade for this key.
+      // In steady-state replace usage there's at most one, but the set
+      // could carry several if the workspace was previously running
+      // `concurrent` and switched to `replace`.
+      replacedExisting = Array.from(existingSet);
+      logger.info("Cascade replacing in-flight cascade(s) — concurrency=replace", {
         workspaceId: envelope.workspaceId,
         signalId: envelope.signalId,
-        cancelledSessionId: existing.sessionId,
+        cancelledCount: replacedExisting.length,
+        cancelledSessionIds: replacedExisting.map((c) => c.sessionId).filter(Boolean),
       });
-      existing.controller.abort("replaced by newer cascade");
-      // Don't await `existing.done` — that would re-introduce head-of-line
-      // blocking. The runtime's abort path settles the cancelled cascade
-      // independently. The `cascade.replaced` event is published once the
-      // new cascade has its sessionId.
+      for (const cascade of replacedExisting) {
+        cascade.controller.abort("replaced by newer cascade");
+      }
+      // Don't await — that would re-introduce head-of-line blocking.
+      // The runtime's abort path settles cancelled cascades independently.
+      // `cascade.replaced` events publish once the new cascade has its
+      // sessionId.
     }
 
     if (policy === "queue") {
@@ -408,7 +435,7 @@ export class CascadeConsumer {
       // result still flows through response/stream subjects when the
       // chain gets there.
       const prevTail = this.queueTails.get(key) ?? Promise.resolve();
-      const next = prevTail.then(() => this.runCascade(envelope, key, existing));
+      const next = prevTail.then(() => this.runCascade(envelope, key, []));
       this.queueTails.set(
         key,
         next.catch(() => undefined),
@@ -419,7 +446,7 @@ export class CascadeConsumer {
 
     // skip with no existing, concurrent always, or replace (we already
     // aborted existing above and are starting fresh now).
-    void this.runCascade(envelope, key, existing);
+    void this.runCascade(envelope, key, replacedExisting);
     msg.ack();
   }
 
@@ -432,7 +459,7 @@ export class CascadeConsumer {
   private runCascade(
     envelope: SignalEnvelope,
     key: string,
-    replacedExisting?: InFlightCascade,
+    replacedExisting: InFlightCascade[] = [],
   ): Promise<void> {
     const controller = new AbortController();
     const startedAt = Date.now();
@@ -441,7 +468,12 @@ export class CascadeConsumer {
       done: Promise.resolve(), // placeholder; replaced below
       startedAt,
     };
-    this.inFlight.set(key, cascade);
+    let set = this.inFlight.get(key);
+    if (!set) {
+      set = new Set();
+      this.inFlight.set(key, set);
+    }
+    set.add(cascade);
     this.maybeEmitSaturated();
 
     const onStreamEvent = envelope.correlationId
@@ -467,13 +499,17 @@ export class CascadeConsumer {
           abortSignal: controller.signal,
         });
         cascade.sessionId = result.sessionId;
-        if (replacedExisting?.sessionId) {
+        // One `cascade.replaced` event per cancelled cascade. Steady-
+        // state replace cancels at most one, but if a `concurrent`-then-
+        // `replace` switch produced N, surface each cancellation.
+        for (const cancelled of replacedExisting) {
+          if (!cancelled.sessionId) continue;
           const ev: CascadeReplacedEvent = {
             type: "cascade.replaced",
             at: new Date().toISOString(),
             workspaceId: envelope.workspaceId,
             signalId: envelope.signalId,
-            cancelledSessionId: replacedExisting.sessionId,
+            cancelledSessionId: cancelled.sessionId,
             newSessionId: result.sessionId,
           };
           await publishInstanceEvent(this.nc, ev, logger);
@@ -492,10 +528,14 @@ export class CascadeConsumer {
           this.publishResponse(envelope.correlationId, { ok: false, error: msg });
         }
       } finally {
-        // Only remove from registry if we're still the active cascade.
-        // (A `replace` could have already swapped us out.)
-        if (this.inFlight.get(key) === cascade) {
-          this.inFlight.delete(key);
+        // Remove this specific cascade from the per-key set. The set is
+        // keyed-but-multi-valued so concurrent dispatches don't clobber
+        // each other; each cascade always finds itself by identity here
+        // regardless of how many siblings are running.
+        const liveSet = this.inFlight.get(key);
+        if (liveSet) {
+          liveSet.delete(cascade);
+          if (liveSet.size === 0) this.inFlight.delete(key);
         }
         this.maybeEmitDrained();
       }
@@ -506,24 +546,30 @@ export class CascadeConsumer {
 
   private maybeEmitSaturated(): void {
     if (this.saturated) return;
-    if (this.inFlight.size <= this.maxAckPending * 0.5) return;
+    const total = this.totalInFlight();
+    if (total <= this.maxAckPending * 0.5) return;
     this.saturated = true;
     let deepestSignal: string | undefined;
     let deepestAge = -1;
     const now = Date.now();
-    for (const [key, c] of this.inFlight.entries()) {
-      const age = now - c.startedAt;
-      if (age > deepestAge) {
-        deepestAge = age;
-        deepestSignal = key;
+    // Scan every cascade across every key — concurrent dispatches mean
+    // one key may hold multiple cascades, and the deepest may not be
+    // the first one in the set.
+    for (const [key, set] of this.inFlight.entries()) {
+      for (const c of set) {
+        const age = now - c.startedAt;
+        if (age > deepestAge) {
+          deepestAge = age;
+          deepestSignal = key;
+        }
       }
     }
     const event: CascadeQueueSaturatedEvent = {
       type: "cascade.queue_saturated",
       at: new Date().toISOString(),
-      inFlight: this.inFlight.size,
+      inFlight: total,
       cap: this.maxAckPending,
-      backlog: this.inFlight.size,
+      backlog: total,
       ...(deepestSignal ? { deepestSignal } : {}),
     };
     void publishInstanceEvent(this.nc, event, logger);
@@ -531,12 +577,13 @@ export class CascadeConsumer {
 
   private maybeEmitDrained(): void {
     if (!this.saturated) return;
-    if (this.inFlight.size > this.maxAckPending * 0.5) return;
+    const total = this.totalInFlight();
+    if (total > this.maxAckPending * 0.5) return;
     this.saturated = false;
     const event: CascadeQueueDrainedEvent = {
       type: "cascade.queue_drained",
       at: new Date().toISOString(),
-      inFlight: this.inFlight.size,
+      inFlight: total,
       cap: this.maxAckPending,
     };
     void publishInstanceEvent(this.nc, event, logger);
@@ -555,6 +602,6 @@ export class CascadeConsumer {
 
   /** Instrumentation — used by daemon status API. */
   getStats(): { inFlight: number; cap: number; saturated: boolean } {
-    return { inFlight: this.inFlight.size, cap: this.maxAckPending, saturated: this.saturated };
+    return { inFlight: this.totalInFlight(), cap: this.maxAckPending, saturated: this.saturated };
   }
 }
