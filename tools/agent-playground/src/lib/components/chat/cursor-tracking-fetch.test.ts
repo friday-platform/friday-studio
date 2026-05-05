@@ -304,6 +304,73 @@ describe("createCursorTrackingFetch", () => {
     expect(cursorValue).toBe(11);
   });
 
+  it("fires onUnrecoverable on 410 + X-Stream-Replay-Disabled", async () => {
+    // Server returns this when the SSE buffer overflowed and replay is
+    // impossible. Without short-circuiting, the auto-resume effect would
+    // burn its 20-attempt budget hammering the same dead endpoint.
+    const original = new Response(null, {
+      status: 410,
+      headers: { "X-Stream-Replay-Disabled": "true" },
+    });
+    const fetchImpl: typeof fetch = () => Promise.resolve(original);
+
+    let unrecoverable = 0;
+    const tracking = createCursorTrackingFetch({
+      getCursor: () => 5,
+      setCursor: () => {},
+      isResumeRequest: () => true,
+      onUnrecoverable: () => {
+        unrecoverable += 1;
+      },
+      fetchImpl,
+    });
+
+    const result = await tracking("https://example.test/stream");
+    expect(result.status).toBe(410);
+    expect(unrecoverable).toBe(1);
+  });
+
+  it("does not fire onUnrecoverable on 410 without the marker header", async () => {
+    const original = new Response(null, { status: 410 });
+    const fetchImpl: typeof fetch = () => Promise.resolve(original);
+
+    let unrecoverable = 0;
+    const tracking = createCursorTrackingFetch({
+      getCursor: () => undefined,
+      setCursor: () => {},
+      isResumeRequest: () => true,
+      onUnrecoverable: () => {
+        unrecoverable += 1;
+      },
+      fetchImpl,
+    });
+
+    await tracking("https://example.test/stream");
+    expect(unrecoverable).toBe(0);
+  });
+
+  it("does not fire onUnrecoverable on other non-2xx statuses", async () => {
+    const original = new Response(makeBodyStream("nope"), {
+      status: 500,
+      headers: { "X-Stream-Replay-Disabled": "true" },
+    });
+    const fetchImpl: typeof fetch = () => Promise.resolve(original);
+
+    let unrecoverable = 0;
+    const tracking = createCursorTrackingFetch({
+      getCursor: () => undefined,
+      setCursor: () => {},
+      isResumeRequest: () => true,
+      onUnrecoverable: () => {
+        unrecoverable += 1;
+      },
+      fetchImpl,
+    });
+
+    await tracking("https://example.test/stream");
+    expect(unrecoverable).toBe(0);
+  });
+
   it("accepts URL and Request inputs for the resume predicate", async () => {
     const seen: Array<Request | URL | string> = [];
     const fetchImpl: typeof fetch = () =>

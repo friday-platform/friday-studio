@@ -119,6 +119,20 @@
   let resumeAttempts = $state(0);
   let lastSeenEventId: number | undefined = $state(undefined);
   let lastSeenEventIdAtLastFailure: number | undefined = $state(undefined);
+  /**
+   * Set when the server signals the SSE buffer can't be replayed
+   * (`410 Gone` + `X-Stream-Replay-Disabled: true`). Short-circuits
+   * auto-resume so we surface the banner instead of burning the 20-attempt
+   * budget on a status that won't change.
+   */
+  let unrecoverableStream = $state(false);
+
+  function resetResumeState(): void {
+    resumeAttempts = 0;
+    lastSeenEventId = undefined;
+    lastSeenEventIdAtLastFailure = undefined;
+    unrecoverableStream = false;
+  }
 
   const trackingFetch = createCursorTrackingFetch({
     getCursor: () => lastSeenEventId,
@@ -129,6 +143,9 @@
       typeof input === "string" || input instanceof URL
         ? String(input).endsWith("/stream")
         : input.url.endsWith("/stream"),
+    onUnrecoverable: () => {
+      unrecoverableStream = true;
+    },
   });
 
   /**
@@ -374,6 +391,10 @@
     if (!chat?.error) return;
     const last = chat.messages.at(-1);
     if (last && last.role === "assistant" && hasErrorPart(last as AtlasUIMessage)) {
+      return;
+    }
+    if (unrecoverableStream) {
+      error = chat.error.message;
       return;
     }
     const step = nextResumeBudgetStep({
@@ -699,6 +720,7 @@
         if (step.toSend === null || !chat) break;
         queuedMessages = step.remainder;
         try {
+          resetResumeState();
           await chat.sendMessage({
             role: "user",
             parts: step.toSend,
@@ -1009,9 +1031,6 @@
     if (!chat) return;
     error = null;
     wasInterrupted = false;
-    resumeAttempts = 0;
-    lastSeenEventId = undefined;
-    lastSeenEventIdAtLastFailure = undefined;
 
     // Merge images from the input component + any dropped on the chat area
     const allImages = [...inputImages, ...pendingImages];
@@ -1035,12 +1054,16 @@
     if (parts.length === 0) return;
 
     // Queue while the current turn is still streaming; the flush effect
-    // fires the next turn as soon as status returns to ready.
+    // fires the next turn as soon as status returns to ready. Resetting
+    // resume state here would zero the in-flight cursor and force the
+    // next Chrome drop into a duplicating full replay — only reset on
+    // the actual turn-start path below.
     if (streaming) {
       queuedMessages = [...queuedMessages, parts];
       return;
     }
 
+    resetResumeState();
     void chat.sendMessage({
       role: "user",
       parts,
@@ -1073,6 +1096,7 @@
       queuedMessages = [...queuedMessages, parts];
       return;
     }
+    resetResumeState();
     void chat.sendMessage({
       role: "user",
       parts,

@@ -15,10 +15,20 @@
 /** whatwg/fetch §2.2.6 — `new Response(stream, { status })` throws for these. */
 const NULL_BODY_STATUS: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
 
+/** Server marker on a 410 resume response: buffer overflowed, no replay possible. */
+const REPLAY_DISABLED_HEADER = "X-Stream-Replay-Disabled";
+
 export interface CursorTrackingFetchOptions {
   getCursor(): number | undefined;
   setCursor(value: number): void;
   isResumeRequest(input: Request | URL | string): boolean;
+  /**
+   * Fired when the server signals the SSE buffer can't be replayed
+   * (`410 Gone` + `X-Stream-Replay-Disabled: true`). Lets the caller
+   * short-circuit auto-resume so it doesn't burn its retry budget on
+   * a status that won't change.
+   */
+  onUnrecoverable?(): void;
   fetchImpl?: typeof fetch;
 }
 
@@ -28,7 +38,7 @@ export type TrackingFetch = (
 ) => Promise<Response>;
 
 export function createCursorTrackingFetch(options: CursorTrackingFetchOptions): TrackingFetch {
-  const { getCursor, setCursor, isResumeRequest, fetchImpl = fetch } = options;
+  const { getCursor, setCursor, isResumeRequest, onUnrecoverable, fetchImpl = fetch } = options;
 
   return async (input, init) => {
     let mergedInit = init;
@@ -42,6 +52,13 @@ export function createCursorTrackingFetch(options: CursorTrackingFetchOptions): 
     }
 
     const response = await fetchImpl(input as RequestInfo, mergedInit);
+
+    if (
+      response.status === 410 &&
+      response.headers.get(REPLAY_DISABLED_HEADER) === "true"
+    ) {
+      onUnrecoverable?.();
+    }
 
     // Resume endpoint returns 204 on finished chats — wrapping that throws.
     if (!response.ok || !response.body || NULL_BODY_STATUS.has(response.status)) {
