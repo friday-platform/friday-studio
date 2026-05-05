@@ -13,7 +13,7 @@
 
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { Button, IconSmall, toast } from "@atlas/ui";
+  import { Badge, Button, IconSmall, toast } from "@atlas/ui";
   import { createDialog } from "@melt-ui/svelte";
   import { createQuery } from "@tanstack/svelte-query";
   import { parseCustomMCPConfig, type ParseResult } from "@atlas/core/mcp-registry/custom-parser";
@@ -303,9 +303,9 @@
                           <div class="result-name-row">
                             <span class="result-name">{displayName}</span>
                             {#if result.isOfficial}
-                              <span class="official-badge">Official</span>
+                              <Badge variant="status">Official</Badge>
                             {/if}
-                            <span class="version-badge">{result.version}</span>
+                            <Badge variant="info">{result.version}</Badge>
                           </div>
                           {#if result.description}
                             <p class="result-desc">{result.description}</p>
@@ -341,9 +341,9 @@
                           <div class="result-name-row">
                             <span class="result-name">{displayName}</span>
                             {#if result.isOfficial}
-                              <span class="official-badge">Official</span>
+                              <Badge variant="status">Official</Badge>
                             {/if}
-                            <span class="version-badge">{result.version}</span>
+                            <Badge variant="info">{result.version}</Badge>
                           </div>
                           {#if result.description}
                             <p class="result-desc">{result.description}</p>
@@ -628,28 +628,6 @@
     color: var(--color-text);
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
-  }
-
-  .official-badge {
-    background: var(--color-accent);
-    border-radius: var(--radius-1);
-    color: var(--color-surface-1);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    letter-spacing: 0.02em;
-    line-height: 1;
-    padding: var(--size-0-5) var(--size-1-5);
-  }
-
-  .version-badge {
-    background: var(--color-surface-3);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 35%);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-4);
-    line-height: 1;
-    padding: var(--size-0-5) var(--size-1-5);
   }
 
   .result-desc {

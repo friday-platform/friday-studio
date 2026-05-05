@@ -20,6 +20,7 @@
 <script lang="ts">
   import type { MCPServerMetadata } from "@atlas/core/mcp-registry/schemas";
   import {
+    Badge,
     Button,
     Dialog,
     IconSmall,
@@ -185,13 +186,13 @@
 
         <div class="header-badges">
           {#if source}
-            <span class="badge">
+            <Badge variant="status">
               {sourceLabel(source)}
 
               {#if isOfficial}
                 • Official
               {/if}
-            </span>
+            </Badge>
           {/if}
         </div>
       </header>
@@ -416,21 +417,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-1);
-  }
-
-  .badge {
-    --badge-bg-light: color-mix(in srgb, var(--purple-primary), transparent 94%);
-    --badge-bg-dark: color-mix(in srgb, var(--purple-primary), transparent 90%);
-    align-items: center;
-    background-color: light-dark(var(--badge-bg-light), var(--badge-bg-dark));
-    border-radius: var(--radius-2-5);
-    block-size: var(--size-5-5);
-    display: flex;
-    color: var(--purple-primary);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-    justify-content: center;
-    padding-inline: var(--size-2-5);
   }
 
   /* ─── Content ────────────────────────────────────────────────────────────── */

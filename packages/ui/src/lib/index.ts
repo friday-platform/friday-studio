@@ -1,3 +1,4 @@
+export { default as Badge } from "./badge.svelte";
 export { default as Button } from "./button.svelte";
 export { Collapsible } from "./collapsible/index.js";
 export { Dialog } from "./dialog/index.js";
