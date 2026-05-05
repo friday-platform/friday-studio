@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -51,16 +52,33 @@ describe("workspace-api SKILL.md content", () => {
  * fails fast and points at the file that needs to be updated.
  */
 describe("LLM-priming surfaces only reference real bundled agents", () => {
-  // Files the workspace-chat LLM sees, either via load_skill, the system
-  // prompt, or as a tool description string. New files added under this
-  // umbrella should be appended here.
-  const PRIMING_FILES = [
-    new URL("./SKILL.md", import.meta.url),
-    new URL("./references/agent-types.md", import.meta.url),
+  // Skills root: every `.md` / `.yml` / `.yaml` under here is loaded by the
+  // LLM via `load_skill` (skill markdown + reference docs + asset examples)
+  // — so any `agent: "<id>"` reference inside qualifies for the drift check.
+  // Globbed rather than hand-listed so adding a new skill or asset can't
+  // bypass the test.
+  const SKILLS_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+
+  // Files outside the skills tree that still prime the LLM directly: the
+  // workspace-chat system prompt and its tool description strings.
+  const NON_SKILL_PRIMING_FILES = [
     new URL("../../agents/workspace-chat/prompt.txt", import.meta.url),
     new URL("../../agents/workspace-chat/tools/list-capabilities.ts", import.meta.url),
     new URL("../../agents/workspace-chat/tools/upsert-tools.ts", import.meta.url),
-  ];
+  ].map((u) => fileURLToPath(u));
+
+  async function walkSkills(dir: string): Promise<string[]> {
+    const out: string[] = [];
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        out.push(...(await walkSkills(full)));
+      } else if (/\.(md|ya?ml)$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
 
   // Match `agent: "<id>"`, `agent: '<id>'`, and `agent: <id>` (bare in YAML
   // examples). The id charset matches what bundled-agents actually use —
@@ -74,47 +92,62 @@ describe("LLM-priming surfaces only reference real bundled agents", () => {
   // files; 5 gives slack for blank lines and inline comments.
   const ATLAS_QUALIFIER_WINDOW = 5;
 
-  it.each(
-    PRIMING_FILES.map((u) => [fileURLToPath(u)]),
-  )("%s references only real bundled-agent ids", async (path: string) => {
-    const text = await readFile(path, "utf8");
-    const known = new Set(Object.keys(bundledAgentsRegistry));
-    const offenders: { id: string; line: number }[] = [];
+  let primingFiles: string[] = [];
 
-    const lines = text.split("\n");
+  beforeAll(async () => {
+    const skillFiles = await walkSkills(SKILLS_ROOT);
+    primingFiles = [...skillFiles, ...NON_SKILL_PRIMING_FILES].sort();
+  });
+
+  it("scans every system skill + workspace-chat priming file", () => {
+    // Sanity: ensure the glob actually found the umbrella we expect, so a
+    // structural rename of the skills tree fails loudly here rather than
+    // silently scanning zero files.
+    expect(primingFiles.length).toBeGreaterThanOrEqual(10);
+    expect(primingFiles).toEqual(expect.arrayContaining(NON_SKILL_PRIMING_FILES));
+  });
+
+  it("every priming file references only real bundled-agent ids", async () => {
+    const known = new Set(Object.keys(bundledAgentsRegistry));
+    const offenders: { id: string; line: number; file: string }[] = [];
+
     const TYPE_RE = /\btype:\s*["']?(atlas|llm|user|system)["']?/g;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? "";
-      for (const match of line.matchAll(AGENT_REF_RE)) {
-        const id = match[1];
-        if (id === undefined) continue;
-        // Only `type: atlas` references must resolve in the bundled
-        // registry. Find the nearest preceding `type: <X>` (same line
-        // first, then the search window). If X !== "atlas", skip.
-        const sameLineType = [...line.matchAll(TYPE_RE)];
-        let nearestType: string | undefined;
-        if (sameLineType.length > 0) {
-          // Take the last `type:` occurrence on the line — handles cheat-
-          // sheet cells with both `type: user` AND `agent: "..."` inline.
-          nearestType = sameLineType[sameLineType.length - 1]?.[1];
-        } else {
-          for (let j = i - 1; j >= Math.max(0, i - ATLAS_QUALIFIER_WINDOW); j--) {
-            const m = [...(lines[j] ?? "").matchAll(TYPE_RE)];
-            if (m.length > 0) {
-              nearestType = m[m.length - 1]?.[1];
-              break;
+    for (const path of primingFiles) {
+      const text = await readFile(path, "utf8");
+      const lines = text.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i] ?? "";
+        for (const match of line.matchAll(AGENT_REF_RE)) {
+          const id = match[1];
+          if (id === undefined) continue;
+          // Only `type: atlas` references must resolve in the bundled
+          // registry. Find the nearest preceding `type: <X>` (same line
+          // first, then the search window). If X !== "atlas", skip.
+          const sameLineType = [...line.matchAll(TYPE_RE)];
+          let nearestType: string | undefined;
+          if (sameLineType.length > 0) {
+            // Take the last `type:` occurrence on the line — handles cheat-
+            // sheet cells with both `type: user` AND `agent: "..."` inline.
+            nearestType = sameLineType[sameLineType.length - 1]?.[1];
+          } else {
+            for (let j = i - 1; j >= Math.max(0, i - ATLAS_QUALIFIER_WINDOW); j--) {
+              const m = [...(lines[j] ?? "").matchAll(TYPE_RE)];
+              if (m.length > 0) {
+                nearestType = m[m.length - 1]?.[1];
+                break;
+              }
             }
           }
+          if (nearestType !== "atlas") continue;
+          if (known.has(id)) continue;
+          offenders.push({ id, line: i + 1, file: path });
         }
-        if (nearestType !== "atlas") continue;
-        if (known.has(id)) continue;
-        offenders.push({ id, line: i + 1 });
       }
     }
 
     if (offenders.length > 0) {
-      const summary = offenders.map((o) => `  line ${o.line}: agent: "${o.id}"`).join("\n");
+      const summary = offenders.map((o) => `  ${o.file}:${o.line} → agent: "${o.id}"`).join("\n");
       const knownList = [...known].sort().join(", ");
       throw new Error(
         `Found ${offenders.length} \`type: atlas\` reference(s) to bundled agents ` +
