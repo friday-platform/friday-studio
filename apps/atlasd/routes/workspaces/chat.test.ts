@@ -302,19 +302,21 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
       expect(body.messages).toHaveLength(100);
     });
 
-    test.each(["1", "yes", "TRUE", ""])(
-      "?full=%s passes through cleanly and falls back to last-100 trim",
-      async (value) => {
-        mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
-        const { app } = createTestApp();
+    test.each([
+      "1",
+      "yes",
+      "TRUE",
+      "",
+    ])("?full=%s passes through cleanly and falls back to last-100 trim", async (value) => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
 
-        const res = await app.request(`/ws-1/chat/chat-1?full=${value}`);
+      const res = await app.request(`/ws-1/chat/chat-1?full=${value}`);
 
-        expect(res.status).toBe(200);
-        const body = (await res.json()) as { messages: Array<{ id: string }> };
-        expect(body.messages).toHaveLength(100);
-      },
-    );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+    });
   });
 });
 
@@ -499,4 +501,3 @@ test("workspace-not-found middleware short-circuits with 404", async () => {
   const body = (await res.json()) as JsonBody;
   expect(body.error).toBe("Workspace not found");
 });
-

@@ -395,10 +395,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     // Load and validate chat history via workspace-scoped HTTP endpoint
     let messages: AtlasUIMessage[] = [];
     const res = await parseResult(
-      client.workspaceChat(workspaceId)[":chatId"].$get({
-        param: { chatId: session.streamId },
-        query: {},
-      }),
+      client
+        .workspaceChat(workspaceId)
+        [":chatId"].$get({ param: { chatId: session.streamId }, query: {} }),
     );
     if (res.ok) {
       messages = await validateAtlasUIMessages(res.data.messages);

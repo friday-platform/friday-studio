@@ -20,9 +20,7 @@ export default defineConfig({
       // Route-component tests (e.g. the export preview page) import
       // `$lib/...` paths that live under playground; reproduce the alias
       // here so vitest resolves them the same way the dev server does.
-      $lib: fileURLToPath(
-        new URL("./tools/agent-playground/src/lib", import.meta.url),
-      ),
+      $lib: fileURLToPath(new URL("./tools/agent-playground/src/lib", import.meta.url)),
     },
   },
   test: {
