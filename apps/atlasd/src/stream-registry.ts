@@ -235,6 +235,10 @@ export class StreamRegistry {
     buffer.lastEventAt = Date.now();
 
     // Replay-disabled buffers omit `id:` — the cursor would never be honored.
+    // Side effect: any frame broadcast after the flag trips is unrecoverable —
+    // a live subscriber that drops here advances no cursor, and the next GET
+    // returns 410. The user sees the unrecoverable banner without a partial-
+    // truncation indicator for whatever shipped between flag-trip and drop.
     const data = StreamRegistry.ENCODER.encode(
       frameId !== undefined
         ? `id: ${frameId}\ndata: ${JSON.stringify(event)}\n\n`

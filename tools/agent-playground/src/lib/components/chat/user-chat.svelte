@@ -354,20 +354,26 @@
   // Pick up an in-flight turn the user navigated away from. 204 = no live
   // stream; if the last loaded message was an unanswered user turn, surface
   // the interrupted banner so they can resend.
+  //
+  // Read `shouldResumeStream` via `untrack` so the synchronous self-write
+  // below can't queue a same-tick re-run whose cleanup would `instance.stop()`
+  // the just-fired resumeStream. The chatId-change effect sets the flag true
+  // BEFORE chat is created, so reading it untracked still observes the right
+  // value when this effect runs on the chat null→ChatImpl transition.
   $effect(() => {
-    if (chat && shouldResumeStream) {
-      shouldResumeStream = false;
-      const instance = chat;
-      const hadUnansweredUser =
-        initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
-      instance.resumeStream().catch(() => {
-        if (hadUnansweredUser) wasInterrupted = true;
-      });
-      // Abort the old Chat's resume fetch when re-derived or unmounted.
-      return () => {
-        void instance.stop().catch(() => {});
-      };
-    }
+    if (!chat) return;
+    if (!untrack(() => shouldResumeStream)) return;
+    shouldResumeStream = false;
+    const instance = chat;
+    const hadUnansweredUser =
+      initialMessages.length > 0 && initialMessages.at(-1)?.role === "user";
+    instance.resumeStream().catch(() => {
+      if (hadUnansweredUser) wasInterrupted = true;
+    });
+    // Abort the old Chat's resume fetch when re-derived or unmounted.
+    return () => {
+      void instance.stop().catch(() => {});
+    };
   });
 
   // One-shot: auto-submit a seed message planted by the overview start-chat card.
@@ -394,6 +400,14 @@
       return;
     }
     if (unrecoverableStream) {
+      error = chat.error.message;
+      return;
+    }
+    // Terminal errors that fired before any SSE frame landed (e.g. 503
+    // no-responders from a downed daemon) won't be recovered by resuming —
+    // the GET /stream just 204s. Surface the banner immediately instead of
+    // burning the 20-attempt budget.
+    if (lastSeenEventId === undefined) {
       error = chat.error.message;
       return;
     }
