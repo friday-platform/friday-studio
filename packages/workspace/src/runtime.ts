@@ -123,6 +123,48 @@ import { MountedStoreBinding } from "./mounted-store-binding.ts";
 import { interpolateConfig, resolveWorkspaceVariables } from "./variable-interpolation.ts";
 
 /**
+ * Await a promise but reject as soon as `signal` aborts, even when the
+ * underlying promise never settles. The orphaned promise keeps running — the
+ * caller accepts whatever side-effects it produces.
+ *
+ * Why this exists: `engine.signal()` awaits agent work that can include
+ * `fetch()` calls which don't pipe the AbortSignal through. Without this
+ * race, a single non-cooperative call wedges the await forever, leaks the
+ * `activeAbortControllers` entry, and blocks `cascade-stream`'s in-flight
+ * slot — at which point the skipped-duplicate guard rejects every
+ * subsequent trigger of the same signal until the daemon restarts.
+ */
+function awaitWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(asAbortError(signal.reason));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(asAbortError(signal.reason));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
+function asAbortError(reason: unknown): Error {
+  if (reason instanceof Error && reason.name === "AbortError") return reason;
+  const err = new Error(
+    reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "Aborted",
+  );
+  err.name = "AbortError";
+  return err;
+}
+
+/**
  * Classify an error to determine session status.
  * UserConfigurationError (OAuth not connected, missing env vars) → "skipped"
  * All other errors → "failed"
@@ -1050,6 +1092,12 @@ export class WorkspaceRuntime {
         /** Tracks the FSM state where a non-agent action (code/emit) failed, so we
          *  can attribute the error to the correct planned step in the catch block. */
         let failedActionStateId: string | undefined;
+        /** Set true once we've finalized the session (cancellation path). The
+         *  orphan `engine.signal` may keep firing onEvent/onStreamEvent
+         *  callbacks for minutes after; this flag short-circuits them so late
+         *  events don't land in JetStream after `session:complete` has been
+         *  emitted. */
+        let finalized = false;
 
         logger.info("Processing signal via FSM", {
           sessionId: session.id,
@@ -1091,89 +1139,99 @@ export class WorkspaceRuntime {
         // consumer reading the records. Source of truth for "what
         // happened in workspace X" is the SESSIONS JetStream stream.)
 
-        try {
-          await engine.signal(
-            { type: signal.id, data: signal.data || {} },
-            {
-              sessionId: session.id,
-              workspaceId: this.workspace.id,
-              abortSignal: effectiveAbortSignal,
-              skipStates,
-              // FSM lifecycle events only (state transitions, action executions, tool calls/results)
-              onEvent: (event) => {
-                if (onStreamEvent) {
-                  const fsmChunk = fsmEventToStreamChunk(event);
-                  if (fsmChunk) {
-                    onStreamEvent(fsmChunk);
-                  }
+        // Capture the engine.signal promise so we can race it against the
+        // abort signal (see `awaitWithAbort`). If the engine is wedged on
+        // non-cooperative work, the await rejects immediately on cancel,
+        // releasing this session and the cascade-stream slot above it.
+        const enginePromise = engine.signal(
+          { type: signal.id, data: signal.data || {} },
+          {
+            sessionId: session.id,
+            workspaceId: this.workspace.id,
+            abortSignal: effectiveAbortSignal,
+            skipStates,
+            // FSM lifecycle events only (state transitions, action executions, tool calls/results)
+            onEvent: (event) => {
+              // Drop events from an orphaned engine.signal that's still
+              // running after we cancelled and finalized the session.
+              if (finalized) return;
+              if (onStreamEvent) {
+                const fsmChunk = fsmEventToStreamChunk(event);
+                if (fsmChunk) {
+                  onStreamEvent(fsmChunk);
                 }
+              }
 
-                if (
-                  sessionStream &&
-                  event.type === "data-fsm-action-execution" &&
-                  isAgentAction(event as FSMActionExecutionEvent)
+              if (
+                sessionStream &&
+                event.type === "data-fsm-action-execution" &&
+                isAgentAction(event as FSMActionExecutionEvent)
+              ) {
+                const actionEvent = event as FSMActionExecutionEvent;
+                if (actionEvent.data.status === "started") {
+                  stepCounter++;
+                  sessionStream.emit(mapActionToStepStart(actionEvent, stepCounter));
+                } else if (
+                  actionEvent.data.status === "completed" ||
+                  actionEvent.data.status === "failed"
                 ) {
-                  const actionEvent = event as FSMActionExecutionEvent;
-                  if (actionEvent.data.status === "started") {
-                    stepCounter++;
-                    sessionStream.emit(mapActionToStepStart(actionEvent, stepCounter));
-                  } else if (
-                    actionEvent.data.status === "completed" ||
-                    actionEvent.data.status === "failed"
-                  ) {
-                    // LLM actions carry result data directly on the event (populated by FSM engine).
-                    // Agent actions use the side-channel (populated by executeAgent callback).
-                    let agentResult: AgentResultData | undefined;
-                    if (actionEvent.data.llmResult) {
-                      agentResult = actionEvent.data.llmResult;
-                    } else {
-                      // Side-channel key must use job.name (workspace-level key) to match
-                      // what executeAgent stores — NOT actionEvent.data.jobName which is
-                      // the FSM definition's id (may differ from the workspace job key).
-                      const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
-                      agentResult = sideChannel.get(sideChannelKey);
-                      sideChannel.delete(sideChannelKey);
-                    }
-                    sessionStream.emit(
-                      mapActionToStepComplete(actionEvent, agentResult, stepCounter),
-                    );
+                  // LLM actions carry result data directly on the event (populated by FSM engine).
+                  // Agent actions use the side-channel (populated by executeAgent callback).
+                  let agentResult: AgentResultData | undefined;
+                  if (actionEvent.data.llmResult) {
+                    agentResult = actionEvent.data.llmResult;
+                  } else {
+                    // Side-channel key must use job.name (workspace-level key) to match
+                    // what executeAgent stores — NOT actionEvent.data.jobName which is
+                    // the FSM definition's id (may differ from the workspace job key).
+                    const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
+                    agentResult = sideChannel.get(sideChannelKey);
+                    sideChannel.delete(sideChannelKey);
                   }
+                  sessionStream.emit(
+                    mapActionToStepComplete(actionEvent, agentResult, stepCounter),
+                  );
                 }
+              }
 
-                // Track the state where a non-agent action failed — the catch
-                // block uses this to emit synthetic step events for the agent that
-                // was queued behind the failing code action.
-                if (
-                  event.type === "data-fsm-action-execution" &&
-                  !isAgentAction(event as FSMActionExecutionEvent)
-                ) {
-                  const actionEvent = event as FSMActionExecutionEvent;
-                  if (actionEvent.data.status === "failed") {
-                    failedActionStateId = actionEvent.data.state;
-                  }
+              // Track the state where a non-agent action failed — the catch
+              // block uses this to emit synthetic step events for the agent that
+              // was queued behind the failing code action.
+              if (
+                event.type === "data-fsm-action-execution" &&
+                !isAgentAction(event as FSMActionExecutionEvent)
+              ) {
+                const actionEvent = event as FSMActionExecutionEvent;
+                if (actionEvent.data.status === "failed") {
+                  failedActionStateId = actionEvent.data.state;
                 }
+              }
 
-                // Session history v2: map skipped states to step:skipped events
-                if (sessionStream && event.type === "data-fsm-state-skipped") {
-                  sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
-                }
+              // Session history v2: map skipped states to step:skipped events
+              if (sessionStream && event.type === "data-fsm-state-skipped") {
+                sessionStream.emit(mapStateSkippedToStepSkipped(event as FSMStateSkippedEvent));
+              }
 
-                // mapValidationAttemptToStepValidation returns null when the
-                // source event is missing actionId — keeps the wire schema's
-                // actionId required without emitting orphan UI pills.
-                if (sessionStream && event.type === "data-fsm-validation-attempt") {
-                  const stepEvent = mapValidationAttemptToStepValidation(event);
-                  if (stepEvent) sessionStream.emit(stepEvent);
-                }
-              },
-              // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through
-              // this separate channel, bypassing the FSMEvent-typed onEvent callback
-              onStreamEvent: (chunk) => {
-                onStreamEvent?.(chunk);
-                sessionStream?.emitEphemeral({ stepNumber: stepCounter, chunk });
-              },
+              // mapValidationAttemptToStepValidation returns null when the
+              // source event is missing actionId — keeps the wire schema's
+              // actionId required without emitting orphan UI pills.
+              if (sessionStream && event.type === "data-fsm-validation-attempt") {
+                const stepEvent = mapValidationAttemptToStepValidation(event);
+                if (stepEvent) sessionStream.emit(stepEvent);
+              }
             },
-          );
+            // Agent UIMessageChunks (text, reasoning, tool-call, etc.) flow through
+            // this separate channel, bypassing the FSMEvent-typed onEvent callback
+            onStreamEvent: (chunk) => {
+              if (finalized) return;
+              onStreamEvent?.(chunk);
+              sessionStream?.emitEphemeral({ stepNumber: stepCounter, chunk });
+            },
+          },
+        );
+
+        try {
+          await awaitWithAbort(enginePromise, effectiveAbortSignal);
 
           session.artifacts = this.extractArtifacts(engine.documents);
           session.completedAt = new Date();
@@ -1203,6 +1261,23 @@ export class WorkspaceRuntime {
           // a downstream `AbortError` isn't always what bubbles up from MCP.
           if (effectiveAbortSignal.aborted) {
             session.status = WorkspaceSessionStatus.CANCELLED;
+            // We bailed before engine.signal settled — attach a tail handler so
+            // the orphan's eventual settlement doesn't surface as an
+            // UnhandledPromiseRejection, and log when it actually unwinds so
+            // operators can spot agents that ignore AbortSignal.
+            enginePromise.then(
+              () => {
+                logger.info("Orphan engine.signal resolved after cancel", {
+                  sessionId: session.id,
+                });
+              },
+              (orphanErr) => {
+                logger.info("Orphan engine.signal rejected after cancel", {
+                  sessionId: session.id,
+                  error: stringifyError(orphanErr),
+                });
+              },
+            );
           } else {
             session.status = classifySessionError(error);
           }
@@ -1285,6 +1360,10 @@ export class WorkspaceRuntime {
             }
           }
         } finally {
+          // Close the gate before emitting terminal events. From this point on
+          // an orphaned engine.signal can't write to the session stream — its
+          // callbacks short-circuit on `finalized`.
+          finalized = true;
           if (onStreamEvent) {
             try {
               await onStreamEvent({
