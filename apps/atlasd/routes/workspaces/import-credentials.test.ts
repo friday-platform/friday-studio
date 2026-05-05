@@ -276,7 +276,7 @@ describe("POST /create — credential resolution", () => {
       agents: {
         summarizer: {
           type: "atlas",
-          agent: "summarizer",
+          agent: "get-summary",
           description: "Summarizes content",
           prompt: "Summarize the input",
           env: { API_KEY: { from: "link", id: "cred_foreign", key: "api_key" } },
@@ -957,7 +957,7 @@ describe("POST /create — credential resolution", () => {
       agents: {
         researcher: {
           type: "atlas",
-          agent: "research-agent",
+          agent: "research",
           description: "Researcher",
           prompt: "Do research",
           env: { GITHUB_API: { from: "link", provider: "github", key: "token" } },
@@ -1194,7 +1194,7 @@ describe("POST /create — credential resolution", () => {
       agents: {
         researcher: {
           type: "atlas",
-          agent: "research-agent",
+          agent: "research",
           description: "Researcher",
           prompt: "Do research",
           env: { GITHUB_API: { from: "link", provider: "github", key: "token" } },
