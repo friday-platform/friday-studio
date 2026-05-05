@@ -251,6 +251,84 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.error).toBe("Chat not found");
   });
+
+  // ?full controls the route-layer trim. Default behavior keeps the
+  // legacy last-100 slice for live UI rehydrate; ?full=true is the
+  // export preview path that needs every message.
+  describe("?full query parameter", () => {
+    function makeMessages(count: number): Array<{ id: string; role: string; content: string }> {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `msg-${i}`,
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `message ${i}`,
+      }));
+    }
+
+    function makeChatData(messageCount: number): Record<string, unknown> {
+      return {
+        id: "chat-1",
+        workspaceId: "ws-1",
+        userId: "user-123",
+        title: "Test Chat",
+        messages: makeMessages(messageCount),
+        systemPromptContext: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      };
+    }
+
+    test("absent param trims to last 100 messages", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+      // Slice keeps the tail — first returned message is index 50.
+      expect(body.messages[0]?.id).toBe("msg-50");
+      expect(body.messages.at(-1)?.id).toBe("msg-149");
+    });
+
+    test("?full=true returns every message without slicing", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(150);
+      expect(body.messages[0]?.id).toBe("msg-0");
+      expect(body.messages.at(-1)?.id).toBe("msg-149");
+    });
+
+    test("?full=false trims to last 100 (only literal 'true' opts in)", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=false");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(100);
+    });
+
+    test.each(["1", "yes", "TRUE", ""])(
+      "?full=%s passes through cleanly and falls back to last-100 trim",
+      async (value) => {
+        mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(150) });
+        const { app } = createTestApp();
+
+        const res = await app.request(`/ws-1/chat/chat-1?full=${value}`);
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { messages: Array<{ id: string }> };
+        expect(body.messages).toHaveLength(100);
+      },
+    );
+  });
 });
 
 describe("GET /:workspaceId/chat/:chatId/stream — SSE stream reconnect", () => {

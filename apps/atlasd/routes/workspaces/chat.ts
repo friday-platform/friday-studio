@@ -170,6 +170,20 @@ const listChatsQuerySchema = z.object({
 });
 
 /**
+ * Query schema for `GET /:chatId`. `?full=true` returns the entire message
+ * list; absent value or any other string preserves the legacy last-100 trim
+ * used by the live chat UI rehydrate path. The schema accepts an optional
+ * raw string and narrows to a boolean so callers branch on `full` without
+ * re-parsing — only the literal string "true" opts in.
+ */
+const getChatQuerySchema = z.object({
+  full: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
+});
+
+/**
  * Extract userId from FRIDAY_KEY JWT.
  * Falls back to "default-user" in dev mode (no FRIDAY_KEY).
  */
@@ -345,9 +359,15 @@ const workspaceChatRoutes = daemonFactory
         pathMap: artifactPathMap,
         skippedArtifactIds,
       } = await bundleChatArtifacts(artifacts);
+      const artifactBytesById = new Map<string, Uint8Array>();
+      for (const file of artifactFiles) {
+        // Path format: assets/artifacts/<id>/<basename>
+        const id = file.path.split("/")[2];
+        if (id) artifactBytesById.set(id, file.bytes);
+      }
       // Export uses the full message list — unlike GET /:chatId which trims
       // to the last 100 for UI rehydrate.
-      const html = renderChatToHTML(chat, artifacts, artifactPathMap, skippedArtifactIds);
+      const html = renderChatToHTML(chat, artifacts, artifactPathMap, skippedArtifactIds, artifactBytesById);
       const stream = await buildExportZip(html, chat, artifactFiles);
       return { kind: "ok" as const, stream };
     })();
@@ -382,9 +402,10 @@ const workspaceChatRoutes = daemonFactory
     });
   })
 
-  .get("/:chatId", async (c) => {
+  .get("/:chatId", zValidator("query", getChatQuerySchema), async (c) => {
     const chatId = c.req.param("chatId");
     const workspaceId = c.req.param("workspaceId");
+    const { full } = c.req.valid("query");
 
     const chatResult = await ChatStorage.getChat(chatId, workspaceId);
     if (!chatResult.ok || !chatResult.data) {
@@ -392,8 +413,10 @@ const workspaceChatRoutes = daemonFactory
     }
 
     const { messages, systemPromptContext, ...chat } = chatResult.data;
-    const limitedMessages = messages.slice(-100);
-    const sanitized = await validateAtlasUIMessages(limitedMessages);
+    // Export preview (`?full=true`) needs the whole conversation; the live
+    // UI rehydrate path keeps the last-100 trim to bound payload size.
+    const selectedMessages = full ? messages : messages.slice(-100);
+    const sanitized = await validateAtlasUIMessages(selectedMessages);
 
     return c.json(
       { chat, messages: sanitized, systemPromptContext: systemPromptContext ?? null },
