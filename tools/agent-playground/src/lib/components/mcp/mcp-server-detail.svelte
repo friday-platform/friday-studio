@@ -263,17 +263,6 @@
           <p class="description">{description}</p>
         {/if}
 
-        {#if server?.securityRating}
-          <div class="content-section">
-            <h3 class="section-title">Security</h3>
-            <div>
-              <span class="badge security-{server.securityRating}">
-                {securityLabel(server.securityRating)}
-              </span>
-            </div>
-          </div>
-        {/if}
-
         {#if isInstalled && server}
           <div>
             <McpConnectionTest serverId={server.id} />
@@ -319,7 +308,10 @@
             <McpWorkspaceUsage serverId={server.id} />
           </div>
 
-          <McpTestChat serverId={server.id} />
+          <div class="content-section">
+            <h3 class="section-title">Test Chat</h3>
+            <McpTestChat serverId={server.id} />
+          </div>
 
           {#if server.upstream}
             <div class="content-section">
@@ -345,7 +337,7 @@
         <!-- README -->
         {#if readme}
           <div class="content-section readme-section">
-            <h3 class="section-title">README</h3>
+            <h3 class="section-title">Readme</h3>
             <div class="readme-content">
               <MarkdownRendered>
                 {@html browser
@@ -410,11 +402,10 @@
     padding: var(--size-12);
 
     header {
-      align-items: flex-start;
+      align-items: center;
       display: flex;
       flex-shrink: 0;
       gap: var(--size-4);
-      justify-content: space-between;
 
       h1 {
         color: var(--text-bright);
@@ -495,9 +486,9 @@
   }
 
   .description {
-    color: color-mix(in srgb, var(--color-text), transparent 15%);
+    color: var(--text);
     font-size: var(--font-size-5);
-    line-height: 1.55;
+    line-height: var(--font-lineheight-3);
     margin: 0;
     max-inline-size: 72ch;
   }

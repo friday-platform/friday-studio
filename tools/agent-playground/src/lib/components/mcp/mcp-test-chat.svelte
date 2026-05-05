@@ -12,8 +12,8 @@
 <script lang="ts">
   import { Button, IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
-  import { testChatEventStream, type TestChatEvent } from "../../queries/workspace-mcp-queries";
   import { workspaceQueries } from "../../queries";
+  import { testChatEventStream } from "../../queries/workspace-mcp-queries";
 
   interface Props {
     serverId: string;
@@ -53,21 +53,11 @@
           case "tool_call":
             toolCalls = [
               ...toolCalls,
-              {
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-                input: event.input,
-              },
+              { toolCallId: event.toolCallId, toolName: event.toolName, input: event.input },
             ];
             break;
           case "tool_result":
-            toolResults = [
-              ...toolResults,
-              {
-                toolCallId: event.toolCallId,
-                output: event.output,
-              },
-            ];
+            toolResults = [...toolResults, { toolCallId: event.toolCallId, output: event.output }];
             break;
           case "error":
             chatError = event.error;
@@ -92,8 +82,6 @@
 </script>
 
 <section class="test-chat-section">
-  <h3 class="section-title">Test Chat</h3>
-
   {#if workspaces.length > 0}
     <div class="workspace-selector">
       <label for="test-chat-workspace">Workspace context</label>
@@ -168,9 +156,6 @@
       onclick={() => void send()}
       disabled={streaming || !message.trim()}
     >
-      {#snippet prepend()}
-        <IconSmall.CheckCircle />
-      {/snippet}
       Send
     </Button>
   </div>
@@ -178,17 +163,9 @@
 
 <style>
   .test-chat-section {
-    border-block-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-    padding-block-start: var(--size-4);
-  }
-
-  .section-title {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin: 0;
   }
 
   .workspace-selector {

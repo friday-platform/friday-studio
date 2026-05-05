@@ -60,10 +60,7 @@
 
 <section class="connection-test-section">
   {#if !shouldTest || (!probeQuery.isLoading && !probeQuery.isPending)}
-    <Button variant="secondary" size="small" onclick={runTest} disabled={probeQuery.isLoading}>
-      {#snippet prepend()}
-        <IconSmall.CheckCircle />
-      {/snippet}
+    <Button size="small" onclick={runTest} disabled={probeQuery.isLoading}>
       {probeQuery.isLoading ? "Testing…" : "Test Connection"}
     </Button>
   {/if}

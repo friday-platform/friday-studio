@@ -24,6 +24,7 @@
   import { linkProviderQueries } from "../../queries/link-provider-queries.ts";
   import { useCredentialConnect } from "../../use-credential-connect.svelte.ts";
   import CredentialSecretForm from "../credential-secret-form.svelte";
+  import McpCredentialsList from "./mcp-credentials-list.svelte";
 
   // ─── Props ─────────────────────────────────────────────────────────────────
 
@@ -133,32 +134,6 @@
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
-  function statusLabel(status: string | undefined): string {
-    switch (status) {
-      case "ready":
-        return "Ready";
-      case "expired":
-        return "Expired";
-      case "unknown":
-        return "Unknown";
-      default:
-        return "";
-    }
-  }
-
-  function statusClass(status: string | undefined): string {
-    switch (status) {
-      case "ready":
-        return "status-ready";
-      case "expired":
-        return "status-expired";
-      case "unknown":
-        return "status-unknown";
-      default:
-        return "";
-    }
-  }
-
   function handleRemoveConfirm(id: string) {
     removingId = id;
   }
@@ -246,65 +221,34 @@
             No credentials connected for {providerName}.
           </div>
         {:else}
-          <ul class="credential-list">
-            {#each credentials as cred (cred.id)}
-              <li class="credential-row">
-                <div class="credential-info">
-                  <span class="credential-label">{cred.label}</span>
-                  <span class="credential-type">{cred.type}</span>
-                  {#if cred.status}
-                    <span class="status-badge {statusClass(cred.status)}">
-                      {statusLabel(cred.status)}
-                    </span>
-                  {/if}
-                </div>
-
-                <div class="credential-actions">
-                  {#if details?.type === "apikey"}
-                    <Button variant="secondary" size="small" onclick={() => handleReplace(cred.id)}>
-                      Replace
-                    </Button>
-                  {:else if details?.type === "oauth"}
-                    <Button variant="secondary" size="small" onclick={connect.startOAuth}>
-                      Re-authenticate
-                    </Button>
-                  {:else if details?.type === "app_install"}
-                    <Button variant="secondary" size="small" onclick={connect.startAppInstall}>
-                      Re-install
-                    </Button>
-                  {/if}
-
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    onclick={() => handleRemoveConfirm(cred.id)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-
-                {#if replacingId === cred.id && details?.secretSchema}
-                  <div class="replace-form">
-                    <CredentialSecretForm
-                      secretSchema={details.secretSchema}
-                      initialLabel={cred.label}
-                      submitting={updateMutation.isPending}
-                      error={updateMutation.error?.message ?? null}
-                      onSubmit={handleReplaceSubmit}
-                    />
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onclick={handleReplaceCancel}
-                      disabled={updateMutation.isPending}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                {/if}
-              </li>
-            {/each}
-          </ul>
+          {@const replacingCred = credentials.find((c) => c.id === replacingId)}
+          <McpCredentialsList
+            {credentials}
+            providerType={details?.type}
+            onReplace={handleReplace}
+            onRemove={handleRemoveConfirm}
+            onReauthenticate={connect.startOAuth}
+            onReinstall={connect.startAppInstall}
+          />
+          {#if replacingCred && details?.secretSchema}
+            <div class="replace-form">
+              <CredentialSecretForm
+                secretSchema={details.secretSchema}
+                initialLabel={replacingCred.label}
+                submitting={updateMutation.isPending}
+                error={updateMutation.error?.message ?? null}
+                onSubmit={handleReplaceSubmit}
+              />
+              <Button
+                variant="secondary"
+                size="small"
+                onclick={handleReplaceCancel}
+                disabled={updateMutation.isPending}
+              >
+                Cancel
+              </Button>
+            </div>
+          {/if}
         {/if}
 
         <!-- Add new — always available regardless of credential count -->
@@ -403,12 +347,6 @@
     gap: var(--size-4);
   }
 
-  .panel-title {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin: 0;
-  }
-
   .id-ref-notice {
     background: var(--color-surface-3);
     border: 1px solid var(--color-border-1);
@@ -445,74 +383,6 @@
     display: flex;
     font-size: var(--font-size-1);
     gap: var(--size-2);
-  }
-
-  .credential-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .credential-row {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-2);
-    padding: var(--size-2) var(--size-3);
-  }
-
-  .credential-info {
-    align-items: center;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-2);
-  }
-
-  .credential-label {
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-5);
-  }
-
-  .credential-type {
-    background: var(--color-surface-3);
-    border-radius: var(--radius-1);
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    padding: 2px 6px;
-    text-transform: uppercase;
-  }
-
-  .status-badge {
-    border-radius: var(--radius-1);
-    font-size: var(--font-size-0);
-    font-weight: var(--font-weight-5);
-    padding: 2px 6px;
-  }
-
-  .status-badge.status-ready {
-    background: color-mix(in srgb, var(--color-success), transparent 85%);
-    color: var(--color-success);
-  }
-
-  .status-badge.status-expired {
-    background: color-mix(in srgb, var(--color-warning), transparent 85%);
-    color: var(--color-warning);
-  }
-
-  .status-badge.status-unknown {
-    background: color-mix(in srgb, var(--color-text), transparent 85%);
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-  }
-
-  .credential-actions {
-    display: flex;
-    gap: var(--size-1);
   }
 
   .replace-form,

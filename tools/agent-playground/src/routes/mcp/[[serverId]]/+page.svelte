@@ -11,7 +11,7 @@
 -->
 
 <script lang="ts">
-  import { Button, IconSmall, ListDetail, toast } from "@atlas/ui";
+  import { Button, ListDetail, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -161,9 +161,6 @@
       aria-label="Import from registry"
       onclick={() => (importDialogOpen = true)}
     >
-      {#snippet prepend()}
-        <IconSmall.Plus />
-      {/snippet}
       Add New
     </Button>
   {/snippet}
