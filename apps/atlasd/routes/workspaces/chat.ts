@@ -359,15 +359,9 @@ const workspaceChatRoutes = daemonFactory
         pathMap: artifactPathMap,
         skippedArtifactIds,
       } = await bundleChatArtifacts(artifacts);
-      const artifactBytesById = new Map<string, Uint8Array>();
-      for (const file of artifactFiles) {
-        // Path format: assets/artifacts/<id>/<basename>
-        const id = file.path.split("/")[2];
-        if (id) artifactBytesById.set(id, file.bytes);
-      }
       // Export uses the full message list — unlike GET /:chatId which trims
       // to the last 100 for UI rehydrate.
-      const html = renderChatToHTML(chat, artifacts, artifactPathMap, skippedArtifactIds, artifactBytesById);
+      const html = renderChatToHTML(chat, artifacts, artifactPathMap, skippedArtifactIds);
       const stream = await buildExportZip(html, chat, artifactFiles);
       return { kind: "ok" as const, stream };
     })();
