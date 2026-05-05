@@ -847,7 +847,20 @@ export class WorkspaceRuntime {
     const agentExecutor: AgentExecutor = (action, context, signal, options) =>
       this.executeAgent(action, context, job, signal, options);
 
-    const mcpServerConfigs = this.config.workspace.tools?.mcp?.servers || {};
+    // Apply registry-owned platformEnv (MCP_ENABLE_OAUTH21, dummy
+    // GOOGLE_OAUTH_CLIENT_ID/SECRET, stateless mode) before handing configs
+    // to the FSM engine. Without this, cron-triggered LLM actions spawn
+    // workspace-mcp in native-OAuth mode and reject every bearer-authed
+    // request — see registry-consolidated.ts:101-130 for the failure mode.
+    // Same idiom as line 1869-1872 in executeCodeAgent.
+    const rawMcpServers = this.config.workspace.tools?.mcp?.servers || {};
+    const mcpServerConfigs: Record<string, MCPServerConfig> = {};
+    for (const [id, config] of Object.entries(rawMcpServers)) {
+      const registryEntry = mcpServersRegistry.servers[id];
+      mcpServerConfigs[id] = registryEntry?.platformEnv
+        ? applyPlatformEnv(config, registryEntry.platformEnv)
+        : config;
+    }
 
     const scope = { workspaceId: this.workspace.id, workspaceName: this.workspace.name, sessionId };
     const platformModels = this.options.platformModels;
