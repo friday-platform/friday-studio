@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from "@atlas/ui";
+  import { browser } from "$app/environment";
   import { checkDaemonHealth, daemonHealth } from "$lib/daemon-health.svelte";
   import type { Snippet } from "svelte";
 
@@ -10,11 +11,11 @@
   }
 </script>
 
-{#if daemonHealth.loading}
+{#if browser && daemonHealth.loading}
   <div class="gate-state">
     <p class="gate-message">Connecting to daemon...</p>
   </div>
-{:else if !daemonHealth.connected}
+{:else if browser && !daemonHealth.connected}
   <div class="gate-state">
     <p class="gate-icon">!</p>
     <p class="gate-title">Reconnecting to Friday Studio…</p>
