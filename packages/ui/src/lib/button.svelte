@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { IconSmall } from "$lib/icons";
   import type { Snippet } from "svelte";
   import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
 
