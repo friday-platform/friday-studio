@@ -101,6 +101,13 @@ export async function ensureInstanceEventsStream(nc: NatsConnection): Promise<vo
       retention: RetentionPolicy.Limits,
       storage: StorageType.File,
       max_age: SEVEN_DAYS_NS,
+      // `allow_direct` is intentionally NOT set here — defaults to false,
+      // which routes `streams.getMessage` calls to the leader and gives
+      // us read-your-writes for the replay endpoint
+      // (`/api/instance/events?since=...`). If a future op enables
+      // direct-get on replicas to scale read throughput, the replay path
+      // will lose read-your-writes and a recently-published event may
+      // not appear immediately on a reload-after-disconnect.
     });
   }
 }

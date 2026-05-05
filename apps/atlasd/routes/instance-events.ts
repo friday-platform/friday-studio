@@ -53,6 +53,13 @@ export const instanceEventsRoutes = daemonFactory
     // SSE path — live feed.
     const subject = type ? `instance.${type}` : "instance.>";
     const sub = nc.subscribe(subject);
+    // The `subscribe()` call returns before the broker actually registers
+    // the subscription. Without this flush, an event published in the
+    // window between subscribe-returns and broker-registers would be
+    // silently dropped. The flush forces a PING/PONG round-trip; once
+    // it resolves, the subscription is live server-side and the SSE
+    // handshake honestly means "from now on, you get every event."
+    await nc.flush();
 
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
