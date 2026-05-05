@@ -159,9 +159,14 @@ const NameProbeSchema = z.object({ server: z.object({ name: z.string() }).partia
 /**
  * Return shape of `search()`. Not a Zod schema — the wire response is parsed
  * via `UpstreamSearchEnvelopeSchema` + per-entry `UpstreamServerEntrySchema`.
+ *
+ * `dropped` counts entries that failed strict parsing and were skipped, so
+ * callers can surface drift signals (metrics, headers, etc.) without parsing
+ * logs.
  */
 export interface UpstreamSearchResponse {
   servers: UpstreamServerEntry[];
+  dropped: number;
 }
 
 // ─── Client ──────────────────────────────────────────────────────────────────
@@ -247,7 +252,7 @@ export class MCPUpstreamClient {
       logger.info("upstream search dropped malformed entries", { dropped, kept: servers.length });
     }
 
-    return { servers };
+    return { servers, dropped };
   }
 
   /**

@@ -196,6 +196,48 @@ describe("MCPUpstreamClient", () => {
 
       expect(result.servers).toHaveLength(1);
       expect(result.servers[0]?.server.name).toEqual("io.github.test/good-server");
+      expect(result.dropped).toEqual(2);
+    });
+
+    it("reports zero dropped when all entries are valid", async () => {
+      const mockResponse = {
+        servers: [
+          {
+            server: {
+              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
+              name: "io.github.test/server",
+              description: "Valid",
+              version: "1.0.0",
+            },
+            _meta: {
+              "io.modelcontextprotocol.registry/official": {
+                status: "active",
+                statusChangedAt: "2025-01-01T00:00:00Z",
+                publishedAt: "2025-01-01T00:00:00Z",
+                updatedAt: "2025-01-01T00:00:00Z",
+                isLatest: true,
+              },
+            },
+          },
+        ],
+      };
+
+      const mockFetch: typeof fetch = (
+        _input: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> =>
+        Promise.resolve(
+          new Response(JSON.stringify(mockResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
+      const result = await client.search("test", 10);
+
+      expect(result.servers).toHaveLength(1);
+      expect(result.dropped).toEqual(0);
     });
   });
 
