@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  MCPUpstreamClient,
-  UpstreamSearchResponseSchema,
-  UpstreamServerEntrySchema,
-} from "./upstream-client.ts";
+import { MCPUpstreamClient, UpstreamServerEntrySchema } from "./upstream-client.ts";
 
 describe("MCPUpstreamClient", () => {
   describe("search", () => {
@@ -131,6 +127,117 @@ describe("MCPUpstreamClient", () => {
       await client.search("hello world & more", 5);
 
       expect(capturedUrl).toContain("search=hello%20world%20%26%20more");
+    });
+
+    it("drops malformed entries but keeps valid ones", async () => {
+      // Defense against upstream schema drift: one bad entry must not poison
+      // the whole response. Regression test for the 502 caused when a new
+      // upstream registryType appeared and the strict outer parse rejected
+      // every reddit search result.
+      const mockResponse = {
+        servers: [
+          {
+            server: {
+              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
+              name: "io.github.test/good-server",
+              description: "Valid",
+              version: "1.0.0",
+            },
+            _meta: {
+              "io.modelcontextprotocol.registry/official": {
+                status: "active",
+                statusChangedAt: "2025-01-01T00:00:00Z",
+                publishedAt: "2025-01-01T00:00:00Z",
+                updatedAt: "2025-01-01T00:00:00Z",
+                isLatest: true,
+              },
+            },
+          },
+          {
+            // Broken: missing required `_meta` block.
+            server: {
+              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
+              name: "io.github.test/broken-server",
+              version: "1.0.0",
+            },
+          },
+          {
+            // Broken: server.version missing entirely.
+            server: {
+              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
+              name: "io.github.test/no-version",
+            },
+            _meta: {
+              "io.modelcontextprotocol.registry/official": {
+                status: "active",
+                statusChangedAt: "2025-01-01T00:00:00Z",
+                publishedAt: "2025-01-01T00:00:00Z",
+                updatedAt: "2025-01-01T00:00:00Z",
+                isLatest: true,
+              },
+            },
+          },
+        ],
+      };
+
+      const mockFetch: typeof fetch = (
+        _input: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> =>
+        Promise.resolve(
+          new Response(JSON.stringify(mockResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
+      const result = await client.search("test", 10);
+
+      expect(result.servers).toHaveLength(1);
+      expect(result.servers[0]?.server.name).toEqual("io.github.test/good-server");
+      expect(result.dropped).toEqual(2);
+    });
+
+    it("reports zero dropped when all entries are valid", async () => {
+      const mockResponse = {
+        servers: [
+          {
+            server: {
+              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
+              name: "io.github.test/server",
+              description: "Valid",
+              version: "1.0.0",
+            },
+            _meta: {
+              "io.modelcontextprotocol.registry/official": {
+                status: "active",
+                statusChangedAt: "2025-01-01T00:00:00Z",
+                publishedAt: "2025-01-01T00:00:00Z",
+                updatedAt: "2025-01-01T00:00:00Z",
+                isLatest: true,
+              },
+            },
+          },
+        ],
+      };
+
+      const mockFetch: typeof fetch = (
+        _input: URL | RequestInfo,
+        _init?: RequestInit,
+      ): Promise<Response> =>
+        Promise.resolve(
+          new Response(JSON.stringify(mockResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const client = new MCPUpstreamClient({ fetchFn: mockFetch });
+      const result = await client.search("test", 10);
+
+      expect(result.servers).toHaveLength(1);
+      expect(result.dropped).toEqual(0);
     });
   });
 
@@ -354,16 +461,19 @@ describe("MCPUpstreamClient", () => {
       expect(parsed.success).toBe(true);
     });
 
-    it("rejects invalid registry type", () => {
-      const invalidEntry = {
+    it("accepts arbitrary registry type strings", () => {
+      // Upstream spec defines registryType as an open-ended string with
+      // npm/pypi/oci/nuget/mcpb as examples; we must accept new values
+      // (e.g., "nuget", "cargo", "gem") rather than rejecting the whole entry.
+      const entry = {
         server: {
           $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
-          name: "io.github.test/invalid",
+          name: "io.github.test/nuget-server",
           version: "1.0.0",
           packages: [
             {
-              registryType: "invalid-type", // Not in enum
-              identifier: "test",
+              registryType: "nuget",
+              identifier: "TestPackage",
               version: "1.0.0",
               transport: { type: "stdio" },
             },
@@ -380,67 +490,8 @@ describe("MCPUpstreamClient", () => {
         },
       };
 
-      const parsed = UpstreamServerEntrySchema.safeParse(invalidEntry);
-      expect(parsed.success).toBe(false);
-    });
-  });
-
-  describe("search response schema", () => {
-    it("validates search response with multiple results", () => {
-      const searchResponse = {
-        servers: [
-          {
-            server: {
-              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
-              name: "io.github.test/server-a",
-              description: "Server A",
-              version: "1.0.0",
-            },
-            _meta: {
-              "io.modelcontextprotocol.registry/official": {
-                status: "active",
-                statusChangedAt: "2025-01-01T00:00:00Z",
-                publishedAt: "2025-01-01T00:00:00Z",
-                updatedAt: "2025-01-01T00:00:00Z",
-                isLatest: true,
-              },
-            },
-          },
-          {
-            server: {
-              $schema: "https://schema.modelcontextprotocol.io/server/2025-04-18.json",
-              name: "io.github.test/server-b",
-              description: "Server B",
-              version: "2.0.0",
-            },
-            _meta: {
-              "io.modelcontextprotocol.registry/official": {
-                status: "active",
-                statusChangedAt: "2025-01-01T00:00:00Z",
-                publishedAt: "2025-01-01T00:00:00Z",
-                updatedAt: "2025-01-01T00:00:00Z",
-                isLatest: true,
-              },
-            },
-          },
-        ],
-      };
-
-      const parsed = UpstreamSearchResponseSchema.safeParse(searchResponse);
+      const parsed = UpstreamServerEntrySchema.safeParse(entry);
       expect(parsed.success).toBe(true);
-      if (parsed.success) {
-        expect(parsed.data.servers).toHaveLength(2);
-      }
-    });
-
-    it("validates empty search response", () => {
-      const emptyResponse = { servers: [] };
-
-      const parsed = UpstreamSearchResponseSchema.safeParse(emptyResponse);
-      expect(parsed.success).toBe(true);
-      if (parsed.success) {
-        expect(parsed.data.servers).toHaveLength(0);
-      }
     });
   });
 

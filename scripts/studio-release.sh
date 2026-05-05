@@ -229,7 +229,7 @@ cmd_publish() {
     *) echo "aborted."; exit 0 ;;
   esac
 
-  echo "→ Triggering $publish_wf…"
+  echo "→ Triggering ${publish_wf}…"
   local since
   since=$(buffered_since)
   gh workflow run "$publish_wf" \
