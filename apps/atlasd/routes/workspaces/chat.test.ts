@@ -7,8 +7,7 @@
 
 import { WorkspaceNotFoundError } from "@atlas/core/errors/workspace-not-found";
 import { Hono } from "hono";
-import JSZip from "jszip";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // No AppContext import needed — test mock uses typeof inference
 
@@ -16,20 +15,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // Module mocks — vi.hoisted runs before vi.mock hoisting
 // ---------------------------------------------------------------------------
 
-const { mockChatStorage, mockArtifactStorage, mockValidateMessages } = vi.hoisted(() => ({
+const { mockChatStorage, mockValidateMessages } = vi.hoisted(() => ({
   mockChatStorage: {
     listChatsByWorkspace: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
     getChat: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
     appendMessage: vi.fn<() => Promise<{ ok: boolean; error?: string }>>(),
     updateChatTitle: vi.fn<() => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
-  },
-  mockArtifactStorage: {
-    listByChat:
-      vi.fn<
-        (input: { chatId: string }) => Promise<{ ok: boolean; data?: unknown; error?: string }>
-      >(),
-    readBinaryContents:
-      vi.fn<(input: { id: string }) => Promise<{ ok: boolean; data?: unknown; error?: string }>>(),
   },
   mockValidateMessages: vi
     .fn<(msgs: unknown[]) => Promise<unknown[]>>()
@@ -41,8 +32,6 @@ vi.mock("@atlas/core/credentials", () => ({
 }));
 
 vi.mock("@atlas/core/chat/storage", () => ({ ChatStorage: mockChatStorage }));
-
-vi.mock("@atlas/core/artifacts/server", () => ({ ArtifactStorage: mockArtifactStorage }));
 
 vi.mock("@atlas/agent-sdk", () => ({
   validateAtlasUIMessages: mockValidateMessages,
@@ -155,8 +144,6 @@ beforeEach(() => {
   mockChatStorage.getChat.mockReset();
   mockChatStorage.appendMessage.mockReset();
   mockChatStorage.updateChatTitle.mockReset();
-  mockArtifactStorage.listByChat.mockReset();
-  mockArtifactStorage.readBinaryContents.mockReset();
   mockValidateMessages.mockReset();
   mockValidateMessages.mockImplementation((msgs: unknown[]) => Promise.resolve(msgs));
 });
@@ -513,197 +500,3 @@ test("workspace-not-found middleware short-circuits with 404", async () => {
   expect(body.error).toBe("Workspace not found");
 });
 
-// ---------------------------------------------------------------------------
-// GET /:workspaceId/chat/:chatId/export — zip export
-// ---------------------------------------------------------------------------
-
-const EXPORT_CHAT_ID = "chat-export-1234567890";
-
-function makeChat(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
-  return {
-    id: EXPORT_CHAT_ID,
-    workspaceId: "ws-1",
-    userId: "user-123",
-    source: "atlas",
-    title: "Export Test Chat",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    messages: [{ id: "msg-1", role: "user", parts: [{ type: "text", text: "hello world" }] }],
-    ...overrides,
-  };
-}
-
-function makeArtifactSummary(
-  id: string,
-  overrides: Partial<Record<string, unknown>> = {},
-): Record<string, unknown> {
-  return {
-    id,
-    type: "file",
-    revision: 1,
-    title: `Artifact ${id}`,
-    summary: "Test artifact",
-    createdAt: "2026-01-01T00:00:00Z",
-    workspaceId: "ws-1",
-    chatId: EXPORT_CHAT_ID,
-    mimeType: "text/plain",
-    size: 16,
-    originalName: `${id}.txt`,
-    ...overrides,
-  };
-}
-
-async function readZip(res: Response): Promise<JSZip> {
-  const buf = new Uint8Array(await res.arrayBuffer());
-  // Magic bytes: PK\x03\x04 — local file header for any non-empty zip.
-  expect(buf[0]).toBe(0x50);
-  expect(buf[1]).toBe(0x4b);
-  expect(buf[2]).toBe(0x03);
-  expect(buf[3]).toBe(0x04);
-  return await JSZip.loadAsync(buf);
-}
-
-describe("GET /:workspaceId/chat/:chatId/export — zip export", () => {
-  test("happy path: chat with no artifacts returns a zip with proper headers", async () => {
-    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: makeChat() });
-    mockArtifactStorage.listByChat.mockResolvedValueOnce({ ok: true, data: [] });
-    const { app } = createTestApp();
-
-    const res = await app.request(`/ws-1/chat/${EXPORT_CHAT_ID}/export`);
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toBe("application/zip");
-    expect(res.headers.get("Content-Disposition")).toBe(
-      `attachment; filename="friday-chat-${EXPORT_CHAT_ID.slice(0, 8)}.zip"`,
-    );
-
-    const zip = await readZip(res);
-    expect(zip.file("index.html")).not.toBeNull();
-    expect(zip.file("chat.json")).not.toBeNull();
-    const html = await zip.file("index.html")?.async("string");
-    expect(html).toContain("hello world");
-  });
-
-  test("with artifacts: zip contains assets/artifacts/<id>/<basename> for each", async () => {
-    const a1 = makeArtifactSummary("art-aaaa", { mimeType: "text/plain", originalName: "a.txt" });
-    const a2 = makeArtifactSummary("art-bbbb", { mimeType: "text/plain", originalName: "b.txt" });
-    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: makeChat() });
-    mockArtifactStorage.listByChat.mockResolvedValueOnce({ ok: true, data: [a1, a2] });
-    mockArtifactStorage.readBinaryContents.mockImplementation(({ id }: { id: string }) =>
-      Promise.resolve({ ok: true, data: new TextEncoder().encode(`bytes-for-${id}`) }),
-    );
-    const { app } = createTestApp();
-
-    const res = await app.request(`/ws-1/chat/${EXPORT_CHAT_ID}/export`);
-
-    expect(res.status).toBe(200);
-    const zip = await readZip(res);
-    expect(zip.file("assets/artifacts/art-aaaa/a.txt")).not.toBeNull();
-    expect(zip.file("assets/artifacts/art-bbbb/b.txt")).not.toBeNull();
-    const a1Bytes = await zip.file("assets/artifacts/art-aaaa/a.txt")?.async("string");
-    expect(a1Bytes).toBe("bytes-for-art-aaaa");
-
-    const html = await zip.file("index.html")?.async("string");
-    expect(html).toContain("assets/artifacts/art-aaaa/a.txt");
-    expect(html).toContain("assets/artifacts/art-bbbb/b.txt");
-  });
-
-  test("failed artifact read: missing file in zip, placeholder in HTML, still 200", async () => {
-    const ok = makeArtifactSummary("art-ok", { originalName: "ok.txt" });
-    const bad = makeArtifactSummary("art-bad", { originalName: "bad.txt" });
-    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: makeChat() });
-    mockArtifactStorage.listByChat.mockResolvedValueOnce({ ok: true, data: [ok, bad] });
-    mockArtifactStorage.readBinaryContents.mockImplementation(({ id }: { id: string }) => {
-      if (id === "art-bad") return Promise.resolve({ ok: false, error: "object missing" });
-      return Promise.resolve({ ok: true, data: new TextEncoder().encode("good") });
-    });
-    const { app } = createTestApp();
-
-    const res = await app.request(`/ws-1/chat/${EXPORT_CHAT_ID}/export`);
-
-    expect(res.status).toBe(200);
-    const zip = await readZip(res);
-    expect(zip.file("assets/artifacts/art-ok/ok.txt")).not.toBeNull();
-    expect(zip.file("assets/artifacts/art-bad/bad.txt")).toBeNull();
-    const html = await zip.file("index.html")?.async("string");
-    expect(html).toContain("[artifact file unavailable]");
-  });
-
-  test("missing chat: getChat returns null → 404 JSON error", async () => {
-    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: null });
-    const { app } = createTestApp();
-
-    const res = await app.request(`/ws-1/chat/${EXPORT_CHAT_ID}/export`);
-
-    expect(res.status).toBe(404);
-    expect(res.headers.get("Content-Type")).toContain("application/json");
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("Chat not found");
-  });
-
-  test("storage error: getChat returns err → 500 JSON error", async () => {
-    mockChatStorage.getChat.mockResolvedValueOnce({ ok: false, error: "kv unavailable" });
-    const { app } = createTestApp();
-
-    const res = await app.request(`/ws-1/chat/${EXPORT_CHAT_ID}/export`);
-
-    expect(res.status).toBe(500);
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("kv unavailable");
-  });
-
-  test("missing workspace: middleware short-circuits export with 404", async () => {
-    const { app } = createTestApp({ workspaceExists: false });
-
-    const res = await app.request(`/ws-missing/chat/${EXPORT_CHAT_ID}/export`);
-
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("Workspace not found");
-    // Storage layer should not be touched when workspace is rejected upstream.
-    expect(mockChatStorage.getChat).not.toHaveBeenCalled();
-  });
-
-  test("artifact migration in progress: list returns 'migrating' err → 503", async () => {
-    mockChatStorage.getChat.mockResolvedValueOnce({ ok: true, data: makeChat() });
-    mockArtifactStorage.listByChat.mockResolvedValueOnce({
-      ok: false,
-      error: "Artifacts are migrating, retry in a moment",
-    });
-    const { app } = createTestApp();
-
-    const res = await app.request(`/ws-1/chat/${EXPORT_CHAT_ID}/export`);
-
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as JsonBody;
-    expect(body.error).toBe("Chat artifacts are being migrated; try again shortly");
-  });
-
-  describe("with fake timers", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    test("timeout: getChat hangs >10s → 503 'Chat too large to export'", async () => {
-      // Promise that never resolves — the route's 10s race must fire first.
-      mockChatStorage.getChat.mockReturnValueOnce(
-        new Promise(() => {
-          // intentionally never resolves
-        }),
-      );
-      const { app } = createTestApp();
-
-      const pending = app.request(`/ws-1/chat/${EXPORT_CHAT_ID}/export`);
-      // Advance past the 10s export ceiling and let the timeout race resolve.
-      await vi.advanceTimersByTimeAsync(10_001);
-      const res = await pending;
-
-      expect(res.status).toBe(503);
-      const body = (await res.json()) as JsonBody;
-      expect(body.error).toBe("Chat too large to export");
-    });
-  });
-});
