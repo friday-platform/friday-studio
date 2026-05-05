@@ -121,6 +121,73 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(body.published).toMatchObject({ namespace: "atlas", name: "code-review", version: 1 });
     });
 
+    it("splits embedded frontmatter into the frontmatter column on JSON publish", async () => {
+      const fullSkillMd =
+        "---\nname: split-me\ndescription: This is a test skill description.\n---\n\n# Split Me\n\nBody content.\n";
+      const publishRes = await skillsRoutes.request("/@atlas/split-me", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions: fullSkillMd }),
+      });
+      expect(publishRes.status).toBe(201);
+
+      const getRes = await skillsRoutes.request("/@atlas/split-me");
+      expect(getRes.status).toBe(200);
+      const body = (await getRes.json()) as {
+        skill: { instructions: string; frontmatter: Record<string, unknown>; description: string };
+      };
+      expect(body.skill.frontmatter).toMatchObject({
+        name: "split-me",
+        description: "This is a test skill description.",
+      });
+      expect(body.skill.instructions).not.toContain("---");
+      expect(body.skill.instructions).toContain("# Split Me");
+    });
+
+    it("explicit frontmatter wins over embedded frontmatter on key conflict", async () => {
+      // Both sources provide `description`. The route comment in skills.ts
+      // promises "Explicit `input.frontmatter` wins on key conflicts" — lock
+      // that direction in so a future merge-order swap shows up as a failure.
+      const fullSkillMd =
+        "---\nname: merge-conflict\ndescription: embedded\n---\n\n# Merge Conflict\n\nBody.\n";
+      const publishRes = await skillsRoutes.request("/@atlas/merge-conflict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructions: fullSkillMd,
+          frontmatter: { description: "explicit" },
+        }),
+      });
+      expect(publishRes.status).toBe(201);
+
+      const getRes = await skillsRoutes.request("/@atlas/merge-conflict");
+      expect(getRes.status).toBe(200);
+      const body = (await getRes.json()) as { skill: { frontmatter: Record<string, unknown> } };
+      expect(body.skill.frontmatter.description).toBe("explicit");
+    });
+
+    it("splits embedded frontmatter without a description into the frontmatter column (legacy row shape)", async () => {
+      // Legacy rows had embedded frontmatter without `description` in
+      // `instructions`. The strict parser rejected them, so the body was
+      // stored verbatim with the YAML preamble — exactly what this PR fixes.
+      const legacySkillMd = "---\nname: legacy-skill\n---\n\n# Legacy Skill\n\nBody content.\n";
+      const publishRes = await skillsRoutes.request("/@atlas/legacy-skill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions: legacySkillMd }),
+      });
+      expect(publishRes.status).toBe(201);
+
+      const getRes = await skillsRoutes.request("/@atlas/legacy-skill");
+      expect(getRes.status).toBe(200);
+      const body = (await getRes.json()) as {
+        skill: { instructions: string; frontmatter: Record<string, unknown> };
+      };
+      expect(body.skill.frontmatter).toMatchObject({ name: "legacy-skill" });
+      expect(body.skill.instructions.trimStart().startsWith("---")).toBe(false);
+      expect(body.skill.instructions).toContain("# Legacy Skill");
+    });
+
     it("auto-increments version on subsequent publish", async () => {
       const response = await skillsRoutes.request("/@atlas/code-review", {
         method: "POST",
@@ -337,6 +404,281 @@ describe("Skills API Routes - Global Catalog", () => {
       expect(response.status).toBe(404);
       const body = (await response.json()) as { error: string };
       expect(body.error).toContain("No archive");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EXPORT (self-contained tar.gz with reconstructed SKILL.md)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("GET /:namespace/:name/export", () => {
+    it("exports a published skill as a tar.gz containing SKILL.md", async () => {
+      const response = await skillsRoutes.request("/@atlas/code-review/export");
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/gzip");
+      const disposition = response.headers.get("content-disposition") ?? "";
+      expect(disposition).toContain("attachment");
+      expect(disposition).toContain('filename="@atlas-code-review-v');
+      expect(disposition).toContain('.tar.gz"');
+
+      const { extractArchiveContents } = await import("@atlas/skills/archive");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const contents = await extractArchiveContents(bytes);
+      expect(contents["SKILL.md"]).toBeDefined();
+      expect(contents["SKILL.md"]).toContain("Review the code more carefully.");
+    });
+
+    it("returns 404 for non-existent skill", async () => {
+      const response = await skillsRoutes.request("/@atlas/nonexistent/export");
+      expect(response.status).toBe(404);
+      const body = ErrorSchema.parse(await response.json());
+      expect(body.error).toBe("Skill not found");
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // IMPORT (round-trip from exported tar.gz)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe("POST /import-archive", () => {
+    it("imports a previously-exported tar.gz and republishes the skill", async () => {
+      const { packExportArchive } = await import("@atlas/skills/archive");
+      const frontmatter = {
+        name: "@atlas/imported-skill",
+        description: "Imported skill for round-trip test. Use when testing import.",
+        metadata: { foo: "bar" },
+      };
+      const instructions = "# Imported\n\nDo the thing.";
+      const archiveBytes = await packExportArchive({ instructions, frontmatter, archive: null });
+
+      const formData = new FormData();
+      formData.append(
+        "archive",
+        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
+      );
+
+      const response = await skillsRoutes.request("/import-archive", {
+        method: "POST",
+        body: formData,
+      });
+      expect(response.status).toBe(201);
+      const body = PublishedResponseSchema.parse(await response.json());
+      expect(body.published.namespace).toBe("atlas");
+      expect(body.published.name).toBe("imported-skill");
+
+      // Verify the skill is fetchable + content survived the round trip
+      const getRes = await skillsRoutes.request("/@atlas/imported-skill");
+      expect(getRes.status).toBe(200);
+      const skill = SkillResponseSchema.parse(await getRes.json());
+      expect(skill.skill.description).toBe(frontmatter.description);
+      expect(skill.skill.instructions).toBe(instructions);
+      expect(skill.skill.frontmatter).toMatchObject({
+        name: "@atlas/imported-skill",
+        description: frontmatter.description,
+        metadata: { foo: "bar" },
+      });
+    });
+
+    it("returns 400 with needsNamespace when frontmatter has no namespace", async () => {
+      const { packExportArchive } = await import("@atlas/skills/archive");
+      const archiveBytes = await packExportArchive({
+        instructions: "Body of skill.",
+        frontmatter: {
+          name: "just-a-name",
+          description: "Skill without namespace. Use when something happens.",
+        },
+        archive: null,
+      });
+
+      const formData = new FormData();
+      formData.append(
+        "archive",
+        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
+      );
+
+      const response = await skillsRoutes.request("/import-archive", {
+        method: "POST",
+        body: formData,
+      });
+      expect(response.status).toBe(400);
+      const body = z
+        .object({ error: z.string(), needsNamespace: z.literal(true), defaultName: z.string() })
+        .parse(await response.json());
+      expect(body.needsNamespace).toBe(true);
+      expect(body.defaultName).toBe("just-a-name");
+    });
+
+    it("uses ?namespace= query param to supply a missing namespace", async () => {
+      const { packExportArchive } = await import("@atlas/skills/archive");
+      const archiveBytes = await packExportArchive({
+        instructions: "Body of skill.",
+        frontmatter: {
+          name: "just-a-name",
+          description: "Skill without namespace. Use when something happens.",
+        },
+        archive: null,
+      });
+
+      const formData = new FormData();
+      formData.append(
+        "archive",
+        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
+      );
+
+      const response = await skillsRoutes.request("/import-archive?namespace=eric", {
+        method: "POST",
+        body: formData,
+      });
+      expect(response.status).toBe(201);
+      const body = PublishedResponseSchema.parse(await response.json());
+      expect(body.published.namespace).toBe("eric");
+      expect(body.published.name).toBe("just-a-name");
+
+      const getRes = await skillsRoutes.request("/@eric/just-a-name");
+      expect(getRes.status).toBe(200);
+    });
+
+    it("uses ?namespace= and ?name= query params to override the frontmatter prefix", async () => {
+      const { packExportArchive } = await import("@atlas/skills/archive");
+      const archiveBytes = await packExportArchive({
+        instructions: "Body of skill.",
+        frontmatter: {
+          name: "@atlas/original-name",
+          description: "Skill that will be renamed via query params on import.",
+        },
+        archive: null,
+      });
+
+      const formData = new FormData();
+      formData.append(
+        "archive",
+        new File([new Uint8Array(archiveBytes)], "imported.tar.gz", { type: "application/gzip" }),
+      );
+
+      const response = await skillsRoutes.request(
+        "/import-archive?namespace=different-ns&name=overridden-name",
+        { method: "POST", body: formData },
+      );
+      expect(response.status).toBe(201);
+      const body = PublishedResponseSchema.parse(await response.json());
+      expect(body.published.namespace).toBe("different-ns");
+      expect(body.published.name).toBe("overridden-name");
+
+      const getRes = await skillsRoutes.request("/@different-ns/overridden-name");
+      expect(getRes.status).toBe(200);
+    });
+
+    it("end-to-end: export with refs then re-import preserves reference files", async () => {
+      // Publish the source skill with a reference file via the /upload endpoint.
+      const { packSkillArchive } = await import("@atlas/skills/archive");
+      const archiveDir = join(tmpdir(), `skills-roundtrip-src-${Date.now()}`);
+      mkdirSync(join(archiveDir, "references"), { recursive: true });
+      writeFileSync(join(archiveDir, "references", "foo.md"), "# Foo\nReference content.");
+
+      const sourceArchive = await packSkillArchive(archiveDir);
+      rmSync(archiveDir, { recursive: true, force: true });
+
+      const uploadForm = new FormData();
+      uploadForm.append(
+        "archive",
+        new File([new Uint8Array(sourceArchive)], "skill.tar.gz", { type: "application/gzip" }),
+      );
+      uploadForm.append("description", "Source skill for round-trip with references.");
+      uploadForm.append(
+        "instructions",
+        "# Source\n\nUses [foo](references/foo.md) as a reference.",
+      );
+
+      const uploadRes = await skillsRoutes.request("/@atlas/roundtrip-src/upload", {
+        method: "POST",
+        body: uploadForm,
+      });
+      expect(uploadRes.status).toBe(201);
+
+      // Export the published skill and re-import it under a different ns/name.
+      const exportRes = await skillsRoutes.request("/@atlas/roundtrip-src/export");
+      expect(exportRes.status).toBe(200);
+      const exportedBytes = new Uint8Array(await exportRes.arrayBuffer());
+
+      const importForm = new FormData();
+      importForm.append(
+        "archive",
+        new File([exportedBytes], "exported.tar.gz", { type: "application/gzip" }),
+      );
+
+      const importRes = await skillsRoutes.request(
+        "/import-archive?namespace=roundtrip-dst&name=roundtrip-dst-name",
+        { method: "POST", body: importForm },
+      );
+      expect(importRes.status).toBe(201);
+      const imported = PublishedResponseSchema.parse(await importRes.json());
+      expect(imported.published.namespace).toBe("roundtrip-dst");
+      expect(imported.published.name).toBe("roundtrip-dst-name");
+
+      // The reference file content should survive the export -> import round-trip.
+      const fileRes = await skillsRoutes.request(
+        "/@roundtrip-dst/roundtrip-dst-name/files/references/foo.md",
+      );
+      expect(fileRes.status).toBe(200);
+      const fileBody = z
+        .object({ path: z.string(), content: z.string() })
+        .parse(await fileRes.json());
+      expect(fileBody.content).toContain("# Foo");
+      expect(fileBody.content).toContain("Reference content.");
+    });
+
+    it("returns 400 when SKILL.md has malformed frontmatter", async () => {
+      const { packSkillArchive } = await import("@atlas/skills/archive");
+      const tmpDir = join(testDir, `malformed-import-${Date.now()}`);
+      mkdirSync(tmpDir, { recursive: true });
+      try {
+        writeFileSync(join(tmpDir, "SKILL.md"), "---\nname: [unclosed\n---\n\nBody.\n");
+        const archiveBytes = await packSkillArchive(tmpDir);
+
+        const formData = new FormData();
+        formData.append(
+          "archive",
+          new File([new Uint8Array(archiveBytes)], "bad.tar.gz", { type: "application/gzip" }),
+        );
+
+        const response = await skillsRoutes.request("/import-archive", {
+          method: "POST",
+          body: formData,
+        });
+        expect(response.status).toBe(400);
+        const body = ErrorSchema.parse(await response.json());
+        expect(body.error).toContain("SKILL.md parse failed");
+      } finally {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("returns 400 with deadLinks when instructions reference missing files", async () => {
+      const { packExportArchive } = await import("@atlas/skills/archive");
+      const archiveBytes = await packExportArchive({
+        instructions: "# Skill\n\nUses [missing](references/missing.md).\n",
+        frontmatter: {
+          name: "@atlas/dead-links",
+          description: "Skill with dead links. Use when testing dead link validation.",
+        },
+        archive: null,
+      });
+
+      const formData = new FormData();
+      formData.append(
+        "archive",
+        new File([new Uint8Array(archiveBytes)], "dead-links.tar.gz", { type: "application/gzip" }),
+      );
+
+      const response = await skillsRoutes.request("/import-archive", {
+        method: "POST",
+        body: formData,
+      });
+      expect(response.status).toBe(400);
+      const body = z
+        .object({ error: z.string(), deadLinks: z.array(z.string()) })
+        .parse(await response.json());
+      expect(body.deadLinks).toContain("references/missing.md");
     });
   });
 

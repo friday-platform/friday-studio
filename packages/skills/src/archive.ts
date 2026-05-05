@@ -1,13 +1,50 @@
 import { Buffer } from "node:buffer";
-import { chmod, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, posix, resolve } from "node:path";
 import { createLogger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { makeTempDir } from "@atlas/utils/temp.server";
+import { stringify as stringifyYaml } from "@std/yaml";
 import MarkdownIt from "markdown-it";
 import { create, extract, list, type WriteEntry } from "tar";
+import { splitSkillMd } from "./skill-md-parser.ts";
 
 const logger = createLogger({ name: "skill-archive" });
+
+/**
+ * Writes a list of skill files to a directory, creating parent directories
+ * as needed. Rejects paths that escape the base directory (absolute paths or
+ * containing `..`). Optionally rejects entries whose normalized path is
+ * "SKILL.md" to prevent overwriting the canonical skill instructions file.
+ *
+ * @param dir Base directory to write into.
+ * @param files Array of `{ path, content }` entries. Paths are relative.
+ * @param options.allowSkillMd When true, permits a `SKILL.md` entry. Default false.
+ */
+export async function writeSkillFiles(
+  dir: string,
+  files: Array<{ path: string; content: string }>,
+  options: { allowSkillMd?: boolean } = {},
+): Promise<void> {
+  const resolvedDir = resolve(dir);
+  for (const entry of files) {
+    const normalized = posix.normalize(entry.path);
+    if (normalized === "." || normalized.startsWith("/") || entry.path.split("/").includes("..")) {
+      throw new Error(`Invalid file path: ${entry.path}`);
+    }
+    const target = join(dir, normalized);
+    const resolvedSkillMd = resolve(dir, "SKILL.md");
+    if (!options.allowSkillMd && resolve(target) === resolvedSkillMd) {
+      throw new Error("SKILL.md is reserved for the canonical skill instructions");
+    }
+    const resolvedTarget = resolve(target);
+    if (!resolvedTarget.startsWith(resolvedDir + "/") && resolvedTarget !== resolvedDir) {
+      throw new Error(`Path escapes base directory: ${entry.path}`);
+    }
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, entry.content);
+  }
+}
 
 /**
  * Packs a skill directory into a gzipped tarball.
@@ -43,6 +80,40 @@ export async function packSkillArchive(dirPath: string): Promise<Buffer> {
     logger.debug("cleanup failed", { error: stringifyError(e) }),
   );
   return Buffer.from(buf);
+}
+
+/**
+ * Reconstructs SKILL.md from `frontmatter` + `instructions` and packs it
+ * alongside any reference files from `archive` (a tar.gz that excludes
+ * SKILL.md, matching how skills are stored). Returns a self-contained
+ * tar.gz suitable for sharing or re-importing.
+ *
+ * Skills published via the JSON path (`POST /:namespace/:name`) are stored
+ * with the `instructions` body verbatim — including any leading frontmatter
+ * block — and an empty `frontmatter` column. To avoid emitting a double
+ * frontmatter, we always re-parse `instructions` first; embedded fields are
+ * the base, and the column-extracted `frontmatter` overlays them.
+ */
+export async function packExportArchive(input: {
+  instructions: string;
+  frontmatter: Record<string, unknown>;
+  archive: Uint8Array | null;
+}): Promise<Buffer> {
+  const { frontmatter: embeddedFm, instructions: body } = splitSkillMd(input.instructions);
+  const mergedFm = { ...embeddedFm, ...input.frontmatter };
+  const fmYaml = Object.keys(mergedFm).length > 0 ? `---\n${stringifyYaml(mergedFm)}---\n\n` : "";
+  const skillMd = `${fmYaml}${body}`;
+  const dir = input.archive
+    ? await extractSkillArchive(Buffer.from(input.archive), "atlas-export-")
+    : makeTempDir({ prefix: "atlas-export-" });
+  try {
+    await writeFile(join(dir, "SKILL.md"), skillMd);
+    return await packSkillArchive(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch((e) =>
+      logger.debug("export cleanup failed", { error: stringifyError(e) }),
+    );
+  }
 }
 
 /**

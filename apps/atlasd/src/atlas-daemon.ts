@@ -3,6 +3,7 @@ import { join } from "node:path";
 import process, { env } from "node:process";
 import { JetStreamMemoryAdapter } from "@atlas/adapters-md";
 import type { AgentRegistry as AgentRegistryType, AtlasUIMessageChunk } from "@atlas/agent-sdk";
+import type { ConcurrencyPolicy } from "@atlas/config";
 import { FilesystemAtlasConfigSource } from "@atlas/config/server";
 import {
   AtlasAgentsMCPServer,
@@ -62,6 +63,7 @@ import { configRoutes } from "../routes/config.ts";
 import { cronRoutes } from "../routes/cron.ts";
 import { daemonApp } from "../routes/daemon.ts";
 import { healthRoutes } from "../routes/health.ts";
+import { instanceEventsRoutes } from "../routes/instance-events.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
 import { linkRoutes } from "../routes/link.ts";
 import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
@@ -82,6 +84,7 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { integrationRoutes } from "../routes/workspaces/integrations.ts";
 import { mcpRoutes } from "../routes/workspaces/mcp.ts";
 import { CapabilityHandlerRegistry } from "./capability-handlers.ts";
+import { CascadeConsumer, ensureCascadesStream, publishCascade } from "./cascade-stream.ts";
 import { CHAT_PROVIDERS, type PlatformCredentials } from "./chat-sdk/adapter-factory.ts";
 import { broadcastJobOutput } from "./chat-sdk/broadcast.ts";
 import {
@@ -95,6 +98,7 @@ import { createFSMBroadcastNotifier } from "./chat-sdk/fsm-broadcast-adapter.ts"
 import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
+import { ensureInstanceEventsStream } from "./instance-events.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
@@ -226,6 +230,7 @@ export class AtlasDaemon {
   private capabilityRegistry: CapabilityHandlerRegistry | null = null;
   private processAgentExecutor: ProcessAgentExecutor | null = null;
   private signalConsumer: SignalConsumer | null = null;
+  private cascadeConsumer: CascadeConsumer | null = null;
   private toolWorkers: ToolWorker[] = [];
   private cronManager: CronManager | null = null;
   private workspaceManager: WorkspaceManager | null = null;
@@ -416,6 +421,19 @@ export class AtlasDaemon {
       // signals are work units, not long-term history.
     });
 
+    // CASCADES stream — dispatch buffer between SignalConsumer (forwarder)
+    // and CascadeConsumer (executor). 1h max_age because cascades that
+    // sit longer than that are queue-timeout territory anyway. The
+    // CascadeConsumer enforces its own per-envelope queue-timeout
+    // (FRIDAY_CASCADE_QUEUE_TIMEOUT, default 5min).
+    await ensureCascadesStream(nc);
+
+    // INSTANCE_EVENTS — instance-wide operational feed, consumed via SSE
+    // by /api/instance/events. Used today for cascade backlog / replace /
+    // queue-timeout signals; intentionally open to other instance-level
+    // event types (daemon, health, …) without a stream split.
+    await ensureInstanceEventsStream(nc);
+
     // Wire chat storage to JetStream + eagerly create the CHATS KV bucket
     // so the first cold read doesn't pay the create cost.
     initChatStorage(nc, {
@@ -577,11 +595,15 @@ export class AtlasDaemon {
     this.agentRegistry = agentRegistry;
 
     // Set up workspace wakeup callback — publishes onto the SIGNALS JetStream
-    // stream. The local SignalConsumer (started below) picks up the envelope
-    // and dispatches via `triggerWorkspaceSignal`. Going through JetStream
-    // gives us durability (broker redelivers if the daemon dies between
-    // publish and dispatch) and a uniform substrate that future cross-process
-    // workers consume from.
+    // stream. The local SignalConsumer forwards each envelope onto CASCADES;
+    // the CascadeConsumer then applies the per-signal concurrency policy and
+    // runs the cascade as a background Promise. Two streams give us:
+    //   - delivery durability (SIGNALS retains the envelope until forwarded)
+    //   - dispatch decoupling (a slow cascade on workspace A doesn't block
+    //     workspace B's signal — head-of-line blocking that existed before
+    //     the cascade split is gone)
+    //   - independent observability (`nats consumer info` on each stream
+    //     surfaces ingress vs execution backlog separately)
     const wakeupCallback: WorkspaceSignalTriggerCallback = async (
       workspaceId: string,
       signalId: string,
@@ -623,19 +645,34 @@ export class AtlasDaemon {
     // Initialize WorkspaceManager with registrars and watcher (manager owns lifecycle)
     await this.workspaceManager.initialize(signalRegistrars);
 
-    // Spin up the SIGNALS consumer now that the workspace manager can satisfy
-    // dispatched envelopes. The consumer reads from the stream and calls
-    // triggerWorkspaceSignal — same in-process path the HTTP handler uses.
-    //
-    // Error handling mirrors the legacy per-workspace NATS subscription:
-    //   - SessionFailedError = domain-level session failure → ack (signal
-    //     was delivered fine; the cascade just had a domain failure).
-    //   - Any other error = infra-level failure → mark the workspace
-    //     "inactive" with the error metadata, destroy its runtime, and
-    //     throw so the broker NAKs and redelivers (up to maxDeliver).
+    // SignalConsumer — thin forwarder. Pulls from SIGNALS, parses the
+    // envelope, publishes onto CASCADES, acks. No FSM execution here;
+    // the heavy lifting moved to CascadeConsumer below.
     this.signalConsumer = new SignalConsumer(
       nc,
-      async (envelope: SignalEnvelope, ctx) => {
+      (envelope: SignalEnvelope) => publishCascade(nc, envelope),
+      {
+        maxAckPending: jsCfg.consumer.maxAckPending.value,
+        maxDeliver: jsCfg.consumer.maxDeliver.value,
+        ackWaitNs: jsCfg.consumer.ackWaitNs.value,
+      },
+    );
+
+    // CascadeConsumer — applies the per-signal `concurrency` policy
+    // (skip / queue / concurrent / replace; default skip) and runs each
+    // cascade as a background Promise so a slow cascade doesn't stall
+    // delivery of the next envelope.
+    //
+    // Error handling for the cascade dispatcher:
+    //   - SessionFailedError = domain-level session failure. Surfaces as
+    //     ok=false on the correlated response subject; not retried.
+    //   - Other Error = infra-level failure. Same surface, plus we
+    //     mark the workspace inactive with the error metadata. Not
+    //     retried (max_deliver=1 on CASCADES — failed cascades surface
+    //     as failed sessions in storage, not as redelivery storms).
+    this.cascadeConsumer = new CascadeConsumer(
+      nc,
+      async (envelope, ctx) => {
         try {
           return await this.triggerWorkspaceSignal(
             envelope.workspaceId,
@@ -643,26 +680,20 @@ export class AtlasDaemon {
             envelope.payload,
             envelope.streamId,
             ctx.onStreamEvent,
+            undefined,
+            ctx.abortSignal,
           );
         } catch (err) {
           if (err instanceof SessionFailedError) {
-            logger.warn("Signal session failed", {
+            logger.warn("Cascade session failed", {
               workspaceId: envelope.workspaceId,
               signalId: envelope.signalId,
               status: err.status,
               error: err.message,
             });
-            // Domain-level failure (not infra). For correlated callers we need
-            // to surface it as ok=false on the response subject and ack so the
-            // broker doesn't redeliver. For uncorrelated callers (cron-style)
-            // we just ack — the legacy NATS subscriber didn't redeliver these
-            // either.
-            if (envelope.correlationId) {
-              throw err;
-            }
-            return undefined;
+            throw err; // CascadeConsumer publishes ok=false on the response subject
           }
-          logger.error("Failed to process signal", {
+          logger.error("Failed to process cascade", {
             error: err,
             workspaceId: envelope.workspaceId,
             signalId: envelope.signalId,
@@ -678,14 +709,8 @@ export class AtlasDaemon {
                 failureCount: (workspace?.metadata?.failureCount ?? 0) + 1,
               },
             });
-            // Note: we used to destroyWorkspaceRuntime here on signal failure.
-            // That assumed a corrupted runtime is the most likely cause of a
-            // signal failure, but in practice signal failures are usually
-            // transient (network, MCP timeout, LLM error) and tearing down the
-            // runtime forces an expensive cold restart on the next trigger.
-            // Idle timeout / explicit shutdown handle genuine cleanup.
           } catch (statusError) {
-            logger.error("Failed to update workspace status after signal failure", {
+            logger.error("Failed to update workspace status after cascade failure", {
               workspaceId: envelope.workspaceId,
               statusError,
             });
@@ -693,15 +718,25 @@ export class AtlasDaemon {
           throw err;
         }
       },
-      {
-        maxAckPending: jsCfg.consumer.maxAckPending.value,
-        maxDeliver: jsCfg.consumer.maxDeliver.value,
-        ackWaitNs: jsCfg.consumer.ackWaitNs.value,
+      async (workspaceId, signalId): Promise<ConcurrencyPolicy> => {
+        try {
+          const manager = this.getWorkspaceManager();
+          const cfg = await manager.getWorkspaceConfig(workspaceId);
+          const sig = cfg?.workspace?.signals?.[signalId];
+          // `sig.concurrency` is typed `ConcurrencyPolicy | undefined`
+          // through the WorkspaceSignalConfig schema in @atlas/config —
+          // no cast needed.
+          return sig?.concurrency ?? "skip";
+        } catch {
+          return "skip";
+        }
       },
+      { maxAckPending: parseInt(process.env.FRIDAY_CASCADE_CONCURRENCY ?? "32", 10) || 32 },
     );
-    // NB: do NOT start the consumer here — that would race with the
-    // rest of init (`getOrCreateWorkspaceRuntime` requires
-    // `isInitialized = true`). Started below after the init flag flips.
+
+    // NB: neither consumer starts here — they need `isInitialized=true`
+    // (so `getOrCreateWorkspaceRuntime` works) and `triggerWorkspaceSignal`
+    // ready. Started below after the init flag flips.
 
     // Register in-process tool workers. Default behavior — each worker
     // subscribes to a NATS subject and executes the tool's handler when
@@ -798,15 +833,18 @@ export class AtlasDaemon {
 
     this.isInitialized = true;
 
-    // Start the SIGNALS consumer LAST so no message can be dispatched
-    // until every prerequisite (cron manager, session adapter, tool
-    // workers, isInitialized flag) is in place. Pre-existing signals
-    // in the queue (redeliveries, leftovers from a previous daemon
-    // run) sit until we're ready to dispatch — no "not initialized"
-    // throws / NAK / redelivery loops on boot. (Bug 2026-05-03:
-    // rtx-price-check-cron seq 40 was hitting deliveryCount: 3 on
-    // restart because the consumer was started ~100 lines before
-    // isInitialized = true.)
+    // Start the SIGNALS + CASCADES consumers LAST so no message can be
+    // dispatched until every prerequisite (cron manager, session adapter,
+    // tool workers, isInitialized flag) is in place. Pre-existing
+    // envelopes in either queue (redeliveries, leftovers from a previous
+    // daemon run) sit until we're ready to dispatch — no "not initialized"
+    // throws / NAK / redelivery loops on boot.
+    //
+    // CASCADES first so when SignalConsumer starts forwarding, there's a
+    // consumer ready to drain. The reverse order would briefly back up
+    // CASCADES even though the daemon could service it — minor, but
+    // unnecessary.
+    if (this.cascadeConsumer) await this.cascadeConsumer.start();
     if (this.signalConsumer) await this.signalConsumer.start();
 
     logger.info("Atlas daemon initialized");
@@ -1076,6 +1114,7 @@ export class AtlasDaemon {
     this.app.route("/api/workspaces/:workspaceId/mcp", mcpRoutes);
     this.app.route("/api/workspaces", workspaceEventsRoutes);
     this.app.route("/api/events", eventsRoutes);
+    this.app.route("/api/instance", instanceEventsRoutes);
     this.app.route("/api/artifacts", artifactsApp);
     this.app.route("/api/chunked-upload", chunkedUploadApp);
     this.app.route("/api/chat", chatRoutes);
@@ -1632,10 +1671,10 @@ export class AtlasDaemon {
       await manager.registerRuntime(workspace.id, runtime);
       logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
 
-      // Signal routing now goes through the SIGNALS JetStream stream and the
-      // shared SignalConsumer (started in initialize()). No per-workspace
-      // NATS subscription needed — the consumer dispatches every envelope
-      // via triggerWorkspaceSignal which already does the runtime wakeup.
+      // Signal routing: SIGNALS → SignalConsumer (forwarder) → CASCADES →
+      // CascadeConsumer (applies per-signal concurrency policy and dispatches
+      // via triggerWorkspaceSignal, which handles the runtime wakeup). No
+      // per-workspace NATS subscription needed.
 
       // Watcher is managed centrally by WorkspaceManager.initialize()
 
@@ -1686,15 +1725,21 @@ export class AtlasDaemon {
   }
 
   /**
-   * Publish a signal envelope onto the SIGNALS JetStream stream. The local
-   * SignalConsumer (or any worker subscribed to the same durable consumer
-   * in a multi-process deployment) will pick it up and run the cascade
-   * via `triggerWorkspaceSignal`.
+   * Publish a signal envelope onto the SIGNALS JetStream stream.
    *
-   * Use this for fire-and-forget dispatch — the publish ack returns immediately
-   * with the broker sequence number; the actual session id is allocated later
-   * by whichever worker handles the message. For synchronous "trigger and
-   * await result" semantics, keep using `triggerWorkspaceSignal` directly.
+   * Pipeline: SIGNALS → SignalConsumer (forwards to CASCADES) → CascadeConsumer
+   * (applies the per-signal `concurrency` policy and runs the cascade as a
+   * background Promise via `triggerWorkspaceSignal`). The publish ack returns
+   * the SIGNALS sequence number immediately; the session id is allocated later
+   * by the cascade worker.
+   *
+   * For synchronous "trigger and await result" semantics, set `correlationId`
+   * on the envelope and consume the response with `awaitSignalCompletion`
+   * (signal-stream.ts) — the CascadeConsumer publishes the dispatch outcome
+   * onto `signals.responses.<correlationId>` regardless of which worker
+   * handled the cascade. For interactive (chat) flows, bypass the queue
+   * entirely and call `triggerWorkspaceSignal` directly — chat is exempt
+   * from the cascade cap.
    */
   public publishSignalToJetStream(opts: PublishSignalOpts): Promise<{ seq: number }> {
     const nc = this.natsManager?.connection;
@@ -1813,7 +1858,12 @@ export class AtlasDaemon {
   }
 
   /**
-   * Trigger a workspace signal and handle lifecycle updates (lastSeen, idle timeout)
+   * Trigger a workspace signal and handle lifecycle updates (lastSeen, idle timeout).
+   *
+   * Concurrency control lives in `CascadeConsumer` (cascade-stream.ts) — it
+   * applies the per-signal `concurrency` policy (skip / queue / concurrent /
+   * replace) before calling here. By the time this method runs, the dispatch
+   * is committed; we just execute.
    *
    * @param workspaceId - Workspace ID to trigger signal in
    * @param signalId - Signal ID to trigger
@@ -1821,6 +1871,7 @@ export class AtlasDaemon {
    * @param streamId - Optional stream ID for conversation context
    * @param onStreamEvent - Optional callback for streaming responses (used by Discord, web chat, etc)
    * @param skipStates - Optional state IDs to skip during FSM execution
+   * @param abortSignal - Wired by CascadeConsumer for the `replace` policy — aborts the cascade in favour of a newer envelope
    * @returns Session ID for tracking the triggered signal
    */
   public async triggerWorkspaceSignal(
@@ -1830,23 +1881,12 @@ export class AtlasDaemon {
     streamId?: string,
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
+    abortSignal?: AbortSignal,
   ): Promise<{
     sessionId: string;
     output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
   }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-
-    // Check if there are already active sessions for this signal
-    // This prevents concurrent executions when cron timers fire while previous sessions are still running
-    if (runtime.hasActiveSessionsForSignal(signalId)) {
-      logger.warn(
-        "Skipping signal trigger - workspace already has active session for this signal",
-        { workspaceId, signalId },
-      );
-      throw new Error(
-        `Workspace ${workspaceId} already has an active session processing signal ${signalId}`,
-      );
-    }
 
     const session = await runtime.triggerSignalWithSession(
       signalId,
@@ -1854,6 +1894,7 @@ export class AtlasDaemon {
       streamId,
       onStreamEvent,
       skipStates,
+      abortSignal,
     );
 
     // Record signal trigger metric by provider type (http, schedule, slack, etc.)
@@ -2399,12 +2440,16 @@ export class AtlasDaemon {
     await Promise.allSettled([
       withShutdownTimeout("http server drain", this.server?.shutdown(), 3000),
       withShutdownTimeout("discord gateway", this.discordGatewayService?.stop(), 1500),
+      // Stop the SIGNALS forwarder first so no new envelopes land on
+      // CASCADES while the cascade consumer is draining.
       withShutdownTimeout("signals consumer", this.signalConsumer?.stop(), 1500),
+      withShutdownTimeout("cascades consumer", this.cascadeConsumer?.stop(), 1500),
       withShutdownTimeout("tool workers", Promise.all(this.toolWorkers.map((w) => w.stop())), 1500),
     ]);
     this.server = null;
     this.discordGatewayService = null;
     this.signalConsumer = null;
+    this.cascadeConsumer = null;
     this.toolWorkers = [];
 
     // Reap orphaned agent-browser daemons after Phase 1 (no new agent
@@ -2524,6 +2569,7 @@ export class AtlasDaemon {
 
   getStatus() {
     const cronStats = this.cronManager?.getStats();
+    const cascadeStats = this.cascadeConsumer?.getStats();
 
     return {
       activeWorkspaces: this.runtimes.size,
@@ -2531,6 +2577,7 @@ export class AtlasDaemon {
       cronManager: cronStats
         ? { isActive: this.cronManager?.isRunning || false, ...cronStats }
         : null,
+      cascadeConsumer: cascadeStats ?? null,
       migrations: this.migrationStatus,
       configuration: {
         maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,

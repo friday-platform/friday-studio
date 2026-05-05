@@ -45,6 +45,41 @@ function splitFrontmatter(content: string): { raw: string; body: string } | null
   return { raw, body };
 }
 
+/**
+ * Relaxed splitter for the storage-layer use case: separates an embedded
+ * `---...---` YAML preamble from the body without validating against
+ * `KnownFrontmatterSchema`. Use this when you just need to move YAML out of
+ * `instructions` into the `frontmatter` column on legacy rows that may be
+ * missing required keys (e.g. `description`) or otherwise fail strict
+ * validation. For caller-facing parsing where field types matter, use
+ * `parseSkillMd`.
+ *
+ * Returns empty frontmatter when the YAML can't be parsed as a mapping, but
+ * still strips the body so we don't double-emit the preamble downstream.
+ */
+export function splitSkillMd(content: string): {
+  frontmatter: Record<string, unknown>;
+  instructions: string;
+} {
+  const normalized = content.replace(/\r\n/g, "\n");
+  const split = splitFrontmatter(normalized);
+  if (!split) return { frontmatter: {}, instructions: content.trim() };
+
+  const { raw, body } = split;
+  if (!raw.trim()) return { frontmatter: {}, instructions: body.trim() };
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(raw);
+  } catch {
+    return { frontmatter: {}, instructions: body.trim() };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { frontmatter: {}, instructions: body.trim() };
+  }
+  return { frontmatter: parsed as Record<string, unknown>, instructions: body.trim() };
+}
+
 /** Returns full content as instructions when no frontmatter block is present. */
 export function parseSkillMd(
   content: string,

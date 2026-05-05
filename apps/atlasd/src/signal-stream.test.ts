@@ -37,7 +37,13 @@ describe("signalSubject", () => {
 });
 
 describe("publishSignal + SignalConsumer", () => {
-  it("publishes an envelope and the consumer dispatches it once", async () => {
+  // SignalConsumer is now a thin forwarder: it parses the envelope, hands
+  // it to the injected dispatcher (production wiring is `publishCascade`),
+  // and acks. Cascade execution + per-signal concurrency policy + correlated
+  // response/stream forwarding all live in CascadeConsumer
+  // (cascade-stream.ts) — those tests live there.
+
+  it("publishes an envelope and the consumer forwards it once", async () => {
     const received: SignalEnvelope[] = [];
     const consumer = new SignalConsumer(
       nc,
@@ -65,7 +71,7 @@ describe("publishSignal + SignalConsumer", () => {
     expect(received[0]?.publishedAt).toBeDefined();
   });
 
-  it("redelivers on dispatch failure up to maxDeliver, then dead-letters", async () => {
+  it("redelivers on forward failure up to maxDeliver, then dead-letters", async () => {
     let attempts = 0;
     const consumer = new SignalConsumer(
       nc,
@@ -103,96 +109,18 @@ describe("publishSignal + SignalConsumer", () => {
     await publishSignal(nc, { workspaceId: "ws-dedup", signalId: "once", dedupId });
 
     await waitFor(() => dispatched.length >= 1, 3000);
-    // Give the broker a moment to redeliver if dedup somehow misses.
     await new Promise((r) => setTimeout(r, 500));
     await consumer.destroy();
 
     expect(dispatched).toEqual(["once"]);
   });
 
-  it("forwards onStreamEvent chunks to signals.stream.<correlationId>", async () => {
-    const correlationId = crypto.randomUUID();
-    const seenChunks: unknown[] = [];
-
-    // Subscribe BEFORE publishing.
-    const streamSub = nc.subscribe(`signals.stream.${correlationId}`);
-    const reader = (async () => {
-      for await (const msg of streamSub) {
-        seenChunks.push(JSON.parse(new TextDecoder().decode(msg.data)));
-        if (seenChunks.length >= 3) break;
-      }
-    })();
-
-    const consumer = new SignalConsumer(
-      nc,
-      (_envelope, c) => {
-        c.onStreamEvent?.({ type: "delta", text: "a" } as never);
-        c.onStreamEvent?.({ type: "delta", text: "b" } as never);
-        c.onStreamEvent?.({ type: "delta", text: "c" } as never);
-        return Promise.resolve({ done: true });
-      },
-      { name: `test-${crypto.randomUUID()}`, expiresMs: 1000 },
-    );
-    await consumer.start();
-
-    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
-    await publishSignal(nc, { workspaceId: "ws-stream", signalId: "stream-test", correlationId });
-    const reply = await responsePromise;
-    await reader;
-    streamSub.unsubscribe();
-    await consumer.destroy();
-
-    expect(seenChunks).toHaveLength(3);
-    expect(reply.ok).toBe(true);
-  });
-
-  it("publishes the dispatch result to the response subject for correlated requests", async () => {
-    const consumer = new SignalConsumer(nc, (env) => Promise.resolve({ echoed: env.payload }), {
-      name: `test-${crypto.randomUUID()}`,
-      expiresMs: 1000,
-    });
-    await consumer.start();
-
-    const correlationId = crypto.randomUUID();
-    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
-    await publishSignal(nc, {
-      workspaceId: "ws-correl",
-      signalId: "ping",
-      payload: { hello: "world" },
-      correlationId,
-    });
-    const reply = await responsePromise;
-    await consumer.destroy();
-
-    expect(reply.ok).toBe(true);
-    if (reply.ok) {
-      expect(reply.result).toEqual({ echoed: { hello: "world" } });
-    }
-  });
-
-  it("publishes ok=false to the response subject for a failing correlated request", async () => {
-    const consumer = new SignalConsumer(nc, () => Promise.reject(new Error("dispatch boom")), {
-      name: `test-${crypto.randomUUID()}`,
-      expiresMs: 1000,
-    });
-    await consumer.start();
-
-    const correlationId = crypto.randomUUID();
-    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
-    await publishSignal(nc, { workspaceId: "ws-correl-fail", signalId: "fail", correlationId });
-    const reply = await responsePromise;
-    await consumer.destroy();
-
-    expect(reply.ok).toBe(false);
-    if (!reply.ok) expect(reply.error).toContain("dispatch boom");
-  });
-
-  it("awaitSignalCompletion times out when the consumer never replies", async () => {
+  it("awaitSignalCompletion times out when nobody publishes a response", async () => {
     const correlationId = crypto.randomUUID();
     await expect(awaitSignalCompletion(nc, correlationId, 200)).rejects.toThrow(/timeout/);
   });
 
-  it("processes a burst of published signals in arrival order", async () => {
+  it("forwards a burst of published signals in arrival order", async () => {
     const seen: string[] = [];
     const consumer = new SignalConsumer(
       nc,

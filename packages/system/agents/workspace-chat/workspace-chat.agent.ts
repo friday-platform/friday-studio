@@ -62,6 +62,7 @@ import { createListIntegrationsTool } from "./tools/list-integrations.ts";
 import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
+import { createPublishSkillTool } from "./tools/publish-skill.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import { createSetUserIdentityTool } from "./tools/set-user-identity.ts";
 import {
@@ -596,6 +597,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const disableMcpServerTool = createDisableMcpServerTool(workspaceId, logger);
 
         // Workspace skill management tools
+        const publishSkillTool = createPublishSkillTool(logger);
         const assignSkillTool = createAssignWorkspaceSkillTool(workspaceId, logger);
         const unassignSkillTool = createUnassignWorkspaceSkillTool(workspaceId, logger);
 
@@ -728,6 +730,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           ...enableMcpServerTool,
           ...disableMcpServerTool,
           ...listMcpToolsTool,
+          ...publishSkillTool,
           ...assignSkillTool,
           ...unassignSkillTool,
           delegate: delegateTool,
