@@ -30,6 +30,7 @@ import {
   MAX_IMAGE_SIZE,
   MAX_OFFICE_SIZE,
   MAX_PDF_SIZE,
+  stripMimeParams,
 } from "@atlas/core/artifacts/file-upload";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { type PlatformModels, smallLLM } from "@atlas/llm";
@@ -794,15 +795,22 @@ const artifactsApp = daemonFactory
       }
 
       const { mimeType, originalName } = artifact.data;
+      // Strip mime parameters (`; charset=…`) for predicates. Storage adapters
+      // can round-trip text mimes with a charset attached (e.g.
+      // `text/html; charset=utf-8`); without normalization the equality
+      // checks below silently miss and the CSP sandbox fails to apply on
+      // what the browser still parses as HTML. The response `Content-Type`
+      // keeps the original value so the browser sees the charset.
+      const baseMime = stripMimeParams(mimeType);
       // Mimes the browser renders inline in an `<iframe>` or `<img>`. Anything
       // else triggers a download. PDFs and HTML need `inline` so the chat
       // UI's artifact-card iframe shows a preview instead of pulling down a
       // copy and leaving the iframe blank.
       const isInlineRenderable =
-        isImageMimeType(mimeType) ||
-        mimeType === "application/pdf" ||
-        mimeType === "text/html" ||
-        mimeType === "text/plain";
+        isImageMimeType(baseMime) ||
+        baseMime === "application/pdf" ||
+        baseMime === "text/html" ||
+        baseMime === "text/plain";
       const disposition = isInlineRenderable ? "inline" : "attachment";
 
       // Filename hint so the browser uses something meaningful when the user
@@ -823,6 +831,31 @@ const artifactsApp = daemonFactory
       const asciiName = rawName.replace(/[^\x20-\x7e]+/g, "_").replace(/["\\]/g, "_");
       const utf8Name = encodeURIComponent(rawName);
       const contentDisposition = `${disposition}; filename="${asciiName}"; filename*=UTF-8''${utf8Name}`;
+      // Sandbox active-content mimes. The CSP `sandbox` directive (and
+      // the matching iframe `sandbox` attribute) drops the document
+      // into an opaque origin, which is the actual security boundary —
+      // scripts in the iframe can't reach the parent's cookies, storage,
+      // or DOM via the same-origin policy.
+      //
+      // HTML opts into `allow-scripts` so legit agent-rendered pages
+      // (Leaflet maps, charts, embedded viewers) actually run. The
+      // opaque-origin sandbox still blocks parent access, so this is
+      // not a regression on the threat model — it just lets the iframe
+      // execute the JS the agent wrote, which is the whole point of
+      // rendering HTML.
+      //
+      // SVG stays scriptless: when a user views what's nominally an
+      // image, no `<script>` should ever execute, regardless of source.
+      // XHTML is rendered as a document and executes `<script>` exactly
+      // like text/html, so it gets the same sandbox treatment.
+      let contentSecurityPolicy: string | undefined;
+      if (baseMime === "text/html" || baseMime === "application/xhtml+xml") {
+        contentSecurityPolicy =
+          "sandbox allow-scripts; default-src https: data: blob: 'unsafe-inline' 'unsafe-eval'";
+      } else if (baseMime === "image/svg+xml") {
+        contentSecurityPolicy =
+          "sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'";
+      }
 
       const body = new Uint8Array(binaryResult.data);
       return new Response(body, {
@@ -833,6 +866,7 @@ const artifactsApp = daemonFactory
           "Content-Disposition": contentDisposition,
           "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, max-age=31536000, immutable",
+          ...(contentSecurityPolicy ? { "Content-Security-Policy": contentSecurityPolicy } : {}),
         },
       });
     },

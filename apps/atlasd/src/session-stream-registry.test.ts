@@ -23,7 +23,7 @@ function mockNatsConnection(): NatsConnection {
   const jsMock = {
     publish: vi
       .fn<() => Promise<{ stream: string; seq: number }>>()
-      .mockResolvedValue({ stream: "SESSIONS", seq: 1 }),
+      .mockResolvedValue({ stream: "SESSION_EVENTS", seq: 1 }),
   };
   return {
     jetstream: vi.fn<() => typeof jsMock>().mockReturnValue(jsMock),

@@ -1,4 +1,5 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { NamespaceSchema, RESERVED_WORDS, SkillNameSchema } from "@atlas/config";
@@ -10,11 +11,13 @@ import {
   lintSkill,
   listArchiveFiles,
   localAudit,
+  packExportArchive,
   packSkillArchive,
   parseSkillMd,
   readArchiveFile,
   SkillStorage,
   SkillsShClient,
+  splitSkillMd,
   validateSkillReferences,
 } from "@atlas/skills";
 import { PublishSkillInputSchema, SkillSortSchema } from "@atlas/skills/schemas";
@@ -88,6 +91,21 @@ async function requireUser(): Promise<{ ok: true; userId: string } | { ok: false
  * matching the bootstrap loader's sentinel user id — which interactive
  * callers never hold. Returns true when the caller should be rejected.
  */
+async function listFilesRecursively(dir: string, base = ""): Promise<string[]> {
+  const currentDir = base ? join(dir, base) : dir;
+  const entries = await readdir(currentDir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const relPath = base ? `${base}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursively(dir, relPath)));
+    } else if (entry.isFile()) {
+      files.push(relPath);
+    }
+  }
+  return files;
+}
+
 function isFridayNamespaceBlockedForUser(namespace: string, userId: string): boolean {
   return namespace === "friday" && userId !== "system";
 }
@@ -521,6 +539,147 @@ export const skillsRoutes = daemonFactory
       return c.body(null, 204);
     },
   )
+  // ─── IMPORT FROM EXPORTED TAR.GZ ────────────────────────────────────────────
+  // Inverse of GET /:namespace/:name/export. Accepts a self-contained tar.gz
+  // (SKILL.md at root + reference files) and publishes it. Namespace comes
+  // from `?namespace=` if provided, otherwise the `@<ns>/<name>` prefix in
+  // SKILL.md frontmatter. When neither yields a namespace, returns 400 with
+  // `needsNamespace: true` so the caller can prompt and re-POST.
+  // Must be registered before /:namespace/... so Hono doesn't match
+  // "import-archive" as a namespace param.
+  .post("/import-archive", async (c) => {
+    const auth = await requireUser();
+    if (!auth.ok) return c.json({ error: auth.error }, 401);
+
+    const formData = await c.req.formData();
+    const file = formData.get("archive");
+    if (!(file instanceof File)) {
+      return c.json({ error: "archive field is required and must be a File" }, 400);
+    }
+
+    const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+    if (file.size > MAX_IMPORT_SIZE) {
+      return c.json({ error: "Archive exceeds 50 MB limit" }, 413);
+    }
+
+    const archiveBytes = new Uint8Array(await file.arrayBuffer());
+
+    // Extract to temp dir — preserves binary fidelity and filters unsafe paths.
+    const extractedDir = await extractSkillArchive(Buffer.from(archiveBytes), "atlas-import-");
+    try {
+      const skillMdPath = join(extractedDir, "SKILL.md");
+      let skillMdContent: string;
+      try {
+        skillMdContent = await readFile(skillMdPath, "utf-8");
+      } catch {
+        return c.json({ error: "Archive must contain SKILL.md at root" }, 400);
+      }
+
+      const parsed = parseSkillMd(skillMdContent);
+      if (!parsed.ok) return c.json({ error: `SKILL.md parse failed: ${parsed.error}` }, 400);
+      const { frontmatter, instructions } = parsed.data;
+
+      // Derive (namespace, name). Query params win; otherwise split `@ns/name`
+      // from frontmatter. The bare name (after the slash, or whole string when
+      // no slash) is always taken from frontmatter.
+      const fmName = typeof frontmatter.name === "string" ? frontmatter.name : "";
+      const queryNs = c.req.query("namespace");
+      const queryName = c.req.query("name");
+      let namespace: string | undefined;
+      let name: string;
+      if (fmName.startsWith("@") && fmName.includes("/")) {
+        const slash = fmName.indexOf("/");
+        namespace = fmName.slice(1, slash);
+        name = fmName.slice(slash + 1);
+      } else {
+        name = fmName;
+      }
+      if (queryNs) namespace = queryNs;
+      if (queryName) name = queryName;
+
+      if (!name) {
+        return c.json({ error: "SKILL.md frontmatter must include a `name` field" }, 400);
+      }
+      if (!namespace) {
+        return c.json(
+          {
+            error:
+              "SKILL.md frontmatter has no namespace. Re-upload with ?namespace=<ns> to choose one.",
+            needsNamespace: true,
+            defaultName: name,
+          },
+          400,
+        );
+      }
+
+      const nsCheck = NamespaceSchema.safeParse(namespace);
+      if (!nsCheck.success) {
+        return c.json({ error: `Invalid namespace: ${nsCheck.error.message}` }, 400);
+      }
+      const nameCheck = SkillNameSchema.safeParse(name);
+      if (!nameCheck.success) {
+        return c.json({ error: `Invalid skill name: ${nameCheck.error.message}` }, 400);
+      }
+
+      if (isFridayNamespaceBlockedForUser(namespace, auth.userId)) {
+        return c.json(
+          { error: "The @friday namespace is reserved for bundled system skills" },
+          403,
+        );
+      }
+
+      // Collect file paths (excluding SKILL.md) for dead-link validation.
+      const archiveFiles = (await listFilesRecursively(extractedDir)).filter(
+        (p) => p !== "SKILL.md",
+      );
+      const deadLinks = validateSkillReferences(instructions, archiveFiles);
+      if (deadLinks.length > 0) {
+        return c.json(
+          {
+            error: `Skill instructions reference files not found in archive: ${deadLinks.join(", ")}`,
+            deadLinks,
+          },
+          400,
+        );
+      }
+
+      // Remove SKILL.md before packing the rest into a storage-format archive.
+      await rm(skillMdPath, { force: true });
+
+      let storageArchive: Uint8Array | undefined;
+      if (archiveFiles.length > 0) {
+        storageArchive = new Uint8Array(await packSkillArchive(extractedDir));
+      }
+
+      const description =
+        typeof frontmatter.description === "string" ? frontmatter.description : "";
+
+      const input = PublishSkillInputSchema.safeParse({
+        description,
+        instructions,
+        frontmatter,
+        archive: storageArchive,
+      });
+      if (!input.success) return c.json({ error: input.error.message }, 400);
+
+      const result = await SkillStorage.publish(namespace, name, auth.userId, input.data);
+      if (!result.ok) return c.json({ error: result.error }, 500);
+      return c.json(
+        {
+          published: {
+            id: result.data.id,
+            skillId: result.data.skillId,
+            namespace,
+            name: result.data.name,
+            version: result.data.version,
+          },
+        },
+        201,
+      );
+    } finally {
+      await rm(extractedDir, { recursive: true, force: true }).catch(() => {});
+    }
+  })
   // ─── GET LATEST ─────────────────────────────────────────────────────────────
   .get(
     "/:namespace/:name",
@@ -547,6 +706,32 @@ export const skillsRoutes = daemonFactory
     const result = await SkillStorage.listVersions(namespace, name);
     if (!result.ok) return c.json({ error: result.error }, 500);
     return c.json({ versions: result.data });
+  })
+  // ─── EXPORT AS SELF-CONTAINED TAR.GZ ───────────────────────────────────────
+  // Reconstructs SKILL.md from frontmatter + instructions and packs it
+  // alongside any reference files from the stored archive. The result is a
+  // single tar.gz the user can download, share, or re-import.
+  // Must be registered before /:version to avoid Hono matching "export" as a version.
+  .get("/:namespace/:name/export", zValidator("param", NamespacedParams), async (c) => {
+    const { namespace, name } = c.req.valid("param");
+    const result = await SkillStorage.get(namespace, name);
+    if (!result.ok) return c.json({ error: result.error }, 500);
+    if (!result.data) return c.json({ error: "Skill not found" }, 404);
+
+    const bytes = await packExportArchive({
+      instructions: result.data.instructions,
+      frontmatter: result.data.frontmatter,
+      archive: result.data.archive,
+    });
+    const body = new Uint8Array(bytes);
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/gzip",
+        "Content-Disposition": `attachment; filename="@${namespace}-${name}-v${String(result.data.version)}.tar.gz"`,
+        "Content-Length": String(body.byteLength),
+      },
+    });
   })
   // ─── AUTO-FIX A LINT FINDING ───────────────────────────────────────────────
   // Applies a one-shot fix for a single lint rule. Deterministic rules
@@ -924,7 +1109,20 @@ export const skillsRoutes = daemonFactory
           403,
         );
       }
-      const input = c.req.valid("json");
+      const rawInput = c.req.valid("json");
+
+      // Storage invariant: `instructions` is body-only, `frontmatter` is the
+      // parsed YAML. Callers (the editor's Save button, the SKILL.md drop in
+      // SkillLoader) often POST `instructions` containing an embedded
+      // frontmatter block — split it here so the column gets populated and
+      // the body stored without the YAML preamble. Explicit `input.frontmatter`
+      // wins on key conflicts (it's the caller's deliberate signal).
+      const { frontmatter: embedded, instructions: body } = splitSkillMd(rawInput.instructions);
+      const input = {
+        ...rawInput,
+        instructions: body,
+        frontmatter: { ...embedded, ...(rawInput.frontmatter ?? {}) },
+      };
 
       // Validate references against the text files that will actually be
       // extracted to the sandbox — not the full archive (which includes binaries
