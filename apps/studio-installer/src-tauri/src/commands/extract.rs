@@ -230,7 +230,7 @@ fn extract_tar_zst(
     // against libzstd which we'd need to vendor for the install bundle.
     // ruzstd is pure Rust + small + fast enough for one-shot install
     // extraction (a few seconds for a 1 GB archive).
-    let zst = ruzstd::StreamingDecoder::new(file)
+    let zst = ruzstd::decoding::StreamingDecoder::new(file)
         .map_err(|e| format!("zstd init failed: {e}"))?;
     extract_tar_streaming(zst, dest, emitter)
         .map_err(|e| format!("tar.zst extraction failed: {e}"))
