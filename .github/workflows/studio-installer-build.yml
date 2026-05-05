@@ -5,6 +5,11 @@ on:
   # don't want it firing on every push that touches the installer.
   # Run via `gh workflow run studio-installer-build.yml --ref <branch>` or
   # the Actions tab.
+  #
+  # This workflow ONLY builds — versioned bundles land in GCS at their
+  # immutable URLs but `manifest.json` is left alone. To promote a build
+  # to clients, run `studio-installer-publish.yml` with this run's id +
+  # version.
   workflow_dispatch:
 
 env:
@@ -253,14 +258,23 @@ jobs:
           DMG_NAME: ${{ steps.mac-artifact.outputs.dmg_name }}
           DMG_PATH: ${{ steps.mac-artifact.outputs.dmg_path }}
         run: |
+          set -euo pipefail
+          sha=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
+          size=$(stat -f %z "$DMG_PATH")
+          # Sidecar checksum file alongside the bundle. The publish
+          # workflow reads this instead of re-downloading the bundle to
+          # hash it. Uploaded BEFORE the bundle so a partial failure
+          # under concurrent dispatch fails verification rather than
+          # silently passing it.
+          printf '%s  %s\n' "$sha" "$DMG_NAME" > "$DMG_PATH.sha256"
+          gsutil cp "$DMG_PATH.sha256" \
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$DMG_NAME.sha256"
           # Versioned upload — kept forever, served as immutable by studio-artifact.
           gsutil cp "$DMG_PATH" \
             "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$DMG_NAME"
           # Per-platform entry for the publish-manifest job to assemble later.
           mkdir -p manifest-entries
           encoded_name=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$DMG_NAME")
-          sha=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
-          size=$(stat -f %z "$DMG_PATH")
           printf '{"url":"https://download.fridayplatform.io/installer/%s/%s","sha256":"%s","size":%s}\n' \
             "${{ matrix.platform }}" "$encoded_name" "$sha" "$size" \
             > "manifest-entries/${{ matrix.platform }}.json"
@@ -272,70 +286,34 @@ jobs:
           EXE_NAME: ${{ steps.win-artifact.outputs.name }}
           EXE_PATH: ${{ steps.win-artifact.outputs.path }}
         run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $env:EXE_PATH).Hash.ToLower()
+          $size = (Get-Item $env:EXE_PATH).Length
+          # Sidecar checksum file. Same format as macOS (`<sha>  <name>`)
+          # so the publish-side `awk '{print $1}'` works uniformly.
+          # Sidecar uploaded BEFORE the bundle for the same conservative-
+          # partial-failure reasoning as the macOS leg.
+          $sidecar = "$env:EXE_PATH.sha256"
+          "$hash  $env:EXE_NAME" | Set-Content -Path $sidecar
+          gsutil cp $sidecar `
+            "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$env:EXE_NAME.sha256"
           gsutil cp "$env:EXE_PATH" `
             "gs://${{ env.GCS_BUCKET }}/installer/${{ matrix.platform }}/$env:EXE_NAME"
           New-Item -ItemType Directory -Force -Path manifest-entries | Out-Null
           $encoded = [System.Uri]::EscapeDataString($env:EXE_NAME)
-          $hash = (Get-FileHash -Algorithm SHA256 -Path $env:EXE_PATH).Hash.ToLower()
-          $size = (Get-Item $env:EXE_PATH).Length
           $entry = @{ url = "https://download.fridayplatform.io/installer/${{ matrix.platform }}/$encoded"; sha256 = $hash; size = $size }
           $entry | ConvertTo-Json -Compress | Set-Content -NoNewline -Path "manifest-entries/${{ matrix.platform }}.json"
 
       - name: Upload manifest entry artifact
+        # Retained 30d so studio-installer-publish.yml can pull entries
+        # from a build run up to a month later without re-running the
+        # (expensive) native matrix. Bump if you need a longer window.
         uses: actions/upload-artifact@v7
         with:
           name: manifest-entry-${{ matrix.platform }}
           path: manifest-entries/${{ matrix.platform }}.json
-          retention-days: 1
+          retention-days: 30
 
-  publish-manifest:
-    name: Publish installer/manifest.json
-    needs: [version, build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      RELEASE_VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - name: Download all manifest entries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: manifest-entry-*
-          path: entries
-          merge-multiple: true
-
-      - name: Compose manifest
-        id: compose
+      - name: Print publish hint
+        shell: bash
         run: |
-          # Combine per-platform entries into the schema the studio-installer's
-          # fetch_manifest.rs already understands: { version, platforms{...} }.
-          # Version comes from the upstream `version` job (semver patch bump
-          # over the previously-published manifest).
-          python3 - <<'PY' "$RELEASE_VERSION" entries > manifest.json
-          import json, os, sys
-          version, dirpath = sys.argv[1], sys.argv[2]
-          platforms = {}
-          for fname in sorted(os.listdir(dirpath)):
-              if not fname.endswith(".json"):
-                  continue
-              platform = fname[:-len(".json")]
-              with open(os.path.join(dirpath, fname)) as f:
-                  platforms[platform] = json.load(f)
-          json.dump({"version": version, "platforms": platforms}, sys.stdout, indent=2)
-          PY
-          cat manifest.json
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          project_id: ${{ secrets.GCP_PROJECT }}
-          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
-
-      - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Upload manifest to GCS
-        run: |
-          gsutil -h "Content-Type:application/json" cp manifest.json \
-            "gs://${{ env.GCS_BUCKET }}/installer/manifest.json"
+          echo "::notice::Build complete. To publish: gh workflow run studio-installer-publish.yml -f build_run_id=${{ github.run_id }} -f version=${RELEASE_VERSION}"

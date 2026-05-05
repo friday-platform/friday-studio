@@ -5,6 +5,10 @@ on:
   # don't want it firing on every push to a heavy-traffic source path.
   # Run via `gh workflow run studio-build.yml --ref <branch>` or the
   # Actions tab.
+  #
+  # This workflow ONLY builds — versioned tarballs land in GCS at their
+  # immutable URLs but `manifest.json` is left alone. To promote a build
+  # to clients, run `studio-publish.yml` with this run's id + version.
   workflow_dispatch:
 
 env:
@@ -276,96 +280,32 @@ jobs:
           set -euo pipefail
           ARCHIVE="dist/friday-studio_${RELEASE_VERSION}_${{ matrix.target }}.${{ matrix.archive_ext }}"
           NAME=$(basename "$ARCHIVE")
+          # Always (re)write the sidecar from the post-notarize archive so
+          # macOS and Windows agree on format. The publish workflow reads
+          # this instead of re-downloading the archive to hash it.
+          SHA=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+          printf '%s  %s\n' "$SHA" "$NAME" > "$ARCHIVE.sha256"
+          # Sidecar BEFORE archive: under concurrent dispatch a partial
+          # failure should leave state that fails verification (sidecar
+          # SHA != archive bytes), not state that silently passes.
+          gsutil cp "$ARCHIVE.sha256" "gs://${{ env.GCS_BUCKET }}/studio/$NAME.sha256"
           # Versioned filename — kept forever, served as immutable by studio-artifact.
           gsutil cp "$ARCHIVE" "gs://${{ env.GCS_BUCKET }}/studio/$NAME"
-          # Sidecar checksum file alongside the archive so curl-only clients
-          # can verify without parsing the manifest.
-          if [ -f "$ARCHIVE.sha256" ]; then
-            gsutil cp "$ARCHIVE.sha256" "gs://${{ env.GCS_BUCKET }}/studio/$NAME.sha256"
-          fi
 
       - name: Upload manifest entry artifact
+        # Retained 30d so studio-publish.yml can pull entries from a build
+        # run up to a month later without re-running the (expensive) native
+        # matrix. Bump if you ever need a longer test → publish window.
         uses: actions/upload-artifact@v7
         with:
           name: studio-manifest-entry-${{ matrix.platform }}
           path: dist/friday-studio_${{ env.RELEASE_VERSION }}_${{ matrix.target }}.json
-          retention-days: 1
+          retention-days: 30
 
-  publish-manifest:
-    name: Publish studio/manifest.json
-    needs: [version, build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      RELEASE_VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - name: Download all manifest entries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: studio-manifest-entry-*
-          path: entries
-          merge-multiple: true
-
-      - name: Compose manifest
+      - name: Print publish hint
+        # Surfaces the exact command needed to promote this build, so
+        # whoever runs the build doesn't have to dig the run id out of
+        # the URL. Printed once per matrix leg — harmless duplication.
+        shell: bash
         run: |
-          set -euo pipefail
-          # Each per-platform JSON contains a single { "<platform>": {...} }
-          # object. Merge them into { version, platforms: {...} } — same
-          # schema as installer/manifest.json so fetch_manifest.rs deserializes
-          # both with one Manifest struct.
-          python3 - <<'PY' "$RELEASE_VERSION" entries > manifest.json
-          import json, os, sys
-          version, dirpath = sys.argv[1], sys.argv[2]
-          platforms = {}
-          for fname in sorted(os.listdir(dirpath)):
-              if not fname.endswith(".json"):
-                  continue
-              with open(os.path.join(dirpath, fname)) as f:
-                  platforms.update(json.load(f))
-          json.dump({"version": version, "platforms": platforms}, sys.stdout, indent=2)
-          PY
-          cat manifest.json
-          # Sanity: refuse to publish if any of the three expected platforms
-          # is missing — a half-broken manifest would 404 for some users.
-          python3 -c "
-          import json, sys
-          m = json.load(open('manifest.json'))
-          # macos-intel temporarily out of the matrix (see build job) —
-          # restore to {'macos-arm', 'macos-intel', 'windows'} when
-          # re-enabling macos-intel before merge.
-          want = {'macos-arm', 'windows'}
-          got = set(m['platforms'].keys())
-          missing = want - got
-          if missing:
-              print(f'ERROR: missing platforms: {missing}', file=sys.stderr)
-              sys.exit(1)
-          "
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          project_id: ${{ secrets.GCP_PROJECT }}
-          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
-
-      - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Upload manifest to GCS
-        run: |
-          # Atomicity is provided by the workflow ordering: artifacts are
-          # uploaded in the build job (before this), then the manifest is
-          # uploaded last. A CDN that fetches the manifest after this step
-          # always sees URLs that resolve.
-          #
-          # Cache-Control: no-cache forces GCS's anonymous edge CDN to
-          # revalidate every fetch — the bucket default of max-age=3600
-          # caused installers to keep downloading the old version for an
-          # hour after publish on 2026-04-27 (v0.0.7 → v0.0.8 cutover).
-          # Manifests must always reflect the current truth; tarball
-          # objects are immutable so they keep the bucket-default cache.
-          gsutil -h "Content-Type:application/json" \
-                 -h "Cache-Control:no-cache, max-age=0, must-revalidate" \
-                 cp manifest.json \
-            "gs://${{ env.GCS_BUCKET }}/studio/manifest.json"
+          echo "::notice::Build complete. To publish: gh workflow run studio-publish.yml -f build_run_id=${{ github.run_id }} -f version=${RELEASE_VERSION}"
