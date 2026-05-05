@@ -163,7 +163,10 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     expect(parsed).toHaveProperty("chat");
     expect(parsed).toHaveProperty("messages");
     expect(parsed).toHaveProperty("systemPromptContext");
-    expect((parsed.chat as { id: string }).id).toBe(SAMPLE_CHAT_ID);
+    expect((parsed.chat as { id: string; userId?: string }).id).toBe(SAMPLE_CHAT_ID);
+    // `userId` is intentionally stripped at the zip boundary — see +server.ts.
+    expect((parsed.chat as { id: string; userId?: string }).userId).toBeUndefined();
+    expect(Object.keys(parsed.chat as object)).not.toContain("userId");
 
     const a1Bytes = await zip.file("assets/artifacts/art-aaaa/a.txt")?.async("string");
     expect(a1Bytes).toBe("AAAA");

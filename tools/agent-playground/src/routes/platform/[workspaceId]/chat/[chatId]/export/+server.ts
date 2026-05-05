@@ -187,11 +187,15 @@ export const GET: RequestHandler = async (event) => {
 
   const zip = new JSZip();
   zip.file("index.html", html);
+  // Strip `userId` from the exported chat — it's account-ownership PII and
+  // shared exports shouldn't leak it. The schema validates the wire shape
+  // upstream; the strip happens at the zip-write boundary.
+  const { userId: _userId, ...chatWithoutUserId } = chatParsed.data.chat;
   zip.file(
     "chat.json",
     JSON.stringify(
       {
-        chat: chatParsed.data.chat,
+        chat: chatWithoutUserId,
         messages: chatParsed.data.messages,
         systemPromptContext: chatParsed.data.systemPromptContext,
       },
