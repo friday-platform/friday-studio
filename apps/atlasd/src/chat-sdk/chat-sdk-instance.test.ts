@@ -136,6 +136,74 @@ describe("createMessageHandler", () => {
     expect(buffer?.active).toBe(false);
   });
 
+  it("drops events from a stale turn that emits after a follow-up replaced its buffer", async () => {
+    // Cross-turn isolation: turn 1's late producer (e.g. a NATS chunk that
+    // arrived after `streamSub.unsubscribe()` had already drained one more
+    // message off the wire) must not bleed into turn 2's buffer. Without the
+    // identity check at appendEvent's expectedBuffer parameter, turn 1's
+    // text-delta would land in turn 2's buffer mid-stream — UI sees a
+    // text-delta with no matching text-start and the AI SDK throws.
+    const registry = new StreamRegistry();
+
+    let captureChunkCallback: ((chunk: unknown) => void) | undefined;
+    const triggerFn = vi.fn(
+      (
+        _signalName: string,
+        _payload: Record<string, unknown>,
+        _streamId: string,
+        onStreamEvent: (chunk: unknown) => void,
+      ) => {
+        captureChunkCallback = onStreamEvent;
+        return Promise.resolve({ sessionId: "sess-1" });
+      },
+    );
+
+    const handler = createMessageHandler("ws-test", triggerFn, registry);
+    const thread = makeThread("chat-cross");
+    const turn1Buffer = registry.createStream("chat-cross");
+
+    await handler(thread, makeMessage({ threadId: "chat-cross" }));
+
+    // Simulate a follow-up turn replacing the buffer mid-flight, then a
+    // late producer from turn 1 emits one more chunk.
+    const turn2Buffer = registry.createStream("chat-cross");
+    captureChunkCallback?.({ type: "text-delta", delta: "stale" });
+
+    expect(turn1Buffer.events).toEqual([]); // turn 1's buffer was closed by createStream replacement
+    expect(turn2Buffer.events).toEqual([]); // and turn 1's stale chunk did NOT leak into turn 2
+  });
+
+  it("does not finish a follow-up turn's buffer when the prior turn cleans up", async () => {
+    // Aborted-cleanup isolation: turn 1's `finally` must not flip turn 2's
+    // freshly-created buffer to inactive. Pre-fix this used finishStream
+    // (chatId-keyed only) and ripped subscribers off the new buffer; the
+    // identity-checked finishStreamIfCurrent makes it a no-op when the
+    // buffer has been replaced.
+    const registry = new StreamRegistry();
+
+    // Trigger fn replaces the buffer mid-flight (after the handler captured
+    // its ownBuffer at line 888 of chat-sdk-instance.ts), modeling a follow-up
+    // POST that lands while turn 1 is still streaming. Returns a promise that
+    // resolves immediately so the handler proceeds to its `finally`.
+    const triggerFn = vi.fn(
+      (_s: string, _p: Record<string, unknown>, _id: string, _cb: (c: unknown) => void) => {
+        registry.createStream("chat-no-rip"); // turn 2 replaces turn 1's buffer
+        return Promise.resolve({ sessionId: "sess-1" });
+      },
+    );
+
+    const handler = createMessageHandler("ws-test", triggerFn, registry);
+    const thread = makeThread("chat-no-rip");
+    registry.createStream("chat-no-rip"); // turn 1's buffer
+
+    await handler(thread, makeMessage({ threadId: "chat-no-rip" }));
+
+    // After turn 1's handler ran its finally, turn 2's buffer must still be
+    // active — the identity check made the finishStream call a no-op.
+    const current = registry.getStream("chat-no-rip");
+    expect(current?.active).toBe(true);
+  });
+
   it("filters internal FSM events from StreamRegistry but forwards them to thread.post", async () => {
     const registry = new StreamRegistry();
     const chunks = [
