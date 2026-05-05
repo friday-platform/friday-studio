@@ -99,10 +99,28 @@ export interface StreamBuffer {
 
 /**
  * Type-safe extraction of `(kind, id)` from chunks that open or close a
- * UI message part. We treat tool calls (`tool-input-start` opens, both
- * `tool-output-available` and `tool-output-error` close) and any
- * `*-start`/`*-end` pair (text, reasoning) symmetrically. Returning
- * `null` for chunks we don't track keeps `appendEvent`'s switch tight.
+ * UI message part. We treat tool calls (`tool-input-start` and
+ * `tool-input-available` open, both `tool-output-available` and
+ * `tool-output-error` close) and any `*-start`/`*-end` pair (text,
+ * reasoning) symmetrically. Returning `null` for chunks we don't track
+ * keeps `appendEvent`'s switch tight.
+ *
+ * Why `tool-input-available` is an opener: the AI SDK transitions a tool
+ * part from `input-streaming` to `input-available` on this chunk and
+ * stores the fully-formed `input` on the part. If a resume cursor lands
+ * between `tool-input-available` and `tool-output-available`, re-emitting
+ * only the original `tool-input-start` would leave the resumed client's
+ * part stuck in `input-streaming` with no `input` recorded — by treating
+ * `tool-input-available` as an opener we *update* the `openParts` entry
+ * to point at its frame, so re-emit replays the most recent state-bearing
+ * chunk for that tool. Also covers tools that skip `tool-input-start`
+ * entirely (non-streaming inputs) and emit `tool-input-available` as the
+ * first event for the part.
+ *
+ * Not tracked: `start-step` / `finish-step`. These don't carry per-part
+ * state the AI SDK's `*-delta` validators check; missing one on resume
+ * pushes no UI message protocol error, only loses a `step-start` marker
+ * in `message.parts`. Worth a comment, not a re-emit.
  */
 function partKey(event: AtlasUIMessageChunk): { key: string; opens: boolean } | null {
   switch (event.type) {
@@ -115,6 +133,7 @@ function partKey(event: AtlasUIMessageChunk): { key: string; opens: boolean } | 
     case "reasoning-end":
       return { key: `reasoning:${event.id}`, opens: false };
     case "tool-input-start":
+    case "tool-input-available":
       return { key: `tool:${event.toolCallId}`, opens: true };
     case "tool-output-available":
     case "tool-output-error":

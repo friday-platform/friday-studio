@@ -439,6 +439,185 @@ describe("StreamRegistry", () => {
       expect(decoder.decode(received[1])).toMatch(/^id: 3\ndata: .*"type":"text-delta"/);
     });
 
+    // `tool-output-error` is the alternate close path for a tool part. The
+    // existing "forgets parts" test only exercises `tool-output-available`;
+    // a typo in `partKey` for the error case (e.g. wrong key shape) would
+    // leak the part into `openParts` forever and re-emit a stale
+    // `tool-input-start` past every subsequent cursor.
+    it("forgets a tool part when tool-output-error closes it", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-start",
+        toolCallId: "tc-err",
+        toolName: "do-thing",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "tool-output-error",
+        toolCallId: "tc-err",
+        errorText: "boom",
+      } as AtlasUIMessageChunk); // index 1 — CLOSES the part
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 2
+
+      const received: Uint8Array[] = [];
+      registry.subscribe(
+        "chat-1",
+        createController({ onEnqueue: (d) => received.push(d) }),
+        1,
+      );
+
+      // No open parts left — only the post-cursor text-delta replays.
+      expect(received).toHaveLength(1);
+      expect(new TextDecoder().decode(received[0])).toMatch(
+        /^id: 2\ndata: .*"type":"text-delta"/,
+      );
+    });
+
+    // `reasoning-end` closes a reasoning part. Same risk as
+    // `tool-output-error`: untested = silent regression.
+    it("forgets a reasoning part when reasoning-end closes it", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "reasoning-start",
+        id: "r-1",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "reasoning-end",
+        id: "r-1",
+      } as AtlasUIMessageChunk); // index 1 — CLOSES
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 2
+
+      const received: Uint8Array[] = [];
+      registry.subscribe(
+        "chat-1",
+        createController({ onEnqueue: (d) => received.push(d) }),
+        1,
+      );
+
+      // Closed reasoning part must not re-emit.
+      expect(received).toHaveLength(1);
+      expect(new TextDecoder().decode(received[0])).toMatch(
+        /^id: 2\ndata: .*"type":"text-delta"/,
+      );
+    });
+
+    // `tool-input-available` carries the fully-formed `input` for a tool
+    // call. The AI SDK transitions the tool part from `input-streaming`
+    // to `input-available` on this chunk and stores `input` on the part.
+    // If a resume cursor lands between `tool-input-available` and
+    // `tool-output-available`, re-emitting only the earlier
+    // `tool-input-start` would leave the resumed client's part stuck in
+    // `input-streaming` with no `input` recorded. We MUST re-emit the
+    // latest open frame (here, `tool-input-available`).
+    it("re-emits tool-input-available when cursor lands between it and tool-output-available", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-start",
+        toolCallId: "tc-1",
+        toolName: "do-thing",
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "tool-input-delta",
+        toolCallId: "tc-1",
+        inputTextDelta: '{"x":1}',
+      } as AtlasUIMessageChunk); // index 1
+      registry.appendEvent("chat-1", {
+        type: "tool-input-available",
+        toolCallId: "tc-1",
+        toolName: "do-thing",
+        input: { x: 1 },
+      } as AtlasUIMessageChunk); // index 2 — UPDATES the open frame
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 3
+
+      const received: Uint8Array[] = [];
+      registry.subscribe(
+        "chat-1",
+        createController({ onEnqueue: (d) => received.push(d) }),
+        2, // client has up to tool-input-available
+      );
+
+      // Re-emit must be tool-input-available at index 2 (the LATEST open
+      // frame for this tool) — NOT tool-input-start at index 0. Replaying
+      // only `*-start` would lose the input registration.
+      expect(received).toHaveLength(2);
+      const decoder = new TextDecoder();
+      const first = decoder.decode(received[0]);
+      expect(first).toMatch(/^id: 2\n/);
+      expect(first).toContain('"type":"tool-input-available"');
+      const second = decoder.decode(received[1]);
+      expect(second).toMatch(/^id: 3\n/);
+      expect(second).toContain('"type":"text-delta"');
+    });
+
+    // Some tools emit `tool-input-available` directly without a preceding
+    // `tool-input-start` (non-streaming input path). The buffer should
+    // still register it as an opener so resume re-emits it past the
+    // cursor.
+    it("treats tool-input-available as an opener even without a prior tool-input-start", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "tool-input-available",
+        toolCallId: "tc-direct",
+        toolName: "do-thing",
+        input: { y: 2 },
+      } as AtlasUIMessageChunk); // index 0
+      registry.appendEvent("chat-1", {
+        type: "text-delta",
+        id: "msg-1",
+        delta: "post",
+      } as AtlasUIMessageChunk); // index 1
+
+      const received: Uint8Array[] = [];
+      registry.subscribe(
+        "chat-1",
+        createController({ onEnqueue: (d) => received.push(d) }),
+        0,
+      );
+
+      // tool-input-available re-emits at its original frame id, then
+      // post-cursor text-delta lands.
+      expect(received).toHaveLength(2);
+      const decoder = new TextDecoder();
+      expect(decoder.decode(received[0])).toMatch(
+        /^id: 0\ndata: .*"type":"tool-input-available"/,
+      );
+      expect(decoder.decode(received[1])).toMatch(
+        /^id: 1\ndata: .*"type":"text-delta"/,
+      );
+    });
+
+    // Audit decision: `start-step` / `finish-step` are intentionally NOT
+    // tracked in `partKey`. They don't carry per-part state the AI SDK's
+    // `*-delta` validators check — missing one on resume only loses a
+    // `step-start` marker in `message.parts`, no protocol error. This
+    // test pins that decision so a well-meaning future edit (adding them
+    // to `partKey`) trips an obvious red and forces the author to revisit
+    // the rationale.
+    it("does NOT track start-step or finish-step in openParts", () => {
+      registry.createStream("chat-1");
+      registry.appendEvent("chat-1", {
+        type: "start-step",
+      } as AtlasUIMessageChunk);
+      registry.appendEvent("chat-1", {
+        type: "finish-step",
+      } as AtlasUIMessageChunk);
+
+      const buffer = registry.getStream("chat-1");
+      expect.assert(buffer !== undefined, "buffer should exist");
+      expect(buffer.openParts.size).toBe(0);
+    });
+
     it("replays nothing when cursor is past the buffer tail", () => {
       registry.createStream("chat-1");
       registry.appendEvent("chat-1", makeEvent(1));
