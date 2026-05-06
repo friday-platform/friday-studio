@@ -376,6 +376,100 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
     - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `memory_save` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
     - **`jobs.<name>.elicitations: { timeout: <duration> }`** — per-job elicitation timeout, independent of `config.timeout`. Useful for long batch jobs whose individual prompts shouldn't sit unanswered.
 
+    Worked example showing every option in one workspace.yml. Comments
+    flag mutually exclusive choices and per-job overrides.
+
+    ```yaml
+    # ── Workspace-level defaults (top of workspace.yml) ────────────
+    permissions:
+      # Bypass tool/skill allowlist enforcement. When true, NO elicitations
+      # fire — the elicitation flow and bypass are mutually exclusive.
+      # Trusted contexts only. Job-level setting wins; daemon
+      # FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1 env var is the floor.
+      dangerouslySkipAllowlist: false
+
+    delegation:
+      # Per-field merge with per-job override. Job wins per-field; unset
+      # fields fall through to workspace, then to runtime defaults.
+      max_depth: 1                # default 1; child cannot itself delegate
+      max_steps_per_call: 40
+      max_output_tokens: 20000
+      max_input_tokens: 100000
+      max_wall_time_ms: 120000
+      max_cost_usd: null          # reserved; not enforced until cost-tracking lands
+
+    artifacts:
+      # Workspace-level grace window after job completion before ephemeral
+      # artifacts are swept. Default '24h'. Promotion-by-reference
+      # (memory_save text containing the id, display_artifact, or
+      # aiSummary.keyDetails[].url) keeps an artifact past the window.
+      default_grace: 24h
+
+    memory:
+      own:
+        - name: notes
+          type: short_term        # ephemeral session-bound
+          strategy: narrative
+          # ttl: 7d               # OPTIONAL: explicit TTL overrides the
+                                  #   type-default. With ttl set, type
+                                  #   becomes advisory.
+        - name: memory
+          type: long_term         # durable across sessions
+          strategy: narrative
+
+    # ── Per-job overrides (under jobs.<name>) ─────────────────────────
+    jobs:
+      sensitive-job:
+        config:
+          timeout: 30m            # parent timeout; default for elicitation TTL
+          max_steps: 60
+
+        # Per-job permissions override. Wins over workspace; daemon env
+        # var is the floor for both.
+        permissions:
+          dangerouslySkipAllowlist: true   # this job bypasses; siblings stay strict
+
+        # Per-job delegation override. Per-field merge with workspace.
+        delegation:
+          max_depth: 2            # only this job; siblings inherit workspace 1
+          max_wall_time_ms: 60000
+
+        # Per-job artifact lifecycle. EITHER ephemeral (whole-job) OR
+        # default_grace (window override) — both can coexist; ephemeral
+        # is the kind, default_grace is the sweep delay.
+        artifacts:
+          ephemeral: true         # all this job's artifacts ephemeral
+                                  # (omit for per-action defaults: terminal-state
+                                  #  outputs durable, non-terminal ephemeral)
+          default_grace: 6h       # shorter grace than workspace 24h
+
+        # Per-job elicitation timeout. Independent of config.timeout —
+        # use to constrain individual prompt latency on a long job.
+        elicitations:
+          timeout: 5m
+
+        triggers:
+          - signal: ...
+        fsm:
+          # ...
+    ```
+
+    Mutually exclusive / precedence reminders:
+    - `permissions.dangerouslySkipAllowlist: true` and the elicitation
+      flow are exclusive. Bypass-on jobs never emit elicitations; their
+      `request_tool_access` calls return `{ ok: true, granted: true,
+      reason: "bypass" }` immediately.
+    - `memory.own[].ttl` overrides the type-based default. Set it only
+      when the type default is wrong; otherwise omit and let `short_term`
+      stay session-bound, `long_term` durable.
+    - `artifacts.ephemeral: true` (job-level) forces every artifact this
+      job emits to be ephemeral. Omit it to let the runtime apply
+      per-action defaults (terminal-state outputs durable, non-terminal
+      ephemeral). The two are exclusive within a single job.
+    - `delegation.max_cost_usd` accepts `null` for "no enforcement";
+      a positive number is reserved for the future cost-tracking layer
+      and currently has no runtime effect.
+
 ---
 
 ## Go deeper

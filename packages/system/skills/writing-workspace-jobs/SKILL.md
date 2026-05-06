@@ -366,6 +366,114 @@ memory store, then have downstream supervisors read that store and dispatch.
 This is the same pattern chat uses to coordinate multi-step work without FSM
 guards.
 
+### LLM router → Python user agent dispatcher
+
+When the routing decision is a judgment call (LLM) but the per-branch work is
+deterministic (fixed transforms, schema-constrained tool calls), pair an LLM
+router with a `type: user` Python SDK agent. The LLM emits a structured
+decision document; the Python agent reads it via `inputFrom` and dispatches
+mechanically.
+
+Workspace shape:
+
+```yaml
+agents:
+  router:
+    type: llm
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      prompt: |
+        Classify the inbox item by intent: "billing", "support", or "other".
+        Emit a routing-decision doc.
+
+  dispatcher:
+    type: user
+    agent: dispatcher-py    # registered Python SDK id
+    # No tools array — type: user agents resolve tools via ctx.tools.call
+
+jobs:
+  triage-and-dispatch:
+    triggers:
+      - signal: triage-now
+    fsm:
+      initial: idle
+      documentTypes:
+        routing-decision:
+          type: object
+          properties:
+            path:    { type: string, enum: ["billing", "support", "other"] }
+            item_id: { type: string }
+          required: [path, item_id]
+      states:
+        idle:
+          on: { triage-now: { target: route } }
+        route:
+          entry:
+            - type: agent
+              agentId: router
+              outputTo: routing-decision
+              outputType: routing-decision
+            - type: emit
+              event: DONE
+          on: { DONE: { target: dispatch } }
+        dispatch:
+          entry:
+            - type: agent
+              agentId: dispatcher
+              inputFrom: routing-decision
+          type: final
+```
+
+`agent.py` (registered separately via `POST /api/agents/register`):
+
+```python
+from friday_agent_sdk import agent, Context
+from dataclasses import dataclass
+
+@dataclass
+class RoutingDecision:
+    path: str
+    item_id: str
+
+@agent(id="dispatcher-py", version="0.1.0")
+async def dispatcher(ctx: Context, prompt: str) -> str:
+    # parse_input unwraps the FSM's wrapped {config: ...} shape; see the
+    # writing-friday-python-agents skill for details.
+    decision = ctx.parse_input(prompt, RoutingDecision)
+
+    if decision.path == "billing":
+        # Mechanical dispatch: known tool, known shape.
+        result = await ctx.tools.call(
+            "google-gmail/batch_modify_gmail_message_labels",
+            {"message_ids": [decision.item_id], "add_label_ids": ["LABEL_BILLING"]},
+        )
+        return f"Routed {decision.item_id} to billing"
+
+    if decision.path == "support":
+        result = await ctx.tools.call(
+            "linear/create_issue",
+            {"title": "Support ticket", "external_id": decision.item_id},
+        )
+        return f"Routed {decision.item_id} to support"
+
+    # default
+    return f"No action for {decision.item_id}"
+```
+
+When this is the right shape:
+- The LLM's only job is the classification (one decision per item).
+- The dispatcher's branches are mechanical (no `ctx.llm.generate` calls).
+- The Python agent is registered ahead of time — see the
+  `writing-friday-python-agents` skill for the registration two-step
+  (`POST /api/agents/register` then `upsert_agent`).
+
+When NOT this shape — keep the work in one LLM action:
+- Each branch's body itself needs LLM judgment (drafting different
+  responses per category, scoring tradeoffs). Hybrid is overkill — a
+  single LLM action with the full tool surface is simpler and the
+  per-action `tools:` allowlist still locks it down.
+
 > Note: predicate-on-transition is **not** on the roadmap. Agent-level
 > branching is the intended forward path — the LLM action is more
 > expressive than any guard expression we'd ship, and the supervisor-flip
