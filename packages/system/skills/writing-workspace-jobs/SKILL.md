@@ -537,6 +537,126 @@ If you do declare `tools: [...]`, the built-ins still work — the
 allowlist narrows the **non-built-in** catalog. To genuinely lock the
 action down to "memory only," declare `tools: []`.
 
+## Validation strategies
+
+Every `type: llm` and `type: agent` action's output is checked for
+fabrication unless the author opts out. The `validate:` field selects
+the strategy. Absent or `"auto"` → the runtime classifier picks
+`skip` or `self` based on the action's shape; authors override only
+when they need different behavior.
+
+### String forms
+
+```yaml
+validate: skip      # bypass — read-only fetchers, deterministic transforms
+validate: self      # LLM self-checks its draft before emitting (cheap)
+validate: external  # separate-judge LLM call after emit (thorough, slower)
+validate: auto      # runtime decides based on action shape (default)
+```
+
+### Auto-detect rules
+
+The classifier (see `READ_ONLY_ALLOWLIST` and `MUTATING_VERB_RE` in
+`packages/fsm-engine/validate-classifier.ts` for the canonical lists)
+picks:
+
+- **`skip`** when every declared tool is read-only (`gmail/get_*`,
+  `gmail/search_*`, `fs_read_file`, `web_fetch`, `memory_read`,
+  `artifacts_get`, etc.) **and** the action has structured
+  `outputType:`. Also picks `skip` for the pure-formatter case:
+  no tools, has `inputFrom:`, has `outputType:`.
+- **`self`** when any declared or called tool is mutating (`send_*`,
+  `create_*`, `delete_*`, `batch_modify_*`, `fs_write_*`,
+  `memory_save`, `memory_remove`, `publish_*`, etc.) **or** the
+  action emits free-form prose with no structured contract.
+- **`external`** is never auto-picked. Authors opt in explicitly.
+
+`type: agent` actions resolving to `type: user` or `type: atlas`
+agents short-circuit to `skip` — those agents are deterministic
+from the FSM's perspective.
+
+### Object form
+
+For advanced overrides, swap the string for an object. Object form
+pins `strategy` to `self` or `external` (use the string form for
+`skip` / `auto`):
+
+```yaml
+validate:
+  strategy: external
+  skill: "@my/financial-claims-validator"   # custom validation skill
+  threshold: paranoid                       # supervision threshold
+  retryOnFail: false                        # advisory verdicts pass through
+```
+
+`threshold` accepts `minimal`, `standard`, or `paranoid` — sets the
+confidence band the judge must clear. `retryOnFail: false` lets
+`uncertain` / `fail` verdicts proceed as advisory rather than
+blocking the step.
+
+### What each strategy does at runtime
+
+- **`skip`** — no validation. `step:complete.validation` records
+  `{ strategy: "skip", skipReason }` for observability.
+- **`self`** — runtime composes `@friday/validating-llm-outputs`
+  (or your `skill:` override) into the action's prompt. The LLM
+  walks every claim in its draft and drops anything not sourced to
+  a tool result, input, or direct inference. (The
+  `record_validation` tool is auto-injected when this lands in
+  pt2's B6 phase; today the inline path is a no-op and behaves like
+  `skip`.)
+- **`external`** — post-emit judge call. Returns a
+  `ValidationVerdict` with `status` (`pass` / `uncertain` /
+  `fail`), `confidence`, `threshold`, and an `issues` array with
+  `category` (`sourcing`, `no-tools-called`, `judge-uncertain`,
+  `judge-error`), `severity`, `claim`, `reasoning`, and `citation`.
+  See `packages/hallucination/src/verdict.ts` for the full shape.
+
+### When to override the default
+
+Three cases worth the explicit field:
+
+```yaml
+# 1. Known-deterministic action — LLM is just formatting structured input.
+- type: llm
+  provider: anthropic
+  model: claude-sonnet-4-6
+  inputFrom: raw-event
+  outputType: formatted-event
+  validate: skip
+  prompt: "Reshape the event into formatted-event."
+```
+
+```yaml
+# 2. High-stakes action — independent review is worth the latency.
+- type: agent
+  agentId: contract-drafter
+  outputTo: contract-draft
+  validate: external
+```
+
+```yaml
+# 3. Domain-specific self-check — pair self with a custom validator.
+- type: llm
+  provider: anthropic
+  model: claude-sonnet-4-6
+  outputTo: medication-plan
+  validate:
+    strategy: self
+    skill: "@my/medical-claims-validator"
+  prompt: |
+    Draft a medication plan from the patient summary above.
+```
+
+### Cross-references
+
+- `@friday/validating-llm-outputs` is a **system skill** the runtime
+  composes into the action prompt when `validate` resolves to
+  `self`. Authors don't load it via `load_skill`.
+- For workspace-wide / per-job defaults, see the `validation:`
+  block on workspace and job specs (TODO: cross-link once D2 lands
+  alongside the workspace-level B5 phase).
+
 ## Delegating to a sub-agent from an FSM action
 
 `type: llm` actions can spawn a sub-agent via the `delegate` tool —
