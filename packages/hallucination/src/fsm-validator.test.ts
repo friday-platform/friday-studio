@@ -1,7 +1,13 @@
 import type { LLMActionTrace } from "@atlas/fsm-engine";
-import { describe, expect, it } from "vitest";
+import { createStubPlatformModels } from "@atlas/llm";
+import { describe, expect, it, vi } from "vitest";
 import { formatToolResults } from "./detector.ts";
-import { traceToAgentResult } from "./fsm-validator.ts";
+import {
+  createFSMOutputValidator,
+  tracePassthroughReason,
+  traceToAgentResult,
+} from "./fsm-validator.ts";
+import { SupervisionLevel } from "./supervision-levels.ts";
 
 describe("traceToAgentResult", () => {
   it("maps basic fields correctly", () => {
@@ -357,5 +363,242 @@ describe("formatToolResults", () => {
     const formatted = formatToolResults(results);
 
     expect(formatted).toContain("plain text response");
+  });
+});
+
+describe("tracePassthroughReason", () => {
+  it("returns reason when content is empty", () => {
+    const trace: LLMActionTrace = {
+      prompt: "Call list_messages",
+      content: "",
+      model: "gpt-4",
+      toolCalls: [{ type: "tool-call", toolCallId: "c-1", toolName: "list_messages", input: {} }],
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "list_messages",
+          input: {},
+          output: { messages: [{ id: "m-1" }] },
+        },
+      ],
+    };
+
+    expect(tracePassthroughReason(trace)).not.toBeNull();
+  });
+
+  it("returns reason when content is whitespace-only", () => {
+    const trace: LLMActionTrace = { prompt: "p", content: "   \n\t  ", model: "gpt-4" };
+
+    expect(tracePassthroughReason(trace)).not.toBeNull();
+  });
+
+  it("returns reason when content trivially echoes an MCP tool result text", () => {
+    const echoed = '{"id":"m-1","subject":"hi"}';
+    const trace: LLMActionTrace = {
+      prompt: "p",
+      content: echoed,
+      model: "gpt-4",
+      toolCalls: [
+        { type: "tool-call", toolCallId: "c-1", toolName: "get_message", input: { id: "m-1" } },
+      ],
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "get_message",
+          input: { id: "m-1" },
+          output: { content: [{ type: "text", text: echoed }] },
+        },
+      ],
+    };
+
+    expect(tracePassthroughReason(trace)).not.toBeNull();
+  });
+
+  it("returns reason when content trivially echoes a string tool result output", () => {
+    const trace: LLMActionTrace = {
+      prompt: "p",
+      content: "result text",
+      model: "gpt-4",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "noop",
+          input: {},
+          output: "result text",
+        },
+      ],
+    };
+
+    expect(tracePassthroughReason(trace)).not.toBeNull();
+  });
+
+  it("returns null when content is genuine LLM-generated reasoning", () => {
+    const trace: LLMActionTrace = {
+      prompt: "Summarize the messages",
+      content:
+        "I reviewed three messages. Two are from finance, one is a calendar reminder. The finance ones look routine.",
+      model: "gpt-4",
+      toolCalls: [{ type: "tool-call", toolCallId: "c-1", toolName: "list_messages", input: {} }],
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "list_messages",
+          input: {},
+          output: { content: [{ type: "text", text: '[{"id":"m-1"},{"id":"m-2"},{"id":"m-3"}]' }] },
+        },
+      ],
+    };
+
+    expect(tracePassthroughReason(trace)).toBeNull();
+  });
+
+  it("returns null when content is a slight wrapping of a tool result (conservative default)", () => {
+    const echoed = "tool result body";
+    const trace: LLMActionTrace = {
+      prompt: "p",
+      content: `${echoed} (done)`,
+      model: "gpt-4",
+      toolResults: [
+        { type: "tool-result", toolCallId: "c-1", toolName: "noop", input: {}, output: echoed },
+      ],
+    };
+
+    // Wrapping is not exact-equality, so the conservative default runs the judge.
+    expect(tracePassthroughReason(trace)).toBeNull();
+  });
+
+  it("returns null when content has prose but no tool results to compare against", () => {
+    const trace: LLMActionTrace = { prompt: "p", content: "some output", model: "gpt-4" };
+
+    expect(tracePassthroughReason(trace)).toBeNull();
+  });
+});
+
+describe("createFSMOutputValidator", () => {
+  it("returns synthetic pass without invoking platformModels for empty content", async () => {
+    const get = vi.fn(() => {
+      throw new Error("platformModels.get should not be called for tool-passthrough trace");
+    });
+    const platformModels = { get };
+
+    const validator = createFSMOutputValidator(SupervisionLevel.STANDARD, platformModels);
+
+    const result = await validator({
+      prompt: "p",
+      content: "",
+      model: "gpt-4",
+      toolCalls: [{ type: "tool-call", toolCallId: "c-1", toolName: "list_messages", input: {} }],
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "list_messages",
+          input: {},
+          output: { messages: [] },
+        },
+      ],
+    });
+
+    expect(get).not.toHaveBeenCalled();
+    expect(result.verdict.confidence).toEqual(1);
+    expect(result.verdict.issues).toEqual([]);
+  });
+
+  it("returns synthetic pass without invoking platformModels when content echoes a tool result", async () => {
+    const get = vi.fn(() => {
+      throw new Error("platformModels.get should not be called for tool-passthrough trace");
+    });
+    const platformModels = { get };
+
+    const validator = createFSMOutputValidator(SupervisionLevel.STANDARD, platformModels);
+
+    const echoed = '{"id":"m-1","subject":"hi"}';
+    const result = await validator({
+      prompt: "p",
+      content: echoed,
+      model: "gpt-4",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "get_message",
+          input: { id: "m-1" },
+          output: { content: [{ type: "text", text: echoed }] },
+        },
+      ],
+    });
+
+    expect(get).not.toHaveBeenCalled();
+    expect(result.verdict.issues).toEqual([]);
+  });
+
+  it("invokes platformModels when content is genuine LLM-generated reasoning", async () => {
+    const stub = createStubPlatformModels();
+    const get = vi.fn((role) => stub.get(role));
+    const platformModels = { get };
+
+    const validator = createFSMOutputValidator(SupervisionLevel.STANDARD, platformModels);
+
+    // The stub model throws on doGenerate — the validator catches that and
+    // returns a judge-error verdict. We only care that get() was called.
+    await validator({
+      prompt: "Summarize",
+      content:
+        "I reviewed the messages and concluded that two are routine and one needs follow-up.",
+      model: "gpt-4",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "list_messages",
+          input: {},
+          output: { content: [{ type: "text", text: "[]" }] },
+        },
+      ],
+    });
+
+    expect(get).toHaveBeenCalledWith("classifier");
+  });
+
+  it("invokes platformModels when content is a slight wrapping of a tool result", async () => {
+    const stub = createStubPlatformModels();
+    const get = vi.fn((role) => stub.get(role));
+    const platformModels = { get };
+
+    const validator = createFSMOutputValidator(SupervisionLevel.STANDARD, platformModels);
+
+    await validator({
+      prompt: "p",
+      content: "tool result body (done)",
+      model: "gpt-4",
+      toolResults: [
+        {
+          type: "tool-result",
+          toolCallId: "c-1",
+          toolName: "noop",
+          input: {},
+          output: "tool result body",
+        },
+      ],
+    });
+
+    expect(get).toHaveBeenCalledWith("classifier");
+  });
+
+  it("no-op fallback (no platformModels) returns synthetic pass — unchanged behavior", async () => {
+    const validator = createFSMOutputValidator(SupervisionLevel.STANDARD, undefined);
+
+    const result = await validator({
+      prompt: "Anything",
+      content: "Anything goes here",
+      model: "gpt-4",
+    });
+
+    expect(result.verdict.confidence).toEqual(1);
+    expect(result.verdict.issues).toEqual([]);
   });
 });
