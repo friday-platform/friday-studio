@@ -27,6 +27,7 @@ import {
   type GlobalSkillRefConfig,
   type InlineSkillConfig,
   type MergedConfig,
+  parseDuration,
   parseSkillRef,
   resolveRuntimeAgentId,
   validateSignalPayload,
@@ -700,26 +701,48 @@ export async function persistFsmSessionArtifacts(args: {
 }
 
 /**
- * Phase 6 — best-effort sweep of ephemeral artifacts and memory entries
- * bound to a completed session. Free function so tests can exercise it
- * without spinning up the full {@link WorkspaceRuntime}.
+ * Phase 6.B — at session-complete, stamp `expiresAt` on each ephemeral
+ * artifact bound to this session and `forget()` each ephemeral memory
+ * entry bound to it.
  *
- * Failure modes are intentionally non-fatal: lifecycle metadata is the
- * source of truth, so a future startup-time sweep can pick up any
- * stragglers this pass misses (process death, transient KV failure,
- * etc.). The cleanup never blocks session completion.
+ * Replaces the Phase 6 synchronous-delete pass for artifacts. The
+ * artifact sweeper (`apps/atlasd/src/sweepers/artifacts-sweeper.ts`)
+ * walks `expiresAt`-past-now ephemeral artifacts on a timer and either
+ * deletes them or promotes them to durable based on inbound reference
+ * signals (memory_save text, aiSummary URL). The grace window between
+ * `completedAt` and `expiresAt` is what gives those signals time to
+ * land — the chat path's `memory_save` callbacks fire after
+ * session-complete in some shapes.
+ *
+ * Memory entries keep the synchronous-forget behavior: notes are
+ * supposed to be genuinely short-term, and there's no analogous
+ * promotion-by-reference signal on the memory side (memory IS the
+ * promotion signal for artifacts).
+ *
+ * Free function so tests can exercise it without spinning the full
+ * runtime. Failures are non-fatal: an artifact missed here gets
+ * picked up by the next sweep tick if its `expiresAt` is past.
+ *
+ * `graceMs` is the time window after `completedAt` before the artifact
+ * becomes eligible for sweeping. Caller computes from job/workspace
+ * config (`artifacts.default_grace`).
  */
-export async function cleanupEphemeralForSession(args: {
+export async function expireEphemeralForSession(args: {
   sessionId: string;
   jobName: string;
   workspaceId: string;
+  completedAt: Date;
+  graceMs: number;
   memoryAdapter?: MemoryAdapter;
   memoryStoreNames: string[];
 }): Promise<void> {
-  const { sessionId, jobName, workspaceId, memoryAdapter, memoryStoreNames } = args;
+  const { sessionId, jobName, workspaceId, completedAt, graceMs, memoryAdapter, memoryStoreNames } =
+    args;
 
-  // 1) Ephemeral artifacts. Walk the workspace's artifacts and filter
-  //    by lifecycle.boundTo.sessionId. Tombstone via deleteArtifact.
+  const expiresAtIso = new Date(completedAt.getTime() + graceMs).toISOString();
+
+  // 1) Stamp expiresAt on ephemeral artifacts bound to this session.
+  //    The sweeper picks them up at/after `expiresAt`.
   try {
     const list = await ArtifactStorage.listByWorkspace({ workspaceId, includeData: false });
     if (list.ok) {
@@ -735,33 +758,37 @@ export async function cleanupEphemeralForSession(args: {
           lc.boundTo.scope === "session" &&
           lc.boundTo.sessionId === sessionId
         ) {
-          const del = await ArtifactStorage.deleteArtifact({ id: summary.id });
-          if (!del.ok) {
-            logger.warn("Failed to delete ephemeral artifact during session cleanup", {
+          const upd = await ArtifactStorage.updateLifecycle({
+            id: summary.id,
+            lifecycle: { ...lc, expiresAt: expiresAtIso },
+          });
+          if (!upd.ok) {
+            logger.warn("Failed to stamp expiresAt on ephemeral artifact", {
               artifactId: summary.id,
               sessionId,
-              error: del.error,
+              error: upd.error,
             });
           }
         }
       }
     } else {
-      logger.warn("listByWorkspace failed during ephemeral cleanup", {
+      logger.warn("listByWorkspace failed during ephemeral stamp", {
         sessionId,
         error: list.error,
       });
     }
   } catch (err) {
-    logger.warn("Ephemeral artifact cleanup threw", {
+    logger.warn("Ephemeral artifact stamp threw", {
       sessionId,
       jobName,
       error: stringifyError(err),
     });
   }
 
-  // 2) Ephemeral memory entries. For each declared narrative store,
-  //    scan entries and `forget` the ones whose lifecycle binds to
-  //    this session.
+  // 2) Ephemeral memory entries. Synchronous forget on session-
+  //    complete — same behavior as Phase 6. Memory entries don't
+  //    participate in the deferred-sweep model (notes are genuinely
+  //    short-term; promotion-by-reference applies only to artifacts).
   if (memoryAdapter && memoryStoreNames.length > 0) {
     for (const name of memoryStoreNames) {
       try {
@@ -1698,13 +1725,15 @@ export class WorkspaceRuntime {
             session.status = WorkspaceSessionStatus.COMPLETED;
           }
 
-          // Phase 6 — best-effort sweep of ephemeral artifacts and memory
-          // entries bound to this session. Fire-and-forget: failures log
-          // a warning and are otherwise silent. Lifecycle metadata stays
-          // the source of truth, so a future startup-time sweep can
-          // pick up stragglers.
-          this.cleanupEphemeralForSession(session.id, job.name).catch((err) => {
-            logger.warn("Ephemeral cleanup pass failed", {
+          // Phase 6.B — stamp `expiresAt` on ephemeral artifacts (sweeper
+          // picks them up later) and forget ephemeral memory entries
+          // (synchronous, same as Phase 6). Fire-and-forget: failures
+          // log a warning and are otherwise silent. The artifact
+          // sweeper (`apps/atlasd/src/sweepers/artifacts-sweeper.ts`)
+          // is the long-stop — it picks up any artifact past
+          // `expiresAt` regardless of which run stamped it.
+          this.expireEphemeralForSession(session.id, job.name, session.completedAt).catch((err) => {
+            logger.warn("Ephemeral expire pass failed", {
               sessionId: session.id,
               jobName: job.name,
               error: stringifyError(err),
@@ -2630,21 +2659,82 @@ export class WorkspaceRuntime {
   }
 
   /**
-   * Phase 6 — best-effort sweep of ephemeral artifacts + memory entries
-   * bound to a completed session. Called fire-and-forget from the
-   * session-completion path; failures log and continue. Lifecycle
-   * metadata is the source of truth, so a future startup-time sweep
-   * can pick up anything this pass misses (e.g. process death between
-   * session-complete and the cleanup running).
+   * Phase 6.B — at session-complete, stamp `expiresAt` on ephemeral
+   * artifacts (sweeper picks them up later) and forget ephemeral
+   * memory entries (synchronous, same as Phase 6). Called fire-and-
+   * forget from the session-completion path; failures log and
+   * continue. Lifecycle metadata is the source of truth — the sweeper
+   * picks up anything missed.
+   *
+   * Grace window resolves job-spec → workspace-config → 24h fallback.
+   * `parseDuration` from `@atlas/config` handles the format ("24h",
+   * "1h", "30m" — see {@link DurationSchema}).
    */
-  private cleanupEphemeralForSession(sessionId: string, jobName: string): Promise<void> {
-    return cleanupEphemeralForSession({
+  private expireEphemeralForSession(
+    sessionId: string,
+    jobName: string,
+    completedAt: Date,
+  ): Promise<void> {
+    const jobSpec = this.config.workspace.jobs?.[jobName];
+    const graceStr =
+      jobSpec?.artifacts?.default_grace ?? this.config.workspace.artifacts?.default_grace ?? "24h";
+    let graceMs: number;
+    try {
+      graceMs = parseDuration(graceStr);
+    } catch {
+      // Schema already validates DurationSchema, but if a future field
+      // shape introduces an unparseable value, fall back to 24h
+      // rather than skipping the stamp entirely.
+      graceMs = 24 * 60 * 60 * 1000;
+    }
+    return expireEphemeralForSession({
       sessionId,
       jobName,
       workspaceId: this.workspace.id,
+      completedAt,
+      graceMs,
       memoryAdapter: this.options.memoryAdapter,
       memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name),
     });
+  }
+
+  /**
+   * Phase 6.B — exposes a promotion-by-reference scan context for the
+   * artifacts sweeper. The sweeper lives in atlasd; runtime keeps the
+   * authoritative memory-adapter binding and configured store names,
+   * so it surfaces them through this accessor instead of the daemon
+   * reaching into private fields.
+   *
+   * The aiSummary provider walks the in-memory completed-session
+   * snapshot (`completedSessionMetadata`); it's bounded by the same
+   * 100-entry FIFO. A session swept after eviction won't carry an
+   * aiSummary signal — acceptable because the eviction window
+   * (~hundreds of completions) is far larger than the grace window in
+   * practice.
+   */
+  getPromotionScanContext(): {
+    memoryAdapter?: MemoryAdapter;
+    memoryStoreNames: string[];
+    aiSummary: () => Promise<Array<{ url?: string }>>;
+  } {
+    const ctx: {
+      memoryAdapter?: MemoryAdapter;
+      memoryStoreNames: string[];
+      aiSummary: () => Promise<Array<{ url?: string }>>;
+    } = {
+      memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name),
+      aiSummary: () => {
+        const out: Array<{ url?: string }> = [];
+        for (const meta of this.completedSessionMetadata.values()) {
+          for (const detail of meta.aiSummary?.keyDetails ?? []) {
+            if (detail.url) out.push({ url: detail.url });
+          }
+        }
+        return Promise.resolve(out);
+      },
+    };
+    if (this.options.memoryAdapter) ctx.memoryAdapter = this.options.memoryAdapter;
+    return ctx;
   }
 
   private createSessionSummary(sessionResult: SessionResult): SessionSummary {

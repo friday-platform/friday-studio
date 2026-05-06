@@ -34,6 +34,7 @@ import type { KV, NatsConnection, ObjectStore } from "nats";
 import {
   type Artifact,
   type ArtifactDataInput,
+  type ArtifactLifecycle,
   ArtifactSchema,
   type ArtifactSummary,
   type CreateArtifactInput,
@@ -330,6 +331,71 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
     includeData?: boolean;
   }): Promise<Result<ArtifactSummary[], string>> {
     return this.listFiltered((a) => a.chatId === input.chatId, input.limit ?? 100);
+  }
+
+  listBySession(input: {
+    sessionId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> {
+    return this.listFiltered(
+      (a) =>
+        a.lifecycle?.kind === "ephemeral" &&
+        a.lifecycle.boundTo.scope === "session" &&
+        a.lifecycle.boundTo.sessionId === input.sessionId,
+      input.limit ?? 100,
+    );
+  }
+
+  /**
+   * Phase 6.B — list ephemeral artifacts whose `expiresAt` is at or
+   * before `now`. Sweeper invocation point. Excludes entries without
+   * `expiresAt` (ephemeral but un-stamped, e.g. process death between
+   * create and session-complete); a session-completion pass or a
+   * future startup-time backfill catches those.
+   */
+  listExpired(input: { now: Date; limit?: number }): Promise<Result<ArtifactSummary[], string>> {
+    const nowMs = input.now.getTime();
+    return this.listFiltered((a) => {
+      if (a.lifecycle?.kind !== "ephemeral") return false;
+      const exp = a.lifecycle.expiresAt;
+      if (!exp) return false;
+      const expMs = Date.parse(exp);
+      if (Number.isNaN(expMs)) return false;
+      return expMs <= nowMs;
+    }, input.limit ?? 1000);
+  }
+
+  /**
+   * Phase 6.B — in-place lifecycle update. Skips the
+   * blob-rehash path of {@link update} and does not bump revision.
+   *
+   * Promotion-by-reference flips ephemeral → durable; the runtime
+   * stamps `expiresAt` on the existing ephemeral lifecycle. Either
+   * mutation is bookkeeping only — no consumer needs revision history
+   * over it.
+   */
+  async updateLifecycle(input: {
+    id: string;
+    lifecycle: ArtifactLifecycle;
+  }): Promise<Result<Artifact, string>> {
+    try {
+      if (await this.isDeleted(input.id)) {
+        return fail(`Artifact ${input.id} has been deleted`);
+      }
+      const latest = await this.readLatestRevision(input.id);
+      if (latest === null) return fail(`Artifact ${input.id} not found`);
+      const current = await this.readMeta(input.id, latest);
+      if (!current) {
+        return fail(`Artifact ${input.id} revision ${latest} not found`);
+      }
+      const next: Artifact = { ...current, lifecycle: input.lifecycle };
+      const kv = await this.kv();
+      await kv.put(flatKey(next.id, next.revision), enc.encode(JSON.stringify(next)));
+      return success(next);
+    } catch (err) {
+      return fail(stringifyError(err));
+    }
   }
 
   /**

@@ -1,12 +1,15 @@
 /**
- * Phase 6 — ephemeral cleanup pass on session completion.
+ * Phase 6.B — at session-complete, ephemeral artifacts get an
+ * `expiresAt` stamp (sweeper picks them up later) and ephemeral memory
+ * entries get forgotten synchronously (notes are genuinely short-term;
+ * memory has no promotion-by-reference signal of its own).
  *
- * Verifies that the free function `cleanupEphemeralForSession` (extracted
- * from `WorkspaceRuntime` so the test doesn't have to spin the runtime
- * up):
+ * Verifies that the free function `expireEphemeralForSession` (extracted
+ * from {@link WorkspaceRuntime} so the test doesn't have to spin the
+ * runtime up):
  *
- *   1. Tombstones artifacts whose `lifecycle.boundTo.sessionId` matches
- *      the completed session.
+ *   1. Stamps `expiresAt = completedAt + graceMs` on artifacts whose
+ *      `lifecycle.boundTo.sessionId` matches the completed session.
  *   2. Leaves durable artifacts and ephemeral artifacts bound to other
  *      sessions alone.
  *   3. Calls `forget()` on memory entries whose lifecycle binds to the
@@ -14,14 +17,15 @@
  *
  * The vitest setup initializes `ArtifactStorage` against a per-worker
  * NATS test server, so artifact reads/writes are real. The narrative
- * memory adapter is stubbed in-memory — exercising the JetStream path
- * is covered separately by `js-narrative-store` tests.
+ * memory adapter is stubbed in-memory.
  */
 
 import type { MemoryAdapter, NarrativeEntry, NarrativeStore } from "@atlas/agent-sdk";
 import { ArtifactStorage } from "@atlas/core/artifacts/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanupEphemeralForSession } from "../runtime.ts";
+import { expireEphemeralForSession } from "../runtime.ts";
+
+const GRACE_MS = 24 * 60 * 60 * 1000;
 
 class InMemoryNarrativeStore implements NarrativeStore {
   entries: NarrativeEntry[] = [];
@@ -64,7 +68,7 @@ function makeMemoryAdapter(stores: Record<string, InMemoryNarrativeStore>): Memo
   };
 }
 
-describe("cleanupEphemeralForSession — artifacts", () => {
+describe("expireEphemeralForSession — artifacts", () => {
   beforeEach(() => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -74,9 +78,10 @@ describe("cleanupEphemeralForSession — artifacts", () => {
     vi.restoreAllMocks();
   });
 
-  it("tombstones ephemeral artifacts bound to the completed session", async () => {
+  it("stamps expiresAt on ephemeral artifacts bound to the completed session", async () => {
     const workspaceId = `ws-${crypto.randomUUID()}`;
     const sessionId = `ses-${crypto.randomUUID()}`;
+    const completedAt = new Date("2026-05-05T00:00:00.000Z");
 
     const ephemeral = await ArtifactStorage.create({
       data: { type: "file", content: "{}", contentEncoding: "utf-8", mimeType: "application/json" },
@@ -87,17 +92,26 @@ describe("cleanupEphemeralForSession — artifacts", () => {
     });
     if (!ephemeral.ok) throw new Error("create failed");
 
-    await cleanupEphemeralForSession({
+    await expireEphemeralForSession({
       sessionId,
       jobName: "j",
       workspaceId,
+      completedAt,
+      graceMs: GRACE_MS,
       memoryStoreNames: [],
     });
 
     const fetched = await ArtifactStorage.get({ id: ephemeral.data.id });
     expect(fetched.ok).toBe(true);
-    if (!fetched.ok) return;
-    expect(fetched.data).toBeNull(); // tombstoned → reads return null
+    if (!fetched.ok || !fetched.data) throw new Error("expected artifact");
+    // Still present — the sweeper does the eventual delete.
+    expect(fetched.data).not.toBeNull();
+    const lc = fetched.data.lifecycle;
+    expect(lc?.kind).toBe("ephemeral");
+    if (lc?.kind !== "ephemeral") return;
+    const expectedExpiry = new Date(completedAt.getTime() + GRACE_MS).toISOString();
+    expect(lc.expiresAt).toBe(expectedExpiry);
+    expect(lc.boundTo).toEqual({ scope: "session", sessionId });
   });
 
   it("leaves durable artifacts in this workspace untouched", async () => {
@@ -113,10 +127,12 @@ describe("cleanupEphemeralForSession — artifacts", () => {
     });
     if (!durable.ok) throw new Error("create failed");
 
-    await cleanupEphemeralForSession({
+    await expireEphemeralForSession({
       sessionId,
       jobName: "j",
       workspaceId,
+      completedAt: new Date(),
+      graceMs: GRACE_MS,
       memoryStoreNames: [],
     });
 
@@ -124,9 +140,10 @@ describe("cleanupEphemeralForSession — artifacts", () => {
     expect(fetched.ok).toBe(true);
     if (!fetched.ok) return;
     expect(fetched.data).not.toBeNull();
+    expect(fetched.data?.lifecycle).toEqual({ kind: "durable" });
   });
 
-  it("leaves ephemeral artifacts bound to a different session untouched", async () => {
+  it("leaves ephemeral artifacts bound to a different session alone", async () => {
     const workspaceId = `ws-${crypto.randomUUID()}`;
     const sessionId = `ses-${crypto.randomUUID()}`;
     const otherSessionId = `ses-${crypto.randomUUID()}`;
@@ -140,17 +157,21 @@ describe("cleanupEphemeralForSession — artifacts", () => {
     });
     if (!otherEphemeral.ok) throw new Error("create failed");
 
-    await cleanupEphemeralForSession({
+    await expireEphemeralForSession({
       sessionId,
       jobName: "j",
       workspaceId,
+      completedAt: new Date(),
+      graceMs: GRACE_MS,
       memoryStoreNames: [],
     });
 
     const fetched = await ArtifactStorage.get({ id: otherEphemeral.data.id });
     expect(fetched.ok).toBe(true);
-    if (!fetched.ok) return;
-    expect(fetched.data).not.toBeNull();
+    if (!fetched.ok || !fetched.data) throw new Error("expected artifact");
+    const lc = fetched.data.lifecycle;
+    if (lc?.kind !== "ephemeral") throw new Error("expected ephemeral");
+    expect(lc.expiresAt).toBeUndefined();
   });
 
   it("leaves artifacts with no lifecycle field (pre-Phase-6) untouched", async () => {
@@ -165,10 +186,12 @@ describe("cleanupEphemeralForSession — artifacts", () => {
     });
     if (!legacy.ok) throw new Error("create failed");
 
-    await cleanupEphemeralForSession({
+    await expireEphemeralForSession({
       sessionId,
       jobName: "j",
       workspaceId,
+      completedAt: new Date(),
+      graceMs: GRACE_MS,
       memoryStoreNames: [],
     });
 
@@ -176,10 +199,11 @@ describe("cleanupEphemeralForSession — artifacts", () => {
     expect(fetched.ok).toBe(true);
     if (!fetched.ok) return;
     expect(fetched.data).not.toBeNull();
+    expect(fetched.data?.lifecycle).toBeUndefined();
   });
 });
 
-describe("cleanupEphemeralForSession — memory", () => {
+describe("expireEphemeralForSession — memory", () => {
   beforeEach(() => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -217,10 +241,12 @@ describe("cleanupEphemeralForSession — memory", () => {
 
     const adapter = makeMemoryAdapter({ notes: notesStore });
 
-    await cleanupEphemeralForSession({
+    await expireEphemeralForSession({
       sessionId,
       jobName: "j",
       workspaceId,
+      completedAt: new Date(),
+      graceMs: GRACE_MS,
       memoryAdapter: adapter,
       memoryStoreNames: ["notes"],
     });
@@ -233,10 +259,12 @@ describe("cleanupEphemeralForSession — memory", () => {
     const sessionId = `ses-${crypto.randomUUID()}`;
 
     // Should not throw without a memory adapter.
-    await cleanupEphemeralForSession({
+    await expireEphemeralForSession({
       sessionId,
       jobName: "j",
       workspaceId,
+      completedAt: new Date(),
+      graceMs: GRACE_MS,
       memoryStoreNames: ["notes"],
     });
   });
@@ -268,10 +296,12 @@ describe("cleanupEphemeralForSession — memory", () => {
       rollback: () => Promise.resolve(),
     };
 
-    await cleanupEphemeralForSession({
+    await expireEphemeralForSession({
       sessionId,
       jobName: "j",
       workspaceId,
+      completedAt: new Date(),
+      graceMs: GRACE_MS,
       memoryAdapter: adapter,
       memoryStoreNames: ["broken", "notes"],
     });

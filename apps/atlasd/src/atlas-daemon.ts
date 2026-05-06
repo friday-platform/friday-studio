@@ -116,6 +116,10 @@ import {
 import { initScratchpadStorage } from "./storage/scratchpad.ts";
 import { StreamRegistry } from "./stream-registry.ts";
 import { sweepOrphanedAgentBrowserSessions } from "./sweep-agent-browser-sessions.ts";
+import {
+  type ArtifactsSweeperHandle,
+  startArtifactsSweeper,
+} from "./sweepers/artifacts-sweeper.ts";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -289,6 +293,13 @@ export class AtlasDaemon {
   // Store the actual port after server starts
   #port: number | undefined;
   private discordGatewayService: DiscordGatewayService | null = null;
+  /**
+   * Phase 6.B — hourly sweep of ephemeral artifacts past their grace
+   * window. Promotes via inbound-reference scan or deletes. Started
+   * after JetStream init in {@link initialize}; stopped during the
+   * domain-layer teardown phase of {@link shutdown}.
+   */
+  private artifactsSweeper: ArtifactsSweeperHandle | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     // Read CORS origins from environment or options
@@ -830,6 +841,20 @@ export class AtlasDaemon {
 
     // Start chunked upload cleanup lifecycle
     initChunkedUpload();
+
+    // Phase 6.B — start the artifacts sweeper. Walks ephemeral artifacts
+    // whose `expiresAt` is past on a timer; promotes them to durable if
+    // an inbound reference signal is found, deletes otherwise. Wired
+    // here (post-JetStream init, post-runtime registry creation) so
+    // the sweeper can resolve a per-workspace scan context against
+    // `this.runtimes`.
+    this.artifactsSweeper = startArtifactsSweeper({
+      getScanContext: (workspaceId) => {
+        const runtime = this.runtimes.get(workspaceId);
+        if (!runtime) return Promise.resolve(undefined);
+        return Promise.resolve(runtime.getPromotionScanContext());
+      },
+    });
 
     this.isInitialized = true;
 
@@ -2586,6 +2611,10 @@ export class AtlasDaemon {
     if (this.platformSessionCleanupInterval) {
       clearInterval(this.platformSessionCleanupInterval);
       this.platformSessionCleanupInterval = null;
+    }
+    if (this.artifactsSweeper) {
+      this.artifactsSweeper.stop();
+      this.artifactsSweeper = null;
     }
 
     // SSE clients — the HTTP server already drained in Phase 1, but any

@@ -41,6 +41,8 @@ export {
   FileDataInputWireSchema,
   FileDataSchema,
 } from "./primitives.ts";
+// NOTE: hasPromotionSignal lives in `./server.ts` — the Phase 6.B sweeper
+// (atlasd-internal) is the only consumer and uses the server-only path.
 // Tool-result scrubber (lifts oversized binary out of MCP results into artifacts).
 export type { ScrubberOptions, ScrubToolResult } from "./scrubber.ts";
 export { createScrubber, scrubAssistantMessage } from "./scrubber.ts";

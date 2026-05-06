@@ -1,7 +1,13 @@
 import type { Result } from "@atlas/utils";
 import type { NatsConnection } from "nats";
 import { JetStreamArtifactStorageAdapter } from "./jetstream-adapter.ts";
-import type { Artifact, ArtifactDataInput, ArtifactSummary, CreateArtifactInput } from "./model.ts";
+import type {
+  Artifact,
+  ArtifactDataInput,
+  ArtifactLifecycle,
+  ArtifactSummary,
+  CreateArtifactInput,
+} from "./model.ts";
 import type { ArtifactStorageAdapter } from "./types.ts";
 
 let adapter: ArtifactStorageAdapter | null = null;
@@ -56,6 +62,17 @@ export const ArtifactStorage: ArtifactStorageAdapter = {
     limit?: number;
     includeData?: boolean;
   }): Promise<Result<ArtifactSummary[], string>> => require_().listByChat(input),
+  listBySession: (input: {
+    sessionId: string;
+    limit?: number;
+    includeData?: boolean;
+  }): Promise<Result<ArtifactSummary[], string>> => require_().listBySession(input),
+  listExpired: (input: { now: Date; limit?: number }): Promise<Result<ArtifactSummary[], string>> =>
+    require_().listExpired(input),
+  updateLifecycle: (input: {
+    id: string;
+    lifecycle: ArtifactLifecycle;
+  }): Promise<Result<Artifact, string>> => require_().updateLifecycle(input),
   deleteArtifact: (input: { id: string }): Promise<Result<void, string>> =>
     require_().deleteArtifact(input),
   readFileContents: (input: { id: string; revision?: number }): Promise<Result<string, string>> =>
