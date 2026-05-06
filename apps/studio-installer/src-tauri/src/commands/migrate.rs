@@ -105,6 +105,30 @@ pub async fn migrate(
             cmd.env("HOME", home);
         }
     }
+    // Prepend `<install_dir>/bin` to PATH so the spawned `friday migrate`
+    // can locate the bundled `nats-server` (and any other in-bundle
+    // binaries it may shell out to). At install time, no daemon is up
+    // and the post-NATS phase needs to spawn an ephemeral nats-server
+    // via packages/jetstream's `findNatsServerBinary()`, which does a
+    // bare `which nats-server`. The Tauri app's parent shell typically
+    // has `/usr/bin:/bin` etc. on PATH but NOT the freshly-extracted
+    // `<install_dir>/bin`, so without this, every install would hit
+    // the "nats-server not found, brew install nats-server" error and
+    // the migrate row would render red ✗ even on a successful pre-NATS
+    // move. Mirrors the launcher's own PATH augmentation in
+    // tools/friday-launcher/project.go.
+    let bin_dir = install_path.join("bin");
+    let existing_path = env_kv
+        .get("PATH")
+        .cloned()
+        .or_else(|| std::env::var("PATH").ok())
+        .unwrap_or_default();
+    let new_path = if existing_path.is_empty() {
+        bin_dir.display().to_string()
+    } else {
+        format!("{}:{existing_path}", bin_dir.display())
+    };
+    cmd.env("PATH", new_path);
 
     let output = cmd
         .output()

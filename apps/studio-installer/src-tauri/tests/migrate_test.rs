@@ -301,3 +301,43 @@ async fn locate_friday_finds_binary_under_install_dir_bin() {
         migrate(install_dir.to_string_lossy().to_string()).await;
     assert!(result.is_ok(), "expected Ok with binary at bin/friday: {result:?}");
 }
+
+#[tokio::test]
+async fn install_dir_bin_is_prepended_to_subprocess_path() {
+    // The Tauri command must prepend `<install_dir>/bin` to PATH so the
+    // spawned `friday migrate` can locate bundled binaries (especially
+    // `nats-server`, which the post-NATS phase tries to spawn via
+    // `findNatsServerBinary()` — a bare `which nats-server`). Without
+    // this, every install hits "nats-server not found" and the migrate
+    // step renders red ✗ even on a successful pre-NATS move.
+    let _g = env_lock();
+    let (_tmp, friday_home, install_dir) = fixture_dirs();
+    let _env = EnvGuard::install(&friday_home);
+
+    let sentinel = friday_home.join("path-sentinel");
+    write_friday_stub(
+        &install_dir,
+        &format!(
+            r#"
+echo "PATH=$PATH" > '{sentinel}'
+echo '{{"preNats":[]}}'
+"#,
+            sentinel = sentinel.display(),
+        ),
+        0,
+    );
+
+    let result = migrate(install_dir.to_string_lossy().to_string()).await;
+    assert!(result.is_ok(), "expected Ok, got {result:?}");
+
+    let captured = fs::read_to_string(&sentinel).expect("sentinel file");
+    let expected_bin = install_dir.join("bin").display().to_string();
+    let path_line = captured.trim_start_matches("PATH=").trim_end();
+    // The bundled bin dir must be the FIRST entry — so a bundled
+    // `nats-server` wins over any system-installed one (e.g.,
+    // homebrew). `which` walks PATH left-to-right.
+    assert!(
+        path_line.starts_with(&expected_bin),
+        "<install_dir>/bin not at the front of PATH; got:\n{path_line}\nwanted prefix: {expected_bin}"
+    );
+}
