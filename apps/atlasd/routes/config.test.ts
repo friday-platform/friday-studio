@@ -115,11 +115,30 @@ describe("PUT /env on-disk format", () => {
     expect(onDisk).toBe(`MSG="it's fine"`);
   });
 
-  test("multi-line value uses double quotes with escaped newlines", async () => {
-    await putEnv({ BLOCK: "line1\nline2" });
+  test("newline-bearing values are rejected at the boundary", async () => {
+    // The Go launcher's unquoteEnvValue strips outer quotes only; it
+    // doesn't expand `\n`, so KEY="line1\nline2" would reach spawned
+    // services with a literal backslash-n. Reject up front instead.
+    const app = createApp();
+    const res = await app.request("/env", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ envVars: { BLOCK: "line1\nline2" } }),
+    });
+    expect(res.status).toBe(400);
+  });
 
-    const onDisk = await readFile(join(tempHome, ".env"), "utf-8");
-    expect(onDisk).toBe(`BLOCK="line1\\nline2"`);
+  test("newline-bearing keys are rejected at the boundary", async () => {
+    // A key with `\n` would let one PUT entry split into two on-disk
+    // lines, smuggling additional env vars into spawned services on
+    // the next launcher import. Schema enforces POSIX identifiers.
+    const app = createApp();
+    const res = await app.request("/env", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ envVars: { "FOO\nBAR": "baz" } }),
+    });
+    expect(res.status).toBe(400);
   });
 
   test("multiple keys are joined by newlines, no trailing newline", async () => {
@@ -132,6 +151,9 @@ describe("PUT /env on-disk format", () => {
 
 describe("PUT → GET round-trip", () => {
   test("preserves values across the full set of edge cases", async () => {
+    // Newlines are rejected at the boundary (see "newline-bearing values
+    // are rejected"), so the round-trip set covers every other shape the
+    // Settings UI can send.
     const cases = {
       ANTHROPIC_API_KEY: "sk-ant-api03-foo-bar",
       OPENAI_URL: "https://api.openai.com/v1",
@@ -140,7 +162,6 @@ describe("PUT → GET round-trip", () => {
       WITH_HASH: "abc#def",
       WITH_SQUOTE: "it's ok",
       WITH_DQUOTE: 'say "hi"',
-      WITH_NEWLINE: "line1\nline2",
       EMPTY: "",
     };
 
