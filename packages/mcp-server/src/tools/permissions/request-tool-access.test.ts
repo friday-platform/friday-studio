@@ -243,10 +243,13 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
   });
 
   it("falls back to sessionId='unknown' when scope didn't inject one", async () => {
-    const { registered } = captureRegistration();
+    const { registered, ctx } = captureRegistration();
     await registered.handler({ toolName: "x", reason: "y", workspaceId: "ws_1" });
     const env = mockState.creates[0] as Record<string, unknown>;
     expect(env.sessionId).toBe("unknown");
+    // Review N4: fallback fires a warn-log so operators can spot bugs
+    // where future scope plumbers forget sessionId.
+    expect((ctx.logger.warn as unknown as MockInstance).mock.calls.length).toBeGreaterThan(0);
   });
 
   it("omits actionId from envelope when scope didn't inject one", async () => {
@@ -259,6 +262,41 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
     });
     const env = mockState.creates[0] as Record<string, unknown>;
     expect("actionId" in env).toBe(false);
+  });
+
+  it("uses resolvedPermissions when provided, skipping raw resolution (review N2)", async () => {
+    // resolvedPermissions=bypass means immediate granted return — no
+    // elicitation. If the tool re-resolved from raw fields, daemon-env=0
+    // would flip the result.
+    const { registered } = captureRegistration();
+    const result = await registered.handler({
+      toolName: "x",
+      reason: "y",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      resolvedPermissions: { dangerouslySkipAllowlist: true },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(mockState.creates).toHaveLength(0); // no elicitation created
+    expect(parseBody(result)).toEqual({ ok: true, granted: true, reason: "bypass" });
+  });
+
+  it("derives expiresAt from jobTimeoutMs when injected (review N3)", async () => {
+    const { registered } = captureRegistration();
+    const before = Date.now();
+    await registered.handler({
+      toolName: "x",
+      reason: "y",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      jobTimeoutMs: 60_000, // 1 minute
+    });
+    const after = Date.now();
+    const env = mockState.creates[0] as Record<string, unknown>;
+    const expiresAt = new Date(env.expiresAt as string).getTime();
+    // Should land within ±a few ms of `now + 60s`.
+    expect(expiresAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(expiresAt).toBeLessThanOrEqual(after + 60_000 + 100);
   });
 });
 
@@ -283,5 +321,8 @@ describe("request_tool_access — registration sanity", () => {
     expect(registered.inputSchema).toHaveProperty("actionId");
     expect(registered.inputSchema).toHaveProperty("jobPermissions");
     expect(registered.inputSchema).toHaveProperty("workspacePermissions");
+    // Review N2/N3 — resolved-once + job-timeout fields.
+    expect(registered.inputSchema).toHaveProperty("resolvedPermissions");
+    expect(registered.inputSchema).toHaveProperty("jobTimeoutMs");
   });
 });

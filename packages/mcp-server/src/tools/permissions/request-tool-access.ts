@@ -1,5 +1,5 @@
 import process from "node:process";
-import { resolvePermissions } from "@atlas/config";
+import { resolvePermissions } from "@atlas/config/permissions";
 import { ElicitationStorage } from "@atlas/core/elicitations";
 import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -9,12 +9,10 @@ import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
 /**
- * Default elicitation TTL when the runtime doesn't pass one through.
- *
- * MVP scope (Phase 12.C): no auto-suspend / resume — the LLM that calls
- * `request_tool_access` gets a structured denial back synchronously and
- * `failStep`s. The user re-runs the job after answering. So `expiresAt` is
- * informational; the real lifecycle gate is the parent job's timeout.
+ * Fallback elicitation TTL when neither `jobTimeoutMs` (runtime-injected)
+ * nor a workspace default propagates through scope. 30 minutes is the
+ * informational TTL for MVP — the elicitation expires either way; the
+ * real lifecycle gate is the parent job's timeout.
  */
 const DEFAULT_ELICITATION_TTL_MS = 30 * 60 * 1000;
 
@@ -24,6 +22,9 @@ const DEFAULT_ELICITATION_TTL_MS = 30 * 60 * 1000;
  * land here when other permissions resolve at call time.
  */
 const PermissionsShape = z.object({ dangerouslySkipAllowlist: z.boolean().optional() });
+
+/** Pre-resolved permissions shape (review N2 — single source of truth). */
+const ResolvedPermissionsShape = z.object({ dangerouslySkipAllowlist: z.boolean() });
 
 /**
  * Register the `request_tool_access` platform tool.
@@ -71,12 +72,28 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
         workspaceId: z.string().describe("(runtime-injected) workspace identity"),
         sessionId: z.string().optional().describe("(runtime-injected) session identity"),
         actionId: z.string().optional().describe("(runtime-injected) FSM action id"),
+        // Review N2: prefer pre-resolved permissions when the runtime
+        // (fsm-engine.buildTools) has already merged job/workspace/daemon.
+        // The raw fields below remain a fall-through for callers that
+        // don't have a resolution context handy.
+        resolvedPermissions: ResolvedPermissionsShape.optional().describe(
+          "(runtime-injected) effective permissions, pre-resolved",
+        ),
         jobPermissions: PermissionsShape.optional().describe(
-          "(runtime-injected) per-job permissions config",
+          "(runtime-injected) per-job permissions config (fallback if resolvedPermissions absent)",
         ),
         workspacePermissions: PermissionsShape.optional().describe(
-          "(runtime-injected) workspace-level permissions config",
+          "(runtime-injected) workspace-level permissions config (fallback)",
         ),
+        // Review N3: when set, derives expiresAt = now + jobTimeoutMs so
+        // the elicitation TTL matches the job lifetime per the user-
+        // resolved Phase 12 policy. Falls back to DEFAULT_ELICITATION_TTL_MS.
+        jobTimeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("(runtime-injected) parent job timeout in ms"),
       },
     },
     async ({
@@ -85,17 +102,21 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
       workspaceId,
       sessionId,
       actionId,
+      resolvedPermissions,
       jobPermissions,
       workspacePermissions,
+      jobTimeoutMs,
     }): Promise<CallToolResult> => {
-      const daemonDangerouslySkipAllowlist =
-        process.env.FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS === "1";
-
-      const effective = resolvePermissions({
-        job: jobPermissions,
-        workspace: workspacePermissions,
-        daemonDangerouslySkipAllowlist,
-      });
+      // Review N2: prefer resolvedPermissions when present. Falls back to
+      // resolving from raw fields at call time so callers without a
+      // resolution context still work.
+      const effective =
+        resolvedPermissions ??
+        resolvePermissions({
+          job: jobPermissions,
+          workspace: workspacePermissions,
+          daemonDangerouslySkipAllowlist: process.env.FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS === "1",
+        });
 
       if (effective.dangerouslySkipAllowlist) {
         // Phase 1.C — bypass branch. Operators read this in
@@ -112,8 +133,24 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
 
       // Phase 12.C — elicitation branch. Emit a tool-allowlist elicitation
       // and surface a structured denial so the LLM can fail-step cleanly.
+      // Review N3: derive expiresAt from job timeout when available so the
+      // elicitation TTL matches the job lifetime; else default to 30 min.
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + DEFAULT_ELICITATION_TTL_MS).toISOString();
+      const ttlMs = jobTimeoutMs ?? DEFAULT_ELICITATION_TTL_MS;
+      const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+
+      // Review N4: warn-log when sessionId fallback fires. The fallback is
+      // safe (Activity feed shows "unknown" rather than crashing the
+      // create), but it masks bugs where future call sites forget to
+      // thread sessionId through scope. Loud log gives operators a
+      // bread-crumb without erroring out.
+      if (!sessionId) {
+        ctx.logger.warn("request_tool_access: missing sessionId in scope — using 'unknown'", {
+          toolName,
+          workspaceId,
+          actionId,
+        });
+      }
 
       try {
         const created = await ElicitationStorage.create({

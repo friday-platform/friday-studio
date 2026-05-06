@@ -488,6 +488,15 @@ export interface FSMEngineOptions {
    * forwarding contract as `jobPermissions` but at the workspace tier.
    */
   workspacePermissions?: import("@atlas/config").PermissionsConfig;
+  /**
+   * Effective parent-job timeout in milliseconds. When set, surfaces in
+   * the wrapped scope as `jobTimeoutMs` so scope-injected elicitation
+   * tools (e.g. `request_tool_access`) can derive `expiresAt = now +
+   * jobTimeoutMs` per the user-resolved Phase 12 policy ("tied to job
+   * timeout"). Workspace runtime sets this from the resolved per-job
+   * timeout (or omits when no timeout configured). Review N3.
+   */
+  jobTimeoutMs?: number;
 }
 
 export class FSMEngine {
@@ -2333,12 +2342,22 @@ export class FSMEngine {
       // `request_tool_access` (and any future scope-injected tool that
       // needs them). Other wrapped tools strip extras via Zod input
       // validation, so this is harmless surface widening.
+      //
+      // Review N2: pass `resolvedPermissions` (computed once above for
+      // the bypass check) so the tool consumes the same merge result
+      // instead of re-resolving at call time. Raw fields kept for
+      // back-compat with callers that don't have a resolution context.
       ...(this.options.scope.sessionId && { sessionId: this.options.scope.sessionId }),
       ...(actionId && { actionId }),
+      resolvedPermissions: effectivePermissions,
       ...(this.options.jobPermissions && { jobPermissions: this.options.jobPermissions }),
       ...(this.options.workspacePermissions && {
         workspacePermissions: this.options.workspacePermissions,
       }),
+      // Review N3: surface job timeout when known so request_tool_access
+      // can derive expiresAt = now + jobTimeoutMs (Phase 12 user-resolved
+      // policy). Optional — falls back to tool-local default when absent.
+      ...(this.options.jobTimeoutMs !== undefined && { jobTimeoutMs: this.options.jobTimeoutMs }),
     });
     Object.assign(tools, wrapped);
 

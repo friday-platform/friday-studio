@@ -1,6 +1,6 @@
 import type { AtlasTool, AtlasTools } from "@atlas/agent-sdk";
 import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
-import type { PermissionsConfig } from "@atlas/config";
+import type { PermissionsConfig, ResolvedPermissions } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 
 export { PLATFORM_TOOL_NAMES };
@@ -55,6 +55,11 @@ export interface ToolScope {
    * `request_tool_access` so it can call `resolvePermissions` at call time
    * with the daemon-env floor. Optional — missing means "no per-job
    * override; fall through to workspace + daemon".
+   *
+   * 2026-05-06 review N2: prefer setting `resolvedPermissions` (single
+   * source of truth resolved at scope-construction time). Raw
+   * job/workspace fields remain supported for back-compat / call-sites
+   * that don't have a resolution context handy.
    */
   jobPermissions?: PermissionsConfig;
   /**
@@ -62,6 +67,23 @@ export interface ToolScope {
    * `jobPermissions` but at the workspace tier.
    */
   workspacePermissions?: PermissionsConfig;
+  /**
+   * Pre-resolved effective permissions (job > workspace > daemon env).
+   * When set, scope-injected tools (e.g. `request_tool_access`) use this
+   * directly instead of re-resolving from the raw fields. Resolves the
+   * "two layers call resolvePermissions independently" duplication
+   * flagged in 2026-05-06 review N2 — single source of truth at
+   * scope-construction time.
+   */
+  resolvedPermissions?: ResolvedPermissions;
+  /**
+   * Parent job's effective timeout (ms). When set, scope-injected
+   * elicitation tools derive `expiresAt = now + jobTimeoutMs` so the
+   * elicitation TTL matches the job lifetime — per the user-resolved
+   * Phase 12 policy ("tied to job timeout"). When absent, callers fall
+   * back to a tool-local default. Review N3.
+   */
+  jobTimeoutMs?: number;
 }
 
 /**
@@ -102,6 +124,8 @@ export function wrapPlatformToolsWithScope(
             ...(scope.actionId && { actionId: scope.actionId }),
             ...(scope.jobPermissions && { jobPermissions: scope.jobPermissions }),
             ...(scope.workspacePermissions && { workspacePermissions: scope.workspacePermissions }),
+            ...(scope.resolvedPermissions && { resolvedPermissions: scope.resolvedPermissions }),
+            ...(scope.jobTimeoutMs !== undefined && { jobTimeoutMs: scope.jobTimeoutMs }),
           },
           opts,
         )) as AtlasTool["execute"],
