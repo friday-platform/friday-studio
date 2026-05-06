@@ -151,4 +151,23 @@ describe("interpolatePromptPlaceholders", () => {
     );
     expect(out).toBe("i=0 ok=false");
   });
+
+  it("supports apostrophes inside double-quoted default literals", () => {
+    // Authors reach for the double-quoted form precisely when the fallback
+    // contains an apostrophe ("don't", "it's"). Single-quoted literals don't
+    // support backslash escapes, so this is the documented way to embed `'`.
+    const out = interpolatePromptPlaceholders(`Reply: {{inputs.greeting | default: "it's me"}}`, {
+      config: {},
+    });
+    expect(out).toBe("Reply: it's me");
+  });
+
+  it("renders an empty string when default is `''` and the path is missing", () => {
+    // Edge of the falsy-handling rule: an explicit empty fallback should
+    // still apply, producing an empty substitution rather than leaving the
+    // placeholder verbatim. Pin it so the `?? cursor` fallthrough doesn't
+    // accidentally start treating `""` defaults as absent.
+    const out = interpolatePromptPlaceholders("[{{inputs.x | default: ''}}]", { config: {} });
+    expect(out).toBe("[]");
+  });
 });

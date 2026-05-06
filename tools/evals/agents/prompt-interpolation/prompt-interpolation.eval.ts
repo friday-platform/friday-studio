@@ -1,22 +1,19 @@
 /**
- * Prompt-interpolation end-to-end eval.
- *
- * Anchors the behavior PR #199 fixes: agent prompts that reference
- * `{{inputs.x}}` (and the Liquid-style `| default: '...'` filter) are resolved
- * by `interpolatePromptPlaceholders` BEFORE being sent to the LLM, so the
- * model sees real data instead of literal mustache syntax.
+ * Prompt-interpolation downstream eval.
  *
  * The unit tests in `packages/fsm-engine/tests/prompt-interpolation.test.ts`
- * pin the substring-substitution contract. This eval pins the downstream
- * effect: an interpolated prompt produces an LLM response that addresses the
- * substituted values, contains no `{{...}}` leakage, and isn't a
- * "missing input" refusal — which is exactly the failure shape the PR cites.
+ * already pin the substring-substitution contract. This eval covers a
+ * complementary, model-side property: when the rendered prompt is sent to a
+ * real LLM, the response addresses the substituted values, doesn't leak
+ * `{{...}}` syntax, and isn't a "missing input" refusal — the failure shape
+ * cited by PR #199.
  *
- * Why a real-LLM eval on top of unit tests: a future refactor that kept the
- * function correct but broke the call ordering (e.g. interpolating after the
- * prompt was sent) would not fail the unit tests but WOULD fail this eval,
- * because the LLM's output would suddenly start echoing `{{inputs.x}}` or
- * refusing.
+ * Scope note: this eval calls `interpolatePromptPlaceholders` directly, NOT
+ * via `runtime.ts:executeAgent`, so a regression that removed the
+ * interpolation call from the agent-action path would not be caught here.
+ * That end-to-end coverage lives in the daemon-side smoke test documented in
+ * the PR. Treat this eval as "given a correctly-rendered prompt, the LLM
+ * behaves," not "the FSM call site is wired correctly."
  */
 
 import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
@@ -175,19 +172,9 @@ const cases: InterpolationCase[] = [
     expectNotInPrompt: ["{{", "}}", "classic SNES/GBA"],
     expectInResponse: ["knight"],
   },
-  {
-    id: "empty-string-fallback",
-    name: "empty-string input still triggers the default (Liquid convention)",
-    // Forms commonly post "" for unfilled optional fields. Without the
-    // empty-string-as-missing rule, the default would never fire here.
-    template: "Greet the visitor in {{inputs.language | default: 'English'}}. Keep it to one line.",
-    config: { language: "" },
-    input: "greeting: empty language",
-    expectInPrompt: ["English"],
-    expectNotInPrompt: ["{{", "}}"],
-    // Hello / hi / welcome — any common English greeting token.
-    expectInResponse: [],
-  },
+  // Empty-string-as-missing semantics are covered by unit tests in
+  // prompt-interpolation.test.ts; an LLM run adds nothing the no-leak /
+  // no-refusal scorers don't already give us on every other case.
 ];
 
 // ---------------------------------------------------------------------------
@@ -216,6 +203,10 @@ async function runInterpolationCase(testCase: InterpolationCase): Promise<RunOut
       "You follow the user's instruction precisely and respond in plain prose. Keep responses short.",
     prompt: interpolatedPrompt,
     maxOutputTokens: 200,
+    // Determinism: keyword scoring is paraphrase-sensitive. Pinning to 0
+    // doesn't fully eliminate variance (server-side sampling can still
+    // diverge on ties) but materially reduces flake.
+    temperature: 0,
   });
   const latencyMs = performance.now() - start;
 
