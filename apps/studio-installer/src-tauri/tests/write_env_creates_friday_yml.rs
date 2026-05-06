@@ -8,18 +8,34 @@
 
 use std::env;
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 
 use studio_installer_lib::commands::env_file::write_env_file;
 use tempfile::TempDir;
 
+/// Serialise tests in this file. Cargo runs tests in parallel by
+/// default, but write_env_file mutates ~/.friday/local under HOME and
+/// the atomic-write tmp-then-rename dance is sensitive to two parallel
+/// invocations stomping each other's `.env.tmp`.
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
 #[test]
 fn write_env_with_openai_key_creates_friday_yml() {
+    let _g = env_lock();
     let tmp = TempDir::new().unwrap();
     // dirs::home_dir() on macOS reads $HOME first.
-    // SAFETY: tests in a single Cargo target run in-process; we don't
-    // run this concurrently with anything that depends on $HOME.
+    // SAFETY: env_lock() above serialises HOME mutations across tests
+    // in this file.
     unsafe {
         env::set_var("HOME", tmp.path());
+        // Make sure no leftover FRIDAY_LAUNCHER_HOME from another test
+        // overrides HOME-based resolution.
+        env::remove_var("FRIDAY_LAUNCHER_HOME");
     }
 
     let result = write_env_file(
@@ -49,9 +65,11 @@ fn write_env_with_openai_key_creates_friday_yml() {
 
 #[test]
 fn write_env_with_anthropic_key_does_not_create_friday_yml() {
+    let _g = env_lock();
     let tmp = TempDir::new().unwrap();
     unsafe {
         env::set_var("HOME", tmp.path());
+        env::remove_var("FRIDAY_LAUNCHER_HOME");
     }
 
     let result = write_env_file(

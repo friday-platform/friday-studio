@@ -217,7 +217,7 @@ func loadDotEnv(path string) []string {
 		return nil
 	}
 	var out []string
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
@@ -230,7 +230,12 @@ func loadDotEnv(path string) []string {
 		if key == "" {
 			continue
 		}
-		value := unquoteEnvValue(line[eq+1:])
+		// Trim trailing `\r` BEFORE unquoting so CRLF-saved files
+		// (Notepad on Windows) don't smuggle a `\r` into the value
+		// and then survive the quote-strip because the last byte was
+		// CR rather than the matching quote. Mirrors the same trim
+		// in apps/studio-installer/.../env_file.rs's parse_env_lines.
+		value := unquoteEnvValue(strings.TrimRight(line[eq+1:], "\r"))
 		out = append(out, key+"="+value)
 	}
 	return out
@@ -263,6 +268,61 @@ func unquoteEnvValue(v string) string {
 		return v[1 : len(v)-1]
 	}
 	return v
+}
+
+// jetStreamStoreDirEnvKey is the single canonical knob for JetStream's
+// on-disk store path. Written by the installer (Stream A) and dev
+// script into ~/.friday/local/.env; read by the launcher (here), the
+// atlas-cli `friday migrate` command (Stream B), and the daemon's
+// readJetStreamConfig. All three must compute the same default if the
+// key is absent — see resolveJetStreamStoreDir.
+const jetStreamStoreDirEnvKey = "FRIDAY_JETSTREAM_STORE_DIR"
+
+// resolveJetStreamStoreDir returns the absolute path to use for
+// nats-server's JetStream store, plus a provenance string describing
+// where the value came from.
+//
+// Resolution order:
+//  1. FRIDAY_JETSTREAM_STORE_DIR in ~/.friday/local/.env, if present
+//     and non-empty → ("env-from-dotenv").
+//  2. Fallback: <friendlyHome()>/jetstream → ("default").
+//
+// The fallback default MUST match the value the installer's
+// write_env_file emits and the dev script writes, so an absent .env
+// key resolves identically across launcher/migrate-CLI/daemon.
+func resolveJetStreamStoreDir() (storeDir, source string) {
+	for _, kv := range loadDotEnv(filepath.Join(friendlyHome(), ".env")) {
+		i := strings.IndexByte(kv, '=')
+		if i <= 0 {
+			continue
+		}
+		if kv[:i] != jetStreamStoreDirEnvKey {
+			continue
+		}
+		if v := strings.TrimSpace(kv[i+1:]); v != "" {
+			return v, "env-from-dotenv"
+		}
+		// Key present but empty → treat as missing (fall through to
+		// the default). Matches the contract Stream B's @std/dotenv
+		// reader applies and the design doc's "missing-or-empty"
+		// fallback rule.
+		break
+	}
+	return filepath.Join(friendlyHome(), "jetstream"), "default"
+}
+
+// natsServerArgs builds the argv slice for the supervised nats-server
+// process. Extracted as a pure function to keep the args layout (flag
+// order, store-dir position) trivially assertable in tests without
+// touching the surrounding spec wiring.
+func natsServerArgs(storeDir string) []string {
+	return []string{
+		"--addr", "127.0.0.1",
+		"--port", "4222",
+		"--jetstream",
+		"-sd", storeDir,
+		"--http_port", "8222",
+	}
 }
 
 func discoverClaudeBinary() string {
@@ -363,6 +423,11 @@ func supervisedProcessNames() []string {
 // with a developer's real Friday instance running on the production
 // ports.
 func supervisedProcesses(binDir string) []processSpec {
+	// Resolve JetStream store dir once per call. The launcher logs the
+	// path + source separately on startup (see main.go onReady); this
+	// site only needs the value to wire into nats-server's args.
+	jetstreamStoreDir, _ := resolveJetStreamStoreDir()
+
 	specs := []processSpec{
 		// `nats-server` MUST start before `friday` — atlasd's
 		// NatsManager probes 127.0.0.1:4222 at boot and reuses an
@@ -384,7 +449,17 @@ func supervisedProcesses(binDir string) []processSpec {
 			// session/event traffic + JetStream state, none of which
 			// should be reachable from the LAN. atlasd's NatsManager
 			// connects via 127.0.0.1:4222 so loopback-only is fine.
-			args:       []string{"--addr", "127.0.0.1", "--port", "4222", "--jetstream", "--http_port", "8222"},
+			//
+			// `-sd <storeDir>` pins JetStream's on-disk store under a
+			// stable, well-known path. The path is resolved from
+			// FRIDAY_JETSTREAM_STORE_DIR in ~/.friday/local/.env
+			// (installer-written) with a launcher-computed fallback to
+			// <friendlyHome()>/jetstream. The same default is computed
+			// identically across writers (installer, dev script) and
+			// readers (this launcher, atlas-cli `friday migrate`,
+			// daemon `readJetStreamConfig`), so an absent value
+			// resolves identically everywhere.
+			args:       natsServerArgs(jetstreamStoreDir),
 			healthPort: "8222", healthPath: "/healthz",
 		},
 		// `friday` is the atlas-cli daemon binary. Without an explicit

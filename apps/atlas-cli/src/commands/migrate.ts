@@ -1,23 +1,28 @@
 /**
- * `atlas migrate` — run pending data migrations directly against NATS.
+ * `atlas migrate` — run pending data migrations.
  *
- * Standalone: connects to the broker (FRIDAY_NATS_URL or default
- * localhost:4222), invokes `runMigrations` from the `jetstream` package
- * — same function the daemon's startup hook calls. No daemon HTTP API
- * involved; the CLI is independent of daemon lifecycle.
+ * Two phases:
+ *   1. **Pre-NATS migrations** (filesystem-only, no broker connection).
+ *      Live in `src/pre-nats-migrations/`; today the only entry is
+ *      `relocate-jetstream-store` which moves legacy `$TMPDIR/nats/...`
+ *      data to `<FRIDAY_JETSTREAM_STORE_DIR>`. See the v6 design doc.
+ *   2. **Post-NATS migrations** (KV-backed, run via `runMigrations` from
+ *      the jetstream package — same function the daemon calls at
+ *      startup).
  *
- *   atlas migrate                run pending migrations
+ *   atlas migrate                run pending migrations (both phases)
  *   atlas migrate --list         show every migration entry + status
  *   atlas migrate --dry-run      report what would run without changing state
  *   atlas migrate --json         machine-readable output
  *
- * Daemon also runs the same queue at startup; this command is for
- * recovery scenarios (daemon down + want to inspect / advance state)
- * and for CI/CD pipelines that want to migrate before starting the
- * daemon. Idempotent — re-running is safe.
+ * Daemon also runs the post-NATS queue at startup; this command is for
+ * recovery scenarios (daemon down + want to inspect / advance state) and
+ * for the installer flow which invokes `friday migrate --json` after
+ * extract and before launching the binary. Idempotent — re-running is
+ * safe.
  *
- * Caveat: in the solo-dev default the daemon spawns nats-server, so
- * if the daemon is down NATS is also down — the CLI will surface a
+ * Caveat: in the solo-dev default the daemon spawns nats-server, so if
+ * the daemon is down NATS is also down — the CLI will surface a
  * connection error pointing the operator at `atlas daemon start` or
  * external NATS.
  */
@@ -28,6 +33,7 @@ import { getAllMigrations } from "@atlas/atlasd/migrations";
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
+import { load } from "@std/dotenv";
 import {
   type ConnectionHandle,
   connectOrSpawn,
@@ -38,6 +44,13 @@ import {
   resolveNatsUrl,
   runMigrations,
 } from "jetstream";
+import {
+  listPreNatsEntries,
+  preNatsMigrations,
+  runPreNatsMigrations,
+} from "../pre-nats-migrations/index.ts";
+import { acquirePreNatsLock, LockBusyError, type LockHandle } from "../pre-nats-migrations/lock.ts";
+import type { MigrationOutcome } from "../pre-nats-migrations/types.ts";
 import { errorOutput, infoOutput, successOutput } from "../utils/output.ts";
 import type { YargsInstance } from "../utils/yargs.ts";
 
@@ -81,28 +94,146 @@ export function builder(y: YargsInstance) {
     .example("$0 migrate --dry-run", "Preview what would run");
 }
 
-export const handler = async (argv: MigrateArgs): Promise<void> => {
-  const url = resolveNatsUrl({ url: argv.natsUrl });
-  // Same store_dir resolution the daemon uses — env override → daemon
-  // home / jetstream. So if we end up auto-spawning, the spawn reads
-  // (and writes) the same JetStream data the daemon would have served.
-  const cfg = readJetStreamConfig();
-  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+/**
+ * Load `<friday_home>/.env` into `process.env` so subsequent reads see the
+ * installer's port remap (and any other operator-set values). Tolerant —
+ * missing `.env` is fine on a fresh dev install. The installer always
+ * writes `.env` before invoking `friday migrate`.
+ */
+export async function loadFridayEnv(fridayHome: string): Promise<void> {
+  try {
+    await load({ envPath: join(fridayHome, ".env"), export: true });
+  } catch {
+    // .env may not exist yet (fresh install); that's fine, defaults apply.
+  }
+}
 
-  // For mutating runs only: refuse if a daemon is reachable. The daemon
-  // runs the same queue at startup under the same lock, so racing it
-  // would just produce a `MigrationLockError` later — fail early with a
-  // friendlier message. `--list` and `--dry-run` are read-only and stay
-  // available for inspection while the daemon is up.
+export const handler = async (argv: MigrateArgs): Promise<void> => {
+  // 1. Load .env BEFORE any other process.env reads. The daemon-alive
+  //    probe and the @std/dotenv-aware downstream code both depend on
+  //    this happening at handler entry.
+  const fridayHome = getFridayHome();
+  await loadFridayEnv(fridayHome);
+
   const isReadOnly = argv.list || argv.dryRun;
+
+  // 2. --list: enumerate both pre-NATS and post-NATS entries, no
+  //    mutating work. Daemon-alive does not gate read-only ops.
+  if (argv.list) {
+    await handleList(argv);
+    return;
+  }
+
+  // 3. For mutating runs, refuse if a daemon is reachable. The daemon
+  //    runs the post-NATS queue at startup under the same lock, so racing
+  //    it would just produce a `MigrationLockError` later — fail early
+  //    with a friendlier message. `--dry-run` skips this check (read-only).
   if (!isReadOnly && (await isDaemonRunning())) {
+    const port = process.env.FRIDAY_PORT_FRIDAY ?? "8080";
     errorOutput(
-      "Daemon is running on http://localhost:8080 — restart it to apply pending " +
+      `Daemon is running on http://localhost:${port} — restart it to apply pending ` +
         "migrations (`atlas daemon restart`), or stop it to run them standalone. " +
         "`atlas migrate --list` and `--dry-run` work while the daemon is up.",
     );
     process.exit(1);
   }
+
+  // 4. Pre-NATS migrations. For mutating runs, acquire the PID lock;
+  //    release IMMEDIATELY after the queue finishes (before connectOrSpawn).
+  //    Read-only / dry-run ops skip the lock entirely.
+  let lock: LockHandle | null = null;
+  if (!isReadOnly) {
+    try {
+      lock = await acquirePreNatsLock(fridayHome);
+    } catch (err) {
+      if (err instanceof LockBusyError) {
+        errorOutput(err.message);
+        process.exit(1);
+      }
+      errorOutput(stringifyError(err));
+      process.exit(1);
+    }
+  }
+
+  let preNatsResult: { outcomes: MigrationOutcome[]; aborted: boolean };
+  try {
+    preNatsResult = await runPreNatsMigrations(logger, { dryRun: !!argv.dryRun });
+  } finally {
+    if (lock) {
+      await lock.release();
+    }
+  }
+
+  // 5. If pre-NATS aborted, report and skip post-NATS entirely.
+  if (preNatsResult.aborted) {
+    if (argv.json) {
+      console.log(
+        JSON.stringify(
+          { preNats: preNatsResult.outcomes, ran: [], skipped: [], failed: [] },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    const last = preNatsResult.outcomes[preNatsResult.outcomes.length - 1];
+    const errKind = last?.error?.kind ?? "unknown";
+    const errMsg = last?.error?.message ?? "(no message)";
+    errorOutput(`pre-NATS migration ${last?.id} failed (${errKind}): ${errMsg}`);
+    process.exit(1);
+  }
+
+  // 6. Post-NATS phase: connect to NATS and run the KV-backed queue.
+  await runPostNatsPhase(argv, preNatsResult.outcomes);
+};
+
+async function handleList(argv: MigrateArgs): Promise<void> {
+  const url = resolveNatsUrl({ url: argv.natsUrl });
+  const cfg = readJetStreamConfig();
+  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+
+  // Pre-NATS list works even if NATS is unreachable — collect first.
+  const preEntries = listPreNatsEntries();
+
+  let handle: ConnectionHandle;
+  try {
+    handle = await connectOrSpawn({
+      url,
+      name: "atlas-cli-migrate",
+      storeDir,
+      spawnFallback: !argv.noSpawn,
+      logger,
+    });
+  } catch (err) {
+    errorOutput(stringifyError(err));
+    process.exit(1);
+  }
+  const { nc, cleanup } = handle;
+  try {
+    const migrations = await getAllMigrations();
+    const records = await listMigrationRecords(nc);
+    const byId = new Map(records.map((r) => [r.id, r]));
+    const entries = migrations.map((m) => ({
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      record: byId.get(m.id) ?? null,
+    }));
+    if (argv.json) {
+      console.log(JSON.stringify({ preNats: preEntries, migrations: entries }, null, 2));
+      return;
+    }
+    printPreNatsList(preEntries);
+    printList(entries);
+  } finally {
+    await cleanup();
+  }
+}
+
+async function runPostNatsPhase(argv: MigrateArgs, preNats: MigrationOutcome[]): Promise<void> {
+  const url = resolveNatsUrl({ url: argv.natsUrl });
+  const cfg = readJetStreamConfig();
+  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
 
   let handle: ConnectionHandle;
   try {
@@ -119,32 +250,20 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   }
 
   const { nc, cleanup } = handle;
-
   try {
     const migrations = await getAllMigrations();
-    if (argv.list) {
-      const records = await listMigrationRecords(nc);
-      const byId = new Map(records.map((r) => [r.id, r]));
-      const entries = migrations.map((m) => ({
-        id: m.id,
-        name: m.name,
-        description: m.description,
-        record: byId.get(m.id) ?? null,
-      }));
-      if (argv.json) {
-        console.log(JSON.stringify({ migrations: entries }, null, 2));
-        return;
-      }
-      printList(entries);
-      return;
-    }
-
     const result = await runMigrations(nc, migrations, logger, {
       dryRun: !!argv.dryRun,
       runner: "cli",
     });
     if (argv.json) {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(
+        JSON.stringify(
+          { preNats, ran: result.ran, skipped: result.skipped, failed: result.failed },
+          null,
+          2,
+        ),
+      );
       return;
     }
     if (argv.dryRun) {
@@ -173,17 +292,24 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   } finally {
     await cleanup();
   }
-};
+}
 
 /**
  * Cheap probe of the daemon's /health endpoint. 500ms timeout is enough
  * on localhost; failure modes (DNS, connection refused, timeout) all
  * fall through to "no daemon" which is the safe default — the lock in
  * `runMigrations` is the actual correctness guard.
+ *
+ * Reads `FRIDAY_PORT_FRIDAY` from `process.env` (already populated by
+ * `loadFridayEnv` at handler entry) so the probe sees the installer's
+ * remapped port (typically 18080) rather than the legacy default 8080.
  */
-async function isDaemonRunning(): Promise<boolean> {
+export async function isDaemonRunning(): Promise<boolean> {
+  const port = process.env.FRIDAY_PORT_FRIDAY ?? "8080";
   try {
-    const res = await fetch("http://localhost:8080/health", { signal: AbortSignal.timeout(500) });
+    const res = await fetch(`http://localhost:${port}/health`, {
+      signal: AbortSignal.timeout(500),
+    });
     return res.ok;
   } catch {
     return false;
@@ -195,6 +321,15 @@ interface MigrationEntry {
   name: string;
   description?: string;
   record: MigrationRecord | null;
+}
+
+function printPreNatsList(entries: ReturnType<typeof listPreNatsEntries>): void {
+  if (entries.length === 0) return;
+  for (const e of entries) {
+    console.log(`[pre-NATS] ${e.id}  ${e.name}`);
+    console.log(`  ${e.description}`);
+    console.log("");
+  }
 }
 
 function printList(entries: MigrationEntry[]): void {
@@ -216,3 +351,6 @@ function printList(entries: MigrationEntry[]): void {
     console.log("");
   }
 }
+
+// Re-export for tests.
+export { preNatsMigrations };

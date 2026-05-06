@@ -1,18 +1,96 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_norway::{Mapping, Value};
 
+use crate::friday_home::friday_home_dir;
+
 fn env_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    Ok(home.join(".friday").join("local").join(".env"))
+    Ok(friday_home_dir()?.join(".env"))
+}
+
+/// Atomic write helper: write to `<path>.tmp`, fsync, then rename over the
+/// original. Guarantees that an external observer (another process, or the
+/// same process restarted after crash) sees either the prior content or
+/// the full new content — never a partial mix and never an empty file.
+///
+/// Best-effort cleanup: if a stale `<path>.tmp` exists from a prior crash,
+/// we attempt to remove it before writing the fresh tmp. Cleanup failures
+/// are logged and ignored — the subsequent write+rename overwrites the
+/// stale tmp anyway.
+///
+/// fsync semantics: we fsync the file contents (data) but NOT the
+/// containing directory. On most platforms this is sufficient for the
+/// "no torn write" guarantee — the rename is atomic, so the worst case
+/// after a crash is that the rename was lost (original survives) rather
+/// than a partial file. Operators who need durable-against-power-loss
+/// fsync of the directory entry can add it later; the failure mode here
+/// (config rolled back to prior content) is acceptable for `.env`.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("path has no parent: {}", path.display()))?;
+
+    // Best-effort cleanup of a stale tmp from a prior crash. Don't fail
+    // the write if cleanup fails — the rename below will replace it.
+    let tmp = path.with_extension({
+        let existing = path.extension().map(|e| e.to_string_lossy().into_owned());
+        match existing {
+            Some(e) if !e.is_empty() => format!("{e}.tmp"),
+            _ => "tmp".to_string(),
+        }
+    });
+    if tmp.exists() {
+        if let Err(e) = fs::remove_file(&tmp) {
+            eprintln!(
+                "[installer] could not remove stale tmp {}: {e} (continuing)",
+                tmp.display()
+            );
+        }
+    }
+
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("create parent dir {}: {e}", parent.display()))?;
+
+    {
+        let mut f = fs::File::create(&tmp)
+            .map_err(|e| format!("create tmp {}: {e}", tmp.display()))?;
+        f.write_all(bytes)
+            .map_err(|e| format!("write tmp {}: {e}", tmp.display()))?;
+        f.sync_all()
+            .map_err(|e| format!("fsync tmp {}: {e}", tmp.display()))?;
+    }
+
+    fs::rename(&tmp, path).map_err(|e| {
+        // Cleanup the leftover tmp on rename failure so we don't leak
+        // partial state. If THAT fails, we've already lost — log and move on.
+        if let Err(rm_err) = fs::remove_file(&tmp) {
+            eprintln!(
+                "[installer] rename failed and tmp cleanup failed at {}: {rm_err}",
+                tmp.display()
+            );
+        }
+        format!(
+            "rename {} -> {}: {e}",
+            tmp.display(),
+            path.display()
+        )
+    })?;
+
+    Ok(())
 }
 
 /// Parse a `.env`-format file into an ordered list of (key, value) pairs.
 /// Lines that don't match `KEY=VALUE` are preserved as-is (comments, blanks).
-fn parse_env_lines(content: &str) -> Vec<(Option<String>, String)> {
+///
+/// Verbatim values: no quote stripping, no escape handling. The migrate
+/// command (commands/migrate_jetstream_store.rs) re-uses this same parser
+/// shape via the `parse_env_simple` helper to keep the writer/reader
+/// contract symmetrical inside the installer crate.
+pub(crate) fn parse_env_lines(content: &str) -> Vec<(Option<String>, String)> {
     content
         .lines()
         .map(|line| {
@@ -189,33 +267,56 @@ pub fn write_env_file(
     // the source of truth for port configuration; users who genuinely
     // want different ports can edit .env after install (the launcher
     // re-reads it on every restart).
-    let platform_vars = [
-        ("FRIDAY_LOCAL_ONLY", "true"),
-        ("LINK_DEV_MODE", "true"),
-        ("FRIDAY_PORT_FRIDAY", "18080"),
-        ("FRIDAY_PORT_LINK", "13100"),
-        ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090"),
-        ("FRIDAY_PORT_PLAYGROUND", "15200"),
-        ("FRIDAYD_URL", "http://localhost:18080"),
-        ("EXTERNAL_DAEMON_URL", "http://localhost:18080"),
-        ("EXTERNAL_TUNNEL_URL", "http://localhost:19090"),
+    // Per-machine value: depends on friday_home_dir() resolution, so it
+    // can't live in the static array of (&str, &str) literals below. We
+    // build the JetStream store path here and feed it into the array as
+    // a String alongside the static port/url constants.
+    //
+    // Why this lives in platform_vars (overwrite semantics) and not in
+    // an "only if missing" path: the installer is the source of truth
+    // for STORE_DIR, same convention as FRIDAY_PORT_*. Operators who
+    // genuinely want a different store path can edit .env after install
+    // (the launcher re-reads it on every restart), with the explicit
+    // understanding that the next reinstall will reset it.
+    let jetstream_store_dir = friday_home_dir()?
+        .join("jetstream")
+        .display()
+        .to_string();
+
+    let platform_vars: Vec<(&str, String)> = vec![
+        ("FRIDAY_LOCAL_ONLY", "true".to_string()),
+        ("LINK_DEV_MODE", "true".to_string()),
+        ("FRIDAY_PORT_FRIDAY", "18080".to_string()),
+        ("FRIDAY_PORT_LINK", "13100".to_string()),
+        ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090".to_string()),
+        ("FRIDAY_PORT_PLAYGROUND", "15200".to_string()),
+        ("FRIDAYD_URL", "http://localhost:18080".to_string()),
+        ("EXTERNAL_DAEMON_URL", "http://localhost:18080".to_string()),
+        ("EXTERNAL_TUNNEL_URL", "http://localhost:19090".to_string()),
         // Daemon proxies /api/link/* to LINK_SERVICE_URL; without this
         // line it falls back to the legacy :3100 and credential lookups
         // for Gmail / Slack / etc. fail with ECONNREFUSED. atlasd's
         // resolver also accepts FRIDAY_PORT_LINK as a port-only
         // fallback, but seeding the full URL here is the canonical
         // shape and keeps the env file readable.
-        ("LINK_SERVICE_URL", "http://localhost:13100"),
+        ("LINK_SERVICE_URL", "http://localhost:13100".to_string()),
+        // The installer is the single writer of FRIDAY_JETSTREAM_STORE_DIR.
+        // The launcher reads it and passes it to nats-server as -sd; the
+        // daemon reads it via readJetStreamConfig. Default: <friday_home>
+        // /jetstream — stable, persistent, never `$TMPDIR`. See
+        // docs/plans/2026-05-05-jetstream-store-migration-design.v6.md.
+        ("FRIDAY_JETSTREAM_STORE_DIR", jetstream_store_dir),
     ];
-    for (k, v) in platform_vars {
-        match existing_keys.get(k) {
-            Some(&i) => lines[i] = (Some(k.to_string()), v.to_string()),
-            None => lines.push((Some(k.to_string()), v.to_string())),
+    for (k, v) in &platform_vars {
+        match existing_keys.get(*k) {
+            Some(&i) => lines[i] = (Some((*k).to_string()), v.clone()),
+            None => lines.push((Some((*k).to_string()), v.clone())),
         }
     }
 
     let output = render_env_lines(&lines);
-    fs::write(&path, output.as_bytes()).map_err(|e| format!("Failed to write .env file: {e}"))?;
+    atomic_write(&path, output.as_bytes())
+        .map_err(|e| format!("Failed to write .env file: {e}"))?;
 
     // Read-back verification — catches the silent-fail case where
     // fs::write returned Ok but the file didn't actually land
@@ -491,10 +592,141 @@ fn manage_friday_yml_at(path: &Path, provider: WizardProvider) -> Result<(), Str
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Failed to create friday-home dir: {e}"))?;
     }
-    fs::write(path, yaml.as_bytes())
+    atomic_write(path, yaml.as_bytes())
         .map_err(|e| format!("Failed to write friday.yml at {}: {e}", path.display()))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod atomic_write_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn successful_write_leaves_no_tmp_behind() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        let tmp_sibling = tmp.path().join(".env.tmp");
+
+        atomic_write(&target, b"FOO=bar\n").unwrap();
+
+        assert!(target.exists(), "target file should exist");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "FOO=bar\n");
+        assert!(
+            !tmp_sibling.exists(),
+            ".env.tmp should not be left behind on success"
+        );
+    }
+
+    #[test]
+    fn rename_failure_leaves_original_intact() {
+        // Simulate a rename failure by making the target path a directory
+        // that contains a file (so the rename target is a non-empty dir,
+        // which fails on most platforms with EEXIST or ENOTEMPTY).
+        // We accomplish this by pre-populating both the target (as a
+        // directory) and a sentinel file inside it.
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        fs::create_dir(&target).unwrap();
+        // Drop a file inside so rename-over fails on Linux/macOS where
+        // rename(file, non-empty-dir) is rejected.
+        fs::write(target.join("sentinel"), b"original").unwrap();
+
+        let result = atomic_write(&target, b"NEW=content\n");
+        assert!(
+            result.is_err(),
+            "atomic_write should fail when target is a non-empty dir"
+        );
+
+        // Original directory + sentinel should still be there.
+        assert!(target.is_dir(), "target dir should still exist");
+        assert_eq!(
+            fs::read_to_string(target.join("sentinel")).unwrap(),
+            "original",
+            "sentinel inside the dir should be untouched"
+        );
+        // tmp file should be cleaned up by atomic_write's failure handler.
+        let tmp_path = tmp.path().join(".env.tmp");
+        assert!(
+            !tmp_path.exists(),
+            "tmp should be cleaned up when rename fails"
+        );
+    }
+
+    #[test]
+    fn existing_target_content_survives_when_rename_fails() {
+        // Pre-existing .env with prior content. Force rename to fail by
+        // pre-creating a directory at the .env.tmp path so the create
+        // step succeeds but rename can't replace .env (we simulate via
+        // a different mechanism: rename atomicity over a file-with-same
+        // contents is fine on POSIX; instead test the simpler semantic
+        // "if atomic_write returns Err, original content is intact").
+        //
+        // We approximate by making the parent dir read-only after
+        // pre-seeding the original — atomic_write's fs::File::create on
+        // the tmp will fail, returning Err before any rename happens.
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        fs::write(&target, b"ORIGINAL=keep\n").unwrap();
+
+        // Make the parent unwritable so create_tmp fails.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(tmp.path()).unwrap().permissions();
+            perms.set_mode(0o555);
+            fs::set_permissions(tmp.path(), perms).unwrap();
+        }
+
+        let result = atomic_write(&target, b"NEW=content\n");
+
+        // Restore perms so TempDir cleanup works.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(tmp.path()).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(tmp.path(), perms).unwrap();
+        }
+
+        // On unix this fails (EACCES on file create). On other platforms
+        // the test is a no-op assertion of the success path.
+        #[cfg(unix)]
+        {
+            assert!(result.is_err(), "expected EACCES error on read-only parent");
+            // Original content untouched.
+            assert_eq!(
+                fs::read_to_string(&target).unwrap(),
+                "ORIGINAL=keep\n",
+                "original .env must survive a failed write"
+            );
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = result;
+        }
+    }
+
+    #[test]
+    fn pre_existing_tmp_is_cleaned_up_on_next_write() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        let tmp_sibling = tmp.path().join(".env.tmp");
+
+        // Simulate a stale tmp from a prior crash.
+        fs::write(&tmp_sibling, b"PARTIAL=garbage").unwrap();
+        assert!(tmp_sibling.exists());
+
+        atomic_write(&target, b"GOOD=value\n").unwrap();
+
+        assert!(target.exists());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "GOOD=value\n");
+        assert!(
+            !tmp_sibling.exists(),
+            "stale .env.tmp must be cleaned up by the next successful write"
+        );
+    }
 }
 
 #[cfg(test)]

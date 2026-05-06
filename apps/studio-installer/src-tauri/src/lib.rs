@@ -1,6 +1,8 @@
 // Public so integration tests under tests/ can call commands directly
 // (specifically launch_studio in tests/launcher_handoff.rs).
 pub mod commands;
+// Shared helpers used by multiple commands. Public for integration tests.
+pub mod friday_home;
 
 use commands::{
     check_running::check_running_processes,
@@ -16,6 +18,7 @@ use commands::{
     fetch_manifest::fetch_manifest,
     installed_marker::{read_installed, write_installed},
     launch::launch_studio,
+    migrate::migrate,
     platform::{bin_dir, current_platform, install_dir},
     prewarm_agent_sdk::prewarm_agent_sdk,
     stop_running_launcher::stop_running_launcher,
@@ -57,6 +60,7 @@ pub fn run() {
             install_dir,
             bin_dir,
             prewarm_agent_sdk,
+            migrate,
             wait_for_services,
             extend_wait_deadline,
         ])

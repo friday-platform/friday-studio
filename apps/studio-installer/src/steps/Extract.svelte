@@ -44,6 +44,18 @@ let tools = $state<Tool[]>([
     args: async () => ({ installDir: await installDir() }),
     status: "pending",
   },
+  {
+    // Relocates JetStream data from $TMPDIR/nats/jetstream (where macOS
+    // periodically GCs it) to <friday_home>/jetstream and runs any
+    // post-NATS schema migrations. Idempotent — fresh installs hit a
+    // structured noop. Failures are non-fatal: the row flips to ✗, the
+    // launcher boots against the canonical store anyway, legacy data is
+    // preserved on disk for manual rsync recovery.
+    display: "Migrating data store",
+    command: "migrate",
+    args: async () => ({ installDir: await installDir() }),
+    status: "pending",
+  },
 ]);
 
 async function runTool(idx: number): Promise<void> {
