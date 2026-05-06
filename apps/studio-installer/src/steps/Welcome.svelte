@@ -19,11 +19,12 @@ let stopError = $state<string | null>(null);
 //
 // Five quick clicks on the logo open a panel where a tester can pin an
 // explicit studio version (e.g. "0.0.10"). The installer then fetches
-// `friday-studio_<version>_<arch>.tar.zst` directly from GCS — bypassing
-// the production manifest. State lives in the store (not localStorage),
-// so the override evaporates on installer relaunch. Skips SHA-256
-// verification because the synthetic manifest has no hash; the banner
-// below the panel makes that obvious.
+// `friday-studio_<version>_<arch>.tar.zst` directly, bypassing the
+// production manifest. Fetches the matching `.sha256` sibling so
+// checksum verification stays on. State lives in the store (not
+// localStorage), so the override evaporates on installer relaunch.
+// The DEV banner above the hero makes the override state obvious to
+// the tester.
 //
 // The 5-click pattern keeps the panel hidden from regular users without
 // a discoverable keystroke (which would either be in muscle memory or
