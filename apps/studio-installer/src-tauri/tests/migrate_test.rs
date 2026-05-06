@@ -8,7 +8,7 @@
 // stderr, and exit code without coupling to atlas-cli.
 //
 // FRIDAY_LAUNCHER_HOME is set per-test to point at a tempdir, isolating
-// the friday-home resolution and the installer.log writes from the
+// the friday-home resolution and the migrate.jsonl writes from the
 // developer's real ~/.friday/local.
 //
 // SAFETY: tests in a single Cargo test target run as one process with
@@ -207,8 +207,8 @@ async fn jsonl_record_appended_on_success() {
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
     assert!(result.is_ok(), "expected Ok, got {result:?}");
 
-    let log_path = log_dir.join("installer.log");
-    assert!(log_path.exists(), "installer.log not written");
+    let log_path = log_dir.join("migrate.jsonl");
+    assert!(log_path.exists(), "migrate.jsonl not written");
 
     let content = fs::read_to_string(&log_path).unwrap();
     let line = content.lines().next().expect("at least one line");
@@ -248,7 +248,7 @@ echo 'failure mode' >&2
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
     assert!(result.is_err(), "expected Err on nonzero exit");
 
-    let log_path = friday_home.join("logs").join("installer.log");
+    let log_path = friday_home.join("logs").join("migrate.jsonl");
     let content = fs::read_to_string(&log_path).unwrap();
     let line = content.lines().next().expect("a record");
     let record: serde_json::Value =

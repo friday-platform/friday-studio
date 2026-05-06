@@ -18,8 +18,11 @@
 //     JSON outcome discovery (defense in depth — the producer is
 //     supposed to keep logs on stderr, but we don't trust it).
 //   - The JSONL record is durably persisted to <friday_home>/logs/
-//     installer.log on every invocation, regardless of outcome. The
-//     command creates `logs/` if absent.
+//     migrate.jsonl on every invocation, regardless of outcome. The
+//     command creates `logs/` if absent. Dedicated per-command file
+//     so it doesn't collide with `installer.log` (which the
+//     agent-browser-chrome step already writes to with arbitrary
+//     stdout, making mixed parsing painful).
 
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
@@ -161,7 +164,7 @@ pub async fn migrate(
         outcome_for_log,
         stderr_tail.as_deref(),
     ) {
-        eprintln!("[installer] could not append installer.log record: {e}");
+        eprintln!("[installer] could not append migrate.jsonl record: {e}");
     }
 
     if exit_code == 0 {
@@ -220,7 +223,7 @@ fn find_outcome_line(stdout: &str) -> Option<MigrationOutcome> {
 
 /// Last 8 lines of stderr, capped at 2KB total. The `min(8 lines, 2KB)`
 /// rule comes from the v6 plan — the cap keeps malformed-CLI cases
-/// (binary stderr, megabyte log dumps) from bloating installer.log.
+/// (binary stderr, megabyte log dumps) from bloating migrate.jsonl.
 fn stderr_tail(stderr: &str) -> String {
     const MAX_BYTES: usize = 2048;
     const MAX_LINES: usize = 8;
@@ -243,9 +246,18 @@ fn stderr_tail(stderr: &str) -> String {
     }
 }
 
-/// Append one JSONL record to `<friday_home>/logs/installer.log`. The
+/// Append one JSONL record to `<friday_home>/logs/migrate.jsonl`. The
 /// `logs/` directory is created if absent. The record shape is fixed
-/// per the v6 plan ("installer.log format" section).
+/// per the v6 plan ("installer.log format" section — applies to the
+/// JSONL shape regardless of which file it lands in).
+///
+/// Why a dedicated file instead of the shared `installer.log`:
+/// `ensure_agent_browser_chrome.rs` already writes the
+/// `agent-browser doctor` step's stdout to `installer.log` — including
+/// noise like xcode-select prompts. Multiple writers to one file
+/// caused our JSONL records to be interleaved with arbitrary text and
+/// hard to parse. Splitting per-command into `migrate.jsonl` keeps
+/// each tool's audit trail self-contained and `jq`-parseable.
 fn append_log_record(
     friday_home: &Path,
     exit_code: i32,
@@ -255,7 +267,7 @@ fn append_log_record(
     let log_dir = friday_home.join("logs");
     fs::create_dir_all(&log_dir)
         .map_err(|e| format!("create logs dir {}: {e}", log_dir.display()))?;
-    let log_path = log_dir.join("installer.log");
+    let log_path = log_dir.join("migrate.jsonl");
 
     let record = serde_json::json!({
         "ts": iso8601_utc_now(),
