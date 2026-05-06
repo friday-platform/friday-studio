@@ -749,17 +749,15 @@ export async function expireEphemeralForSession(args: {
   const expiresAtIso = new Date(completedAt.getTime() + graceMs).toISOString();
 
   // 1) Stamp expiresAt on ephemeral artifacts bound to this session.
-  //    The sweeper picks them up at/after `expiresAt`.
+  //    The sweeper picks them up at/after `expiresAt`. Use
+  //    `listBySession` so high-throughput jobs don't N²-scan every
+  //    workspace artifact per completion. ArtifactSummary keeps
+  //    `lifecycle` (omits only `data`), so no per-id refetch needed.
   try {
-    const list = await ArtifactStorage.listByWorkspace({ workspaceId, includeData: false });
+    const list = await ArtifactStorage.listBySession({ sessionId, includeData: false });
     if (list.ok) {
       for (const summary of list.data) {
-        // ArtifactSummary omits `data` but keeps top-level fields.
-        // Refetch the full artifact to read lifecycle (it lives on
-        // the entity, not the summary). Cheap: KV gets only.
-        const got = await ArtifactStorage.get({ id: summary.id });
-        if (!got.ok || !got.data) continue;
-        const lc = got.data.lifecycle;
+        const lc = summary.lifecycle;
         if (
           lc?.kind === "ephemeral" &&
           lc.boundTo.scope === "session" &&
@@ -779,10 +777,7 @@ export async function expireEphemeralForSession(args: {
         }
       }
     } else {
-      logger.warn("listByWorkspace failed during ephemeral stamp", {
-        sessionId,
-        error: list.error,
-      });
+      logger.warn("listBySession failed during ephemeral stamp", { sessionId, error: list.error });
     }
   } catch (err) {
     logger.warn("Ephemeral artifact stamp threw", {

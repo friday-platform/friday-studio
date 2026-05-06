@@ -32,7 +32,7 @@ import {
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { createScrubber } from "@atlas/core/artifacts/scrubber";
-import { createDelegateTool } from "@atlas/core/delegate";
+import { createDelegateTool, DEFAULT_MAX_DEPTH } from "@atlas/core/delegate";
 import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
 import { buildTemporalFacts, type PlatformModels } from "@atlas/llm";
@@ -1278,7 +1278,7 @@ export class FSMEngine {
               const wantsDelegate = (action.tools ?? []).includes("delegate");
               if (wantsDelegate) {
                 const currentDepth = sig._context?.delegationDepth ?? 0;
-                const maxDepth = this.options.delegationBudget?.max_depth ?? 1;
+                const maxDepth = this.options.delegationBudget?.max_depth ?? DEFAULT_MAX_DEPTH;
                 if (!this.options.platformModels) {
                   logger.debug(
                     "delegate requested but FSMEngineOptions.platformModels missing — omitting from tool set",
@@ -1427,7 +1427,21 @@ export class FSMEngine {
               // and logged; never blocks the action. Phase 5.
               if (workspaceId) {
                 try {
-                  const memoryBlocks = await composeMemoryBlocks(workspaceId, [], logger);
+                  // Honor foregroundWorkspaceIds the same way chat does
+                  // (composeMemoryBlocks reads memory across the primary +
+                  // any foreground workspaces). Without this, FSM jobs
+                  // triggered via foreground-workspace cascades silently
+                  // see a smaller memory surface than chat — Phase 5 parity
+                  // break.
+                  const rawFgIds = sig.data?.foregroundWorkspaceIds;
+                  const foregroundIds = Array.isArray(rawFgIds)
+                    ? rawFgIds.filter((id): id is string => typeof id === "string")
+                    : [];
+                  const memoryBlocks = await composeMemoryBlocks(
+                    workspaceId,
+                    foregroundIds,
+                    logger,
+                  );
                   if (memoryBlocks.length > 0) {
                     contextPrompt = `${memoryBlocks.join("\n\n")}\n\n${contextPrompt}`;
                     logger.debug("Injected memory blocks into LLM action prompt", {

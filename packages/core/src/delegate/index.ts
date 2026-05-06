@@ -36,9 +36,14 @@ const DELEGATE_TOOL_NAME = "delegate";
  * (or when a per-job override leaves a field unset). Match the historical
  * hardcoded constants for back-compat with un-migrated workspaces.
  */
-const DEFAULT_MAX_STEPS_PER_CALL = 40;
-const DEFAULT_MAX_OUTPUT_TOKENS = 20000;
-const DEFAULT_MAX_DEPTH = 1;
+/**
+ * Default delegation budget constants. Exported so callers (notably
+ * `fsm-engine`'s pre-strip gate) reference the same values rather than
+ * hardcoding their own copy.
+ */
+export const DEFAULT_MAX_STEPS_PER_CALL = 40;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 20000;
+export const DEFAULT_MAX_DEPTH = 1;
 
 const DelegateInputSchema = z.strictObject({
   goal: z.string().describe("What the sub-agent should accomplish."),
@@ -213,24 +218,20 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
         // single-level cap). Splitting the destructure makes the keep/strip
         // decision explicit without two near-duplicate code paths.
         const childCanDelegate = depth + 1 < maxDepth;
-        const { [DELEGATE_TOOL_NAME]: parentDelegate, ...withoutDelegate } = inheritedTools;
+        const { [DELEGATE_TOOL_NAME]: _parentDelegate, ...withoutDelegate } = inheritedTools;
+        // Phase 8 — when the child can re-delegate, build a fresh delegate
+        // tool bound to `depth + 1`. We reuse the parent's deps (writer,
+        // session, platformModels, etc. — already in this function's
+        // closure) and the same `toolSetThunk` so the grandchild also
+        // inherits properly. Without this rebind, the inherited
+        // `parentDelegate` would carry the parent's depth=N closure, and
+        // the grandchild's depth check would pass on `N >= maxDepth`
+        // forever — the loophole called out in the 2026-05-06 review.
         const inheritedForChild: AtlasTools = childCanDelegate
-          ? // Re-include the parent's `delegate` reference verbatim. The AI
-            // SDK invokes its `execute` with a fresh `toolCallId`; the
-            // delegate tool itself reads `deps.depth` by closure (this
-            // function's argument), so the parent's tool already encodes
-            // its own current depth. To get the child's increment to take
-            // effect we need a re-bound delegate built with `depth + 1` —
-            // but that requires the same caller wiring (writer, logger,
-            // platformModels). We expose that re-binding only via the
-            // engine path; here we leave the inherited tool in place
-            // (depth-aware re-binding lives in fsm-engine.ts where the
-            // engine has the necessary deps). For callers that don't
-            // re-bind, the inherited delegate still enforces its own
-            // depth check at execute time, so the cap holds.
-            parentDelegate
-            ? { ...withoutDelegate, [DELEGATE_TOOL_NAME]: parentDelegate }
-            : withoutDelegate
+          ? {
+              ...withoutDelegate,
+              [DELEGATE_TOOL_NAME]: createDelegateTool({ ...deps, depth: depth + 1 }, toolSetThunk),
+            }
           : withoutDelegate;
 
         const childTools: AtlasTools = { [FINISH_TOOL_NAME]: finishTool };

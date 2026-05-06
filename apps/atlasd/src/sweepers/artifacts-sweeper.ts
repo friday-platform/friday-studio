@@ -158,15 +158,16 @@ export function startArtifactsSweeper(opts: ArtifactsSweeperOptions): ArtifactsS
         // (workspaceId points at nothing live), `ctx` is undefined —
         // synthesize an empty scan that always returns "no signal" so
         // the artifact gets deleted instead of leaking forever.
-        const scanCtx: PromotionScanContext = ctx ?? {
-          memoryStoreNames: [],
-          ...(opts.aiSummaryFallback ? { aiSummary: opts.aiSummaryFallback } : {}),
-        };
-        // Per-workspace ctx may not supply aiSummary; fall back to the
-        // sweeper-level provider when present.
-        if (!scanCtx.aiSummary && opts.aiSummaryFallback) {
-          scanCtx.aiSummary = opts.aiSummaryFallback;
-        }
+        //
+        // Build a fresh object rather than mutating `ctx` — a future
+        // memoization layer in `getScanContext` would otherwise inherit
+        // the fallback assignment for every subsequent sweep.
+        const scanCtx: PromotionScanContext = ctx
+          ? { ...ctx, aiSummary: ctx.aiSummary ?? opts.aiSummaryFallback }
+          : {
+              memoryStoreNames: [],
+              ...(opts.aiSummaryFallback ? { aiSummary: opts.aiSummaryFallback } : {}),
+            };
 
         const promote = await hasPromotionSignal(summary.id, workspaceId, scanCtx);
         if (promote) {
