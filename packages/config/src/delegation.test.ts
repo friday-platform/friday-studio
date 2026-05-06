@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { JobSpecificationSchema } from "./jobs.ts";
 import { DelegationBudgetSchema, WorkspaceConfigSchema } from "./workspace.ts";
 
 describe("DelegationBudgetSchema", () => {
@@ -38,6 +39,40 @@ describe("DelegationBudgetSchema", () => {
 
   it("rejects unknown fields (strict object)", () => {
     expect(() => DelegationBudgetSchema.parse({ unknownField: 1 })).toThrow();
+  });
+});
+
+describe("JobSpecificationSchema delegation override", () => {
+  // Phase 8 — per-job `delegation:` override on JobSpecification, mirrors
+  // the per-job `permissions:` pattern from `44f5605`. Schema accepts the
+  // same fields as the workspace-level block; merge precedence (job wins
+  // per-field) is enforced at the runtime layer, not in Zod.
+  const minimalJob = { fsm: { id: "x", initial: "s", states: { s: { type: "final" } } } };
+
+  it("accepts a job without delegation (back-compat)", () => {
+    const parsed = JobSpecificationSchema.parse(minimalJob);
+    expect(parsed.delegation).toBeUndefined();
+  });
+
+  it("accepts a job with a delegation override", () => {
+    const parsed = JobSpecificationSchema.parse({
+      ...minimalJob,
+      delegation: { max_depth: 3, max_wall_time_ms: 5000 },
+    });
+    expect(parsed.delegation?.max_depth).toBe(3);
+    expect(parsed.delegation?.max_wall_time_ms).toBe(5000);
+  });
+
+  it("rejects unknown fields inside the per-job delegation block", () => {
+    expect(() =>
+      JobSpecificationSchema.parse({ ...minimalJob, delegation: { unknownField: 1 } }),
+    ).toThrow();
+  });
+
+  it("rejects zero or negative budgets at the per-job level", () => {
+    expect(() =>
+      JobSpecificationSchema.parse({ ...minimalJob, delegation: { max_depth: 0 } }),
+    ).toThrow();
   });
 });
 

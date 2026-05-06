@@ -22,6 +22,7 @@ import {
   type StoreMountBinding,
 } from "@atlas/agent-sdk";
 import {
+  type DelegationBudget,
   expandAgentActions,
   type GlobalSkillRefConfig,
   type InlineSkillConfig,
@@ -158,6 +159,42 @@ function awaitWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T>
       },
     );
   });
+}
+
+/**
+ * Phase 8 — per-field merge of two delegation-budget blocks. Job-level
+ * override wins per field; unset fields fall through to workspace-level.
+ * Returns `undefined` when both inputs are absent so the caller can skip
+ * passing the option to FSMEngineOptions and let `createDelegateTool`'s
+ * built-in defaults apply (back-compat: no `delegation:` block ⇒ no
+ * change in behavior vs. pre-Phase-8 hardcoded constants).
+ *
+ * Exported for unit-test parity with the runtime path.
+ */
+export function mergeDelegationBudgets(
+  workspace: DelegationBudget | undefined,
+  job: DelegationBudget | undefined,
+): DelegationBudget | undefined {
+  if (!workspace && !job) return undefined;
+  const merged: DelegationBudget = {};
+  // Walk the union of keys so the output preserves only fields explicitly
+  // set somewhere — never synthesize defaults here (that's the delegate's
+  // job, where they're encoded once next to the runtime that consumes them).
+  const keys = new Set<keyof DelegationBudget>([
+    ...((workspace ? Object.keys(workspace) : []) as Array<keyof DelegationBudget>),
+    ...((job ? Object.keys(job) : []) as Array<keyof DelegationBudget>),
+  ]);
+  for (const key of keys) {
+    const jobVal = job?.[key];
+    const wsVal = workspace?.[key];
+    const value = jobVal !== undefined ? jobVal : wsVal;
+    if (value !== undefined) {
+      // Type-cast individual assignment — DelegationBudget is a union of
+      // optional fields with mixed numeric / nullable shapes.
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
 }
 
 function asAbortError(reason: unknown): Error {
@@ -365,6 +402,14 @@ interface FSMJob {
   description?: string;
   /** Max LLM tool-calling steps for FSM actions */
   maxSteps?: number;
+  /**
+   * Phase 8 — per-job delegation override. Merged per-field over the
+   * workspace-level `delegation:` block at engine-construction time
+   * (job wins; unset fields fall through). Carried on the job record so
+   * the merge is local to `createJobEngine` and stays out of the
+   * signal-routing path.
+   */
+  delegationOverride?: import("@atlas/config").DelegationBudget;
 }
 
 interface ActiveSession {
@@ -1024,6 +1069,7 @@ export class WorkspaceRuntime {
         fsmDefinition,
         description: jobSpec.description,
         maxSteps: jobSpec.config?.max_steps,
+        delegationOverride: jobSpec.delegation,
       });
 
       // D.1: declarative `jobs.*.skills` field — warn when refs don't match
@@ -1270,9 +1316,14 @@ export class WorkspaceRuntime {
       // clean error if the LLM passes `mcpServers` without one.
       platformModels,
       repairToolCall,
-      delegationBudget: this.config.workspace.delegation
-        ? { max_depth: this.config.workspace.delegation.max_depth }
-        : undefined,
+      // Phase 8 — per-field merge: workspace defaults, then job override
+      // wins per field. `mergeDelegationBudgets` returns `undefined` when
+      // both inputs are undefined, preserving back-compat (delegate falls
+      // back to its built-in defaults inside `createDelegateTool`).
+      delegationBudget: mergeDelegationBudgets(
+        this.config.workspace.delegation,
+        job.delegationOverride,
+      ),
     };
 
     let definition: FSMDefinition;

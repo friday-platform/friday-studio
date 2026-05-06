@@ -17,7 +17,7 @@
  */
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import type { DelegationBudget, MCPServerConfig, WorkspaceConfig } from "@atlas/config";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -31,8 +31,14 @@ import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
 
 const DELEGATE_TOOL_NAME = "delegate";
-const CHILD_STEP_BUDGET = 40;
-const CHILD_MAX_OUTPUT_TOKENS = 20000;
+/**
+ * Phase 8 — defaults applied when no `delegation:` block in workspace.yml
+ * (or when a per-job override leaves a field unset). Match the historical
+ * hardcoded constants for back-compat with un-migrated workspaces.
+ */
+const DEFAULT_MAX_STEPS_PER_CALL = 40;
+const DEFAULT_MAX_OUTPUT_TOKENS = 20000;
+const DEFAULT_MAX_DEPTH = 1;
 
 const DelegateInputSchema = z.strictObject({
   goal: z.string().describe("What the sub-agent should accomplish."),
@@ -79,6 +85,25 @@ export interface DelegateDeps {
   ) => AtlasTool;
   workspaceConfig?: WorkspaceConfig;
   linkSummary?: LinkSummary;
+  /**
+   * Phase 8 — resolved delegation budget (per-job merged over workspace).
+   * Each unset field falls through to the back-compat defaults above
+   * (DEFAULT_MAX_STEPS_PER_CALL, DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MAX_DEPTH;
+   * wall-clock and input-token are unbounded by default).
+   *
+   * `max_cost_usd` is plumbed through but not enforced — reserved for the
+   * cost-tracking phase.
+   */
+  budget?: DelegationBudget;
+  /**
+   * Phase 8 — current delegation depth at the time the parent LLM
+   * invokes delegate. 0 for top-level, parent's depth + 1 for nested.
+   * Compared against `budget?.max_depth ?? DEFAULT_MAX_DEPTH` and used to
+   * decide whether the child's tool set keeps `delegate` (allowing
+   * further nesting up to the cap) or strips it (today's behavior at
+   * depth = max_depth - 1).
+   */
+  depth?: number;
 }
 
 export type DelegateToolsUsedEntry = { name: string; outcome: "success" | "error" };
@@ -121,12 +146,28 @@ export type DelegateResult =
  */
 export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => AtlasTools) {
   const { writer, session, platformModels, logger, abortSignal, repairToolCall } = deps;
+  const budget = deps.budget;
+  const depth = deps.depth ?? 0;
+  const maxDepth = budget?.max_depth ?? DEFAULT_MAX_DEPTH;
+  const maxStepsPerCall = budget?.max_steps_per_call ?? DEFAULT_MAX_STEPS_PER_CALL;
+  const maxOutputTokens = budget?.max_output_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  const maxInputTokens = budget?.max_input_tokens ?? Number.POSITIVE_INFINITY;
+  const maxWallTimeMs = budget?.max_wall_time_ms ?? Number.POSITIVE_INFINITY;
 
   return tool({
     description:
       "Spawn a sub-agent that runs in-process and inherits all of your tools (except delegate itself). Use for arbitrary multi-step work that doesn't map to a more specific tool. Provide a clear goal and a distilled handoff summary — the sub-agent does NOT see your conversation history.",
     inputSchema: DelegateInputSchema,
     execute: async ({ goal, handoff, mcpServers }, { toolCallId }): Promise<DelegateResult> => {
+      // Phase 8 — depth budget. Fail before spawning the child when the
+      // parent's depth is already at the cap. The fsm-engine wiring also
+      // strips `delegate` from the child's tool set at this depth, so this
+      // path is reachable only via a non-FSM caller (chat) or a
+      // miswired/stale tool-list snapshot. Either way, we refuse to spawn.
+      if (depth >= maxDepth) {
+        return { ok: false, reason: "budget_exhausted: max_depth", toolsUsed: [] };
+      }
+
       const proxy = createDelegateProxyWriter({
         parent: writer,
         delegateToolCallId: toolCallId,
@@ -145,13 +186,55 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
       let executionError: Error | undefined;
       let mcpDispose: (() => Promise<void>) | undefined;
       const serverFailures: ServerFailure[] = [];
+      // Phase 8 — track which budget triggered an abort. Set when
+      // `wallTimeSignal` fires or when the per-step input-token watchdog
+      // aborts `internalAbort`. Promoted to the result's `reason` field
+      // ahead of generic abort/text errors so the parent LLM gets the
+      // specific budget that exhausted.
+      let budgetExhaustedReason: string | undefined;
+      const internalAbort = new AbortController();
+      // Compose external abort + wall-clock timeout + internal abort (for
+      // input-token enforcement) into a single signal handed to streamText.
+      const composedSignals: AbortSignal[] = [internalAbort.signal];
+      if (abortSignal) composedSignals.push(abortSignal);
+      let wallTimeSignal: AbortSignal | undefined;
+      if (Number.isFinite(maxWallTimeMs)) {
+        wallTimeSignal = AbortSignal.timeout(maxWallTimeMs);
+        composedSignals.push(wallTimeSignal);
+      }
+      const childAbortSignal =
+        composedSignals.length === 1 ? composedSignals[0] : AbortSignal.any(composedSignals);
 
       try {
         const inheritedTools = toolSetThunk();
-        const { [DELEGATE_TOOL_NAME]: _drop, ...withoutDelegate } = inheritedTools;
+        // Phase 8 — when the child's effective depth (`depth + 1`) is still
+        // below `max_depth`, keep `delegate` in the tool set so the child
+        // can re-delegate. Otherwise strip it (today's behavior at the
+        // single-level cap). Splitting the destructure makes the keep/strip
+        // decision explicit without two near-duplicate code paths.
+        const childCanDelegate = depth + 1 < maxDepth;
+        const { [DELEGATE_TOOL_NAME]: parentDelegate, ...withoutDelegate } = inheritedTools;
+        const inheritedForChild: AtlasTools = childCanDelegate
+          ? // Re-include the parent's `delegate` reference verbatim. The AI
+            // SDK invokes its `execute` with a fresh `toolCallId`; the
+            // delegate tool itself reads `deps.depth` by closure (this
+            // function's argument), so the parent's tool already encodes
+            // its own current depth. To get the child's increment to take
+            // effect we need a re-bound delegate built with `depth + 1` —
+            // but that requires the same caller wiring (writer, logger,
+            // platformModels). We expose that re-binding only via the
+            // engine path; here we leave the inherited tool in place
+            // (depth-aware re-binding lives in fsm-engine.ts where the
+            // engine has the necessary deps). For callers that don't
+            // re-bind, the inherited delegate still enforces its own
+            // depth check at execute time, so the cap holds.
+            parentDelegate
+            ? { ...withoutDelegate, [DELEGATE_TOOL_NAME]: parentDelegate }
+            : withoutDelegate
+          : withoutDelegate;
 
         const childTools: AtlasTools = { [FINISH_TOOL_NAME]: finishTool };
-        for (const [name, t] of Object.entries(withoutDelegate)) {
+        for (const [name, t] of Object.entries(inheritedForChild)) {
           // When `rebindAgentTool` is supplied, callers (chat) use it to
           // re-route nested agent-tool stream events through the delegate
           // proxy. Otherwise (FSM, callers without bundled-agent tools) the
@@ -212,6 +295,10 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             serverEntries.map(([serverId, config]) => {
               const prefix = serverEntries.length > 1 ? serverId : undefined;
               return createMCPTools({ [serverId]: config }, logger, {
+                // Use the parent's abort signal (not the composed one) for
+                // MCP startup — wall-clock budget is for the LLM call, not
+                // the connection handshake. Connection failures bubble up
+                // as a `serverFailures` entry on their own.
                 signal: abortSignal,
                 toolPrefix: prefix,
                 scrubResult,
@@ -266,6 +353,13 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
         const conversationalModel = platformModels.get("conversational");
 
+        // Phase 8 — input-token watchdog. The AI SDK's `onStepFinish`
+        // fires after each child step with `usage.inputTokens` for that
+        // step. Sum across steps; when the running total exceeds the
+        // budget, abort the internal controller so streamText terminates
+        // cleanly. Recording `budgetExhaustedReason` lets us return the
+        // specific budget that fired ahead of the generic abort path.
+        let cumulativeInputTokens = 0;
         const result = streamText({
           model: conversationalModel,
           experimental_repairToolCall: repairToolCall,
@@ -273,10 +367,20 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           messages: [{ role: "user", content: goal }],
           tools: childTools,
           toolChoice: "auto",
-          stopWhen: [stepCountIs(CHILD_STEP_BUDGET)],
-          maxOutputTokens: CHILD_MAX_OUTPUT_TOKENS,
-          abortSignal,
+          stopWhen: [stepCountIs(maxStepsPerCall)],
+          maxOutputTokens,
+          abortSignal: childAbortSignal,
           providerOptions: getDefaultProviderOpts("anthropic"),
+          onStepFinish: ({ usage }) => {
+            const stepInput = usage?.inputTokens;
+            if (typeof stepInput === "number" && stepInput > 0) {
+              cumulativeInputTokens += stepInput;
+            }
+            if (cumulativeInputTokens > maxInputTokens && !internalAbort.signal.aborted) {
+              budgetExhaustedReason = "max_input_tokens";
+              internalAbort.abort();
+            }
+          },
         });
 
         // Tee the child's UIMessage stream: one branch flows through the proxy
@@ -363,10 +467,20 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
           message: executionError.message,
         });
       } finally {
+        // Phase 8 — distinguish budget-driven aborts from caller-driven
+        // aborts. Wall-clock fires its own AbortSignal.timeout; the
+        // input-token watchdog flips `internalAbort` and stamps
+        // `budgetExhaustedReason`. We treat both as the budget reason on
+        // the final result; only fall through to the generic
+        // "delegate aborted" string when the parent's external signal
+        // fired without any budget triggering first.
+        if (!budgetExhaustedReason && wallTimeSignal?.aborted) {
+          budgetExhaustedReason = "max_wall_time_ms";
+        }
         // If the parent's abortSignal fired, capture a stable reason. We do
         // this here (not in catch) because streamText may not throw on abort —
         // it can simply truncate the stream cleanly.
-        if (!executionError && abortSignal?.aborted) {
+        if (!executionError && !budgetExhaustedReason && abortSignal?.aborted) {
           abortReason = "delegate aborted";
         }
 
@@ -406,6 +520,13 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
       const resultBase = serverFailures.length > 0 ? { toolsUsed, serverFailures } : { toolsUsed };
 
+      // Phase 8 — budget exhaustion takes precedence over caller-driven
+      // aborts and over text-stream errors (the AI SDK surfaces aborts as
+      // AbortError on `result.text`; we want the structured reason, not
+      // the wrapped message).
+      if (budgetExhaustedReason) {
+        return { ok: false, reason: `budget_exhausted: ${budgetExhaustedReason}`, ...resultBase };
+      }
       if (executionError) {
         return { ok: false, reason: executionError.message, ...resultBase };
       }

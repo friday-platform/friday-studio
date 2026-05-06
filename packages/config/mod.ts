@@ -18,6 +18,8 @@ export * from "./src/communicators.ts";
 export * from "./src/config-loader.ts";
 // Configuration adapter interface
 export type { ConfigurationAdapter } from "./src/configuration-adapter.ts";
+// Delegation budget schema (Phase 8)
+export * from "./src/delegation.ts";
 // Expand agent actions in FSM definitions
 export { expandAgentActions } from "./src/expand-agent-actions.ts";
 // NOTE: FilesystemAtlasConfigSource NOT exported here — uses node:fs.

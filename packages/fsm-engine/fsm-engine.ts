@@ -462,11 +462,15 @@ export interface FSMEngineOptions {
    */
   linkSummary?: LinkSummary;
   /**
-   * Phase 7 — workspace-level delegation budget (max_depth, max_steps,
-   * etc.). Today only `max_depth` is consulted by the runtime (default 1,
-   * matching the previous chat-side hard cap). Phase 8 honors the rest.
+   * Phase 7 + 8 — resolved delegation budget for this engine. Top-level
+   * caller (workspace runtime) computes the per-job-merged-over-workspace
+   * value before constructing the engine. Forwarded into `createDelegateTool`
+   * so wall-clock, input-token, output-token, step, and depth budgets are
+   * all enforced inside the child's streamText. Default depth cap = 1
+   * (today's chat-side hard cap, preserved for back-compat when no
+   * `delegation:` block exists).
    */
-  delegationBudget?: { max_depth?: number };
+  delegationBudget?: import("@atlas/config").DelegationBudget;
 }
 
 export class FSMEngine {
@@ -1321,6 +1325,14 @@ export class FSMEngine {
                           Record<string, Tool>
                         >),
                       linkSummary: this.options.linkSummary,
+                      // Phase 8 — pass the resolved budget and the
+                      // current depth. The delegate enforces
+                      // wall-clock / input-tokens / output-tokens / steps
+                      // internally; depth fail-fast happens at execute
+                      // time when `depth >= max_depth` (covers the case
+                      // of a stale tool-list snapshot).
+                      budget: this.options.delegationBudget,
+                      depth: currentDepth,
                     },
                     () => {
                       // The child inherits the parent's tool set minus

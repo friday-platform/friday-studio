@@ -732,8 +732,13 @@ describe("createDelegateTool", () => {
     ac.abort();
     const result = await runDelegate(delegateTool);
 
-    // (a) Child's streamText received the abort signal.
-    expect(captured.args?.abortSignal).toBe(ac.signal);
+    // (a) Child's streamText received an abort signal that's already aborted.
+    // Phase 8 — delegate composes the parent signal with an internal
+    // controller (input-token watchdog) and an optional wall-clock signal,
+    // so the forwarded signal is no longer guaranteed to be `===` the
+    // parent's. Assert on aborted state + reason propagation instead.
+    expect(captured.args?.abortSignal).toBeDefined();
+    expect((captured.args?.abortSignal as AbortSignal).aborted).toBe(true);
 
     // (b) Proxy received a delegate-end terminator with no payload.
     // Simplified crash recovery: when delegate-end fires, all non-terminal

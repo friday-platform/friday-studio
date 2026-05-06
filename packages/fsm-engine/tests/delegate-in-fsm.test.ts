@@ -233,6 +233,60 @@ describe("FSM LLM action — delegate tool exposure (Phase 7)", () => {
     expect(observedToolNames).not.toContain("delegate");
   });
 
+  // Phase 8 — when max_depth > 1, the child must keep `delegate` so it
+  // can re-delegate. The strip/keep decision is computed inside
+  // `createDelegateTool` based on `depth + 1 < max_depth`; here we assert
+  // the engine threads the depth + budget through correctly by reading
+  // the registered delegate tool's behavior at the boundary.
+  it("threads max_depth from FSMEngineOptions through to the delegate tool's depth check", async () => {
+    memoryStubFetch();
+    mockCreateMCPTools.mockResolvedValue({
+      tools: {},
+      toolsByServer: { "atlas-platform": [] },
+      dispose: () => Promise.resolve(),
+      disconnectedIntegrations: [],
+    });
+
+    let observedToolNames: string[] | undefined;
+    const mockLLMProvider: LLMProvider = {
+      call: (params) => {
+        observedToolNames = Object.keys(params.tools as Record<string, Tool>);
+        const envelope: AgentResult<string, FSMLLMOutput> = {
+          agentId: params.agentId,
+          timestamp: new Date().toISOString(),
+          input: params.prompt ?? "",
+          ok: true,
+          data: { response: "done" },
+          toolCalls: [],
+          toolResults: [],
+          durationMs: 0,
+        };
+        return Promise.resolve(envelope);
+      },
+    };
+
+    // max_depth=2 + delegationDepth=0 → currentDepth(0) < maxDepth(2),
+    // so the engine MUST register delegate. (At depth=1 it would also
+    // register because 1 < 2.) We assert the registration boundary; the
+    // re-delegation behavior inside the child is unit-tested in the
+    // delegate budget.test.ts.
+    const engine = new FSMEngine(fsmWithDelegate, {
+      documentStore: getDocumentStore(),
+      scope: { workspaceId: "ws-deep", sessionId: "sess-deep" },
+      llmProvider: mockLLMProvider,
+      platformModels: createStubPlatformModels(),
+      delegationBudget: { max_depth: 2, max_steps_per_call: 10, max_output_tokens: 1000 },
+    });
+    await engine.initialize();
+
+    await engine.signal(
+      { type: "RUN" },
+      { sessionId: "sess-deep", workspaceId: "ws-deep", delegationDepth: 0 },
+    );
+
+    expect(observedToolNames).toContain("delegate");
+  });
+
   it("registers delegate at depth 0 even with explicit max_depth=1 (chat-parity default)", async () => {
     memoryStubFetch();
     mockCreateMCPTools.mockResolvedValue({
