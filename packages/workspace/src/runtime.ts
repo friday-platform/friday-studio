@@ -417,8 +417,33 @@ interface FSMJob {
    * Forwarded into FSMEngine options so `request_tool_access` can resolve
    * the effective `dangerouslySkipAllowlist` at LLM-call time. Optional;
    * undefined = "no per-job override; fall through to workspace + daemon".
+   *
+   * `timeoutMs` is the parsed `JobSpecification.config.timeout` in
+   * milliseconds. Forwarded into FSMEngine options as `jobTimeoutMs` so
+   * scope-injected elicitation tools (`request_tool_access`) can derive
+   * `expiresAt = now + jobTimeoutMs` per the user-resolved Phase 12 policy
+   * ("tied to job timeout"). Undefined when no timeout configured;
+   * elicitation tools fall back to their built-in default.
    */
   permissions?: import("@atlas/config").PermissionsConfig;
+  /** Parsed `jobSpec.config.timeout` in milliseconds. See doc above. */
+  timeoutMs?: number;
+}
+
+/**
+ * Parse a job-config duration into milliseconds. Tolerates a malformed
+ * value with a warn-log so one typo doesn't block the entire workspace
+ * from loading. Returns undefined on parse failure (caller treats
+ * undefined as "no per-job timeout configured" — engine falls back to
+ * its built-in default).
+ */
+function parseJobTimeoutMs(jobName: string, value: string): number | undefined {
+  try {
+    return parseDuration(value);
+  } catch (err) {
+    logger.warn("Invalid job timeout — ignoring", { jobName, value, error: stringifyError(err) });
+    return undefined;
+  }
 }
 
 interface ActiveSession {
@@ -1140,6 +1165,14 @@ export class WorkspaceRuntime {
         maxSteps: jobSpec.config?.max_steps,
         delegationOverride: jobSpec.delegation,
         ...(jobSpec.permissions && { permissions: jobSpec.permissions }),
+        // Review N3 follow-up: parse `jobSpec.config.timeout` once at
+        // registration so the engine path doesn't re-parse on every signal.
+        // Becomes the source for FSMEngineOptions.jobTimeoutMs at engine
+        // construction. parseDuration throws on malformed input; tolerated
+        // with warn-log so a typo doesn't block the workspace from loading.
+        ...(jobSpec.config?.timeout && {
+          timeoutMs: parseJobTimeoutMs(jobName, jobSpec.config.timeout),
+        }),
       });
 
       // D.1: declarative `jobs.*.skills` field — warn when refs don't match
@@ -1396,11 +1429,18 @@ export class WorkspaceRuntime {
       ),
       // Phase 12.C / Phase 1.C — forward raw permissions (unresolved) so
       // `request_tool_access` can run `resolvePermissions` with the daemon
-      // env floor at call time. Job > workspace > daemon precedence.
+      // env floor at call time. Job > workspace > daemon precedence. The
+      // engine also resolves these once at action-construction time and
+      // surfaces the result through scope as `resolvedPermissions` (review
+      // N2 single source of truth).
       ...(job.permissions && { jobPermissions: job.permissions }),
       ...(this.config.workspace.permissions && {
         workspacePermissions: this.config.workspace.permissions,
       }),
+      // Review N3 follow-up — surface job timeout so scope-injected
+      // elicitation tools derive `expiresAt = now + jobTimeoutMs`. Parsed
+      // once at job registration (see FSMJob.timeoutMs).
+      ...(job.timeoutMs !== undefined && { jobTimeoutMs: job.timeoutMs }),
     };
 
     let definition: FSMDefinition;
