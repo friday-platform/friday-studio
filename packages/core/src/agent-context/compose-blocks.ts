@@ -10,7 +10,10 @@
 
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
+import type { ArtifactSummary } from "../artifacts/model.ts";
+import { ArtifactStorage } from "../artifacts/storage.ts";
 
 const MemoryListSchema = z.array(
   z.object({ workspaceId: z.string(), name: z.string(), kind: z.string() }),
@@ -124,4 +127,111 @@ export async function composeMemoryBlocks(
   }
 
   return blocks;
+}
+
+/**
+ * Maximum artifacts surfaced per session into the retrieval-gated injection
+ * envelope. Bounds the prompt cost — long-running FSM jobs can produce dozens
+ * of intermediate artifacts; the LLM only needs the most recent few to
+ * orient. Anything older it can `parse_artifact` for on demand.
+ *
+ * Phase 9 default. A future per-workspace knob can override it; today the
+ * cap is a constant to keep injection bounded.
+ */
+export const ARTIFACT_INJECTION_LIMIT = 10;
+
+/**
+ * Build retrieval-gated `<retrieved_content>` envelopes for recent artifacts
+ * bound to the current chat or FSM session. Phase 9.
+ *
+ * Each emitted block has the eval-described shape:
+ *
+ *   <retrieved_content
+ *     provenance="artifact:<id>"
+ *     origin="workspace:<wsId>/session:<sId>"
+ *     fetched_at="<iso>">
+ *   <summary text>
+ *   </retrieved_content>
+ *
+ * Scope semantics (user decision 2026-05-05):
+ *   - **chat path** — `chatId` is set; lists via `ArtifactStorage.listByChat`.
+ *     The chat tools persist artifacts with `chatId`, so chat-session scope
+ *     is "all artifacts that share this chatId".
+ *   - **FSM path** — `sessionId` is set, `chatId` undefined; lists via
+ *     `ArtifactStorage.listBySession`. The runtime tags ephemeral FSM
+ *     artifacts with `lifecycle.boundTo.sessionId`, so session scope is
+ *     "all artifacts whose ephemeral binding matches this sessionId".
+ *
+ * Returns `[]` when there are no artifacts, when storage isn't initialized
+ * (unit-test environments), or when the underlying call fails — never
+ * throws. Bounded at {@link ARTIFACT_INJECTION_LIMIT} entries by default.
+ *
+ * The block carries the artifact's **summary** plus its `id` (via
+ * `provenance`), not the full content. The LLM can call `parse_artifact`
+ * to expand any reference it needs.
+ */
+export async function composeArtifactBlocks(
+  input: { workspaceId: string; sessionId?: string; chatId?: string; limit?: number },
+  logger: Logger,
+): Promise<string[]> {
+  const limit = input.limit ?? ARTIFACT_INJECTION_LIMIT;
+  if (!input.chatId && !input.sessionId) return [];
+
+  let artifacts: ArtifactSummary[] = [];
+  try {
+    if (input.chatId) {
+      const result = await ArtifactStorage.listByChat({
+        chatId: input.chatId,
+        limit,
+        includeData: false,
+      });
+      if (!result.ok) {
+        logger.warn("listByChat failed in composeArtifactBlocks", {
+          chatId: input.chatId,
+          error: result.error,
+        });
+        return [];
+      }
+      artifacts = result.data;
+    } else if (input.sessionId) {
+      const result = await ArtifactStorage.listBySession({
+        sessionId: input.sessionId,
+        limit,
+        includeData: false,
+      });
+      if (!result.ok) {
+        logger.warn("listBySession failed in composeArtifactBlocks", {
+          sessionId: input.sessionId,
+          error: result.error,
+        });
+        return [];
+      }
+      artifacts = result.data;
+    }
+  } catch (err) {
+    // Storage might not be initialized in some unit-test paths. Treat as
+    // "no artifacts" rather than blocking the action.
+    logger.warn("composeArtifactBlocks: artifact storage unavailable", {
+      error: stringifyError(err),
+    });
+    return [];
+  }
+
+  if (artifacts.length === 0) return [];
+
+  // Already sorted desc by createdAt in the adapter; honour the cap here too
+  // so callers passing a custom limit get exactly that many.
+  const trimmed = artifacts.slice(0, limit);
+  const fetchedAt = new Date().toISOString();
+  const scopeId = input.sessionId ?? input.chatId ?? "";
+
+  return trimmed.map((a) => {
+    const provenance = `artifact:${a.id}`;
+    const origin = `workspace:${input.workspaceId}/session:${scopeId}`;
+    // The summary is the LLM-facing one-liner; carries the gist without the
+    // bytes. The artifact id is in `provenance` so the model can call
+    // `parse_artifact` for the full content if it needs more.
+    const body = a.summary.trim();
+    return `<retrieved_content provenance="${provenance}" origin="${origin}" fetched_at="${fetchedAt}">\n${body}\n</retrieved_content>`;
+  });
 }

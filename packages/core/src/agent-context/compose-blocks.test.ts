@@ -11,7 +11,12 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { composeMemoryBlocks } from "./compose-blocks.ts";
+import { ArtifactStorage } from "../artifacts/storage.ts";
+import {
+  ARTIFACT_INJECTION_LIMIT,
+  composeArtifactBlocks,
+  composeMemoryBlocks,
+} from "./compose-blocks.ts";
 
 vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: () => "http://localhost:3000" }));
 
@@ -137,5 +142,139 @@ describe("composeMemoryBlocks", () => {
     expect(blocks[0]).toContain('<memory workspace="ws-ok" store="notes">');
     expect(blocks[0]).toContain("- Surviving entry");
     vi.unstubAllGlobals();
+  });
+});
+
+/**
+ * Phase 9 — Retrieval-gated artifact injection. `composeArtifactBlocks`
+ * mirrors `composeMemoryBlocks`: pulls recent session-bound artifacts and
+ * wraps each one in a `<retrieved_content>` envelope. Tests use the real
+ * ArtifactStorage adapter (initialized via vitest.setup.ts) so the
+ * lifecycle-filtering predicate gets exercised end-to-end.
+ */
+describe("composeArtifactBlocks", () => {
+  const logger = mkLogger() as unknown as Parameters<typeof composeArtifactBlocks>[1];
+
+  function makeData(text: string): { type: "file"; content: string; mimeType: string } {
+    return { type: "file", content: text, mimeType: "text/plain" };
+  }
+
+  it("returns empty list when neither sessionId nor chatId is provided", async () => {
+    const blocks = await composeArtifactBlocks({ workspaceId: "ws-empty" }, logger);
+    expect(blocks).toEqual([]);
+  });
+
+  it("returns empty list when no artifacts exist for the session", async () => {
+    const sessionId = `sess-empty-${crypto.randomUUID()}`;
+    const blocks = await composeArtifactBlocks({ workspaceId: "ws-empty", sessionId }, logger);
+    expect(blocks).toEqual([]);
+  });
+
+  it("emits one <retrieved_content> envelope per session-bound artifact", async () => {
+    const workspaceId = `ws-${crypto.randomUUID()}`;
+    const sessionId = `sess-${crypto.randomUUID()}`;
+
+    // Two ephemeral session-bound artifacts; the composer should surface both.
+    const r1 = await ArtifactStorage.create({
+      data: makeData("alpha contents"),
+      title: "alpha",
+      summary: "alpha summary",
+      workspaceId,
+      lifecycle: { kind: "ephemeral", boundTo: { scope: "session", sessionId } },
+    });
+    expect(r1.ok).toBe(true);
+    const r2 = await ArtifactStorage.create({
+      data: makeData("beta contents"),
+      title: "beta",
+      summary: "beta summary",
+      workspaceId,
+      lifecycle: { kind: "ephemeral", boundTo: { scope: "session", sessionId } },
+    });
+    expect(r2.ok).toBe(true);
+
+    // A different session's artifact must NOT leak into this session's
+    // injection — locality is the entire point of session scoping.
+    const otherSession = `sess-other-${crypto.randomUUID()}`;
+    await ArtifactStorage.create({
+      data: makeData("not for us"),
+      title: "leak",
+      summary: "should not appear",
+      workspaceId,
+      lifecycle: { kind: "ephemeral", boundTo: { scope: "session", sessionId: otherSession } },
+    });
+
+    const blocks = await composeArtifactBlocks({ workspaceId, sessionId }, logger);
+
+    expect(blocks).toHaveLength(2);
+    // Envelope-format invariants — these are the eval scaffold's contract.
+    for (const block of blocks) {
+      expect(block).toMatch(/^<retrieved_content provenance="artifact:[^"]+"/);
+      expect(block).toContain(`origin="workspace:${workspaceId}/session:${sessionId}"`);
+      expect(block).toMatch(/fetched_at="\d{4}-\d{2}-\d{2}T/);
+      expect(block).toContain("</retrieved_content>");
+    }
+    const joined = blocks.join("\n");
+    expect(joined).toContain("alpha summary");
+    expect(joined).toContain("beta summary");
+    expect(joined).not.toContain("should not appear");
+  });
+
+  it("surfaces chat-bound artifacts when chatId is provided", async () => {
+    const workspaceId = `ws-${crypto.randomUUID()}`;
+    const chatId = `chat-${crypto.randomUUID()}`;
+
+    const r = await ArtifactStorage.create({
+      data: makeData("chat-bound contents"),
+      title: "chat-1",
+      summary: "chat artifact summary",
+      workspaceId,
+      chatId,
+    });
+    expect(r.ok).toBe(true);
+
+    const blocks = await composeArtifactBlocks({ workspaceId, chatId }, logger);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain("chat artifact summary");
+    expect(blocks[0]).toContain(`origin="workspace:${workspaceId}/session:${chatId}"`);
+  });
+
+  it("caps emitted blocks at the configured limit (default 10)", async () => {
+    const workspaceId = `ws-cap-${crypto.randomUUID()}`;
+    const sessionId = `sess-cap-${crypto.randomUUID()}`;
+
+    // Create 12 — exceed the cap by 2 to verify the limit applies.
+    for (let i = 0; i < ARTIFACT_INJECTION_LIMIT + 2; i++) {
+      const r = await ArtifactStorage.create({
+        data: makeData(`item ${i}`),
+        title: `t${i}`,
+        summary: `summary ${i}`,
+        workspaceId,
+        lifecycle: { kind: "ephemeral", boundTo: { scope: "session", sessionId } },
+      });
+      expect(r.ok).toBe(true);
+    }
+
+    const blocks = await composeArtifactBlocks({ workspaceId, sessionId }, logger);
+    expect(blocks).toHaveLength(ARTIFACT_INJECTION_LIMIT);
+  });
+
+  it("respects an explicit limit override", async () => {
+    const workspaceId = `ws-lim-${crypto.randomUUID()}`;
+    const sessionId = `sess-lim-${crypto.randomUUID()}`;
+
+    for (let i = 0; i < 5; i++) {
+      const r = await ArtifactStorage.create({
+        data: makeData(`row ${i}`),
+        title: `t${i}`,
+        summary: `s${i}`,
+        workspaceId,
+        lifecycle: { kind: "ephemeral", boundTo: { scope: "session", sessionId } },
+      });
+      expect(r.ok).toBe(true);
+    }
+
+    const blocks = await composeArtifactBlocks({ workspaceId, sessionId, limit: 3 }, logger);
+    expect(blocks).toHaveLength(3);
   });
 });

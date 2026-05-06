@@ -34,6 +34,7 @@ import {
 import { z } from "zod";
 import { fetchLinkSummary, formatIntegrationsSection } from "../link-context.ts";
 import {
+  composeArtifactBlocks,
   composeMemoryBlocks,
   composeSkills,
   composeTools,
@@ -307,6 +308,14 @@ export function getSystemPrompt(
     userIdentity?: string;
     resources?: string;
     memory?: string;
+    /**
+     * Phase 9 retrieval-gated artifact injection. Joined
+     * `<retrieved_content>` envelopes built from artifacts created in
+     * the current chat session. Sits next to `memory` in the prompt
+     * because the two are semantic siblings — one carries narrative
+     * recall, the other carries byte-level recall.
+     */
+    artifacts?: string;
     onboarding?: string;
     userProfile?: string;
   },
@@ -317,6 +326,10 @@ export function getSystemPrompt(
 
   if (options?.memory) {
     prompt = `${prompt}\n\n${options.memory}`;
+  }
+
+  if (options?.artifacts) {
+    prompt = `${prompt}\n\n${options.artifacts}`;
   }
 
   if (options?.onboarding) {
@@ -798,6 +811,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);
         const memorySection = memoryBlocks.length > 0 ? memoryBlocks.join("\n\n") : undefined;
 
+        // Phase 9 retrieval-gated injection. Pull recent artifacts created
+        // during this chat session and surface them as `<retrieved_content>`
+        // envelopes. Per-chat-session scope (user decision 2026-05-05). The
+        // chat path uses chatId (= session.streamId) to match how artifact
+        // tools persist them. Failures fall through silently.
+        const artifactBlocks = await composeArtifactBlocks(
+          { workspaceId, chatId: session.streamId },
+          logger,
+        );
+        const artifactSection = artifactBlocks.length > 0 ? artifactBlocks.join("\n\n") : undefined;
+
         const onboardingClause = buildOnboardingClause(profileState);
         const userProfileClause = buildUserProfileClause(profileState);
 
@@ -807,6 +831,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           userIdentity: userIdentitySection,
           resources: resourceSection,
           memory: memorySection,
+          artifacts: artifactSection,
           onboarding: onboardingClause,
           userProfile: userProfileClause,
         });

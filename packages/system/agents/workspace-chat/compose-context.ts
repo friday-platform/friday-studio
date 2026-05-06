@@ -1,7 +1,10 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
-import { composeMemoryBlocks } from "@atlas/core/agent-context/compose-blocks";
+import {
+  composeArtifactBlocks,
+  composeMemoryBlocks,
+} from "@atlas/core/agent-context/compose-blocks";
 import type { Logger } from "@atlas/logger";
 import type { SkillSummary } from "@atlas/skills";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
@@ -15,7 +18,7 @@ import {
 // The canonical implementation now lives in @atlas/core so the FSM
 // engine can consume it without crossing the chat-package layering
 // boundary. See `packages/core/src/agent-context/compose-blocks.ts`.
-export { composeMemoryBlocks };
+export { composeArtifactBlocks, composeMemoryBlocks };
 
 export interface ComposedForegroundContext {
   workspaceId: string;

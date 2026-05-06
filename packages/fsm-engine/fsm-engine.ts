@@ -25,7 +25,10 @@ import {
   UserConfigurationError,
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
-import { composeMemoryBlocks } from "@atlas/core/agent-context/compose-blocks";
+import {
+  composeArtifactBlocks,
+  composeMemoryBlocks,
+} from "@atlas/core/agent-context/compose-blocks";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { createScrubber } from "@atlas/core/artifacts/scrubber";
@@ -1417,6 +1420,40 @@ export class FSMEngine {
                 } catch (err) {
                   logger.warn("composeMemoryBlocks failed — proceeding without memory blocks", {
                     workspaceId,
+                    error: stringifyError(err),
+                  });
+                }
+              }
+
+              // Phase 9 retrieval-gated artifact injection. Pull recent
+              // session-bound ephemeral artifacts and prepend them as
+              // `<retrieved_content>` envelopes alongside the memory blocks.
+              // Per-FSM-session scope (user decision 2026-05-05): the
+              // workspace runtime tags FSM-produced ephemeral artifacts with
+              // `lifecycle.boundTo.sessionId`, and `composeArtifactBlocks`
+              // filters on that. Capped at ARTIFACT_INJECTION_LIMIT (10).
+              // Each block carries the artifact's summary + id so the LLM
+              // can `parse_artifact` for full content. v1 is a pull at
+              // action-start — no NATS subscriber. Failures swallowed.
+              const sessionIdForArtifacts = sig._context?.sessionId;
+              if (workspaceId && sessionIdForArtifacts) {
+                try {
+                  const artifactBlocks = await composeArtifactBlocks(
+                    { workspaceId, sessionId: sessionIdForArtifacts },
+                    logger,
+                  );
+                  if (artifactBlocks.length > 0) {
+                    contextPrompt = `${artifactBlocks.join("\n\n")}\n\n${contextPrompt}`;
+                    logger.debug("Injected artifact blocks into LLM action prompt", {
+                      workspaceId,
+                      sessionId: sessionIdForArtifacts,
+                      blockCount: artifactBlocks.length,
+                    });
+                  }
+                } catch (err) {
+                  logger.warn("composeArtifactBlocks failed — proceeding without artifact blocks", {
+                    workspaceId,
+                    sessionId: sessionIdForArtifacts,
                     error: stringifyError(err),
                   });
                 }
