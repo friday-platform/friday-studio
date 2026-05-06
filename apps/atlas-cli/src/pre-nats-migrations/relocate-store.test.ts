@@ -177,9 +177,17 @@ describe("runRelocate", () => {
       throw xdev;
     });
     const fakeCp = vi.fn(async (_src: string, dst: string) => {
-      // Simulate a partial copy: create something at the target then fail.
-      await mkdir(dst, { recursive: true });
-      await writeFile(join(dst, "partial-marker"), "in progress");
+      // Mirror the real on-disk shape NATS produces during an EXDEV
+      // copy: <dst>/jetstream/$G/streams/<name>/meta.inf. The
+      // production cleanup must rm-rf the whole subtree under `dst`,
+      // not just the leaf — a flat partial-target stub can mask a
+      // regression where cleanup walks the wrong path. We seed two
+      // stream subdirs so a partially-recursive cleanup also fails.
+      const partialStreams = join(dst, "jetstream", "$G", "streams");
+      await mkdir(join(partialStreams, "S1"), { recursive: true });
+      await writeFile(join(partialStreams, "S1", "meta.inf"), "partial-stream-S1");
+      await mkdir(join(partialStreams, "S2"), { recursive: true });
+      await writeFile(join(partialStreams, "S2", "meta.inf"), "partial-stream-S2");
       throw new Error("disk read error mid-copy");
     });
     const outcome = await runRelocate(

@@ -104,8 +104,15 @@ async fn stub_emits_known_json_returns_parsed_outcome() {
 async fn stub_with_log_lines_around_json_picks_the_last_object() {
     // The producer emits logger lines and the outcome on the same
     // stream (Node/Deno's console.info goes to stdout). The outcome is
-    // always the LAST JSON-object line; the Tauri command picks it
-    // with a backward scan.
+    // always the LAST JSON-OBJECT line; the Tauri command picks it
+    // with a backward scan that ignores arrays, scalars, and plain
+    // text.
+    //
+    // The trailing scalar (`echo 42`) and trailing JSON array
+    // (`echo '[1,2,3]'`) pin the `is_object()` filter at the
+    // integration boundary. Without that filter, a backward scan
+    // would lock onto the scalar/array and the outcome would be
+    // missed — this stub exercises that guard end-to-end.
     let _g = env_lock();
     let (_tmp, friday_home, install_dir) = fixture_dirs();
     let _env = EnvGuard::install(&friday_home);
@@ -116,6 +123,8 @@ async fn stub_with_log_lines_around_json_picks_the_last_object() {
 echo '{"level":"info","msg":"starting migrate"}'
 echo 'INFO: resolving paths'
 echo '{"status":"ok","streams_moved":7}'
+echo '[1,2,3]'
+echo '42'
 "#,
         0,
     );

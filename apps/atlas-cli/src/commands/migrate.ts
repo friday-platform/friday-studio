@@ -108,6 +108,36 @@ export async function loadFridayEnv(fridayHome: string): Promise<void> {
   }
 }
 
+/**
+ * --json mode stdout-discipline contract (load-bearing):
+ *
+ *   The OUTCOME JSON is the LAST JSON-object line emitted to stdout.
+ *
+ * The installer's Tauri wrapper backward-scans stdout for the last
+ * JSON-object line and forwards it verbatim — it does NOT inspect the
+ * shape, but it WILL silently pick the wrong line if anything emits
+ * a JSON object after `console.log(JSON.stringify(outcome))`.
+ *
+ * Therefore, after the outcome `console.log` returns, the handler MUST
+ * NOT call:
+ *   - `console.log(...)` with anything that serialises to a JSON object
+ *   - `logger.info(...)` (because @atlas/logger's info routes through
+ *     `console.info`, which lands on stdout in Node/Deno — only `warn`
+ *     and `error` go to stderr)
+ *   - any other code path that prints to stdout
+ *
+ * Plain text writes after the outcome are tolerated (the scan filters
+ * to JSON objects), but any new emit on this path is a footgun:
+ * prefer `process.exit(...)` immediately after the outcome `console.log`.
+ *
+ * If you need a "trailer" or telemetry line in --json mode, wrap the
+ * outcome in a marker object (`{"_outcome":true, ...}`) and have the
+ * installer prefer marker lines — don't rely on order.
+ *
+ * Tested by `migrate-handler.test.ts > outcome is the last JSON-object
+ * line on stdout`, which runs every --json branch and asserts the
+ * invariant directly.
+ */
 export const handler = async (argv: MigrateArgs): Promise<void> => {
   // 1. Load .env BEFORE any other process.env reads. The daemon-alive
   //    probe and the @std/dotenv-aware downstream code both depend on
@@ -167,12 +197,12 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   // 5. If pre-NATS aborted, report and skip post-NATS entirely.
   if (preNatsResult.aborted) {
     if (argv.json) {
-      // Single-line JSON on stdout — the Tauri command's stdout scanner
-      // parses one line at a time, so pretty-printing would split the
-      // outcome across lines that don't individually parse and every
-      // success/failure would surface as "exit 0 but no parseable JSON".
-      // Exit nonzero so callers (the installer Tauri command, CI scripts)
-      // see the failure regardless of whether they inspect the JSON body.
+      // Single-line JSON on stdout — see the handler-level "stdout
+      // discipline contract" comment above. Anything emitted to stdout
+      // AFTER this `console.log` (a logger.info, another console.log,
+      // a trailing telemetry line) becomes a silent footgun: the
+      // installer's backward-scan would pick the trailing line as the
+      // outcome. `process.exit(1)` immediately after is intentional.
       console.log(
         JSON.stringify({ preNats: preNatsResult.outcomes, ran: [], skipped: [], failed: [] }),
       );
@@ -222,7 +252,10 @@ async function handleList(argv: MigrateArgs): Promise<void> {
       record: byId.get(m.id) ?? null,
     }));
     if (argv.json) {
-      // Single-line — see migrate.ts handler comment on Tauri stdout scanner.
+      // Single-line, last on stdout — see handler-level stdout-discipline
+      // contract above. Caller MUST NOT add any further stdout writes
+      // after this point; the `finally`-scoped `cleanup()` below only
+      // touches the broker, not stdout.
       console.log(JSON.stringify({ preNats: preEntries, migrations: entries }));
       return;
     }
@@ -260,10 +293,11 @@ async function runPostNatsPhase(argv: MigrateArgs, preNats: MigrationOutcome[]):
       runner: "cli",
     });
     if (argv.json) {
-      // Single-line JSON on stdout (see handler comment) — the Tauri
-      // command's line-by-line scanner can't reassemble pretty-printed
-      // output. Exit nonzero on post-NATS failure so callers don't have
-      // to peek inside the JSON body to detect errors.
+      // Last JSON-object line on stdout — see handler-level stdout-
+      // discipline contract above. Exit nonzero on post-NATS failure
+      // so callers don't have to peek inside the JSON body to detect
+      // errors. The `finally`-scoped `cleanup()` only touches the
+      // broker, not stdout — the contract holds.
       console.log(
         JSON.stringify({
           preNats,
