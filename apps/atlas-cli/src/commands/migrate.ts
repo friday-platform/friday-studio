@@ -1,30 +1,14 @@
 /**
- * `atlas migrate` — run pending data migrations.
+ * `atlas migrate` — run pending data migrations. Idempotent.
  *
- * Two phases:
- *   1. **Pre-NATS migrations** (filesystem-only, no broker connection).
- *      Live in `src/pre-nats-migrations/`; today the only entry is
- *      `relocate-jetstream-store` which moves legacy `$TMPDIR/nats/...`
- *      data to `<FRIDAY_JETSTREAM_STORE_DIR>`. See the v6 design doc.
- *   2. **Post-NATS migrations** (KV-backed, run via `runMigrations` from
- *      the jetstream package — same function the daemon calls at
- *      startup).
- *
- *   atlas migrate                run pending migrations (both phases)
+ *   atlas migrate                run pending migrations
  *   atlas migrate --list         show every migration entry + status
  *   atlas migrate --dry-run      report what would run without changing state
  *   atlas migrate --json         machine-readable output
  *
- * Daemon also runs the post-NATS queue at startup; this command is for
- * recovery scenarios (daemon down + want to inspect / advance state) and
- * for the installer flow which invokes `friday migrate --json` after
- * extract and before launching the binary. Idempotent — re-running is
- * safe.
- *
- * Caveat: in the solo-dev default the daemon spawns nats-server, so if
- * the daemon is down NATS is also down — the CLI will surface a
- * connection error pointing the operator at `atlas daemon start` or
- * external NATS.
+ * Refuses to run mutations while the daemon is up (the daemon owns the
+ * KV migration lock and runs the same queue at startup). `--list` and
+ * `--dry-run` work either way.
  */
 
 import { join } from "node:path";
