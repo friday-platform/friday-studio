@@ -623,6 +623,135 @@ export function synthesizeFallbackSummary(
 }
 
 /**
+ * Identify the "terminal action" of an FSM — the last `llm`/`agent` entry
+ * action whose output reaches the final state. Used by the C1 aiSummary
+ * fast path to read a Phase 2.A `summary:` declaration without an LLM
+ * round-trip.
+ *
+ * Walk order:
+ *   1. The final state's own `entry` actions — most jobs put their last
+ *      LLM/agent step here.
+ *   2. If none, predecessor states (any state with a transition whose
+ *      `target` is the final state) and pick the last LLM/agent entry
+ *      action across them. Falls through to the transition's own
+ *      `actions` array if the predecessor has none.
+ *
+ * Returns `undefined` when no LLM/agent action can be tied to the
+ * terminal output (e.g. emit-only FSMs).
+ */
+export function findTerminalAction(definition: FSMDefinition): LLMAction | AgentAction | undefined {
+  const states = definition.states;
+  const finalStateIds = Object.entries(states)
+    .filter(([, s]) => s.type === "final")
+    .map(([id]) => id);
+  if (finalStateIds.length === 0) return undefined;
+
+  const lastLlmOrAgent = (actions: Action[] | undefined): LLMAction | AgentAction | undefined => {
+    if (!actions) return undefined;
+    for (let i = actions.length - 1; i >= 0; i--) {
+      const a = actions[i];
+      if (!a) continue;
+      if (a.type === "llm" || a.type === "agent") return a;
+    }
+    return undefined;
+  };
+
+  // Tier 1 — final state's own entry actions.
+  for (const id of finalStateIds) {
+    const found = lastLlmOrAgent(states[id]?.entry);
+    if (found) return found;
+  }
+
+  // Tier 2 — predecessor states whose transitions point to a final state.
+  // Pick the last LLM/agent entry action of any such predecessor; fall
+  // back to the transition's own `actions` if the predecessor has none.
+  let fromTransitionActions: LLMAction | AgentAction | undefined;
+  for (const state of Object.values(states)) {
+    if (!state.on) continue;
+    for (const transition of Object.values(state.on)) {
+      const transitions = Array.isArray(transition) ? transition : [transition];
+      for (const t of transitions) {
+        if (!finalStateIds.includes(t.target)) continue;
+        const fromEntry = lastLlmOrAgent(state.entry);
+        if (fromEntry) return fromEntry;
+        fromTransitionActions ??= lastLlmOrAgent(t.actions);
+      }
+    }
+  }
+  return fromTransitionActions;
+}
+
+/**
+ * C1 helper — derive `keyDetails` for {@link SessionAISummary} from the
+ * terminal action's structured output document. Walks only the document's
+ * top-level `data` fields; nested objects/arrays are skipped (too noisy
+ * for an at-a-glance summary). String/number leaves become entries; URL-
+ * shaped strings populate the `url` field. Capped at 5 to match the
+ * existing aiSummary norm.
+ */
+export function deriveKeyDetailsFromOutputDoc(
+  doc: { data: Record<string, unknown> } | undefined,
+): Array<{ label: string; value: string; url?: string }> {
+  if (!doc?.data) return [];
+  const entries: Array<{ label: string; value: string; url?: string }> = [];
+  for (const [key, value] of Object.entries(doc.data)) {
+    if (entries.length >= 5) break;
+    if (value === null || value === undefined) continue;
+    if (typeof value !== "string" && typeof value !== "number") continue;
+    const stringValue = String(value);
+    const entry: { label: string; value: string; url?: string } = {
+      label: humanizeFieldKey(key),
+      value: stringValue,
+    };
+    if (typeof value === "string" && isUrlShaped(value)) {
+      entry.url = value;
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * Turn `processedCount` → "Processed Count", `total_emails` → "Total
+ * Emails". Splits on snake_case underscores and camelCase boundaries,
+ * then title-cases each word.
+ */
+export function humanizeFieldKey(key: string): string {
+  return key
+    .replace(/_+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/\s+/)
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function isUrlShaped(s: string): boolean {
+  return s.startsWith("http://") || s.startsWith("https://");
+}
+
+/**
+ * C1 fast path — produce a SessionAISummary from the terminal action's
+ * declared `summary:` (Phase 2.A) plus structured leaf fields of its
+ * `outputTo` document, without an LLM call. Returns `undefined` when
+ * no such terminal action is identified or its `summary:` is missing
+ * — caller falls back to the LLM-generated path.
+ */
+export function buildFastPathAiSummary(
+  definition: FSMDefinition,
+  documents: FSMDocument[],
+): SessionAISummary | undefined {
+  const terminalAction = findTerminalAction(definition);
+  if (!terminalAction) return undefined;
+  const declared = terminalAction.summary?.trim();
+  if (!declared) return undefined;
+  const outputDoc = terminalAction.outputTo
+    ? documents.find((d) => d.id === terminalAction.outputTo)
+    : undefined;
+  return { summary: declared, keyDetails: deriveKeyDetailsFromOutputDoc(outputDoc) };
+}
+
+/**
  * Persist non-plumbing FSM documents as real artifacts in JetStream
  * Object Store. Phase 2.B of the fan-out-without-fan-in plan — the
  * data-layer half of the universal ref-return change. Failures log a
@@ -1950,10 +2079,15 @@ export class WorkspaceRuntime {
             );
 
             const platformModels = this.options.platformModels;
-            // Skip AI summarization for code-only sessions (no agent blocks) —
-            // nothing meaningful to summarize and it adds ~2s of LLM latency per invocation.
-            const aiSummary =
-              platformModels && executedBlocks.length > 0
+            // C1 fast path — when the terminal LLM/agent action declared a
+            // Phase 2.A `summary:`, build SessionAISummary synchronously
+            // without the ~1-2s LLM round-trip. Falls through to
+            // generateSessionSummary when no terminal action can be
+            // identified or it didn't declare `summary`.
+            const fastPathAiSummary = buildFastPathAiSummary(engine.definition, engine.documents);
+            const aiSummary = fastPathAiSummary
+              ? fastPathAiSummary
+              : platformModels && executedBlocks.length > 0
                 ? await generateSessionSummary(
                     view,
                     { platformModels },
