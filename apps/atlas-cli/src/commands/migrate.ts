@@ -93,25 +93,21 @@ export async function loadFridayEnv(fridayHome: string): Promise<void> {
 }
 
 export const handler = async (argv: MigrateArgs): Promise<void> => {
-  // 1. Load .env BEFORE any other process.env reads. The daemon-alive
-  //    probe and the @std/dotenv-aware downstream code both depend on
-  //    this happening at handler entry.
+  // .env load must happen before any process.env reads — the
+  // daemon-alive probe below reads FRIDAY_PORT_FRIDAY from it.
   const fridayHome = getFridayHome();
   await loadFridayEnv(fridayHome);
 
   const isReadOnly = argv.list || argv.dryRun;
 
-  // 2. --list: enumerate both pre-NATS and post-NATS entries, no
-  //    mutating work. Daemon-alive does not gate read-only ops.
   if (argv.list) {
     await handleList(argv);
     return;
   }
 
-  // 3. For mutating runs, refuse if a daemon is reachable. The daemon
-  //    runs the post-NATS queue at startup under the same lock, so racing
-  //    it would just produce a `MigrationLockError` later — fail early
-  //    with a friendlier message. `--dry-run` skips this check (read-only).
+  // The daemon owns the migration lock and runs the same queue at
+  // startup. Racing it just yields a MigrationLockError later — refuse
+  // up front with a friendlier message. Read-only ops skip this.
   if (!isReadOnly && (await isDaemonRunning())) {
     const port = process.env.FRIDAY_PORT_FRIDAY ?? "8080";
     errorOutput(
@@ -122,9 +118,8 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
     process.exit(1);
   }
 
-  // 4. Pre-NATS migrations. For mutating runs, acquire the PID lock;
-  //    release IMMEDIATELY after the queue finishes (before connectOrSpawn).
-  //    Read-only / dry-run ops skip the lock entirely.
+  // PID lock guards the pre-NATS phase only — released BEFORE
+  // connectOrSpawn so the post-NATS phase runs under the KV lock alone.
   let lock: LockHandle | null = null;
   if (!isReadOnly) {
     try {
@@ -148,14 +143,10 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
     }
   }
 
-  // 5. If pre-NATS aborted, report and skip post-NATS entirely.
   if (preNatsResult.aborted) {
     if (argv.json) {
-      // Single-line JSON on stdout for any tool that wants to parse
-      // `--json` output (CI scripts, future integrations). Pretty-
-      // printing would split the outcome across lines that don't
-      // individually parse. Exit nonzero so callers that key on exit
-      // code see the failure regardless.
+      // Single-line JSON for `--json` parseability — pretty-printing
+      // would split across lines that don't individually parse.
       console.log(
         JSON.stringify({ preNats: preNatsResult.outcomes, ran: [], skipped: [], failed: [] }),
       );
@@ -168,7 +159,6 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
     process.exit(1);
   }
 
-  // 6. Post-NATS phase: connect to NATS and run the KV-backed queue.
   await runPostNatsPhase(argv, preNatsResult.outcomes);
 };
 
