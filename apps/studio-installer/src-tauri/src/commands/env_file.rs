@@ -312,9 +312,9 @@ pub fn write_env_file(
         ("LINK_SERVICE_URL", "http://localhost:13100".to_string()),
         // The installer is the single writer of FRIDAY_JETSTREAM_STORE_DIR.
         // The launcher reads it and passes it to nats-server as -sd; the
-        // daemon reads it via readJetStreamConfig. Default: <friday_home>
-        // /jetstream — stable, persistent, never `$TMPDIR`. See
-        // docs/plans/2026-05-05-jetstream-store-migration-design.v6.md.
+        // daemon reads it via readJetStreamConfig. Default: <friday_home>/
+        // jetstream — stable, persistent, never `$TMPDIR` (which macOS
+        // periodically garbage-collects).
         ("FRIDAY_JETSTREAM_STORE_DIR", jetstream_store_dir),
     ];
     for (k, v) in &platform_vars {

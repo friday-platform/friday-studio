@@ -157,6 +157,12 @@ describe("migrate handler", () => {
     const { handler } = await import("./migrate.ts");
     await expect(handler({ json: true })).rejects.toThrow(/__test_exit__:1/);
 
+    // Relocate must STILL run before connectOrSpawn even when the
+    // post-NATS phase eventually proceeds successfully — guards against
+    // a regression that only reorders the relocate call in the success
+    // branch.
+    expect(mockState.relocateBeforeConnect).toBe(1);
+
     // Exactly one stdout line — the JSON outcome.
     expect(mockState.capturedStdout).toHaveLength(1);
     const jsonLine = mockState.capturedStdout[0];
