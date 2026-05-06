@@ -1,25 +1,113 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_norway::{Mapping, Value};
 
+use crate::friday_home::friday_home_dir;
+
 fn env_file_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    Ok(home.join(".friday").join("local").join(".env"))
+    Ok(friday_home_dir()?.join(".env"))
+}
+
+/// Atomic write helper: write to `<path>.tmp`, fsync, then rename over the
+/// original. Guarantees that an external observer (another process, or the
+/// same process restarted after crash) sees either the prior content or
+/// the full new content — never a partial mix and never an empty file.
+///
+/// Best-effort cleanup: if a stale `<path>.tmp` exists from a prior crash,
+/// we attempt to remove it before writing the fresh tmp. Cleanup failures
+/// are logged and ignored — the subsequent write+rename overwrites the
+/// stale tmp anyway.
+///
+/// fsync semantics: we fsync the file contents (data) but NOT the
+/// containing directory. On most platforms this is sufficient for the
+/// "no torn write" guarantee — the rename is atomic, so the worst case
+/// after a crash is that the rename was lost (original survives) rather
+/// than a partial file. Operators who need durable-against-power-loss
+/// fsync of the directory entry can add it later; the failure mode here
+/// (config rolled back to prior content) is acceptable for `.env`.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("path has no parent: {}", path.display()))?;
+
+    // Best-effort cleanup of a stale tmp from a prior crash. Don't fail
+    // the write if cleanup fails — the rename below will replace it.
+    let tmp = path.with_extension({
+        let existing = path.extension().map(|e| e.to_string_lossy().into_owned());
+        match existing {
+            Some(e) if !e.is_empty() => format!("{e}.tmp"),
+            _ => "tmp".to_string(),
+        }
+    });
+    if tmp.exists() {
+        if let Err(e) = fs::remove_file(&tmp) {
+            eprintln!(
+                "[installer] could not remove stale tmp {}: {e} (continuing)",
+                tmp.display()
+            );
+        }
+    }
+
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("create parent dir {}: {e}", parent.display()))?;
+
+    {
+        let mut f = fs::File::create(&tmp)
+            .map_err(|e| format!("create tmp {}: {e}", tmp.display()))?;
+        f.write_all(bytes)
+            .map_err(|e| format!("write tmp {}: {e}", tmp.display()))?;
+        f.sync_all()
+            .map_err(|e| format!("fsync tmp {}: {e}", tmp.display()))?;
+    }
+
+    fs::rename(&tmp, path).map_err(|e| {
+        // Cleanup the leftover tmp on rename failure so we don't leak
+        // partial state. If THAT fails, we've already lost — log and move on.
+        if let Err(rm_err) = fs::remove_file(&tmp) {
+            eprintln!(
+                "[installer] rename failed and tmp cleanup failed at {}: {rm_err}",
+                tmp.display()
+            );
+        }
+        format!(
+            "rename {} -> {}: {e}",
+            tmp.display(),
+            path.display()
+        )
+    })?;
+
+    Ok(())
 }
 
 /// Parse a `.env`-format file into an ordered list of (key, value) pairs.
 /// Lines that don't match `KEY=VALUE` are preserved as-is (comments, blanks).
-fn parse_env_lines(content: &str) -> Vec<(Option<String>, String)> {
+///
+/// Verbatim values: no quote stripping, no escape handling. The migrate
+/// command (commands/migrate.rs) re-uses this same parser shape to keep
+/// the writer/reader contract symmetrical inside the installer crate.
+///
+/// One exception to the verbatim rule: trailing `\r` is stripped. Rust's
+/// `str::lines()` already strips `\r\n` line *boundaries* — so for a
+/// well-formed CRLF file the trim is a no-op. The trim defends against
+/// the one case that survives `lines()`: a final line with a CR but
+/// **no following LF** (e.g., a Notepad save that didn't append a final
+/// newline). For input `"A=1\r"` `lines()` yields `"A=1\r"` verbatim
+/// (no boundary to strip), and without this trim the parsed value would
+/// be `"1\r"` — breaking downstream URL construction. The Go launcher's
+/// `loadDotEnv` applies the same trim for parity (it splits on `\n`
+/// only, so for Go this trim handles the more common `\r\n` case too).
+pub(crate) fn parse_env_lines(content: &str) -> Vec<(Option<String>, String)> {
     content
         .lines()
         .map(|line| {
             if let Some((k, v)) = line.split_once('=') {
                 let key = k.trim().to_string();
                 if !key.is_empty() && !key.starts_with('#') {
-                    return (Some(key), v.to_string());
+                    return (Some(key), v.trim_end_matches('\r').to_string());
                 }
             }
             (None, line.to_string())
@@ -76,6 +164,102 @@ pub fn env_file_has_provider_key() -> Result<bool, String> {
 #[tauri::command]
 pub fn env_file_location() -> Result<String, String> {
     Ok(env_file_path()?.display().to_string())
+}
+
+/// Append missing platform-internal env vars (ports, store dir, link
+/// URLs, etc.) to `lines`. Existing values are NEVER overwritten — if
+/// a user customised `FRIDAY_PORT_FRIDAY` in `.env`, we leave it. New
+/// defaults the installer ships (e.g. `FRIDAY_JETSTREAM_STORE_DIR`)
+/// get added on every run, so an upgrade picks them up even when
+/// `write_env_file` itself isn't invoked (update mode skips it when
+/// the user already has an API key).
+fn apply_platform_vars(
+    lines: &mut Vec<(Option<String>, String)>,
+    existing_keys: &HashMap<String, usize>,
+) -> Result<(), String> {
+    // Per-machine value: depends on friday_home_dir() resolution, so
+    // it can't live in the static array below. `nats` (not `jetstream`)
+    // because nats-server itself appends a `jetstream/` segment
+    // internally — naming the storeDir `nats` produces the clean
+    // `<home>/nats/jetstream/$G/streams/...` layout.
+    let jetstream_store_dir = friday_home_dir()?
+        .join("nats")
+        .display()
+        .to_string();
+
+    // Friday Studio reserves its own non-default port range so a user
+    // running another local Friday instance, a stock atlasd from
+    // source, or another tool on the conventional 5200/8080 ports
+    // doesn't clash with the installed launcher.
+    //
+    //   FRIDAY_PORT_FRIDAY            18080  ← daemon (was 8080)
+    //   FRIDAY_PORT_LINK              13100  ← link (was 3100)
+    //   FRIDAY_PORT_WEBHOOK_TUNNEL    19090  ← tunnel (was 9090)
+    //   FRIDAY_PORT_PLAYGROUND        15200  ← studio UI (was 5200)
+    //
+    // The launcher imports ~/.friday/local/.env into its own process
+    // env (tools/friday-launcher/main.go's importDotEnvIntoProcessEnv).
+    // The matching EXTERNAL_*_URL / FRIDAYD_URL values ensure the
+    // playground UI's window.__FRIDAY_CONFIG__ points at the moved
+    // daemon + tunnel — auto-derive isn't possible because the URLs
+    // may also include user-controlled hostnames or schemes.
+    let platform_vars: Vec<(&str, String)> = vec![
+        ("FRIDAY_LOCAL_ONLY", "true".to_string()),
+        ("LINK_DEV_MODE", "true".to_string()),
+        ("FRIDAY_PORT_FRIDAY", "18080".to_string()),
+        ("FRIDAY_PORT_LINK", "13100".to_string()),
+        ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090".to_string()),
+        ("FRIDAY_PORT_PLAYGROUND", "15200".to_string()),
+        ("FRIDAYD_URL", "http://localhost:18080".to_string()),
+        ("EXTERNAL_DAEMON_URL", "http://localhost:18080".to_string()),
+        ("EXTERNAL_TUNNEL_URL", "http://localhost:19090".to_string()),
+        // Daemon proxies /api/link/* to LINK_SERVICE_URL; without
+        // this line it falls back to the legacy :3100 and credential
+        // lookups for Gmail / Slack / etc. fail with ECONNREFUSED.
+        ("LINK_SERVICE_URL", "http://localhost:13100".to_string()),
+        // The launcher reads FRIDAY_JETSTREAM_STORE_DIR and passes it
+        // to nats-server as `-sd`; the daemon reads it via
+        // readJetStreamConfig. Default: <friday_home>/nats — stable,
+        // persistent, never `$TMPDIR` (which macOS periodically GCs).
+        ("FRIDAY_JETSTREAM_STORE_DIR", jetstream_store_dir),
+    ];
+    for (k, v) in &platform_vars {
+        if !existing_keys.contains_key(*k) {
+            lines.push((Some((*k).to_string()), v.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Add any platform vars missing from `.env`. Called on every install
+/// (fresh AND update) so a customer upgrading from a build that
+/// didn't ship a particular var picks up the new default. Existing
+/// values are preserved — if you've customised `.env`, your
+/// customisations survive.
+#[tauri::command]
+pub fn ensure_platform_env_vars() -> Result<String, String> {
+    let path = env_file_path()?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create .friday/local dir: {e}"))?;
+    }
+
+    let existing_content = fs::read_to_string(&path).unwrap_or_default();
+    let mut lines = parse_env_lines(&existing_content);
+    let existing_keys: HashMap<String, usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (k, _))| k.as_ref().map(|key| (key.clone(), i)))
+        .collect();
+
+    apply_platform_vars(&mut lines, &existing_keys)?;
+
+    let output = render_env_lines(&lines);
+    atomic_write(&path, output.as_bytes())
+        .map_err(|e| format!("Failed to write .env file: {e}"))?;
+
+    Ok(path.display().to_string())
 }
 
 /// Returns the URL the wizard should open in the user's browser to
@@ -146,76 +330,11 @@ pub fn write_env_file(
         }
     }
 
-    // Platform-internal vars — only added when missing so any user
-    // overrides survive (someone editing .env to point FRIDAYD_URL
-    // at a non-default daemon, etc.). The EXTERNAL_*_URL values are
-    // read at runtime by the playground binary and injected into the
-    // served HTML; the launcher passes the .env through to its
-    // supervised processes so updating these is enough to retarget
-    // browser-facing URLs without rebuilding.
-    //
-    // FRIDAY_KEY is intentionally NOT seeded here. The daemon's
-    // ensureLocalFridayKey() (apps/atlas-cli/.../local-friday-key.ts)
-    // generates a fresh ephemeral JWT in-process on every start when
-    // the env var isn't set. Hardcoding a static JWT in the installer
-    // would (1) ship a known token in clear in source and (2) skip the
-    // daemon's richer payload (iss / email / user_metadata) for no
-    // benefit — the signature isn't verified in local mode anyway.
-    // Friday Studio reserves its own non-default port range so a user
-    // running another local Friday instance, a stock atlasd from source,
-    // or another tool on the conventional 5200/8080 ports doesn't clash
-    // with the installed launcher. Coordinated set the wizard ALWAYS
-    // writes on every install (overwrite semantics — see below):
-    //
-    //   FRIDAY_PORT_FRIDAY            18080  ← daemon (was 8080)
-    //   FRIDAY_PORT_LINK              13100  ← link (was 3100)
-    //   FRIDAY_PORT_WEBHOOK_TUNNEL    19090  ← tunnel (was 9090)
-    //   FRIDAY_PORT_PLAYGROUND        15200  ← studio UI (was 5200)
-    //
-    // The launcher imports ~/.friday/local/.env into its own process env
-    // (tools/friday-launcher/main.go's importDotEnvIntoProcessEnv), so
-    // portOverride() picks up these values when supervisedProcesses()
-    // builds each spec. The matching EXTERNAL_*_URL / FRIDAYD_URL values
-    // below ensure the playground UI's window.__FRIDAY_CONFIG__ points
-    // at the moved daemon + tunnel — auto-derive isn't possible because
-    // the URLs may also include user-controlled hostnames or schemes
-    // (reverse proxies, future cloud mode).
-    //
-    // OVERWRITE semantics: pre-Stack-3 builds wrote these values only
-    // when the key was missing, so users would silently get whatever
-    // was in .env from a previous version. That left installs running
-    // on the legacy 8080/5200 ports even after a fresh install — the
-    // exact bug the user hit. Always-overwrite means the installer is
-    // the source of truth for port configuration; users who genuinely
-    // want different ports can edit .env after install (the launcher
-    // re-reads it on every restart).
-    let platform_vars = [
-        ("FRIDAY_LOCAL_ONLY", "true"),
-        ("LINK_DEV_MODE", "true"),
-        ("FRIDAY_PORT_FRIDAY", "18080"),
-        ("FRIDAY_PORT_LINK", "13100"),
-        ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090"),
-        ("FRIDAY_PORT_PLAYGROUND", "15200"),
-        ("FRIDAYD_URL", "http://localhost:18080"),
-        ("EXTERNAL_DAEMON_URL", "http://localhost:18080"),
-        ("EXTERNAL_TUNNEL_URL", "http://localhost:19090"),
-        // Daemon proxies /api/link/* to LINK_SERVICE_URL; without this
-        // line it falls back to the legacy :3100 and credential lookups
-        // for Gmail / Slack / etc. fail with ECONNREFUSED. atlasd's
-        // resolver also accepts FRIDAY_PORT_LINK as a port-only
-        // fallback, but seeding the full URL here is the canonical
-        // shape and keeps the env file readable.
-        ("LINK_SERVICE_URL", "http://localhost:13100"),
-    ];
-    for (k, v) in platform_vars {
-        match existing_keys.get(k) {
-            Some(&i) => lines[i] = (Some(k.to_string()), v.to_string()),
-            None => lines.push((Some(k.to_string()), v.to_string())),
-        }
-    }
+    apply_platform_vars(&mut lines, &existing_keys)?;
 
     let output = render_env_lines(&lines);
-    fs::write(&path, output.as_bytes()).map_err(|e| format!("Failed to write .env file: {e}"))?;
+    atomic_write(&path, output.as_bytes())
+        .map_err(|e| format!("Failed to write .env file: {e}"))?;
 
     // Read-back verification — catches the silent-fail case where
     // fs::write returned Ok but the file didn't actually land
@@ -491,10 +610,220 @@ fn manage_friday_yml_at(path: &Path, provider: WizardProvider) -> Result<(), Str
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Failed to create friday-home dir: {e}"))?;
     }
-    fs::write(path, yaml.as_bytes())
+    atomic_write(path, yaml.as_bytes())
         .map_err(|e| format!("Failed to write friday.yml at {}: {e}", path.display()))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod atomic_write_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn successful_write_leaves_no_tmp_behind() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        let tmp_sibling = tmp.path().join(".env.tmp");
+
+        atomic_write(&target, b"FOO=bar\n").unwrap();
+
+        assert!(target.exists(), "target file should exist");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "FOO=bar\n");
+        assert!(
+            !tmp_sibling.exists(),
+            ".env.tmp should not be left behind on success"
+        );
+    }
+
+    #[test]
+    fn rename_failure_leaves_original_intact() {
+        // Simulate a rename failure by making the target path a directory
+        // that contains a file (so the rename target is a non-empty dir,
+        // which fails on most platforms with EEXIST or ENOTEMPTY).
+        // We accomplish this by pre-populating both the target (as a
+        // directory) and a sentinel file inside it.
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        fs::create_dir(&target).unwrap();
+        // Drop a file inside so rename-over fails on Linux/macOS where
+        // rename(file, non-empty-dir) is rejected.
+        fs::write(target.join("sentinel"), b"original").unwrap();
+
+        let result = atomic_write(&target, b"NEW=content\n");
+        assert!(
+            result.is_err(),
+            "atomic_write should fail when target is a non-empty dir"
+        );
+
+        // Original directory + sentinel should still be there.
+        assert!(target.is_dir(), "target dir should still exist");
+        assert_eq!(
+            fs::read_to_string(target.join("sentinel")).unwrap(),
+            "original",
+            "sentinel inside the dir should be untouched"
+        );
+        // tmp file should be cleaned up by atomic_write's failure handler.
+        let tmp_path = tmp.path().join(".env.tmp");
+        assert!(
+            !tmp_path.exists(),
+            "tmp should be cleaned up when rename fails"
+        );
+    }
+
+    #[test]
+    fn existing_target_content_survives_when_rename_fails() {
+        // Pre-existing .env with prior content. Force rename to fail by
+        // pre-creating a directory at the .env.tmp path so the create
+        // step succeeds but rename can't replace .env (we simulate via
+        // a different mechanism: rename atomicity over a file-with-same
+        // contents is fine on POSIX; instead test the simpler semantic
+        // "if atomic_write returns Err, original content is intact").
+        //
+        // We approximate by making the parent dir read-only after
+        // pre-seeding the original — atomic_write's fs::File::create on
+        // the tmp will fail, returning Err before any rename happens.
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        fs::write(&target, b"ORIGINAL=keep\n").unwrap();
+
+        // Make the parent unwritable so create_tmp fails.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(tmp.path()).unwrap().permissions();
+            perms.set_mode(0o555);
+            fs::set_permissions(tmp.path(), perms).unwrap();
+        }
+
+        let result = atomic_write(&target, b"NEW=content\n");
+
+        // Restore perms so TempDir cleanup works.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(tmp.path()).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(tmp.path(), perms).unwrap();
+        }
+
+        // On unix this fails (EACCES on file create). On other platforms
+        // the test is a no-op assertion of the success path.
+        #[cfg(unix)]
+        {
+            assert!(result.is_err(), "expected EACCES error on read-only parent");
+            // Original content untouched.
+            assert_eq!(
+                fs::read_to_string(&target).unwrap(),
+                "ORIGINAL=keep\n",
+                "original .env must survive a failed write"
+            );
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = result;
+        }
+    }
+
+    #[test]
+    fn pre_existing_tmp_is_cleaned_up_on_next_write() {
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join(".env");
+        let tmp_sibling = tmp.path().join(".env.tmp");
+
+        // Simulate a stale tmp from a prior crash.
+        fs::write(&tmp_sibling, b"PARTIAL=garbage").unwrap();
+        assert!(tmp_sibling.exists());
+
+        atomic_write(&target, b"GOOD=value\n").unwrap();
+
+        assert!(target.exists());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "GOOD=value\n");
+        assert!(
+            !tmp_sibling.exists(),
+            "stale .env.tmp must be cleaned up by the next successful write"
+        );
+    }
+}
+
+#[cfg(test)]
+mod parse_env_lines_tests {
+    use super::*;
+
+    #[test]
+    fn strips_trailing_cr_on_final_line_without_terminator() {
+        // The case the trim actually defends against: a file whose
+        // last line has a `\r` but no following `\n` — `lines()` does
+        // NOT recognize lone `\r` as a line terminator, so the `\r` is
+        // included in the line text and survives into the value.
+        // Mutation-tested: remove the `trim_end_matches('\r')` from
+        // parse_env_lines and this test fails.
+        let no_terminator = "FRIDAY_PORT_FRIDAY=18080\r";
+        let parsed = parse_env_lines(no_terminator);
+        let port = parsed
+            .iter()
+            .find(|(k, _)| k.as_deref() == Some("FRIDAY_PORT_FRIDAY"))
+            .expect("port key present");
+        assert_eq!(port.1, "18080", "trailing \\r on last line must be stripped");
+    }
+
+    #[test]
+    fn handles_well_formed_crlf_file() {
+        // Sanity: a file with proper `\r\n` line terminators parses
+        // cleanly. `lines()` strips the `\r\n` boundary on its own,
+        // so the trim is a no-op here — but the test guards against
+        // a future regression where the trim becomes destructive.
+        let crlf = "FRIDAY_PORT_FRIDAY=18080\r\nFRIDAY_HOME=/Users/x/.friday/local\r\n";
+        let parsed = parse_env_lines(crlf);
+        assert_eq!(
+            parsed
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("FRIDAY_PORT_FRIDAY"))
+                .unwrap()
+                .1,
+            "18080"
+        );
+        assert_eq!(
+            parsed
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("FRIDAY_HOME"))
+                .unwrap()
+                .1,
+            "/Users/x/.friday/local"
+        );
+    }
+
+    #[test]
+    fn lf_only_file_unchanged() {
+        // Standard Unix `.env` — verify the trim is a no-op when
+        // there's no CR to strip.
+        let lf = "FRIDAY_PORT_FRIDAY=18080\nFRIDAY_HOME=/Users/x/.friday/local\n";
+        let parsed = parse_env_lines(lf);
+        assert_eq!(
+            parsed
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("FRIDAY_PORT_FRIDAY"))
+                .unwrap()
+                .1,
+            "18080"
+        );
+    }
+
+    #[test]
+    fn value_with_legitimate_internal_cr_is_left_alone() {
+        // Only the trailing `\r` is stripped — values that contain a
+        // `\r` mid-string (vanishingly unlikely in practice but worth
+        // pinning) keep their internal byte.
+        let weird = "WEIRD=foo\rbar\n";
+        let parsed = parse_env_lines(weird);
+        let val = &parsed
+            .iter()
+            .find(|(k, _)| k.as_deref() == Some("WEIRD"))
+            .unwrap()
+            .1;
+        assert_eq!(val, "foo\rbar", "internal \\r preserved; only trailing trimmed");
+    }
 }
 
 #[cfg(test)]

@@ -1,15 +1,30 @@
 name: studio-build
 
 on:
-  # Manual dispatch only. Each release is a paid native-runner build; we
-  # don't want it firing on every push to a heavy-traffic source path.
-  # Run via `gh workflow run studio-build.yml --ref <branch>` or the
-  # Actions tab.
+  # Two trigger modes — the version-determination step branches on which
+  # one fired:
   #
-  # This workflow ONLY builds — versioned tarballs land in GCS at their
-  # immutable URLs but `manifest.json` is left alone. To promote a build
-  # to clients, run `studio-publish.yml` with this run's id + version.
+  # 1. Manual dispatch (workflow_dispatch): version = next semver patch
+  #    after whatever's currently published in the studio manifest.
+  #    Used for ad-hoc test builds during development. Run via
+  #    `gh workflow run studio-build.yml --ref <branch>` or the Actions
+  #    tab.
+  #
+  # 2. Tag push (push.tags): version = the tag name itself, with a
+  #    leading `v` stripped so both `v0.1.3` and `0.1.3` work. Use this
+  #    for cut-a-release flows: `git tag v0.1.3 && git push --tags`.
+  #    The same tag fires `studio-installer-build.yml` so studio + the
+  #    installer that bundles its URL ship at matched versions.
+  #
+  # Either way the workflow ONLY builds — versioned tarballs land in
+  # GCS at their immutable URLs but `manifest.json` is left alone. To
+  # promote a build to clients, run `studio-publish.yml` with this
+  # run's id + version.
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+      - '*.*.*'
 
 env:
   GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
@@ -27,13 +42,25 @@ jobs:
       version: ${{ steps.compute.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-      - name: Compute next semver patch from published manifest
+      - name: Resolve release version
         id: compute
         run: |
           set -euo pipefail
+          # Tag-driven path: version = tag name (with optional `v` stripped).
+          # The tag is the source of truth for that build — no manifest read,
+          # no patch bump. Both `v0.1.3` and `0.1.3` are accepted.
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            RAW="${GITHUB_REF_NAME}"
+            VERSION="${RAW#v}"
+            echo "Tag-driven release: tag=$RAW -> version=$VERSION"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # workflow_dispatch path: bump the next semver patch from the
+          # published platform manifest. Single source of truth: the live
+          # manifest. First-ever build seeds from 0.0.0 so the first
+          # published version is 0.0.1.
           MANIFEST_URL="https://download.fridayplatform.io/studio/manifest.json"
-          # Single source of truth: the published platform manifest. First-ever
-          # build seeds from 0.0.0 so the first published version is 0.0.1.
           PREV=$(curl -sf "$MANIFEST_URL" | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
           if [ -z "$PREV" ]; then
             PREV="0.0.0"
