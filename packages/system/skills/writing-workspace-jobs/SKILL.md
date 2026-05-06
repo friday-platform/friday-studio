@@ -309,7 +309,13 @@ For data too large for the payload, persist with the artifact + memory pattern â
 
 ## Conditional branching
 
-Transition array with guard functions. Guards checked in order; first passing guard wins. Always include fallback.
+**Currently agent-level, not FSM-level.** Guards and code-action helpers were
+removed from the FSM engine; transitions take the first matching event without
+predicates. To branch on data, decide and act inside a single agent, or chain
+agents that each handle their own branch.
+
+The simplest pattern: a single LLM agent that reads inputs, decides the path,
+and acts in one step.
 
 ```yaml
 fsm:
@@ -317,47 +323,26 @@ fsm:
   states:
     idle:
       on:
-        go: { target: decide }
-    decide:
+        go: { target: route-and-act }
+    route-and-act:
       entry:
         - type: agent
           agentId: router-agent
+          prompt: |
+            Decide the path (A, B, or default) from the inputs and execute it
+            yourself. Save the chosen path + outcome to memory.
           outputTo: decision
-        - type: emit
-          event: DONE
-      on:
-        DONE:
-          - target: path-a
-            guards: [isPathA]
-          - target: path-b
-            guards: [isPathB]
-          - target: path-default
-    path-a:
-      entry:
-        - type: agent
-          agentId: agent-a
       type: final
-    path-b:
-      entry:
-        - type: agent
-          agentId: agent-b
-      type: final
-    path-default:
-      type: final
-  functions:
-    isPathA:
-      type: guard
-      code: |
-        export default function isPathA(context, event) {
-          return context.results['decision']?.route === "a";
-        }
-    isPathB:
-      type: guard
-      code: |
-        export default function isPathB(context, event) {
-          return context.results['decision']?.route === "b";
-        }
 ```
+
+For coarser routing where you really need separate states (e.g. each path
+runs a *different* SDK agent), wire the router agent to write its choice to a
+memory store, then have downstream supervisors read that store and dispatch.
+This is the same pattern chat uses to coordinate multi-step work without FSM
+guards.
+
+> Note: explicit FSM-level conditional routing (predicate-on-transition) is on
+> the roadmap. Until then, prefer agent-level branching.
 
 ## Validation error decoder
 
