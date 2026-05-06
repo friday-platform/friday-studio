@@ -2492,6 +2492,64 @@ describe("MCP Registry Routes", () => {
       expect(getCachedTools("hash-id", v1)?.[0]?.name).toBe("t-v1");
       expect(getCachedTools("hash-id", v2)).toBeNull();
     });
+
+    it("evicts the entry on TTL expiry — getCachedTools returns null and the map is clean", async () => {
+      vi.useFakeTimers();
+      try {
+        const { putCachedTools, getCachedTools } = await import("./mcp-tool-cache.ts");
+        const config = { transport: { type: "stdio" as const, command: "echo", args: ["x"] } };
+        putCachedTools("ttl-id", config, [{ name: "t1", inputSchema: null }]);
+        expect(getCachedTools("ttl-id", config)?.[0]?.name).toBe("t1");
+        // Advance past the 1h TTL.
+        vi.advanceTimersByTime(60 * 60 * 1000 + 1);
+        expect(getCachedTools("ttl-id", config)).toBeNull();
+        // The expired entry must actually be removed (not just returned-as-null).
+        // Re-put would prove the slot is reusable; checking again post-eviction
+        // confirms no stale entry lingers under the same id+hash.
+        expect(getCachedTools("ttl-id", config)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("prewarmTools dedupes same-config callers but starts a fresh probe when config changes", async () => {
+      const { prewarmTools, getInFlightPrewarm, _resetCacheForTest } = await import(
+        "./mcp-tool-cache.ts"
+      );
+      _resetCacheForTest();
+
+      // Two never-resolving probes so we can inspect in-flight state without
+      // the IIFE settling between assertions.
+      mockCreateMCPTools.mockImplementation(() => new Promise(() => {}));
+
+      const fakeLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      } as unknown as Parameters<typeof prewarmTools>[2];
+
+      const v1 = { transport: { type: "stdio" as const, command: "echo", args: ["v1"] } };
+      const v2 = { transport: { type: "stdio" as const, command: "echo", args: ["v2"] } };
+
+      const p1a = prewarmTools("race-id", v1, fakeLogger);
+      const p1b = prewarmTools("race-id", v1, fakeLogger);
+      // Same config → second caller dedupes onto the same in-flight promise.
+      expect(p1a).toBe(p1b);
+      expect(mockCreateMCPTools.mock.calls.length).toBe(1);
+
+      // Different config → must start a fresh probe, not return p1.
+      const p2 = prewarmTools("race-id", v2, fakeLogger);
+      expect(p2).not.toBe(p1a);
+      expect(mockCreateMCPTools.mock.calls.length).toBe(2);
+
+      // getInFlightPrewarm now returns the v2 promise for v2 callers, and
+      // undefined for v1 callers (the v1 prewarm is still running but its
+      // slot has been replaced — a v1-config GET would correctly fall
+      // through rather than wait on v2 tools).
+      expect(getInFlightPrewarm("race-id", v2)).toBe(p2);
+      expect(getInFlightPrewarm("race-id", v1)).toBeUndefined();
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════

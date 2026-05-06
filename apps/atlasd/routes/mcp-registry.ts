@@ -624,6 +624,13 @@ export const mcpRegistryRouter = daemonFactory
       }
 
       await adapter.delete(id);
+      // Deliberate leak window: an in-flight prewarm started moments before
+      // this DELETE will eventually `putCachedTools` *after* this
+      // `invalidateCache(id)`, leaving a stale entry until TTL eviction or
+      // process restart. Re-add with the same config hits the stale entry
+      // (correct tools); re-add with different config sees configHash
+      // mismatch and re-probes. Not worth wiring an AbortController through
+      // prewarm.
       invalidateCache(id);
       return new Response(null, { status: 204 });
     },
@@ -662,7 +669,7 @@ export const mcpRegistryRouter = daemonFactory
       // npx/uvx process. Race-cap the wait at 5s — if the cold install runs
       // longer, return a retryable hint rather than block for the prewarm's
       // full 60s budget.
-      const inFlight = getInFlightPrewarm(id);
+      const inFlight = getInFlightPrewarm(id, server.configTemplate);
       if (inFlight) {
         const TIMED_OUT = Symbol("timeout");
         let timer: ReturnType<typeof setTimeout> | undefined;

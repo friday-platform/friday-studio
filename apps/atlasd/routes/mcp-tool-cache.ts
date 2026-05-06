@@ -36,7 +36,14 @@ export function _setRaceCapForTest(ms: number): void {
 }
 
 const cache = new Map<string, Entry>();
-const inFlightPrewarm = new Map<string, Promise<PrewarmResult>>();
+
+// In-flight prewarms carry their configHash so that a mid-flight update
+// (which races a v1 prewarm against a fresh v2 prewarm) doesn't dedupe v2
+// onto the v1 promise — that would cache v1 tools under a v2 hash, leaving
+// a subsequent GET to fall through to the foreground 5s probe instead of
+// the prewarm fast-path.
+type InFlightPrewarm = { configHash: string; promise: Promise<PrewarmResult> };
+const inFlightPrewarm = new Map<string, InFlightPrewarm>();
 
 function hashConfig(config: MCPServerConfig): string {
   // We rely on JSON.stringify dropping `undefined` values inside objects so
@@ -59,7 +66,13 @@ export function getCachedTools(serverId: string, config: MCPServerConfig): Cache
   const entry = cache.get(serverId);
   if (!entry) return null;
   if (entry.configHash !== hashConfig(config)) return null;
-  if (Date.now() - entry.cachedAt > CACHE_TTL_MS) return null;
+  // Evict on read so expired entries don't accumulate over the daemon's
+  // lifetime. The map otherwise grows monotonically with stale entries
+  // (TTL is checked here but never followed by a delete).
+  if (Date.now() - entry.cachedAt > CACHE_TTL_MS) {
+    cache.delete(serverId);
+    return null;
+  }
   return entry.tools;
 }
 
@@ -75,8 +88,17 @@ export function invalidateCache(serverId: string): void {
   cache.delete(serverId);
 }
 
-export function getInFlightPrewarm(serverId: string): Promise<PrewarmResult> | undefined {
-  return inFlightPrewarm.get(serverId);
+export function getInFlightPrewarm(
+  serverId: string,
+  config: MCPServerConfig,
+): Promise<PrewarmResult> | undefined {
+  const inFlight = inFlightPrewarm.get(serverId);
+  // Only dedupe onto the in-flight prewarm if its configHash matches the
+  // requested config. A stale (e.g. v1) prewarm running while the caller
+  // wants v2 must not be returned — the caller would block on it and then
+  // see configHash mismatch on the cached result.
+  if (!inFlight || inFlight.configHash !== hashConfig(config)) return undefined;
+  return inFlight.promise;
 }
 
 // Callers must register prewarms synchronously after the preceding `await
@@ -89,7 +111,7 @@ export function _resetCacheForTest(): void {
 }
 
 export async function _flushPrewarmsForTest(): Promise<void> {
-  await Promise.allSettled(inFlightPrewarm.values());
+  await Promise.allSettled(Array.from(inFlightPrewarm.values()).map((v) => v.promise));
 }
 
 /**
@@ -154,13 +176,20 @@ export function prewarmTools(
   config: MCPServerConfig,
   logger: Logger,
 ): Promise<PrewarmResult> {
+  const newHash = hashConfig(config);
   const existing = inFlightPrewarm.get(serverId);
-  if (existing) return existing;
+  // Only dedupe onto an existing prewarm when configs match. If a v1 prewarm
+  // is still in flight when an update fires this with v2, start a fresh v2
+  // prewarm — the v1 promise keeps running and will write v1 tools to the
+  // cache (under v1 hash, harmless), but we need a v2 in-flight so a GET
+  // racing the update finds something to await on.
+  if (existing && existing.configHash === newHash) return existing.promise;
   const cached = getCachedTools(serverId, config);
   if (cached) {
     return Promise.resolve({ ok: true, tools: cached });
   }
 
+  let entry: InFlightPrewarm | undefined;
   const promise = (async (): Promise<PrewarmResult> => {
     try {
       const tools = await probeAndExtract(serverId, config, logger, PREWARM_TIMEOUT_MS);
@@ -172,11 +201,14 @@ export function prewarmTools(
       logger.debug("MCP tools prewarm failed", { serverId, ...classified });
       return { ok: false, error: classified.error, phase: classified.phase };
     } finally {
-      inFlightPrewarm.delete(serverId);
+      // Only clear our own slot — a racing v2 prewarm may have replaced us
+      // and we mustn't evict it.
+      if (inFlightPrewarm.get(serverId) === entry) inFlightPrewarm.delete(serverId);
     }
   })();
+  entry = { configHash: newHash, promise };
 
-  inFlightPrewarm.set(serverId, promise);
+  inFlightPrewarm.set(serverId, entry);
   return promise;
 }
 
