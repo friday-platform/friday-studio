@@ -94,7 +94,12 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
         // for day-long jobs to outlast their elicitations and still
         // have audit trail visible in the Activity page.
         max_age: 7 * 24 * 60 * 60 * 1_000_000_000,
-      });
+        // NATS 2.11+ rejects the `Nats-TTL` header unless the stream
+        // opts in. The nats.js v2.29 client doesn't expose this field
+        // in its `StreamConfig` type yet — it's accepted server-side
+        // as part of the JSON config — so we cast through `unknown`.
+        allow_msg_ttl: true,
+      } as unknown as Parameters<typeof jsm.streams.add>[0]);
     }
     this.streamEnsured = true;
   }
@@ -163,9 +168,20 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
   }): Promise<Result<Elicitation[], string>> {
     try {
       const kv = await this.kv();
-      const it = await kv.keys();
+      // Materialize the key list FIRST. Calling `await kv.get(key)`
+      // inside the `for await` body causes the underlying ordered
+      // consumer that powers `kv.keys()` to terminate early in
+      // nats.js v2.29 — the consumer's "no pending" stop condition
+      // fires while the loop body is suspended on the round-trip,
+      // leaving the QueuedIterator drained after only a couple of
+      // entries. Two passes (drain keys, then fetch each) is the
+      // simple fix and acceptable: bucket sizes are bounded by the
+      // sweeper's expiration cadence.
+      const keysIter = await kv.keys();
+      const keys: string[] = [];
+      for await (const key of keysIter) keys.push(key);
       const out: Elicitation[] = [];
-      for await (const key of it) {
+      for (const key of keys) {
         const entry = await kv.get(key);
         if (!entry || entry.operation !== "PUT") continue;
         let elicitation: Elicitation;
