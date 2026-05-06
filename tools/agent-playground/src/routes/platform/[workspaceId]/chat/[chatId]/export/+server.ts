@@ -4,6 +4,7 @@ import { artifactZipPath } from "$lib/export/artifact-zip-path";
 import { GetChatResponseSchema } from "$lib/components/chat/types";
 import JSZip from "jszip";
 import { z } from "zod";
+import { MAX_ARTIFACT_BYTES, MAX_TOTAL_ARTIFACT_BYTES } from "./limits";
 
 /**
  * Hard ceiling on the preview render. The preview load function fans out
@@ -51,13 +52,16 @@ export const GET: RequestHandler = async (event) => {
   // Race the preview render against a 10s ceiling. We abort the inner
   // fetch on timeout so the SvelteKit handler chain can clean up, and
   // return 504 to the caller with a JSON body rather than a half-rendered
-  // HTML stub.
+  // HTML stub. We also fold in the request signal so a closed browser tab
+  // tears down the upstream fetch instead of leaving it pinned.
+  const requestSignal = event.request.signal;
   const previewController = new AbortController();
   const previewTimer = setTimeout(() => previewController.abort(), EXPORT_TIMEOUT_MS);
+  const previewSignal = AbortSignal.any([requestSignal, previewController.signal]);
 
   let previewRes: Response;
   try {
-    previewRes = await event.fetch(previewUrl, { signal: previewController.signal });
+    previewRes = await event.fetch(previewUrl, { signal: previewSignal });
   } catch (err) {
     clearTimeout(previewTimer);
     if (previewController.signal.aborted) {
@@ -87,10 +91,12 @@ export const GET: RequestHandler = async (event) => {
 
   // Chat JSON and artifact list run in parallel — neither depends on the
   // other and we want the wall-clock pipeline to be max(preview, max(chat,
-  // artifacts), max(artifact-bytes…)) rather than a serial sum.
+  // artifacts), max(artifact-bytes…)) rather than a serial sum. The
+  // request signal threads through so a tab close tears down the daemon
+  // fetches instead of leaving them pinned.
   const [chatRes, artifactsRes] = await Promise.all([
-    event.fetch(chatUrl),
-    event.fetch(artifactsUrl),
+    event.fetch(chatUrl, { signal: requestSignal }),
+    event.fetch(artifactsUrl, { signal: requestSignal }),
   ]);
 
   if (chatRes.status === 404) {
@@ -144,11 +150,21 @@ export const GET: RequestHandler = async (event) => {
     artifacts.map(async (summary) => {
       const res = await event.fetch(
         `/api/daemon/api/artifacts/${encodeURIComponent(summary.id)}/content`,
+        { signal: requestSignal },
       );
       if (!res.ok) {
         throw new Error(`status ${res.status}`);
       }
       const buf = new Uint8Array(await res.arrayBuffer());
+      // Per-artifact ceiling. Throwing here lands in the same skip-and-warn
+      // path as a fetch failure: the entry is dropped from the zip and the
+      // rest of the export proceeds. We pin the message so tests / log
+      // greps can distinguish oversize from network failures.
+      if (buf.byteLength > MAX_ARTIFACT_BYTES) {
+        throw new Error(
+          `artifact ${summary.id} exceeds per-artifact byte ceiling (${buf.byteLength} > ${MAX_ARTIFACT_BYTES})`,
+        );
+      }
       return {
         path: artifactZipPath({
           id: summary.id,
@@ -161,11 +177,32 @@ export const GET: RequestHandler = async (event) => {
     }),
   );
 
+  // Aggregate ceiling. Sum the byte lengths of everything that survived the
+  // per-artifact cap; if the total still blows past the limit we 413 before
+  // ever calling `zip.generateAsync` — generating a 500 MB zip just to drop
+  // it on the floor would burn the request budget for nothing.
+  let totalBytes = 0;
+  for (const result of byteResults) {
+    if (result.status === "fulfilled") {
+      totalBytes += result.value.bytes.byteLength;
+    }
+  }
+  if (totalBytes > MAX_TOTAL_ARTIFACT_BYTES) {
+    return new Response(
+      JSON.stringify({
+        error: "Export exceeds size limit",
+        totalBytes,
+        limit: MAX_TOTAL_ARTIFACT_BYTES,
+      }),
+      { status: 413, headers: { "content-type": "application/json" } },
+    );
+  }
+
   const zip = new JSZip();
   zip.file("index.html", html);
-  // Strip `userId` from the exported chat — it's account-ownership PII and
-  // shared exports shouldn't leak it. The schema validates the wire shape
-  // upstream; the strip happens at the zip-write boundary.
+  // Strip the top-level account-ownership ID from chat.json. The transcript,
+  // system prompt context, and tool inputs/outputs are exported verbatim —
+  // recipients see what the sender saw.
   const { userId: _userId, ...chatWithoutUserId } = chatParsed.data.chat;
   zip.file(
     "chat.json",

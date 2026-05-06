@@ -12,11 +12,33 @@
 import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Mock the byte ceilings down to test-friendly values so the per-artifact
+// and aggregate ceiling branches are exercisable without allocating tens
+// or hundreds of megabytes per test. The real production values live in
+// `./limits.ts` (25 MB / 250 MB) — see that module for rationale.
+const TEST_MAX_ARTIFACT_BYTES = 1024;
+const TEST_MAX_TOTAL_ARTIFACT_BYTES = 4096;
+vi.mock("./limits", () => ({
+  MAX_ARTIFACT_BYTES: TEST_MAX_ARTIFACT_BYTES,
+  MAX_TOTAL_ARTIFACT_BYTES: TEST_MAX_TOTAL_ARTIFACT_BYTES,
+}));
+
 const { GET } = await import("./+server");
 
 interface FakeEvent {
   params: { workspaceId?: string; chatId?: string };
   fetch: typeof globalThis.fetch;
+  // The route reads `event.request.signal` so a closed-tab abort can cascade
+  // through the upstream fetches. Tests provide a never-aborting controller
+  // by default; the timeout test substitutes its own.
+  request: { signal: AbortSignal };
+}
+
+function makeRequest(): { signal: AbortSignal } {
+  // A fresh, never-aborted AbortController stands in for SvelteKit's real
+  // `event.request`. Using `AbortSignal.any([...])` in production code
+  // requires a real `AbortSignal`, so a plain object isn't enough.
+  return { signal: new AbortController().signal };
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -123,6 +145,7 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     const a2 = sampleArtifact("art-bbbb", "b.txt");
     const event: FakeEvent = {
       params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
       fetch: makeFetch([
         {
           match: (u) => u.includes("/export/preview"),
@@ -157,6 +180,13 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
 
     const html = await zip.file("index.html")?.async("string");
     expect(html).toContain("preview body");
+    // The preview is rendered with `csr=false` and `inlineStyleThreshold:
+    // Infinity` so the exported HTML is portable — no external CSS link
+    // tags, no client-side script tags. Lock that in: a regression that
+    // re-introduces either would silently break recipients who open the
+    // file offline.
+    expect(html).not.toContain('<link rel="stylesheet"');
+    expect(html).not.toMatch(/<script[\s>]/i);
 
     const chatJson = await zip.file("chat.json")?.async("string");
     const parsed = JSON.parse(chatJson ?? "{}") as Record<string, unknown>;
@@ -177,6 +207,7 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     const bad = sampleArtifact("art-bad", "bad.txt");
     const event: FakeEvent = {
       params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
       fetch: makeFetch([
         {
           match: (u) => u.includes("/export/preview"),
@@ -208,9 +239,168 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     expect(zip.file("assets/artifacts/art-bad/bad.txt")).toBeNull();
   });
 
+  it("returns 504 with the timeout error body when the preview fetch is aborted by the 10s ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      const event: FakeEvent = {
+        params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+        request: makeRequest(),
+        // Preview handler hangs until the orchestrator's AbortController
+        // fires. The route attaches `previewController.signal` to the
+        // event.fetch call, so the abort surfaces as a rejection that
+        // the catch block translates to 504.
+        fetch: ((async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.toString()
+                : input.url;
+          if (url.includes("/export/preview")) {
+            return await new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => {
+                reject(new DOMException("aborted", "AbortError"));
+              });
+            });
+          }
+          throw new Error(`Unexpected fetch in test: ${url}`);
+        }) as typeof globalThis.fetch),
+      };
+
+      const resPromise = callGet(event);
+      // Step past the 10s ceiling — the route's setTimeout fires and
+      // aborts the preview fetch above.
+      await vi.advanceTimersByTimeAsync(10_001);
+      const res = await resPromise;
+
+      expect(res.status).toBe(504);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("Chat too large to export");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns 502 in the outer catch when the preview fetch throws a non-AbortError", async () => {
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
+      fetch: makeFetch([
+        {
+          match: (u) => u.includes("/export/preview"),
+          respond: () => {
+            // Daemon-down style failure — not an abort, so the route
+            // takes the 502 branch in the catch.
+            throw new Error("daemon dead");
+          },
+        },
+      ]),
+    };
+
+    const res = await callGet(event);
+
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("daemon dead");
+  });
+
+  it("omits an artifact whose body exceeds MAX_ARTIFACT_BYTES; the rest of the export still succeeds", async () => {
+    const small = sampleArtifact("art-small", "small.txt");
+    const huge = sampleArtifact("art-huge", "huge.txt");
+    // One byte over the (mocked, test-only) per-artifact ceiling.
+    const oversize = new Uint8Array(TEST_MAX_ARTIFACT_BYTES + 1);
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
+      fetch: makeFetch([
+        {
+          match: (u) => u.includes("/export/preview"),
+          respond: () => htmlResponse("<html>ok</html>"),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/workspaces/") && u.includes("?full=true"),
+          respond: () => jsonResponse(sampleChatPayload),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/artifacts?chatId="),
+          respond: () => jsonResponse({ artifacts: [small, huge] }),
+        },
+        { match: (u) => u.endsWith("/art-small/content"), respond: () => bytesResponse("ok") },
+        {
+          match: (u) => u.endsWith("/art-huge/content"),
+          respond: () =>
+            new Response(oversize, {
+              status: 200,
+              headers: { "content-type": "application/octet-stream" },
+            }),
+        },
+      ]),
+    };
+
+    const res = await callGet(event);
+
+    expect(res.status).toBe(200);
+    const zip = await decodeZip(res);
+    // Small artifact survives; oversize one is dropped (same skip-and-warn
+    // path as a fetch failure — recipient sees one missing download).
+    expect(zip.file("assets/artifacts/art-small/small.txt")).not.toBeNull();
+    expect(zip.file("assets/artifacts/art-huge/huge.txt")).toBeNull();
+  });
+
+  it("returns 413 when the surviving artifacts' total bytes exceed MAX_TOTAL_ARTIFACT_BYTES", async () => {
+    // Three artifacts, each within the per-artifact ceiling but together
+    // over the aggregate ceiling. With TEST_MAX_ARTIFACT_BYTES = 1024 and
+    // TEST_MAX_TOTAL_ARTIFACT_BYTES = 4096, three 1024-byte artifacts =
+    // 3072 (under), four = 4096 (under), five = 5120 (over).
+    const a1 = sampleArtifact("art-1", "1.bin");
+    const a2 = sampleArtifact("art-2", "2.bin");
+    const a3 = sampleArtifact("art-3", "3.bin");
+    const a4 = sampleArtifact("art-4", "4.bin");
+    const a5 = sampleArtifact("art-5", "5.bin");
+    const chunk = new Uint8Array(TEST_MAX_ARTIFACT_BYTES);
+    const chunkResponse = (): Response =>
+      new Response(chunk, {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+      });
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
+      fetch: makeFetch([
+        {
+          match: (u) => u.includes("/export/preview"),
+          respond: () => htmlResponse("<html>ok</html>"),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/workspaces/") && u.includes("?full=true"),
+          respond: () => jsonResponse(sampleChatPayload),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/artifacts?chatId="),
+          respond: () => jsonResponse({ artifacts: [a1, a2, a3, a4, a5] }),
+        },
+        { match: (u) => u.endsWith("/art-1/content"), respond: chunkResponse },
+        { match: (u) => u.endsWith("/art-2/content"), respond: chunkResponse },
+        { match: (u) => u.endsWith("/art-3/content"), respond: chunkResponse },
+        { match: (u) => u.endsWith("/art-4/content"), respond: chunkResponse },
+        { match: (u) => u.endsWith("/art-5/content"), respond: chunkResponse },
+      ]),
+    };
+
+    const res = await callGet(event);
+
+    expect(res.status).toBe(413);
+    expect(res.headers.get("content-type")).toBe("application/json");
+    const body = (await res.json()) as { error: string; totalBytes: number; limit: number };
+    expect(body.error).toBe("Export exceeds size limit");
+    expect(body.limit).toBe(TEST_MAX_TOTAL_ARTIFACT_BYTES);
+    expect(body.totalBytes).toBeGreaterThan(TEST_MAX_TOTAL_ARTIFACT_BYTES);
+  });
+
   it("forwards a non-2xx preview status (e.g. 404 for missing chat) verbatim", async () => {
     const event: FakeEvent = {
       params: { workspaceId: SAMPLE_WS_ID, chatId: "missing-chat" },
+      request: makeRequest(),
       fetch: makeFetch([
         {
           match: (u) => u.includes("/export/preview"),
