@@ -14,7 +14,13 @@ import {
   ValidationFailedError,
   validate as validateOutput,
 } from "@atlas/hallucination";
-import { buildTemporalFacts, type DatetimeContext, type PlatformModels } from "@atlas/llm";
+import {
+  buildTemporalFacts,
+  type DatetimeContext,
+  type PlatformModels,
+  type ProvenanceSource,
+  wrapRetrieved,
+} from "@atlas/llm";
 import { logger } from "@atlas/logger";
 
 /**
@@ -98,6 +104,22 @@ export function buildFinalAgentPrompt(
   return taskPrompt ? `${taskPrompt}\n\n${documentContext}` : documentContext;
 }
 
+export interface BuildAgentPromptOptions {
+  /**
+   * Trust tier for the signal payload, derived by the caller from the
+   * workspace's signal config (see `provenanceForSignalProvider`). HTTP
+   * webhook payloads carry caller-controlled bytes — wrap them as
+   * `external` so the model's `<retrieved_content_hygiene>` rule fires
+   * and treats them as data, not commands. Defaults to `"external"` —
+   * the safest choice when the caller doesn't know the provider type.
+   */
+  signalProvenance?: ProvenanceSource;
+  /** Stable identifier for the signal (defaults to `signal.type`). */
+  signalOrigin?: string;
+  /** Stable identifier for the prepare-result origin. */
+  inputOrigin?: string;
+}
+
 /**
  * Build agent prompt with context (extracted from SessionSupervisor lines 1347-1446)
  *
@@ -107,8 +129,16 @@ export function buildFinalAgentPrompt(
  * - Previous agent outputs (from other documents)
  * - Task description
  *
- * NOTE: Working memory integration would go here if needed, but for the initial
- * FSM integration, we're keeping this minimal.
+ * Each section that carries values originating outside the workspace's
+ * trusted code path (signal payload, document data, prepare-result Input)
+ * is wrapped in a `<retrieved_content provenance="..." origin="..."
+ * fetched_at="...">` envelope. The model's `<retrieved_content_hygiene>`
+ * rule (in workspace-chat `prompt.txt`) treats anything inside these tags
+ * as data, never as instructions — so a webhook payload that says "ignore
+ * previous instructions" is data, not a command. Documents and prepare
+ * results default to `user-authored` (workspace developer / FSM author
+ * controls them); signal data defaults to whatever provenance the caller
+ * computes from the signal's provider.
  */
 export async function buildAgentPrompt(
   _agentId: string,
@@ -117,6 +147,7 @@ export async function buildAgentPrompt(
   abortSignal?: AbortSignal,
   _workspaceId?: string,
   _artifactStorage?: ArtifactStorageAdapter,
+  options: BuildAgentPromptOptions = {},
 ): Promise<string> {
   const signalContext = signal.data;
   const signalDatetime = signal.data?.datetime as DatetimeContext | undefined;
@@ -126,12 +157,15 @@ export async function buildAgentPrompt(
 
   const sections: string[] = [];
 
-  // Add facts section (current date/time/etc)
+  // Add facts section (current date/time/etc) — temporal facts are
+  // system-derived; no envelope wrapping.
   sections.push(buildTemporalFacts(signalDatetime));
 
-  // Format documents for prompt - these are the FSM's business domain documents
+  // Documents are workspace-authored business state. Tag as
+  // user-authored so the model can distinguish data from instructions
+  // even though the trust level is high.
   if (documents.length > 0) {
-    const documentsSection = documents
+    const body = documents
       .map((d) => {
         return `### Document: ${d.id} (type: ${d.type})\n\`\`\`json\n${JSON.stringify(
           d.data,
@@ -140,20 +174,42 @@ export async function buildAgentPrompt(
         )}\n\`\`\``;
       })
       .join("\n\n");
-
-    sections.push(`## Available Documents\n\n${documentsSection}`);
+    sections.push(
+      wrapRetrieved({
+        source: "user-authored",
+        origin: "fsm:documents",
+        body: `## Available Documents\n\n${body}`,
+      }),
+    );
   }
 
-  // Include prepare result (task + config from code action) so agents
-  // receive computed values from prepare functions, matching LLM action behavior
+  // Prepare-result Input — emitted by a workspace-authored `prepare`
+  // function; tagged user-authored. If a prepare function pulls in
+  // signal payload bytes, those bytes inherit this envelope; the
+  // workspace author is responsible for not splicing untrusted
+  // values into the action prompt template directly.
   if (fsmContext.input) {
-    sections.push(`## Input\n\n\`\`\`json\n${JSON.stringify(fsmContext.input, null, 2)}\n\`\`\``);
+    sections.push(
+      wrapRetrieved({
+        source: "user-authored",
+        origin: options.inputOrigin ?? "fsm:input",
+        body: `## Input\n\n\`\`\`json\n${JSON.stringify(fsmContext.input, null, 2)}\n\`\`\``,
+      }),
+    );
   }
 
-  // Include signal data
+  // Signal data is the load-bearing trust boundary — provenance is
+  // dictated by the signal's provider (caller passes
+  // `signalProvenance` from `provenanceForSignalProvider(provider)`).
+  // Default to `external` when unknown — safer than silently
+  // inheriting `system-config`.
   if (signalContext && Object.keys(signalContext).length > 0) {
     sections.push(
-      `## Signal Data\n\n\`\`\`json\n${JSON.stringify(signalContext, null, 2)}\n\`\`\``,
+      wrapRetrieved({
+        source: options.signalProvenance ?? "external",
+        origin: options.signalOrigin ?? `signal:${signal.type}`,
+        body: `## Signal Data\n\n\`\`\`json\n${JSON.stringify(signalContext, null, 2)}\n\`\`\``,
+      }),
     );
   }
 

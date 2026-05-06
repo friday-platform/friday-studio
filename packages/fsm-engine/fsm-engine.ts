@@ -29,7 +29,7 @@ import {
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
-import { buildTemporalFacts } from "@atlas/llm";
+import { buildTemporalFacts, wrapRetrieved } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
@@ -1821,7 +1821,16 @@ export class FSMEngine {
         }
       }
 
-      prompt = `${prompt}\n\nInput:\n${JSON.stringify(expanded, null, 2)}`;
+      // Prepare-result Input rides as workspace-authored content
+      // (the `prepare` function emits it). Wrap in `<retrieved_content>`
+      // so the model's hygiene rule treats nested JSON values as data,
+      // not commands — covers cases where prepare functions copy
+      // signal-payload bytes into the Input without sanitization.
+      prompt = `${prompt}\n\n${wrapRetrieved({
+        source: "user-authored",
+        origin: `fsm:${this._definition.id}:input`,
+        body: `Input:\n${JSON.stringify(expanded, null, 2)}`,
+      })}`;
     }
 
     if (skills.length > 0) {

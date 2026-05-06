@@ -44,6 +44,11 @@ export {
   type RegistryProvider,
 } from "./src/registry-id.ts";
 export {
+  type ProvenanceSource,
+  provenanceForSignalProvider,
+  wrapRetrieved,
+} from "./src/retrieved-content.ts";
+export {
   type GenerateSessionTitleInput,
   generateSessionTitle,
 } from "./src/session-title.ts";

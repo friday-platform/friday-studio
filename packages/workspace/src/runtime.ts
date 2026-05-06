@@ -81,6 +81,7 @@ import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
   type PlatformModels,
+  provenanceForSignalProvider,
 } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -1598,6 +1599,16 @@ export class WorkspaceRuntime {
     const agentConfigPrompt = extractAgentConfigPrompt(agentConfig);
     const agentCustomConfig = extractAgentConfig(agentConfig);
 
+    // Resolve signal provenance from the workspace's signal config so
+    // signal payloads are tagged at the right trust tier (HTTP webhook
+    // bodies are caller-controlled → "external"; chat communicator
+    // payloads are user-typed → "user-authored"; cron triggers are
+    // internal → "system-config"). The model's
+    // `<retrieved_content_hygiene>` rule (in workspace-chat prompt.txt)
+    // uses this to refuse instruction-execution from data tags.
+    const signalConfig = this.config.workspace.signals?.[signal.type];
+    const signalProvenance = provenanceForSignalProvider(signalConfig?.provider);
+
     const context = await buildAgentPrompt(
       agentId,
       fsmContext,
@@ -1605,6 +1616,7 @@ export class WorkspaceRuntime {
       signal._context?.abortSignal,
       this.workspace.id,
       ArtifactStorage,
+      { signalProvenance },
     );
 
     const prompt = buildFinalAgentPrompt(action.prompt, agentConfigPrompt, context);
