@@ -82,6 +82,7 @@ import type {
   SignalWithContext,
   TransitionDefinition,
 } from "./types.ts";
+import { classifyAction } from "./validate-classifier.ts";
 
 /**
  * Platform tools exposed to FSM LLM steps.
@@ -1558,6 +1559,40 @@ export class FSMEngine {
               // also check toolCalls for backward compatibility with mock providers.
               if (completeToolInjected) {
                 capturedCompleteOutput = findCompleteToolArgs(result);
+              }
+
+              // Phase B1 (melodic-strolling-seal-pt2): observability-only
+              // classifier. Decides what validation strategy WOULD apply per
+              // FSM type:llm action without changing runtime behavior. Wired
+              // here so we can compare decisions against author intent on
+              // real workloads BEFORE B2 lands the schema field that flips
+              // behavior. Built from the post-call trace so calledToolNames
+              // reflect what actually ran.
+              {
+                const observedTrace = buildLLMActionTrace(result, action.model, contextPrompt);
+                const declaredTools = action.tools ?? [];
+                const classifierDecision = classifyAction({
+                  declaredTools,
+                  calledToolNames: observedTrace.toolCalls?.map((tc) => tc.toolName) ?? [],
+                  hasOutputType: !!action.outputType,
+                  hasInputFrom: !!action.inputFrom,
+                  // case "llm" — type is always "llm". The case "agent" path
+                  // will fill in resolvedAgentType in B4.
+                  resolvedAgentType: undefined,
+                  emittedProse:
+                    typeof observedTrace.content === "string" &&
+                    observedTrace.content.trim().length > 0,
+                  toolsAvailable: declaredTools.length > 0,
+                });
+                logger.debug("validate-classifier decision", {
+                  state: currentState,
+                  action: action.outputTo ?? "anonymous",
+                  decision: classifierDecision.decision,
+                  reason: classifierDecision.reason,
+                  wouldChangeBehavior: this.options.validateOutput
+                    ? classifierDecision.decision !== "external"
+                    : classifierDecision.decision !== "skip",
+                });
               }
 
               // Validate output if validator provided.
