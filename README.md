@@ -33,7 +33,7 @@ provider clients from scratch every time.
 
 > **Prefer the packaged version?** **[hellofriday.ai](https://hellofriday.ai)**
 > ships the same daemon and playground as a one-click installer for macOS
-> and Windows, with the launcher, dependencies, and tray UI bundled. The
+> with the launcher, dependencies, and tray UI bundled. The
 > rest of this README is for working in-tree.
 
 ## Architecture
