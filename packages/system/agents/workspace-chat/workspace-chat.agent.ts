@@ -61,6 +61,7 @@ import { createListMcpToolsTool } from "./tools/list-mcp-tools.ts";
 import { createMcpDependenciesTool } from "./tools/mcp-dependencies.ts";
 import { createMemorySaveTool } from "./tools/memory-save.ts";
 import { createPublishSkillTool } from "./tools/publish-skill.ts";
+import { createRequestToolAccessTool } from "./tools/request-tool-access.ts";
 import { createSearchMcpServersTool } from "./tools/search-mcp-servers.ts";
 import {
   createAssignWorkspaceSkillTool,
@@ -750,6 +751,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             streamId: session.streamId,
           }),
           ...createMemorySaveTool(workspaceId, logger),
+          ...createRequestToolAccessTool({
+            workspaceId,
+            sessionId: adHocSessionId,
+            workspacePermissions: wsConfig?.permissions,
+            logger,
+          }),
           ...webFetchTool,
           ...webSearchTool,
           ...runCodeTool,
