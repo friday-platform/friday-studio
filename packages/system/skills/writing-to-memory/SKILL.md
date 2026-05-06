@@ -1,7 +1,6 @@
 ---
 name: writing-to-memory
 description: "How to read and write Friday memory stores correctly: store selection, terse entry format, large-content artifact pattern, and what's auto-injected into the system prompt."
-user-invocable: false
 ---
 
 # Writing to Memory

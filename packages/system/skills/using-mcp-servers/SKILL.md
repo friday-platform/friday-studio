@@ -1,7 +1,6 @@
 ---
 name: using-mcp-servers
 description: Use when choosing between install, enable, disable, or delete for an MCP server; when an agent needs to discover or delegate to MCP servers; or when MCP tools fail with credential, connection, or prefixing issues.
-user-invocable: false
 ---
 
 # Using MCP Servers

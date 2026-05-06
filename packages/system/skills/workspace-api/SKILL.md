@@ -1,7 +1,6 @@
 ---
 name: workspace-api
 description: "Create, list, update, delete, and clean up workspaces via the daemon HTTP API (localhost:8080). Use when the user asks to create, edit, delete, or list workspaces, spaces, projects, or environments; add or patch signals / agents / jobs / memory / skills; convert a workspace.yml into a live workspace; wire up triggers (HTTP webhooks, cron, fs-watch, Slack / Telegram / WhatsApp); or clean up test/scratch workspaces."
-user-invocable: false
 ---
 
 # Workspace API
