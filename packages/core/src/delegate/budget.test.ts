@@ -330,11 +330,18 @@ describe("delegate budget enforcement", () => {
       // delegate's `finally` checks `wallTimeSignal.aborted`; it's true
       // after `await new Promise(r => setTimeout(r, ...))`.
       const captured: CapturedStreamTextArgs = { args: undefined };
+      // The original gap (5ms timeout vs 25ms work) flaked on busy CI
+      // runners with GC pauses. Using `vi.useFakeTimers` against
+      // `AbortSignal.timeout` is unreliable across Node versions, so we
+      // widen the gap instead — 50ms timeout vs 250ms work gives enough
+      // slack that any reasonable runner reliably aborts before the work
+      // completes. The branch under test is "wall-clock fires" — gap
+      // size is irrelevant to the assertion, only that the timeout
+      // settles before the steps resolve.
       mockStreamText.mockImplementation((args: Parameters<typeof mockStreamText>[0]) => {
         captured.args = args;
-        // Wait long enough for the 5ms wall-clock signal to flip.
         const stepsPromise = new Promise<unknown[]>((resolve) => {
-          setTimeout(() => resolve([]), 25);
+          setTimeout(() => resolve([]), 250);
         });
         return {
           steps: stepsPromise,
@@ -351,7 +358,7 @@ describe("delegate budget enforcement", () => {
         };
       });
 
-      const { delegateTool } = makeDelegate({ max_wall_time_ms: 5 });
+      const { delegateTool } = makeDelegate({ max_wall_time_ms: 50 });
       const result = await runDelegate(delegateTool);
 
       expect(result.ok).toBe(false);

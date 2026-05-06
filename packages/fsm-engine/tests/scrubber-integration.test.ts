@@ -74,6 +74,21 @@ import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
 
 const SIZE_THRESHOLD_CHARS = 4 * 1024;
 
+// Note (2026-05-06 review): this suite mocks `@atlas/mcp`'s createMCPTools
+// — the mocked wrapper itself implements the `wrappedExecute = scrubResult
+// ? ... : ...` branch. So an assertion that "lifted base64 ends up as a
+// ref" only proves that the test's own wrapper invokes the scrubResult
+// callback, not that the production createMCPTools at
+// `packages/mcp/src/create-mcp-tools.ts` calls it. A regression in
+// production createMCPTools that silently dropped the scrubResult call
+// would still pass these tests.
+//
+// The genuinely useful assertion in this suite is "createMCPTools is
+// called with scrubResult set" (the wiring contract). That part is
+// real. The "lifted to artifact ref" payload-shape part is tautological
+// against the test's own wrapper. A future pass that swaps in the real
+// createMCPTools against a stub MCP server fixture would make the
+// payload-shape assertions meaningful.
 describe("FSM LLM action — scrubber wiring (Phase 3)", () => {
   it("passes scrubResult into createMCPTools and lifts oversized base64", async () => {
     // Capture what the LLM provider receives so we can assert the scrubber

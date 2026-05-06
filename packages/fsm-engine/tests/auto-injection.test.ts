@@ -66,7 +66,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("FSM LLM action — auto-injection of memory+artifact tools (Phase 5)", () => {
+// Note (2026-05-06 review): this suite verifies that the FSM LLM action
+// path forwards platform tools returned by createMCPTools to the LLM
+// and that atlas-platform is in the connected configs. It does NOT
+// verify that the *real* atlas-platform MCP server actually exposes a
+// tool named `memory_save` — that's an integration concern covered by
+// the eval suite. If platform's tool naming changes (e.g. `mem_save`),
+// production breaks but these tests still pass because they stub
+// createMCPTools.
+describe("FSM LLM action — forwards configured platform tools to LLM (Phase 5)", () => {
   it("exposes memory_save without action.tools declaring it, and prepends <memory> blocks to the prompt", async () => {
     // Daemon HTTP mock: list one narrative store with one entry.
     mockFetch.mockImplementation((input) => {
