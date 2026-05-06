@@ -30,6 +30,14 @@ export * from "./src/jobs.ts";
 export * from "./src/mcp.ts";
 // Notification configuration schemas
 export * from "./src/notifications.ts";
+// Permissions resolver (job > workspace > daemon precedence helper).
+// `PermissionsConfig` + `PermissionsConfigSchema` are re-exported via
+// workspace.ts; only the resolver helpers ship from here.
+export {
+  type ResolvedPermissions,
+  type ResolvePermissionsInput,
+  resolvePermissions,
+} from "./src/permissions.ts";
 // Agent indirection: workspace agent key → runtime agent ID
 export { resolveRuntimeAgentId } from "./src/resolve-runtime-agent.ts";
 // Signal schemas with tagged unions

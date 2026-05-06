@@ -60,6 +60,8 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "scratchpad_append",
   "scratchpad_read",
   "scratchpad_clear",
+  // Permissions (Phase 12.C / Phase 1.C)
+  "request_tool_access",
 ]);
 
 export function createPlatformTools(ctx: AgentContext) {

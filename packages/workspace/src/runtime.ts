@@ -412,6 +412,13 @@ interface FSMJob {
    * signal-routing path.
    */
   delegationOverride?: import("@atlas/config").DelegationBudget;
+  /**
+   * Phase 12.C / Phase 1.C — per-job permissions from `JobSpecification.permissions`.
+   * Forwarded into FSMEngine options so `request_tool_access` can resolve
+   * the effective `dangerouslySkipAllowlist` at LLM-call time. Optional;
+   * undefined = "no per-job override; fall through to workspace + daemon".
+   */
+  permissions?: import("@atlas/config").PermissionsConfig;
 }
 
 interface ActiveSession {
@@ -1137,6 +1144,7 @@ export class WorkspaceRuntime {
         description: jobSpec.description,
         maxSteps: jobSpec.config?.max_steps,
         delegationOverride: jobSpec.delegation,
+        ...(jobSpec.permissions && { permissions: jobSpec.permissions }),
       });
 
       // D.1: declarative `jobs.*.skills` field — warn when refs don't match
@@ -1391,6 +1399,13 @@ export class WorkspaceRuntime {
         this.config.workspace.delegation,
         job.delegationOverride,
       ),
+      // Phase 12.C / Phase 1.C — forward raw permissions (unresolved) so
+      // `request_tool_access` can run `resolvePermissions` with the daemon
+      // env floor at call time. Job > workspace > daemon precedence.
+      ...(job.permissions && { jobPermissions: job.permissions }),
+      ...(this.config.workspace.permissions && {
+        workspacePermissions: this.config.workspace.permissions,
+      }),
     };
 
     let definition: FSMDefinition;

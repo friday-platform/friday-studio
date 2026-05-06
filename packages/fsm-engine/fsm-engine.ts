@@ -474,6 +474,19 @@ export interface FSMEngineOptions {
    * `delegation:` block exists).
    */
   delegationBudget?: import("@atlas/config").DelegationBudget;
+  /**
+   * Phase 12.C / Phase 1.C — per-job permissions (raw, unresolved).
+   * Forwarded into the `wrapPlatformToolsWithScope` call so
+   * `request_tool_access` can resolve effective bypass at LLM-call time
+   * (job > workspace > daemon-env precedence). Optional — undefined means
+   * "no per-job override".
+   */
+  jobPermissions?: import("@atlas/config").PermissionsConfig;
+  /**
+   * Phase 12.C / Phase 1.C — workspace-level permissions config. Same
+   * forwarding contract as `jobPermissions` but at the workspace tier.
+   */
+  workspacePermissions?: import("@atlas/config").PermissionsConfig;
 }
 
 export class FSMEngine {
@@ -1227,7 +1240,12 @@ export class FSMEngine {
             // side via buildTools' existing allowlist; platform tools remain
             // ambient (PLATFORM_TOOL_ALLOWLIST in buildTools is already
             // filtered there). Phase 5 of the fan-in plan.
-            const buildResult = await this.buildTools(action.tools ?? [], context, sig._context);
+            const buildResult = await this.buildTools(
+              action.tools ?? [],
+              context,
+              sig._context,
+              actionId,
+            );
             const baseTools = buildResult.tools;
 
             let cleanupSkills: (() => Promise<void>) | undefined;
@@ -2116,6 +2134,13 @@ export class FSMEngine {
     toolNames: string[],
     _context: Context,
     signalContext?: SignalWithContext["_context"],
+    /**
+     * Phase 12.C — action id forwarded into the scope-injection wrapper so
+     * `request_tool_access` can stamp the originating action onto its
+     * elicitation envelope. Optional because non-LLM-action callers don't
+     * own an action id (and don't expose `request_tool_access` anyway).
+     */
+    actionId?: string,
   ): Promise<{ tools: Record<string, Tool>; dispose: () => Promise<void> }> {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
@@ -2264,6 +2289,16 @@ export class FSMEngine {
     const wrapped = wrapPlatformToolsWithScope(scoped, {
       workspaceId: this.options.scope.workspaceId,
       workspaceName: this.options.scope.workspaceName,
+      // Phase 12.C — sessionId + actionId + permissions flow into
+      // `request_tool_access` (and any future scope-injected tool that
+      // needs them). Other wrapped tools strip extras via Zod input
+      // validation, so this is harmless surface widening.
+      ...(this.options.scope.sessionId && { sessionId: this.options.scope.sessionId }),
+      ...(actionId && { actionId }),
+      ...(this.options.jobPermissions && { jobPermissions: this.options.jobPermissions }),
+      ...(this.options.workspacePermissions && {
+        workspacePermissions: this.options.workspacePermissions,
+      }),
     });
     Object.assign(tools, wrapped);
 

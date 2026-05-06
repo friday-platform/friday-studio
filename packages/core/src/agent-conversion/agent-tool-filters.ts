@@ -1,5 +1,6 @@
 import type { AtlasTool, AtlasTools } from "@atlas/agent-sdk";
 import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
+import type { PermissionsConfig } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 
 export { PLATFORM_TOOL_NAMES };
@@ -25,11 +26,42 @@ export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
   "memory_save",
   "memory_read",
   "memory_remove",
+  // Phase 12.C — request_tool_access reads sessionId, actionId, jobPermissions,
+  // and workspacePermissions from the wrapper to resolve effective bypass at
+  // call time. Without scope injection it has no way to see permissions
+  // config.
+  "request_tool_access",
 ]);
 
 export interface ToolScope {
   workspaceId: string;
   workspaceName?: string;
+  /**
+   * Optional session id forwarded to scope-injected tools that need it
+   * (e.g. `request_tool_access` records it on the elicitation envelope so
+   * the Activity page can correlate). Undefined for tools that don't need
+   * session identity (most chat-side wraps).
+   */
+  sessionId?: string;
+  /**
+   * Optional FSM action id. Set when an LLM action constructs the tool set
+   * inside `fsm-engine`'s `case "llm":` dispatch — `request_tool_access`
+   * stamps it on the elicitation so the Activity page can link back to
+   * the originating action.
+   */
+  actionId?: string;
+  /**
+   * Per-job permissions config (raw, unresolved). Forwarded to
+   * `request_tool_access` so it can call `resolvePermissions` at call time
+   * with the daemon-env floor. Optional — missing means "no per-job
+   * override; fall through to workspace + daemon".
+   */
+  jobPermissions?: PermissionsConfig;
+  /**
+   * Workspace-level permissions config. Same forwarding contract as
+   * `jobPermissions` but at the workspace tier.
+   */
+  workspacePermissions?: PermissionsConfig;
 }
 
 /**
@@ -60,6 +92,16 @@ export function wrapPlatformToolsWithScope(
             ...(args as Record<string, unknown>),
             workspaceId: scope.workspaceId,
             ...(scope.workspaceName && { workspaceName: scope.workspaceName }),
+            // Phase 12.C — these flow into `request_tool_access` (and any
+            // future scope-injected tool that needs them). Other wrapped
+            // tools ignore unknown fields because their MCP-side schemas
+            // don't declare them; Zod parses out only what each tool asks
+            // for. Defense in depth still applies: caller-supplied values
+            // are overwritten.
+            ...(scope.sessionId && { sessionId: scope.sessionId }),
+            ...(scope.actionId && { actionId: scope.actionId }),
+            ...(scope.jobPermissions && { jobPermissions: scope.jobPermissions }),
+            ...(scope.workspacePermissions && { workspacePermissions: scope.workspacePermissions }),
           },
           opts,
         )) as AtlasTool["execute"],
@@ -103,6 +145,10 @@ export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   // Workspace (limited)
   "convert_task_to_workspace",
   "workspace_signal_trigger",
+  // Permissions — Phase 12.C / Phase 1.C. The LLM calls this to ask for a
+  // tool not in its allowlist. Bypass returns granted; otherwise emits an
+  // elicitation and returns a structured denial.
+  "request_tool_access",
 ]);
 
 /**
