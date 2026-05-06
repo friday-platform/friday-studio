@@ -48,6 +48,7 @@ import { expandArtifactRefsInInput } from "./artifact-expansion.ts";
 import { FSMDocumentDataSchema } from "./document-schemas.ts";
 import { hasDefinedSchema } from "./schema-utils.ts";
 import * as serializer from "./serializer.ts";
+import { applySkillAllowlist, unmatchedAllowlistEntries } from "./skill-filter.ts";
 import type {
   Action,
   AgentAction,
@@ -1128,12 +1129,27 @@ export class FSMEngine {
             // skills assigned to other workspaces into this LLM call.
             const workspaceId = sig._context?.workspaceId;
             const jobName = this._definition.id;
-            const skills: SkillSummary[] = workspaceId
+            const resolved: SkillSummary[] = workspaceId
               ? await resolveVisibleSkills(workspaceId, SkillStorage, { jobName })
               : [];
             if (!workspaceId) {
               logger.warn("LLM action without workspaceId — skill list empty", {
                 state: currentState,
+              });
+            }
+            // Per-action skill allowlist (LLMActionSchema.skills): narrows the
+            // resolved set to those explicitly named on the action. See
+            // `applySkillAllowlist` for the full inherit/empty/populated rules.
+            const skills: SkillSummary[] = applySkillAllowlist(resolved, action.skills);
+            if (action.skills) {
+              logger.debug("Applied per-action skill filter", {
+                workspaceId,
+                jobName,
+                state: currentState,
+                requested: action.skills,
+                matched: skills.map((s) => s.name),
+                unmatched: unmatchedAllowlistEntries(resolved, action.skills),
+                droppedCount: resolved.length - skills.length,
               });
             }
             logger.debug("Resolved workspace skills", {

@@ -65,6 +65,12 @@ export interface LLMAction {
   model: string;
   prompt: string;
   tools?: string[];
+  /**
+   * Step-level skill allowlist. Narrows which skills this LLM action can
+   * `load_skill`. See `LLMActionSchema.skills` in schema.ts for full semantics
+   * (undefined ⇒ inherit, [] ⇒ opt-out, populated ⇒ whitelist).
+   */
+  skills?: string[];
   outputTo?: string;
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType?: string;

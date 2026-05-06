@@ -21,15 +21,14 @@ export const LLMActionSchema = z.object({
   prompt: z.string(),
   tools: z.array(z.string()).optional(),
   /**
-   * @experimental — step-level skill filter. **Not enforced at runtime today.**
-   * The additive job-scoping model (job-level `skills:` in workspace.yml)
-   * covers the 95% case. This field is preserved for a future power-user
-   * escape hatch to further narrow what a single FSM step can load, but
-   * the engine currently ignores it.
+   * Step-level skill allowlist. Narrows which skills this LLM action can
+   * `load_skill`. Layered on top of the job/workspace skill scoping resolved
+   * at the engine level.
    *
-   * When reactivated, semantics would be: empty array ⇒ no workspace skills
-   * for this step; absent ⇒ inherit job/workspace visibility; populated ⇒
-   * whitelist within the job's resolved set.
+   * Semantics: empty array ⇒ no workspace skills for this step (load_skill
+   * tool not registered); absent ⇒ inherit the job/workspace visibility
+   * unchanged; populated ⇒ whitelist within the job's resolved set (skills
+   * not in this list are dropped, even if they would otherwise be visible).
    */
   skills: z.array(z.string()).optional(),
   outputTo: z.string().optional(),
@@ -59,7 +58,7 @@ export const AgentActionSchema = z.object({
   outputType: z.string().optional(),
   /** Task instructions for the agent. Takes precedence over agent config prompt. */
   prompt: z.string().optional(),
-  /** @experimental — see LLMActionSchema.skills. Not enforced at runtime today. */
+  /** Step-level skill allowlist — see LLMActionSchema.skills for semantics. */
   skills: z.array(z.string()).optional(),
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
