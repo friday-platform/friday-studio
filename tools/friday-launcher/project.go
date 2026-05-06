@@ -230,10 +230,39 @@ func loadDotEnv(path string) []string {
 		if key == "" {
 			continue
 		}
-		value := line[eq+1:]
+		value := unquoteEnvValue(line[eq+1:])
 		out = append(out, key+"="+value)
 	}
 	return out
+}
+
+// unquoteEnvValue strips a single layer of matching surrounding quotes
+// from a .env value so spawned services receive the intended string,
+// not the literal quotes.
+//
+// Standard dotenv parsers (Node, Python, @std/dotenv) treat `KEY='v'`
+// as `KEY=v`. The launcher previously left quotes attached, so any
+// .env line written by atlasd's @std/dotenv stringify (which wraps
+// values with non-word chars in single quotes — e.g. an API key with
+// `-`) reached agents as `'sk-ant-foo'` and failed authentication.
+// Stripping here is defensive: even after atlasd switched to
+// unquoted-by-default writes, hand-edited .env files and pre-fix
+// installs continue to work.
+//
+// Only strips when the leading and trailing quote match. Mismatched
+// or single-sided quotes are left as-is — they're part of the value.
+// Embedded escapes inside double quotes (`\n`, `\"`) are not expanded
+// here; values that need them should be set via the Settings UI,
+// which writes the canonical unquoted form.
+func unquoteEnvValue(v string) string {
+	if len(v) < 2 {
+		return v
+	}
+	first, last := v[0], v[len(v)-1]
+	if (first == '\'' || first == '"') && first == last {
+		return v[1 : len(v)-1]
+	}
+	return v
 }
 
 func discoverClaudeBinary() string {

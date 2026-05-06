@@ -10,7 +10,7 @@ import { createPlatformModels, getCatalog, PlatformModelsConfigError } from "@at
 import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import { getFridayHome } from "@atlas/utils/paths.server";
-import { parse, stringify } from "@std/dotenv";
+import { parse } from "@std/dotenv";
 import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import z from "zod";
@@ -25,6 +25,54 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Serialize env vars into `.env` format without unnecessary quoting.
+ *
+ * @std/dotenv's stringify wraps any value containing a non-word char
+ * (a `-` in an API key, a `/` in a URL, …) in single quotes. The
+ * launcher's loadDotEnv (tools/friday-launcher/project.go) reads the
+ * file as-is and forwards `KEY='sk-ant-foo'` verbatim to spawned
+ * services, so agents inherit the literal quotes and the API key
+ * fails to authenticate. The Tauri installer's render_env_lines also
+ * writes unquoted, so this matches the format the rest of the stack
+ * already expects.
+ *
+ * Inputs are pre-validated by envVarsPutRequestSchema: keys are POSIX
+ * identifiers and values contain no CR/LF, so we don't need to handle
+ * multi-line escapes here (the Go launcher's unquoteEnvValue strips
+ * outer quotes only — it would forward `\n` literally).
+ *
+ * Quoting rules picked to round-trip through @std/dotenv's parse:
+ *   - whitespace, `#`, `$`, leading `'`/`"`, or backslash
+ *                  → single-quote (literal, no expansion)
+ *   - value containing `'`
+ *                  → double-quote with `\` and `"` escapes
+ *   - otherwise    → unquoted
+ */
+function stringifyEnv(envVars: Record<string, string>): string {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(envVars)) {
+    if (key.startsWith("#")) continue;
+    const v = value ?? "";
+
+    const needsQuoting = /[\s#$"'\\]/.test(v) || /^['"]/.test(v);
+
+    if (!needsQuoting) {
+      lines.push(`${key}=${v}`);
+      continue;
+    }
+
+    if (!v.includes("'")) {
+      lines.push(`${key}='${v}'`);
+      continue;
+    }
+
+    const escaped = v.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+    lines.push(`${key}="${escaped}"`);
+  }
+  return lines.join("\n");
 }
 
 import { daemonFactory } from "../src/factory.ts";
@@ -43,7 +91,24 @@ const envVarsGetResponseSchema = z.object({
   error: z.string().optional(),
 });
 
-const envVarsPutRequestSchema = z.object({ envVars: z.record(z.string(), z.string()) });
+/**
+ * Keys: POSIX env-var identifiers — `[A-Za-z_][A-Za-z0-9_]*`. Tighter than
+ * what @std/dotenv parse accepts on the read side, deliberately: a key
+ * containing `\n` would let one PUT entry split into two on-disk lines and
+ * smuggle additional env vars into spawned services on the next launcher
+ * import.
+ *
+ * Values: no CR/LF. The Settings UI never sends multi-line values today,
+ * and the Go launcher's unquoteEnvValue strips outer quotes only — it
+ * doesn't expand `\n` escapes — so any multi-line value would reach
+ * spawned services with literal backslash-n. Reject at the boundary.
+ */
+const envVarsPutRequestSchema = z.object({
+  envVars: z.record(
+    z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var keys must be POSIX identifiers"),
+    z.string().regex(/^[^\r\n]*$/, "env var values must not contain newlines"),
+  ),
+});
 
 const envVarsPutResponseSchema = z.object({ success: z.boolean(), error: z.string().optional() });
 
@@ -135,8 +200,7 @@ configRoutes.put(
         await mkdir(atlasDir, { recursive: true });
       }
 
-      // Write the file using @std/dotenv stringify
-      const content = stringify(envVars);
+      const content = stringifyEnv(envVars);
       await writeFile(envPath, content, "utf-8");
 
       logger.info("Environment variables updated successfully", {
