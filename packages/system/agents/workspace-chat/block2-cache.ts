@@ -38,7 +38,52 @@ interface CacheEntry {
 
 const TTL_MS = 5 * 60 * 1000;
 
-const cache = new Map<string, CacheEntry>();
+/**
+ * LRU cap. Map iteration order in JS is insertion order, so re-set on
+ * read keeps the recency ordering and `Map#keys().next()` gives the
+ * least-recently-used. 64 covers the realistic working set of any
+ * single daemon (typical user has <10 workspaces; foreground composition
+ * touches at most a few extras per turn) without leaking unbounded
+ * across long runs.
+ */
+const MAX_ENTRIES = 64;
+
+export class Block2Cache {
+  private readonly map = new Map<string, CacheEntry>();
+
+  get(workspaceId: string): CacheEntry | undefined {
+    const hit = this.map.get(workspaceId);
+    if (!hit) return undefined;
+    // Refresh recency: re-insert moves to the end of the iteration order.
+    this.map.delete(workspaceId);
+    this.map.set(workspaceId, hit);
+    return hit;
+  }
+
+  set(workspaceId: string, entry: CacheEntry): void {
+    if (this.map.has(workspaceId)) this.map.delete(workspaceId);
+    this.map.set(workspaceId, entry);
+    while (this.map.size > MAX_ENTRIES) {
+      const oldest = this.map.keys().next().value;
+      if (oldest === undefined) break;
+      this.map.delete(oldest);
+    }
+  }
+
+  delete(workspaceId: string): void {
+    this.map.delete(workspaceId);
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+
+  size(): number {
+    return this.map.size;
+  }
+}
+
+const cache = new Block2Cache();
 
 /**
  * Get cached Block 2 inputs (workspace details + config) for a

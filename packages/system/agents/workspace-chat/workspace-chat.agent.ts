@@ -25,6 +25,7 @@ import { createLoadSkillTool, resolveVisibleSkills, SkillStorage } from "@atlas/
 import {
   convertToModelMessages,
   createUIMessageStream,
+  type ModelMessage,
   smoothStream,
   stepCountIs,
   streamText,
@@ -310,14 +311,30 @@ ${entries.join("\n")}
 }
 
 /**
- * Build workspace-chat system prompt.
+ * Build workspace-chat system prompt blocks.
  *
- * Block 4 (memory contents, temporal facts) is NOT injected here — it
- * rides as a synthetic user-message preface so the system prompt stays
+ * Returns three logical tiers matching the prompt-cache layout:
+ *   - block1: weeks-stable static instructions (prompt.txt)
+ *   - block2: workspace-stable inventory + identity (workspace XML,
+ *     skills, integrations, user identity)
+ *   - block3: session-stable turn-context (resources, onboarding clause)
+ *
+ * Block 4 (memory + temporal facts) is NOT in the system prompt — it
+ * rides as a synthetic user-message preface so the system stays
  * byte-stable across turns and the Anthropic prompt cache hits the
  * prefix.
+ *
+ * Anthropic supports up to 4 cache breakpoints per request. We wire
+ * one each at block1/block2/block3 boundaries (see
+ * `buildSystemMessages`), leaving headroom for a turn-level marker.
  */
-export function getSystemPrompt(
+export interface SystemBlocks {
+  block1: string;
+  block2: string;
+  block3: string;
+}
+
+export function getSystemBlocks(
   workspaceSection: string,
   options?: {
     integrations?: string;
@@ -326,32 +343,32 @@ export function getSystemPrompt(
     resources?: string;
     onboarding?: string;
   },
-): string {
-  let prompt = SYSTEM_PROMPT;
+): SystemBlocks {
+  const block2Parts = [workspaceSection];
+  if (options?.integrations) block2Parts.push(options.integrations);
+  if (options?.skills) block2Parts.push(options.skills);
+  if (options?.userIdentity) block2Parts.push(options.userIdentity);
 
-  prompt = `${prompt}\n\n${workspaceSection}`;
+  const block3Parts: string[] = [];
+  if (options?.resources) block3Parts.push(options.resources);
+  if (options?.onboarding) block3Parts.push(options.onboarding);
 
-  if (options?.onboarding) {
-    prompt = `${prompt}\n\n${options.onboarding}`;
-  }
+  return {
+    block1: SYSTEM_PROMPT,
+    block2: block2Parts.join("\n\n"),
+    block3: block3Parts.join("\n\n"),
+  };
+}
 
-  if (options?.resources) {
-    prompt = `${prompt}\n\n${options.resources}`;
-  }
-
-  if (options?.integrations) {
-    prompt = `${prompt}\n\n${options.integrations}`;
-  }
-
-  if (options?.skills) {
-    prompt = `${prompt}\n\n${options.skills}`;
-  }
-
-  if (options?.userIdentity) {
-    prompt = `${prompt}\n\n${options.userIdentity}`;
-  }
-
-  return prompt;
+/**
+ * Concatenate blocks into a single system-prompt string. Used when the
+ * provider doesn't support per-block cache control — non-anthropic
+ * providers see the full prompt as one string.
+ */
+export function flattenSystemBlocks(blocks: SystemBlocks): string {
+  const parts = [blocks.block1, blocks.block2];
+  if (blocks.block3) parts.push(blocks.block3);
+  return parts.join("\n\n");
 }
 
 /**
@@ -398,6 +415,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     const workspaceId = session.workspaceId;
     if (!workspaceId) {
       throw new Error("Workspace ID is required for workspace chat");
+    }
+
+    // userId is required for the new identity-aware code paths
+    // (USERS-bucket reads, set_user_identity tool). The HTTP route
+    // middleware in routes/workspaces/chat.ts populates it from the
+    // X-Atlas-User-Id header (set server-side from getUserId()), so it
+    // is always present in production. Guard explicitly so the SDK
+    // type narrowing works for the rest of the handler.
+    const userId = session.userId;
+    if (!userId) {
+      throw new Error("User ID is required for workspace chat");
     }
 
     // Load and validate chat history via workspace-scoped HTTP endpoint
@@ -535,11 +563,11 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           await Promise.all([
             getBlock2Inputs(workspaceId, logger),
             fetchLinkSummary(logger),
-            fetchUserIdentitySection(session.userId, logger),
+            fetchUserIdentitySection(userId, logger),
             foregroundIds.length > 0
               ? fetchForegroundContexts(foregroundIds, logger)
               : Promise.resolve([]),
-            fetchUserProfileState(session.userId, logger),
+            fetchUserProfileState(userId, logger),
           ]);
 
         const workspaceDetails = block2.details;
@@ -663,7 +691,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
               sessionId: adHocSessionId,
               workspaceId,
               streamId: session.streamId,
-              userId: session.userId,
+              userId: userId,
               datetime: session.datetime,
             },
             platformModels,
@@ -695,7 +723,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             sessionId: adHocSessionId,
             workspaceId,
             streamId: session.streamId,
-            userId: session.userId,
+            userId: userId,
             datetime: session.datetime,
           },
           platformModels,
@@ -720,7 +748,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             streamId: session.streamId,
           }),
           ...createMemorySaveTool(workspaceId, logger),
-          ...createSetUserIdentityTool(session.userId, logger),
+          ...createSetUserIdentityTool(userId, logger),
           ...createDescribeWorkspaceTool(workspaceId, logger),
           ...createDescribeSkillTool(workspaceId, logger),
           ...createListIntegrationsTool(logger),
@@ -803,13 +831,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
 
         const onboardingClause = buildOnboardingClause(profileState);
 
-        const systemPrompt = getSystemPrompt(workspaceSection, {
+        const systemBlocks = getSystemBlocks(workspaceSection, {
           integrations: integrationsSection,
           skills: skillsSection,
           userIdentity: userIdentitySection,
           resources: resourceSection,
           onboarding: onboardingClause,
         });
+        const systemPrompt = flattenSystemBlocks(systemBlocks);
 
         // Capture system prompt context on every turn (fire-and-forget). The
         // stored snapshot reflects what the model actually saw on the latest
@@ -896,12 +925,49 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           },
         });
 
+        // For Anthropic, split the system prompt into 3 cache breakpoints
+        // (block1 weeks-stable, block2 workspace-stable, block3 session-
+        // stable). The Anthropic provider in the AI SDK collects
+        // consecutive system messages into a `system` array of text parts,
+        // each carrying its own `cache_control`. Anthropic allows up to 4
+        // breakpoints per request; we use 3 here, leaving 1 for future
+        // turn-level use. Other providers see a single `system` string —
+        // multi-system messages are not portable.
+        const isAnthropic = conversationalModel.provider === "anthropic";
+        const systemModelMessages: ModelMessage[] = isAnthropic
+          ? (() => {
+              const longTtl = { type: "ephemeral", ttl: "1h" } as const;
+              const shortTtl = { type: "ephemeral" } as const;
+              const msgs: ModelMessage[] = [
+                {
+                  role: "system",
+                  content: systemBlocks.block1,
+                  providerOptions: { anthropic: { cacheControl: longTtl } },
+                },
+                {
+                  role: "system",
+                  content: systemBlocks.block2,
+                  providerOptions: { anthropic: { cacheControl: longTtl } },
+                },
+              ];
+              if (systemBlocks.block3) {
+                msgs.push({
+                  role: "system",
+                  content: systemBlocks.block3,
+                  providerOptions: { anthropic: { cacheControl: shortTtl } },
+                });
+              }
+              return msgs;
+            })()
+          : [];
+
         try {
           const result = streamText({
             model: conversationalModel,
             experimental_repairToolCall: repairToolCall,
-            system: systemPrompt,
-            messages: modelMessages,
+            system: isAnthropic ? undefined : systemPrompt,
+            messages: isAnthropic ? [...systemModelMessages, ...modelMessages] : modelMessages,
+            allowSystemInMessages: isAnthropic ? true : undefined,
             tools: allTools,
             toolChoice: "auto",
             stopWhen: [stepCountIs(40), connectServiceSucceeded(), connectCommunicatorSucceeded()],
@@ -909,6 +975,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             experimental_transform: smoothStream({ chunking: "word" }),
             maxRetries: 3,
             abortSignal,
+            // Per-block cacheControl is set on the system messages above for
+            // anthropic; the top-level providerOptions still carries the
+            // default for tool/message-level caching the SDK applies.
             providerOptions: getDefaultProviderOpts("anthropic"),
             onFinish: ({ text }) => {
               finalText = text;

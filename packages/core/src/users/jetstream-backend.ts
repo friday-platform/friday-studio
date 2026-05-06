@@ -140,7 +140,7 @@ export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBac
     for (let attempt = 0; attempt < 8; attempt++) {
       const entry = await k.get(userId);
       let current: User;
-      let revision: bigint | undefined;
+      let revision: number | undefined;
       if (!entry || entry.operation !== "PUT") {
         current = emptyUser(userId, identityInit);
         revision = undefined; // create
@@ -219,8 +219,21 @@ export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBac
 
   /**
    * Resolve the local single-tenant user's id. On first call (no `_local`
-   * pointer in KV), generates a nanoid, creates an empty User record, and
-   * stores the pointer. Subsequent calls return the cached id.
+   * pointer in KV), generates a nanoid, claims the pointer via CAS-create,
+   * then writes the User record. Subsequent calls return the cached id.
+   *
+   * Race semantics: two daemons starting concurrently each generate a
+   * nanoid. Both attempt `kv.create(_local)` — only one wins. The loser
+   * reads the winner's id and returns it without creating a record under
+   * its own (rejected) nanoid. Pointer-first ordering means an orphaned
+   * USERS record can never exist — the User record is only written
+   * after the pointer claims that id.
+   *
+   * The ~1ms window where `_local` is set but the User record isn't
+   * yet written is masked by `getUser`/`ensureUser` returning null and
+   * the caller's normal create-on-empty path; readers that race in
+   * during that window see a non-existent user, identical to the
+   * fresh-install state.
    */
   async function resolveLocalUserId(): Promise<Result<string, string>> {
     if (cachedLocalUserId) return success(cachedLocalUserId);
@@ -231,16 +244,16 @@ export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBac
         cachedLocalUserId = dec.decode(existing.value);
         return success(cachedLocalUserId);
       }
-      const userId = generateId();
-      // Create the User record first so the pointer never points at a
-      // missing record.
-      await updateUser(userId, (u) => u, { nameStatus: "unknown" });
+      const candidateId = generateId();
+      let claimedId: string;
       try {
-        await k.create(LOCAL_USER_KEY, enc.encode(userId));
-        cachedLocalUserId = userId;
+        await k.create(LOCAL_USER_KEY, enc.encode(candidateId));
+        claimedId = candidateId;
       } catch (err) {
         if (isCASConflict(err)) {
-          // Another caller raced us. Read and return their id.
+          // Another caller claimed first. Read their id and return it —
+          // no orphaned User record under our (rejected) candidateId
+          // because we hadn't written one yet.
           const winner = await k.get(LOCAL_USER_KEY);
           if (winner && winner.operation === "PUT") {
             cachedLocalUserId = dec.decode(winner.value);
@@ -249,7 +262,10 @@ export function createJetStreamUserBackend(nc: NatsConnection): JetStreamUserBac
         }
         throw err;
       }
-      return success(userId);
+      // Pointer is ours — now write the User record under it.
+      await updateUser(claimedId, (u) => u, { nameStatus: "unknown" });
+      cachedLocalUserId = claimedId;
+      return success(claimedId);
     } catch (error) {
       return fail(stringifyError(error));
     }

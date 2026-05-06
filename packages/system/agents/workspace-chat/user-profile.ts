@@ -1,13 +1,17 @@
 /**
  * Onboarding gate state derived from the USERS KV bucket.
  *
- * Replaces the legacy memory-based derivation that scanned narrative
- * `notes` entries for `metadata.type === "user-name"` /
- * `"name-declined"`. Identity is now user-scoped (cross-workspace);
- * the source of truth is the `USERS[userId]` record.
+ * Source of truth is `USERS[userId].onboarding.completedAt + version`.
+ * The gate only opens when both are present and the version matches the
+ * current `ONBOARDING_VERSION` — a version bump re-onboards every user,
+ * which is the design intent (declined users re-prompted when the
+ * onboarding script meaningfully changes).
+ *
+ * `identity.name` rides along when known so the prompt assembly can
+ * inline it via `<user_identity>` without a second read.
  */
 
-import { UserStorage } from "@atlas/core/users/storage";
+import { ONBOARDING_VERSION, UserStorage } from "@atlas/core/users/storage";
 import type { Logger } from "@atlas/logger";
 
 export type UserProfileState =
@@ -27,6 +31,10 @@ export async function fetchUserProfileState(
     }
     const user = result.data;
     if (!user) return { status: "unknown" };
+
+    const onboardingDone =
+      user.onboarding.completedAt !== undefined && user.onboarding.version >= ONBOARDING_VERSION;
+    if (!onboardingDone) return { status: "unknown" };
 
     const { nameStatus, name } = user.identity;
     if (nameStatus === "provided" && name) return { status: "known", name };
