@@ -52,7 +52,12 @@ const ToolsProbeSuccessSchema = z.object({
 const ToolsProbeFailureSchema = z.object({
   ok: z.literal(false),
   error: z.string(),
-  phase: z.enum(["dns", "connect", "auth", "tools"]),
+  // `phase` is set on terminal probe failures (DNS, connect, auth, tools).
+  // `retryable: true` is set when the server is still warming up (cold
+  // npx/uvx install in progress) — the next click will most likely succeed.
+  // Exactly one of the two is set on a given failure response.
+  phase: z.enum(["dns", "connect", "auth", "tools"]).optional(),
+  retryable: z.boolean().optional(),
 });
 
 const ToolsProbeResponseSchema = z.union([ToolsProbeSuccessSchema, ToolsProbeFailureSchema]);
