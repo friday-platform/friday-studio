@@ -58,7 +58,7 @@
 <style>
   :global(.ws-trigger) {
     align-items: center;
-    background: transparent;
+    background: var(--highlight);
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
     color: var(--text-bright);
@@ -74,7 +74,7 @@
   }
 
   :global(.ws-trigger:hover) {
-    background: var(--surface);
+    background: var(--highlight-bright);
   }
 
   .dot {
