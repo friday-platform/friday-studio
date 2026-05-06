@@ -14,6 +14,40 @@ export const DocumentSchema = z.object({
   data: z.record(z.string(), z.unknown()),
 });
 
+/**
+ * Author-facing validation strategy for `type: llm` and `type: agent` actions.
+ *
+ * String form:
+ *   - "skip"     — never validate; output is accepted as-is.
+ *   - "self"     — inline validation in the same LLM call (B3 will inject a
+ *                  `record_validation` tool + the validating-llm-outputs skill).
+ *                  No-op until B3 lands; today behaves like "skip".
+ *   - "external" — separate-judge call (today's `validateOutput` hook).
+ *                  B7 will swap this for a delegate to a validator agent.
+ *   - "auto"     — delegate to the runtime classifier (read-only/structured →
+ *                  skip; mutating-tool/prose-emitting → self). Same as omitting
+ *                  the field. The classifier never returns "external" — that
+ *                  remains an explicit author opt-in.
+ *
+ * Object form (escape hatch for tuning a specific step without rewriting the
+ * action shape): pin the `strategy` to `self` or `external` and optionally
+ * override the validating skill, the threshold band, or the retry-on-fail
+ * behavior. The object form intentionally omits `skip` and `auto` — pick those
+ * via the string form.
+ */
+export const ValidateStrategySchema = z.union([
+  z.literal("skip"),
+  z.literal("self"),
+  z.literal("external"),
+  z.literal("auto"),
+  z.strictObject({
+    strategy: z.enum(["self", "external"]),
+    skill: z.string().optional(),
+    threshold: z.enum(["minimal", "standard", "paranoid"]).optional(),
+    retryOnFail: z.boolean().optional(),
+  }),
+]);
+
 export const LLMActionSchema = z.object({
   type: z.literal("llm"),
   provider: z.string(),
@@ -38,6 +72,13 @@ export const LLMActionSchema = z.object({
    * Absent → runtime synthesizes a short truncation from the output.
    */
   summary: z.string().optional(),
+  /**
+   * Per-action validation strategy. Absent or `"auto"` ⇒ runtime classifier
+   * picks `skip` or `self` based on the action shape. See
+   * `ValidateStrategySchema` for the full semantics. The classifier never
+   * returns `external` — that remains an explicit author opt-in.
+   */
+  validate: ValidateStrategySchema.optional(),
   outputTo: z.string().optional(),
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType: z.string().optional(),
@@ -69,6 +110,12 @@ export const AgentActionSchema = z.object({
   skills: z.array(z.string()).optional(),
   /** Short human-readable summary — see LLMActionSchema.summary. */
   summary: z.string().optional(),
+  /**
+   * Per-action validation strategy — see `ValidateStrategySchema` for the
+   * full semantics. Mirrors the field on LLMActionSchema so authors can
+   * tune validation on agent invocations the same way.
+   */
+  validate: ValidateStrategySchema.optional(),
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
    * chains a single prior step's `outputTo`; array form concatenates
@@ -132,4 +179,5 @@ export type ValidatedStateDefinition = z.infer<typeof StateDefinitionSchema>;
 export type ValidatedDocument = z.infer<typeof DocumentSchema>;
 export type ValidatedAction = z.infer<typeof ActionSchema>;
 export type ValidatedSignal = z.infer<typeof SignalSchema>;
+export type ValidateStrategy = z.infer<typeof ValidateStrategySchema>;
 export type { ValidatedJSONSchema } from "@atlas/core/artifacts";

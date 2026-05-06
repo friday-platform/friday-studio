@@ -569,6 +569,10 @@ describe("complete tool injection for LLM actions", () => {
                   model: "test-model",
                   prompt: "Extract ticket info",
                   outputTo: "result",
+                  // B2: pin to external so the validator-driven retry path
+                  // is exercised — without `validate:` the classifier picks
+                  // `self` (no-op) and the retry never fires.
+                  validate: "external",
                 },
               ],
             },
@@ -891,6 +895,8 @@ describe("complete tool injection for LLM actions", () => {
                   model: "test-model",
                   prompt: "Extract info",
                   outputTo: "result",
+                  // B2: pin to external so the validator-driven retry fires.
+                  validate: "external",
                 },
               ],
             },

@@ -104,6 +104,9 @@ function createLLMActionConfig(): MergedConfig {
                     model: "claude-haiku-4-5",
                     prompt: "anything",
                     outputTo: "result",
+                    // B2: pin to external so the workspace runtime forwards
+                    // real validation lifecycle events to sessionStream.
+                    validate: "external",
                   },
                 ],
                 always: { target: "complete" },

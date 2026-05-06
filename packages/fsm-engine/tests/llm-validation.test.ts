@@ -259,6 +259,11 @@ describe("LLM Action Validation Hook", () => {
                   model: "test-model",
                   prompt: "Do something",
                   outputTo: "output",
+                  // B2: opt this test action into the external-judge path so
+                  // these legacy tests of `validateOutput` semantics keep
+                  // exercising it. Without `validate:`, the classifier now
+                  // resolves prose-emitting steps to `self` (no-op until B3).
+                  validate: "external",
                 },
               ],
             },
@@ -641,6 +646,9 @@ describe("LLM Action Validation Hook", () => {
                   model: "test-model",
                   prompt: "Check for new issues",
                   outputTo: "output",
+                  // B2: pin to external so this test still exercises the
+                  // separate-judge retry path.
+                  validate: "external",
                 },
               ],
             },
@@ -730,6 +738,9 @@ describe("LLM Action Validation Hook", () => {
                   model: "test-model",
                   prompt: "Summarize",
                   outputTo: "output",
+                  // B2: pin to external so retry-prompt assertions exercise
+                  // the separate-judge path.
+                  validate: "external",
                 },
               ],
             },
@@ -962,6 +973,9 @@ describe("FSMValidationAttemptEvent emission", () => {
                   model: "test-model",
                   prompt: "Do something",
                   outputTo: "output",
+                  // B2: pin to external so validation lifecycle event
+                  // assertions still observe a real judge call.
+                  validate: "external",
                 },
               ],
             },

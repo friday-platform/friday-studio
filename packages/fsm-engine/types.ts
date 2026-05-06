@@ -10,9 +10,11 @@ export type { ToolCall, ToolResult };
 import type { ValidationVerdict } from "@atlas/hallucination/verdict";
 import type { ModelMessage, Tool } from "ai";
 import type { DocumentScope } from "../document-store/mod.ts";
+import type { ValidateStrategy } from "./schema.ts";
 
+// Re-export ValidateStrategy for consumers of this types module.
 // Re-export DocumentScope for convenience
-export type { DocumentScope };
+export type { DocumentScope, ValidateStrategy };
 
 export interface JSONSchema {
   [key: string]: unknown;
@@ -76,6 +78,12 @@ export interface LLMAction {
    * `LLMActionSchema.summary` in schema.ts.
    */
   summary?: string;
+  /**
+   * Per-action validation strategy. See `ValidateStrategySchema` in schema.ts
+   * for full semantics. Absent or `"auto"` ⇒ runtime classifier picks `skip`
+   * or `self`. The classifier never auto-resolves to `external`.
+   */
+  validate?: ValidateStrategy;
   outputTo?: string;
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType?: string;
@@ -106,6 +114,11 @@ export interface AgentAction {
    * `LLMActionSchema.summary` in schema.ts.
    */
   summary?: string;
+  /**
+   * Per-action validation strategy — see `ValidateStrategySchema` in
+   * schema.ts. Mirrors the field on LLMAction.
+   */
+  validate?: ValidateStrategy;
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
    * chains a single prior step's `outputTo`; array form concatenates

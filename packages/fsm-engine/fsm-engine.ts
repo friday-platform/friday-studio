@@ -81,8 +81,44 @@ import type {
   Signal,
   SignalWithContext,
   TransitionDefinition,
+  ValidateStrategy,
 } from "./types.ts";
-import { classifyAction } from "./validate-classifier.ts";
+import {
+  type ClassifierInput,
+  classifyAction,
+  type ValidateDecision,
+} from "./validate-classifier.ts";
+
+/**
+ * Resolve the final `ValidateDecision` for an action.
+ *
+ * If an explicit strategy is set (string form other than `"auto"`, or object
+ * form), honor it. Otherwise — including the explicit `"auto"` keyword —
+ * delegate to the runtime classifier. Returns the resolved decision plus
+ * provenance for the observability log.
+ *
+ * The classifier's `external` decision is intentionally unreachable from
+ * `auto`: the classifier itself enforces this, so picking the slower
+ * separate-judge path remains an explicit author opt-in.
+ */
+function resolveValidateDecision(
+  explicit: ValidateStrategy | undefined,
+  classifierInput: ClassifierInput,
+): { decision: ValidateDecision; source: "explicit" | "auto"; reason: string } {
+  if (typeof explicit === "string" && explicit !== "auto") {
+    return { decision: explicit, source: "explicit", reason: `explicit:${explicit}` };
+  }
+  if (typeof explicit === "object") {
+    return {
+      decision: explicit.strategy,
+      source: "explicit",
+      reason: `explicit-object:${explicit.strategy}`,
+    };
+  }
+  // explicit absent or "auto" → classifier.
+  const auto = classifyAction(classifierInput);
+  return { decision: auto.decision, source: "auto", reason: auto.reason };
+}
 
 /**
  * Platform tools exposed to FSM LLM steps.
@@ -1561,45 +1597,48 @@ export class FSMEngine {
                 capturedCompleteOutput = findCompleteToolArgs(result);
               }
 
-              // Phase B1 (melodic-strolling-seal-pt2): observability-only
-              // classifier. Decides what validation strategy WOULD apply per
-              // FSM type:llm action without changing runtime behavior. Wired
-              // here so we can compare decisions against author intent on
-              // real workloads BEFORE B2 lands the schema field that flips
-              // behavior. Built from the post-call trace so calledToolNames
-              // reflect what actually ran.
-              {
-                const observedTrace = buildLLMActionTrace(result, action.model, contextPrompt);
-                const declaredTools = action.tools ?? [];
-                const classifierDecision = classifyAction({
-                  declaredTools,
-                  calledToolNames: observedTrace.toolCalls?.map((tc) => tc.toolName) ?? [],
-                  hasOutputType: !!action.outputType,
-                  hasInputFrom: !!action.inputFrom,
-                  // case "llm" — type is always "llm". The case "agent" path
-                  // will fill in resolvedAgentType in B4.
-                  resolvedAgentType: undefined,
-                  emittedProse:
-                    typeof observedTrace.content === "string" &&
-                    observedTrace.content.trim().length > 0,
-                  toolsAvailable: declaredTools.length > 0,
-                });
-                logger.debug("validate-classifier decision", {
-                  state: currentState,
-                  action: action.outputTo ?? "anonymous",
-                  decision: classifierDecision.decision,
-                  reason: classifierDecision.reason,
-                  wouldChangeBehavior: this.options.validateOutput
-                    ? classifierDecision.decision !== "external"
-                    : classifierDecision.decision !== "skip",
-                });
-              }
+              // Phase B2 (melodic-strolling-seal-pt2): resolve the per-action
+              // validation strategy and gate the existing external-judge call
+              // by it. `external` preserves today's `validateOutput` path;
+              // `self` is a no-op until B3 lands prompt injection; `skip`
+              // bypasses validation entirely. The classifier (used when the
+              // author hasn't set `validate:`) never returns `external`.
+              const observedTrace = buildLLMActionTrace(result, action.model, contextPrompt);
+              const declaredTools = action.tools ?? [];
+              const classifierInput: ClassifierInput = {
+                declaredTools,
+                calledToolNames: observedTrace.toolCalls?.map((tc) => tc.toolName) ?? [],
+                hasOutputType: !!action.outputType,
+                hasInputFrom: !!action.inputFrom,
+                // case "llm" — type is always "llm". The case "agent" path
+                // will fill in resolvedAgentType in B4.
+                resolvedAgentType: undefined,
+                emittedProse:
+                  typeof observedTrace.content === "string" &&
+                  observedTrace.content.trim().length > 0,
+                toolsAvailable: declaredTools.length > 0,
+              };
+              const {
+                decision: validateDecision,
+                source: validateSource,
+                reason: validateReason,
+              } = resolveValidateDecision(action.validate, classifierInput);
+              logger.info("validate-decision resolved", {
+                state: currentState,
+                action: action.outputTo ?? "anonymous",
+                decision: validateDecision,
+                source: validateSource,
+                reason: validateReason,
+                ranExternalJudge: validateDecision === "external" && !!this.options.validateOutput,
+              });
 
-              // Validate output if validator provided.
-              // Retry policy: only verdict.status === "fail" triggers a retry.
-              // Both `pass` and `uncertain` proceed identically — uncertain is observability-only,
-              // never gating, so judge confusion (timezones, math) cannot kill recoverable work.
-              if (this.options.validateOutput) {
+              // Validate output if validator provided AND the resolved
+              // decision is `external`. Retry policy: only verdict.status ===
+              // "fail" triggers a retry. Both `pass` and `uncertain` proceed
+              // identically — uncertain is observability-only, never gating,
+              // so judge confusion (timezones, math) cannot kill recoverable
+              // work.
+              if (validateDecision === "external" && this.options.validateOutput) {
                 const trace = buildLLMActionTrace(result, action.model, contextPrompt);
                 const validationActionId = this.getActionId(action);
 
@@ -1749,6 +1788,15 @@ export class FSMEngine {
                     verdict,
                   });
                 }
+              } else if (validateDecision === "self") {
+                // TODO(B3): inject the validating-llm-outputs skill into prompt
+                // assembly + auto-inject the `record_validation` tool so the
+                // model self-validates inside the same call. Until then, "self"
+                // is a no-op — the action emits without separate validation
+                // overhead.
+              } else if (validateDecision === "skip") {
+                // No validation. The decision was logged above; nothing else
+                // to do here.
               }
 
               if (action.outputTo) {
