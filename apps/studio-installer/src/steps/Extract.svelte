@@ -45,13 +45,12 @@ let tools = $state<Tool[]>([
     status: "pending",
   },
   {
-    // Relocates JetStream data from $TMPDIR/nats/jetstream (where macOS
-    // periodically GCs it) to <friday_home>/jetstream and runs any
-    // post-NATS schema migrations. Idempotent — fresh installs hit a
-    // structured noop. Failures are non-fatal: the row flips to ✗, the
-    // launcher boots against the canonical store anyway, legacy data is
-    // preserved on disk for manual rsync recovery.
-    display: "Migrating data store",
+    // Runs `friday migrate`. Idempotent — fresh installs are a noop.
+    // Failures are non-fatal: the row flips to ✗ and the launcher
+    // boots anyway. What `migrate` actually does is owned by atlas-cli
+    // (today: relocate JetStream store, tomorrow: whatever's next);
+    // the installer doesn't need to know.
+    display: "Running migrations",
     command: "migrate",
     args: async () => ({ installDir: await installDir() }),
     status: "pending",
