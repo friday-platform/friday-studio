@@ -228,10 +228,15 @@ fn env_keys_from(content: &str) -> HashMap<String, String> {
 /// into `extra`) and the audit JSONL would record logger gunk
 /// instead of the real outcome.
 ///
-/// We require the line to carry at least one of the documented
-/// outcome fields: `preNats` (pre-NATS array), or one of `ran`/
-/// `skipped`/`failed` (the post-NATS arrays from `runMigrations`).
-/// A logger line has none of these, so it gets skipped.
+/// We require the line to carry BOTH `preNats` (pre-NATS array, may be
+/// empty) AND at least one of `ran`/`skipped`/`failed` (the post-NATS
+/// arrays from `runMigrations`). The `migrate --json` handler always
+/// emits all four keys — on success, on post-NATS failure, and on the
+/// pre-NATS-aborted path. Logger lines carry neither. The
+/// `migrate --list --json` shape (`{preNats, migrations}`) carries
+/// `preNats` but no post-NATS array — requiring both keeps a future
+/// caller that pipes `--list` output through this resolver from
+/// receiving a half-populated outcome.
 fn find_outcome_line(stdout: &str) -> Option<MigrationOutcome> {
     for line in stdout.lines() {
         let trimmed = line.trim();
@@ -243,12 +248,12 @@ fn find_outcome_line(stdout: &str) -> Option<MigrationOutcome> {
         };
         // Reject lines that parsed only because `serde(flatten)` is
         // permissive. The real outcome always emits `preNats` (even
-        // as `[]`) plus the post-NATS arrays.
-        let has_outcome_field = o.pre_nats.is_some()
-            || o.extra.contains_key("ran")
-            || o.extra.contains_key("skipped")
-            || o.extra.contains_key("failed");
-        if has_outcome_field {
+        // as `[]`) AND the post-NATS arrays.
+        let has_outcome_shape = o.pre_nats.is_some()
+            && (o.extra.contains_key("ran")
+                || o.extra.contains_key("skipped")
+                || o.extra.contains_key("failed"));
+        if has_outcome_shape {
             return Some(o);
         }
     }
@@ -417,6 +422,42 @@ mod tests {
     fn find_outcome_line_returns_none_when_no_json() {
         let stdout = "no json here\nplain logs only\n";
         assert!(find_outcome_line(stdout).is_none());
+    }
+
+    #[test]
+    fn find_outcome_line_rejects_list_shape() {
+        // `friday migrate --list --json` emits `{preNats, migrations}` —
+        // it carries `preNats` but none of `ran`/`skipped`/`failed`. The
+        // resolver MUST reject it so a future caller that pipes --list
+        // output through this command doesn't get a half-populated
+        // outcome silently treated as a real run result.
+        let stdout = "{\"preNats\":[],\"migrations\":[]}\n";
+        assert!(find_outcome_line(stdout).is_none());
+    }
+
+    #[test]
+    fn find_outcome_line_rejects_logger_with_post_nats_key() {
+        // Defense-in-depth: a logger line that happened to carry a `ran`
+        // field in its structured context (no `preNats`) must be rejected.
+        // Today no @atlas/logger consumer emits this shape, but the
+        // assertion pins the new "BOTH preNats AND post-NATS" contract
+        // against future drift.
+        let stdout =
+            "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"info\",\"ran\":\"foo\"}\n";
+        assert!(find_outcome_line(stdout).is_none());
+    }
+
+    #[test]
+    fn find_outcome_line_accepts_pre_nats_aborted_outcome() {
+        // The pre-NATS-aborted path emits all four arrays so the resolver
+        // matches it. Pins migrate.ts:177's exit-1 JSON shape.
+        let stdout = concat!(
+            "{\"timestamp\":\"2026-01-01\",\"level\":\"info\",\"context\":{}}\n",
+            "{\"preNats\":[{\"id\":\"x\"}],\"ran\":[],\"skipped\":[],\"failed\":[]}\n",
+        );
+        let outcome = find_outcome_line(stdout).expect("pre-NATS-aborted outcome should match");
+        assert_eq!(outcome.pre_nats.as_ref().map(|v| v.len()), Some(1));
+        assert!(outcome.extra.contains_key("failed"));
     }
 
     #[test]

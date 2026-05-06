@@ -146,7 +146,7 @@ async fn env_keys_are_forwarded_to_subprocess() {
             r#"
 echo "PORT=$FRIDAY_PORT_FRIDAY" > '{sentinel}'
 echo "STORE=$FRIDAY_JETSTREAM_STORE_DIR" >> '{sentinel}'
-echo '{{"preNats":[]}}'
+echo '{{"preNats":[],"ran":[],"skipped":[],"failed":[]}}'
 "#,
             sentinel = sentinel.display(),
         ),
@@ -298,7 +298,11 @@ async fn locate_friday_finds_binary_under_install_dir_bin() {
 
     // Now write the stub at the CORRECT bin/friday path. It should be
     // found and the command should succeed.
-    write_friday_stub(&install_dir, r#"echo '{"preNats":[]}'"#, 0);
+    write_friday_stub(
+        &install_dir,
+        r#"echo '{"preNats":[],"ran":[],"skipped":[],"failed":[]}'"#,
+        0,
+    );
     let result =
         migrate(install_dir.to_string_lossy().to_string()).await;
     assert!(result.is_ok(), "expected Ok with binary at bin/friday: {result:?}");
@@ -322,7 +326,7 @@ async fn install_dir_bin_is_prepended_to_subprocess_path() {
         &format!(
             r#"
 echo "PATH=$PATH" > '{sentinel}'
-echo '{{"preNats":[]}}'
+echo '{{"preNats":[],"ran":[],"skipped":[],"failed":[]}}'
 "#,
             sentinel = sentinel.display(),
         ),

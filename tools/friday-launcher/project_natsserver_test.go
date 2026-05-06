@@ -84,8 +84,10 @@ func TestSupervisedProcesses_NatsServerDefaultsWhenKeyMissing(t *testing.T) {
 	// Make friendlyHome() resolve to the test-owned dir regardless of
 	// the surrounding test process's HOME interpretation. Without this
 	// pin a stale FRIDAY_LAUNCHER_HOME from another test or the
-	// developer's shell would leak in.
-	_ = os.Unsetenv("FRIDAY_LAUNCHER_HOME")
+	// developer's shell would leak in. `t.Setenv("…", "")` over
+	// `os.Unsetenv` so the runtime auto-restores at test end —
+	// friendlyHome() treats empty and unset identically.
+	t.Setenv("FRIDAY_LAUNCHER_HOME", "")
 
 	wantDefault := filepath.Join(tmpHome, ".friday", "local", "jetstream")
 
@@ -118,7 +120,11 @@ func TestSupervisedProcesses_NatsServerEmptyValueFallsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", tmpHome)
-	_ = os.Unsetenv("FRIDAY_LAUNCHER_HOME")
+	// See note on `t.Setenv("…", "")` in
+	// TestSupervisedProcesses_NatsServerDefaultsWhenKeyMissing — empty
+	// is treated identically to unset by friendlyHome(), and the
+	// runtime auto-restores at test end.
+	t.Setenv("FRIDAY_LAUNCHER_HOME", "")
 
 	wantDefault := filepath.Join(tmpHome, ".friday", "local", "jetstream")
 
