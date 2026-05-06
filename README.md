@@ -40,7 +40,7 @@ provider clients from scratch every time.
 
 | | What it is | When you use it |
 | --- | --- | --- |
-| **`atlasd` (daemon)** | Headless runtime — HTTP API on `:8080`, workspace lifecycle, signal router, session state, credentials, JetStream message bus. | Production. CI. Anything you'd `systemd`-ify. |
+| **`atlasd` (daemon)** | Headless runtime — HTTP API on `:8080`, workspace lifecycle, signal router, session state, JetStream message bus. | Production. CI. Anything you'd `systemd`-ify. |
 | **Agent Playground** | SvelteKit web UI on `:5200` — chat with Friday, author and run agents, inspect every session step-by-step, manage skills/MCP servers/schedules/memory/credentials, browse the workspace marketplace. | Day-to-day. The playground is what you actually look at. |
 
 The desktop installer ships both behind a tray icon. In-tree, `deno task

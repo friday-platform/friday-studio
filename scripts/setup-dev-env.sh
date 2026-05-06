@@ -122,6 +122,33 @@ brew_install_or_upgrade() {
     fi
 }
 
+# is_brew_managed <tool-name>: returns 0 iff the tool currently on PATH
+# resolves into Homebrew's prefix. Used to gate stale-branch upgrades:
+# without this check, a curl-installed (e.g. ~/.deno/bin/deno) tool that's
+# below MIN would trigger `brew install <tool>`, dropping a second copy
+# alongside the first and leaving PATH order to pick the winner. With it,
+# we only route through brew when brew already owns the binary — otherwise
+# fall through to the tool's own self-upgrade (or, for tools without one,
+# a clear fail-fast asking the user to upgrade via their existing manager).
+is_brew_managed() {
+    [[ "$OSTYPE" == "darwin"* ]] || return 1
+    command -v brew >/dev/null 2>&1 || return 1
+    local p prefix resolved
+    p="$(command -v "$1" 2>/dev/null)"
+    [[ -n "$p" ]] || return 1
+    prefix="$(brew --prefix 2>/dev/null)"
+    [[ -n "$prefix" ]] || return 1
+    # Resolve symlinks. macOS BSD `readlink` lacks `-f`, so use `realpath`
+    # if present, else fall back to comparing the symlink path itself —
+    # which still hits brew's prefix for the canonical /opt/homebrew/bin
+    # entries that brew installs.
+    resolved="$p"
+    if command -v realpath >/dev/null 2>&1; then
+        resolved="$(realpath "$p" 2>/dev/null || echo "$p")"
+    fi
+    [[ "$resolved" == "$prefix"/* || "$p" == "$prefix"/* ]]
+}
+
 # Tools that this run elected to skip rather than fail. Surfaced in the
 # final summary so the user knows which functionality won't work yet.
 declare -a SKIPPED_TOOLS=()
@@ -199,8 +226,9 @@ echo "→ Pinned NATS:    nats-server $PINNED_NATS_VERSION"
 # ── 1. Ensure Deno + workspace deps ─────────────────────────────────────────
 case "$(check_min_version deno "$DENO_MIN"; echo $?)" in
     0) echo "→ deno:          $(command -v deno) ($(get_tool_version deno))" ;;
-    1) if brew_install_or_upgrade deno; then
-           echo "→ deno (homebrew) upgraded to $(get_tool_version deno)"
+    1) if is_brew_managed deno; then
+           echo "→ deno (homebrew) is below $DENO_MIN — upgrading via brew"
+           brew_install_or_upgrade deno
        else
            echo "→ deno $(get_tool_version deno) is below $DENO_MIN — upgrading via deno upgrade"
            deno upgrade
@@ -233,8 +261,18 @@ install_go_via_brew_or_fail() {
 }
 case "$(check_min_version go "$GO_MIN"; echo $?)" in
     0) echo "→ go:            $(command -v go) ($(get_tool_version go))" ;;
-    1) echo "→ go $(get_tool_version go) is below $GO_MIN — upgrading"
-       install_go_via_brew_or_fail "$(get_tool_version go) below $GO_MIN" ;;
+    1) # Stale: only auto-upgrade if the existing binary is brew-managed.
+       # Otherwise (asdf/gvm/manual install, system tarball) we'd shadow
+       # their toolchain with a brew copy — defer to their installer.
+       if is_brew_managed go; then
+           echo "→ go (homebrew) is below $GO_MIN — upgrading via brew"
+           brew_install_or_upgrade go
+       else
+           echo "✗ go $(get_tool_version go) is below $GO_MIN" >&2
+           echo "  Upgrade via your existing installer (asdf/gvm/system) and re-run." >&2
+           echo "  Auto-upgrade skipped to avoid shadowing the existing Go with a brew copy." >&2
+           exit 1
+       fi ;;
     2) echo "→ go not found — installing"
        install_go_via_brew_or_fail "missing" ;;
 esac
@@ -242,8 +280,9 @@ esac
 # ── 3. Ensure uv ────────────────────────────────────────────────────────────
 case "$(check_min_version uv "$UV_MIN"; echo $?)" in
     0) echo "→ uv:            $(command -v uv) ($(get_tool_version uv))" ;;
-    1) if brew_install_or_upgrade uv; then
-           echo "→ uv (homebrew) upgraded to $(get_tool_version uv)"
+    1) if is_brew_managed uv; then
+           echo "→ uv (homebrew) is below $UV_MIN — upgrading via brew"
+           brew_install_or_upgrade uv
        else
            echo "→ uv $(get_tool_version uv) is below $UV_MIN — upgrading via uv self update"
            uv self update
@@ -285,8 +324,18 @@ install_nats_server() {
 }
 case "$(check_min_version nats-server "$NATS_MIN"; echo $?)" in
     0) echo "→ nats-server:   $(command -v nats-server) ($(get_tool_version nats-server))" ;;
-    1) echo "→ nats-server $(get_tool_version nats-server) is below $NATS_MIN — installing $PINNED_NATS_VERSION"
-       install_nats_server ;;
+    1) # Stale: same shadow-avoidance logic as Go. If the existing binary
+       # came from `go install` or a manual download, brew-installing
+       # would put a second copy alongside; defer to whoever owns it.
+       if is_brew_managed nats-server; then
+           echo "→ nats-server (homebrew) is below $NATS_MIN — upgrading via brew"
+           brew_install_or_upgrade nats-server
+       else
+           echo "✗ nats-server $(get_tool_version nats-server) is below $NATS_MIN" >&2
+           echo "  Upgrade via wherever it came from (go install, GitHub release, etc.) and re-run." >&2
+           echo "  Auto-upgrade skipped to avoid shadowing with a brew copy." >&2
+           exit 1
+       fi ;;
     2) echo "→ nats-server not found — installing $PINNED_NATS_VERSION"
        install_nats_server ;;
 esac
