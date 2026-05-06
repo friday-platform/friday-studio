@@ -14,6 +14,7 @@ import {
   // SuccessConfigSchema,  // Currently unused
   SupervisionLevel,
 } from "./base.ts";
+import { PermissionsConfigSchema } from "./permissions.ts";
 import { SkillRefSchema } from "./skills.ts";
 
 // ==============================================================================
@@ -182,6 +183,12 @@ export const JobSpecificationSchema = z
 
     // Job configuration
     config: JobConfigSchema.optional(),
+
+    // Per-job permissions override. When omitted, inherits the workspace-level
+    // setting (then the daemon FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS env var
+    // as the floor). Jobs are the execution sandbox abstraction, so per-job
+    // is the natural granularity for `dangerouslySkipAllowlist`.
+    permissions: PermissionsConfigSchema.optional(),
 
     // Memory output declaration — where a job's findings are written
     outputs: z.object({ memory: z.string(), entryKind: z.string() }).optional(),
