@@ -90,13 +90,16 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 /// command (commands/migrate.rs) re-uses this same parser shape to keep
 /// the writer/reader contract symmetrical inside the installer crate.
 ///
-/// One exception to the verbatim rule: trailing `\r` is stripped. `lines()`
-/// already splits on both `\n` and `\r\n` for line *boundaries*, but on a
-/// CRLF file the value still contains the `\r` if there's no key-side
-/// trim. Without this strip, a `.env` opened in Notepad and saved would
-/// pass `FRIDAY_PORT_FRIDAY=18080\r` through to subprocess env, breaking
-/// any downstream URL construction. The Go launcher's `loadDotEnv`
-/// applies the same trim for parity.
+/// One exception to the verbatim rule: trailing `\r` is stripped. Rust's
+/// `str::lines()` already strips `\r\n` line *boundaries* — so for a
+/// well-formed CRLF file the trim is a no-op. The trim defends against
+/// the one case that survives `lines()`: a final line with a CR but
+/// **no following LF** (e.g., a Notepad save that didn't append a final
+/// newline). For input `"A=1\r"` `lines()` yields `"A=1\r"` verbatim
+/// (no boundary to strip), and without this trim the parsed value would
+/// be `"1\r"` — breaking downstream URL construction. The Go launcher's
+/// `loadDotEnv` applies the same trim for parity (it splits on `\n`
+/// only, so for Go this trim handles the more common `\r\n` case too).
 pub(crate) fn parse_env_lines(content: &str) -> Vec<(Option<String>, String)> {
     content
         .lines()
@@ -741,24 +744,46 @@ mod parse_env_lines_tests {
     use super::*;
 
     #[test]
-    fn strips_trailing_cr_on_crlf_file() {
-        // A `.env` opened in a Windows editor and saved would have
-        // CRLF line endings. The value bytes between `=` and the line
-        // boundary include the `\r`. Without stripping it, downstream
-        // env consumers would see `FRIDAY_PORT_FRIDAY=18080\r` which
-        // breaks URL construction.
-        let crlf = "FRIDAY_PORT_FRIDAY=18080\r\nFRIDAY_HOME=/Users/x/.friday/local\r\n";
-        let parsed = parse_env_lines(crlf);
+    fn strips_trailing_cr_on_final_line_without_terminator() {
+        // The case the trim actually defends against: a file whose
+        // last line has a `\r` but no following `\n` — `lines()` does
+        // NOT recognize lone `\r` as a line terminator, so the `\r` is
+        // included in the line text and survives into the value.
+        // Mutation-tested: remove the `trim_end_matches('\r')` from
+        // parse_env_lines and this test fails.
+        let no_terminator = "FRIDAY_PORT_FRIDAY=18080\r";
+        let parsed = parse_env_lines(no_terminator);
         let port = parsed
             .iter()
             .find(|(k, _)| k.as_deref() == Some("FRIDAY_PORT_FRIDAY"))
             .expect("port key present");
-        assert_eq!(port.1, "18080", "trailing \\r must be stripped");
-        let home = parsed
-            .iter()
-            .find(|(k, _)| k.as_deref() == Some("FRIDAY_HOME"))
-            .expect("home key present");
-        assert_eq!(home.1, "/Users/x/.friday/local");
+        assert_eq!(port.1, "18080", "trailing \\r on last line must be stripped");
+    }
+
+    #[test]
+    fn handles_well_formed_crlf_file() {
+        // Sanity: a file with proper `\r\n` line terminators parses
+        // cleanly. `lines()` strips the `\r\n` boundary on its own,
+        // so the trim is a no-op here — but the test guards against
+        // a future regression where the trim becomes destructive.
+        let crlf = "FRIDAY_PORT_FRIDAY=18080\r\nFRIDAY_HOME=/Users/x/.friday/local\r\n";
+        let parsed = parse_env_lines(crlf);
+        assert_eq!(
+            parsed
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("FRIDAY_PORT_FRIDAY"))
+                .unwrap()
+                .1,
+            "18080"
+        );
+        assert_eq!(
+            parsed
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("FRIDAY_HOME"))
+                .unwrap()
+                .1,
+            "/Users/x/.friday/local"
+        );
     }
 
     #[test]
