@@ -9,7 +9,6 @@
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
-  import ChatListPanel from "./chat-list-panel.svelte";
   import ChatMessageList from "./chat-message-list.svelte";
   import { createCursorTrackingFetch } from "./cursor-tracking-fetch.ts";
   import { nextQueueStep } from "./chat-queue.ts";
@@ -1035,12 +1034,6 @@
     goto(`/platform/${encodeURIComponent(wsId)}/chat`);
   }
 
-  /** Navigate to an existing chat (from the chat list panel). */
-  function switchToChat(targetChatId: string): void {
-    if (targetChatId === chatId) return;
-    goto(`/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(targetChatId)}`);
-  }
-
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (!chat) return;
     error = null;
@@ -1272,27 +1265,6 @@
       {workspaceName}
       workspaceId={wsId}
       status={streaming ? "streaming" : (chat?.status ?? "idle")}
-    />
-
-    <ChatListPanel
-      workspaceId={wsId}
-      currentChatId={chatId}
-      onSelect={switchToChat}
-      onDelete={(deletedId, nextChatId) => {
-        // Only react when the user nuked the chat they're currently
-        // viewing — otherwise the rest of the list stays put and there's
-        // nothing to do here. When it IS the current chat, jump to the
-        // neighbor the panel picked (older-first, falling back to newer)
-        // so browsing history stays fluid. If the list is empty now,
-        // start a fresh chat instead of leaving a dead id on screen.
-        if (deletedId !== chatId) return;
-        if (nextChatId) {
-          // switchToChat already persists and kicks off rehydration.
-          switchToChat(nextChatId);
-        } else {
-          startNewChat();
-        }
-      }}
     />
   </div>
 </div>

@@ -247,10 +247,6 @@
   message is sent.
 -->
 <aside class="chat-list-panel">
-  <div class="chat-list-header">
-    <h3>Chats</h3>
-  </div>
-
   {#if error}
     <div class="list-error">{error}</div>
   {/if}
@@ -309,29 +305,11 @@
 
 <style>
   .chat-list-panel {
-    background-color: var(--surface);
-    border-inline-start: 1px solid var(--color-border-1);
     display: flex;
+    flex: 1;
     flex-direction: column;
-    inline-size: 280px;
-    min-inline-size: 280px;
+    min-block-size: 0;
     overflow: hidden;
-  }
-
-  .chat-list-header {
-    align-items: center;
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    flex-shrink: 0;
-    justify-content: space-between;
-    padding: var(--size-3);
-  }
-
-  .chat-list-header h3 {
-    color: var(--color-text);
-    font-size: var(--font-size-2);
-    font-weight: var(--font-weight-6);
-    margin: 0;
   }
 
   .list-error {
