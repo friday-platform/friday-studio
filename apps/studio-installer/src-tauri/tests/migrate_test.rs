@@ -3,8 +3,8 @@
 // We exercise the command via its underlying async function (the
 // #[tauri::command] attribute is metadata-only — the function itself is
 // callable as plain async). The command spawns
-// `<install_dir>/bin/friday migrate --json`; tests substitute a shell
-// script stub for the real binary, so we have full control over stdout,
+// `<install_dir>/bin/friday migrate`; tests substitute a shell script
+// stub for the real binary, so we have full control over stdout,
 // stderr, and exit code without coupling to atlas-cli.
 //
 // FRIDAY_LAUNCHER_HOME is set per-test to point at a tempdir, isolating
@@ -81,58 +81,15 @@ fn fixture_dirs() -> (tempfile::TempDir, PathBuf, PathBuf) {
 }
 
 #[tokio::test]
-async fn stub_emits_known_json_returns_parsed_outcome() {
+async fn exit_zero_returns_ok() {
     let _g = env_lock();
     let (_tmp, friday_home, install_dir) = fixture_dirs();
     let _env = EnvGuard::install(&friday_home);
 
-    write_friday_stub(
-        &install_dir,
-        r#"echo '{"status":"ok","streams_moved":3,"label":"relocate"}'"#,
-        0,
-    );
+    write_friday_stub(&install_dir, "echo 'ran 0 migrations'", 0);
 
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
-    let outcome = result.expect("expected Ok outcome");
-    // The Tauri command forwards the outcome JSON verbatim — no schema
-    // interpretation. Whatever atlas-cli emits, Svelte gets.
-    assert_eq!(outcome["status"], "ok");
-    assert_eq!(outcome["streams_moved"], 3);
-}
-
-#[tokio::test]
-async fn stub_with_log_lines_around_json_picks_the_last_object() {
-    // The producer emits logger lines and the outcome on the same
-    // stream (Node/Deno's console.info goes to stdout). The outcome is
-    // always the LAST JSON-OBJECT line; the Tauri command picks it
-    // with a backward scan that ignores arrays, scalars, and plain
-    // text.
-    //
-    // The trailing scalar (`echo 42`) and trailing JSON array
-    // (`echo '[1,2,3]'`) pin the `is_object()` filter at the
-    // integration boundary. Without that filter, a backward scan
-    // would lock onto the scalar/array and the outcome would be
-    // missed — this stub exercises that guard end-to-end.
-    let _g = env_lock();
-    let (_tmp, friday_home, install_dir) = fixture_dirs();
-    let _env = EnvGuard::install(&friday_home);
-
-    write_friday_stub(
-        &install_dir,
-        r#"
-echo '{"level":"info","msg":"starting migrate"}'
-echo 'INFO: resolving paths'
-echo '{"status":"ok","streams_moved":7}'
-echo '[1,2,3]'
-echo '42'
-"#,
-        0,
-    );
-
-    let result = migrate(install_dir.to_string_lossy().to_string()).await;
-    let outcome = result.expect("Ok outcome");
-    assert_eq!(outcome["status"], "ok");
-    assert_eq!(outcome["streams_moved"], 7);
+    assert!(result.is_ok(), "expected Ok on exit 0, got {result:?}");
 }
 
 #[tokio::test]
@@ -156,7 +113,6 @@ async fn env_keys_are_forwarded_to_subprocess() {
             r#"
 echo "PORT=$FRIDAY_PORT_FRIDAY" > '{sentinel}'
 echo "STORE=$FRIDAY_JETSTREAM_STORE_DIR" >> '{sentinel}'
-echo '{{"status":"ok"}}'
 "#,
             sentinel = sentinel.display(),
         ),
@@ -212,7 +168,7 @@ async fn jsonl_record_appended_on_success() {
 
     write_friday_stub(
         &install_dir,
-        r#"echo '{"status":"ok"}'"#,
+        "echo 'ran 1 migration; skipped 0 already applied'",
         0,
     );
 
@@ -228,14 +184,16 @@ async fn jsonl_record_appended_on_success() {
         serde_json::from_str(line).expect("record must parse as JSON");
     assert_eq!(record["command"], "migrate");
     assert_eq!(record["exit_code"], 0);
-    // outcome is a parsed JSON object on success
+    // Stdout captured verbatim — operators grep migrate.jsonl for it.
     assert!(
-        record["outcome"].is_object(),
-        "outcome should be present on success: {line}"
+        record["stdout"]
+            .as_str()
+            .unwrap_or("")
+            .contains("ran 1 migration"),
+        "stdout content not preserved in audit record: {line}"
     );
-    // stderr_tail is null on success
-    assert!(record["stderr_tail"].is_null(), "stderr_tail should be null on success");
-    // ts is an ISO8601-shaped string
+    assert_eq!(record["stderr"], "");
+    // ts is an ISO8601-shaped string.
     let ts = record["ts"].as_str().expect("ts string");
     assert!(
         ts.ends_with('Z') && ts.contains('T'),
@@ -266,16 +224,10 @@ echo 'failure mode' >&2
     let record: serde_json::Value =
         serde_json::from_str(line).expect("parse record");
     assert_eq!(record["exit_code"], 2);
+    let stderr = record["stderr"].as_str().expect("stderr field");
     assert!(
-        record["outcome"].is_null(),
-        "outcome should be null on failure: {line}"
-    );
-    let stderr_tail = record["stderr_tail"]
-        .as_str()
-        .expect("stderr_tail set on failure");
-    assert!(
-        stderr_tail.contains("failure mode"),
-        "stderr_tail content unexpected: {stderr_tail}"
+        stderr.contains("failure mode"),
+        "stderr content unexpected: {stderr}"
     );
 }
 
@@ -308,7 +260,7 @@ async fn locate_friday_finds_binary_under_install_dir_bin() {
 
     // Now write the stub at the CORRECT bin/friday path. It should be
     // found and the command should succeed.
-    write_friday_stub(&install_dir, r#"echo '{"status":"ok"}'"#, 0);
+    write_friday_stub(&install_dir, "echo ok", 0);
     let result =
         migrate(install_dir.to_string_lossy().to_string()).await;
     assert!(result.is_ok(), "expected Ok with binary at bin/friday: {result:?}");
@@ -318,10 +270,10 @@ async fn locate_friday_finds_binary_under_install_dir_bin() {
 async fn install_dir_bin_is_prepended_to_subprocess_path() {
     // The Tauri command must prepend `<install_dir>/bin` to PATH so the
     // spawned `friday migrate` can locate bundled binaries (especially
-    // `nats-server`, which the post-NATS phase tries to spawn via
-    // `findNatsServerBinary()` — a bare `which nats-server`). Without
-    // this, every install hits "nats-server not found" and the migrate
-    // step renders red ✗ even on a successful pre-NATS move.
+    // `nats-server`, which atlas-cli's post-NATS phase tries to spawn
+    // via a bare `which nats-server`). Without this, every install
+    // hits "nats-server not found" and the migrate step renders red ✗
+    // even on a successful pre-NATS move.
     let _g = env_lock();
     let (_tmp, friday_home, install_dir) = fixture_dirs();
     let _env = EnvGuard::install(&friday_home);
@@ -330,10 +282,7 @@ async fn install_dir_bin_is_prepended_to_subprocess_path() {
     write_friday_stub(
         &install_dir,
         &format!(
-            r#"
-echo "PATH=$PATH" > '{sentinel}'
-echo '{{"status":"ok"}}'
-"#,
+            r#"echo "PATH=$PATH" > '{sentinel}'"#,
             sentinel = sentinel.display(),
         ),
         0,
@@ -352,50 +301,4 @@ echo '{{"status":"ok"}}'
         path_line.starts_with(&expected_bin),
         "<install_dir>/bin not at the front of PATH; got:\n{path_line}\nwanted prefix: {expected_bin}"
     );
-}
-
-#[tokio::test]
-async fn logger_line_on_stdout_does_not_match_as_outcome() {
-    // @atlas/logger writes `info`-level records via `console.info`,
-    // which in Node.js/Deno goes to stdout (not stderr — only
-    // `console.error` / `console.warn` hit stderr). So a single
-    // `friday migrate --json` run can produce two JSON-object lines
-    // on stdout: the logger line, then the outcome.
-    //
-    // The Tauri command's contract is "outcome is the last JSON object
-    // on stdout." A backward scan picks the real outcome and ignores
-    // the earlier logger line — no schema knowledge needed.
-    //
-    // VM-tested 2026-05-06: an installed wizard's first run produced
-    // a misleading audit record because an earlier parser locked onto
-    // the logger line. This test guards against the regression.
-    let _g = env_lock();
-    let (_tmp, friday_home, install_dir) = fixture_dirs();
-    let _env = EnvGuard::install(&friday_home);
-
-    write_friday_stub(
-        &install_dir,
-        r#"
-# Logger-style line FIRST (this is what relocate-store's
-# logger.info() emits via @atlas/logger's console.info → stdout).
-echo '{"timestamp":"2026-01-01T00:00:00Z","level":"info","message":"resolved paths","context":{"legacy":"/tmp/legacy","target":"/tmp/target"}}'
-# Real outcome line SECOND.
-echo '{"status":"ok","streams_moved":3,"label":"relocate"}'
-"#,
-        0,
-    );
-
-    let result = migrate(install_dir.to_string_lossy().to_string()).await;
-    let outcome = result.expect("Ok outcome");
-
-    // The backward scan must have picked the outcome line, not the
-    // logger line. `streams_moved: 3` is a sentinel only the outcome
-    // carries; `level`/`timestamp` would mean we got the logger line.
-    assert_eq!(
-        outcome["streams_moved"], 3,
-        "scan locked onto wrong line; got: {outcome:?}"
-    );
-    assert_eq!(outcome["status"], "ok");
-    assert!(outcome.get("level").is_none(), "logger line leaked through");
-    assert!(outcome.get("timestamp").is_none(), "logger line leaked through");
 }
