@@ -94,9 +94,10 @@ async fn stub_emits_known_json_returns_parsed_outcome() {
 
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
     let outcome = result.expect("expected Ok outcome");
-    assert_eq!(outcome.pre_nats.len(), 1);
-    assert_eq!(outcome.pre_nats[0]["id"], "relocate-jetstream-store");
-    assert_eq!(outcome.pre_nats[0]["status"], "noop");
+    let pre_nats = outcome.pre_nats.as_ref().expect("preNats present");
+    assert_eq!(pre_nats.len(), 1);
+    assert_eq!(pre_nats[0]["id"], "relocate-jetstream-store");
+    assert_eq!(pre_nats[0]["status"], "noop");
 }
 
 #[tokio::test]
@@ -118,7 +119,8 @@ echo 'INFO: done'
 
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
     let outcome = result.expect("Ok outcome");
-    assert!(outcome.pre_nats.is_empty());
+    // preNats is present (the source has it explicitly as []).
+    assert_eq!(outcome.pre_nats.as_deref(), Some(&[][..]));
     // `ran` and `skipped` survive in `extra` via #[serde(flatten)].
     assert!(outcome.extra.contains_key("ran"));
 }
@@ -340,4 +342,57 @@ echo '{{"preNats":[]}}'
         path_line.starts_with(&expected_bin),
         "<install_dir>/bin not at the front of PATH; got:\n{path_line}\nwanted prefix: {expected_bin}"
     );
+}
+
+#[tokio::test]
+async fn logger_line_on_stdout_does_not_match_as_outcome() {
+    // @atlas/logger writes `info`-level records via `console.info`,
+    // which in Node.js/Deno goes to stdout (not stderr — only
+    // `console.error` / `console.warn` hit stderr). The pre-NATS
+    // step's resolved-paths log line therefore lands on the same
+    // stream we scan for the JSON outcome. Without the shape check
+    // in `find_outcome_line`, the parser matched the logger line
+    // first (because `serde(flatten)` swallows unknown fields into
+    // `extra`) and the audit JSONL ended up with logger gunk in the
+    // `outcome` field instead of the real `{preNats:[...], ran:...}`.
+    //
+    // VM-tested 2026-05-06: an installed wizard's first run produced
+    // exactly this misleading audit record. This test guards against
+    // a regression.
+    let _g = env_lock();
+    let (_tmp, friday_home, install_dir) = fixture_dirs();
+    let _env = EnvGuard::install(&friday_home);
+
+    write_friday_stub(
+        &install_dir,
+        r#"
+# Logger-style line FIRST (this is what relocate-store's
+# logger.info() emits via @atlas/logger's console.info → stdout).
+echo '{"timestamp":"2026-01-01T00:00:00Z","level":"info","message":"pre-nats migration: relocate-jetstream-store","context":{"id":"relocate-jetstream-store","legacy_path":"/tmp/legacy","target_path":"/tmp/target","target_source":"default","dry_run":false}}'
+# Real outcome line SECOND.
+echo '{"preNats":[{"id":"relocate-jetstream-store","status":"migrated","streams_moved":3}],"ran":["m1"],"skipped":[],"failed":[]}'
+"#,
+        0,
+    );
+
+    let result = migrate(install_dir.to_string_lossy().to_string()).await;
+    let outcome = result.expect("Ok outcome");
+
+    // The parser must have skipped the logger line and locked onto
+    // the real outcome — `streams_moved: 3` is a sentinel that only
+    // the real line carries.
+    let pre_nats = outcome.pre_nats.as_ref().expect("preNats present in real outcome");
+    assert_eq!(pre_nats.len(), 1);
+    assert_eq!(
+        pre_nats[0]["streams_moved"], 3,
+        "parser locked onto wrong line; got: {pre_nats:?}"
+    );
+    assert_eq!(pre_nats[0]["status"], "migrated");
+    // And the post-NATS arrays are populated, not the logger's
+    // `level`/`message`/`timestamp`/`context`.
+    assert!(outcome.extra.contains_key("ran"));
+    assert!(!outcome.extra.contains_key("timestamp"));
+    assert!(!outcome.extra.contains_key("level"));
+    assert!(!outcome.extra.contains_key("message"));
+    assert!(!outcome.extra.contains_key("context"));
 }

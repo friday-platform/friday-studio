@@ -40,14 +40,22 @@ use crate::friday_home::friday_home_dir;
 /// typed; the post-NATS portion is kept loose with `serde_json::Value`
 /// so future schema additions in atlas-cli don't break the Tauri
 /// boundary.
+///
+/// `pre_nats` is `Option<Vec>` rather than `Vec` with `default` so
+/// `find_outcome_line` can distinguish a real outcome JSON (which
+/// always emits `preNats: [...]`, possibly empty) from a stray
+/// logger-formatted line on stdout. See the `find_outcome_line` doc
+/// comment for the @atlas/logger info-on-stdout backstory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationOutcome {
-    /// One element per registered pre-NATS migration entry. Always
-    /// present, may be empty for fresh installs that hit no entries.
-    #[serde(rename = "preNats", default)]
-    pub pre_nats: Vec<serde_json::Value>,
+    /// One element per registered pre-NATS migration entry. The CLI's
+    /// `--json` output always includes this field (possibly as `[]`);
+    /// `None` here means the source line lacked the field entirely
+    /// — typically a logger line that happens to also be JSON.
+    #[serde(rename = "preNats", skip_serializing_if = "Option::is_none")]
+    pub pre_nats: Option<Vec<serde_json::Value>>,
     /// Everything else the CLI emits (post-NATS `ran`, `skipped`,
-    /// `failed`, etc.). We preserve unknown fields so Stream B can
+    /// `failed`, etc.). We preserve unknown fields so atlas-cli can
     /// extend the schema without coordination with this Stream.
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -206,15 +214,41 @@ fn env_keys_from(content: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// Search stdout for the first line that successfully parses as
-/// MigrationOutcome. Returns None if no line matches.
+/// Search stdout for the first line that successfully parses as the
+/// real `friday migrate --json` outcome shape (NOT a stray log line
+/// that happens to also be JSON). Returns None if no line matches.
+///
+/// Why the shape check matters: `@atlas/logger` writes `info`-level
+/// records with `console.info(...)`, which in Node.js / Deno goes to
+/// **stdout**, not stderr (only `console.error` and `console.warn`
+/// hit stderr). The `friday migrate` CLI's pre-NATS step emits a
+/// resolved-paths log line on stdout for that reason. Without this
+/// shape check, the parser would match the logger line first
+/// (because of `serde(flatten)` swallowing `timestamp`/`level`/etc.
+/// into `extra`) and the audit JSONL would record logger gunk
+/// instead of the real outcome.
+///
+/// We require the line to carry at least one of the documented
+/// outcome fields: `preNats` (pre-NATS array), or one of `ran`/
+/// `skipped`/`failed` (the post-NATS arrays from `runMigrations`).
+/// A logger line has none of these, so it gets skipped.
 fn find_outcome_line(stdout: &str) -> Option<MigrationOutcome> {
     for line in stdout.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        if let Ok(o) = serde_json::from_str::<MigrationOutcome>(trimmed) {
+        let Ok(o) = serde_json::from_str::<MigrationOutcome>(trimmed) else {
+            continue;
+        };
+        // Reject lines that parsed only because `serde(flatten)` is
+        // permissive. The real outcome always emits `preNats` (even
+        // as `[]`) plus the post-NATS arrays.
+        let has_outcome_field = o.pre_nats.is_some()
+            || o.extra.contains_key("ran")
+            || o.extra.contains_key("skipped")
+            || o.extra.contains_key("failed");
+        if has_outcome_field {
             return Some(o);
         }
     }
@@ -375,7 +409,7 @@ mod tests {
             "INFO: done\n",
         );
         let outcome = find_outcome_line(stdout).expect("should parse");
-        assert!(outcome.pre_nats.is_empty());
+        assert_eq!(outcome.pre_nats.as_deref(), Some(&[][..]));
         assert!(outcome.extra.contains_key("ran"));
     }
 
