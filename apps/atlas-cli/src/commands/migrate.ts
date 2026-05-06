@@ -28,15 +28,9 @@ import {
   resolveNatsUrl,
   runMigrations,
 } from "jetstream";
-import {
-  listPreNatsEntries,
-  preNatsMigrations,
-  runPreNatsMigrations,
-} from "../pre-nats-migrations/index.ts";
-import { acquirePreNatsLock, LockBusyError, type LockHandle } from "../pre-nats-migrations/lock.ts";
-import type { MigrationOutcome } from "../pre-nats-migrations/types.ts";
 import { errorOutput, infoOutput, successOutput } from "../utils/output.ts";
 import type { YargsInstance } from "../utils/yargs.ts";
+import { relocateJetStreamStore } from "./relocate-jetstream-store.ts";
 
 interface MigrateArgs {
   list?: boolean;
@@ -79,16 +73,15 @@ export function builder(y: YargsInstance) {
 }
 
 /**
- * Load `<friday_home>/.env` into `process.env` so subsequent reads see the
- * installer's port remap (and any other operator-set values). Tolerant —
- * missing `.env` is fine on a fresh dev install. The installer always
- * writes `.env` before invoking `friday migrate`.
+ * Load `<friday_home>/.env` into `process.env` so subsequent reads see
+ * the installer's port remap (and any other operator-set values).
+ * Tolerant — missing `.env` is fine on a fresh dev install.
  */
 export async function loadFridayEnv(fridayHome: string): Promise<void> {
   try {
     await load({ envPath: join(fridayHome, ".env"), export: true });
   } catch {
-    // .env may not exist yet (fresh install); that's fine, defaults apply.
+    // .env may not exist yet (fresh install); defaults apply.
   }
 }
 
@@ -118,95 +111,18 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
     process.exit(1);
   }
 
-  // PID lock guards the pre-NATS phase only — released BEFORE
-  // connectOrSpawn so the post-NATS phase runs under the KV lock alone.
-  let lock: LockHandle | null = null;
-  if (!isReadOnly) {
+  // Move legacy data out of $TMPDIR before connecting to NATS — see
+  // relocate-jetstream-store.ts. Skip on dry-run (don't mutate). Throws
+  // on real errors (ENOSPC, etc.); we surface them and bail.
+  if (!argv.dryRun) {
     try {
-      lock = await acquirePreNatsLock(fridayHome);
+      await relocateJetStreamStore(logger);
     } catch (err) {
-      if (err instanceof LockBusyError) {
-        errorOutput(err.message);
-        process.exit(1);
-      }
-      errorOutput(stringifyError(err));
+      errorOutput(`failed to relocate JetStream store: ${stringifyError(err)}`);
       process.exit(1);
     }
   }
 
-  let preNatsResult: { outcomes: MigrationOutcome[]; aborted: boolean };
-  try {
-    preNatsResult = await runPreNatsMigrations(logger, { dryRun: !!argv.dryRun });
-  } finally {
-    if (lock) {
-      await lock.release();
-    }
-  }
-
-  if (preNatsResult.aborted) {
-    if (argv.json) {
-      // Single-line JSON for `--json` parseability — pretty-printing
-      // would split across lines that don't individually parse.
-      console.log(
-        JSON.stringify({ preNats: preNatsResult.outcomes, ran: [], skipped: [], failed: [] }),
-      );
-      process.exit(1);
-    }
-    const last = preNatsResult.outcomes[preNatsResult.outcomes.length - 1];
-    const errKind = last?.error?.kind ?? "unknown";
-    const errMsg = last?.error?.message ?? "(no message)";
-    errorOutput(`pre-NATS migration ${last?.id} failed (${errKind}): ${errMsg}`);
-    process.exit(1);
-  }
-
-  await runPostNatsPhase(argv, preNatsResult.outcomes);
-};
-
-async function handleList(argv: MigrateArgs): Promise<void> {
-  const url = resolveNatsUrl({ url: argv.natsUrl });
-  const cfg = readJetStreamConfig();
-  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
-
-  // Pre-NATS list works even if NATS is unreachable — collect first.
-  const preEntries = listPreNatsEntries();
-
-  let handle: ConnectionHandle;
-  try {
-    handle = await connectOrSpawn({
-      url,
-      name: "atlas-cli-migrate",
-      storeDir,
-      spawnFallback: !argv.noSpawn,
-      logger,
-    });
-  } catch (err) {
-    errorOutput(stringifyError(err));
-    process.exit(1);
-  }
-  const { nc, cleanup } = handle;
-  try {
-    const migrations = await getAllMigrations();
-    const records = await listMigrationRecords(nc);
-    const byId = new Map(records.map((r) => [r.id, r]));
-    const entries = migrations.map((m) => ({
-      id: m.id,
-      name: m.name,
-      description: m.description,
-      record: byId.get(m.id) ?? null,
-    }));
-    if (argv.json) {
-      // Single-line for `--json` parseability — see runPostNatsPhase.
-      console.log(JSON.stringify({ preNats: preEntries, migrations: entries }));
-      return;
-    }
-    printPreNatsList(preEntries);
-    printList(entries);
-  } finally {
-    await cleanup();
-  }
-}
-
-async function runPostNatsPhase(argv: MigrateArgs, preNats: MigrationOutcome[]): Promise<void> {
   const url = resolveNatsUrl({ url: argv.natsUrl });
   const cfg = readJetStreamConfig();
   const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
@@ -233,18 +149,11 @@ async function runPostNatsPhase(argv: MigrateArgs, preNats: MigrationOutcome[]):
       runner: "cli",
     });
     if (argv.json) {
-      // Single-line JSON for any tool that wants to parse `--json`
-      // output. Pretty-printing would split the outcome across lines
-      // that don't individually parse. Exit nonzero on failure so
-      // callers that key on exit code see it without having to peek
-      // inside the JSON body.
+      // Single-line JSON for `--json` parseability — pretty-printing
+      // would split across lines that don't individually parse. Exit
+      // nonzero on failure so callers that key on exit code see it.
       console.log(
-        JSON.stringify({
-          preNats,
-          ran: result.ran,
-          skipped: result.skipped,
-          failed: result.failed,
-        }),
+        JSON.stringify({ ran: result.ran, skipped: result.skipped, failed: result.failed }),
       );
       if (result.failed.length > 0) {
         process.exit(1);
@@ -277,12 +186,51 @@ async function runPostNatsPhase(argv: MigrateArgs, preNats: MigrationOutcome[]):
   } finally {
     await cleanup();
   }
+};
+
+async function handleList(argv: MigrateArgs): Promise<void> {
+  const url = resolveNatsUrl({ url: argv.natsUrl });
+  const cfg = readJetStreamConfig();
+  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+
+  let handle: ConnectionHandle;
+  try {
+    handle = await connectOrSpawn({
+      url,
+      name: "atlas-cli-migrate",
+      storeDir,
+      spawnFallback: !argv.noSpawn,
+      logger,
+    });
+  } catch (err) {
+    errorOutput(stringifyError(err));
+    process.exit(1);
+  }
+  const { nc, cleanup } = handle;
+  try {
+    const migrations = await getAllMigrations();
+    const records = await listMigrationRecords(nc);
+    const byId = new Map(records.map((r) => [r.id, r]));
+    const entries = migrations.map((m) => ({
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      record: byId.get(m.id) ?? null,
+    }));
+    if (argv.json) {
+      console.log(JSON.stringify({ migrations: entries }));
+      return;
+    }
+    printList(entries);
+  } finally {
+    await cleanup();
+  }
 }
 
 /**
  * Cheap probe of the daemon's /health endpoint. 500ms timeout is enough
  * on localhost; failure modes (DNS, connection refused, timeout) all
- * fall through to "no daemon" which is the safe default — the lock in
+ * fall through to "no daemon" — the safe default. The KV lock in
  * `runMigrations` is the actual correctness guard.
  *
  * Reads `FRIDAY_PORT_FRIDAY` from `process.env` (already populated by
@@ -308,15 +256,6 @@ interface MigrationEntry {
   record: MigrationRecord | null;
 }
 
-function printPreNatsList(entries: ReturnType<typeof listPreNatsEntries>): void {
-  if (entries.length === 0) return;
-  for (const e of entries) {
-    console.log(`[pre-NATS] ${e.id}  ${e.name}`);
-    console.log(`  ${e.description}`);
-    console.log("");
-  }
-}
-
 function printList(entries: MigrationEntry[]): void {
   if (entries.length === 0) {
     infoOutput("(no migrations registered)");
@@ -336,6 +275,3 @@ function printList(entries: MigrationEntry[]): void {
     console.log("");
   }
 }
-
-// Re-export for tests.
-export { preNatsMigrations };

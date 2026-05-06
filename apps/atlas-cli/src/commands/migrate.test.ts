@@ -1,14 +1,14 @@
 /**
- * Tests for `apps/atlas-cli/src/commands/migrate.ts`.
+ * Unit tests for the small helpers in `migrate.ts`:
+ *   - loadFridayEnv: reads `<friday_home>/.env` into process.env.
+ *   - isDaemonRunning: cheap port-aware probe of the daemon's /health.
  *
- * Focus: the new behavior introduced by Stream B of the JetStream store
- * migration plan — `.env` load on handler entry, port-aware daemon-alive
- * probe, and the pre-NATS / post-NATS sequencing contract. The
- * pre-NATS registry semantics themselves are covered in
- * `../pre-nats-migrations/*.test.ts`; here we exercise the integration.
+ * Handler-level behavior (relocate-before-connect, --json failure mode,
+ * exit codes) lives in `migrate-handler.test.ts`. The relocation helper
+ * itself is covered by `relocate-jetstream-store.test.ts`.
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,7 +42,6 @@ describe("loadFridayEnv", () => {
   });
 
   it("is a no-op when .env doesn't exist", async () => {
-    // No .env in fixtureHome.
     await expect(loadFridayEnv(fixtureHome)).resolves.toBeUndefined();
     expect(process.env.FRIDAY_PORT_FRIDAY).toBeUndefined();
   });
@@ -53,10 +52,7 @@ describe("loadFridayEnv", () => {
   });
 });
 
-/**
- * Spin a small HTTP server on `port` that returns 200 on `/health`. Used
- * to verify the port-aware daemon-alive probe.
- */
+/** Spin a small HTTP server on `port` returning 200 on `/health`. */
 async function startStubDaemon(port: number): Promise<Server> {
   const server = createServer((req, res) => {
     if (req.url === "/health") {
@@ -84,8 +80,6 @@ describe("isDaemonRunning", () => {
   });
 
   it("respects FRIDAY_PORT_FRIDAY rather than the legacy 8080", async () => {
-    // Pick an unlikely port to avoid colliding with anything real on the
-    // dev's machine.
     const port = 18181;
     process.env.FRIDAY_PORT_FRIDAY = String(port);
     const server = await startStubDaemon(port);
@@ -94,104 +88,5 @@ describe("isDaemonRunning", () => {
     } finally {
       await stopServer(server);
     }
-  });
-});
-
-describe("pre-NATS / post-NATS sequencing", () => {
-  it("preNatsMigrations registry includes relocate-jetstream-store", async () => {
-    const { preNatsMigrations } = await import("../pre-nats-migrations/index.ts");
-    expect(preNatsMigrations.some((m) => m.id === "relocate-jetstream-store")).toBe(true);
-  });
-
-  it("first-failure-aborts-queue: throwing entry stops execution before later entries", async () => {
-    // Verifies the contract documented in the v6 plan:
-    // "first failure stops the pre-NATS queue AND prevents post-NATS
-    //  execution (`connectOrSpawn` is not called)."
-    const { runPreNatsMigrations } = await import("../pre-nats-migrations/index.ts");
-    const { logger } = await import("@atlas/logger");
-
-    const calls: string[] = [];
-    const result = await runPreNatsMigrations(logger, { dryRun: false }, [
-      {
-        id: "succeed-then",
-        name: "succeed-then",
-        description: "first stub: succeed",
-        run: async () => {
-          await Promise.resolve();
-          calls.push("succeed-then");
-          return {
-            id: "succeed-then",
-            status: "noop",
-            legacy_path: "",
-            target_path: "",
-            target_source: "default",
-            duration_ms: 0,
-          };
-        },
-      },
-      {
-        id: "throw-here",
-        name: "throw-here",
-        description: "second stub: throws",
-        run: async () => {
-          await Promise.resolve();
-          calls.push("throw-here");
-          throw new Error("simulated failure");
-        },
-      },
-      {
-        id: "never-runs",
-        name: "never-runs",
-        description: "third stub: should be unreachable",
-        run: async () => {
-          await Promise.resolve();
-          calls.push("never-runs");
-          return {
-            id: "never-runs",
-            status: "noop",
-            legacy_path: "",
-            target_path: "",
-            target_source: "default",
-            duration_ms: 0,
-          };
-        },
-      },
-    ]);
-
-    expect(calls).toEqual(["succeed-then", "throw-here"]);
-    expect(result.aborted).toBe(true);
-    // The handler reads `aborted` and skips connectOrSpawn — we don't
-    // call connectOrSpawn here directly, but the contract is enforced
-    // at the handler level by the early return in the aborted branch.
-  });
-});
-
-describe("--list output includes pre-NATS entries", () => {
-  it("listPreNatsEntries returns at least the relocate-store entry", async () => {
-    const { listPreNatsEntries } = await import("../pre-nats-migrations/index.ts");
-    const entries = listPreNatsEntries();
-    expect(entries.find((e) => e.id === "relocate-jetstream-store")).toBeTruthy();
-  });
-});
-
-describe("dry-run does not mutate the filesystem", () => {
-  it("relocate-store reports migrated without removing legacy data in dry-run", async () => {
-    const { runRelocate } = await import("../pre-nats-migrations/relocate-store.ts");
-    const { logger } = await import("@atlas/logger");
-
-    const legacy = join(fixtureHome, "legacy");
-    const target = join(fixtureHome, "target");
-    await mkdir(join(legacy, "jetstream", "$G", "streams", "X"), { recursive: true });
-    await writeFile(join(legacy, "jetstream", "$G", "streams", "X", "meta.inf"), "x");
-
-    const outcome = await runRelocate(
-      { logger, dryRun: true },
-      { legacyPath: legacy, targetPath: target, targetSource: "default" },
-    );
-
-    expect(outcome.status).toBe("migrated");
-    // Source directory still on disk after dry-run.
-    const { stat } = await import("node:fs/promises");
-    await expect(stat(legacy)).resolves.toBeTruthy();
   });
 });

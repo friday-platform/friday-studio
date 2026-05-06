@@ -1,92 +1,63 @@
 /**
- * Handler-level call-order tests for `friday migrate`.
+ * Handler-level tests for `friday migrate`.
  *
- * The unit tests in `migrate.test.ts` and `../pre-nats-migrations/*.test.ts`
- * cover the building blocks; this file pins the load-bearing ORDERING
- * contract documented in the v6 design doc:
+ *   - Legacy JetStream relocation runs BEFORE connectOrSpawn (so the
+ *     ephemeral nats-server boots against the canonical store, not
+ *     $TMPDIR).
+ *   - --dry-run skips the relocation (dry-run must not mutate disk).
+ *   - --json failure mode emits exactly one line to stdout and exits
+ *     nonzero (the installer keys on exit code; a JSON-mode silent
+ *     success on a real failure would render every error as ✓).
+ *   - A relocation failure surfaces as a friendly Err and exits 1.
  *
- *   1. Pre-NATS migrations run BEFORE `connectOrSpawn`.
- *   2. The PID lock is RELEASED before `connectOrSpawn` (KV lock owns
- *      the post-NATS phase; the file lock's scope ends with pre-NATS).
- *   3. When pre-NATS aborts (first-failure-aborts-queue), `connectOrSpawn`
- *      is NOT invoked — the post-NATS phase is skipped entirely.
- *   4. In `--json` mode, post-NATS failures still exit nonzero — the
- *      Tauri command keys on exit code, so silent JSON-mode success on a
- *      real failure would render every migration error as ✓ in the
- *      installer UI.
- *
- * Mocks: only the module boundaries we need to observe (jetstream's
- * connectOrSpawn / runMigrations / getAllMigrations + the pre-NATS
- * runner). `acquirePreNatsLock` runs for real against a tempdir so we
- * can assert on the actual on-disk lock file's existence at the moment
- * connectOrSpawn is invoked.
+ * Mocks: jetstream's `connectOrSpawn` / `runMigrations` and the
+ * relocate helper. Everything else runs for real against tempdirs.
  */
 
-import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Hoisted state — shared between the vi.mock factories (which run before
-// any test code) and the test bodies. Accessing `currentFridayHome`
-// inside the connectOrSpawn mock requires this indirection because
-// vi.mock factories execute at module-evaluation time.
 const mockState = vi.hoisted(() => ({
   fridayHome: "" as string,
-  preNatsResult: null as { outcomes: unknown[]; aborted: boolean } | null,
-  connectOrSpawnInvocations: 0,
-  // Snapshot of `existsSync(<fridayHome>/.pre-nats-migrate.lock)` taken
-  // the instant connectOrSpawn fires — proves the lock was released
-  // BEFORE post-NATS started.
-  lockFileWhenConnectInvoked: null as boolean | null,
-  // Behavior knob for the post-NATS phase. "throw" short-circuits via
-  // connectOrSpawn rejection (the default — most tests don't care
-  // about runMigrations). "succeed" returns a fake handle so the
-  // handler proceeds into runMigrations, which then returns
-  // `runMigrationsResult` (use that to drive failure outcomes).
+  relocateInvocations: 0,
+  /** Snapshot of relocateInvocations the instant connectOrSpawn fires. */
+  relocateBeforeConnect: -1,
+  /** Drive the relocate stub: "ok" returns a fake result; "throw" rejects. */
+  relocateBehavior: "ok" as "ok" | "throw",
   postNatsBehavior: "throw" as "throw" | "succeed",
   runMigrationsResult: { ran: [] as string[], skipped: [] as string[], failed: [] as string[] },
-  // Captured stdout writes — populated by a console.log spy. Used to
-  // assert the single-line JSON contract in failure-mode tests.
   capturedStdout: [] as string[],
 }));
 
-vi.mock("../pre-nats-migrations/index.ts", () => ({
-  runPreNatsMigrations: vi.fn(() => {
-    if (!mockState.preNatsResult) {
-      return Promise.reject(new Error("test setup error: preNatsResult not configured"));
+vi.mock("./relocate-jetstream-store.ts", () => ({
+  relocateJetStreamStore: vi.fn(() => {
+    mockState.relocateInvocations += 1;
+    if (mockState.relocateBehavior === "throw") {
+      return Promise.reject(new Error("simulated relocate failure"));
     }
-    return Promise.resolve(mockState.preNatsResult);
+    return Promise.resolve({
+      legacyPath: "/tmp/legacy",
+      targetPath: "/tmp/target",
+      moved: false,
+      streamsMoved: 0,
+    });
   }),
-  listPreNatsEntries: () => [],
-  preNatsMigrations: [{ id: "stub", name: "stub", description: "" }],
 }));
 
-vi.mock("@atlas/atlasd/migrations", () => ({
-  // Empty post-NATS registry — runMigrations is mocked anyway, so this
-  // never runs. Just satisfies the import.
-  getAllMigrations: () => Promise.resolve([]),
-}));
+vi.mock("@atlas/atlasd/migrations", () => ({ getAllMigrations: () => Promise.resolve([]) }));
 
 vi.mock("jetstream", async () => {
   const actual = await vi.importActual<typeof import("jetstream")>("jetstream");
   return {
     ...actual,
     connectOrSpawn: vi.fn(() => {
-      mockState.connectOrSpawnInvocations += 1;
-      mockState.lockFileWhenConnectInvoked = existsSync(
-        join(mockState.fridayHome, ".pre-nats-migrate.lock"),
-      );
+      mockState.relocateBeforeConnect = mockState.relocateInvocations;
       if (mockState.postNatsBehavior === "throw") {
-        // Short-circuit: most call-order tests don't need the post-NATS
-        // phase to actually proceed — they just observe that
-        // connectOrSpawn was called (and at what point).
         return Promise.reject(new Error("test-marker: connectOrSpawn invoked"));
       }
-      // Success path: return a minimal handle so the handler proceeds
-      // into runMigrations. `nc` doesn't matter — runMigrations is mocked.
       return Promise.resolve({
         nc: {} as unknown as import("jetstream").ConnectionHandle["nc"],
         cleanup: () => Promise.resolve(),
@@ -107,32 +78,22 @@ beforeEach(async () => {
   savedFridayHome = process.env.FRIDAY_HOME;
   savedFridayPort = process.env.FRIDAY_PORT_FRIDAY;
   process.env.FRIDAY_HOME = mockState.fridayHome;
-  // A definitely-closed port so the daemon-alive probe returns false
-  // and the handler reaches the pre-NATS phase.
+  // Definitely-closed port so the daemon-alive probe returns false.
   process.env.FRIDAY_PORT_FRIDAY = "59998";
 
-  mockState.preNatsResult = null;
-  mockState.connectOrSpawnInvocations = 0;
-  mockState.lockFileWhenConnectInvoked = null;
+  mockState.relocateInvocations = 0;
+  mockState.relocateBeforeConnect = -1;
+  mockState.relocateBehavior = "ok";
   mockState.postNatsBehavior = "throw";
   mockState.runMigrationsResult = { ran: [], skipped: [], failed: [] };
   mockState.capturedStdout = [];
 
-  // Replace process.exit so the test runner doesn't actually exit.
-  // We capture the codes for assertions and throw a sentinel so the
-  // handler unwinds the same way it does in production (via the
-  // never-returning exit). vi.spyOn handles the typed-replacement
-  // dance cleanly so we don't need an `any` cast.
   exitCalls = [];
   exitSpy = vi.spyOn(process, "exit").mockImplementation((code?: string | number | null) => {
     const numeric = typeof code === "number" ? code : 0;
     exitCalls.push(numeric);
     throw new Error(`__test_exit__:${numeric}`);
   });
-
-  // Capture console.log for the JSON-mode assertions. Cast to string
-  // covers the typed-args contract; non-string args (Buffers etc.)
-  // shouldn't occur in this codepath.
   logSpy = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
     mockState.capturedStdout.push(typeof line === "string" ? line : String(line));
   });
@@ -149,69 +110,43 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-describe("handler call-order contract", () => {
-  it("pre-NATS runs and PID lock is released before connectOrSpawn", async () => {
-    // Pre-NATS succeeds (empty outcomes, not aborted) → handler proceeds
-    // to the post-NATS phase, which is when connectOrSpawn fires. The
-    // mock rejects, the handler's catch block calls process.exit(1)
-    // which throws `__test_exit__:1` — matching that prefix proves we
-    // traversed the production exit path (not just the raw mock error).
-    mockState.preNatsResult = { outcomes: [], aborted: false };
-
+describe("migrate handler", () => {
+  it("relocates legacy data before connecting to NATS", async () => {
+    // The relocation MUST run first, otherwise the ephemeral
+    // nats-server boots against $TMPDIR data and the move would be
+    // racing with a live broker.
     const { handler } = await import("./migrate.ts");
-
     await expect(handler({ json: true })).rejects.toThrow(/__test_exit__:1/);
-
-    expect(mockState.connectOrSpawnInvocations).toBe(1);
-    expect(mockState.lockFileWhenConnectInvoked).toBe(false);
-    // And after the handler returns, the lock file is also gone
-    // (defensive — `release()` is the producer of this state).
-    expect(existsSync(join(mockState.fridayHome, ".pre-nats-migrate.lock"))).toBe(false);
+    expect(mockState.relocateInvocations).toBe(1);
+    expect(mockState.relocateBeforeConnect).toBe(1); // relocate had run before connect
   });
 
-  it("connectOrSpawn is NOT invoked when pre-NATS aborts", async () => {
-    // Mimic a registry-level abort: the runner returns aborted=true with
-    // an error outcome. The handler should emit JSON, exit nonzero, and
-    // never reach connectOrSpawn.
-    mockState.preNatsResult = {
-      outcomes: [
-        {
-          id: "stub",
-          status: "error",
-          legacy_path: "",
-          target_path: "",
-          target_source: "default",
-          duration_ms: 0,
-          error: { kind: "unknown", message: "simulated failure" },
-        },
-      ],
-      aborted: true,
-    };
+  it("skips relocation on --dry-run (no disk mutation)", async () => {
+    const { handler } = await import("./migrate.ts");
+    await expect(handler({ dryRun: true, json: true })).rejects.toThrow(/__test_exit__:1/);
+    expect(mockState.relocateInvocations).toBe(0);
+  });
+
+  it("relocate failure exits 1 with a helpful message", async () => {
+    mockState.relocateBehavior = "throw";
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const { handler } = await import("./migrate.ts");
-
     await expect(handler({ json: true })).rejects.toThrow(/__test_exit__:1/);
 
-    expect(mockState.connectOrSpawnInvocations).toBe(0);
-    // process.exit(1) is the contract on abort.
+    // connectOrSpawn must NOT have been reached.
+    expect(mockState.relocateBeforeConnect).toBe(-1);
+    // The handler reported the failure on stderr before exiting.
+    const allStderr = errSpy.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(allStderr).toMatch(/relocate JetStream store/);
     expect(exitCalls).toContain(1);
-    // Lock was released by the finally block before the abort branch.
-    expect(existsSync(join(mockState.fridayHome, ".pre-nats-migrate.lock"))).toBe(false);
+    errSpy.mockRestore();
   });
 
   it("post-NATS failure in --json mode emits single-line JSON and exits 1", async () => {
-    // The fix-commit invariant: when `runMigrations` returns
-    // `failed.length > 0` in --json mode, the handler must
-    // (a) emit a single-line JSON to stdout (so the Tauri scanner can
-    //     parse it line-by-line — pretty-printed output would never
-    //     match the expected shape), and
-    // (b) exit nonzero (so callers like the Tauri command, which key on
-    //     the exit code, surface the failure to Svelte).
-    //
     // A regression dropping `process.exit(1)` from the post-NATS-failed
     // JSON branch would render every customer's failed migration as a
     // green ✓ in the installer UI. This test catches that.
-    mockState.preNatsResult = { outcomes: [], aborted: false };
     mockState.postNatsBehavior = "succeed";
     mockState.runMigrationsResult = {
       ran: [],
@@ -220,18 +155,14 @@ describe("handler call-order contract", () => {
     };
 
     const { handler } = await import("./migrate.ts");
-
     await expect(handler({ json: true })).rejects.toThrow(/__test_exit__:1/);
 
-    // Exactly one stdout line — the JSON outcome. Anything more would
-    // mean we leaked log output to stdout, breaking the Tauri scanner.
+    // Exactly one stdout line — the JSON outcome.
     expect(mockState.capturedStdout).toHaveLength(1);
     const jsonLine = mockState.capturedStdout[0];
-    // It must be valid single-line JSON (no embedded newlines).
     expect(jsonLine).not.toContain("\n");
     const parsed = JSON.parse(jsonLine ?? "");
     expect(parsed).toMatchObject({
-      preNats: [],
       ran: [],
       skipped: [],
       failed: ["m_20260501_120000_chat_to_jetstream"],
