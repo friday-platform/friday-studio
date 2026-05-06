@@ -318,6 +318,14 @@ export interface SignalWithContext extends Signal {
     abortSignal?: AbortSignal;
     /** State IDs to skip — their entry actions won't execute, engine chains through */
     skipStates?: string[];
+    /**
+     * Phase 7 — delegation depth at this signal's frame.
+     * `0` (or unset) means the FSM is running at the user-facing top level.
+     * Each `delegate` tool invocation increments this on the child's
+     * synthetic signal context, so depth-cap enforcement (Phase 8 budgets)
+     * can read a single counter regardless of how the child is invoked.
+     */
+    delegationDepth?: number;
   };
 }
 

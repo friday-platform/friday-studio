@@ -9,13 +9,13 @@
 import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { repairToolCall, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import type { WorkspaceConfig } from "@atlas/config";
-import type { MCPServerCandidate } from "@atlas/core/mcp-registry/discovery";
 import { createStubPlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import type { UIMessageStreamWriter } from "ai";
 import { tool } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { MCPServerCandidate } from "../mcp-registry/discovery.ts";
 
 const mockStreamText = vi.hoisted(() => vi.fn());
 const mockStepCountIs = vi.hoisted(() => vi.fn((n: number) => ({ __stepCountIs: n })));
@@ -27,9 +27,9 @@ vi.mock("ai", async () => {
   return { ...actual, streamText: mockStreamText, stepCountIs: mockStepCountIs };
 });
 
-vi.mock("@atlas/core/mcp-registry/discovery", () => ({
-  discoverMCPServers: mockDiscoverMCPServers,
-}));
+// Path matches the relative import used by `delegate/index.ts` (sibling
+// `mcp-registry/discovery.ts` after the Phase 7 move into `@atlas/core`).
+vi.mock("../mcp-registry/discovery.ts", () => ({ discoverMCPServers: mockDiscoverMCPServers }));
 
 vi.mock("@atlas/mcp", () => ({ createMCPTools: mockCreateMCPTools }));
 

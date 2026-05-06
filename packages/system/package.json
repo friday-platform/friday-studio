@@ -16,7 +16,6 @@
     "@atlas/core": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
-    "@atlas/mcp": "workspace:*",
     "@atlas/oapi-client": "workspace:*",
     "@atlas/skills": "workspace:*",
     "@atlas/utils": "workspace:*",

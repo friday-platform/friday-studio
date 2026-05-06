@@ -38,6 +38,7 @@
     "npm:@ai-sdk/svelte@^4.0.174": "4.0.174_svelte@5.55.5_zod@4.3.6",
     "npm:@anthropic-ai/claude-agent-sdk@~0.2.126": "0.2.126_zod@4.3.6",
     "npm:@biomejs/biome@*": "2.4.14",
+    "npm:@biomejs/biome@latest": "2.4.14",
     "npm:@chat-adapter/discord@4.27.0": "4.27.0",
     "npm:@chat-adapter/slack@4.27.0": "4.27.0",
     "npm:@chat-adapter/teams@4.27.0": "4.27.0",

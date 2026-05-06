@@ -17,6 +17,7 @@
     "./artifacts/storage": "./src/artifacts/storage.ts",
     "./artifacts/scrubber": "./src/artifacts/scrubber.ts",
     "./artifacts/converters": "./src/artifacts/converters/mod.ts",
+    "./delegate": "./src/delegate/index.ts",
     "./elicitations": "./src/elicitations/mod.ts",
     "./elicitations/storage": "./src/elicitations/storage.ts",
     "./errors": "./src/errors.ts",

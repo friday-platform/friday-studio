@@ -18,8 +18,6 @@
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
-import { createScrubber } from "@atlas/core/artifacts/scrubber";
-import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
 import { createMCPTools } from "@atlas/mcp";
@@ -27,7 +25,8 @@ import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import { rebindAgentTool } from "../../../workspace-chat/tools/bundled-agent-tools.ts";
+import { createScrubber } from "../artifacts/scrubber.ts";
+import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
 
@@ -153,9 +152,14 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
 
         const childTools: AtlasTools = { [FINISH_TOOL_NAME]: finishTool };
         for (const [name, t] of Object.entries(withoutDelegate)) {
-          childTools[name] = deps.rebindAgentTool
-            ? deps.rebindAgentTool(t, proxy)
-            : rebindAgentTool(t, proxy);
+          // When `rebindAgentTool` is supplied, callers (chat) use it to
+          // re-route nested agent-tool stream events through the delegate
+          // proxy. Otherwise (FSM, callers without bundled-agent tools) the
+          // inherited tool passes through unchanged — its writer stays
+          // whatever the caller wired at construction time. The proxy still
+          // wraps anything streamed via the AI SDK message stream, so the
+          // happy path is intact even without a rebind hook.
+          childTools[name] = deps.rebindAgentTool ? deps.rebindAgentTool(t, proxy) : t;
         }
 
         if (mcpServers && mcpServers.length > 0) {

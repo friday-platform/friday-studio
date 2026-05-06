@@ -133,7 +133,7 @@ import { PermissionsConfigSchema } from "./permissions.ts";
  *
  * Today: schema only — runtime enforcement of `max_steps_per_call` and
  * `max_output_tokens` exists today as hardcoded constants in
- * `packages/system/agents/workspace-chat/tools/delegate/index.ts`
+ * `packages/core/src/delegate/index.ts`
  * (CHILD_STEP_BUDGET=40, CHILD_MAX_OUTPUT_TOKENS=20000). Phase 8 promotes
  * those to config-driven and adds depth + wall-clock + input-token + cost.
  */

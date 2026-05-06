@@ -18,6 +18,7 @@ import {
   type NarrativeStore,
   PLATFORM_TOOL_NAMES,
   type ResolvedWorkspaceMemory,
+  repairToolCall,
   type StoreMountBinding,
 } from "@atlas/agent-sdk";
 import {
@@ -1259,6 +1260,19 @@ export class WorkspaceRuntime {
       ),
       artifactStorage: ArtifactStorage,
       broadcastNotifier: this.options.broadcastNotifier,
+      // Phase 7 — wires the optional `delegate` tool for FSM type:llm
+      // actions. `platformModels` and `repairToolCall` are mandatory for
+      // the delegate child's streamText call; `delegationBudget` carries
+      // the workspace-level depth cap (default 1, matching today's chat
+      // hard cap). `linkSummary` is intentionally omitted today —
+      // populating it would require a daemon-side fetch on every job
+      // engine spawn; delegate tolerates the absence by surfacing a
+      // clean error if the LLM passes `mcpServers` without one.
+      platformModels,
+      repairToolCall,
+      delegationBudget: this.config.workspace.delegation
+        ? { max_depth: this.config.workspace.delegation.max_depth }
+        : undefined,
     };
 
     let definition: FSMDefinition;

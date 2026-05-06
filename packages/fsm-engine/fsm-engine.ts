@@ -29,8 +29,10 @@ import { composeMemoryBlocks } from "@atlas/core/agent-context/compose-blocks";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { createScrubber } from "@atlas/core/artifacts/scrubber";
+import { createDelegateTool } from "@atlas/core/delegate";
+import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
-import { buildTemporalFacts } from "@atlas/llm";
+import { buildTemporalFacts, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 import { createMCPTools, type MCPToolsResult } from "@atlas/mcp";
 import { getAtlasPlatformServerConfig } from "@atlas/oapi-client";
@@ -43,7 +45,14 @@ import {
 } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { type Span as OtelSpan, withOtelSpan } from "@atlas/utils/telemetry.server";
-import { type ImagePart, type ModelMessage, type Tool, tool } from "ai";
+import {
+  type ImagePart,
+  type ModelMessage,
+  type Tool,
+  type ToolCallRepairFunction,
+  tool,
+  type UIMessageStreamWriter,
+} from "ai";
 import { z } from "zod";
 import type { DocumentScope, DocumentStore } from "../document-store/mod.ts";
 import { expandArtifactRefsInInput } from "./artifact-expansion.ts";
@@ -430,6 +439,34 @@ export interface FSMEngineOptions {
    * a typed error on first encounter.
    */
   broadcastNotifier?: FSMBroadcastNotifier;
+  /**
+   * Phase 7 — required to expose `delegate` to `type: llm` actions. The
+   * delegate child runs its own `streamText` against the registry's
+   * `conversational` model, mirroring the chat-side behavior. Without this
+   * field the engine silently omits delegate from the action's tool set
+   * (callers without delegate-capable runtimes don't pay for the wiring).
+   */
+  platformModels?: PlatformModels;
+  /**
+   * Phase 7 — repair function forwarded to the delegate child's streamText.
+   * Mirrors the chat-side wiring so children handle malformed tool args
+   * identically to the parent. Falls back to the agent-sdk default when
+   * unset.
+   */
+  repairToolCall?: ToolCallRepairFunction<Record<string, Tool>>;
+  /**
+   * Phase 7 — workspace link summary, used by the delegate when an LLM
+   * passes `mcpServers` to discover candidate servers. Optional; absence
+   * disables MCP-server discovery inside the delegate child but does not
+   * disable delegate itself.
+   */
+  linkSummary?: LinkSummary;
+  /**
+   * Phase 7 — workspace-level delegation budget (max_depth, max_steps,
+   * etc.). Today only `max_depth` is consulted by the runtime (default 1,
+   * matching the previous chat-side hard cap). Phase 8 honors the rest.
+   */
+  delegationBudget?: { max_depth?: number };
 }
 
 export class FSMEngine {
@@ -589,6 +626,14 @@ export class FSMEngine {
       abortSignal?: AbortSignal;
       /** State IDs to skip — their entry actions won't execute, engine chains through */
       skipStates?: string[];
+      /**
+       * Phase 7 — current delegation depth. Top-level signals leave this
+       * unset (treated as 0); a delegate child-frame would set this to its
+       * parent's depth + 1. Used to gate `delegate` tool registration in
+       * `type: llm` actions against `FSMEngineOptions.delegationBudget.
+       * max_depth`.
+       */
+      delegationDepth?: number;
     },
   ): Promise<void> {
     const signalWithContext: SignalWithContext = context ? { ...sig, _context: context } : sig;
@@ -1196,6 +1241,100 @@ export class FSMEngine {
               });
 
               const tools: Record<string, Tool> = { ...baseTools, failStep: failStepTool };
+
+              // Phase 7 — opt-in `delegate` tool for FSM type:llm actions.
+              // Mirrors the chat-side wiring: the LLM declares `tools:
+              // [..., "delegate"]` to spawn an in-process child agent with
+              // isolated context. Skipped silently with a debug log when a
+              // required dep (platformModels) is unwired or when the
+              // workspace's `delegation.max_depth` is exhausted, so authors
+              // can declare the tool unconditionally without runtime errors
+              // in environments that don't support it.
+              const wantsDelegate = (action.tools ?? []).includes("delegate");
+              if (wantsDelegate) {
+                const currentDepth = sig._context?.delegationDepth ?? 0;
+                const maxDepth = this.options.delegationBudget?.max_depth ?? 1;
+                if (!this.options.platformModels) {
+                  logger.debug(
+                    "delegate requested but FSMEngineOptions.platformModels missing — omitting from tool set",
+                    { state: currentState, jobName: this._definition.id },
+                  );
+                } else if (currentDepth >= maxDepth) {
+                  logger.debug("delegate requested but delegation depth cap reached — omitting", {
+                    state: currentState,
+                    currentDepth,
+                    maxDepth,
+                  });
+                } else {
+                  // Build a synthetic writer that forwards every chunk into
+                  // the FSM signal's `onStreamEvent` callback. The delegate
+                  // expects a `UIMessageStreamWriter`; FSM's adapter exposes
+                  // a per-chunk callback. The bridge below preserves the
+                  // delegate's envelope semantics (`data-delegate-chunk`,
+                  // `data-delegate-ledger`, `delegate-end`) — the chat-side
+                  // path uses an SSE-backed writer; we use a callback fan-out
+                  // that delivers chunks to the same downstream consumer.
+                  const onStreamEvent = sig._context?.onStreamEvent;
+                  const bridgedWriter: UIMessageStreamWriter<
+                    import("@atlas/agent-sdk").AtlasUIMessage
+                  > = {
+                    write(chunk) {
+                      onStreamEvent?.(chunk);
+                    },
+                    async merge(stream) {
+                      const reader = stream.getReader();
+                      try {
+                        while (true) {
+                          const { done, value } = await reader.read();
+                          if (done) return;
+                          if (value !== undefined) onStreamEvent?.(value);
+                        }
+                      } finally {
+                        reader.releaseLock();
+                      }
+                    },
+                    onError: undefined,
+                  };
+
+                  const ws = sig._context?.workspaceId ?? this.options.scope.workspaceId;
+                  const ss = sig._context?.sessionId ?? this.options.scope.sessionId ?? "fsm";
+                  const delegateTool = createDelegateTool(
+                    {
+                      writer: bridgedWriter,
+                      session: {
+                        sessionId: ss,
+                        workspaceId: ws,
+                        // FSM signals don't carry a streamId today; reuse
+                        // sessionId as the correlation key. Same fallback
+                        // pattern as `buildTools`'s scrubber wiring.
+                        streamId: ss,
+                      },
+                      platformModels: this.options.platformModels,
+                      logger,
+                      abortSignal: sig._context?.abortSignal,
+                      // Default to the agent-sdk's repair fn when the engine
+                      // wasn't constructed with one. Keeps unit-test wiring
+                      // minimal while honoring chat-parity in production.
+                      repairToolCall:
+                        this.options.repairToolCall ??
+                        (((args: unknown) => Promise.resolve(args)) as ToolCallRepairFunction<
+                          Record<string, Tool>
+                        >),
+                      linkSummary: this.options.linkSummary,
+                    },
+                    () => {
+                      // The child inherits the parent's tool set minus
+                      // `delegate` itself (the existing destructuring inside
+                      // `createDelegateTool` performs the strip). We pass
+                      // the assembled `tools` map by closure; the thunk lets
+                      // the delegate read the final shape after `complete`
+                      // tool injection finishes below.
+                      return tools as import("@atlas/agent-sdk").AtlasTools;
+                    },
+                  );
+                  tools.delegate = delegateTool as unknown as Tool;
+                }
+              }
 
               // Check if outputTo document type has a structured schema (properties defined)
               // If so, inject a `complete` tool to capture structured output

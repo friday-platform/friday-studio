@@ -140,7 +140,13 @@ vi.mock("../tools/connect-service.ts", () => ({
 
 vi.mock("@atlas/bundled-agents", () => ({ bundledAgents: [] }));
 
-vi.mock("./tools/bundled-agent-tools.ts", () => ({ createAgentTool: mockCreateAgentTool }));
+vi.mock("./tools/bundled-agent-tools.ts", () => ({
+  createAgentTool: mockCreateAgentTool,
+  // Phase 7 — workspace-chat now passes `rebindAgentTool` to the moved
+  // delegate package (`@atlas/core/delegate`). Stub out as identity here so
+  // the handler tests don't pull bundled-agent-tools' transitive deps.
+  rebindAgentTool: (t: unknown) => t,
+}));
 
 vi.mock("./tools/job-tools.ts", () => ({ createJobTools: mockCreateJobTools }));
 

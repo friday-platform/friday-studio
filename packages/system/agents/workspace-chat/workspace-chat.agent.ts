@@ -13,6 +13,7 @@ import { client, parseResult } from "@atlas/client/v2";
 import { CommunicatorKindSchema, type WorkspaceConfig } from "@atlas/config";
 import { scrubAssistantMessage } from "@atlas/core/artifacts/scrubber";
 import { ChatStorage } from "@atlas/core/chat/storage";
+import { createDelegateTool } from "@atlas/core/delegate";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
   buildTemporalFacts,
@@ -43,12 +44,11 @@ import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
 import { artifactTools, createArtifactsCreateTool } from "./tools/artifact-tools.ts";
-import { createAgentTool } from "./tools/bundled-agent-tools.ts";
+import { createAgentTool, rebindAgentTool } from "./tools/bundled-agent-tools.ts";
 import { createRunCodeTool } from "./tools/code-exec.ts";
 import { createConnectCommunicatorTool } from "./tools/connect-communicator.ts";
 import { createConnectServiceTool } from "./tools/connect-service.ts";
 import { createCreateMcpServerTool } from "./tools/create-mcp-server.ts";
-import { createDelegateTool } from "./tools/delegate/index.ts";
 import { createDisableMcpServerTool } from "./tools/disable-mcp-server.ts";
 import { createBoundDraftTools } from "./tools/draft-tools.ts";
 import { createEnableMcpServerTool } from "./tools/enable-mcp-server.ts";
@@ -679,6 +679,14 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             logger,
             abortSignal,
             repairToolCall,
+            // Chat composes bundled-agent tools (`agent_<id>`) into the
+            // parent's tool set. When the delegate inherits them, we need to
+            // re-bind so the inner agent's stream events route through the
+            // delegate proxy instead of leaking to the parent writer.
+            // FSM-side callers don't compose these wrappers, so they leave
+            // this hook unset and the delegate just passes inherited tools
+            // through verbatim.
+            rebindAgentTool,
             workspaceConfig: wsConfig,
             linkSummary: linkSummary ?? undefined,
           },
