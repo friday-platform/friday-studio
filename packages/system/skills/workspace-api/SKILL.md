@@ -48,7 +48,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 **Key one-liners.**
 - Jobs must use `fsm:`, not `execution:` — the runtime silently skips jobs without `fsm:`.
 - `write_file` writes to scratch only; use `run_code` with an absolute path to edit `workspace.yml`.
-- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*`; there are no platform-default filesystem tools outside MCP.
+- Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, request_tool_access) auto-inject everywhere and use bare names (`memory_save`, `fs_glob`); no `serverId/` prefix.
 
 ---
 
@@ -369,11 +369,12 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 
 11. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
-12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring:
-    - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Per-job overrides per-workspace overrides the daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only.
-    - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level defaults; per-job override coming.
+12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring. All three precedence chains follow **per-job > per-workspace > daemon-level** (env var or runtime default).
+    - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Floor: daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only. Without bypass, allowlist denials become elicitations: an agent that calls `request_tool_access(toolName, reason)` produces a `tool-allowlist` elicitation surfaced via `GET /api/elicitations` and the Activity page; the user answers (allow once / allow always for the job / deny) and re-runs.
+    - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level + per-job override (`jobs.<name>.delegation`) — per-field merge, job wins. Default `max_depth: 1`.
     - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.
-    - **`jobs.<name>.artifacts: { ephemeral: bool }`** — per-job override of the default artifact lifecycle (terminal-state outputs durable, non-terminal ephemeral session-bound).
+    - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `memory_save` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
+    - **`jobs.<name>.elicitations: { timeout: <duration> }`** — per-job elicitation timeout, independent of `config.timeout`. Useful for long batch jobs whose individual prompts shouldn't sit unanswered.
 
 ---
 

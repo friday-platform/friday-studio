@@ -133,6 +133,14 @@ Practical implication for `summary` field: when you `artifacts_create`, write a 
 `workspaceId` — the runtime overrides it (defense in depth: a foreign
 workspaceId in args is replaced before the tool runs).
 
+**Authoring rule for FSM `type: llm` actions: do NOT redeclare these in
+the action's `tools:` array.** They are auto-injected on top of any
+allowlist you provide. Listing `memory_save` or `artifacts_create` in
+`tools:` is harmless but adds noise. To genuinely lock an action down
+to "memory + artifacts only," declare `tools: []` (empty) — the
+auto-injected built-ins still work, the workspace MCP catalog gets
+narrowed away.
+
 | Context | Tool surface | Call shape |
 |---|---|---|
 | Workspace-chat / conversation | direct tool call | `memory_save({ memoryName, text })` |

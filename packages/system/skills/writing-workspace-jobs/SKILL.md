@@ -66,13 +66,23 @@ fsm:
 [{ "name": "search_gmail_messages" }]
 ```
 
-**Always use `serverId/toolName` in `agents.*.config.tools`.** Validator accepts prefixed tools for declared servers even when server offline.
+Two places declare tools, with different naming rules:
 
-| `list_mcp_tools` returns | Write in `agents.*.config.tools` |
+- **`agents.*.config.tools`** (`type: llm` agent declared at workspace top
+  level): use `serverId/toolName` for workspace MCP tools. Validator
+  accepts prefixed tools for declared servers even when server offline.
+- **FSM action `entry[].tools`** (per-action allowlist on `type: llm` /
+  `type: agent`): same rule for workspace MCP tools — `serverId/toolName`.
+  **Atlas-platform built-ins (`fs_glob`, `fs_read_file`, `fs_write_file`,
+  `memory_save`, `memory_read`, `artifacts_create`, `parse_artifact`,
+  `display_artifact`, `request_tool_access`, etc.) use bare names** —
+  atlas-platform is auto-injected, no prefix needed.
+
+| `list_mcp_tools` returns | Write in agent or action `tools` |
 |---|---|
-| `"search_gmail_messages"` | `"google-gmail/search_gmail_messages"` |
-| `"get_gmail_message_content"` | `"google-gmail/get_gmail_message_content"` |
-| Built-in platform tool | `"memory_save"`, `"memory_read"` — no prefix |
+| `"search_gmail_messages"` (workspace MCP) | `"google-gmail/search_gmail_messages"` |
+| `"get_gmail_message_content"` (workspace MCP) | `"google-gmail/get_gmail_message_content"` |
+| Atlas-platform built-in | `"memory_save"`, `"fs_glob"`, etc. — no prefix |
 
 ## Minimal valid job
 
@@ -356,8 +366,170 @@ memory store, then have downstream supervisors read that store and dispatch.
 This is the same pattern chat uses to coordinate multi-step work without FSM
 guards.
 
-> Note: explicit FSM-level conditional routing (predicate-on-transition) is on
-> the roadmap. Until then, prefer agent-level branching.
+> Note: predicate-on-transition is **not** on the roadmap. Agent-level
+> branching is the intended forward path — the LLM action is more
+> expressive than any guard expression we'd ship, and the supervisor-flip
+> world means a routing agent can read context and dispatch via
+> `delegate` without holding the items in its own buffer.
+
+## Per-action tool + skill allowlist
+
+`type: llm` and `type: agent` actions take optional `tools: [...]` and
+`skills: [...]` arrays — both runtime-enforced. They narrow the catalog
+**within** a single action, on top of any per-agent or workspace-level
+filtering.
+
+```yaml
+- type: llm
+  provider: anthropic
+  model: claude-sonnet-4-6
+  tools:
+    - fs_glob               # atlas-platform built-in (bare)
+    - google-gmail/search_gmail_messages  # workspace MCP (prefixed)
+  skills:
+    - composing-emails       # only this skill loadable here
+  outputTo: triage
+  prompt: |
+    ...
+```
+
+Semantics:
+- `tools: []` (empty array) — no MCP/platform tools available; only the
+  auto-injected built-ins (memory + artifacts; see below). Useful for a
+  pure-reasoning action.
+- `tools: [...]` (populated) — exactly those tools, plus the built-ins.
+- `tools` absent — inherits the agent/workspace tool surface, which may
+  itself be permissive.
+- `skills: []` — `load_skill` registered but resolves to "no skills
+  available." Locks the action down.
+- `skills: [...]` — whitelist within the job's resolved skill set.
+- `skills` absent — full job-level skill visibility.
+
+**Phase 1 made these load-bearing.** Pre-fix the runtime ignored both
+fields and exposed the full catalog. If a fetcher action lists no send
+tool but the prompt is ambiguous, the agent now genuinely cannot send.
+
+## Auto-injected built-ins for FSM `type: llm` actions
+
+You do **not** need to declare these in the action's `tools:` array;
+they're always available:
+
+- Memory: `memory_save`, `memory_read`, `memory_remove`
+- Artifacts: `artifacts_create`, `artifacts_get`, `parse_artifact`,
+  `display_artifact`
+- Filesystem (sandboxed): `fs_glob`, `fs_read_file`, `fs_write_file`,
+  `fs_list_files`, `fs_grep`
+- Permissions: `request_tool_access` (see below)
+
+Recent memory entries auto-prepend to the action's prompt. Recent
+session artifacts auto-inject as `<retrieved_content>` envelopes. No
+boilerplate.
+
+If you do declare `tools: [...]`, the built-ins still work — the
+allowlist narrows the **non-built-in** catalog. To genuinely lock the
+action down to "memory only," declare `tools: []`.
+
+## Delegating to a sub-agent from an FSM action
+
+`type: llm` actions can spawn a sub-agent via the `delegate` tool —
+opt in by listing it:
+
+```yaml
+- type: llm
+  tools:
+    - delegate
+  prompt: |
+    For each item in {{inputs.items}}, delegate the per-item judgment
+    to a sub-agent with the gmail tools it needs. Collect the answers
+    and emit a structured summary.
+```
+
+The child runs in an isolated context — its tool calls don't pollute
+the parent action's message buffer. The parent sees only the child's
+final `answer` (and the chunk stream for live UI). Bounded by:
+
+- **`max_depth`** — default 1; child cannot itself call `delegate`.
+- **`max_steps_per_call`**, **`max_output_tokens`**, **`max_input_tokens`**,
+  **`max_wall_time_ms`** — workspace-level (`delegation:` block) +
+  per-job override (`jobs.<name>.delegation:`). Budget exhaustion
+  returns `{ ok: false, reason: "budget_exhausted: <which>" }` — the
+  parent can fail-step or route around.
+
+**When to delegate from an FSM action vs. compose with `inputFrom`:**
+- Per-item expansion that would explode the parent's context →
+  `delegate`. The child holds the items; the parent gets a digest.
+- Sequential pipelines (fetch → format → emit) → chain states with
+  `outputTo` → `inputFrom`. No delegation needed.
+
+## Requesting access to a tool not in your allowlist
+
+When an action discovers it needs a tool it didn't declare, the action
+calls `request_tool_access(toolName, reason)`. Two paths:
+
+- **Bypass on** (job or workspace `permissions.dangerouslySkipAllowlist:
+  true`, or daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1`): tool
+  returns `{ ok: true, granted: true, reason: "bypass" }` synchronously.
+  Action proceeds.
+- **Bypass off** (default): tool returns `{ ok: false, granted: false,
+  elicitationId, reason: "pending_user_approval" }`. The runtime
+  emits a tool-allowlist elicitation surfaced via the Activity page +
+  `GET /api/elicitations`. The action should `failStep` or route around;
+  the user re-runs the job after answering.
+
+```yaml
+- type: llm
+  tools:
+    - fs_read_file
+    - request_tool_access
+  prompt: |
+    If you discover you need fs_write_file (not in your allowlist), use
+    request_tool_access first. Acknowledge the elicitation id to the
+    user and stop — they will re-run the job after approving.
+```
+
+Authoring rule: only list `request_tool_access` in the allowlist when
+the action has a known fallback path (failStep, partial result, retry
+on next signal). The runtime suspend/resume layer is a follow-on; today
+the user re-runs after answering.
+
+**Per-job elicitation timeout.** Defaults to the parent job's `config.timeout`
+(elicitations expire when the job times out). Override per-job to constrain
+finer:
+
+```yaml
+jobs:
+  triage:
+    config:
+      timeout: 30m
+    elicitations:
+      timeout: 5m   # individual prompts shouldn't sit unanswered
+```
+
+Expired elicitations move to a read-only Activity log entry; acting on
+one does not reify the timed-out job.
+
+## Runtime invariants you don't author
+
+A few behaviors fire automatically. You don't opt in or out, but
+knowing they exist saves debugging time.
+
+- **Oversized tool results auto-lift to artifacts.** When an MCP tool
+  returns more than ~4 KB, the runtime writes it to the JetStream
+  Object Store and replaces the value in the action's message buffer
+  with `<artifact-ref:...>`. If you see unexpected artifacts in
+  `GET /api/artifacts?sessionId=...`, this is the source. Don't try to
+  manage it manually.
+- **Validator skips on tool-passthrough.** The hallucination judge
+  runs only when the action's output is LLM-generated prose. If the
+  output is empty or trivially echoes a tool result, the validator
+  skips with a "Skipping validation for tool-passthrough trace" debug
+  log. This halves validator cost on multi-step jobs and is why pure
+  fetcher actions complete fast.
+- **Provenance metadata is captured.** Every spawned session carries
+  `parentSessionId` + `parentEventId`; every `step:complete` event has
+  `usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
+  model }`. You don't write these — but the Activity / sessions API
+  surfaces them, and crystallization (future) reads them.
 
 ## Validation error decoder
 
