@@ -36,7 +36,6 @@
 
 <DropdownMenu.Root>
   <DropdownMenu.Trigger class="ws-trigger">
-    <span class="dot" style:--dot-color={dotColor(activeWorkspace?.metadata?.color)}></span>
     <span class="name">{activeWorkspace?.displayName ?? selected}</span>
     <IconSmall.CaretDown />
   </DropdownMenu.Trigger>
@@ -59,18 +58,18 @@
   :global(.ws-trigger) {
     align-items: center;
     background: var(--highlight);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
+    block-size: var(--size-6-5);
+    border: none;
+    border-radius: var(--radius-2-5);
     color: var(--text-bright);
     cursor: pointer;
     display: flex;
-    font: inherit;
+    flex: 1;
+    font-size: var(--font-size-2);
     font-weight: var(--font-weight-5);
     gap: var(--size-2);
-    inline-size: 100%;
-    min-block-size: var(--size-7);
-    padding-block: var(--size-1);
-    padding-inline: var(--size-2);
+    min-inline-size: 0;
+    padding-inline: var(--size-3);
   }
 
   :global(.ws-trigger:hover) {

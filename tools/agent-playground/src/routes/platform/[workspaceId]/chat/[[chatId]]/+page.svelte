@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, IconSmall, ListDetail } from "@atlas/ui";
+  import { Button, ListDetail } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import ChatListPanel from "$lib/components/chat/chat-list-panel.svelte";
@@ -30,15 +30,10 @@
   <ListDetail>
     {#snippet header()}
       <WorkspaceDropdown selected={workspaceId} />
+      <Button variant="secondary" size="small" onclick={handleNewChat}>New chat</Button>
     {/snippet}
 
     {#snippet sidebar()}
-      <Button variant="secondary" size="small" onclick={handleNewChat}>
-        {#snippet prepend()}
-          <IconSmall.Plus />
-        {/snippet}
-        New chat
-      </Button>
       <ChatListPanel
         {workspaceId}
         currentChatId={data.chatId}
