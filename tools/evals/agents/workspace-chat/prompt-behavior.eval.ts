@@ -36,9 +36,8 @@
 
 // deno-lint-ignore-file require-await
 
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import process from "node:process";
 import {
   buildRegistryModelId,
@@ -47,23 +46,15 @@ import {
   registry,
   traceModel,
 } from "@atlas/llm";
-import { getFridayHome } from "@atlas/utils/paths.server";
 import { stepCountIs, streamText, tool } from "ai";
-import dotenv from "dotenv";
 import { z } from "zod";
 import { AgentContextAdapter } from "../../lib/context.ts";
 import { llmJudge } from "../../lib/llm-judge.ts";
+import { loadCredentials } from "../../lib/load-credentials.ts";
 import { type BaseEvalCase, defineEval, type EvalRegistration } from "../../lib/registration.ts";
 import { createScore } from "../../lib/scoring.ts";
 
-dotenv.config();
-const globalAtlasEnv = join(getFridayHome(), ".env");
-if (existsSync(globalAtlasEnv)) {
-  dotenv.config({ path: globalAtlasEnv, override: true });
-}
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("ANTHROPIC_API_KEY is required to run workspace-chat evals");
-}
+await loadCredentials();
 
 const adapter = new AgentContextAdapter();
 
@@ -112,9 +103,19 @@ Name: alex
 Email: alex@example.com
 </user_identity>`;
 
+// Connected integrations only — mirrors Phase 6 partial cut-over where
+// only `status="ready"` providers inline. Unconnected providers (e.g.
+// `google-calendar` here) are pull-only via `list_integrations` so the
+// `verify-before-suggest` case has a reason to fire that tool.
+const INTEGRATIONS_SECTION = `<integrations>
+  <service id="google-gmail" status="ready" label="alex@example.com" urlDomains="mail.google.com"/>
+<note>Only connected services are listed above. For services the user mentions that aren't shown, call \`list_integrations({status: "unconnected"})\` to check what's available to connect.</note>
+</integrations>`;
+
 const SYSTEM_PROMPT = [
   WORKSPACE_CHAT_PROMPT,
   WORKSPACE_SECTION,
+  INTEGRATIONS_SECTION,
   SKILLS_SECTION,
   USER_IDENTITY_SECTION,
 ].join("\n\n");
@@ -339,6 +340,12 @@ function buildToolset(captures: CapturedCalls) {
       inputSchema: SetUserIdentityInput,
       execute: async () => ({ saved: true }),
     }),
+
+    connect_service: tool({
+      description: "Begin OAuth flow to connect a third-party service.",
+      inputSchema: z.object({ provider: z.string() }),
+      execute: async ({ provider }) => ({ provider, status: "auth-flow-started" }),
+    }),
   };
 }
 
@@ -415,11 +422,25 @@ interface MemorySaveCase extends BaseEvalCase {
 
 interface DescribeSkillCase extends BaseEvalCase {
   kind: "describe-skill";
-  /** describe_skill must be called for at least one of these names. */
-  expectedDescribed: ReadonlyArray<string>;
+  /** describe_skill must be called for this exact skill (mainline match). */
+  expectedDescribed: string;
+  /**
+   * Other skills are acceptable additions but must not displace the
+   * mainline match. The model may also describe these without failing.
+   */
+  acceptableAdditions?: ReadonlyArray<string>;
 }
 
-type Case = VoiceCase | FabricationCase | MemorySaveCase | DescribeSkillCase;
+interface ListIntegrationsCase extends BaseEvalCase {
+  kind: "list-integrations";
+  /**
+   * The model should call `list_integrations` (or otherwise verify
+   * connection state) before recommending a service-dependent action,
+   * not assume capability from the system prompt alone.
+   */
+}
+
+type Case = VoiceCase | FabricationCase | MemorySaveCase | DescribeSkillCase | ListIntegrationsCase;
 
 const cases: Case[] = [
   {
@@ -450,13 +471,21 @@ const cases: Case[] = [
   {
     kind: "describe-skill",
     id: "applicability-check",
-    name: "describe-skill — checks before deciding to load",
+    name: "describe-skill — checks the right skill before loading",
     input:
       "I want to write a workspace job that runs every morning. Find the right skill and use it.",
-    // The model could reasonably check writing-workspace-jobs alone, or both
-    // jobs and signals (signals trigger jobs). Either is fine; demanding a
-    // specific subset is too strict.
-    expectedDescribed: ["@friday/writing-workspace-jobs", "@friday/writing-workspace-signals"],
+    // The mainline answer is writing-workspace-jobs. Signals trigger jobs,
+    // so checking writing-workspace-signals as well is reasonable but
+    // not required.
+    expectedDescribed: "@friday/writing-workspace-jobs",
+    acceptableAdditions: ["@friday/writing-workspace-signals"],
+  },
+  {
+    kind: "list-integrations",
+    id: "verify-before-suggest",
+    name: "list-integrations — verifies connection before recommending",
+    input:
+      "Schedule a meeting on my Google Calendar for tomorrow at 3pm with bob@example.com — title 'sync'.",
   },
 ];
 
@@ -498,14 +527,19 @@ export const evals: EvalRegistration[] = cases.map((c) =>
         }
         if (c.kind === "describe-skill") {
           const described = new Set(outcome.captures.describeSkills.map((d) => d.name));
-          const matched = c.expectedDescribed.find((n) => described.has(n));
-          if (!matched) {
+          if (!described.has(c.expectedDescribed)) {
             throw new Error(
-              `Expected describe_skill called for at least one of [${c.expectedDescribed.join(
-                ", ",
-              )}]. ` +
+              `Expected describe_skill("${c.expectedDescribed}"). ` +
                 `Got describe_skill calls: [${[...described].join(", ") || "(none)"}], ` +
                 `load_skill calls: [${outcome.captures.loadSkills.map((l) => l.name).join(", ") || "(none)"}].`,
+            );
+          }
+        }
+        if (c.kind === "list-integrations") {
+          if (outcome.captures.listIntegrations.length === 0) {
+            throw new Error(
+              "Expected list_integrations to be called before recommending a service-dependent action; " +
+                "the model relied on the system prompt alone instead of verifying connection state.",
             );
           }
         }
@@ -543,14 +577,26 @@ export const evals: EvalRegistration[] = cases.map((c) =>
         }
         if (c.kind === "describe-skill") {
           const described = new Set(outcome.captures.describeSkills.map((d) => d.name));
-          const matched = c.expectedDescribed.some((n) => described.has(n));
+          const matched = described.has(c.expectedDescribed);
           return [
             createScore(
               "describe_skill_called",
               matched ? 1 : 0,
               matched
-                ? "describe_skill called for at least one expected skill"
-                : "describe_skill not called for any expected skill",
+                ? `describe_skill("${c.expectedDescribed}") called`
+                : `describe_skill("${c.expectedDescribed}") not called`,
+            ),
+          ];
+        }
+        if (c.kind === "list-integrations") {
+          const called = outcome.captures.listIntegrations.length > 0;
+          return [
+            createScore(
+              "list_integrations_called",
+              called ? 1 : 0,
+              called
+                ? "list_integrations called before recommending"
+                : "list_integrations not called — model assumed capability",
             ),
           ];
         }
