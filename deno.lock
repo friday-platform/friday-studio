@@ -176,6 +176,7 @@
     "npm:ulid@^3.0.2": "3.0.2",
     "npm:undici@^7.25.0": "7.25.0",
     "npm:vite@^7.3.2": "7.3.2_@types+node@25.6.0_yaml@2.8.4_picomatch@4.0.4",
+    "npm:vitest@*": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5__vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.4___picomatch@4.0.4__yaml@2.8.4_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.4__picomatch@4.0.4_yaml@2.8.4",
     "npm:vitest@^4.1.0": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5__vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.4___picomatch@4.0.4__yaml@2.8.4_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.4__picomatch@4.0.4_yaml@2.8.4",
     "npm:vitest@^4.1.5": "4.1.5_@opentelemetry+api@1.9.1_@types+node@25.6.0_@vitest+coverage-v8@4.1.5__vitest@4.1.5__@opentelemetry+api@1.9.1__@types+node@25.6.0__happy-dom@20.9.0__vite@7.3.2___@types+node@25.6.0___yaml@2.8.4___picomatch@4.0.4__yaml@2.8.4_happy-dom@20.9.0_vite@7.3.2__@types+node@25.6.0__yaml@2.8.4__picomatch@4.0.4_yaml@2.8.4",
     "npm:xstate@^5.31.0": "5.31.0",

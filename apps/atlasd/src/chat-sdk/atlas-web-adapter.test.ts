@@ -125,6 +125,13 @@ describe("AtlasWebAdapter.handleWebhook", () => {
     expect(message.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     expect(registry.getStream("chat-webhook")?.active).toBe(true);
+    // Wire-up contract: handleWebhook must stash the StreamBuffer it
+    // creates on `Message.raw.turnBuffer` so the shared chat-sdk handler
+    // can capture this turn's buffer deterministically (closes the
+    // subscribe-window race in #192). Asserting identity here means a
+    // refactor that drops the assignment fails this test instead of
+    // only manifesting at runtime in the live SSE handler.
+    expect(message.raw.turnBuffer).toBe(registry.getStream("chat-webhook"));
   });
 
   it("preserves data-artifact-attached parts on WebChatPayload.uiMessage", async () => {
@@ -222,8 +229,12 @@ describe("AtlasWebAdapter.handleWebhook", () => {
 
     const events = text
       .split("\n\n")
-      .filter((line) => line.startsWith("data: "))
-      .map((line) => line.slice("data: ".length));
+      .filter((c) => c.length > 0)
+      .map((c) => {
+        const dataLine = c.split("\n").find((l) => l.startsWith("data: "));
+        return dataLine?.slice("data: ".length) ?? null;
+      })
+      .filter((e): e is string => e !== null);
 
     expect(events).toContain("[DONE]");
     const dataEvents = events.filter((e) => e !== "[DONE]");

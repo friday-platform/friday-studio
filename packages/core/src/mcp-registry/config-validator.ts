@@ -21,6 +21,7 @@
  * every reader is injected and trivially mockable.
  */
 
+import { bundledAgentsRegistry } from "@atlas/bundled-agents";
 import type { JobExecutionAgent, WorkspaceConfig } from "@atlas/config";
 import { extractFSMAgents, parseInlineFSM } from "@atlas/config/mutations";
 import { mcpServersRegistry } from "./registry-consolidated.ts";
@@ -46,6 +47,7 @@ export interface ValidationIssue {
 export type ValidationIssueCode =
   // Cross-refs within the same YAML
   | "unknown_agent_id"
+  | "unknown_bundled_agent"
   | "unknown_signal_name"
   | "unknown_mcp_server_ref"
   | "unknown_memory_store"
@@ -114,6 +116,7 @@ export async function validateWorkspaceConfig(
 
   const passes: Array<Promise<ValidationIssue[]>> = [
     Promise.resolve(checkInternalCrossRefs(config)),
+    Promise.resolve(checkBundledAgentRefs(config)),
     Promise.resolve(checkFsmStructures(config)),
     checkExternalPackages(config, ctx.resolvers),
     checkSkillRefs(config, ctx.skillDb),
@@ -339,6 +342,56 @@ function checkFsmStructures(config: WorkspaceConfig): ValidationIssue[] {
       });
     }
   }
+  return issues;
+}
+
+// ─── Pass: bundled-agent references ────────────────────────────────────────
+
+/**
+ * For every `agents.<name>` whose `type` is `atlas`, the `agent` field must
+ * resolve to an entry in `bundledAgentsRegistry`. Without this check, a
+ * stale or hallucinated reference (e.g. `agent: "email"` after that bundled
+ * agent was removed) imports cleanly and silently dropps at workspace
+ * registration: `apps/atlasd/src/atlas-daemon.ts` logs `Base agent not
+ * found: <id>` and the agent vanishes from the registry, so the workspace
+ * looks live but any FSM step that delegates to it stalls.
+ *
+ * Hard fail (status: hard_fail) — there is no recovery: the workspace
+ * cannot run. Suggest near-misses against the actual registry so the LLM's
+ * correction turn picks a real id.
+ */
+function checkBundledAgentRefs(config: WorkspaceConfig): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const knownIds = Object.keys(bundledAgentsRegistry);
+  // Use a Set rather than `id in bundledAgentsRegistry` — the `in` operator
+  // walks the prototype chain, which would silently accept `agent: "toString"`,
+  // `agent: "constructor"`, `agent: "hasOwnProperty"`, etc. That's the same
+  // shape of silent-pass bug this whole pass exists to prevent.
+  const knownIdSet = new Set(knownIds);
+
+  for (const [agentName, agent] of Object.entries(config.agents ?? {})) {
+    const agentRecord = agent as { type?: unknown; agent?: unknown };
+    if (agentRecord.type !== "atlas") continue;
+    const baseId = agentRecord.agent;
+    // Zod owns the missing-field case. Empty strings flow through to the
+    // registry lookup so they produce a clean issue rather than silently
+    // skipping (which is how the original `agent: "email"` regression
+    // landed in production).
+    if (typeof baseId !== "string") continue;
+    if (knownIdSet.has(baseId)) continue;
+    issues.push({
+      severity: "error",
+      code: "unknown_bundled_agent",
+      path: `agents.${agentName}.agent`,
+      value: baseId,
+      message:
+        `Agent '${agentName}' is type 'atlas' but '${baseId}' is not a bundled ` +
+        `platform agent. Call list_capabilities for the current set, or use ` +
+        `type: llm with the matching MCP server in config.tools.`,
+      suggest: nearestStrings(baseId, knownIds),
+    });
+  }
+
   return issues;
 }
 

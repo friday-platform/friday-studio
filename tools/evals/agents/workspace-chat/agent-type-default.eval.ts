@@ -41,7 +41,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import process from "node:process";
-import { bundledAgents } from "@atlas/bundled-agents";
+import { bundledAgents, bundledAgentsRegistry } from "@atlas/bundled-agents";
 import {
   buildRegistryModelId,
   isRegistryProvider,
@@ -474,6 +474,11 @@ async function runWorkspaceChatTurn(userPrompt: string): Promise<RunOutcome> {
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
     tools,
+    // Pin temperature for repeatability. The cases assert on structural
+    // emission (which type, which agent id, which MCP), not on creative
+    // output — variance here is pure noise, and a 20/20 pass rate on the
+    // regression-target cases is the bar.
+    temperature: 0,
     // Higher step budget than bundled-agent-default — workspace authoring
     // touches more tools (capabilities + skills + multi-agent + jobs + signals).
     stopWhen: stepCountIs(20),
@@ -500,8 +505,7 @@ interface AgentTypeCase extends BaseEvalCase {
   /**
    * Forbidden bundled agent ids — applies to any `type: atlas` upsert
    * regardless of whether `atlas` is in `forbiddenTypes`. Use this to forbid
-   * a specific bundled agent that's a black-box wrong fit (e.g. the `email`
-   * atlas agent for inbox triage — it sends, doesn't triage).
+   * a specific bundled agent that's a black-box wrong fit for the case.
    */
   forbiddenAtlasAgents?: ReadonlySet<string>;
   /**
@@ -524,9 +528,11 @@ const cases: AgentTypeCase[] = [
       "and apply them to future reviews.",
     expectedType: "llm",
     forbiddenTypes: new Set(["user"]),
-    // The bundled `email` atlas agent SENDS email — it does not invoke MCP
-    // tools and cannot archive/keep/delete via gmail. Using it for the
-    // triage role is the silent-failure trap from the real Inbox Zero build.
+    // No `email` bundled agent exists (removed in 11667073e). Reaching for
+    // `agent: "email"` is a hallucination; the only correct path for inbox
+    // ops is `type: llm` + the `google-gmail` MCP server. Forbid it here so
+    // a hallucinated reference fails the case loudly instead of silently
+    // dropping at workspace registration.
     forbiddenAtlasAgents: new Set(["email"]),
     requiredMcpServers: new Set(["google-gmail"]),
     forbidUserAgentRegistration: true,
@@ -550,6 +556,32 @@ const cases: AgentTypeCase[] = [
     expectedType: "llm",
     forbiddenTypes: new Set(["atlas"]),
     forbiddenAtlasAgents: new Set(["claude-code"]),
+    forbidUserAgentRegistration: false,
+  },
+  {
+    // Real production failure: Yena's "Daily Flash Analysis & Reporting"
+    // workspace asked to email a daily report to chewy.com addresses on a
+    // cron. Workspace-chat (primed by stale skill content) emitted
+    // `type: atlas, agent: "email"` — a bundled agent that was deleted in
+    // commit 11667073e. atlas-daemon then logged
+    // `Base agent not found: email` at workspace registration and silently
+    // dropped the agent. The job's email step stalled in production with
+    // no surfaced error.
+    //
+    // Correct shape: `type: llm` with `google-gmail` MCP for the send. No
+    // `type: atlas, agent: "email"` reference may appear.
+    id: "send-daily-report-email",
+    name: "send daily email report — must use type:llm + gmail MCP, never agent:email",
+    input:
+      "Build me a workspace that pulls a daily ad-performance report from Snowflake at 8am " +
+      "UTC and sends the HTML report from my Gmail account to alice@example.com and " +
+      "bob@example.com. Use Gmail for the send — I have OAuth set up.",
+    expectedType: "llm",
+    forbiddenTypes: new Set<string>(),
+    // The exact regression: a hallucinated `agent: "email"` reference that
+    // schema-validates fine and only fails at runtime. Forbid it loudly.
+    forbiddenAtlasAgents: new Set(["email"]),
+    requiredMcpServers: new Set(["google-gmail"]),
     forbidUserAgentRegistration: false,
   },
   {
@@ -639,16 +671,61 @@ export const evals: EvalRegistration[] = cases.map((testCase) =>
         }
 
         if (testCase.requiredMcpServers) {
-          const missing = [...testCase.requiredMcpServers].filter(
-            (id) => !captures.enabledMcpServers.includes(id),
-          );
+          // A required server is "wired" if any of these hold:
+          //   (a) workspace-chat called enable_mcp_server for it, OR
+          //   (b) an agent's config.tools lists it as a bare server id, OR
+          //   (c) an agent's config.tools lists a specific tool from it
+          //       (`<serverId>/<toolName>` form — both shapes are valid MCP
+          //       references; the runtime accepts either).
+          // All three result in the agent calling the MCP at runtime. The
+          // regression target ("don't emit agent: email") doesn't care which
+          // path is taken; accepting any keeps the assertion repeatable.
+          const isReferenced = (serverId: string) =>
+            captures.enabledMcpServers.includes(serverId) ||
+            captures.upsertAgents.some((u) => {
+              const tools = (u.config as { config?: { tools?: unknown } }).config?.tools;
+              if (!Array.isArray(tools)) return false;
+              return tools.some(
+                (t) => typeof t === "string" && (t === serverId || t.startsWith(`${serverId}/`)),
+              );
+            });
+          const missing = [...testCase.requiredMcpServers].filter((id) => !isReferenced(id));
           if (missing.length > 0) {
             throw new Error(
-              `Required MCP server(s) not enabled: ${missing.join(", ")}. ` +
-                `Without them the chosen agent type cannot actually do the work. ` +
+              `Required MCP server(s) not wired: ${missing.join(", ")}. ` +
+                `Neither enabled via enable_mcp_server nor referenced in any ` +
+                `agent's config.tools (as bare id or as <serverId>/<toolName>). ` +
                 `Enabled: [${captures.enabledMcpServers.join(", ") || "none"}].`,
             );
           }
+        }
+
+        // Universal sanity check: every `type: atlas` upsert must reference
+        // a real bundled-agent id. This catches the failure shape where
+        // workspace-chat hallucinates a plausible-sounding bundled agent
+        // (e.g. `agent: "email"`, `agent: "snowflake-analyst"`) that schema-
+        // validates fine but silently drops at workspace registration with
+        // `Base agent not found: <id>`. Sourced from `bundledAgentsRegistry`
+        // (not the bare `bundledAgents` array) so legacy aliases like
+        // `browser` / `research` are accepted — same source of truth the
+        // production validator and the static drift test use.
+        const knownBundledIds = new Set(Object.keys(bundledAgentsRegistry));
+        const phantomAtlas = captures.upsertAgents.filter(
+          (u) =>
+            u.config.type === "atlas" &&
+            typeof u.config.agent === "string" &&
+            !knownBundledIds.has(u.config.agent),
+        );
+        if (phantomAtlas.length > 0) {
+          throw new Error(
+            `upsert_agent emitted type="atlas" with a non-bundled agent id: ` +
+              phantomAtlas.map((u) => `${u.id}(agent=${u.config.agent})`).join(", ") +
+              `. Known bundled ids: [${[...knownBundledIds].sort().join(", ")}]. ` +
+              `This is the silent-drop regression: the workspace.yml saves cleanly ` +
+              `but the daemon logs "Base agent not found: <id>" at registration ` +
+              `and the agent vanishes. Use type:llm with the matching MCP server ` +
+              `for domains without a bundled agent.`,
+          );
         }
       },
       score: ({ captures }) => {
@@ -713,17 +790,49 @@ export const evals: EvalRegistration[] = cases.map((testCase) =>
 
         if (testCase.requiredMcpServers) {
           const required = [...testCase.requiredMcpServers];
-          const missing = required.filter((id) => !captures.enabledMcpServers.includes(id));
+          // Mirrors the assert — accept enable_mcp_server, bare server id
+          // in tools, or `<serverId>/<toolName>` in tools.
+          const isReferenced = (serverId: string) =>
+            captures.enabledMcpServers.includes(serverId) ||
+            captures.upsertAgents.some((u) => {
+              const tools = (u.config as { config?: { tools?: unknown } }).config?.tools;
+              if (!Array.isArray(tools)) return false;
+              return tools.some(
+                (t) => typeof t === "string" && (t === serverId || t.startsWith(`${serverId}/`)),
+              );
+            });
+          const missing = required.filter((id) => !isReferenced(id));
           scores.push(
             createScore(
-              "required-mcp-enabled",
+              "required-mcp-wired",
               missing.length === 0 ? 1 : 0,
               missing.length === 0
-                ? `all required MCP servers enabled: [${required.join(", ")}]`
-                : `missing required MCP server(s): [${missing.join(", ")}]; enabled: [${captures.enabledMcpServers.join(", ") || "none"}]`,
+                ? `all required MCP servers wired: [${required.join(", ")}]`
+                : `missing required MCP server(s): [${missing.join(", ")}]`,
             ),
           );
         }
+
+        // Universal: every type:atlas upsert references a real bundled id
+        // (using the registry-with-aliases — same source as the validator).
+        const knownBundledIds = new Set(Object.keys(bundledAgentsRegistry));
+        const phantomAtlas = captures.upsertAgents.filter(
+          (u) =>
+            u.config.type === "atlas" &&
+            typeof u.config.agent === "string" &&
+            !knownBundledIds.has(u.config.agent),
+        );
+        scores.push(
+          createScore(
+            "no-phantom-atlas-agent",
+            phantomAtlas.length === 0 ? 1 : 0,
+            phantomAtlas.length === 0
+              ? `every type:atlas upsert resolves to a real bundled agent`
+              : `phantom atlas agent(s): ${phantomAtlas
+                  .map((u) => `${u.id}(agent=${u.config.agent})`)
+                  .join(", ")}`,
+          ),
+        );
 
         return scores;
       },

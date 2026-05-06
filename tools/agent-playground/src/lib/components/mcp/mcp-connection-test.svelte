@@ -59,13 +59,8 @@
 </script>
 
 <section class="connection-test-section">
-  <h3 class="section-title">Connection Test</h3>
-
   {#if !shouldTest || (!probeQuery.isLoading && !probeQuery.isPending)}
-    <Button variant="secondary" size="small" onclick={runTest} disabled={probeQuery.isLoading}>
-      {#snippet prepend()}
-        <IconSmall.CheckCircle />
-      {/snippet}
+    <Button size="small" onclick={runTest} disabled={probeQuery.isLoading}>
       {probeQuery.isLoading ? "Testing…" : "Test Connection"}
     </Button>
   {/if}
@@ -123,11 +118,9 @@
 
 <style>
   .connection-test-section {
-    border-block-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-    padding-block-start: var(--size-4);
   }
 
   .section-title {

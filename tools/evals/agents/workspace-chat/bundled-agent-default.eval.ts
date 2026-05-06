@@ -203,7 +203,7 @@ const UPSERT_AGENT_DESCRIPTION =
   '- `type: "llm"` — inline LLM agent. Shape: ' +
   "`{ type, description, config: { provider, model, prompt, tools? } }`. " +
   'Use when the work is open-ended ("figure out what to do") and no bundled agent fits.\n' +
-  '- `type: "atlas"` — bundled platform agent (web, email, slack, gh, etc.). Shape: ' +
+  '- `type: "atlas"` — bundled platform agent (web, slack, gh, etc.). Shape: ' +
   "`{ type, agent, description, prompt, config?, env? }`. " +
   "Does not accept a `tools` array — the bundled agent is a self-contained black box. " +
   'If you need to call MCP tools, use `type: "llm"`. ' +
@@ -305,7 +305,7 @@ function buildToolset(captures: CapturedToolCalls) {
 
     list_capabilities: tool({
       description:
-        "List every capability available to this workspace: bundled atlas agents (web, email, " +
+        "List every capability available to this workspace: bundled atlas agents (web, " +
         "slack, gh, etc.), enabled MCP servers, and MCP servers in the platform catalog. " +
         "Output is bundled-first, alphabetical within each kind. Scan top-down and pick the " +
         "first match — bundled agents are zero-config and should be your default when the " +

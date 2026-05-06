@@ -12,8 +12,8 @@
 <script lang="ts">
   import { Button, IconSmall } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
-  import { testChatEventStream, type TestChatEvent } from "../../queries/workspace-mcp-queries";
   import { workspaceQueries } from "../../queries";
+  import { testChatEventStream } from "../../queries/workspace-mcp-queries";
 
   interface Props {
     serverId: string;
@@ -53,21 +53,11 @@
           case "tool_call":
             toolCalls = [
               ...toolCalls,
-              {
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-                input: event.input,
-              },
+              { toolCallId: event.toolCallId, toolName: event.toolName, input: event.input },
             ];
             break;
           case "tool_result":
-            toolResults = [
-              ...toolResults,
-              {
-                toolCallId: event.toolCallId,
-                output: event.output,
-              },
-            ];
+            toolResults = [...toolResults, { toolCallId: event.toolCallId, output: event.output }];
             break;
           case "error":
             chatError = event.error;
@@ -92,8 +82,6 @@
 </script>
 
 <section class="test-chat-section">
-  <h3 class="section-title">Test Chat</h3>
-
   {#if workspaces.length > 0}
     <div class="workspace-selector">
       <label for="test-chat-workspace">Workspace context</label>
@@ -154,7 +142,7 @@
     {/if}
   </div>
 
-  <div class="input-row">
+  <div class="input-stack">
     <textarea
       bind:value={message}
       onkeydown={handleKeydown}
@@ -162,56 +150,41 @@
       rows={2}
       disabled={streaming}
     ></textarea>
-    <Button
-      variant="primary"
-      size="small"
-      onclick={() => void send()}
-      disabled={streaming || !message.trim()}
-    >
-      {#snippet prepend()}
-        <IconSmall.CheckCircle />
-      {/snippet}
-      Send
-    </Button>
+    <div>
+      <Button
+        variant="primary"
+        size="small"
+        onclick={() => void send()}
+        disabled={streaming || !message.trim()}
+      >
+        Send
+      </Button>
+    </div>
   </div>
 </section>
 
 <style>
   .test-chat-section {
-    border-block-start: 1px solid var(--color-border-1);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-    padding-block-start: var(--size-4);
-  }
-
-  .section-title {
-    font-size: var(--font-size-3);
-    font-weight: var(--font-weight-5);
-    margin: 0;
   }
 
   .workspace-selector {
     align-items: center;
     display: flex;
     gap: var(--size-2);
-  }
 
-  .workspace-selector label {
-    color: color-mix(in srgb, var(--color-text), transparent 25%);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    text-transform: uppercase;
-  }
+    label {
+      color: var(--text-faded);
+      font-size: var(--font-size-3);
+    }
 
-  .workspace-selector select {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    font-family: inherit;
-    font-size: var(--font-size-2);
-    padding: var(--size-1) var(--size-2);
+    select {
+      all: revert;
+      appearance: auto;
+      font-size: var(--font-size-3);
+    }
   }
 
   .chat-history {
@@ -309,36 +282,36 @@
     }
   }
 
-  .input-row {
-    align-items: flex-end;
+  .input-stack {
     display: flex;
-    gap: var(--size-2);
+    flex-direction: column;
+    gap: var(--size-3);
   }
 
-  .input-row textarea {
-    background: var(--color-surface-2);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    flex: 1;
+  .input-stack textarea {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    color: var(--text);
     font-family: inherit;
-    font-size: var(--font-size-2);
+    font-size: var(--font-size-3);
+    inline-size: 100%;
     line-height: 1.5;
-    min-block-size: var(--size-8);
+    max-inline-size: 60ch;
     outline: none;
-    padding: var(--size-2) var(--size-3);
+    padding: var(--size-3);
     resize: vertical;
   }
 
-  .input-row textarea::placeholder {
-    color: color-mix(in srgb, var(--color-text), transparent 50%);
+  .input-stack textarea::placeholder {
+    color: var(--text-faded);
   }
 
-  .input-row textarea:focus {
-    border-color: var(--color-accent);
+  .input-stack textarea:focus {
+    border-color: var(--text);
   }
 
-  .input-row textarea:disabled {
+  .input-stack textarea:disabled {
     opacity: 0.6;
   }
 </style>

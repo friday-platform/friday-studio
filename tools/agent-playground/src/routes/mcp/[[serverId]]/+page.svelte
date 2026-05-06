@@ -11,7 +11,7 @@
 -->
 
 <script lang="ts">
-  import { Button, IconSmall, ListDetail, toast } from "@atlas/ui";
+  import { Button, ListDetail, toast } from "@atlas/ui";
   import { createQuery } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -161,10 +161,7 @@
       aria-label="Import from registry"
       onclick={() => (importDialogOpen = true)}
     >
-      {#snippet prepend()}
-        <IconSmall.Plus />
-      {/snippet}
-      Add
+      Add New
     </Button>
   {/snippet}
 
@@ -174,11 +171,9 @@
 
   <MCPServerDetail
     server={selectedServer}
-    onInstall={handleInstall}
     onCheckUpdate={handleCheckUpdate}
     onPullUpdate={handlePullUpdate}
     onDelete={handleDelete}
-    installing={installMut.isPending}
     checking={checkingId === selectedServerId}
     pulling={pullingId === selectedServerId}
     deleting={deletingId === selectedServerId}
@@ -192,4 +187,3 @@
   onInstall={handleInstall}
   installing={installMut.isPending}
 />
-

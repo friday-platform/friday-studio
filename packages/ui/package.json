@@ -39,7 +39,6 @@
       "svelte": "./src/lib/markdown/markdown.ts",
       "default": "./src/lib/markdown/markdown.ts"
     },
-    "./markdown.css": "./src/lib/markdown/markdown.css",
     "./tokens.css": "./src/lib/tokens.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"

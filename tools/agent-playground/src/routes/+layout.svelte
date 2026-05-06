@@ -5,9 +5,9 @@
   import { page } from "$app/state";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
-  import "@atlas/ui/markdown.css";
   import "../app.css";
   import favicon from "$lib/assets/favicon.png";
+  import CascadeStatusBanner from "$lib/components/shared/cascade-status-banner.svelte";
   import Sidebar from "$lib/components/shared/sidebar.svelte";
   import CommandPalette from "$lib/components/shared/command-palette.svelte";
   import UpdateBanner from "$lib/components/shared/update-banner.svelte";
@@ -79,6 +79,7 @@
   <QueryClientProvider client={queryClient}>
     <div class="app-root">
       <UpdateBanner />
+      <CascadeStatusBanner />
       <div class="app-shell">
         <Sidebar />
         <main>
@@ -87,11 +88,11 @@
           </div>
         </main>
       </div>
-    </div>
 
-    {#if paletteOpen}
-      <CommandPalette initialMode={paletteMode} onclose={() => (paletteOpen = false)} />
-    {/if}
+      {#if paletteOpen}
+        <CommandPalette initialMode={paletteMode} onclose={() => (paletteOpen = false)} />
+      {/if}
+    </div>
   </QueryClientProvider>
 
   <NotificationPortal />

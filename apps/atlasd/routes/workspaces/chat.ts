@@ -117,12 +117,8 @@ const workspaceChatRoutes = daemonFactory
       }
     }
 
-    // Read chatId from the request body so we can register an AbortController
-    // for this turn BEFORE forwarding to the adapter. A new POST with the same
-    // chatId aborts any in-flight controller — the FSM engine and AI SDK
-    // observe the signal and stop the prior turn so two assistant runs don't
-    // race in the same chat. The adapter retrieves the controller from the
-    // registry by chatId in `handleWebhook`.
+    // Register the abort controller BEFORE forwarding so a second POST with
+    // the same chatId can stop the prior turn (no two assistant runs racing).
     const chatId =
       typeof body === "object" && body !== null && "id" in body && typeof body.id === "string"
         ? body.id
@@ -144,9 +140,7 @@ const workspaceChatRoutes = daemonFactory
       return c.json({ error: "Atlas web adapter not configured" }, 500);
     }
 
-    // Clone and set userId header — adapter reads it for message attribution.
-    // `set` replaces any client-supplied value so a malicious client can't
-    // smuggle their own identity into analytics/audit logs.
+    // `set` (not `append`) so a client can't smuggle their own identity.
     const headers = new Headers(c.req.raw.headers);
     headers.set("X-Atlas-User-Id", getUserId());
     const request = new Request(c.req.raw, { headers });
@@ -157,10 +151,8 @@ const workspaceChatRoutes = daemonFactory
     const ctx = c.get("app");
     const chatId = c.req.param("chatId");
 
-    // Abort the in-flight FSM/model call AND close the SSE buffer. Without
-    // the abort, finishStream only stops new events from being broadcast —
-    // the agent run continues server-side and may produce a partial message
-    // that gets persisted after the client thought it cancelled.
+    // abort() stops the FSM/model server-side; finishStream() alone would
+    // let it keep running and persist a partial message after cancel.
     ctx.chatTurnRegistry.abort(chatId);
     ctx.streamRegistry.finishStream(chatId);
 
@@ -177,11 +169,29 @@ const workspaceChatRoutes = daemonFactory
       return c.body(null, 204);
     }
 
+    // 410 (not 204/200-empty): without this, subscribe() refuses the
+    // replayDisabled buffer and closes the controller — the SDK reads zero
+    // events as a clean finish and silently truncates the assistant message.
+    // The header lets the client branch on "buffer gone" vs "replay refused".
+    if (buffer.replayDisabled) {
+      c.header("X-Stream-Replay-Disabled", "true");
+      return c.body(null, 410);
+    }
+
     c.header("X-Turn-Started-At", String(buffer.createdAt));
+
+    const lastEventIdHeader = c.req.header("Last-Event-ID");
+    let lastEventId: number | undefined;
+    if (lastEventIdHeader !== undefined) {
+      const parsed = Number.parseInt(lastEventIdHeader, 10);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        lastEventId = parsed;
+      }
+    }
 
     const readableStream = new ReadableStream<Uint8Array>({
       start(controller) {
-        const subscribed = ctx.streamRegistry.subscribe(chatId, controller);
+        const subscribed = ctx.streamRegistry.subscribe(chatId, controller, lastEventId);
         if (!subscribed) {
           controller.close();
           return;
@@ -274,10 +284,8 @@ const workspaceChatRoutes = daemonFactory
       if (!validatedMessage) {
         return c.json({ error: "Invalid message format" }, 400);
       }
-      // Only user-role messages may be appended through this endpoint. Assistant
-      // and system messages are produced server-side by agents, which persist
-      // them in-process via ChatStorage. Allowing client-supplied roles here
-      // would let any caller poison the next LLM turn (prompt injection).
+      // Client-supplied assistant/system messages would be a prompt injection
+      // vector — agents persist their own non-user messages via ChatStorage.
       if (validatedMessage.role !== "user") {
         return c.json({ error: "Only user-role messages may be appended" }, 403);
       }

@@ -1,4 +1,5 @@
 import type { Component } from "svelte";
+import ArrowsRotate from "./arrows-rotate.svelte";
 import CaretDown from "./caret-down.svelte";
 import CaretRight from "./caret-right.svelte";
 import ChevronLeft from "./chevron-left.svelte";
@@ -15,9 +16,11 @@ import Plus from "./plus.svelte";
 import Progress from "./progress.svelte";
 import Search from "./search.svelte";
 import Skills from "./skills.svelte";
+import TrashBin from "./trash-bin.svelte";
 import XCircle from "./x-circle.svelte";
 
 export const IconSmall: Record<string, Component> = {
+  ArrowsRotate,
   CaretDown,
   CaretRight,
   Check,
@@ -34,5 +37,6 @@ export const IconSmall: Record<string, Component> = {
   Progress,
   Search,
   Skills,
+  TrashBin,
   XCircle,
 };

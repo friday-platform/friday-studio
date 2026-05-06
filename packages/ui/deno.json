@@ -5,7 +5,6 @@
     ".": "./src/lib/index.ts",
     "./markdown": "./src/lib/markdown/markdown.ts",
     "./tokens.css": "./src/lib/tokens.css",
-    "./markdown.css": "./src/lib/markdown/markdown.css",
     "./eslint": "./eslint.config.base.js",
     "./prettier": "./prettier.config.js"
   },
