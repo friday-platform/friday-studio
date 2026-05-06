@@ -165,19 +165,34 @@ fsm:
       type: final                           # entry runs THEN state finalizes
 ```
 
-Caller sees:
+Caller sees (SSE `job-complete` event, modern shape):
 
 ```json
 {
   "status": "completed",
   "sessionId": "...",
+  "artifactIds": ["art-abc", "art-def"],
+  "summary": "Searched index; found 12 matches. Top result archived.",
   "output": [
     { "id": "search-result", "type": "AgentResult", "data": { ... } }
   ]
 }
 ```
 
-**Verify after publish.** Fire the signal once with a fixture payload (`POST /api/workspaces/:id/signals/:signalId` with a JSON body) and confirm `output` is non-empty before declaring the workspace done. `output: []` means the data never reached the caller — almost always a missing `outputTo`.
+`artifactIds` are JetStream-persisted refs to each non-plumbing FSM document the job produced. `summary` is a short human-readable digest synthesized from `aiSummary` (preferred) → terminal-state action's `summary` field → truncated `outputTo` data (fallback).
+
+**The supervisor (workspace-chat) prefers `artifactIds` + `summary` over `output` when both are present** — the LLM-visible tool result drops `output` entirely so the supervisor's next-turn input doesn't ingest the full Document[]. If the LLM needs an artifact's contents, it calls `parse_artifact(<id>)`.
+
+You can declare a per-action `summary` on `type: llm` and `type: agent` actions to override the synthesized digest with author-controlled prose:
+
+```yaml
+- type: agent
+  agentId: search-agent
+  outputTo: search-result
+  summary: "Index search across the knowledge base; returns top-scored matches."
+```
+
+**Verify after publish.** Fire the signal once with a fixture payload (`POST /api/workspaces/:id/signals/:signalId` with a JSON body) and confirm `artifactIds` is non-empty before declaring the workspace done. Empty `artifactIds` (or empty legacy `output`) means the data never reached the caller — almost always a missing `outputTo`.
 
 ## Multi-input steps
 

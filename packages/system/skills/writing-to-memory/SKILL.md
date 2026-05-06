@@ -109,6 +109,22 @@ When you see `→ art_abc123` in an injected memory entry, call `artifacts_get(i
 
 This keeps the injection window lean while making large results durable across sessions.
 
+### Memory references promote artifacts to durable
+
+FSM-emitted artifacts default to **ephemeral** with a grace window (default 24h after job completion); a background sweeper deletes them once the window closes. **An artifact stays durable iff something references it before the sweep**: a `memory_save` text containing the artifact ID, a `display_artifact` call, or an `aiSummary.keyDetails[].url` pointing at it.
+
+So step 2 above isn't just bookkeeping — it's the durability decision. If you don't `memory_save` a reference (or surface the artifact some other way), it'll be gone in 24h.
+
+If you *want* something gone — intermediate working state — write the artifact and never reference it. The sweeper handles cleanup. Don't try to manage lifetimes manually.
+
+### Recent artifacts auto-inject into prompts
+
+Per-session artifact context auto-injects into LLM prompts as
+`<retrieved_content provenance="artifact:..." origin="..." fetched_at="...">`
+blocks at action start (chat: per-chat-session; FSM: per-FSM-session). The block carries each artifact's **summary**, not its content — the LLM sees a 1-line digest plus the artifactId. If a digest looks relevant, call `parse_artifact(artifactId)` to load the content.
+
+Practical implication for `summary` field: when you `artifacts_create`, write a useful 1-2 sentence summary. The LLM's later turns rely on it to decide whether to expand the artifact.
+
 ## Availability
 
 `memory_save`, `memory_read`, `memory_remove`, the `state_*` tools, the
