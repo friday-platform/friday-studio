@@ -14,7 +14,7 @@
  * paths. Goes to stderr via `@atlas/logger` (which uses `console.error`).
  */
 
-import { cp, mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, realpath, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import process from "node:process";
@@ -240,14 +240,12 @@ export async function runRelocate(
       ...baseOutcome,
       status: "migrated",
       streams_moved: legacyStreams.length,
-      bytes_moved: 0,
       duration_ms: Date.now() - startedAt,
     };
   }
 
   // Real run: ensure parent of target exists, then rename. On EXDEV (cross
   // filesystem rename) fall back to recursive copy + source removal.
-  let bytesMoved = 0;
   try {
     await ensureParentDir(targetPath);
 
@@ -293,8 +291,6 @@ export async function runRelocate(
         };
       }
     }
-
-    bytesMoved = await sumDirSize(targetPath);
   } catch (err) {
     // Top-level failure (e.g. ensureParentDir failing, or rename failing
     // with a non-EXDEV code). If anything landed at the target, clean it
@@ -315,43 +311,8 @@ export async function runRelocate(
     ...baseOutcome,
     status: "migrated",
     streams_moved: legacyStreams.length,
-    bytes_moved: bytesMoved,
     duration_ms: Date.now() - startedAt,
   };
-}
-
-/**
- * Walk the target directory and accumulate file sizes. Best-effort —
- * walking errors are swallowed so a partial size doesn't fail an
- * otherwise-successful migration. Used to populate `bytes_moved` for
- * support diagnostics; not part of the trust contract.
- */
-async function sumDirSize(root: string): Promise<number> {
-  let total = 0;
-  async function walk(dir: string): Promise<void> {
-    let names: string[];
-    try {
-      names = await readdir(dir);
-    } catch {
-      return;
-    }
-    for (const name of names) {
-      const p = join(dir, name);
-      let s: Awaited<ReturnType<typeof stat>>;
-      try {
-        s = await stat(p);
-      } catch {
-        continue;
-      }
-      if (s.isDirectory()) {
-        await walk(p);
-      } else if (s.isFile()) {
-        total += s.size;
-      }
-    }
-  }
-  await walk(root);
-  return total;
 }
 
 export const relocateStore: PreNatsMigration = {

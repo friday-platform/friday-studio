@@ -393,3 +393,43 @@ func TestCommonServiceEnv_EmitsFridayConfigPath(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadDotEnv_StripsCRLFTrailingCR verifies that values from a .env
+// file saved with CRLF line endings (e.g. opened in a Windows editor)
+// don't smuggle a trailing `\r` into supervised-service env. Without this
+// trim, `FRIDAY_PORT_FRIDAY=18080\r` would propagate to nats-server's
+// `-sd` flag and to subprocess env, breaking URL construction.
+func TestLoadDotEnv_StripsCRLFTrailingCR(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := []byte("FRIDAY_PORT_FRIDAY=18080\r\nFRIDAY_HOME=/Users/x/.friday/local\r\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := loadDotEnv(path)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0] != "FRIDAY_PORT_FRIDAY=18080" {
+		t.Errorf("port entry = %q, want FRIDAY_PORT_FRIDAY=18080 (trailing CR not stripped)", entries[0])
+	}
+	if entries[1] != "FRIDAY_HOME=/Users/x/.friday/local" {
+		t.Errorf("home entry = %q, want FRIDAY_HOME=/Users/x/.friday/local", entries[1])
+	}
+}
+
+// TestLoadDotEnv_LFOnly verifies the trim is a no-op for standard Unix
+// .env files — no spurious mutation of LF-terminated values.
+func TestLoadDotEnv_LFOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := []byte("FRIDAY_PORT_FRIDAY=18080\nFRIDAY_HOME=/x/.friday/local\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries := loadDotEnv(path)
+	if len(entries) != 2 || entries[0] != "FRIDAY_PORT_FRIDAY=18080" {
+		t.Errorf("unexpected entries on LF-only file: %v", entries)
+	}
+}

@@ -190,7 +190,6 @@ describe("dry-run does not mutate the filesystem", () => {
     );
 
     expect(outcome.status).toBe("migrated");
-    expect(outcome.bytes_moved).toBe(0);
     // Source directory still on disk after dry-run.
     const { stat } = await import("node:fs/promises");
     await expect(stat(legacy)).resolves.toBeTruthy();

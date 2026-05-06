@@ -29,8 +29,6 @@ export interface MigrationOutcome {
   target_source: TargetSource;
   /** Streams counted at the source. Populated for `migrated` and (best-effort) `skipped`. */
   streams_moved?: number;
-  /** Total bytes moved on the wire. Populated for `migrated`; 0 in dry-run. */
-  bytes_moved?: number;
   duration_ms: number;
   error?: { kind: ErrorKind; message: string };
   /** Free-form short tag for non-error statuses (e.g. `dest_not_empty`). */

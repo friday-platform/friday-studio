@@ -167,14 +167,16 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
   // 5. If pre-NATS aborted, report and skip post-NATS entirely.
   if (preNatsResult.aborted) {
     if (argv.json) {
+      // Single-line JSON on stdout — the Tauri command's stdout scanner
+      // parses one line at a time, so pretty-printing would split the
+      // outcome across lines that don't individually parse and every
+      // success/failure would surface as "exit 0 but no parseable JSON".
+      // Exit nonzero so callers (the installer Tauri command, CI scripts)
+      // see the failure regardless of whether they inspect the JSON body.
       console.log(
-        JSON.stringify(
-          { preNats: preNatsResult.outcomes, ran: [], skipped: [], failed: [] },
-          null,
-          2,
-        ),
+        JSON.stringify({ preNats: preNatsResult.outcomes, ran: [], skipped: [], failed: [] }),
       );
-      return;
+      process.exit(1);
     }
     const last = preNatsResult.outcomes[preNatsResult.outcomes.length - 1];
     const errKind = last?.error?.kind ?? "unknown";
@@ -220,7 +222,8 @@ async function handleList(argv: MigrateArgs): Promise<void> {
       record: byId.get(m.id) ?? null,
     }));
     if (argv.json) {
-      console.log(JSON.stringify({ preNats: preEntries, migrations: entries }, null, 2));
+      // Single-line — see migrate.ts handler comment on Tauri stdout scanner.
+      console.log(JSON.stringify({ preNats: preEntries, migrations: entries }));
       return;
     }
     printPreNatsList(preEntries);
@@ -257,13 +260,21 @@ async function runPostNatsPhase(argv: MigrateArgs, preNats: MigrationOutcome[]):
       runner: "cli",
     });
     if (argv.json) {
+      // Single-line JSON on stdout (see handler comment) — the Tauri
+      // command's line-by-line scanner can't reassemble pretty-printed
+      // output. Exit nonzero on post-NATS failure so callers don't have
+      // to peek inside the JSON body to detect errors.
       console.log(
-        JSON.stringify(
-          { preNats, ran: result.ran, skipped: result.skipped, failed: result.failed },
-          null,
-          2,
-        ),
+        JSON.stringify({
+          preNats,
+          ran: result.ran,
+          skipped: result.skipped,
+          failed: result.failed,
+        }),
       );
+      if (result.failed.length > 0) {
+        process.exit(1);
+      }
       return;
     }
     if (argv.dryRun) {

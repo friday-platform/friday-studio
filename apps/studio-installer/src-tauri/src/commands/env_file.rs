@@ -87,9 +87,16 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 /// Lines that don't match `KEY=VALUE` are preserved as-is (comments, blanks).
 ///
 /// Verbatim values: no quote stripping, no escape handling. The migrate
-/// command (commands/migrate_jetstream_store.rs) re-uses this same parser
-/// shape via the `parse_env_simple` helper to keep the writer/reader
-/// contract symmetrical inside the installer crate.
+/// command (commands/migrate.rs) re-uses this same parser shape to keep
+/// the writer/reader contract symmetrical inside the installer crate.
+///
+/// One exception to the verbatim rule: trailing `\r` is stripped. `lines()`
+/// already splits on both `\n` and `\r\n` for line *boundaries*, but on a
+/// CRLF file the value still contains the `\r` if there's no key-side
+/// trim. Without this strip, a `.env` opened in Notepad and saved would
+/// pass `FRIDAY_PORT_FRIDAY=18080\r` through to subprocess env, breaking
+/// any downstream URL construction. The Go launcher's `loadDotEnv`
+/// applies the same trim for parity.
 pub(crate) fn parse_env_lines(content: &str) -> Vec<(Option<String>, String)> {
     content
         .lines()
@@ -97,7 +104,7 @@ pub(crate) fn parse_env_lines(content: &str) -> Vec<(Option<String>, String)> {
             if let Some((k, v)) = line.split_once('=') {
                 let key = k.trim().to_string();
                 if !key.is_empty() && !key.starts_with('#') {
-                    return (Some(key), v.to_string());
+                    return (Some(key), v.trim_end_matches('\r').to_string());
                 }
             }
             (None, line.to_string())
@@ -726,6 +733,63 @@ mod atomic_write_tests {
             !tmp_sibling.exists(),
             "stale .env.tmp must be cleaned up by the next successful write"
         );
+    }
+}
+
+#[cfg(test)]
+mod parse_env_lines_tests {
+    use super::*;
+
+    #[test]
+    fn strips_trailing_cr_on_crlf_file() {
+        // A `.env` opened in a Windows editor and saved would have
+        // CRLF line endings. The value bytes between `=` and the line
+        // boundary include the `\r`. Without stripping it, downstream
+        // env consumers would see `FRIDAY_PORT_FRIDAY=18080\r` which
+        // breaks URL construction.
+        let crlf = "FRIDAY_PORT_FRIDAY=18080\r\nFRIDAY_HOME=/Users/x/.friday/local\r\n";
+        let parsed = parse_env_lines(crlf);
+        let port = parsed
+            .iter()
+            .find(|(k, _)| k.as_deref() == Some("FRIDAY_PORT_FRIDAY"))
+            .expect("port key present");
+        assert_eq!(port.1, "18080", "trailing \\r must be stripped");
+        let home = parsed
+            .iter()
+            .find(|(k, _)| k.as_deref() == Some("FRIDAY_HOME"))
+            .expect("home key present");
+        assert_eq!(home.1, "/Users/x/.friday/local");
+    }
+
+    #[test]
+    fn lf_only_file_unchanged() {
+        // Standard Unix `.env` — verify the trim is a no-op when
+        // there's no CR to strip.
+        let lf = "FRIDAY_PORT_FRIDAY=18080\nFRIDAY_HOME=/Users/x/.friday/local\n";
+        let parsed = parse_env_lines(lf);
+        assert_eq!(
+            parsed
+                .iter()
+                .find(|(k, _)| k.as_deref() == Some("FRIDAY_PORT_FRIDAY"))
+                .unwrap()
+                .1,
+            "18080"
+        );
+    }
+
+    #[test]
+    fn value_with_legitimate_internal_cr_is_left_alone() {
+        // Only the trailing `\r` is stripped — values that contain a
+        // `\r` mid-string (vanishingly unlikely in practice but worth
+        // pinning) keep their internal byte.
+        let weird = "WEIRD=foo\rbar\n";
+        let parsed = parse_env_lines(weird);
+        let val = &parsed
+            .iter()
+            .find(|(k, _)| k.as_deref() == Some("WEIRD"))
+            .unwrap()
+            .1;
+        assert_eq!(val, "foo\rbar", "internal \\r preserved; only trailing trimmed");
     }
 }
 

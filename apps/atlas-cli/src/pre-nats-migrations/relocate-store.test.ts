@@ -107,7 +107,6 @@ describe("runRelocate", () => {
     );
     expect(outcome.status).toBe("migrated");
     expect(outcome.streams_moved).toBe(2);
-    expect(outcome.bytes_moved ?? 0).toBeGreaterThan(0);
     // Source is gone; target has the data.
     expect(await dirExists(legacyRoot)).toBe(false);
     const movedStreams = await readdir(join(targetRoot, "jetstream", "$G", "streams"));
@@ -167,8 +166,6 @@ describe("runRelocate", () => {
     expect(outcome.streams_moved).toBe(1);
     expect(await dirExists(legacyRoot)).toBe(false);
     expect(await readdir(join(targetRoot, "jetstream", "$G", "streams"))).toEqual(["S1"]);
-    // bytes_moved populated from the copied target.
-    expect(outcome.bytes_moved ?? 0).toBeGreaterThan(0);
   });
 
   it("error + cleanup when copy fails mid-stream", async () => {
@@ -212,7 +209,6 @@ describe("runRelocate", () => {
     );
     expect(outcome.status).toBe("migrated");
     expect(outcome.streams_moved).toBe(2);
-    expect(outcome.bytes_moved).toBe(0);
     // Source still there, untouched.
     expect((await readdir(join(legacyRoot, "jetstream", "$G", "streams"))).sort()).toEqual([
       "DR1",
