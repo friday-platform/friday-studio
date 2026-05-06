@@ -171,7 +171,7 @@ function reinstall(): void {
   {#if store.devVersionOverride !== null}
     <div class="dev-banner" role="status">
       <span class="dev-banner-tag">DEV</span>
-      Installing v{store.devVersionOverride} (SHA-256 verification disabled)
+      Installing v{store.devVersionOverride}
     </div>
   {/if}
 
@@ -314,8 +314,9 @@ function reinstall(): void {
         <p class="dev-help">
           Enter a studio version like <code>0.0.10</code>. The installer will
           fetch <code>friday-studio_&lt;version&gt;_aarch64-apple-darwin.tar.zst</code>
-          directly, bypassing the production manifest. SHA-256
-          verification is skipped — this path is for QA testing only.
+          directly, bypassing the production manifest. Checksum verification
+          stays on (the matching <code>.sha256</code> sibling is fetched
+          alongside the artifact).
         </p>
         <input
           type="text"

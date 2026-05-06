@@ -74,20 +74,26 @@ const PLATFORM_ARCH: Record<string, string> = {
 /**
  * Build a synthetic manifest targeting an explicit version. Used by the
  * dev-version-override path so testers can install a specific build
- * without it being promoted to the production manifest. SHA-256 is
- * empty — verifyDownload below skips checksum verification when it
- * sees an empty string. Size is 0 because we don't know it ahead of
- * time; the download progress UI will show a "downloaded N MB" string
- * without a percentage (no harm — it's a tester path).
+ * without it being promoted to the production manifest.
+ *
+ * Fetches the `<artifact>.sha256` sibling that studio-build.yml uploads
+ * alongside every artifact (see studio-build.yml:293), so checksum
+ * verification stays on. If the .sha256 file isn't reachable (404 = the
+ * version doesn't exist) the call rejects — `applyDevOverride` in
+ * Welcome.svelte surfaces that as a panel-level error, leaving the
+ * production manifest in place.
+ *
+ * `size` is 0 because we don't have the file size ahead of time without
+ * an extra HEAD request. The download progress UI tolerates a 0 total
+ * (shows "downloaded N MB" without a percentage) — acceptable for a
+ * tester path.
  */
-function synthesizeManifest(version: string): Manifest {
+async function synthesizeManifest(version: string): Promise<Manifest> {
   const platforms: Record<string, PlatformEntry> = {};
   for (const [key, arch] of Object.entries(PLATFORM_ARCH)) {
-    platforms[key] = {
-      url: `${STUDIO_ARTIFACT_BASE}/friday-studio_${version}_${arch}.tar.zst`,
-      sha256: "",
-      size: 0,
-    };
+    const url = `${STUDIO_ARTIFACT_BASE}/friday-studio_${version}_${arch}.tar.zst`;
+    const sha256 = await invoke<string>("fetch_sha256", { url: `${url}.sha256` });
+    platforms[key] = { url, sha256, size: 0 };
   }
   return { version, platforms };
 }
@@ -96,10 +102,10 @@ export async function detectInstallState(): Promise<void> {
   // Dev override: skip the production manifest fetch and synthesize
   // one for the explicit version. The Welcome screen's hidden 5-click
   // dev panel sets `store.devVersionOverride`. See synthesizeManifest
-  // above for the URL construction pattern.
+  // above for the URL construction pattern + .sha256 fetch.
   const override = store.devVersionOverride;
   const manifestPromise = override
-    ? Promise.resolve(synthesizeManifest(override))
+    ? synthesizeManifest(override)
     : invoke<Manifest>("fetch_manifest", { url: MANIFEST_URL });
 
   const [manifest, installed, running, hasProviderKey] = await Promise.all([
@@ -371,19 +377,6 @@ export async function runLaunch(installDir: string): Promise<void> {
 // ── Verify ────────────────────────────────────────────────────────────────────
 
 export function verifyDownload(path: string, sha256: string): Promise<boolean> {
-  // Dev-version-override path: synthesizeManifest emits an empty SHA
-  // because there's no manifest entry to read it from. Skip checksum
-  // verification with a console warning. The Welcome banner makes the
-  // override state obvious so the tester knows what they're getting.
-  // Production manifests always carry a non-empty SHA so this branch
-  // is unreachable for normal installs.
-  if (sha256 === "") {
-    console.warn(
-      "[installer] dev version override active — SHA-256 verification skipped. " +
-        "Re-launch without the override to install the production version.",
-    );
-    return Promise.resolve(true);
-  }
   return invoke<boolean>("verify_sha256", { path, expectedHash: sha256 });
 }
 
@@ -398,7 +391,7 @@ export function fetchManifest(): Promise<Manifest> {
   // version's artifact.
   const override = store.devVersionOverride;
   if (override) {
-    return Promise.resolve(synthesizeManifest(override));
+    return synthesizeManifest(override);
   }
   return invoke<Manifest>("fetch_manifest", { url: MANIFEST_URL });
 }

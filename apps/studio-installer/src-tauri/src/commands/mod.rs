@@ -9,6 +9,7 @@ pub mod env_file;
 pub mod exit_installer;
 pub mod extract;
 pub mod fetch_manifest;
+pub mod fetch_sha256;
 pub mod installed_marker;
 pub mod launch;
 pub mod migrate;
