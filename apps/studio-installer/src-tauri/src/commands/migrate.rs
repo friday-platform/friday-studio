@@ -188,8 +188,12 @@ fn append_log_record(
         .map_err(|e| format!("create logs dir {}: {e}", log_dir.display()))?;
     let log_path = log_dir.join("migrate.jsonl");
 
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let record = serde_json::json!({
-        "ts": iso8601_utc_now(),
+        "ts": ts,
         "command": "migrate",
         "exit_code": exit_code,
         "stdout": tail(stdout),
@@ -209,62 +213,9 @@ fn append_log_record(
     Ok(())
 }
 
-/// Format a SystemTime::now() as ISO 8601 UTC: `YYYY-MM-DDTHH:MM:SSZ`.
-/// Roll-our-own to avoid pulling chrono in as a new dep — the format is
-/// trivial and we only need second precision for the support audit log.
-fn iso8601_utc_now() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format_unix_seconds_utc(now)
-}
-
-/// Convert a Unix timestamp (UTC seconds since epoch) to
-/// `YYYY-MM-DDTHH:MM:SSZ`. Pure date arithmetic, no deps.
-fn format_unix_seconds_utc(secs: u64) -> String {
-    // Civil-from-days algorithm: Howard Hinnant's "date.h"
-    // (https://howardhinnant.github.io/date_algorithms.html).
-    // Fast, correct for all dates after the Unix epoch, no leap
-    // tables.
-    let days = (secs / 86_400) as i64;
-    let secs_of_day = secs % 86_400;
-    let h = secs_of_day / 3_600;
-    let m = (secs_of_day % 3_600) / 60;
-    let s = secs_of_day % 60;
-
-    // days since 1970-01-01 -> civil date
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = (z - era * 146_097) as u64; // [0, 146096]
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
-    let y = (yoe as i64) + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
-    let m_civ = if mp < 10 { mp + 3 } else { mp.wrapping_sub(9) };
-    let year = if m_civ <= 2 { y + 1 } else { y };
-
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        year, m_civ, d, h, m, s
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn iso8601_format_known_epoch() {
-        // 0 → 1970-01-01T00:00:00Z
-        assert_eq!(format_unix_seconds_utc(0), "1970-01-01T00:00:00Z");
-        // 1_700_000_000 → 2023-11-14T22:13:20Z (verified externally).
-        assert_eq!(
-            format_unix_seconds_utc(1_700_000_000),
-            "2023-11-14T22:13:20Z"
-        );
-    }
 
     #[test]
     fn locate_friday_finds_bin_friday() {

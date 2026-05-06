@@ -193,12 +193,10 @@ async fn jsonl_record_appended_on_success() {
         "stdout content not preserved in audit record: {line}"
     );
     assert_eq!(record["stderr"], "");
-    // ts is an ISO8601-shaped string.
-    let ts = record["ts"].as_str().expect("ts string");
-    assert!(
-        ts.ends_with('Z') && ts.contains('T'),
-        "ts not ISO8601-shaped: {ts}"
-    );
+    // ts is a Unix epoch second count — operators format with `jq` /
+    // `date` if they need a human-readable view.
+    let ts = record["ts"].as_u64().expect("ts is a u64");
+    assert!(ts > 1_700_000_000, "ts not a recent epoch: {ts}");
 }
 
 #[tokio::test]
