@@ -314,7 +314,7 @@ function reinstall(): void {
         <p class="dev-help">
           Enter a studio version like <code>0.0.10</code>. The installer will
           fetch <code>friday-studio_&lt;version&gt;_aarch64-apple-darwin.tar.zst</code>
-          directly from GCS, bypassing the production manifest. SHA-256
+          directly, bypassing the production manifest. SHA-256
           verification is skipped — this path is for QA testing only.
         </p>
         <input
