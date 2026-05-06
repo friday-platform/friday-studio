@@ -85,7 +85,6 @@ import {
   type SignalWithContext,
   validateFSMStructure,
 } from "@atlas/fsm-engine";
-import { createFSMOutputValidator, SupervisionLevel } from "@atlas/hallucination";
 import {
   type GenerateSessionTitleInput,
   generateSessionTitle,
@@ -395,6 +394,15 @@ interface WorkspaceRuntimeOptions {
    * wraps `ChatSdkNotifier` + `broadcastDestinations` and supplies it here.
    */
   broadcastNotifier?: FSMBroadcastNotifier;
+  /**
+   * B7 (melodic-strolling-seal-pt2) — judge agent runner injected by the
+   * daemon. The daemon owns the system-agent registry (workspace can't
+   * import `@atlas/system` without a layering violation) and supplies a
+   * function that delegates to `judgeAgent.execute(...)` (or the override
+   * named in `validate.agent`). When unset, FSM external-validation
+   * branches synthesize an advisory verdict so actions still emit.
+   */
+  runJudge?: import("@atlas/fsm-engine").JudgeAgentRunner;
 }
 
 /**
@@ -1581,10 +1589,12 @@ export class WorkspaceRuntime {
       }),
       agentExecutor,
       mcpServerConfigs,
-      validateOutput: createFSMOutputValidator(
-        SupervisionLevel.STANDARD,
-        this.options.platformModels,
-      ),
+      // B7 (melodic-strolling-seal-pt2). External validation is a delegate
+      // call to `@friday/judge-agent` (or the per-action override). The
+      // daemon supplies the runner via `WorkspaceRuntimeOptions.runJudge`;
+      // when unset, fsm-engine synthesizes an advisory verdict so actions
+      // still emit on the no-judge path.
+      ...(this.options.runJudge ? { runJudge: this.options.runJudge } : {}),
       artifactStorage: ArtifactStorage,
       broadcastNotifier: this.options.broadcastNotifier,
       // Phase 7 — wires the optional `delegate` tool for FSM type:llm

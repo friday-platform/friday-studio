@@ -23,18 +23,25 @@ describe("ValidateStrategySchema", () => {
   });
 
   it("accepts object form with all optional fields", () => {
+    // B7 (melodic-strolling-seal-pt2): `retryOnFail` is dropped — the
+    // delegate-driven judge has no built-in retry concept. `agent` is
+    // added so authors can swap in domain-specific judges.
     const parsed = ValidateStrategySchema.parse({
-      strategy: "self",
+      strategy: "external",
       skill: "@my/validator-skill",
       threshold: "standard",
-      retryOnFail: true,
+      agent: "fin-judge",
     });
     expect(parsed).toMatchObject({
-      strategy: "self",
+      strategy: "external",
       skill: "@my/validator-skill",
       threshold: "standard",
-      retryOnFail: true,
+      agent: "fin-judge",
     });
+  });
+
+  it("rejects retryOnFail (dropped in B7)", () => {
+    expect(() => ValidateStrategySchema.parse({ strategy: "self", retryOnFail: true })).toThrow();
   });
 
   it("accepts object form with strategy=external + bare strategy", () => {

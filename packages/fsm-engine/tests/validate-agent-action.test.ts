@@ -47,11 +47,11 @@ function buildEnvelope(agentId: string): AgentResult<string, Record<string, unkn
 }
 
 function passVerdict(): ValidationVerdict {
-  return { status: "pass", confidence: 0.9, threshold: 0.45, issues: [], retryGuidance: "" };
+  return { verdict: "pass" };
 }
 
 function failVerdict(): ValidationVerdict {
-  return { status: "fail", confidence: 0.1, threshold: 0.45, issues: [], retryGuidance: "fix it" };
+  return { verdict: "blocking", issues: [{ claim: "fabricated stat" }] };
 }
 
 async function runAgentAction(opts: {

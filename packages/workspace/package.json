@@ -19,7 +19,6 @@
     "@atlas/document-store": "workspace:*",
     "@atlas/fs-watch": "workspace:*",
     "@atlas/fsm-engine": "workspace:*",
-    "@atlas/hallucination": "workspace:*",
     "@atlas/llm": "workspace:*",
     "@atlas/logger": "workspace:*",
     "@atlas/memory": "workspace:*",

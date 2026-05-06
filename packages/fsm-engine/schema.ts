@@ -44,7 +44,14 @@ export const ValidateStrategySchema = z.union([
     strategy: z.enum(["self", "external"]),
     skill: z.string().optional(),
     threshold: z.enum(["minimal", "standard", "paranoid"]).optional(),
-    retryOnFail: z.boolean().optional(),
+    /**
+     * Optional override for the `external` judge agent. B7 of
+     * melodic-strolling-seal-pt2 — `external` is a delegate spawn to
+     * `@friday/judge-agent` by default; authors can swap in a domain-
+     * specific judge (e.g. `fin-judge` for finance pipelines) without
+     * changing the runtime contract. Ignored when strategy is `"self"`.
+     */
+    agent: z.string().optional(),
   }),
 ]);
 

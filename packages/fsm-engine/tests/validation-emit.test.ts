@@ -67,14 +67,12 @@ function recordValidationCall(args: {
 }
 
 function passVerdict(): ValidationVerdict {
-  return { status: "pass", confidence: 0.9, threshold: 0.45, issues: [], retryGuidance: "" };
+  return { verdict: "pass" };
 }
 
 function uncertainVerdict(): ValidationVerdict {
   return {
-    status: "uncertain",
-    confidence: 0.4,
-    threshold: 0.45,
+    verdict: "advisory",
     issues: [
       {
         category: "judge-uncertain",
@@ -84,7 +82,6 @@ function uncertainVerdict(): ValidationVerdict {
         citation: null,
       },
     ],
-    retryGuidance: "",
   };
 }
 

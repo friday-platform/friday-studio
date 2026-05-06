@@ -1,18 +1,9 @@
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
-import type { ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
 import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMDocumentDataSchema } from "../document-schemas.ts";
 import { FSMEngine } from "../fsm-engine.ts";
-import type { FSMDefinition, FSMLLMOutput, LLMProvider, OutputValidator } from "../types.ts";
-
-function passVerdict(): ValidationVerdict {
-  return { status: "pass", confidence: 0.9, threshold: 0.45, issues: [], retryGuidance: "" };
-}
-
-function failVerdict(retryGuidance: string): ValidationVerdict {
-  return { status: "fail", confidence: 0.1, threshold: 0.45, issues: [], retryGuidance };
-}
+import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
 
 /** Mock LLM response - simplified format converted to AgentResult */
 interface MockLLMResponse {
@@ -59,11 +50,7 @@ function mockToEnvelope(
  * data matching the schema.
  */
 describe("complete tool injection for LLM actions", () => {
-  async function createLLMEngine(opts: {
-    fsm: FSMDefinition;
-    llmResponses: MockLLMResponse[];
-    validator?: OutputValidator;
-  }) {
+  async function createLLMEngine(opts: { fsm: FSMDefinition; llmResponses: MockLLMResponse[] }) {
     const store = getDocumentStore();
     const scope = {
       workspaceId: `test-${crypto.randomUUID()}`,
@@ -93,7 +80,6 @@ describe("complete tool injection for LLM actions", () => {
       documentStore: store,
       scope,
       llmProvider: mockLLMProvider,
-      validateOutput: opts.validator,
     });
     await engine.initialize();
 
@@ -550,84 +536,10 @@ describe("complete tool injection for LLM actions", () => {
     expect(toolsProvided).toContain("failStep");
   });
 
-  it("captures complete tool output on retry after validation failure", async () => {
-    // This test verifies the fix for the bug where complete tool output was not
-    // captured when the LLM was retried after validation failure.
-    const fsm: FSMDefinition = {
-      id: "complete-retry-test",
-      initial: "pending",
-      states: {
-        pending: {
-          documents: [{ id: "result", type: "TicketResult", data: {} }],
-          on: {
-            RUN: {
-              target: "done",
-              actions: [
-                {
-                  type: "llm",
-                  provider: "test",
-                  model: "test-model",
-                  prompt: "Extract ticket info",
-                  outputTo: "result",
-                  // B2: pin to external so the validator-driven retry path
-                  // is exercised — without `validate:` the classifier picks
-                  // `self` (no-op) and the retry never fires.
-                  validate: "external",
-                },
-              ],
-            },
-          },
-        },
-        done: { type: "final" },
-      },
-      documentTypes: {
-        TicketResult: {
-          type: "object",
-          properties: {
-            ticket_id: { type: "string" },
-            priority: { type: "string", enum: ["low", "medium", "high"] },
-          },
-        },
-      },
-    };
-
-    const { engine, store, scope, getLLMCallCount } = await createLLMEngine({
-      fsm,
-      validator: (trace) => {
-        // Fail first attempt (no complete tool call), pass on retry
-        if (trace.content === "first attempt without structured output") {
-          return Promise.resolve({ verdict: failVerdict("Call complete tool") });
-        }
-        return Promise.resolve({ verdict: passVerdict() });
-      },
-      llmResponses: [
-        // First attempt: LLM responds with text only (fails validation)
-        { content: "first attempt without structured output" },
-        // Retry: LLM calls complete tool with structured data (passes validation)
-        {
-          content: "",
-          calledTool: { name: "complete", args: { ticket_id: "RETRY-456", priority: "medium" } },
-        },
-      ],
-    });
-
-    await engine.signal({ type: "RUN" });
-
-    // Verify two LLM calls were made (initial + retry)
-    expect(getLLMCallCount()).toEqual(2);
-
-    // Verify state transitioned successfully
-    expect(engine.state).toEqual("done");
-
-    // Verify the retry's complete tool output was captured and stored
-    const docResult = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
-    expect(docResult.ok).toBe(true);
-    if (!docResult.ok) throw new Error(docResult.error);
-    expect(docResult.data?.data.data.ticket_id).toEqual("RETRY-456");
-    expect(docResult.data?.data.data.priority).toEqual("medium");
-    // Should NOT have raw response content (structured data took precedence)
-    expect(docResult.data?.data.data.content).toBeUndefined();
-  });
+  // B7 (melodic-strolling-seal-pt2). Pre-B7 retry-after-validation-failure
+  // test deleted along with the retry path itself. Authors who want retry
+  // wrap the action in an FSM-level retry pattern; the delegate-driven judge
+  // doesn't have a built-in retry concept.
 
   it("captures complete tool output when LLM calls other tools first (multi-step)", async () => {
     // BUG REGRESSION TEST: In real multi-step scenarios, the LLM calls MCP tools
@@ -878,73 +790,7 @@ describe("complete tool injection for LLM actions", () => {
     expect(engine.state).toEqual("done");
   });
 
-  it("detects failStep on retry after validation failure (multi-tool)", async () => {
-    const fsm: FSMDefinition = {
-      id: "failstep-retry-multi-test",
-      initial: "pending",
-      states: {
-        pending: {
-          documents: [{ id: "result", type: "TicketResult", data: {} }],
-          on: {
-            RUN: {
-              target: "done",
-              actions: [
-                {
-                  type: "llm",
-                  provider: "test",
-                  model: "test-model",
-                  prompt: "Extract info",
-                  outputTo: "result",
-                  // B2: pin to external so the validator-driven retry fires.
-                  validate: "external",
-                },
-              ],
-            },
-          },
-        },
-        done: { type: "final" },
-      },
-      documentTypes: {
-        TicketResult: { type: "object", properties: { ticket_id: { type: "string" } } },
-      },
-    };
-
-    const { engine } = await createLLMEngine({
-      fsm,
-      validator: (trace) => {
-        if (trace.content === "first attempt") {
-          return Promise.resolve({ verdict: failVerdict("Try again") });
-        }
-        return Promise.resolve({ verdict: passVerdict() });
-      },
-      llmResponses: [
-        // First attempt: text only, fails validation
-        { content: "first attempt" },
-        // Retry: calls artifacts_get then failStep
-        {
-          content: "",
-          calledTool: { name: "artifacts_get", args: { id: "doc-1" } },
-          data: {
-            toolCalls: [
-              {
-                type: "tool-call",
-                toolCallId: "call-1",
-                toolName: "artifacts_get",
-                input: { id: "doc-1" },
-              },
-              {
-                type: "tool-call",
-                toolCallId: "call-2",
-                toolName: "failStep",
-                input: { reason: "Gave up on retry" },
-              },
-            ],
-            toolResults: [],
-          },
-        },
-      ],
-    });
-
-    await expect(engine.signal({ type: "RUN" })).rejects.toThrow("LLM step failed on retry");
-  });
+  // B7 (melodic-strolling-seal-pt2). Pre-B7 retry test deleted — see the
+  // delete note above. failStep detection on the first attempt is still
+  // covered by the "detects failStep when LLM calls other tools first" case.
 });

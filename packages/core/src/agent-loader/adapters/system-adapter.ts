@@ -1,5 +1,5 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
-import { workspaceChatAgent } from "@atlas/system/agents";
+import { judgeAgent, workspaceChatAgent } from "@atlas/system/agents";
 import { AgentNotFoundError } from "../errors.ts";
 import type { AgentAdapter, AgentSourceData, AgentSummary } from "./types.ts";
 
@@ -19,6 +19,10 @@ export class SystemAgentAdapter implements AgentAdapter {
 
   private registerSystemAgents(): void {
     this.agents.set(workspaceChatAgent.metadata.id, workspaceChatAgent);
+    // B7 (melodic-strolling-seal-pt2). Judge agent for `validate: external`
+    // — invoked via the FSM engine's `runJudge` callback (workspace runtime
+    // wires the executor → this adapter → judgeAgent.handler).
+    this.agents.set(judgeAgent.metadata.id, judgeAgent as AtlasAgent<unknown, unknown>);
   }
 
   loadAgent(id: string): Promise<AgentSourceData> {

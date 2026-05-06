@@ -81,6 +81,9 @@ import type {
   FSMBroadcastNotifier,
   FSMDefinition,
   FSMLLMOutput,
+  JudgeAgentRunner,
+  JudgeHandoff,
+  JudgeToolCallEntry,
   LLMActionTrace,
   LLMProvider,
   OutputValidator,
@@ -448,27 +451,6 @@ function findRecordValidationToolArgs(result: LLMResult): Record<string, unknown
 }
 
 /**
- * Map a hallucination-judge verdict status into the structured emit shape's
- * verdict bucket. The judge's three-state space (`pass` / `uncertain` /
- * `fail`) collapses cleanly onto the emit space:
- *
- *   - `pass`      → `pass`      (above threshold, clean path)
- *   - `uncertain` → `advisory`  (mid-band; observability-only, never gates)
- *   - `fail`      → `blocking`  (below floor; today's path throws on retry-fail)
- *
- * The retry/throw machinery upstream is unchanged — this function only
- * reshapes the surviving verdict (the one that's about to be emitted) so
- * downstream consumers see one verdict shape across all three strategies.
- */
-function judgeStatusToVerdict(
-  status: "pass" | "uncertain" | "fail",
-): "pass" | "advisory" | "blocking" {
-  if (status === "pass") return "pass";
-  if (status === "uncertain") return "advisory";
-  return "blocking";
-}
-
-/**
  * Build the structured validation block that rides on `step:complete.validation`.
  * Three resolved strategies → three emit shapes; see `StepValidationOutputSchema`
  * in `@atlas/core/session-events` for the on-the-wire contract. Phase B6 of
@@ -515,73 +497,149 @@ function buildValidationOutput(input: {
   }
   // external
   if (!input.externalVerdict) return { strategy: "external" };
+  const issues = input.externalVerdict.issues ?? [];
   return {
     strategy: "external",
-    verdict: judgeStatusToVerdict(input.externalVerdict.status),
-    ...(input.externalVerdict.issues.length > 0
+    verdict: input.externalVerdict.verdict,
+    ...(issues.length > 0
       ? {
-          issues: input.externalVerdict.issues.map((iss) => ({
+          issues: issues.map((iss) => ({
             claim: iss.claim,
-            category: iss.category,
-            reasoning: iss.reasoning,
-            severity: iss.severity,
-            citation: iss.citation,
+            ...(iss.category !== undefined && { category: iss.category }),
+            ...(iss.reasoning !== undefined && { reasoning: iss.reasoning }),
+            ...(iss.severity !== undefined && { severity: iss.severity }),
+            ...(iss.citation !== undefined && { citation: iss.citation }),
           })),
         }
       : {}),
   };
 }
 
-/** Max characters per tool result when formatting for retry context */
-const MAX_RETRY_TOOL_RESULT_CHARS = 4000;
+/**
+ * Detect a scrubber-lifted (A2) tool result. Mirrors the refMarker
+ * pattern from `@atlas/core/artifacts/scrubber.ts`:
+ *
+ *   `[attachment lifted to artifact <id> (<kb> KB, <mime>, from <server>/<tool>) — use display_artifact or artifacts_get to read]`
+ *
+ * Returns `{ artifactId, summary }` on match — the runtime hands this to
+ * the judge so the judge can call `artifacts_get` only when it needs to
+ * verify a specific claim. Cost scales with judgment work, not with input
+ * size.
+ */
+const REF_MARKER_RE = /^\[attachment lifted to artifact ([\w-]+) \(([^)]+)\) — use [^\]]+\]$/;
 
-/** Max total characters for all tool results in retry context */
-const MAX_RETRY_TOOL_CONTEXT_CHARS = 50_000;
+function detectLiftedArtifact(
+  output: unknown,
+): { artifactId: string; summary: string } | undefined {
+  const text = extractToolResultText(output);
+  if (!text) return undefined;
+  const trimmed = text.trim();
+  const match = REF_MARKER_RE.exec(trimmed);
+  if (!match || !match[1]) return undefined;
+  return { artifactId: match[1], summary: match[2] ?? "" };
+}
+
+/** Max characters to inline per tool result in the judge handoff. */
+const MAX_JUDGE_INLINE_CHARS = 8000;
 
 /**
- * Format tool results from a previous LLM attempt into a readable text block
- * for injection into the retry prompt. Gives the retry LLM visibility into
- * data it already fetched so it can fix its reasoning without re-calling tools.
+ * Extract a string preview of a tool result's `output`. Mirrors the
+ * deleted hallucination/detector.ts shape — string passthrough, MCP text
+ * content array, JSON.stringify fallback. Inlined here so the judge
+ * handoff builder doesn't depend on the deleted package.
  */
-export function formatToolResultsForRetry(trace: LLMActionTrace): string {
-  if (!trace.toolResults?.length) return "";
-
-  const parts: string[] = [];
-  let totalLen = 0;
-
-  for (let i = 0; i < trace.toolResults.length; i++) {
-    const tr = trace.toolResults[i];
-    if (!tr) continue;
-
-    const toolName = tr.toolName ?? "unknown";
-    const inputText = tr.input != null ? ` | input: ${JSON.stringify(tr.input)}` : "";
-    const header = `=== Tool Result ${i + 1}: ${toolName}${inputText} ===`;
-
-    let outputText: string;
-    try {
-      const raw = typeof tr.output === "string" ? tr.output : JSON.stringify(tr.output, null, 2);
-      outputText =
-        raw.length > MAX_RETRY_TOOL_RESULT_CHARS
-          ? `${raw.slice(0, MAX_RETRY_TOOL_RESULT_CHARS)}…[truncated]`
-          : raw;
-    } catch {
-      outputText = "[Failed to serialize]";
+function extractToolResultText(output: unknown): string {
+  if (typeof output === "string") return output;
+  if (output && typeof output === "object") {
+    const obj = output as { content?: unknown };
+    if (Array.isArray(obj.content)) {
+      const texts: string[] = [];
+      for (const item of obj.content) {
+        if (
+          item &&
+          typeof item === "object" &&
+          typeof (item as { text?: unknown }).text === "string"
+        ) {
+          texts.push((item as { text: string }).text);
+        }
+      }
+      if (texts.length > 0) return texts.join("\n");
     }
-
-    const entry = `${header}\n${outputText}`;
-    // Account for "\n\n" join separator between entries
-    const separatorLen = parts.length > 0 ? 2 : 0;
-
-    if (totalLen + separatorLen + entry.length > MAX_RETRY_TOOL_CONTEXT_CHARS) {
-      parts.push(`…[${trace.toolResults.length - i} more tool results truncated for size]`);
-      break;
-    }
-
-    parts.push(entry);
-    totalLen += separatorLen + entry.length;
   }
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return String(output);
+  }
+}
 
-  return parts.join("\n\n");
+function truncateForJudge(text: string): string {
+  if (text.length <= MAX_JUDGE_INLINE_CHARS) return text;
+  return `${text.slice(0, MAX_JUDGE_INLINE_CHARS)}\n[...truncated ${
+    text.length - MAX_JUDGE_INLINE_CHARS
+  } chars]`;
+}
+
+/**
+ * Adapt a pre-B7 `OutputValidator` into a `JudgeAgentRunner`. The legacy
+ * verdict carries `status: "pass" | "uncertain" | "fail"`; this maps onto
+ * the B7 enum (`pass` / `advisory` / `blocking`). Used for back-compat
+ * with test scaffolds and lingering callers; production wires `runJudge`
+ * directly to the system judge agent.
+ */
+function legacyValidatorShim(validator: OutputValidator, trace: LLMActionTrace): JudgeAgentRunner {
+  return async ({ abortSignal }) => {
+    try {
+      const { verdict } = await validator(trace, abortSignal);
+      // Pre-B7 verdicts may carry only `status`; new code may already use
+      // `verdict`. Normalize either onto the B7 enum.
+      const status = (verdict as { status?: "pass" | "uncertain" | "fail" }).status;
+      const v: "pass" | "advisory" | "blocking" =
+        verdict.verdict ??
+        (status === "fail" ? "blocking" : status === "uncertain" ? "advisory" : "pass");
+      return {
+        ok: true,
+        verdict: {
+          verdict: v,
+          ...(verdict.issues && verdict.issues.length > 0 ? { issues: verdict.issues } : {}),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+}
+
+/**
+ * Build the judge handoff for an action's external-validation pass. Walks
+ * the trace's tool calls and projects each one as either an artifact
+ * reference (scrubber-lifted) or an inline preview. The judge agent
+ * receives this as its `handoff` payload.
+ */
+export function buildJudgeHandoff(trace: LLMActionTrace): JudgeHandoff {
+  const toolResults = trace.toolResults ?? [];
+  const toolCalls = trace.toolCalls ?? [];
+  const callsByCallId = new Map(toolCalls.map((tc) => [tc.toolCallId, tc.input]));
+
+  const entries: JudgeToolCallEntry[] = toolResults.map((tr) => {
+    const args = tr.toolCallId ? callsByCallId.get(tr.toolCallId) : undefined;
+    const lifted = detectLiftedArtifact(tr.output);
+    if (lifted) {
+      return {
+        toolName: tr.toolName,
+        ...(args !== undefined && { args }),
+        resultArtifactId: lifted.artifactId,
+        resultSummary: lifted.summary,
+      };
+    }
+    return {
+      toolName: tr.toolName,
+      ...(args !== undefined && { args }),
+      resultInline: truncateForJudge(extractToolResultText(tr.output)),
+    };
+  });
+
+  return { actionInput: trace.prompt, actionOutput: trace.content, toolCalls: entries };
 }
 
 /**
@@ -663,6 +721,22 @@ export interface FSMEngineOptions {
   agentExecutor?: AgentExecutor;
   /** MCP server configs from workspace — merged with atlas-platform at call time */
   mcpServerConfigs?: Record<string, MCPServerConfig>;
+  /**
+   * Phase B7 of melodic-strolling-seal-pt2. Replaces the pre-B7
+   * `validateOutput` hook with a delegate spawn to a system-level judge
+   * agent. Workspace runtime wires this to invoke `@friday/judge-agent`
+   * (or the per-action override from `validate.agent`) through the agent
+   * orchestrator. When unset, external-validation actions log + fall
+   * through to an advisory verdict so the action still emits.
+   */
+  runJudge?: JudgeAgentRunner;
+  /**
+   * @deprecated B7 — pre-B7 hook. The engine adapts a supplied
+   * `validateOutput` into a `runJudge` shim so older callers (test
+   * scaffolds, in-flight migration paths) keep working. New code wires
+   * `runJudge` directly. Remove this field once the lingering tests are
+   * updated.
+   */
   validateOutput?: OutputValidator;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
@@ -1869,7 +1943,7 @@ export class FSMEngine {
                   ? ({ type: "tool", toolName: "complete" } as const)
                   : ("auto" as const);
 
-              let result = await this.options.llmProvider.call({
+              const result = await this.options.llmProvider.call({
                 agentId: llmAgentId,
                 provider: action.provider,
                 model: action.model,
@@ -1940,7 +2014,9 @@ export class FSMEngine {
                 decision: validateDecision,
                 source: validateSource,
                 reason: validateReason,
-                ranExternalJudge: validateDecision === "external" && !!this.options.validateOutput,
+                ranExternalJudge:
+                  validateDecision === "external" &&
+                  (!!this.options.runJudge || !!this.options.validateOutput),
                 // B3: whether the inline self-check skill was injected at
                 // prompt-build time. Useful to verify in `global.log` that
                 // self-decisions actually got the skill body — and to spot
@@ -1957,163 +2033,84 @@ export class FSMEngine {
               // unwinds before we read this back.
               let externalSurvivingVerdict: ValidationVerdict | undefined;
 
-              // Validate output if validator provided AND the resolved
-              // decision is `external`. Retry policy: only verdict.status ===
-              // "fail" triggers a retry. Both `pass` and `uncertain` proceed
-              // identically — uncertain is observability-only, never gating,
-              // so judge confusion (timezones, math) cannot kill recoverable
-              // work.
-              if (validateDecision === "external" && this.options.validateOutput) {
+              // B7 (melodic-strolling-seal-pt2): external validation is now a
+              // delegate spawn to a system-level judge agent. The runtime
+              // hands the judge an action-output + tool-call manifest
+              // (refs-not-bytes for scrubber-lifted results); the judge
+              // returns a structured verdict. The pre-B7 retry policy is
+              // dropped — authors who want retry can wrap the action in an
+              // FSM-level retry pattern. Phase 8 budgets gate the spawn;
+              // delegate failure (budget exhausted, judge agent missing,
+              // exception) synthesizes an advisory verdict so the action
+              // still emits.
+              if (
+                validateDecision === "external" &&
+                (this.options.runJudge || this.options.validateOutput)
+              ) {
                 const trace = buildLLMActionTrace(result, action.model, contextPrompt);
                 const validationActionId = this.getActionId(action);
+                const judgeAgentId =
+                  typeof action.validate === "object" &&
+                  action.validate !== null &&
+                  typeof action.validate.agent === "string"
+                    ? action.validate.agent
+                    : "judge-agent";
 
                 this.emitValidationAttempt(sig, currentState, validationActionId, {
                   attempt: 1,
                   status: "running",
                 });
 
-                const { verdict } = await this.options.validateOutput(
-                  trace,
-                  sig._context?.abortSignal,
-                );
-                // Note: If validator throws, error propagates and aborts the action (fail-closed)
+                const runJudgeOrShim =
+                  this.options.runJudge ?? legacyValidatorShim(this.options.validateOutput!, trace);
+                const judgeResult = await runJudgeOrShim({
+                  agentId: judgeAgentId,
+                  handoff: buildJudgeHandoff(trace),
+                  abortSignal: sig._context?.abortSignal,
+                });
 
-                if (verdict.status === "fail") {
+                if (judgeResult.ok) {
+                  externalSurvivingVerdict = judgeResult.verdict;
                   this.emitValidationAttempt(sig, currentState, validationActionId, {
                     attempt: 1,
-                    status: "failed",
-                    terminal: false,
-                    verdict,
+                    status: judgeResult.verdict.verdict === "blocking" ? "failed" : "passed",
+                    terminal: true,
+                    verdict: judgeResult.verdict,
                   });
-
-                  logger.warn("LLM action failed validation, retrying with feedback", {
-                    state: currentState,
-                    model: action.model,
-                    confidence: verdict.confidence,
-                    threshold: verdict.threshold,
-                    retryGuidance: verdict.retryGuidance,
-                  });
-
-                  // Include previous tool results so the retry LLM can see data
-                  // it already fetched and fix its reasoning without re-calling tools.
-                  const previousToolContext = formatToolResultsForRetry(trace);
-
-                  const retryPrompt =
-                    `${contextPrompt}\n\n` +
-                    (previousToolContext
-                      ? `<previous-attempt-tool-results>\nThese are the tool results from your previous attempt. Use this data to correct your output.\n\n${previousToolContext}\n</previous-attempt-tool-results>\n\n`
-                      : "") +
-                    `<validation-feedback>\n${
-                      verdict.retryGuidance || "Output failed validation."
-                    }\n</validation-feedback>\n` +
-                    (previousToolContext
-                      ? `IMPORTANT: Correct your output using the tool results above. Only re-call tools if you need different data. If you cannot comply, call failStep.`
-                      : `IMPORTANT: Correct your output based on the feedback above. If you cannot comply, call failStep.`);
-
-                  // Rebuild messages with retry prompt, preserving image parts from the original call
-                  const retryMessages: ModelMessage[] | undefined =
-                    images.length > 0
-                      ? [
-                          {
-                            role: "user",
-                            content: [{ type: "text", text: retryPrompt }, ...images],
-                          },
-                        ]
-                      : undefined;
-
-                  result = await this.options.llmProvider.call({
-                    agentId: llmAgentId,
-                    provider: action.provider,
-                    model: action.model,
-                    prompt: retryPrompt,
-                    messages: retryMessages,
-                    tools,
-                    toolChoice: llmToolChoice,
-                    stopOnToolCall: completeToolInjected ? ["complete", "failStep"] : ["failStep"],
-                    onStreamEvent: sig._context?.onStreamEvent,
-                    abortSignal: sig._context?.abortSignal,
-                  });
-
-                  // Check for adapter-level errors on retry
-                  if (!result.ok) {
-                    throw new Error(`LLM call failed on retry: ${result.error.reason}`);
-                  }
-
-                  // Emit tool events for UI visibility (retry — skip when streaming)
-                  if (!sig._context?.onStreamEvent) {
-                    this.emitToolEvents(result, action, sig, currentState);
-                  }
-
-                  // Check if LLM called failStep on retry (search toolCalls for multi-tool scenarios)
-                  const retryFailArgs = findFailStepToolArgs(result);
-                  if (retryFailArgs) {
-                    throw new Error(`LLM step failed on retry: ${JSON.stringify(retryFailArgs)}`);
-                  }
-
-                  // Check if LLM called complete tool on retry
-                  if (completeToolInjected) {
-                    capturedCompleteOutput = findCompleteToolArgs(result);
-                  }
-
-                  const retryTrace = buildLLMActionTrace(result, action.model, retryPrompt);
-
-                  // Merge original call's tool results into the retry trace so the
-                  // validator can see all fetched data, even if the retry LLM didn't
-                  // re-issue the same tool calls.
-                  if (trace.toolResults?.length && !retryTrace.toolResults?.length) {
-                    retryTrace.toolResults = trace.toolResults;
-                    retryTrace.toolCalls = trace.toolCalls;
-                  }
-
-                  this.emitValidationAttempt(sig, currentState, validationActionId, {
-                    attempt: 2,
-                    status: "running",
-                  });
-
-                  const { verdict: retryVerdict } = await this.options.validateOutput(
-                    retryTrace,
-                    sig._context?.abortSignal,
-                  );
-
-                  if (retryVerdict.status === "fail") {
-                    this.emitValidationAttempt(sig, currentState, validationActionId, {
-                      attempt: 2,
-                      status: "failed",
-                      terminal: true,
-                      verdict: retryVerdict,
-                    });
-
-                    logger.error("LLM action failed validation after retry", {
+                  if (judgeResult.verdict.verdict === "blocking") {
+                    logger.error("LLM action external validation: blocking", {
                       state: currentState,
                       model: action.model,
-                      confidence: retryVerdict.confidence,
-                      threshold: retryVerdict.threshold,
-                      retryGuidance: retryVerdict.retryGuidance,
+                      issues: judgeResult.verdict.issues,
                     });
-                    // Attach the verdict to the error so callers (Task #29 system error
-                    // chunk renderer) can inspect issues without re-parsing strings.
-                    throw new ValidationFailedError(retryVerdict, llmAgentId);
+                    throw new ValidationFailedError(judgeResult.verdict, llmAgentId);
                   }
-
-                  this.emitValidationAttempt(sig, currentState, validationActionId, {
-                    attempt: 2,
-                    status: "passed",
-                    verdict: retryVerdict,
-                  });
-
-                  logger.info("LLM action passed validation on retry", {
+                } else {
+                  // Delegate failure → advisory verdict with judge-error
+                  // category. Action still emits; the failure is observable
+                  // on `step:complete.validation`.
+                  logger.warn("Judge delegate failed, synthesizing advisory verdict", {
                     state: currentState,
                     model: action.model,
-                    status: retryVerdict.status,
+                    error: judgeResult.error,
                   });
-                  externalSurvivingVerdict = retryVerdict;
-                } else {
+                  externalSurvivingVerdict = {
+                    verdict: "advisory",
+                    issues: [
+                      {
+                        category: "judge-error",
+                        severity: "info",
+                        claim: "validation",
+                        reasoning: `judge delegate failed: ${judgeResult.error}`,
+                      },
+                    ],
+                  };
                   this.emitValidationAttempt(sig, currentState, validationActionId, {
                     attempt: 1,
                     status: "passed",
-                    verdict,
+                    terminal: true,
+                    verdict: externalSurvivingVerdict,
                   });
-                  externalSurvivingVerdict = verdict;
                 }
               } else if (validateDecision === "self") {
                 // B3: the validating-llm-outputs skill was already composed
@@ -2366,7 +2363,8 @@ export class FSMEngine {
               source: agentValidateSource,
               reason: agentValidateReason,
               ranExternalJudge:
-                agentValidateDecision === "external" && !!this.options.validateOutput,
+                agentValidateDecision === "external" &&
+                (!!this.options.runJudge || !!this.options.validateOutput),
               validationSkillLoaded: agentValidateDecision === "self",
               resolvedAgentType: resolvedAgentType ?? "unknown",
             });
@@ -2383,17 +2381,24 @@ export class FSMEngine {
             // before this is read.
             let agentExternalSurvivingVerdict: ValidationVerdict | undefined;
 
-            // B4: external-path mirror for `case "agent"`. Today the inline
-            // `case "llm"` path runs `validateOutput` post-call when the
-            // resolved decision is `external`; mirror that here using a
-            // trace synthesized from the agent envelope. Retry semantics
-            // are intentionally simpler than the LLM path — the agent
-            // process already owns its own retry / repair loop, so we run
-            // a single judge pass and either pass or throw. B7 will
-            // replace this whole external branch with delegate semantics,
-            // so we deliberately don't factor a shared helper out today.
-            if (agentValidateDecision === "external" && this.options.validateOutput) {
+            // B7 (melodic-strolling-seal-pt2): external validation is a
+            // delegate spawn to a system-level judge agent — same shape as
+            // the case "llm" path. The judge sees the agent's output +
+            // tool-call manifest (refs-not-bytes for scrubber-lifted
+            // results) and returns a structured verdict. Delegate failure
+            // synthesizes an advisory verdict so the action still emits.
+            if (
+              agentValidateDecision === "external" &&
+              (this.options.runJudge || this.options.validateOutput)
+            ) {
               const validationActionId = this.getActionId(action);
+              const judgeAgentId =
+                typeof action.validate === "object" &&
+                action.validate !== null &&
+                typeof action.validate.agent === "string"
+                  ? action.validate.agent
+                  : "judge-agent";
+
               this.emitValidationAttempt(sig, currentState, validationActionId, {
                 attempt: 1,
                 status: "running",
@@ -2411,25 +2416,49 @@ export class FSMEngine {
                 model: `agent:${action.agentId}`,
                 prompt: action.prompt ?? "",
               };
-              const { verdict } = await this.options.validateOutput(
-                trace,
-                sig._context?.abortSignal,
-              );
-              if (verdict.status === "fail") {
+              const runJudgeOrShim =
+                this.options.runJudge ?? legacyValidatorShim(this.options.validateOutput!, trace);
+              const judgeResult = await runJudgeOrShim({
+                agentId: judgeAgentId,
+                handoff: buildJudgeHandoff(trace),
+                abortSignal: sig._context?.abortSignal,
+              });
+
+              if (judgeResult.ok) {
+                agentExternalSurvivingVerdict = judgeResult.verdict;
                 this.emitValidationAttempt(sig, currentState, validationActionId, {
                   attempt: 1,
-                  status: "failed",
+                  status: judgeResult.verdict.verdict === "blocking" ? "failed" : "passed",
                   terminal: true,
-                  verdict,
+                  verdict: judgeResult.verdict,
                 });
-                throw new ValidationFailedError(verdict, action.agentId);
+                if (judgeResult.verdict.verdict === "blocking") {
+                  throw new ValidationFailedError(judgeResult.verdict, action.agentId);
+                }
+              } else {
+                logger.warn("Judge delegate failed for agent action, synthesizing advisory", {
+                  state: currentState,
+                  agentId: action.agentId,
+                  error: judgeResult.error,
+                });
+                agentExternalSurvivingVerdict = {
+                  verdict: "advisory",
+                  issues: [
+                    {
+                      category: "judge-error",
+                      severity: "info",
+                      claim: "validation",
+                      reasoning: `judge delegate failed: ${judgeResult.error}`,
+                    },
+                  ],
+                };
+                this.emitValidationAttempt(sig, currentState, validationActionId, {
+                  attempt: 1,
+                  status: "passed",
+                  terminal: true,
+                  verdict: agentExternalSurvivingVerdict,
+                });
               }
-              this.emitValidationAttempt(sig, currentState, validationActionId, {
-                attempt: 1,
-                status: "passed",
-                verdict,
-              });
-              agentExternalSurvivingVerdict = verdict;
             }
 
             // B6 (melodic-strolling-seal-pt2): build the structured validation

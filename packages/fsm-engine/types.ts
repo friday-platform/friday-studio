@@ -387,24 +387,71 @@ export interface LLMActionTrace {
 }
 
 /**
- * Result of validating LLM output.
- * Named distinctly to avoid collision with ValidationResult in validator.ts.
+ * One tool call's projection in the judge handoff manifest. Phase B7 of
+ * melodic-strolling-seal-pt2. The runtime walks the action's
+ * `traceToolResults` and builds one entry per call:
  *
- * The verdict's `status` field drives retry policy: `pass` and `uncertain`
- * proceed identically to downstream steps; `fail` triggers a single retry, and
- * a second `fail` throws with the verdict attached on the error.
+ *   - `resultArtifactId` + `resultSummary` for scrubber-lifted (A2) results
+ *     so the judge sees a short ref string and fetches via `artifacts_get`
+ *     only for the specific claims it needs to verify.
+ *   - `resultInline` otherwise — small payloads inline up to the cap.
+ */
+export interface JudgeToolCallEntry {
+  toolName: string;
+  args?: unknown;
+  /** Set when the tool result was lifted to an artifact by the scrubber. */
+  resultArtifactId?: string;
+  /** Human-readable preview of the lifted artifact (mime / size / source). */
+  resultSummary?: string;
+  /** Set when the tool result was small enough to inline directly. */
+  resultInline?: string;
+}
+
+/**
+ * Distilled handoff the FSM engine builds for the judge agent's delegate
+ * call. Refs-not-bytes: scrubber-lifted results carry only the artifact id
+ * + summary, so cost scales with judgment work rather than input size.
+ */
+export interface JudgeHandoff {
+  /** The action's input prompt — what the LLM was asked to produce. */
+  actionInput: string;
+  /** The action's output — the LLM's draft to be judged. */
+  actionOutput: string;
+  /** Per-tool-call manifest with refs for lifted artifacts and inline for small payloads. */
+  toolCalls: JudgeToolCallEntry[];
+}
+
+/**
+ * Function type the FSM engine calls when an action's resolved validation
+ * decision is `external`. Replaces the pre-B7 `OutputValidator` hook —
+ * external validation is now a delegate spawn to a system-level judge
+ * agent (default `judge-agent`, overridable via `validate.agent`).
+ *
+ * Implementations live outside fsm-engine (workspace runtime wires this to
+ * the agent orchestrator). Returns the verdict the judge emitted, or `ok:
+ * false` when the delegate failed (budget exhausted, agent not found,
+ * exception). The runtime synthesizes an advisory verdict on `ok: false`
+ * so the action still emits.
+ */
+export type JudgeAgentRunner = (input: {
+  /** Default `"judge-agent"`; can be overridden via `validate.agent`. */
+  agentId: string;
+  /** Distilled handoff the judge agent reads. */
+  handoff: JudgeHandoff;
+  abortSignal?: AbortSignal;
+}) => Promise<{ ok: true; verdict: ValidationVerdict } | { ok: false; error: string }>;
+
+/**
+ * @deprecated B7 — pre-B7 callback signature retained for tests still
+ * exercising the legacy `validate: external` retry semantics. The runtime
+ * uses `JudgeAgentRunner` exclusively; tests that pass `validateOutput`
+ * are adapted into a `runJudge` shim by the test scaffolds.
  */
 export interface LLMOutputValidationResult {
   verdict: ValidationVerdict;
 }
 
-/**
- * Function type for validating LLM action output.
- * Returns a promise because real validators call LLMs for analysis.
- *
- * `abortSignal` lets callers cancel an in-flight judge call when a job is
- * aborted mid-validation, so doomed validations do not waste tokens.
- */
+/** @deprecated B7 — see {@link JudgeAgentRunner}. */
 export type OutputValidator = (
   trace: LLMActionTrace,
   abortSignal?: AbortSignal,

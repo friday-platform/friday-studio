@@ -29,7 +29,7 @@ import type {
 } from "../types.ts";
 
 function passVerdict(): ValidationVerdict {
-  return { status: "pass", confidence: 0.9, threshold: 0.45, issues: [], retryGuidance: "" };
+  return { verdict: "pass" };
 }
 
 interface MockResponse {

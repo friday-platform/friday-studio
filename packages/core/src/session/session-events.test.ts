@@ -425,6 +425,10 @@ describe("SessionStreamEventSchema", () => {
   });
 
   test("parses step:validation (failed, with terminal flag and verdict)", () => {
+    // B7 (melodic-strolling-seal-pt2): the verdict shape collapsed onto
+    // `verdict: "pass" | "advisory" | "blocking"` + optional issues. The
+    // legacy status/confidence/threshold/retryGuidance fields remain on
+    // the schema for back-compat but are no longer the discriminator.
     const result = SessionStreamEventSchema.parse({
       type: "step:validation",
       sessionId: "sess-1",
@@ -433,9 +437,7 @@ describe("SessionStreamEventSchema", () => {
       status: "failed",
       terminal: true,
       verdict: {
-        status: "fail",
-        confidence: 0.2,
-        threshold: 0.45,
+        verdict: "blocking",
         issues: [
           {
             category: "sourcing",
@@ -445,13 +447,12 @@ describe("SessionStreamEventSchema", () => {
             citation: null,
           },
         ],
-        retryGuidance: "call a tool first",
       },
       timestamp: NOW,
     });
     if (result.type === "step:validation") {
       expect(result.terminal).toBe(true);
-      expect(result.verdict?.status).toBe("fail");
+      expect(result.verdict?.verdict).toBe("blocking");
     }
   });
 

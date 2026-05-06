@@ -89,25 +89,36 @@
     return n.toFixed(2);
   }
 
-  const confidenceText = $derived(
-    verdict ? `${fmt(verdict.confidence)} / ${fmt(verdict.threshold)}` : null,
-  );
+  // B7 (melodic-strolling-seal-pt2). Pre-B7 verdicts carried
+  // confidence/threshold; the new judge agent emits only verdict + issues.
+  // The confidence pill renders only on legacy events that still set them.
+  const confidenceText = $derived.by(() => {
+    if (!verdict) return null;
+    if (typeof verdict.confidence !== "number" || typeof verdict.threshold !== "number") {
+      return null;
+    }
+    return `${fmt(verdict.confidence)} / ${fmt(verdict.threshold)}`;
+  });
 
   /* ─── Issue rendering ────────────────────────────────────────────── */
 
-  function severityTone(severity: ValidationIssue["severity"]): "red" | "yellow" | "neutral" {
+  function severityTone(
+    severity: ValidationIssue["severity"],
+  ): "red" | "yellow" | "neutral" {
     switch (severity) {
       case "error":
+      case "high":
         return "red";
       case "warn":
+      case "medium":
         return "yellow";
-      case "info":
+      default:
         return "neutral";
     }
   }
 
-  function citationDisplay(citation: string | null): string {
-    if (citation === null) return "(no supporting tool call)";
+  function citationDisplay(citation: string | null | undefined): string {
+    if (citation == null) return "(no supporting tool call)";
     return citation;
   }
 </script>
@@ -145,7 +156,7 @@
         </div>
       {/if}
 
-      {#if verdict.issues.length > 0}
+      {#if verdict.issues && verdict.issues.length > 0}
         <ul class="issue-list">
           {#each verdict.issues as issue, i (i)}
             {@const sevTone = severityTone(issue.severity)}

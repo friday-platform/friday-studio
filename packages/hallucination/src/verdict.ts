@@ -1,20 +1,29 @@
 /**
- * Validation verdict shape returned by the hallucination judge.
+ * Validation verdict shape returned by the external judge agent (B7 of
+ * melodic-strolling-seal-pt2).
  *
- * Replaces the binary `{ valid, feedback }` envelope. Status is derived in code
- * (not picked by the judge) from a confidence-band → supervision-threshold mapping;
- * severity is derived from category via a static map.
+ * Phase B7 collapsed the heavy hallucination/detector.ts machinery (~700
+ * lines of generateObject + retry + error classification) into a delegate
+ * call to `@friday/judge-agent`. The shapes that survive here are the
+ * narrow data contract the FSM engine emits on `step:complete.validation`
+ * and that the judge agent populates as its `outputType: validation-verdict`.
  *
- * NOTE: "Validator (Workspace)" in `@atlas/config` is a different concept; this
- * module is the post-hoc Output Validator (Hallucination Judge) — runtime, LLM-driven.
+ * NOTE: "Validator (Workspace)" in `@atlas/config` is a different concept;
+ * this module is the post-hoc Output Validator (Hallucination Judge) —
+ * runtime, agent-driven.
  */
 
 import { z } from "zod";
-import { SupervisionLevel } from "./supervision-levels.ts";
 
-export const VerdictStatusSchema = z.enum(["pass", "uncertain", "fail"]);
+export const VerdictStatusSchema = z.enum(["pass", "advisory", "blocking"]);
 export type VerdictStatus = z.infer<typeof VerdictStatusSchema>;
 
+/**
+ * Issue category. Authors and the judge agent both use these — strings on
+ * the wire, enum-typed in code. `judge-error` is reserved for runtime
+ * synthesis when the judge delegate itself fails (budget exhausted, agent
+ * not found, exception); the judge prompt forbids emitting it directly.
+ */
 export const IssueCategorySchema = z.enum([
   "sourcing",
   "no-tools-called",
@@ -23,42 +32,56 @@ export const IssueCategorySchema = z.enum([
 ]);
 export type IssueCategory = z.infer<typeof IssueCategorySchema>;
 
-export const IssueSeveritySchema = z.enum(["info", "warn", "error"]);
+/**
+ * Severity buckets surfaced on `step:complete.validation.issues[].severity`.
+ * Kept as a structural superset of what authors can hand to
+ * `record_validation` (B6) so the judge-derived shape parses cleanly into
+ * the same emit envelope.
+ */
+export const IssueSeveritySchema = z.enum(["low", "medium", "high", "info", "warn", "error"]);
 export type IssueSeverity = z.infer<typeof IssueSeveritySchema>;
 
 export const ValidationIssueSchema = z.object({
-  category: IssueCategorySchema,
-  severity: IssueSeveritySchema,
+  category: IssueCategorySchema.optional(),
+  severity: IssueSeveritySchema.optional(),
   claim: z.string(),
-  reasoning: z.string(),
-  citation: z.string().nullable(),
+  reasoning: z.string().optional(),
+  citation: z.string().nullable().optional(),
 });
 export type ValidationIssue = z.infer<typeof ValidationIssueSchema>;
 
+/**
+ * Verdict the judge agent emits as its structured `validation-verdict`
+ * output, also the shape FSM engine carries forward to
+ * `step:complete.validation`. The discriminator is `verdict`, not
+ * `status` — matches B6's emit-side enum and keeps the judge prompt
+ * conceptually aligned with `record_validation`.
+ *
+ * - `pass`     — output is sourced; emit normally.
+ * - `advisory` — output emitted with concerns; never gates the action.
+ * - `blocking` — fabrication; runtime errors the action and the FSM does
+ *                not transition.
+ *
+ * Legacy (pre-B7) consumers also read `status`/`confidence`/`threshold`/
+ * `retryGuidance`. These are kept on the schema as optional fields so the
+ * UI components that grew up around the pre-B7 shape continue to render
+ * the same pills without per-component refactors. The judge agent does
+ * not emit them; runtime sites that build verdicts populate them only
+ * for back-compat where it matters.
+ */
 export const ValidationVerdictSchema = z.object({
-  status: VerdictStatusSchema,
-  confidence: z.number(),
-  threshold: z.number(),
-  issues: z.array(ValidationIssueSchema),
-  retryGuidance: z.string(),
+  verdict: VerdictStatusSchema,
+  issues: z.array(ValidationIssueSchema).optional(),
+  /** @deprecated B7 — legacy mirror of `verdict`. New code reads `verdict`. */
+  status: z.enum(["pass", "uncertain", "fail"]).optional(),
+  /** @deprecated B7 — pre-B7 confidence band; not produced by the judge agent. */
+  confidence: z.number().optional(),
+  /** @deprecated B7 — pre-B7 supervision threshold; not produced by the judge agent. */
+  threshold: z.number().optional(),
+  /** @deprecated B7 — pre-B7 retry hint; the new path doesn't auto-retry. */
+  retryGuidance: z.string().optional(),
 });
 export type ValidationVerdict = z.infer<typeof ValidationVerdictSchema>;
-
-/**
- * Confidence threshold per supervision level. Above-threshold → pass; below 0.3 → fail;
- * the band in between is uncertain (proceeds with a soft warning).
- */
-const SUPERVISION_THRESHOLDS: Readonly<Record<SupervisionLevel, number>> = {
-  [SupervisionLevel.MINIMAL]: 0.35,
-  [SupervisionLevel.STANDARD]: 0.45,
-  [SupervisionLevel.PARANOID]: 0.6,
-};
-
-/** Hard floor below which any verdict is `fail` regardless of supervision level. */
-const FAIL_FLOOR = 0.3;
-
-/** Synthetic confidence used when the judge itself fails (never < FAIL_FLOOR). */
-const JUDGE_ERROR_CONFIDENCE = 0.4;
 
 /**
  * Static category → severity map. Severity is policy, not observation —
@@ -75,45 +98,10 @@ export function severityForCategory(category: IssueCategory): IssueSeverity {
   return SEVERITY_BY_CATEGORY[category];
 }
 
-export function getThresholdForLevel(level: SupervisionLevel): number {
-  return SUPERVISION_THRESHOLDS[level];
-}
-
 /**
- * Map a confidence score against a supervision threshold to a verdict status.
- * `confidence >= threshold` → pass; `[FAIL_FLOOR, threshold)` → uncertain; below → fail.
- */
-export function statusFromConfidence(confidence: number, threshold: number): VerdictStatus {
-  if (confidence >= threshold) return "pass";
-  if (confidence >= FAIL_FLOOR) return "uncertain";
-  return "fail";
-}
-
-/**
- * Build a synthetic verdict for judge infrastructure failures (network, parse, rate-limit, crash).
- * Status is forced uncertain so agent work is never lost to validator outages.
- */
-export function judgeErrorVerdict(threshold: number, message: string): ValidationVerdict {
-  const issue: ValidationIssue = {
-    category: "judge-error",
-    severity: severityForCategory("judge-error"),
-    claim: "",
-    reasoning: message,
-    citation: null,
-  };
-  return {
-    status: "uncertain",
-    confidence: JUDGE_ERROR_CONFIDENCE,
-    threshold,
-    issues: [issue],
-    retryGuidance: "",
-  };
-}
-
-/**
- * Thrown by validation consumers when a verdict's status is `fail`.
- * Carries the full verdict so callers can render structured issues, log
- * confidence, or attach the payload to a lifecycle event.
+ * Thrown by validation consumers when the judge returns `verdict: "blocking"`.
+ * Carries the verdict so callers (Task #29 system error chunk renderer) can
+ * inspect issues without re-parsing strings.
  */
 export class ValidationFailedError extends Error {
   constructor(
@@ -121,8 +109,8 @@ export class ValidationFailedError extends Error {
     agentId?: string,
   ) {
     const subject = agentId ? `agent ${agentId}` : "agent output";
-    const guidance = verdict.retryGuidance || "no retry guidance";
-    super(`Validation failed for ${subject}: ${guidance}`);
+    const issues = verdict.issues?.map((i) => i.claim).join("; ") || "no issues";
+    super(`Validation failed for ${subject}: ${issues}`);
     this.name = "ValidationFailedError";
   }
 }

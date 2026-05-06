@@ -8,12 +8,6 @@ import type { LLMAgentConfig, SystemAgentConfig, WorkspaceAgentConfig } from "@a
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import type { Context, JSONSchema, Signal } from "@atlas/fsm-engine";
 import { expandArtifactRefsInDocuments } from "@atlas/fsm-engine";
-import {
-  type HallucinationDetectorConfig,
-  SupervisionLevel,
-  ValidationFailedError,
-  validate as validateOutput,
-} from "@atlas/hallucination";
 import { buildTemporalFacts, type DatetimeContext, type PlatformModels } from "@atlas/llm";
 import { logger } from "@atlas/logger";
 
@@ -161,23 +155,29 @@ export async function buildAgentPrompt(
 }
 
 /**
- * Validate agent output (extracted from SessionSupervisor lines 1825-1938)
- *
- * Checks:
- * - Hallucination detection (referencing non-existent data) - ONLY for LLM agents
- * - Schema validation if expected schema provided
- * - Output format validation
- *
- * Throws on invalid output (FSM will abort transition)
+ * Validate agent output. Phase B7 of melodic-strolling-seal-pt2 dropped
+ * the inline hallucination-detection branch (the deleted
+ * `@atlas/hallucination` `validate` function). External validation now
+ * runs through the FSM engine's `runJudge` callback, gated by the
+ * resolved `validate:` decision (`external` only). What's left here is
+ * lightweight envelope checks that catch obviously broken results before
+ * they enter the FSM context.
  */
-export async function validateAgentOutput(
+export function validateAgentOutput(
   result: AgentResult,
   context: Context,
-  agentType: "llm" | "system" | "sdk",
-  platformModels?: PlatformModels,
+  _agentType: "llm" | "system" | "sdk",
+  _platformModels?: PlatformModels,
   expectedSchema?: JSONSchema,
-  supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD,
 ): Promise<void> {
+  return Promise.resolve(validateAgentOutputSync(result, context, expectedSchema));
+}
+
+function validateAgentOutputSync(
+  result: AgentResult,
+  context: Context,
+  expectedSchema?: JSONSchema,
+): void {
   // Skip validation for error results
   if (!result.ok) {
     logger.warn("Agent returned error, skipping validation", {
@@ -196,45 +196,6 @@ export async function validateAgentOutput(
   if (result.data === "") {
     logger.error("Agent output is empty!", { agentId: result.agentId });
     throw new Error(`Agent ${result.agentId} produced empty output`);
-  }
-
-  // Only run hallucination detection for ad-hoc LLM agents
-  // System agents and SDK agents are code-based and should not be checked
-  if (agentType === "llm" && platformModels) {
-    const hallucinationDetectorConfig: HallucinationDetectorConfig = {
-      platformModels,
-      logger: logger.child({ component: "hallucination-detector" }),
-    };
-
-    const verdict = await validateOutput(result, supervisionLevel, hallucinationDetectorConfig);
-
-    logger.info("Agent output validation", {
-      agentId: result.agentId,
-      status: verdict.status,
-      confidence: verdict.confidence,
-      threshold: verdict.threshold,
-      issuesCount: verdict.issues.length,
-      issues: verdict.issues,
-    });
-
-    if (verdict.status === "fail") {
-      logger.error("Agent output failed validation", {
-        agentId: result.agentId,
-        confidence: verdict.confidence,
-        retryGuidance: verdict.retryGuidance,
-        issues: verdict.issues,
-      });
-      throw new ValidationFailedError(verdict, result.agentId);
-    }
-  } else if (agentType === "llm") {
-    logger.debug("Skipping hallucination detection — no platformModels injected", {
-      agentId: result.agentId,
-    });
-  } else {
-    logger.debug("Skipping hallucination detection for non-LLM agent", {
-      agentId: result.agentId,
-      agentType,
-    });
   }
 
   // Validate against schema if provided

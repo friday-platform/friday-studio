@@ -6255,7 +6255,6 @@
       "packages/hallucination": {
         "packageJson": {
           "dependencies": [
-            "npm:ai@^6.0.174",
             "npm:vitest@^4.1.0",
             "npm:zod@^4.3.5"
           ]

@@ -32,7 +32,7 @@ import type {
 const SENTINEL_BODY = "<<<MERGED-DEFAULTS-VALIDATING-SKILL-BODY>>> sentinel for B5 tests";
 
 function passVerdict(): ValidationVerdict {
-  return { status: "pass", confidence: 0.9, threshold: 0.45, issues: [], retryGuidance: "" };
+  return { verdict: "pass" };
 }
 
 function envelope(
