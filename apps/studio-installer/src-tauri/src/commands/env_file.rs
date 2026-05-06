@@ -166,6 +166,102 @@ pub fn env_file_location() -> Result<String, String> {
     Ok(env_file_path()?.display().to_string())
 }
 
+/// Append missing platform-internal env vars (ports, store dir, link
+/// URLs, etc.) to `lines`. Existing values are NEVER overwritten — if
+/// a user customised `FRIDAY_PORT_FRIDAY` in `.env`, we leave it. New
+/// defaults the installer ships (e.g. `FRIDAY_JETSTREAM_STORE_DIR`)
+/// get added on every run, so an upgrade picks them up even when
+/// `write_env_file` itself isn't invoked (update mode skips it when
+/// the user already has an API key).
+fn apply_platform_vars(
+    lines: &mut Vec<(Option<String>, String)>,
+    existing_keys: &HashMap<String, usize>,
+) -> Result<(), String> {
+    // Per-machine value: depends on friday_home_dir() resolution, so
+    // it can't live in the static array below. `nats` (not `jetstream`)
+    // because nats-server itself appends a `jetstream/` segment
+    // internally — naming the storeDir `nats` produces the clean
+    // `<home>/nats/jetstream/$G/streams/...` layout.
+    let jetstream_store_dir = friday_home_dir()?
+        .join("nats")
+        .display()
+        .to_string();
+
+    // Friday Studio reserves its own non-default port range so a user
+    // running another local Friday instance, a stock atlasd from
+    // source, or another tool on the conventional 5200/8080 ports
+    // doesn't clash with the installed launcher.
+    //
+    //   FRIDAY_PORT_FRIDAY            18080  ← daemon (was 8080)
+    //   FRIDAY_PORT_LINK              13100  ← link (was 3100)
+    //   FRIDAY_PORT_WEBHOOK_TUNNEL    19090  ← tunnel (was 9090)
+    //   FRIDAY_PORT_PLAYGROUND        15200  ← studio UI (was 5200)
+    //
+    // The launcher imports ~/.friday/local/.env into its own process
+    // env (tools/friday-launcher/main.go's importDotEnvIntoProcessEnv).
+    // The matching EXTERNAL_*_URL / FRIDAYD_URL values ensure the
+    // playground UI's window.__FRIDAY_CONFIG__ points at the moved
+    // daemon + tunnel — auto-derive isn't possible because the URLs
+    // may also include user-controlled hostnames or schemes.
+    let platform_vars: Vec<(&str, String)> = vec![
+        ("FRIDAY_LOCAL_ONLY", "true".to_string()),
+        ("LINK_DEV_MODE", "true".to_string()),
+        ("FRIDAY_PORT_FRIDAY", "18080".to_string()),
+        ("FRIDAY_PORT_LINK", "13100".to_string()),
+        ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090".to_string()),
+        ("FRIDAY_PORT_PLAYGROUND", "15200".to_string()),
+        ("FRIDAYD_URL", "http://localhost:18080".to_string()),
+        ("EXTERNAL_DAEMON_URL", "http://localhost:18080".to_string()),
+        ("EXTERNAL_TUNNEL_URL", "http://localhost:19090".to_string()),
+        // Daemon proxies /api/link/* to LINK_SERVICE_URL; without
+        // this line it falls back to the legacy :3100 and credential
+        // lookups for Gmail / Slack / etc. fail with ECONNREFUSED.
+        ("LINK_SERVICE_URL", "http://localhost:13100".to_string()),
+        // The launcher reads FRIDAY_JETSTREAM_STORE_DIR and passes it
+        // to nats-server as `-sd`; the daemon reads it via
+        // readJetStreamConfig. Default: <friday_home>/nats — stable,
+        // persistent, never `$TMPDIR` (which macOS periodically GCs).
+        ("FRIDAY_JETSTREAM_STORE_DIR", jetstream_store_dir),
+    ];
+    for (k, v) in &platform_vars {
+        if !existing_keys.contains_key(*k) {
+            lines.push((Some((*k).to_string()), v.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Add any platform vars missing from `.env`. Called on every install
+/// (fresh AND update) so a customer upgrading from a build that
+/// didn't ship a particular var picks up the new default. Existing
+/// values are preserved — if you've customised `.env`, your
+/// customisations survive.
+#[tauri::command]
+pub fn ensure_platform_env_vars() -> Result<String, String> {
+    let path = env_file_path()?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create .friday/local dir: {e}"))?;
+    }
+
+    let existing_content = fs::read_to_string(&path).unwrap_or_default();
+    let mut lines = parse_env_lines(&existing_content);
+    let existing_keys: HashMap<String, usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (k, _))| k.as_ref().map(|key| (key.clone(), i)))
+        .collect();
+
+    apply_platform_vars(&mut lines, &existing_keys)?;
+
+    let output = render_env_lines(&lines);
+    atomic_write(&path, output.as_bytes())
+        .map_err(|e| format!("Failed to write .env file: {e}"))?;
+
+    Ok(path.display().to_string())
+}
+
 /// Returns the URL the wizard should open in the user's browser to
 /// land on the local playground. Reads FRIDAY_PORT_PLAYGROUND from
 /// ~/.friday/local/.env (which the wizard itself writes during the
@@ -234,99 +330,7 @@ pub fn write_env_file(
         }
     }
 
-    // Platform-internal vars — only added when missing so any user
-    // overrides survive (someone editing .env to point FRIDAYD_URL
-    // at a non-default daemon, etc.). The EXTERNAL_*_URL values are
-    // read at runtime by the playground binary and injected into the
-    // served HTML; the launcher passes the .env through to its
-    // supervised processes so updating these is enough to retarget
-    // browser-facing URLs without rebuilding.
-    //
-    // FRIDAY_KEY is intentionally NOT seeded here. The daemon's
-    // ensureLocalFridayKey() (apps/atlas-cli/.../local-friday-key.ts)
-    // generates a fresh ephemeral JWT in-process on every start when
-    // the env var isn't set. Hardcoding a static JWT in the installer
-    // would (1) ship a known token in clear in source and (2) skip the
-    // daemon's richer payload (iss / email / user_metadata) for no
-    // benefit — the signature isn't verified in local mode anyway.
-    // Friday Studio reserves its own non-default port range so a user
-    // running another local Friday instance, a stock atlasd from source,
-    // or another tool on the conventional 5200/8080 ports doesn't clash
-    // with the installed launcher. Coordinated set the wizard ALWAYS
-    // writes on every install (overwrite semantics — see below):
-    //
-    //   FRIDAY_PORT_FRIDAY            18080  ← daemon (was 8080)
-    //   FRIDAY_PORT_LINK              13100  ← link (was 3100)
-    //   FRIDAY_PORT_WEBHOOK_TUNNEL    19090  ← tunnel (was 9090)
-    //   FRIDAY_PORT_PLAYGROUND        15200  ← studio UI (was 5200)
-    //
-    // The launcher imports ~/.friday/local/.env into its own process env
-    // (tools/friday-launcher/main.go's importDotEnvIntoProcessEnv), so
-    // portOverride() picks up these values when supervisedProcesses()
-    // builds each spec. The matching EXTERNAL_*_URL / FRIDAYD_URL values
-    // below ensure the playground UI's window.__FRIDAY_CONFIG__ points
-    // at the moved daemon + tunnel — auto-derive isn't possible because
-    // the URLs may also include user-controlled hostnames or schemes
-    // (reverse proxies, future cloud mode).
-    //
-    // OVERWRITE semantics: pre-Stack-3 builds wrote these values only
-    // when the key was missing, so users would silently get whatever
-    // was in .env from a previous version. That left installs running
-    // on the legacy 8080/5200 ports even after a fresh install — the
-    // exact bug the user hit. Always-overwrite means the installer is
-    // the source of truth for port configuration; users who genuinely
-    // want different ports can edit .env after install (the launcher
-    // re-reads it on every restart).
-    // Per-machine value: depends on friday_home_dir() resolution, so it
-    // can't live in the static array of (&str, &str) literals below. We
-    // build the JetStream store path here and feed it into the array as
-    // a String alongside the static port/url constants.
-    //
-    // Why this lives in platform_vars (overwrite semantics) and not in
-    // an "only if missing" path: the installer is the source of truth
-    // for STORE_DIR, same convention as FRIDAY_PORT_*. Operators who
-    // genuinely want a different store path can edit .env after install
-    // (the launcher re-reads it on every restart), with the explicit
-    // understanding that the next reinstall will reset it.
-    // `nats` (not `jetstream`) because nats-server itself appends a
-    // `jetstream/` segment internally — naming the storeDir `nats`
-    // produces the clean `<home>/nats/jetstream/$G/streams/...` layout
-    // rather than the awkward `<home>/jetstream/jetstream/...`.
-    let jetstream_store_dir = friday_home_dir()?
-        .join("nats")
-        .display()
-        .to_string();
-
-    let platform_vars: Vec<(&str, String)> = vec![
-        ("FRIDAY_LOCAL_ONLY", "true".to_string()),
-        ("LINK_DEV_MODE", "true".to_string()),
-        ("FRIDAY_PORT_FRIDAY", "18080".to_string()),
-        ("FRIDAY_PORT_LINK", "13100".to_string()),
-        ("FRIDAY_PORT_WEBHOOK_TUNNEL", "19090".to_string()),
-        ("FRIDAY_PORT_PLAYGROUND", "15200".to_string()),
-        ("FRIDAYD_URL", "http://localhost:18080".to_string()),
-        ("EXTERNAL_DAEMON_URL", "http://localhost:18080".to_string()),
-        ("EXTERNAL_TUNNEL_URL", "http://localhost:19090".to_string()),
-        // Daemon proxies /api/link/* to LINK_SERVICE_URL; without this
-        // line it falls back to the legacy :3100 and credential lookups
-        // for Gmail / Slack / etc. fail with ECONNREFUSED. atlasd's
-        // resolver also accepts FRIDAY_PORT_LINK as a port-only
-        // fallback, but seeding the full URL here is the canonical
-        // shape and keeps the env file readable.
-        ("LINK_SERVICE_URL", "http://localhost:13100".to_string()),
-        // The installer is the single writer of FRIDAY_JETSTREAM_STORE_DIR.
-        // The launcher reads it and passes it to nats-server as -sd; the
-        // daemon reads it via readJetStreamConfig. Default: <friday_home>/
-        // jetstream — stable, persistent, never `$TMPDIR` (which macOS
-        // periodically garbage-collects).
-        ("FRIDAY_JETSTREAM_STORE_DIR", jetstream_store_dir),
-    ];
-    for (k, v) in &platform_vars {
-        match existing_keys.get(*k) {
-            Some(&i) => lines[i] = (Some((*k).to_string()), v.clone()),
-            None => lines.push((Some((*k).to_string()), v.clone())),
-        }
-    }
+    apply_platform_vars(&mut lines, &existing_keys)?;
 
     let output = render_env_lines(&lines);
     atomic_write(&path, output.as_bytes())
