@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ListDetail } from "@atlas/ui";
+  import { Button, IconSmall, ListDetail } from "@atlas/ui";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import ChatListPanel from "$lib/components/chat/chat-list-panel.svelte";
@@ -20,6 +20,10 @@
     const base = `/platform/${encodeURIComponent(workspaceId)}/chat`;
     goto(nextChatId ? `${base}/${encodeURIComponent(nextChatId)}` : base);
   }
+
+  function handleNewChat() {
+    goto(`/platform/${encodeURIComponent(workspaceId)}/chat`);
+  }
 </script>
 
 {#key workspaceId}
@@ -29,6 +33,12 @@
     {/snippet}
 
     {#snippet sidebar()}
+      <Button variant="secondary" size="small" onclick={handleNewChat}>
+        {#snippet prepend()}
+          <IconSmall.Plus />
+        {/snippet}
+        New chat
+      </Button>
       <ChatListPanel
         {workspaceId}
         currentChatId={data.chatId}
