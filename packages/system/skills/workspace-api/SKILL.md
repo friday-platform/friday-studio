@@ -369,6 +369,12 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 
 11. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
+12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring:
+    - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Per-job overrides per-workspace overrides the daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only.
+    - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level defaults; per-job override coming.
+    - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.
+    - **`jobs.<name>.artifacts: { ephemeral: bool }`** — per-job override of the default artifact lifecycle (terminal-state outputs durable, non-terminal ephemeral session-bound).
+
 ---
 
 ## Go deeper
