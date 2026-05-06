@@ -8,7 +8,7 @@ const mockFetch = vi.hoisted(() =>
 vi.stubGlobal("fetch", mockFetch);
 vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: () => "http://localhost:3000" }));
 
-import { __test, createScrubber, scrubAssistantMessage } from "./scrub-tool-output.ts";
+import { __test, createScrubber, scrubAssistantMessage } from "./scrubber.ts";
 
 const { DATA_URL_RE, EMBEDDED_BASE64_RE, SIZE_THRESHOLD_CHARS } = __test;
 
@@ -62,7 +62,9 @@ describe("EMBEDDED_BASE64_RE", () => {
   });
 
   it("matches base64 embedded inside a larger envelope", () => {
-    const envelope = `Attachment downloaded successfully!\n\nBase64 content (${SIZE_THRESHOLD_CHARS} chars, standard base64):\n${bigBase64(SIZE_THRESHOLD_CHARS)}\n\nGoodbye.`;
+    const envelope = `Attachment downloaded successfully!\n\nBase64 content (${SIZE_THRESHOLD_CHARS} chars, standard base64):\n${bigBase64(
+      SIZE_THRESHOLD_CHARS,
+    )}\n\nGoodbye.`;
     EMBEDDED_BASE64_RE.lastIndex = 0;
     const m = EMBEDDED_BASE64_RE.exec(envelope);
     expect(m).not.toBeNull();

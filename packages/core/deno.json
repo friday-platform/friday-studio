@@ -15,6 +15,7 @@
     "./artifacts/images": "./src/artifacts/images.ts",
     "./artifacts/server": "./src/artifacts/server.ts",
     "./artifacts/storage": "./src/artifacts/storage.ts",
+    "./artifacts/scrubber": "./src/artifacts/scrubber.ts",
     "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./errors": "./src/errors.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",

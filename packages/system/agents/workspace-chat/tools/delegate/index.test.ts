@@ -688,7 +688,9 @@ describe("createDelegateTool", () => {
     const ledgerParts = reloaded.parts.filter((p) => p.type === "data-delegate-ledger");
     expect(ledgerParts).toHaveLength(1);
     const ledgerPart = ledgerParts[0];
-    if (ledgerPart?.type !== "data-delegate-ledger") throw new Error("type mismatch");
+    if (ledgerPart?.type !== "data-delegate-ledger") {
+      throw new Error("type mismatch");
+    }
     expect(ledgerPart.data.delegateToolCallId).toBe("del-call-1");
     expect(ledgerPart.data.toolsUsed).toHaveLength(1);
     const entry = ledgerPart.data.toolsUsed[0];
@@ -843,7 +845,9 @@ describe("createDelegateTool", () => {
     const ledgerParts = reloaded.parts.filter((p) => p.type === "data-delegate-ledger");
     expect(ledgerParts).toHaveLength(1);
     const ledgerPart = ledgerParts[0];
-    if (ledgerPart?.type !== "data-delegate-ledger") throw new Error("type mismatch");
+    if (ledgerPart?.type !== "data-delegate-ledger") {
+      throw new Error("type mismatch");
+    }
     expect(ledgerPart.data.toolsUsed.map((e) => e.toolCallId).sort()).toEqual(["c1", "c2"]);
   });
 
@@ -956,8 +960,8 @@ describe("createDelegateTool", () => {
       expect.any(Object),
       // The delegate now plumbs a `scrubResult` post-processor so MCP tool
       // outputs get oversized binary lifted to artifacts at the boundary
-      // (see scrub-tool-output.ts). Asserted as a function here; behavior
-      // is covered in scrub-tool-output.test.ts.
+      // (see @atlas/core/artifacts/scrubber). Asserted as a function here;
+      // behavior is covered in packages/core/src/artifacts/scrubber.test.ts.
       { signal: undefined, toolPrefix: undefined, scrubResult: expect.any(Function) },
     );
     const tools = captured.args?.tools as Record<string, unknown> | undefined;
@@ -1171,7 +1175,9 @@ describe("createDelegateTool", () => {
  */
 function isDelegateEndTerminator(envelope: AtlasUIMessageChunk): boolean {
   if (typeof envelope !== "object" || envelope === null) return false;
-  if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") return false;
+  if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") {
+    return false;
+  }
   const data = (envelope as { data?: unknown }).data;
   if (typeof data !== "object" || data === null) return false;
   const inner = (data as { chunk?: unknown }).chunk;
@@ -1187,7 +1193,9 @@ function isDelegateEndTerminator(envelope: AtlasUIMessageChunk): boolean {
  */
 function extractInnerToolCallId(envelope: AtlasUIMessageChunk): string | undefined {
   if (typeof envelope !== "object" || envelope === null) return undefined;
-  if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") return undefined;
+  if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") {
+    return undefined;
+  }
   const data = (envelope as { data?: unknown }).data;
   if (typeof data !== "object" || data === null) return undefined;
   const inner = (data as { chunk?: unknown }).chunk;
@@ -1211,14 +1219,18 @@ interface LedgerData {
 
 function extractLedgerData(chunk: AtlasUIMessageChunk): LedgerData | undefined {
   if (typeof chunk !== "object" || chunk === null) return undefined;
-  if (!("type" in chunk) || chunk.type !== "data-delegate-ledger") return undefined;
+  if (!("type" in chunk) || chunk.type !== "data-delegate-ledger") {
+    return undefined;
+  }
   if (!("data" in chunk)) return undefined;
   const data = chunk.data;
   if (typeof data !== "object" || data === null) return undefined;
   if (!("delegateToolCallId" in data) || typeof data.delegateToolCallId !== "string") {
     return undefined;
   }
-  if (!("toolsUsed" in data) || !Array.isArray(data.toolsUsed)) return undefined;
+  if (!("toolsUsed" in data) || !Array.isArray(data.toolsUsed)) {
+    return undefined;
+  }
   return { delegateToolCallId: data.delegateToolCallId, toolsUsed: data.toolsUsed };
 }
 
@@ -1238,7 +1250,9 @@ function reconstructFromEnvelopes(
   let nextStepIndex = 0;
   for (const envelope of envelopes) {
     if (typeof envelope !== "object" || envelope === null) continue;
-    if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") continue;
+    if (!("type" in envelope) || envelope.type !== "data-delegate-chunk") {
+      continue;
+    }
     const data = (envelope as { data?: unknown }).data;
     if (typeof data !== "object" || data === null) continue;
     const inner = (data as { chunk?: unknown }).chunk;
@@ -1246,7 +1260,9 @@ function reconstructFromEnvelopes(
     if (!("type" in inner) || !("toolCallId" in inner)) continue;
     const innerType = inner.type;
     const namespacedId = inner.toolCallId;
-    if (typeof innerType !== "string" || typeof namespacedId !== "string") continue;
+    if (typeof innerType !== "string" || typeof namespacedId !== "string") {
+      continue;
+    }
     // Strip the `${delegateToolCallId}-` prefix to get back to the original
     // child toolCallId for direct comparison with the ledger.
     const delegateId = (data as { delegateToolCallId?: unknown }).delegateToolCallId;

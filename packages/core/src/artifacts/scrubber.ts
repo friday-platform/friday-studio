@@ -22,11 +22,25 @@
  * Failures (network, storage) are swallowed by the caller (`create-mcp-tools.ts`
  * wraps with try/catch) so a scrub failure never breaks tool execution. The
  * pre-persist scrubber serves as a second line of defense.
+ *
+ * Lives in @atlas/core (not @atlas/mcp) to avoid a circular dependency:
+ * @atlas/mcp already imports from @atlas/core. The MCP package defines its
+ * own structurally-compatible `ScrubToolResult` type; the function returned
+ * here matches that shape by construction.
  */
 
 import { client, parseResult } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
-import type { ScrubToolResult } from "@atlas/mcp";
+
+/**
+ * Structural type matching @atlas/mcp's `ScrubToolResult`. Defined locally
+ * to keep the dependency edge mcp → core (not the other way), so this
+ * module can be consumed by both chat and FSM tool-construction paths.
+ */
+export type ScrubToolResult = (
+  result: unknown,
+  ctx: { serverId: string; toolName: string },
+) => Promise<unknown>;
 
 /**
  * Below this size in chars, base64 stays inline. ~4 KB chars of base64 ≈

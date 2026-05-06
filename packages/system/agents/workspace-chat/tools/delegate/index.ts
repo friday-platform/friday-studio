@@ -18,6 +18,7 @@
 
 import type { AtlasTool, AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import type { MCPServerConfig, WorkspaceConfig } from "@atlas/config";
+import { createScrubber } from "@atlas/core/artifacts/scrubber";
 import { discoverMCPServers, type LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { buildTemporalFacts, getDefaultProviderOpts, type PlatformModels } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
@@ -27,7 +28,6 @@ import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
 import { rebindAgentTool } from "../../../workspace-chat/tools/bundled-agent-tools.ts";
-import { createScrubber } from "../../lib/scrub-tool-output.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
 
