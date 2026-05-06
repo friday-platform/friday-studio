@@ -566,7 +566,6 @@ export function extractImages(msg: AtlasUIMessage): ImageDisplay[] {
   return imgs;
 }
 
-const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const DATETIME_FMT = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
@@ -581,20 +580,15 @@ const DATETIME_FMT = new Intl.DateTimeFormat(undefined, {
  * the value isn't a parseable ISO date — no `Date.now()` fallback, no
  * borrowing from neighbors, no "Today, …" prefix.
  *
- * Output shape:
- *   • same calendar day → `12:31 PM`
- *   • any other day     → `Apr 20, 11:31 PM`
+ * Always includes the date (e.g. `Apr 20, 11:31 PM`). The export is a
+ * snapshot of the sender's session, so a recipient opening it on a
+ * different day or in a different timezone still sees an unambiguous
+ * date — no same-day shortcut that hides it.
  */
 export function formatMessageTimestamp(metadata: MessageMetadata | undefined): string {
   const iso = metadata?.startTimestamp ?? metadata?.timestamp ?? metadata?.endTimestamp;
   if (typeof iso !== "string" || iso.length === 0) return "";
   const ms = new Date(iso).getTime();
   if (Number.isNaN(ms)) return "";
-  const date = new Date(ms);
-  const now = new Date();
-  const sameDay =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  return sameDay ? TIME_FMT.format(date) : DATETIME_FMT.format(date);
+  return DATETIME_FMT.format(new Date(ms));
 }

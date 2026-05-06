@@ -1,6 +1,6 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
-import { extractToolCalls } from "./render.ts";
+import { extractToolCalls, formatMessageTimestamp } from "./render.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -658,5 +658,40 @@ describe("extractToolCalls", () => {
       expect(parent?.progress).toEqual(["Analyzing query...", "Synthesizing..."]);
       expect(parent?.children).toHaveLength(1);
     });
+  });
+});
+
+describe("formatMessageTimestamp", () => {
+  it("returns empty string when metadata is missing", () => {
+    expect(formatMessageTimestamp(undefined)).toBe("");
+  });
+
+  it("returns empty string when no timestamp fields are present", () => {
+    expect(formatMessageTimestamp({})).toBe("");
+  });
+
+  it("returns empty string for an unparseable ISO string", () => {
+    expect(formatMessageTimestamp({ timestamp: "not-a-date" })).toBe("");
+  });
+
+  it("prefers startTimestamp over timestamp and endTimestamp", () => {
+    const out = formatMessageTimestamp({
+      startTimestamp: "2024-04-20T23:31:00Z",
+      timestamp: "2024-01-01T00:00:00Z",
+      endTimestamp: "2024-12-31T00:00:00Z",
+    });
+    // Format is locale/TZ-dependent; assert structure (month abbr + day, time)
+    // rather than exact string.
+    expect(out).toMatch(/[A-Za-z]{3}\s+\d{1,2}[,\s]+\d{1,2}:\d{2}/);
+  });
+
+  it("includes the date even when the message is from today (no same-day shortcut)", () => {
+    // The fix: even a "today" timestamp must include the date, so a recipient
+    // opening the export on a different day or TZ still gets context.
+    const todayIso = new Date().toISOString();
+    const out = formatMessageTimestamp({ timestamp: todayIso });
+    // A bare time like `11:31 PM` would not contain a 3-letter month abbr.
+    expect(out).toMatch(/[A-Za-z]{3}/);
+    expect(out).toMatch(/\d{1,2}:\d{2}/);
   });
 });
