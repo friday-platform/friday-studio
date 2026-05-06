@@ -54,9 +54,56 @@ function compareSemver(a: string, b: string): number {
 // max-age=60 set on this path so propagation is bounded.
 const MANIFEST_URL = "https://download.fridayplatform.io/studio/manifest.json";
 
+// Base path for versioned studio artifacts. Filenames follow the pattern
+// `friday-studio_<version>_<arch>.tar.zst` per studio-build.yml's GCS
+// upload step. All historical versions stay reachable here (the manifest
+// is just the pointer to "current"), so dev-version-override constructs
+// these URLs directly without touching the production manifest.
+const STUDIO_ARTIFACT_BASE = "https://download.fridayplatform.io/studio";
+
+// Mapping from the manifest's platform key to the rust-target arch
+// component embedded in artifact filenames. Today only macos-arm is
+// supported by the dev override; extend this map as other platforms
+// gain CI artifacts.
+const PLATFORM_ARCH: Record<string, string> = {
+  "macos-arm": "aarch64-apple-darwin",
+  // "macos-intel": "x86_64-apple-darwin",
+  // "windows": "x86_64-pc-windows-msvc",
+};
+
+/**
+ * Build a synthetic manifest targeting an explicit version. Used by the
+ * dev-version-override path so testers can install a specific build
+ * without it being promoted to the production manifest. SHA-256 is
+ * empty — verifyDownload below skips checksum verification when it
+ * sees an empty string. Size is 0 because we don't know it ahead of
+ * time; the download progress UI will show a "downloaded N MB" string
+ * without a percentage (no harm — it's a tester path).
+ */
+function synthesizeManifest(version: string): Manifest {
+  const platforms: Record<string, PlatformEntry> = {};
+  for (const [key, arch] of Object.entries(PLATFORM_ARCH)) {
+    platforms[key] = {
+      url: `${STUDIO_ARTIFACT_BASE}/friday-studio_${version}_${arch}.tar.zst`,
+      sha256: "",
+      size: 0,
+    };
+  }
+  return { version, platforms };
+}
+
 export async function detectInstallState(): Promise<void> {
+  // Dev override: skip the production manifest fetch and synthesize
+  // one for the explicit version. The Welcome screen's hidden 5-click
+  // dev panel sets `store.devVersionOverride`. See synthesizeManifest
+  // above for the URL construction pattern.
+  const override = store.devVersionOverride;
+  const manifestPromise = override
+    ? Promise.resolve(synthesizeManifest(override))
+    : invoke<Manifest>("fetch_manifest", { url: MANIFEST_URL });
+
   const [manifest, installed, running, hasProviderKey] = await Promise.all([
-    invoke<Manifest>("fetch_manifest", { url: MANIFEST_URL }),
+    manifestPromise,
     invoke<InstalledMarker | null>("read_installed"),
     invoke<boolean>("check_running_processes"),
     // Probe ~/.friday/local/.env so the wizard can reroute users
@@ -324,12 +371,35 @@ export async function runLaunch(installDir: string): Promise<void> {
 // ── Verify ────────────────────────────────────────────────────────────────────
 
 export function verifyDownload(path: string, sha256: string): Promise<boolean> {
+  // Dev-version-override path: synthesizeManifest emits an empty SHA
+  // because there's no manifest entry to read it from. Skip checksum
+  // verification with a console warning. The Welcome banner makes the
+  // override state obvious so the tester knows what they're getting.
+  // Production manifests always carry a non-empty SHA so this branch
+  // is unreachable for normal installs.
+  if (sha256 === "") {
+    console.warn(
+      "[installer] dev version override active — SHA-256 verification skipped. " +
+        "Re-launch without the override to install the production version.",
+    );
+    return Promise.resolve(true);
+  }
   return invoke<boolean>("verify_sha256", { path, expectedHash: sha256 });
 }
 
 // ── Manifest helper ───────────────────────────────────────────────────────────
 
 export function fetchManifest(): Promise<Manifest> {
+  // Honor the dev-version-override so Download.svelte (which calls
+  // this once on mount to look up the platform's URL/SHA) routes to
+  // the synthetic manifest, not the production one. Without this,
+  // detectInstallState would respect the override but Download.svelte
+  // would still fetch the production manifest and pull the wrong
+  // version's artifact.
+  const override = store.devVersionOverride;
+  if (override) {
+    return Promise.resolve(synthesizeManifest(override));
+  }
   return invoke<Manifest>("fetch_manifest", { url: MANIFEST_URL });
 }
 

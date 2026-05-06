@@ -1,6 +1,6 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { advanceStep, stopRunningLauncher } from "../lib/installer.ts";
+import { advanceStep, detectInstallState, stopRunningLauncher } from "../lib/installer.ts";
 import { type InstallMode, store } from "../lib/store.svelte.ts";
 
 interface Props {
@@ -14,6 +14,93 @@ const { mode, installedVersion, availableVersion, studioRunning }: Props = $prop
 
 let stopping = $state(false);
 let stopError = $state<string | null>(null);
+
+// ── Dev-only "install specific version" panel ──────────────────────────────
+//
+// Five quick clicks on the logo open a panel where a tester can pin an
+// explicit studio version (e.g. "0.0.10"). The installer then fetches
+// `friday-studio_<version>_<arch>.tar.zst` directly from GCS — bypassing
+// the production manifest. State lives in the store (not localStorage),
+// so the override evaporates on installer relaunch. Skips SHA-256
+// verification because the synthetic manifest has no hash; the banner
+// below the panel makes that obvious.
+//
+// The 5-click pattern keeps the panel hidden from regular users without
+// a discoverable keystroke (which would either be in muscle memory or
+// hard to remember). Testers learn it once.
+const LOGO_CLICK_THRESHOLD = 5;
+const LOGO_CLICK_RESET_MS = 1500;
+
+let logoClickCount = $state(0);
+let logoClickTimer: ReturnType<typeof setTimeout> | null = null;
+let devPanelOpen = $state(false);
+let devVersionInput = $state("");
+let devError = $state<string | null>(null);
+let devApplying = $state(false);
+
+function onLogoClick(): void {
+  logoClickCount += 1;
+  if (logoClickTimer !== null) clearTimeout(logoClickTimer);
+  logoClickTimer = setTimeout(() => {
+    logoClickCount = 0;
+  }, LOGO_CLICK_RESET_MS);
+  if (logoClickCount >= LOGO_CLICK_THRESHOLD) {
+    logoClickCount = 0;
+    if (logoClickTimer !== null) {
+      clearTimeout(logoClickTimer);
+      logoClickTimer = null;
+    }
+    devPanelOpen = true;
+    devVersionInput = store.devVersionOverride ?? "";
+    devError = null;
+  }
+}
+
+async function applyDevOverride(): Promise<void> {
+  // Permissive normalization — strip a leading "v" but otherwise
+  // accept any non-empty string. The manifest URL we synthesize either
+  // resolves (200 in GCS) or doesn't (404 → user retries with a
+  // different version), so there's no value in client-side semver
+  // validation.
+  const v = devVersionInput.trim().replace(/^v/i, "");
+  devError = null;
+  devApplying = true;
+  try {
+    store.devVersionOverride = v.length > 0 ? v : null;
+    // Re-run the install-state detection so `mode` /
+    // `availableVersion` reflect the new target before the user
+    // clicks Install. Idempotent — same path App.svelte takes on
+    // startup.
+    await detectInstallState();
+    devPanelOpen = false;
+  } catch (err) {
+    devError = err instanceof Error ? err.message : String(err);
+    // Roll back — don't leave the store with an override the user
+    // didn't get a chance to confirm via the wizard advancing.
+    store.devVersionOverride = null;
+  } finally {
+    devApplying = false;
+  }
+}
+
+async function clearDevOverride(): Promise<void> {
+  devError = null;
+  devApplying = true;
+  try {
+    store.devVersionOverride = null;
+    await detectInstallState();
+    devPanelOpen = false;
+  } catch (err) {
+    devError = err instanceof Error ? err.message : String(err);
+  } finally {
+    devApplying = false;
+  }
+}
+
+function cancelDevPanel(): void {
+  devPanelOpen = false;
+  devError = null;
+}
 
 async function openStudio(): Promise<void> {
   // Tauri 2 plugin-opener exports openUrl, not a default `open()`.
@@ -81,10 +168,25 @@ function reinstall(): void {
 </script>
 
 <div class="screen">
+  {#if store.devVersionOverride !== null}
+    <div class="dev-banner" role="status">
+      <span class="dev-banner-tag">DEV</span>
+      Installing v{store.devVersionOverride} (SHA-256 verification disabled)
+    </div>
+  {/if}
+
   <div class="hero">
-    <svg class="logo" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="-4.1 -0.2 26 26">
-      <path d="M9.9375 14.9014C10.344 14.9014 10.6738 15.2312 10.6738 15.6377V20.2383C10.6737 23.1855 8.28412 25.5751 5.33691 25.5752C2.38962 25.5752 0.000158184 23.1855 0 20.2383C0 17.2909 2.38953 14.9014 5.33691 14.9014H9.9375ZM11.1377 0C14.8218 0.00013192 17.8086 2.98674 17.8086 6.6709C17.8086 10.3551 14.8218 13.3417 11.1377 13.3418H5.21289C4.80079 13.3418 4.46696 13.0078 4.4668 12.5957V6.6709C4.4668 2.98666 7.45346 0 11.1377 0Z" fill="#1171DF"/>
-    </svg>
+    <button
+      type="button"
+      class="logo-button"
+      onclick={onLogoClick}
+      aria-label="Friday Studio"
+      title=""
+    >
+      <svg class="logo" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="-4.1 -0.2 26 26">
+        <path d="M9.9375 14.9014C10.344 14.9014 10.6738 15.2312 10.6738 15.6377V20.2383C10.6737 23.1855 8.28412 25.5751 5.33691 25.5752C2.38962 25.5752 0.000158184 23.1855 0 20.2383C0 17.2909 2.38953 14.9014 5.33691 14.9014H9.9375ZM11.1377 0C14.8218 0.00013192 17.8086 2.98674 17.8086 6.6709C17.8086 10.3551 14.8218 13.3417 11.1377 13.3418H5.21289C4.80079 13.3418 4.46696 13.0078 4.4668 12.5957V6.6709C4.4668 2.98666 7.45346 0 11.1377 0Z" fill="#1171DF"/>
+      </svg>
+    </button>
 
     {#if mode === "fresh"}
       <h1>Welcome to Friday Studio</h1>
@@ -204,6 +306,44 @@ function reinstall(): void {
     <span class="dot"></span>
     <span class="dot"></span>
   </div>
+
+  {#if devPanelOpen}
+    <div class="dev-overlay" role="dialog" aria-modal="true" aria-labelledby="dev-panel-title">
+      <div class="dev-panel">
+        <h3 id="dev-panel-title">Install specific version</h3>
+        <p class="dev-help">
+          Enter a studio version like <code>0.0.10</code>. The installer will
+          fetch <code>friday-studio_&lt;version&gt;_aarch64-apple-darwin.tar.zst</code>
+          directly from GCS, bypassing the production manifest. SHA-256
+          verification is skipped — this path is for QA testing only.
+        </p>
+        <input
+          type="text"
+          bind:value={devVersionInput}
+          placeholder="0.0.10"
+          autocomplete="off"
+          spellcheck="false"
+          disabled={devApplying}
+        />
+        {#if devError !== null}
+          <p class="dev-error">{devError}</p>
+        {/if}
+        <div class="dev-actions">
+          <button type="button" class="secondary" onclick={cancelDevPanel} disabled={devApplying}>
+            Cancel
+          </button>
+          {#if store.devVersionOverride !== null}
+            <button type="button" class="secondary" onclick={clearDevOverride} disabled={devApplying}>
+              Use production
+            </button>
+          {/if}
+          <button type="button" class="primary" onclick={applyDevOverride} disabled={devApplying}>
+            {devApplying ? "Loading…" : "Install this version"}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -227,7 +367,33 @@ function reinstall(): void {
   .logo {
     width: 52px;
     height: 52px;
+  }
+
+  /*
+    The logo doubles as a 5-click trigger for the dev-version override
+    panel. Wrap it in a button so the click handler is keyboard-accessible
+    and screen-reader-labelled, but strip all button styling so the
+    visual remains an unadorned mark. `pointer-events: auto` is implicit;
+    the cursor stays as default to avoid hinting at the easter egg.
+  */
+  .logo-button {
+    background: none;
+    border: none;
+    padding: 0;
     margin-bottom: 8px;
+    cursor: default;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .logo-button:focus {
+    outline: none;
+  }
+
+  .logo-button:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 4px;
+    border-radius: 8px;
   }
 
   h1 {
@@ -323,5 +489,107 @@ function reinstall(): void {
 
   .dot.active {
     background: var(--color-primary);
+  }
+
+  /* Dev banner above the hero — visible reminder that the override is
+     active. Yellow strip mirrors the existing `.warning` palette. */
+  .dev-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--color-warning);
+    background: rgba(251, 191, 36, 0.12);
+    border-bottom: 1px solid rgba(251, 191, 36, 0.3);
+    padding: 8px 16px;
+    margin: -48px -60px 0;
+  }
+
+  .dev-banner-tag {
+    background: rgba(251, 191, 36, 0.3);
+    color: light-dark(#92400e, #fde68a);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* Dev panel modal — centered overlay over the welcome screen. */
+  .dev-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+  }
+
+  .dev-panel {
+    background: var(--color-surface-1, light-dark(#fff, #1a1a1a));
+    border: 1px solid var(--color-border-1);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 460px;
+    width: 100%;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
+  }
+
+  .dev-panel h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 8px;
+  }
+
+  .dev-help {
+    font-size: 12px;
+    color: light-dark(#666, #888);
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+
+  .dev-help code {
+    font-family: monospace;
+    font-size: 11px;
+    background: var(--color-surface-3);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .dev-panel input {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--color-border-1);
+    border-radius: 7px;
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    font-family: monospace;
+    font-size: 13px;
+    outline: none;
+  }
+
+  .dev-panel input:focus {
+    border-color: var(--color-primary);
+  }
+
+  .dev-error {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--color-error);
+  }
+
+  .dev-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+  }
+
+  .dev-actions button {
+    padding: 8px 18px;
+    font-size: 13px;
   }
 </style>
