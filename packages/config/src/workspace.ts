@@ -100,6 +100,34 @@ export function parseMemoryMountSource(source: string): {
 // WORKSPACE CONFIGURATION (workspace.yml)
 // ==============================================================================
 
+/**
+ * Per-workspace permissions policy.
+ *
+ * Today: only the allowlist-bypass flag. Future: elicitation policy
+ * (which kinds emit elicitations, default expiry, etc.) lands here.
+ */
+export const PermissionsConfigSchema = z.strictObject({
+  /**
+   * Workspace-level bypass for tool/skill allowlist enforcement (Phase 1).
+   * When `true`, allowlist denials silently pass through with a debug log
+   * instead of becoming elicitations or hard failures. Mirrors Claude
+   * Code's `--dangerously-skip-permissions` flag — trusted-context-only,
+   * never default. The daemon-level env var
+   * `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` enables the same bypass globally;
+   * the workspace setting wins (a workspace can opt back into safety even
+   * when the daemon is open).
+   */
+  dangerouslySkipAllowlist: z
+    .boolean()
+    .optional()
+    .describe(
+      "Bypass tool/skill allowlist enforcement. Trusted contexts only. " +
+        "Workspace setting overrides the FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS daemon flag.",
+    ),
+});
+
+export type PermissionsConfig = z.infer<typeof PermissionsConfigSchema>;
+
 export const WorkspaceConfigSchema = z.strictObject({
   version: z.literal("1.0").describe("Configuration version (currently '1.0')"),
   workspace: WorkspaceIdentitySchema,
@@ -120,6 +148,7 @@ export const WorkspaceConfigSchema = z.strictObject({
         "'surface' writes proposals to scratchpad for review. Defaults to 'surface'.",
     ),
   memory: MemoryConfigSchema.optional(),
+  permissions: PermissionsConfigSchema.optional(),
 });
 
 export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
