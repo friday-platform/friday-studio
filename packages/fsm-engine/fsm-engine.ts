@@ -32,6 +32,10 @@ import {
   composeMemoryBlocks,
   composeValidationBlock,
 } from "@atlas/core/agent-context/compose-blocks";
+import {
+  createRecordValidationTool,
+  RECORD_VALIDATION_TOOL_NAME,
+} from "@atlas/core/agent-context/record-validation-tool";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { createScrubber } from "@atlas/core/artifacts/scrubber";
@@ -424,6 +428,108 @@ function findCompleteToolArgs(result: LLMResult): Record<string, unknown> | unde
 function findFailStepToolArgs(result: LLMResult): Record<string, unknown> | undefined {
   if (!result.ok) return undefined;
   return extractToolCallInput(result.toolCalls ?? [], "failStep");
+}
+
+/**
+ * Extract `record_validation` tool args from an LLM result, B6 of
+ * melodic-strolling-seal-pt2. Mirrors `findCompleteToolArgs` — scans the
+ * result's toolCalls for one whose name matches the platform tool, returning
+ * the input object verbatim. Caller is responsible for parsing it through
+ * `StepValidationOutputSchema` before emit.
+ *
+ * Returns `undefined` when the LLM didn't call the tool — this is observable
+ * (the runtime emits `validation: { strategy: "self" }` without a verdict)
+ * rather than fatal, because the goal is visibility into self-check
+ * outcomes, not enforcing that every action calls the tool.
+ */
+function findRecordValidationToolArgs(result: LLMResult): Record<string, unknown> | undefined {
+  if (!result.ok) return undefined;
+  return extractToolCallInput(result.toolCalls ?? [], RECORD_VALIDATION_TOOL_NAME);
+}
+
+/**
+ * Map a hallucination-judge verdict status into the structured emit shape's
+ * verdict bucket. The judge's three-state space (`pass` / `uncertain` /
+ * `fail`) collapses cleanly onto the emit space:
+ *
+ *   - `pass`      → `pass`      (above threshold, clean path)
+ *   - `uncertain` → `advisory`  (mid-band; observability-only, never gates)
+ *   - `fail`      → `blocking`  (below floor; today's path throws on retry-fail)
+ *
+ * The retry/throw machinery upstream is unchanged — this function only
+ * reshapes the surviving verdict (the one that's about to be emitted) so
+ * downstream consumers see one verdict shape across all three strategies.
+ */
+function judgeStatusToVerdict(
+  status: "pass" | "uncertain" | "fail",
+): "pass" | "advisory" | "blocking" {
+  if (status === "pass") return "pass";
+  if (status === "uncertain") return "advisory";
+  return "blocking";
+}
+
+/**
+ * Build the structured validation block that rides on `step:complete.validation`.
+ * Three resolved strategies → three emit shapes; see `StepValidationOutputSchema`
+ * in `@atlas/core/session-events` for the on-the-wire contract. Phase B6 of
+ * melodic-strolling-seal-pt2.
+ *
+ * Caller is responsible for the failStep semantics on `verdict: "blocking"` —
+ * this helper only assembles the shape; it doesn't throw.
+ */
+function buildValidationOutput(input: {
+  decision: ValidateDecision;
+  reason: string;
+  /** Captured `record_validation` args (self path); undefined if LLM didn't call it. */
+  recordedArgs?: Record<string, unknown>;
+  /** Final verdict from the external judge; undefined when judge didn't run. */
+  externalVerdict?: ValidationVerdict;
+}): NonNullable<FSMActionExecutionEvent["data"]["llmResult"]>["validation"] {
+  if (input.decision === "skip") {
+    return { strategy: "skip", skipReason: input.reason };
+  }
+  if (input.decision === "self") {
+    if (!input.recordedArgs) return { strategy: "self" };
+    const verdict = input.recordedArgs.verdict;
+    const issues = Array.isArray(input.recordedArgs.issues)
+      ? (input.recordedArgs.issues as Array<Record<string, unknown>>).map((i) => ({
+          claim: typeof i.claim === "string" ? i.claim : "",
+          ...(typeof i.category === "string" && { category: i.category }),
+          ...(typeof i.reasoning === "string" && { reasoning: i.reasoning }),
+          ...(typeof i.severity === "string" && {
+            severity: i.severity as "low" | "medium" | "high" | "info" | "warn" | "error",
+          }),
+          ...(typeof i.citation === "string" || i.citation === null
+            ? { citation: i.citation as string | null }
+            : {}),
+        }))
+      : undefined;
+    return {
+      strategy: "self",
+      ...(typeof verdict === "string" &&
+      (verdict === "pass" || verdict === "advisory" || verdict === "blocking")
+        ? { verdict }
+        : {}),
+      ...(issues && issues.length > 0 ? { issues } : {}),
+    };
+  }
+  // external
+  if (!input.externalVerdict) return { strategy: "external" };
+  return {
+    strategy: "external",
+    verdict: judgeStatusToVerdict(input.externalVerdict.status),
+    ...(input.externalVerdict.issues.length > 0
+      ? {
+          issues: input.externalVerdict.issues.map((iss) => ({
+            claim: iss.claim,
+            category: iss.category,
+            reasoning: iss.reasoning,
+            severity: iss.severity,
+            citation: iss.citation,
+          })),
+        }
+      : {}),
+  };
 }
 
 /** Max characters per tool result when formatting for retry context */
@@ -1705,6 +1811,30 @@ export class FSMEngine {
                 });
               }
 
+              // B6 (melodic-strolling-seal-pt2): when the pre-call decision is
+              // `self`, inject the `record_validation` platform tool alongside
+              // the skill body. The skill instructs the LLM to call this tool
+              // before emitting; the post-call gating site below reads the
+              // captured args off `result.toolCalls` (mirroring the `complete`
+              // tool's capture path) and surfaces them on `step:complete.validation`.
+              //
+              // Mirrors `completeToolInjected`: a flag carries the injection
+              // state forward to the capture site so we don't re-derive the
+              // decision there. Pre-call asymmetry note: in the rare edge case
+              // where pre-call resolves `self` but the post-call classifier
+              // resolves `skip`, the injected tool is harmless — the LLM may
+              // call it (we capture and emit) or ignore it (we emit a skip
+              // verdict from the post-call path, ignoring whatever the LLM
+              // recorded). The same asymmetry-tolerance applies to the skill
+              // body — see the longer comment above `preCallResolution`.
+              if (preCallDecision === "self") {
+                tools[RECORD_VALIDATION_TOOL_NAME] = createRecordValidationTool();
+                logger.debug("Injected record_validation tool", {
+                  decision: preCallDecision,
+                  state: currentState,
+                });
+              }
+
               if (completeToolInjected) {
                 contextPrompt +=
                   "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
@@ -1724,9 +1854,20 @@ export class FSMEngine {
                   ? [{ role: "user", content: [{ type: "text", text: contextPrompt }, ...images] }]
                   : undefined;
 
-              const llmToolChoice = completeToolInjected
-                ? ({ type: "tool", toolName: "complete" } as const)
-                : ("auto" as const);
+              // B6: when both `complete` (structured-output capture) and
+              // `record_validation` (self-check capture) are injected, we
+              // can't pin toolChoice to `complete` — that would forbid the
+              // LLM from calling record_validation. Switch to `auto` so the
+              // LLM can sequence record_validation → complete the way the
+              // skill body instructs. Stop semantics still halt on complete
+              // OR failStep, so the second-tool-call assumption stays
+              // sound. When only complete is injected, today's pinned
+              // toolChoice path is preserved.
+              const recordValidationInjected = preCallDecision === "self";
+              const llmToolChoice =
+                completeToolInjected && !recordValidationInjected
+                  ? ({ type: "tool", toolName: "complete" } as const)
+                  : ("auto" as const);
 
               let result = await this.options.llmProvider.call({
                 agentId: llmAgentId,
@@ -1807,6 +1948,14 @@ export class FSMEngine {
                 // skill, postCall=skip).
                 validationSkillLoaded,
               });
+
+              // B6: track the verdict that ultimately survives the
+              // external-judge lifecycle so it can ride on
+              // `step:complete.validation`. Set at every point a verdict is
+              // accepted (first-call pass, first-call uncertain, retry pass,
+              // retry uncertain). On terminal-fail the throw upstream
+              // unwinds before we read this back.
+              let externalSurvivingVerdict: ValidationVerdict | undefined;
 
               // Validate output if validator provided AND the resolved
               // decision is `external`. Retry policy: only verdict.status ===
@@ -1957,23 +2106,66 @@ export class FSMEngine {
                     model: action.model,
                     status: retryVerdict.status,
                   });
+                  externalSurvivingVerdict = retryVerdict;
                 } else {
                   this.emitValidationAttempt(sig, currentState, validationActionId, {
                     attempt: 1,
                     status: "passed",
                     verdict,
                   });
+                  externalSurvivingVerdict = verdict;
                 }
               } else if (validateDecision === "self") {
                 // B3: the validating-llm-outputs skill was already composed
                 // into `contextPrompt` pre-call (see `composeValidationBlock`
                 // above), so the LLM self-checked its draft inside the same
                 // call. No separate post-call step needed at this gate.
-                // B6 will additionally inject the `record_validation` tool
-                // so the self-check verdict is observable in the trace.
+                // B6: the `record_validation` tool was injected pre-call when
+                // preCallDecision === "self"; the captured args are read off
+                // result.toolCalls below for `step:complete.validation`.
               } else if (validateDecision === "skip") {
                 // No validation. The decision was logged above; nothing else
                 // to do here.
+              }
+
+              // B6: build the structured validation block for emit. Three
+              // resolved strategies → three shapes:
+              //   skip     → { strategy, skipReason }
+              //   self     → { strategy, verdict?, issues? }   (record_validation)
+              //   external → { strategy, verdict, issues? }    (judge-derived)
+              // The captured `validateDecision` (post-call) wins over the
+              // pre-call decision used to inject the tool — see preCallResolution
+              // for the asymmetry-tolerance comment. For external, the surviving
+              // verdict (after retry, when applicable) is the one we surface.
+              const recordedValidationArgs =
+                validateDecision === "self" ? findRecordValidationToolArgs(result) : undefined;
+              const validationOutput = buildValidationOutput({
+                decision: validateDecision,
+                reason: validateReason,
+                recordedArgs: recordedValidationArgs,
+                ...(validateDecision === "external" && externalSurvivingVerdict
+                  ? { externalVerdict: externalSurvivingVerdict }
+                  : {}),
+              });
+
+              // B6: failStep semantics on a self-recorded `blocking` verdict.
+              // The LLM has explicitly told us its output is unsourced and
+              // should not emit; treat that signal the same way as a failStep
+              // tool call. Mirrors the `findFailStepToolArgs` → throw path
+              // immediately above. Skipped on `external` because the judge's
+              // retry-and-throw lifecycle already runs upstream; if the
+              // external surviving verdict is `blocking`, we got there via
+              // the already-thrown ValidationFailedError path — not via this
+              // branch.
+              if (
+                validationOutput?.strategy === "self" &&
+                validationOutput.verdict === "blocking"
+              ) {
+                const issuesSummary =
+                  validationOutput.issues
+                    ?.map((i) => `${i.category ?? "issue"}: ${i.claim}`)
+                    .join("; ") || "no issues recorded";
+                throw new Error(`LLM action self-validation: blocking. ${issuesSummary}`);
               }
 
               if (action.outputTo) {
@@ -2038,6 +2230,12 @@ export class FSMEngine {
                   // Provider adapters that don't set usage (e.g. tests with
                   // stub providers) leave this undefined — handled downstream.
                   ...(result.usage && { usage: result.usage }),
+                  // B6: ride the structured validation block on the same
+                  // side-channel `step:complete` mapping reads. Always set
+                  // for `type: llm` actions — the three resolved strategies
+                  // each have a non-empty shape; only pure-agent actions
+                  // (case "agent" → type: user/atlas) leave this absent.
+                  ...(validationOutput && { validation: validationOutput }),
                 };
               }
 
@@ -2178,6 +2376,13 @@ export class FSMEngine {
               throw new Error(result.error.reason);
             }
 
+            // B6: track the external surviving verdict for case "agent" so
+            // it can ride on `step:complete.validation`. Mirrors the case
+            // "llm" path's tracking. Set only when the judge accepted the
+            // verdict (no throw); a thrown ValidationFailedError unwinds
+            // before this is read.
+            let agentExternalSurvivingVerdict: ValidationVerdict | undefined;
+
             // B4: external-path mirror for `case "agent"`. Today the inline
             // `case "llm"` path runs `validateOutput` post-call when the
             // resolved decision is `external`; mirror that here using a
@@ -2224,6 +2429,68 @@ export class FSMEngine {
                 status: "passed",
                 verdict,
               });
+              agentExternalSurvivingVerdict = verdict;
+            }
+
+            // B6 (melodic-strolling-seal-pt2): build the structured validation
+            // block for `case "agent" → type: llm`, mirroring the inline
+            // `case "llm"` path. The `record_validation` tool was injected at
+            // the orchestrator's prompt-assembly site (`from-llm.ts`) when
+            // decision === "self"; capture its args off the agent result's
+            // toolCalls — same mechanism `findCompleteToolArgs` uses, just
+            // applied to the agent envelope. The data flows back to
+            // `step:complete.validation` via the workspace runtime's side
+            // channel (`AgentResultData.validation`).
+            const agentRecordedValidationArgs =
+              agentValidateDecision === "self" && result.ok
+                ? extractToolCallInput(result.toolCalls ?? [], RECORD_VALIDATION_TOOL_NAME)
+                : undefined;
+            const agentValidationOutput = buildValidationOutput({
+              decision: agentValidateDecision,
+              reason: agentValidateReason,
+              recordedArgs: agentRecordedValidationArgs,
+              ...(agentValidateDecision === "external" && agentExternalSurvivingVerdict
+                ? { externalVerdict: agentExternalSurvivingVerdict }
+                : {}),
+            });
+
+            // B6: failStep semantics on a self-recorded `blocking` verdict.
+            // Mirrors the case "llm" path. The workspace runtime's executeAgent
+            // populates the side-channel before this throw, but the
+            // try/catch around action execution emits the failure event
+            // without an `llmResult` (agent path uses the side-channel
+            // exclusively), so the validation block is read by
+            // mapActionToStepComplete from the side-channel below — which
+            // we populate before the throw via a side-channel update via
+            // the workspace runtime path. For unit tests that don't exercise
+            // the workspace runtime, the throw still produces a `failed`
+            // step:complete; the validation field is best-effort.
+            if (
+              agentValidationOutput?.strategy === "self" &&
+              agentValidationOutput.verdict === "blocking"
+            ) {
+              const issuesSummary =
+                agentValidationOutput.issues
+                  ?.map((i) => `${i.category ?? "issue"}: ${i.claim}`)
+                  .join("; ") || "no issues recorded";
+              throw new Error(`Agent action self-validation: blocking. ${issuesSummary}`);
+            }
+
+            // B6: stash the validation block on `llmResultData` so the
+            // workspace runtime's session-stream emit (`step:complete`) can
+            // surface it. `case "agent"` doesn't otherwise populate
+            // `llmResultData` (the runtime uses its side-channel for agent
+            // result data), but writing a minimal projection here is the
+            // smallest surface that lets the existing
+            // `actionEvent.data.llmResult` consumer in workspace runtime
+            // pick up the structured validation without growing a new event
+            // shape or duplicating the capture logic in the runtime.
+            if (agentValidationOutput) {
+              llmResultData = {
+                toolCalls: [],
+                output: undefined,
+                validation: agentValidationOutput,
+              };
             }
 
             // Store result if outputTo specified

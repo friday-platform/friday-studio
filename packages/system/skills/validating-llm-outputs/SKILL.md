@@ -49,3 +49,15 @@ When you walk your draft, classify each problem you find as exactly one of:
 ## FIX-UP RULE
 
 If a claim cannot be sourced, drop it from your output. If the task genuinely required external data and you have no way to source it (no tools, missing access, ambiguous input), call `failStep` with a reason rather than emitting an unsourced answer. Do not silently substitute fabricated content.
+
+## ACTION — RECORDING YOUR VERDICT
+
+Before emitting your final output, you MUST call the `record_validation` tool exactly once with your self-check verdict:
+
+- `{ verdict: "pass" }` — every factual claim in your draft is sourced and you have no concerns. Emit normally.
+- `{ verdict: "advisory", issues: [...] }` — claims are sourced but you have specific concerns to surface. Emit normally; the issues ride alongside the output for downstream review.
+- `{ verdict: "blocking", issues: [...] }` — you cannot source your output and cannot fix it via the FIX-UP RULE above. The runtime treats this like `failStep` — the action errors and the FSM does not transition. **Do not emit your output** when you record `blocking`.
+
+Each `issues` entry should describe one unsourced claim with at minimum a `claim` string. Optional fields: `category` (e.g. `sourcing`, `no-tools-called`, `judge-uncertain`), `reasoning` (why you flagged it), `severity`, and `citation`.
+
+Do not skip this call. The runtime relies on `record_validation` to mark the action's verdict on the session event stream so downstream consumers (compact result shapes, the Activity page, future crystallization signals) see what you concluded. If your output is correct and sourced — which is the common case — record `verdict: "pass"` and emit normally.

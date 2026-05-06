@@ -226,6 +226,27 @@ export interface FSMActionExecutionEvent {
         cacheWriteTokens?: number;
         model?: string;
       };
+      /**
+       * Per-action validation outcome — present on every `type: llm` and
+       * `case "agent" → type: llm` action. Three shapes mirror the resolved
+       * strategy: `skip` carries `skipReason`; `self` carries the LLM's
+       * `record_validation` args; `external` carries the judge-derived
+       * verdict. Phase B6 of melodic-strolling-seal-pt2. See
+       * `@atlas/core/session-events` `StepValidationOutputSchema` for the
+       * on-the-wire shape.
+       */
+      validation?: {
+        strategy: "skip" | "self" | "external";
+        verdict?: "pass" | "advisory" | "blocking";
+        issues?: Array<{
+          category?: string;
+          claim: string;
+          reasoning?: string;
+          severity?: "low" | "medium" | "high" | "info" | "warn" | "error";
+          citation?: string | null;
+        }>;
+        skipReason?: string;
+      };
     };
   };
 }

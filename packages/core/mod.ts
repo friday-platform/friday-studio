@@ -139,8 +139,14 @@ export {
   StepStartEventSchema,
   type StepValidationEvent,
   StepValidationEventSchema,
+  type StepValidationIssue,
+  StepValidationIssueSchema,
+  type StepValidationOutput,
+  StepValidationOutputSchema,
   type ToolCallSummary,
   ToolCallSummarySchema,
+  type ValidationStrategy,
+  ValidationStrategySchema,
 } from "./src/session/session-events.ts";
 export type { SessionHistoryAdapter } from "./src/session/session-history-adapter.ts";
 // Session Reducer

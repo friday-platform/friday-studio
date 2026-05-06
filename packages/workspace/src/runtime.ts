@@ -56,6 +56,7 @@ import {
   type WorkspaceSessionStatusType,
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
+import { buildValidateDecisionConfig } from "@atlas/core/agent-context/validate-decision";
 import { UserAdapter } from "@atlas/core/agent-loader";
 import type { ArtifactLifecycle } from "@atlas/core/artifacts";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
@@ -1881,7 +1882,7 @@ export class WorkspaceRuntime {
                   // LLM actions carry result data directly on the event (populated by FSM engine).
                   // Agent actions use the side-channel (populated by executeAgent callback).
                   let agentResult: AgentResultData | undefined;
-                  if (actionEvent.data.llmResult) {
+                  if (actionEvent.data.actionType === "llm" && actionEvent.data.llmResult) {
                     agentResult = actionEvent.data.llmResult;
                   } else {
                     // Side-channel key must use job.name (workspace-level key) to match
@@ -1890,6 +1891,19 @@ export class WorkspaceRuntime {
                     const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
                     agentResult = sideChannel.get(sideChannelKey);
                     sideChannel.delete(sideChannelKey);
+                    // B6 (melodic-strolling-seal-pt2): agent actions don't
+                    // populate `llmResult` for the full result projection,
+                    // but the FSM engine writes a minimal projection
+                    // carrying the structured validation outcome. Merge it
+                    // onto the side-channel record so `step:complete` for
+                    // `case "agent" → type: llm` carries the same
+                    // `validation` shape an inline `case "llm"` action does.
+                    const validationFromEvent = actionEvent.data.llmResult?.validation;
+                    if (validationFromEvent) {
+                      agentResult = agentResult
+                        ? { ...agentResult, validation: validationFromEvent }
+                        : { toolCalls: [], output: undefined, validation: validationFromEvent };
+                    }
                   }
                   sessionStream.emit(
                     mapActionToStepComplete(actionEvent, agentResult, stepCounter),
@@ -2430,7 +2444,11 @@ export class WorkspaceRuntime {
     fsmContext: Context,
     job: FSMJob,
     signal: SignalWithContext,
-    options?: { outputSchema?: Record<string, unknown> },
+    options?: {
+      outputSchema?: Record<string, unknown>;
+      validateDecision?: "skip" | "self" | "external";
+      validateSkill?: string;
+    },
   ): Promise<AgentResult> {
     const agentId = action.agentId;
 
@@ -2555,9 +2573,23 @@ export class WorkspaceRuntime {
     // Prepare config (from FSM `return { task, config }`) takes precedence
     // so workspace.yml prepare functions can pass data like workDir to agents.
     const prepareConfig = fsmContext.input?.config;
-    const mergedConfig = prepareConfig
+    const baseMergedConfig = prepareConfig
       ? { ...agentCustomConfig, ...prepareConfig }
       : agentCustomConfig;
+
+    // B4 + B6 (melodic-strolling-seal-pt2): thread the resolved validation
+    // decision under the reserved `__atlas_validate` key so the agent
+    // orchestrator's prompt-assembly site (`convertLLMToAgent` in
+    // `@atlas/core/agent-conversion/from-llm.ts`) can compose the
+    // validating-llm-outputs skill body and inject the `record_validation`
+    // platform tool when the strategy is `self`. The reserved key prevents
+    // collisions with author-supplied `agents.<id>.config:` blocks.
+    const mergedConfig = options?.validateDecision
+      ? {
+          ...baseMergedConfig,
+          ...buildValidateDecisionConfig(options.validateDecision, options.validateSkill),
+        }
+      : baseMergedConfig;
 
     // Resolve memory mounts scoped to this agent
     const agentMounts = this.getMountsForAgent(agentId, job.name);

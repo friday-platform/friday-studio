@@ -13,7 +13,9 @@ import {
   SessionViewSchema,
   StepCompleteEventSchema,
   StepStartEventSchema,
+  StepValidationOutputSchema,
   ToolCallSummarySchema,
+  ValidationStrategySchema,
 } from "./session-events.ts";
 
 // ---------------------------------------------------------------------------
@@ -239,6 +241,110 @@ describe("StepCompleteEventSchema", () => {
     const { output: _, ...rest } = validStepComplete();
     const result = StepCompleteEventSchema.parse(rest);
     expect(result.output).toBeUndefined();
+  });
+
+  // ── B6 (melodic-strolling-seal-pt2) — validation field ─────────────────
+  test("parses with validation field set to skip", () => {
+    const result = StepCompleteEventSchema.parse({
+      ...validStepComplete(),
+      validation: { strategy: "skip", skipReason: "read-only-fetcher" },
+    });
+    expect(result.validation).toEqual({ strategy: "skip", skipReason: "read-only-fetcher" });
+  });
+
+  test("parses with validation field set to self with verdict", () => {
+    const result = StepCompleteEventSchema.parse({
+      ...validStepComplete(),
+      validation: {
+        strategy: "self",
+        verdict: "pass",
+        issues: [{ claim: "x", category: "sourcing", severity: "info" }],
+      },
+    });
+    expect(result.validation?.strategy).toBe("self");
+    expect(result.validation?.verdict).toBe("pass");
+  });
+
+  test("parses with validation field set to external with issues", () => {
+    const result = StepCompleteEventSchema.parse({
+      ...validStepComplete(),
+      validation: {
+        strategy: "external",
+        verdict: "advisory",
+        issues: [{ claim: "uncertain claim", reasoning: "unclear source" }],
+      },
+    });
+    expect(result.validation?.strategy).toBe("external");
+    expect(result.validation?.issues).toHaveLength(1);
+  });
+
+  test("validation field is optional — absent on legacy events", () => {
+    const result = StepCompleteEventSchema.parse(validStepComplete());
+    expect(result.validation).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StepValidationOutputSchema (B6)
+// ---------------------------------------------------------------------------
+
+describe("StepValidationOutputSchema", () => {
+  test("accepts skip with skipReason", () => {
+    const result = StepValidationOutputSchema.parse({
+      strategy: "skip",
+      skipReason: "non-llm-agent-type:user",
+    });
+    expect(result.strategy).toBe("skip");
+  });
+
+  test("accepts self with verdict pass and no issues", () => {
+    const result = StepValidationOutputSchema.parse({ strategy: "self", verdict: "pass" });
+    expect(result.verdict).toBe("pass");
+    expect(result.issues).toBeUndefined();
+  });
+
+  test("accepts self with verdict blocking and issues", () => {
+    const result = StepValidationOutputSchema.parse({
+      strategy: "self",
+      verdict: "blocking",
+      issues: [{ claim: "fabricated stat", category: "sourcing" }],
+    });
+    expect(result.verdict).toBe("blocking");
+    expect(result.issues).toHaveLength(1);
+  });
+
+  test("accepts external with all fields", () => {
+    const result = StepValidationOutputSchema.parse({
+      strategy: "external",
+      verdict: "advisory",
+      issues: [{ claim: "x", severity: "warn", citation: null }],
+    });
+    expect(result.strategy).toBe("external");
+  });
+
+  test("accepts self with no verdict (LLM didn't call record_validation)", () => {
+    const result = StepValidationOutputSchema.parse({ strategy: "self" });
+    expect(result.verdict).toBeUndefined();
+  });
+
+  test("rejects invalid verdict", () => {
+    expect(() =>
+      StepValidationOutputSchema.parse({ strategy: "self", verdict: "definitely-pass" }),
+    ).toThrow();
+  });
+
+  test("rejects unknown strategy", () => {
+    expect(() => StepValidationOutputSchema.parse({ strategy: "auto" })).toThrow();
+  });
+
+  test("rejects strategy missing", () => {
+    expect(() => StepValidationOutputSchema.parse({ verdict: "pass" })).toThrow();
+  });
+
+  test("ValidationStrategySchema accepts the three documented values", () => {
+    expect(ValidationStrategySchema.parse("skip")).toBe("skip");
+    expect(ValidationStrategySchema.parse("self")).toBe("self");
+    expect(ValidationStrategySchema.parse("external")).toBe("external");
   });
 });
 

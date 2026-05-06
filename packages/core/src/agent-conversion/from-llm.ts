@@ -19,6 +19,10 @@ import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { composeValidationBlock } from "../agent-context/compose-blocks.ts";
 import {
+  createRecordValidationTool,
+  RECORD_VALIDATION_TOOL_NAME,
+} from "../agent-context/record-validation-tool.ts";
+import {
   readValidateDecisionFromConfig,
   type ValidateDecisionContext,
 } from "../agent-context/validate-decision.ts";
@@ -99,6 +103,23 @@ export function convertLLMToAgent(
         // Tools are provided via execution context from workspace-level MCP servers
         const filteredTools = filterWorkspaceAgentTools(tools, logger);
 
+        // B6 (melodic-strolling-seal-pt2): inject the `record_validation`
+        // platform tool when the resolved validation decision is `self`. The
+        // FSM engine threads the decision in via `__atlas_validate` (B4); the
+        // skill body composed above instructs the LLM to call this tool with
+        // its inline self-check verdict. The captured args are read off the
+        // streamText result's toolCalls back in fsm-engine's `case "agent"`
+        // post-execution site so `step:complete.validation` carries them
+        // identically to the inline `case "llm"` path.
+        const toolsWithValidation =
+          validateCtx.decision === "self"
+            ? {
+                ...filteredTools,
+                [RECORD_VALIDATION_TOOL_NAME]:
+                  createRecordValidationTool() as (typeof filteredTools)[string],
+              }
+            : filteredTools;
+
         const result = streamText({
           model,
           // role:"system" in messages (rather than the `system:` parameter)
@@ -115,7 +136,7 @@ export function convertLLMToAgent(
             temporalGroundingMessage(),
             { role: "user", content: prompt },
           ],
-          tools: filteredTools,
+          tools: toolsWithValidation,
           toolChoice: config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,

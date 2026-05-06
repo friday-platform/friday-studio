@@ -20,6 +20,7 @@ import type {
   StepStartEvent,
   StepUsage,
   StepValidationEvent,
+  StepValidationOutput,
   ToolCallSummary,
 } from "./session-events.ts";
 import { SessionActionTypeSchema } from "./session-events.ts";
@@ -39,6 +40,12 @@ export interface AgentResultData {
   artifactRefs?: unknown[];
   /** Optional LLM token usage. Set by LLM action paths; agent actions leave it absent. */
   usage?: StepUsage;
+  /**
+   * Per-action validation outcome — set on `type: llm` and
+   * `case "agent" → type: llm` paths. Three shapes mirror the resolved
+   * strategy. Phase B6 of melodic-strolling-seal-pt2.
+   */
+  validation?: StepValidationOutput;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +125,11 @@ export function mapActionToStepComplete(
     // Conditionally spread so absence is preserved on the wire — keeps
     // pre-Phase-11 events round-trippable through the schema.
     ...(agentResult?.usage && { usage: agentResult.usage }),
+    // B6 (melodic-strolling-seal-pt2): structured validation outcome.
+    // Conditionally spread so legacy paths and pure-agent (`type: user` /
+    // `type: atlas`) actions that don't run validation leave the field
+    // absent on the wire.
+    ...(agentResult?.validation && { validation: agentResult.validation }),
     timestamp: new Date(event.data.timestamp).toISOString(),
   };
 }
