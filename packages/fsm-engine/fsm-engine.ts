@@ -1,8 +1,7 @@
 /**
- * FSMEngine - FSM execution engine using code-based guards and actions
+ * FSMEngine - FSM execution engine.
  *
- * Executes FSMDefinition with TypeScript code for guards and actions.
- * Guards and actions are executed via dynamic import from code strings.
+ * Executes FSMDefinition entry actions of type llm, agent, emit, or notification.
  */
 
 import {
@@ -151,7 +150,7 @@ export function interpolatePromptPlaceholders(
 }
 
 /**
- * Parse a code action return value into a PrepareResult.
+ * Parse an action return value into a PrepareResult.
  * Returns undefined for null, non-conforming, or empty (neither task nor config) results.
  */
 export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
@@ -182,7 +181,7 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
  *    Wins over carried-over prepareResult: cron/manual triggers auto-seed
  *    prepareResult from signal payloads, and an empty payload (`{}`) used to
  *    overshadow inputFrom and surface as `## Input: { config: {} }`.
- * 2. `prepareResult` from a `prepare` code action — falls through when no
+ * 2. `prepareResult` from a prior action — falls through when no
  *    inputFrom is set on the action.
  * 3. Legacy `foo_result` ↔ `foo-request` document convention.
  */
@@ -231,8 +230,8 @@ export function getInputSnapshot(
     return { task, config };
   }
 
-  // Carried-over prepareResult — from a prior `prepare` code action or
-  // auto-seeded from the triggering signal payload.
+  // Carried-over prepareResult — from a prior action or auto-seeded
+  // from the triggering signal payload.
   if (prepareResult) {
     const { task, config } = prepareResult;
     if (task || config) return { task, config };
@@ -659,7 +658,6 @@ export class FSMEngine {
       ? transitionsOrSingle
       : [transitionsOrSingle];
 
-    // Select first transition (guards removed in Phase 4)
     const selectedTransition: TransitionDefinition | null = transitions[0] ?? null;
 
     if (!selectedTransition) return; // No valid transition found
@@ -917,8 +915,6 @@ export class FSMEngine {
     try {
       // Seed prepareResult from the previous state's stored value so agent
       // actions in a cascaded state inherit config (e.g. platformUrl, workDir)
-      // without needing their own code action. A code action in this state
-      // overrides the stored value naturally via its return value.
       const storedPrepare = results?.get("__lastPrepare");
       let prepareResult: PrepareResult | undefined = storedPrepare
         ? parsePrepareResult(storedPrepare)
@@ -926,12 +922,11 @@ export class FSMEngine {
 
       // If there's no prior prepare result and the triggering signal carries a
       // payload, auto-seed the config from it. Friday-authored FSMs routinely
-      // expect agent prompts to reference signal-payload fields (either via
-      // `{{inputs.x}}` substitution or the Input section), but most authors
-      // never add an explicit code-action to move the payload into
-      // prepareResult. Without this, signal payloads simply vanished — the
-      // job fired, the FSM ran, and the agent complained about missing
-      // inputs while the values sat in `sig.data` unread.
+      // expect agent prompts to reference signal-payload fields (via
+      // `{{inputs.x}}` substitution or the Input section). Without this,
+      // signal payloads simply vanished — the job fired, the FSM ran, and
+      // the agent complained about missing inputs while the values sat in
+      // `sig.data` unread.
       if (!prepareResult && sig.data && typeof sig.data === "object") {
         const candidate = sig.data as Record<string, unknown>;
         // `createJobTools` wraps tool args under `payload` when firing the
@@ -955,10 +950,10 @@ export class FSMEngine {
           prepareResult,
         );
 
-        // After a code action produces a prepareResult without artifactRefs,
+        // After an action produces a prepareResult without artifactRefs,
         // collect any artifactRefs from prior agent results in the accumulator.
-        // This ensures LLM steps see artifact content even when the prepare
-        // function only forwards .response (the common compiled-workspace pattern).
+        // This ensures LLM steps see artifact content even when the upstream
+        // action only forwards .response (the common compiled-workspace pattern).
         if (prepareResult && !prepareResult.artifactRefs && results) {
           const seen = new Set<string>();
           const collectedRefs: ArtifactRef[] = [];
@@ -987,7 +982,7 @@ export class FSMEngine {
       }
 
       // Persist prepareResult so subsequent states inherit config
-      // (e.g. platformUrl, workDir) without needing their own code action.
+      // (e.g. platformUrl, workDir) without re-deriving it.
       if (prepareResult && results) {
         results.set("__lastPrepare", { ...prepareResult });
       }
@@ -2206,7 +2201,7 @@ export class FSMEngine {
   /**
    * Pre-populate results entries before any signal processing.
    * Used by WorkspaceRuntime to inject `__meta` (and potentially other
-   * seed data) so code actions see it via `context.results`.
+   * seed data) so actions see it via `context.results`.
    *
    * Merges entries — safe to call between sessions (when not actively
    * processing). Throws if called mid-session to prevent mutation while
