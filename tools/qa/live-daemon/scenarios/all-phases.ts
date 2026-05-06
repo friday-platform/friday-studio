@@ -12,8 +12,11 @@
  *   1.B  — per-job dangerouslySkipAllowlist: true bypasses narrowing
  *   2.B  — Phase 2.B artifact persists in JetStream Object Store
  *   2.C  — Phase 2.C SSE job-complete carries compact { artifactIds, summary }
- *   4    — validator runs on prose-emitting actions (skip path covered
- *          by unit tests; this confirms the run path)
+ *   4.A  — read-only fetcher action emits step:complete.validation with
+ *          strategy="skip" and a classifier reason (read-only-fetcher)
+ *   4.B  — free-form prose action emits step:complete.validation with
+ *          strategy="self" (verdict optional — LLM may or may not call
+ *          record_validation; self-strategy presence is the contract)
  *   11   — Phase 11 step:complete events carry `usage`
  *   12   — request_tool_access emits a tool-allowlist elicitation
  *          surfaced via GET /api/elicitations
@@ -47,7 +50,23 @@ interface PhaseResult {
 const NARROW_WS = join(HARNESS_PATHS.fixturesDir, "inbox-corpus-qa-narrow");
 const BYPASS_WS = join(HARNESS_PATHS.fixturesDir, "inbox-corpus-qa-bypass");
 const ELICIT_WS = join(HARNESS_PATHS.fixturesDir, "inbox-corpus-qa-elicitation");
+const READONLY_WS = join(HARNESS_PATHS.fixturesDir, "inbox-corpus-qa-readonly");
 const STANDARD_WS = HARNESS_PATHS.inboxCorpusWorkspaceDir;
+
+/**
+ * Classifier reasons (validate-classifier.ts) that the harness recognizes
+ * as legitimate `skip`-strategy emissions. The runtime sets one of these
+ * on `step:complete.validation.skipReason` whenever the auto classifier
+ * resolves to `"skip"`. Keeping this in sync with the classifier source
+ * is intentional — Phase 4.A's pass condition requires the reason to be
+ * one of these (not just any non-empty string).
+ */
+const KNOWN_CLASSIFIER_SKIP_REASONS = new Set<string>([
+  "read-only-fetcher",
+  "pure-formatter",
+  "non-llm-agent-type:user",
+  "non-llm-agent-type:atlas",
+]);
 
 async function runPhase1A(d: DaemonHandle): Promise<PhaseResult> {
   const notes: string[] = [];
@@ -147,6 +166,65 @@ async function runPhase1B(d: DaemonHandle): Promise<PhaseResult> {
   }
 }
 
+/**
+ * Phase 4.A — read-only fetcher action emits `step:complete.validation`
+ * with `strategy: "skip"` and a classifier reason. The fixture's action
+ * declares only `fs_glob` (read-only) and an `outputType` bound to a
+ * structured documentTypes schema; the classifier (validate-classifier.ts)
+ * resolves this shape to `{ decision: "skip", reason: "read-only-fetcher" }`,
+ * which the runtime promotes onto the action's `step:complete.validation`
+ * field per B6 of melodic-strolling-seal-pt2.
+ */
+async function runPhase4A(d: DaemonHandle): Promise<PhaseResult> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  try {
+    const ws = await registerWorkspace(d, READONLY_WS, { name: "Inbox QA Read-Only" });
+    notes.push(`workspace ${ws.id} registered`);
+    const t = await triggerSignalSSE(d, ws.id, "list-event", {
+      payload: { inboxPath: HARNESS_PATHS.inboxCorpusDir },
+      timeoutMs: 2 * 60 * 1000,
+    });
+    metrics.wallTimeMs = t.durationMs;
+    metrics.sessionId = t.sessionId;
+    if (!t.sessionId) {
+      return { phase: "4.A", pass: false, notes: [...notes, "no sessionId"], metrics };
+    }
+
+    const events = await fetchSessionEvents(d, t.sessionId);
+    metrics.stepValidationCount = events.stepValidations.length;
+    metrics.stepValidations = events.stepValidations;
+
+    // Expect exactly one `type: llm` step in the fixture → exactly one
+    // populated validation block. Strategy must be `skip`; skipReason
+    // must be a known classifier reason (read-only-fetcher in this
+    // fixture, but accept any classifier reason so the assertion stays
+    // robust to future refinements like "tools-mostly-read-only").
+    const v = events.stepValidations[0];
+    const hasOne = events.stepValidations.length === 1;
+    const isSkip = !!v && v.strategy === "skip";
+    const reasonOk =
+      !!v && typeof v.skipReason === "string" && KNOWN_CLASSIFIER_SKIP_REASONS.has(v.skipReason);
+    notes.push(`step:complete.validation count: ${events.stepValidations.length}`);
+    notes.push(`strategy: ${v?.strategy ?? "(missing)"}`);
+    notes.push(`skipReason: ${v?.skipReason ?? "(missing)"}`);
+
+    return {
+      phase: "4.A — read-only fetcher → step:complete.validation.strategy=skip",
+      pass: hasOne && isSkip && reasonOk,
+      notes,
+      metrics,
+    };
+  } catch (err) {
+    return {
+      phase: "4.A",
+      pass: false,
+      notes: [...notes, `error: ${err instanceof Error ? err.message : String(err)}`],
+      metrics,
+    };
+  }
+}
+
 async function runPhase2BC4_11_baseline(d: DaemonHandle): Promise<PhaseResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -192,9 +270,20 @@ async function runPhase2BC4_11_baseline(d: DaemonHandle): Promise<PhaseResult[]>
     metrics.supervisorOutputTokens = events.totalUsage.outputTokens;
     metrics.cacheReadTokens = events.totalUsage.cacheReadTokens;
     metrics.validatorRunCount = events.validatorRunCount;
-    // Phase 4 — skip-on-tool-passthrough emits a debug log line
-    const skipLogCount = await countLogMatches(d, "Skipping validation for tool-passthrough");
-    metrics.validatorSkipCountFromLog = skipLogCount;
+    // Phase 4.B — the standard inbox-corpus-qa workspace's triage action
+    // declares only read-only tools but has no `outputType`, so the
+    // classifier (validate-classifier.ts rule 5: free-form-prose) falls
+    // through to `self`. Per B6, the runtime emits
+    // `step:complete.validation = { strategy: "self", verdict?, issues? }`
+    // — `verdict` is optional because the LLM may or may not call the
+    // injected `record_validation` tool, and that's an observable fact,
+    // not an error (see the `missing-verdict-as-observable` semantics
+    // in StepValidationOutputSchema).
+    const selfStrategyCount = events.stepValidations.filter((v) => v.strategy === "self").length;
+    const anyNonSelf = events.stepValidations.find((v) => v.strategy !== "self");
+    metrics.stepValidationCount = events.stepValidations.length;
+    metrics.selfStrategyCount = selfStrategyCount;
+    metrics.stepValidations = events.stepValidations;
 
     return [
       {
@@ -218,15 +307,26 @@ async function runPhase2BC4_11_baseline(d: DaemonHandle): Promise<PhaseResult[]>
         },
       },
       {
-        phase: "4 — validator runs on prose-emitting actions",
-        pass: events.validatorRunCount >= 1,
+        phase: "4.B — free-form prose action → step:complete.validation.strategy=self",
+        // Pass condition: every populated validation block in the
+        // baseline session reports strategy=self, and there is at least
+        // one such block (i.e. a `type: llm` action ran). Verdict
+        // intentionally not pinned — the LLM may skip `record_validation`.
+        pass: selfStrategyCount >= 1 && !anyNonSelf,
         notes: [
-          `validator runs (events): ${events.validatorRunCount}`,
-          `skip-log lines: ${skipLogCount}`,
+          `step:complete.validation count: ${events.stepValidations.length}`,
+          `strategies seen: ${
+            [...new Set(events.stepValidations.map((v) => v.strategy))].join(", ") || "(none)"
+          }`,
+          `verdicts seen: ${
+            [...new Set(events.stepValidations.map((v) => v.verdict ?? "(none)"))].join(", ") ||
+            "(none)"
+          }`,
         ],
         metrics: {
-          validatorRunCount: events.validatorRunCount,
-          validatorSkipCountFromLog: skipLogCount,
+          stepValidationCount: events.stepValidations.length,
+          selfStrategyCount,
+          stepValidations: events.stepValidations,
         },
       },
       {
@@ -325,7 +425,10 @@ async function main() {
     console.log("\n── Phase 1.B (bypass) ──");
     results.push(await runPhase1B(daemon));
 
-    console.log("\n── Phase 2.B/2.C/4/11 (baseline-derived) ──");
+    console.log("\n── Phase 4.A (read-only fetcher → skip) ──");
+    results.push(await runPhase4A(daemon));
+
+    console.log("\n── Phase 2.B/2.C/4.B/11 (baseline-derived) ──");
     results.push(...(await runPhase2BC4_11_baseline(daemon)));
 
     console.log("\n── Phase 12 (elicitation) ──");

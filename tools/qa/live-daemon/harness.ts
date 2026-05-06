@@ -86,6 +86,20 @@ export interface SignalTriggerResult {
   durationMs: number;
 }
 
+/**
+ * One step:complete.validation field captured from a session's event stream.
+ * Mirrors `StepValidationOutputSchema` from
+ * `packages/core/src/session/session-events.ts` (B6 of
+ * melodic-strolling-seal-pt2). Only the fields the harness asserts on are
+ * narrowed; unknown extra fields pass through untouched.
+ */
+export interface CapturedStepValidation {
+  strategy: "skip" | "self" | "external";
+  verdict?: "pass" | "advisory" | "blocking";
+  skipReason?: string;
+  issues?: Array<Record<string, unknown>>;
+}
+
 export interface SessionEventsResult {
   events: Array<Record<string, unknown>>;
   totalUsage: {
@@ -97,6 +111,13 @@ export interface SessionEventsResult {
   validatorRunCount: number;
   validatorSkipCount: number;
   toolCallCount: number;
+  /**
+   * Every `step:complete` event's `validation` field, in stream order.
+   * Phase 4 of the QA harness asserts the post-B6 contract on this array
+   * (one entry per `type: llm` action's step:complete). Pure-agent steps
+   * leave `validation` absent and are omitted here.
+   */
+  stepValidations: CapturedStepValidation[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -420,6 +441,7 @@ interface MaybeStepCompleteEvent {
   usage?: StepUsage;
   toolCalls?: unknown[];
   validationVerdict?: { skipped?: boolean; ok?: boolean };
+  validation?: CapturedStepValidation;
 }
 
 /**
@@ -469,6 +491,7 @@ export async function fetchSessionEvents(
         validatorRunCount: 0,
         validatorSkipCount: 0,
         toolCallCount: 0,
+        stepValidations: [],
       };
     }
     const text = await resp.text();
@@ -526,6 +549,7 @@ export async function fetchSessionEvents(
   let validatorRunCount = 0;
   let validatorSkipCount = 0;
   let toolCallCount = 0;
+  const stepValidations: CapturedStepValidation[] = [];
 
   for (const ev of events as MaybeStepCompleteEvent[]) {
     if (ev.type === "step:complete") {
@@ -537,6 +561,13 @@ export async function fetchSessionEvents(
         totalUsage.cacheWriteTokens += u.cacheWriteTokens ?? 0;
       }
       if (Array.isArray(ev.toolCalls)) toolCallCount += ev.toolCalls.length;
+      // B6 (melodic-strolling-seal-pt2): structured validation outcome
+      // rides on `step:complete` instead of the legacy `step:validation`
+      // event. Capture every populated emit so Phase 4 can assert the
+      // strategy/skipReason/verdict shape.
+      if (ev.validation && typeof ev.validation === "object") {
+        stepValidations.push(ev.validation);
+      }
     } else if (ev.type === "step:validation") {
       // Phase 4: tool-passthrough actions skip the validator. The
       // validator emits `step:validation` with `validationVerdict.skipped:
@@ -552,7 +583,14 @@ export async function fetchSessionEvents(
     }
   }
 
-  return { events, totalUsage, validatorRunCount, validatorSkipCount, toolCallCount };
+  return {
+    events,
+    totalUsage,
+    validatorRunCount,
+    validatorSkipCount,
+    toolCallCount,
+    stepValidations,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
