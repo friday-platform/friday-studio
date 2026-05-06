@@ -33,6 +33,30 @@ export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
 export * from "./src/credential-fetcher.ts";
+// Elicitations (HITL pause-and-ask events) — see Phase 12 of the
+// Bucket-3 plan. Schema + storage groundwork only; runtime suspend/
+// resume + HTTP routes + UI land in follow-on phases.
+export type {
+  CreateElicitationInput,
+  Elicitation,
+  ElicitationAnswer,
+  ElicitationKind,
+  ElicitationOption,
+  ElicitationPendingTool,
+  ElicitationStatus,
+  ElicitationStorageAdapter,
+} from "./src/elicitations/mod.ts";
+export {
+  CreateElicitationSchema,
+  ElicitationAnswerSchema,
+  ElicitationKindSchema,
+  ElicitationOptionSchema,
+  ElicitationPendingToolSchema,
+  ElicitationSchema,
+  ElicitationStatusSchema,
+  ElicitationStorage,
+  initElicitationStorage,
+} from "./src/elicitations/mod.ts";
 // Error types
 export { MissingEnvironmentError } from "./src/errors/missing-environment-error.ts";
 export { SessionFailedError } from "./src/errors/session-failed-error.ts";
