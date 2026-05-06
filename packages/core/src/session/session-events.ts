@@ -84,6 +84,28 @@ export const StepStartEventSchema = z.object({
 });
 export type StepStartEvent = z.infer<typeof StepStartEventSchema>;
 
+/**
+ * LLM token usage captured at step completion. All fields are optional —
+ * the AI SDK reports tokens as `number | undefined`, and non-LLM step
+ * sources (agent actions, bundled agents) may omit usage entirely.
+ *
+ * Shape mirrors the AI SDK's `LanguageModelUsage` projection we care about:
+ * input/output totals plus prompt-cache read/write counts. `model` is the
+ * registry-qualified id (e.g. "anthropic:claude-opus-4-7") of the model
+ * that produced the call so retrospective analysis can group by model.
+ *
+ * Phase 11 of the fan-out-without-fan-in plan — data-layer prerequisite
+ * for crystallization. Schema only; no behavior depends on it yet.
+ */
+export const StepUsageSchema = z.object({
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  cacheReadTokens: z.number().optional(),
+  cacheWriteTokens: z.number().optional(),
+  model: z.string().optional(),
+});
+export type StepUsage = z.infer<typeof StepUsageSchema>;
+
 export const StepCompleteEventSchema = z.object({
   type: z.literal("step:complete"),
   sessionId: z.string(),
@@ -95,6 +117,13 @@ export const StepCompleteEventSchema = z.object({
   output: z.unknown(),
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
+  /**
+   * Optional LLM token usage for this step. Present when the step was an
+   * LLM action; absent for pure agent / tool steps. Phase 11 reservation —
+   * crystallization (feeding successful past run paths into future runs)
+   * uses this for cost-aware selection. See {@link StepUsageSchema}.
+   */
+  usage: StepUsageSchema.optional(),
   timestamp: z.string(),
 });
 export type StepCompleteEvent = z.infer<typeof StepCompleteEventSchema>;
@@ -246,6 +275,26 @@ export type SessionView = z.infer<typeof SessionViewSchema>;
 // List endpoint summary
 // ---------------------------------------------------------------------------
 
+/**
+ * Reserved for future user-feedback integration. No UI surface today;
+ * Phase 11 of the fan-out plan reserves the schema slot so writers can
+ * start populating implicit signals (e.g. session completion as a weak
+ * positive signal) ahead of the explicit-feedback rollout.
+ *
+ * - `implicit`: derived from session lifecycle. `finalState` is the FSM
+ *   state name the session terminated in, when meaningful.
+ * - `explicit`: user-supplied thumbs-up/down with optional note.
+ */
+export const SuccessSignalSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("implicit"), finalState: z.string().optional() }),
+  z.object({
+    kind: z.literal("explicit"),
+    rating: z.enum(["thumbs_up", "thumbs_down"]),
+    note: z.string().optional(),
+  }),
+]);
+export type SuccessSignal = z.infer<typeof SuccessSignalSchema>;
+
 export const SessionSummarySchema = z.object({
   sessionId: z.string(),
   workspaceId: z.string(),
@@ -260,5 +309,21 @@ export const SessionSummarySchema = z.object({
   error: z.string().optional(),
   /** AI-generated summary produced at session finalization */
   aiSummary: SessionAISummarySchema.optional(),
+  /**
+   * Parent session id when this session was spawned by another session
+   * (chat→job, signal-trigger from a parent context). Absent for root
+   * sessions (cron, external HTTP, signal triggers without a parent).
+   * Lets analysis walk the chat→job→child tree from any node.
+   */
+  parentSessionId: z.string().optional(),
+  /**
+   * Stream-event id within the parent session that caused this session
+   * to spawn (e.g. the chat tool-call that fired the signal). Optional
+   * — populated when the spawn site can identify a stable event id;
+   * pure session-level linkage works without it.
+   */
+  parentEventId: z.string().optional(),
+  /** Reserved for future user-feedback integration. See {@link SuccessSignalSchema}. */
+  successSignal: SuccessSignalSchema.optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;

@@ -11,6 +11,7 @@ import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { CommunicatorKindSchema, type WorkspaceConfig } from "@atlas/config";
+import { scrubAssistantMessage } from "@atlas/core/artifacts/scrubber";
 import { ChatStorage } from "@atlas/core/chat/storage";
 import { createErrorCause, getErrorDisplayMessage } from "@atlas/core/errors";
 import {
@@ -38,7 +39,6 @@ import {
   composeWorkspaceSections,
   fetchForegroundContexts,
 } from "./compose-context.ts";
-import { scrubAssistantMessage } from "./lib/scrub-tool-output.ts";
 import { buildOnboardingClause, buildUserProfileClause } from "./onboarding.ts";
 import SYSTEM_PROMPT from "./prompt.txt" with { type: "text" };
 import { connectCommunicatorSucceeded, connectServiceSucceeded } from "./stop-conditions.ts";
@@ -629,6 +629,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
           session.streamId,
           writer,
           abortSignal,
+          // Phase 11 provenance: spawned job sessions record this chat
+          // session as their parent so the chat→job tree is recoverable.
+          session.sessionId,
         );
 
         // Ad-hoc freedom tools — modeled on Hermes + OpenClaw patterns.
@@ -760,6 +763,9 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             session.streamId,
             writer,
             abortSignal,
+            // Phase 11 provenance: parent linkage for foreground-workspace
+            // job spawns mirrors the primary path above.
+            session.sessionId,
           ),
         }));
         const allTools = composeTools(primaryTools, foregroundToolSets);

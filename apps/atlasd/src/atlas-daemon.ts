@@ -669,6 +669,11 @@ export class AtlasDaemon {
             ctx.onStreamEvent,
             undefined,
             ctx.abortSignal,
+            // Reuse the existing `sourceSessionId` envelope field as the
+            // parent linkage. It was wired through on publish but never
+            // consumed — Phase 11 makes it carry across into
+            // `SessionSummary.parentSessionId`.
+            envelope.sourceSessionId,
           );
         } catch (err) {
           if (err instanceof SessionFailedError) {
@@ -1550,7 +1555,9 @@ export class AtlasDaemon {
             // Web/API), runs through that job. Skipping by jobName catches
             // them all, including API-triggered tests where no chat record
             // exists yet.
-            if (status !== WorkspaceSessionStatus.COMPLETED || !finalOutput) return;
+            if (status !== WorkspaceSessionStatus.COMPLETED || !finalOutput) {
+              return;
+            }
             if (jobName === "handle-chat") {
               logger.debug("broadcast_skipped_chat_job", { workspaceId, sessionId, jobName });
               return;
@@ -1907,6 +1914,13 @@ export class AtlasDaemon {
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
     abortSignal?: AbortSignal,
+    /**
+     * Parent session id when this signal is being fired from inside
+     * another session (chat-spawned-job, FSM-emit-and-await, etc.).
+     * Threads through to `SessionSummary.parentSessionId` so the
+     * spawned session records its parent. Phase 11 provenance.
+     */
+    parentSessionId?: string,
   ): Promise<{
     sessionId: string;
     output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
@@ -1920,6 +1934,7 @@ export class AtlasDaemon {
       onStreamEvent,
       skipStates,
       abortSignal,
+      parentSessionId,
     );
 
     // Record signal trigger metric by provider type (http, schedule, slack, etc.)

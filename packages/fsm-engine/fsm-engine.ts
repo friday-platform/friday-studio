@@ -27,6 +27,7 @@ import {
 } from "@atlas/core";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
+import { createScrubber } from "@atlas/core/artifacts/scrubber";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
 import { buildTemporalFacts } from "@atlas/llm";
 import { logger } from "@atlas/logger";
@@ -144,8 +145,12 @@ export function interpolatePromptPlaceholders(
     // convention). Without this, an explicit `default: 'classic'` would do
     // nothing for the very case authors reach for it — a form field that
     // arrives as "" rather than absent.
-    if (typeof cursor === "string") return cursor === "" ? (fallback ?? cursor) : cursor;
-    if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
+    if (typeof cursor === "string") {
+      return cursor === "" ? (fallback ?? cursor) : cursor;
+    }
+    if (typeof cursor === "number" || typeof cursor === "boolean") {
+      return String(cursor);
+    }
     return JSON.stringify(cursor);
   });
 }
@@ -1160,7 +1165,7 @@ export class FSMEngine {
             });
 
             const buildResult = action.tools
-              ? await this.buildTools(action.tools, context, sig._context?.abortSignal)
+              ? await this.buildTools(action.tools, context, sig._context)
               : { tools: {}, dispose: async () => {} };
             const baseTools = buildResult.tools;
 
@@ -1501,6 +1506,11 @@ export class FSMEngine {
                   toolCalls,
                   reasoning: result.reasoning,
                   output: completeCall?.args ?? result.data,
+                  // Pass-through optional `usage` from the LLM provider so the
+                  // session event mapper can persist it on `step:complete`.
+                  // Provider adapters that don't set usage (e.g. tests with
+                  // stub providers) leave this undefined — handled downstream.
+                  ...(result.usage && { usage: result.usage }),
                 };
               }
 
@@ -1868,12 +1878,19 @@ export class FSMEngine {
 
   /**
    * Build AI SDK Tool objects for LLM action.
-   * MCP tools: ephemeral createMCPTools() call — dispose in finally block
+   * MCP tools: ephemeral createMCPTools() call — dispose in finally block.
+   *
+   * `signalContext` carries the per-call session/workspace identity. When
+   * present, an MCP-boundary scrubber is wired into createMCPTools so
+   * oversized binary tool outputs (Gmail attachment base64, image data
+   * URLs, run_code stdout blobs) get lifted to artifacts before they enter
+   * the AI SDK message buffer — same protection the chat path already had
+   * via the `delegate` tool. Phase 3 of the fan-in plan.
    */
   private async buildTools(
     toolNames: string[],
     _context: Context,
-    _abortSignal?: AbortSignal,
+    signalContext?: SignalWithContext["_context"],
   ): Promise<{ tools: Record<string, Tool>; dispose: () => Promise<void> }> {
     const tools: Record<string, Tool> = {};
     let dispose: () => Promise<void> = async () => {};
@@ -1936,9 +1953,27 @@ export class FSMEngine {
       }
     }
 
+    // Build a scrubber bound to this call's workspace + session. Without a
+    // signalContext (older test callers, internal invocations) we skip the
+    // wiring; createMCPTools treats `scrubResult: undefined` as a no-op.
+    // chatId falls back to sessionId — FSM signals don't carry a streamId
+    // today, and the artifact record only needs *some* stable correlation
+    // key for the lifted blob. Using sessionId keeps the lifted artifact
+    // bound to the same execution that produced it.
+    const scrubResult = signalContext?.workspaceId
+      ? createScrubber({
+          workspaceId: signalContext.workspaceId,
+          chatId: signalContext.sessionId,
+          logger,
+        })
+      : undefined;
+
     let mcpResult: MCPToolsResult;
     try {
-      mcpResult = await createMCPTools(effectiveConfigs, logger);
+      mcpResult = await createMCPTools(effectiveConfigs, logger, {
+        signal: signalContext?.abortSignal,
+        scrubResult,
+      });
     } catch (error) {
       if (hasUnusableCredentialCause(error)) {
         let provider = "unknown";
@@ -1982,7 +2017,9 @@ export class FSMEngine {
           // Platform tools were already filtered above by PLATFORM_TOOL_ALLOWLIST.
           // Don't re-filter here — they're ambient, not subject to the agent's
           // workspace MCP whitelist.
-          for (const name of names) if (filtered[name]) scoped[name] = filtered[name];
+          for (const name of names) {
+            if (filtered[name]) scoped[name] = filtered[name];
+          }
           continue;
         }
         const allow = serverAllow.get(serverId);

@@ -18,6 +18,7 @@ import type {
   StepCompleteEvent,
   StepSkippedEvent,
   StepStartEvent,
+  StepUsage,
   StepValidationEvent,
   ToolCallSummary,
 } from "./session-events.ts";
@@ -36,6 +37,8 @@ export interface AgentResultData {
   reasoning?: string;
   output: unknown;
   artifactRefs?: unknown[];
+  /** Optional LLM token usage. Set by LLM action paths; agent actions leave it absent. */
+  usage?: StepUsage;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +115,9 @@ export function mapActionToStepComplete(
     output: agentResult?.output,
     artifactRefs: agentResult?.artifactRefs,
     error: event.data.error,
+    // Conditionally spread so absence is preserved on the wire — keeps
+    // pre-Phase-11 events round-trippable through the schema.
+    ...(agentResult?.usage && { usage: agentResult.usage }),
     timestamp: new Date(event.data.timestamp).toISOString(),
   };
 }

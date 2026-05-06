@@ -59,6 +59,7 @@ import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
 import { mcpServersRegistry } from "@atlas/core/mcp-registry/registry-consolidated";
 import { type DocumentStore, getDocumentStore } from "@atlas/document-store";
 import {
+  type Action,
   type AgentAction,
   type AgentExecutor,
   AtlasLLMProviderAdapter,
@@ -74,6 +75,7 @@ import {
   type FSMEvent,
   type FSMStateSkippedEvent,
   interpolatePromptPlaceholders,
+  type LLMAction,
   type SignalWithContext,
   validateFSMStructure,
 } from "@atlas/fsm-engine";
@@ -195,6 +197,13 @@ interface WorkspaceRuntimeSignal {
   data?: Record<string, unknown>;
   timestamp: Date;
   provider?: { id: string; name: string };
+  /**
+   * Parent session id when this signal was fired from inside another
+   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to
+   * `SessionSummary.parentSessionId` at finalization. Phase 11
+   * provenance for crystallization. Absent for root sessions.
+   */
+  parentSessionId?: string;
 }
 
 /** Minimal workspace info needed by WorkspaceRuntimeInit (internal use only) */
@@ -365,6 +374,22 @@ interface ActiveSession {
   waitForCompletion(): Promise<SessionSummary>; // Convenience method to avoid .session.waitForCompletion()
 }
 
+/**
+ * Reference to an FSM document that was persisted as a real artifact in
+ * JetStream Object Store on session completion (Phase 2.B of the
+ * fan-out-without-fan-in plan). Parent supervisors will eventually consume
+ * this list instead of the full {@link IWorkspaceArtifact} payload — the
+ * job-tool result shape change is a follow-on iteration.
+ */
+export interface SessionArtifactRef {
+  /** FSM document id this artifact was synthesized from. */
+  documentId: string;
+  /** Artifact id assigned by {@link ArtifactStorage.create}. */
+  artifactId: string;
+  /** Artifact revision (always 1 for newly-created artifacts). */
+  revision: number;
+}
+
 interface SessionResult {
   id: string;
   workspaceId: string;
@@ -372,6 +397,13 @@ interface SessionResult {
   startedAt: Date;
   completedAt?: Date;
   artifacts: IWorkspaceArtifact[];
+  /**
+   * Persisted-artifact refs for non-plumbing FSM documents emitted during
+   * the session. Additive — `artifacts` (the labeled in-memory list) is
+   * preserved for existing consumers. Empty when artifact persistence
+   * fails or no eligible documents were emitted.
+   */
+  artifactRefs: SessionArtifactRef[];
   error?: Error;
   /** User ID from signal data */
   userId?: string;
@@ -380,6 +412,151 @@ interface SessionResult {
   /** Snapshot of the per-signal engine's documents at completion. */
   engineDocuments?: FSMDocument[];
   finalState?: string;
+}
+
+/**
+ * FSM plumbing document types that never become artifacts. Exported so
+ * tests can assert filter parity with {@link WorkspaceRuntime.getSessionFsmDocuments}.
+ */
+export const PLUMBING_DOCUMENT_TYPES: ReadonlySet<string> = new Set([
+  "state-transition",
+  "fsm-state",
+  "ChatContext",
+  "signal-payload",
+]);
+
+/**
+ * Walk the FSM definition once and build a `documentId → action` lookup.
+ * Used so artifact persistence can pull the action-author's declared
+ * `summary` (Phase 2 schema addition, commit `d61be0f`) instead of
+ * synthesizing one from the document's `data`.
+ *
+ * Only `llm` and `agent` actions can declare `outputTo` + `summary`;
+ * other action kinds (`emit`, `notification`) are skipped. When two
+ * actions share the same `outputTo` document id (overwriting in a
+ * later state), the last one wins — matches FSM runtime semantics
+ * where successive writes replace prior data.
+ */
+export function buildDocumentActionIndex(
+  definition: FSMDefinition,
+): Map<string, LLMAction | AgentAction> {
+  const index = new Map<string, LLMAction | AgentAction>();
+  const visit = (actions: Action[] | undefined) => {
+    if (!actions) return;
+    for (const a of actions) {
+      if ((a.type === "llm" || a.type === "agent") && a.outputTo) {
+        index.set(a.outputTo, a);
+      }
+    }
+  };
+  for (const state of Object.values(definition.states)) {
+    visit(state.entry);
+    if (!state.on) continue;
+    for (const transition of Object.values(state.on)) {
+      const transitions = Array.isArray(transition) ? transition : [transition];
+      for (const t of transitions) visit(t.actions);
+    }
+  }
+  return index;
+}
+
+/**
+ * Truncate a document's `data` to a synthesized summary (~300 chars).
+ * Falls back to the document type name if `JSON.stringify` throws on
+ * a circular structure — preserves a non-empty summary so artifact
+ * creation doesn't fail Zod validation (`summary.min(1)`).
+ */
+export function synthesizeArtifactSummary(doc: FSMDocument): string {
+  const MAX = 300;
+  let body: string;
+  try {
+    body = JSON.stringify(doc.data);
+  } catch {
+    return `[${doc.type}]`;
+  }
+  if (!body) return `[${doc.type}]`;
+  return body.length > MAX ? `${body.slice(0, MAX - 1)}…` : body;
+}
+
+/**
+ * Persist non-plumbing FSM documents as real artifacts in JetStream
+ * Object Store. Phase 2.B of the fan-out-without-fan-in plan — the
+ * data-layer half of the universal ref-return change. Failures log a
+ * warning and continue; the session document store remains the source
+ * of truth. Artifact `source` is tagged "fsm-engine:..." so Phase 6
+ * (ephemeral lifecycle) can later default these to ephemeral.
+ */
+export async function persistFsmSessionArtifacts(args: {
+  documents: FSMDocument[];
+  definition: FSMDefinition;
+  jobName: string;
+  workspaceId: string;
+}): Promise<SessionArtifactRef[]> {
+  const { documents, definition, jobName, workspaceId } = args;
+  const refs: SessionArtifactRef[] = [];
+  const actionIndex = buildDocumentActionIndex(definition);
+
+  for (const doc of documents) {
+    if (PLUMBING_DOCUMENT_TYPES.has(doc.type)) continue;
+
+    const action = actionIndex.get(doc.id);
+    const authorSummary = action?.summary?.trim();
+    const summary =
+      authorSummary && authorSummary.length > 0 ? authorSummary : synthesizeArtifactSummary(doc);
+
+    let content: string;
+    try {
+      content = JSON.stringify(doc.data, null, 2);
+    } catch (err) {
+      logger.warn("Skipping artifact persist: doc.data is not JSON-serializable", {
+        documentId: doc.id,
+        documentType: doc.type,
+        error: stringifyError(err),
+      });
+      continue;
+    }
+
+    let result: Awaited<ReturnType<typeof ArtifactStorage.create>>;
+    try {
+      result = await ArtifactStorage.create({
+        data: {
+          type: "file",
+          content,
+          contentEncoding: "utf-8",
+          originalName: `${doc.id}.json`,
+          mimeType: "application/json",
+        },
+        title: `${doc.type}: ${doc.id}`,
+        summary,
+        workspaceId,
+        source: `fsm-engine:${jobName}:${doc.id}`,
+      });
+    } catch (err) {
+      // Defensive: ArtifactStorage.create returns a Result, but the
+      // facade throws if the adapter wasn't initialized. Convert the
+      // throw into a logged-and-continue failure so artifact
+      // persistence never crashes the session.
+      logger.warn("Artifact persist threw — skipping", {
+        documentId: doc.id,
+        documentType: doc.type,
+        error: stringifyError(err),
+      });
+      continue;
+    }
+
+    if (!result.ok) {
+      logger.warn("Failed to persist FSM document as artifact", {
+        documentId: doc.id,
+        documentType: doc.type,
+        error: result.error,
+      });
+      continue;
+    }
+
+    refs.push({ documentId: doc.id, artifactId: result.data.id, revision: result.data.revision });
+  }
+
+  return refs;
 }
 
 /**
@@ -1082,6 +1259,7 @@ export class WorkspaceRuntime {
           status: WorkspaceSessionStatus.ACTIVE,
           startedAt: new Date(),
           artifacts: [],
+          artifactRefs: [],
           userId,
         };
 
@@ -1235,6 +1413,16 @@ export class WorkspaceRuntime {
           await awaitWithAbort(enginePromise, effectiveAbortSignal);
 
           session.artifacts = this.extractArtifacts(engine.documents);
+          // Phase 2.B — persist eligible FSM documents as real artifacts so a
+          // future job-tool result shape can return artifactIds + summary
+          // instead of the full Document[] payload. Non-blocking: failures
+          // log and are skipped, the in-memory `session.artifacts` list and
+          // the document store remain authoritative.
+          session.artifactRefs = await this.persistSessionArtifacts(
+            engine.documents,
+            engine.definition,
+            job.name,
+          );
           session.completedAt = new Date();
 
           // A cancelled agent call currently returns a successful-looking
@@ -1440,6 +1628,12 @@ export class WorkspaceRuntime {
               agentNames: executedBlocks.map((b) => b.agentName),
               error: session.error?.message,
               aiSummary,
+              // Phase 11 provenance: parent linkage when this session was
+              // spawned from inside another (chat→job, signal-trigger-from-
+              // FSM). Conditionally spread so root sessions stay free of the
+              // field on the wire — keeps existing SESSION_METADATA entries
+              // and round-trip schema parses unchanged.
+              ...(signal.parentSessionId && { parentSessionId: signal.parentSessionId }),
             };
 
             await sessionStream.finalize(summaryV2).catch((err) => {
@@ -2114,6 +2308,19 @@ export class WorkspaceRuntime {
       }));
   }
 
+  private persistSessionArtifacts(
+    documents: FSMDocument[],
+    definition: FSMDefinition,
+    jobName: string,
+  ): Promise<SessionArtifactRef[]> {
+    return persistFsmSessionArtifacts({
+      documents,
+      definition,
+      jobName,
+      workspaceId: this.workspace.id,
+    });
+  }
+
   private createSessionSummary(sessionResult: SessionResult): SessionSummary {
     const duration = sessionResult.completedAt
       ? sessionResult.completedAt.getTime() - sessionResult.startedAt.getTime()
@@ -2220,6 +2427,13 @@ export class WorkspaceRuntime {
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
     abortSignal?: AbortSignal,
+    /**
+     * Parent session id; threads through to
+     * `SessionSummary.parentSessionId` so chat→job and similar parent
+     * linkages are recoverable from session history. Phase 11 of the
+     * fan-out-without-fan-in plan.
+     */
+    parentSessionId?: string,
   ): Promise<IWorkspaceSession> {
     // Top-level `streamId` arg wins over any payload.streamId. The runtime
     // reads the merged value via `signal.data.streamId` (see processSignalForJob
@@ -2234,6 +2448,7 @@ export class WorkspaceRuntime {
       type: signalName,
       data,
       timestamp: new Date(),
+      parentSessionId,
     };
 
     return await this.processSignal(signal, onStreamEvent, abortSignal, skipStates);

@@ -200,6 +200,19 @@ export interface FSMActionExecutionEvent {
       toolCalls: Array<{ toolName: string; args: unknown }>;
       reasoning?: string;
       output: unknown;
+      /**
+       * Per-call LLM token usage. Optional — pre-Phase-11 callers and
+       * non-LLM (agent) paths leave this absent. See
+       * `@atlas/core/session-events` `StepUsageSchema` for the on-the-wire
+       * shape.
+       */
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+        model?: string;
+      };
     };
   };
 }

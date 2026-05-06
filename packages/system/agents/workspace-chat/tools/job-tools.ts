@@ -80,6 +80,14 @@ export function createJobTools(
   parentStreamId?: string,
   writer?: UIMessageStreamWriter<AtlasUIMessage>,
   abortSignal?: AbortSignal,
+  /**
+   * The parent chat session id. When set, gets forwarded as
+   * `parentSessionId` on the signal-trigger body so the spawned job's
+   * `SessionSummary` records its parent — Phase 11 provenance for
+   * crystallization. Pure plumbing here; absent for non-chat call sites
+   * (tests, headless triggers).
+   */
+  parentSessionId?: string,
 ): AtlasTools {
   const tools: AtlasTools = {};
 
@@ -121,6 +129,7 @@ export function createJobTools(
             abortSignal,
             logger,
             jobName,
+            parentSessionId,
           });
         }
 
@@ -131,6 +140,7 @@ export function createJobTools(
           streamId: parentStreamId,
           logger,
           jobName,
+          parentSessionId,
         });
       },
     });
@@ -154,6 +164,7 @@ interface ExecuteJobViaJSONDeps {
   streamId: string | undefined;
   logger: Logger;
   jobName: string;
+  parentSessionId?: string;
 }
 
 async function executeJobViaJSON(
@@ -166,12 +177,21 @@ async function executeJobViaJSON(
   error?: string;
   statusCode?: number;
 }> {
-  const { workspaceId, signalId, input, streamId, logger, jobName } = deps;
+  const { workspaceId, signalId, input, streamId, logger, jobName, parentSessionId } = deps;
+
+  // Phase 11: forward `parentSessionId` so the spawned job's
+  // `SessionSummary.parentSessionId` records the parent chat session.
+  // Schema field is optional on the route — undefined drops cleanly.
+  const json: { payload: Record<string, unknown>; streamId?: string; parentSessionId?: string } = {
+    payload: input,
+  };
+  if (streamId !== undefined) json.streamId = streamId;
+  if (parentSessionId !== undefined) json.parentSessionId = parentSessionId;
 
   const result = await parseResult(
     client.workspace[":workspaceId"].signals[":signalId"].$post({
       param: { workspaceId, signalId },
-      json: streamId ? { payload: input, streamId } : { payload: input },
+      json,
     }),
   );
 
@@ -219,6 +239,7 @@ interface ExecuteJobViaSSEDeps {
   abortSignal: AbortSignal | undefined;
   logger: Logger;
   jobName: string;
+  parentSessionId?: string;
 }
 
 async function executeJobViaSSE(
@@ -241,12 +262,20 @@ async function executeJobViaSSE(
     abortSignal,
     logger,
     jobName,
+    parentSessionId,
   } = deps;
 
-  const url = `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(workspaceId)}/signals/${encodeURIComponent(signalId)}`;
+  const url = `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(
+    workspaceId,
+  )}/signals/${encodeURIComponent(signalId)}`;
   const body: Record<string, unknown> = { payload: input };
   if (streamId !== undefined) {
     body.streamId = streamId;
+  }
+  // Phase 11: forward parent chat session id so the spawned job's
+  // SessionSummary records its parent. Drops out cleanly when absent.
+  if (parentSessionId !== undefined) {
+    body.parentSessionId = parentSessionId;
   }
 
   let response: Response;

@@ -133,7 +133,9 @@ async function validateImportedWorkspace(
       status: 400,
       body: {
         success: false,
-        error: `Invalid workspace configuration: ${validationResult.error.issues.map((issue) => issue.message).join(", ")}`,
+        error: `Invalid workspace configuration: ${validationResult.error.issues
+          .map((issue) => issue.message)
+          .join(", ")}`,
       },
     };
   }
@@ -217,6 +219,14 @@ const signalBodySchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
   streamId: z.string().optional(),
   skipStates: z.array(z.string()).optional(),
+  /**
+   * Parent session id, when this signal is being fired from inside another
+   * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to the
+   * runtime so the spawned session's `SessionSummary.parentSessionId` is
+   * populated. Phase 11 of the fan-out-without-fan-in plan — provenance
+   * data layer for crystallization.
+   */
+  parentSessionId: z.string().optional(),
 });
 
 export * from "./schemas.ts";
@@ -1670,6 +1680,11 @@ const workspacesRoutes = daemonFactory
             signalId,
             payload: body.payload,
             streamId: body.streamId,
+            // Phase 11: forwarded as the cascade envelope's
+            // `sourceSessionId`, which the daemon's CascadeConsumer threads
+            // into `SessionSummary.parentSessionId`. Absent on root signal
+            // triggers (cron, external HTTP, no-parent calls).
+            sourceSessionId: body.parentSessionId,
             correlationId,
           });
 
@@ -1701,7 +1716,10 @@ const workspacesRoutes = daemonFactory
             });
             safeEnqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ type: "job-error", data: { error: response.error } })}\n\n`,
+                `data: ${JSON.stringify({
+                  type: "job-error",
+                  data: { error: response.error },
+                })}\n\n`,
               ),
             );
           }
@@ -1753,7 +1771,7 @@ const workspacesRoutes = daemonFactory
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
-      const { payload, streamId, skipStates: _skipStates } = c.req.valid("json");
+      const { payload, streamId, skipStates: _skipStates, parentSessionId } = c.req.valid("json");
       const ctx = c.get("app");
 
       const correlationId = crypto.randomUUID();
@@ -1809,6 +1827,10 @@ const workspacesRoutes = daemonFactory
           signalId,
           payload,
           streamId,
+          // Phase 11: forwarded as the cascade envelope's
+          // `sourceSessionId`, threaded by the daemon's CascadeConsumer
+          // into `SessionSummary.parentSessionId`.
+          sourceSessionId: parentSessionId,
           correlationId,
         });
         const response = await responsePromise;
@@ -2175,12 +2197,16 @@ const workspacesRoutes = daemonFactory
       const available: typeof catalog = [];
 
       for (const skill of catalog) {
-        if (skill.name === null || skill.name === "" || skill.disabled) continue;
+        if (skill.name === null || skill.name === "" || skill.disabled) {
+          continue;
+        }
         if (skill.namespace === "friday") {
           friday.push(skill);
           continue;
         }
-        if (inheritedIds.has(skill.skillId) || jobIds.has(skill.skillId)) continue;
+        if (inheritedIds.has(skill.skillId) || jobIds.has(skill.skillId)) {
+          continue;
+        }
         available.push(skill);
       }
 
@@ -2197,7 +2223,9 @@ const workspacesRoutes = daemonFactory
       const manager = ctx.getWorkspaceManager();
       const workspace =
         (await manager.find({ id: workspaceId })) || (await manager.find({ name: workspaceId }));
-      if (!workspace) return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      if (!workspace) {
+        return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
+      }
 
       const config = await manager.getWorkspaceConfig(workspace.id);
       const jobNames = Object.keys(config?.workspace?.jobs ?? {});

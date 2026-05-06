@@ -495,6 +495,25 @@ export const OutlineRefSchema = z.object({
 
 export type OutlineRef = z.infer<typeof OutlineRefSchema>;
 
+/**
+ * Per-call LLM token usage. All fields optional because the AI SDK's
+ * `LanguageModelUsage` reports each count as `number | undefined` (some
+ * providers report partial usage). `model` is the model id the call
+ * actually executed against — useful for retrospective cost grouping
+ * when a single agent supports per-call model overrides.
+ *
+ * Phase 11 of the fan-out-without-fan-in plan persists this on
+ * `step:complete` session events for crystallization data-layer needs.
+ */
+export const AgentExecutionUsageSchema = z.object({
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  cacheReadTokens: z.number().optional(),
+  cacheWriteTokens: z.number().optional(),
+  model: z.string().optional(),
+});
+export type AgentExecutionUsage = z.infer<typeof AgentExecutionUsageSchema>;
+
 export const AgentExecutionSuccessSchema = z.object({
   agentId: z.string().describe("Agent identifier"),
   timestamp: z.string().describe("ISO 8601 timestamp of execution"),
@@ -509,6 +528,8 @@ export const AgentExecutionSuccessSchema = z.object({
   artifactRefs: z.array(ArtifactRefSchema).optional().describe("Artifact references"),
   outlineRefs: z.array(OutlineRefSchema).optional().describe("Outline references for UI"),
   durationMs: z.number().describe("Execution duration in milliseconds"),
+  /** Optional LLM token usage. Populated by LLM provider adapters; absent for pure agent results. */
+  usage: AgentExecutionUsageSchema.optional().describe("Per-call LLM token usage when applicable"),
 });
 
 export const AgentExecutionErrorSchema = z.object({
