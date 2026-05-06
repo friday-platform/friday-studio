@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { WorkspaceAgentConfigSchema } from "./agents.ts";
 import { AtlasServerConfigSchema, PlatformModelsSchema, ServerConfigSchema } from "./atlas.ts";
-import { FederationConfigSchema, MCPToolNameSchema, WorkspaceIdentitySchema } from "./base.ts";
+import {
+  DurationSchema,
+  FederationConfigSchema,
+  MCPToolNameSchema,
+  WorkspaceIdentitySchema,
+} from "./base.ts";
 import { CommunicatorConfigSchema } from "./communicators.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasToolsConfigSchema, ToolsConfigSchema } from "./mcp.ts";
@@ -23,6 +28,16 @@ export const MemoryOwnEntrySchema = z.object({
   name: z.string().min(1),
   type: MemoryTypeSchema,
   strategy: MemoryStrategySchema,
+  /**
+   * Optional TTL override (Phase 6 of melodic-strolling-seal plan).
+   * When set, entries in this store inherit `lifecycle.expiresAt`
+   * computed from the entry's `createdAt + ttl`. Overrides the
+   * type-based default (`short_term` → ephemeral, `long_term` →
+   * durable). Cleanup remains app-layer: the runtime sweep at
+   * session-complete still runs first; an out-of-band sweep based on
+   * `expiresAt` is reserved for a future pass.
+   */
+  ttl: DurationSchema.optional(),
 });
 
 // _global is GLOBAL_WORKSPACE_ID from @atlas/agent-sdk/memory-scope
@@ -103,7 +118,10 @@ export function parseMemoryMountSource(source: string): {
 // PermissionsConfigSchema lives in `permissions.ts` so jobs.ts can import
 // it without creating a workspace.ts ↔ jobs.ts cycle. Re-exported here for
 // callers that previously imported from `@atlas/config/workspace`.
-export { type PermissionsConfig, PermissionsConfigSchema } from "./permissions.ts";
+export {
+  type PermissionsConfig,
+  PermissionsConfigSchema,
+} from "./permissions.ts";
 
 import { PermissionsConfigSchema } from "./permissions.ts";
 

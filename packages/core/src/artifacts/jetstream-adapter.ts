@@ -218,6 +218,7 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
         ...(input.chatId ? { chatId: input.chatId } : {}),
         ...(input.slug ? { slug: input.slug } : {}),
         ...(input.source ? { source: input.source } : {}),
+        ...(input.lifecycle ? { lifecycle: input.lifecycle } : {}),
       };
 
       await this.writeMeta(artifact);
@@ -242,7 +243,9 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
       const latest = await this.readLatestRevision(input.id);
       if (latest === null) return fail(`Artifact ${input.id} not found`);
       const current = await this.readMeta(input.id, latest);
-      if (!current) return fail(`Artifact ${input.id} revision ${latest} not found`);
+      if (!current) {
+        return fail(`Artifact ${input.id} revision ${latest} not found`);
+      }
 
       const { bytes, mimeType, originalName } = await materializeBlob(input.data);
       const contentRef = await sha256Hex(bytes);
@@ -386,7 +389,9 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
       if (!got.data) return fail("Artifact not found");
       const os = await this.os();
       const result = await os.get(got.data.data.contentRef);
-      if (!result) return fail(`Object Store entry missing for ${got.data.data.contentRef}`);
+      if (!result) {
+        return fail(`Object Store entry missing for ${got.data.data.contentRef}`);
+      }
       const reader = result.data.getReader();
       const chunks: Uint8Array[] = [];
       let total = 0;

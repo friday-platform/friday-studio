@@ -53,6 +53,7 @@ import {
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
 import { UserAdapter } from "@atlas/core/agent-loader";
+import type { ArtifactLifecycle } from "@atlas/core/artifacts";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
@@ -461,6 +462,43 @@ export function buildDocumentActionIndex(
 }
 
 /**
+ * Build a `documentId → fromTerminalState` lookup. A document is "from
+ * a terminal state" if the action that emits it lives on a state whose
+ * `type === "final"`. Phase 6 default policy uses this to pick
+ * lifecycle: terminal-state outputs are durable (user-facing job
+ * outputs), non-terminal outputs are ephemeral.
+ *
+ * When two actions in different states write to the same `outputTo`
+ * document id, the runtime applies last-writer-wins — but for
+ * lifecycle classification we err on the durable side: if any
+ * contributing action is in a terminal state, the document is durable.
+ * This is the conservative choice (durable beats ephemeral on
+ * collision) and avoids deleting user-facing output a terminal state
+ * happened to share an id with a transient one.
+ */
+export function buildDocumentTerminalIndex(definition: FSMDefinition): Set<string> {
+  const terminal = new Set<string>();
+  for (const state of Object.values(definition.states)) {
+    if (state.type !== "final") continue;
+    const visit = (actions: Action[] | undefined) => {
+      if (!actions) return;
+      for (const a of actions) {
+        if ((a.type === "llm" || a.type === "agent") && a.outputTo) {
+          terminal.add(a.outputTo);
+        }
+      }
+    };
+    visit(state.entry);
+    if (!state.on) continue;
+    for (const transition of Object.values(state.on)) {
+      const transitions = Array.isArray(transition) ? transition : [transition];
+      for (const t of transitions) visit(t.actions);
+    }
+  }
+  return terminal;
+}
+
+/**
  * Truncate a document's `data` to a synthesized summary (~300 chars).
  * Falls back to the document type name if `JSON.stringify` throws on
  * a circular structure — preserves a non-empty summary so artifact
@@ -483,18 +521,31 @@ export function synthesizeArtifactSummary(doc: FSMDocument): string {
  * Object Store. Phase 2.B of the fan-out-without-fan-in plan — the
  * data-layer half of the universal ref-return change. Failures log a
  * warning and continue; the session document store remains the source
- * of truth. Artifact `source` is tagged "fsm-engine:..." so Phase 6
- * (ephemeral lifecycle) can later default these to ephemeral.
+ * of truth. Artifact `source` is tagged "fsm-engine:..." so the
+ * runtime cleanup pass can correlate artifacts back to their session.
+ *
+ * Phase 6: each persisted artifact gets a `lifecycle`:
+ * - `lifecycleOverride === "ephemeral"` → ephemeral, session-bound
+ * - `lifecycleOverride === "durable"` → durable
+ * - Otherwise: terminal-state outputs durable; non-terminal outputs
+ *   ephemeral, bound to `sessionId` (when provided).
+ *
+ * `sessionId` is required to materialize an `ephemeral` lifecycle. If
+ * absent, ephemeral defaults to durable on persist (back-compat for
+ * callers that haven't been threaded yet).
  */
 export async function persistFsmSessionArtifacts(args: {
   documents: FSMDocument[];
   definition: FSMDefinition;
   jobName: string;
   workspaceId: string;
+  sessionId?: string;
+  lifecycleOverride?: "ephemeral" | "durable";
 }): Promise<SessionArtifactRef[]> {
-  const { documents, definition, jobName, workspaceId } = args;
+  const { documents, definition, jobName, workspaceId, sessionId, lifecycleOverride } = args;
   const refs: SessionArtifactRef[] = [];
   const actionIndex = buildDocumentActionIndex(definition);
+  const terminalDocuments = buildDocumentTerminalIndex(definition);
 
   for (const doc of documents) {
     if (PLUMBING_DOCUMENT_TYPES.has(doc.type)) continue;
@@ -516,6 +567,21 @@ export async function persistFsmSessionArtifacts(args: {
       continue;
     }
 
+    // Phase 6 lifecycle decision. Job override > terminal-state default.
+    let lifecycle: ArtifactLifecycle;
+    if (lifecycleOverride === "durable") {
+      lifecycle = { kind: "durable" };
+    } else if (lifecycleOverride === "ephemeral" && sessionId) {
+      lifecycle = { kind: "ephemeral", boundTo: { scope: "session", sessionId } };
+    } else if (terminalDocuments.has(doc.id) || !sessionId) {
+      // Terminal-state outputs are durable user-facing results. We also
+      // fall back to durable when no sessionId is available, since an
+      // ephemeral entry without a binding can't be cleaned up safely.
+      lifecycle = { kind: "durable" };
+    } else {
+      lifecycle = { kind: "ephemeral", boundTo: { scope: "session", sessionId } };
+    }
+
     let result: Awaited<ReturnType<typeof ArtifactStorage.create>>;
     try {
       result = await ArtifactStorage.create({
@@ -530,6 +596,7 @@ export async function persistFsmSessionArtifacts(args: {
         summary,
         workspaceId,
         source: `fsm-engine:${jobName}:${doc.id}`,
+        lifecycle,
       });
     } catch (err) {
       // Defensive: ArtifactStorage.create returns a Result, but the
@@ -557,6 +624,95 @@ export async function persistFsmSessionArtifacts(args: {
   }
 
   return refs;
+}
+
+/**
+ * Phase 6 — best-effort sweep of ephemeral artifacts and memory entries
+ * bound to a completed session. Free function so tests can exercise it
+ * without spinning up the full {@link WorkspaceRuntime}.
+ *
+ * Failure modes are intentionally non-fatal: lifecycle metadata is the
+ * source of truth, so a future startup-time sweep can pick up any
+ * stragglers this pass misses (process death, transient KV failure,
+ * etc.). The cleanup never blocks session completion.
+ */
+export async function cleanupEphemeralForSession(args: {
+  sessionId: string;
+  jobName: string;
+  workspaceId: string;
+  memoryAdapter?: MemoryAdapter;
+  memoryStoreNames: string[];
+}): Promise<void> {
+  const { sessionId, jobName, workspaceId, memoryAdapter, memoryStoreNames } = args;
+
+  // 1) Ephemeral artifacts. Walk the workspace's artifacts and filter
+  //    by lifecycle.boundTo.sessionId. Tombstone via deleteArtifact.
+  try {
+    const list = await ArtifactStorage.listByWorkspace({ workspaceId, includeData: false });
+    if (list.ok) {
+      for (const summary of list.data) {
+        // ArtifactSummary omits `data` but keeps top-level fields.
+        // Refetch the full artifact to read lifecycle (it lives on
+        // the entity, not the summary). Cheap: KV gets only.
+        const got = await ArtifactStorage.get({ id: summary.id });
+        if (!got.ok || !got.data) continue;
+        const lc = got.data.lifecycle;
+        if (
+          lc?.kind === "ephemeral" &&
+          lc.boundTo.scope === "session" &&
+          lc.boundTo.sessionId === sessionId
+        ) {
+          const del = await ArtifactStorage.deleteArtifact({ id: summary.id });
+          if (!del.ok) {
+            logger.warn("Failed to delete ephemeral artifact during session cleanup", {
+              artifactId: summary.id,
+              sessionId,
+              error: del.error,
+            });
+          }
+        }
+      }
+    } else {
+      logger.warn("listByWorkspace failed during ephemeral cleanup", {
+        sessionId,
+        error: list.error,
+      });
+    }
+  } catch (err) {
+    logger.warn("Ephemeral artifact cleanup threw", {
+      sessionId,
+      jobName,
+      error: stringifyError(err),
+    });
+  }
+
+  // 2) Ephemeral memory entries. For each declared narrative store,
+  //    scan entries and `forget` the ones whose lifecycle binds to
+  //    this session.
+  if (memoryAdapter && memoryStoreNames.length > 0) {
+    for (const name of memoryStoreNames) {
+      try {
+        const store = await memoryAdapter.store(workspaceId, name);
+        const entries = await store.read();
+        for (const entry of entries) {
+          const lc = entry.lifecycle;
+          if (
+            lc?.kind === "ephemeral" &&
+            lc.boundTo.scope === "session" &&
+            lc.boundTo.sessionId === sessionId
+          ) {
+            await store.forget(entry.id);
+          }
+        }
+      } catch (err) {
+        logger.warn("Ephemeral memory cleanup failed for store", {
+          sessionId,
+          storeName: name,
+          error: stringifyError(err),
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -1422,6 +1578,7 @@ export class WorkspaceRuntime {
             engine.documents,
             engine.definition,
             job.name,
+            session.id,
           );
           session.completedAt = new Date();
 
@@ -1435,6 +1592,19 @@ export class WorkspaceRuntime {
           } else {
             session.status = WorkspaceSessionStatus.COMPLETED;
           }
+
+          // Phase 6 — best-effort sweep of ephemeral artifacts and memory
+          // entries bound to this session. Fire-and-forget: failures log
+          // a warning and are otherwise silent. Lifecycle metadata stays
+          // the source of truth, so a future startup-time sweep can
+          // pick up stragglers.
+          this.cleanupEphemeralForSession(session.id, job.name).catch((err) => {
+            logger.warn("Ephemeral cleanup pass failed", {
+              sessionId: session.id,
+              jobName: job.name,
+              error: stringifyError(err),
+            });
+          });
 
           logger.info("Signal processed successfully", {
             sessionId: session.id,
@@ -2312,12 +2482,43 @@ export class WorkspaceRuntime {
     documents: FSMDocument[],
     definition: FSMDefinition,
     jobName: string,
+    sessionId: string,
   ): Promise<SessionArtifactRef[]> {
+    // Phase 6 — per-job ephemeral override, if declared in workspace.yml.
+    const jobSpec = this.config.workspace.jobs?.[jobName];
+    const ephemeralOverride = jobSpec?.artifacts?.ephemeral;
+    const lifecycleOverride: "ephemeral" | "durable" | undefined =
+      ephemeralOverride === true
+        ? "ephemeral"
+        : ephemeralOverride === false
+          ? "durable"
+          : undefined;
+
     return persistFsmSessionArtifacts({
       documents,
       definition,
       jobName,
       workspaceId: this.workspace.id,
+      sessionId,
+      lifecycleOverride,
+    });
+  }
+
+  /**
+   * Phase 6 — best-effort sweep of ephemeral artifacts + memory entries
+   * bound to a completed session. Called fire-and-forget from the
+   * session-completion path; failures log and continue. Lifecycle
+   * metadata is the source of truth, so a future startup-time sweep
+   * can pick up anything this pass misses (e.g. process death between
+   * session-complete and the cleanup running).
+   */
+  private cleanupEphemeralForSession(sessionId: string, jobName: string): Promise<void> {
+    return cleanupEphemeralForSession({
+      sessionId,
+      jobName,
+      workspaceId: this.workspace.id,
+      memoryAdapter: this.options.memoryAdapter,
+      memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name),
     });
   }
 

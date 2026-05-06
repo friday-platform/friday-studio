@@ -190,6 +190,25 @@ export const JobSpecificationSchema = z
     // is the natural granularity for `dangerouslySkipAllowlist`.
     permissions: PermissionsConfigSchema.optional(),
 
+    /**
+     * Phase 6 — per-job artifact lifecycle override. When set, every
+     * non-plumbing FSM document this job emits gets the matching
+     * `lifecycle.kind`. Without an override, the runtime falls back to
+     * the per-action default (terminal-state outputs durable;
+     * non-terminal outputs ephemeral, bound to session).
+     */
+    artifacts: z
+      .strictObject({
+        ephemeral: z
+          .boolean()
+          .optional()
+          .describe(
+            "true → all artifacts ephemeral (session-bound). false → all durable. " +
+              "Omit for per-action defaults.",
+          ),
+      })
+      .optional(),
+
     // Memory output declaration — where a job's findings are written
     outputs: z.object({ memory: z.string(), entryKind: z.string() }).optional(),
 

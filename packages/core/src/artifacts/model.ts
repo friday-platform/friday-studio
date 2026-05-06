@@ -51,6 +51,34 @@ export type ArtifactDataInputWire = z.infer<typeof ArtifactDataInputWireSchema>;
 /** Schema for valid artifact type */
 export const ArtifactTypeSchema = z.literal("file");
 
+/**
+ * Lifecycle metadata (Phase 6 of melodic-strolling-seal plan).
+ *
+ * `durable` — persists indefinitely. The default for back-compat with
+ * pre-Phase-6 entries that have no `lifecycle` field on read.
+ *
+ * `ephemeral` — bound to a session (FSM session id) or job
+ * (workspaceId + jobName). The workspace runtime sweeps these on
+ * session-complete via {@link ArtifactStorageAdapter.deleteArtifact}.
+ *
+ * `expiresAt` is reserved for a future TTL pass; the source-of-truth
+ * today is the scope-end signal (session complete). JetStream Object
+ * Store has no native TTL, so cleanup is app-layer.
+ */
+export const ArtifactLifecycleSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("durable") }),
+  z.object({
+    kind: z.literal("ephemeral"),
+    boundTo: z.discriminatedUnion("scope", [
+      z.object({ scope: z.literal("session"), sessionId: z.string() }),
+      z.object({ scope: z.literal("job"), jobName: z.string(), workspaceId: z.string() }),
+    ]),
+    expiresAt: z.iso.datetime().optional(),
+  }),
+]);
+
+export type ArtifactLifecycle = z.infer<typeof ArtifactLifecycleSchema>;
+
 /** Shared request schemas for REST and MCP */
 
 /**
@@ -66,6 +94,7 @@ export const CreateArtifactSchema = z.object({
   chatId: z.string().optional(),
   slug: SlugSchema.optional(),
   source: z.string().optional(),
+  lifecycle: ArtifactLifecycleSchema.optional(),
 });
 
 export type CreateArtifactInput = z.infer<typeof CreateArtifactSchema>;
@@ -97,6 +126,12 @@ export const ArtifactSchema = z.object({
   revisionMessage: z.string().optional(),
   slug: SlugSchema.optional(),
   source: z.string().optional(),
+  /**
+   * Phase 6 lifecycle metadata. Optional for back-compat — entries
+   * created before Phase 6 have no field; readers treat absence as
+   * `{ kind: "durable" }`.
+   */
+  lifecycle: ArtifactLifecycleSchema.optional(),
 });
 
 export type Artifact = z.infer<typeof ArtifactSchema>;
