@@ -38,6 +38,7 @@
     "./streaming": "./src/streaming/stream-emitters.ts",
     "./agent-context": "./src/agent-context/index.ts",
     "./agent-context/compose-blocks": "./src/agent-context/compose-blocks.ts",
+    "./agent-context/validate-decision": "./src/agent-context/validate-decision.ts",
     "./agent-loader": "./src/agent-loader/index.ts",
     "./agent-loader/user-adapter": "./src/agent-loader/adapters/user-adapter.ts",
     "./errors/missing-environment": "./src/errors/missing-environment-error.ts",

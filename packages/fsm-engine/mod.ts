@@ -17,6 +17,7 @@ export * from "./document-schemas.ts";
 // Core engine and execution
 export type {
   AgentExecutor,
+  AgentExecutorOptions,
   FSMEngineOptions,
 } from "./fsm-engine.ts";
 export { FSMEngine, interpolatePromptPlaceholders } from "./fsm-engine.ts";

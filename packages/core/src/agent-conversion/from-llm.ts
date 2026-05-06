@@ -17,6 +17,11 @@ import {
 import type { Logger } from "@atlas/logger";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod";
+import { composeValidationBlock } from "../agent-context/compose-blocks.ts";
+import {
+  readValidateDecisionFromConfig,
+  type ValidateDecisionContext,
+} from "../agent-context/validate-decision.ts";
 import { throwWithCause } from "../utils/error-helpers.ts";
 import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
@@ -52,10 +57,38 @@ export function convertLLMToAgent(
     outputSchema: LLMOutputSchema,
     expertise: { examples: [] },
     useWorkspaceSkills: true,
-    handler: async (prompt, { tools, stream, abortSignal }) => {
+    handler: async (prompt, { tools, stream, abortSignal, config: ctxConfig }) => {
       try {
         // Use agent's system prompt directly - no attribution protocol injection
-        const systemPrompt = config.config.prompt || "";
+        let systemPrompt = config.config.prompt || "";
+
+        // B4 (melodic-strolling-seal-pt2): close the case-llm-vs-case-agent
+        // validation asymmetry. The FSM engine resolves the validation
+        // decision in `case "agent"` and threads it through
+        // `AgentExecutorOptions.validateDecision` → workspace runtime →
+        // `AgentExecutionContext.config` (under the reserved
+        // `__atlas_validate` key) → here. When the decision is `self` we
+        // append the bundled `validating-llm-outputs` skill body to the
+        // system prompt — same skill, same helper, same placement
+        // (after the author-declared base, mirroring `case "llm"`'s
+        // ordering after memory + artifact blocks). `skip` and
+        // `external` leave the prompt untouched. Failures inside
+        // `composeValidationBlock` swallow + log; they never block the
+        // agent.
+        const validateCtx: ValidateDecisionContext = readValidateDecisionFromConfig(ctxConfig);
+        const validationBlock = await composeValidationBlock({
+          decision: validateCtx.decision,
+          skillName: validateCtx.skill,
+          logger,
+        });
+        if (validationBlock) {
+          systemPrompt = `${systemPrompt}\n\n${validationBlock}`;
+          logger.debug("Injected validation skill block into LLM agent system prompt", {
+            agentId,
+            decision: validateCtx.decision,
+            blockChars: validationBlock.length,
+          });
+        }
 
         stream?.emit({
           type: "data-tool-progress",

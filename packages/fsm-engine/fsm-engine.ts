@@ -450,19 +450,49 @@ export function buildLLMActionTrace(
 }
 
 /**
+ * Per-call options the FSM engine threads into `agentExecutor`. Today: the
+ * resolved `outputSchema` (FSM documentTypes) and the resolved validation
+ * decision. The orchestrator-side adapter (workspace runtime → agent server
+ * → `convertLLMToAgent`) reads `validateDecision` / `validateSkill` and
+ * passes them to `composeValidationBlock` at the LLM-prompt-assembly site so
+ * `case "agent" → type: llm` ends up with the same validation skill body in
+ * its system prompt that an inline `case "llm"` action would. B4 of
+ * melodic-strolling-seal-pt2.
+ */
+export interface AgentExecutorOptions {
+  /** JSON Schema resolved from FSM `documentTypes` for the action's `outputType`. */
+  outputSchema?: Record<string, unknown>;
+  /**
+   * Resolved validation decision for this action — already factored across
+   * `action.validate` (B2) and the auto classifier (B1). The orchestrator
+   * forwards it to `composeValidationBlock`. `"skip"` means the helper
+   * isn't called; `"self"` injects the skill body inline; `"external"` is
+   * handled post-execution by the FSM engine, not the orchestrator.
+   */
+  validateDecision?: "skip" | "self" | "external";
+  /**
+   * Optional override skill name for the `self` path (the object form of
+   * `validate:` lets authors point at a custom validating skill). When
+   * absent, `composeValidationBlock` uses `DEFAULT_VALIDATION_SKILL`.
+   */
+  validateSkill?: string;
+}
+
+/**
  * Agent executor callback type
  * Integrates FSM agent actions with external agent orchestration systems
  *
  * @param action - The full AgentAction object (includes agentId, prompt, outputTo)
  * @param context - FSM context with documents, state, and utility functions
  * @param signal - Signal with context (sessionId, workspaceId, onEvent callback)
- * @param options - Optional execution options (e.g., resolved outputSchema from documentTypes)
+ * @param options - Optional execution options (e.g., resolved outputSchema from documentTypes,
+ *   resolved validation decision threaded into the orchestrator's prompt assembly)
  */
 export type AgentExecutor = (
   action: AgentAction,
   context: Context,
   signal: SignalWithContext,
-  options?: { outputSchema?: Record<string, unknown> },
+  options?: AgentExecutorOptions,
 ) => Promise<AgentSDKExecutionResult>;
 
 export interface FSMEngineOptions {
@@ -535,6 +565,23 @@ export interface FSMEngineOptions {
    * timeout (or omits when no timeout configured). Review N3.
    */
   jobTimeoutMs?: number;
+  /**
+   * B4 — agent-type resolver for `case "agent"` actions. The validate
+   * classifier short-circuits to `skip` when the resolved agent type is
+   * `"user"` or `"atlas"` (Python is code; bundled SDK agents have fixed
+   * prompts — neither path builds an LLM system prompt that
+   * `composeValidationBlock` could augment). Without this callback the
+   * classifier sees `resolvedAgentType: undefined` and falls through to
+   * the existing tool/prose heuristics, which is fine for `case "llm"`
+   * (where the type is implicitly `"llm"`) but loses the cheap
+   * type-based skip on the agent path.
+   *
+   * Returns `undefined` when the agent isn't registered in the workspace
+   * (the executor itself will then surface a clear error). Synchronous
+   * — the caller (workspace runtime) already has the resolved
+   * `agents.<id>` block in memory at engine-construction time.
+   */
+  resolveAgentType?: (agentId: string) => "llm" | "user" | "atlas" | undefined;
 }
 
 export class FSMEngine {
@@ -1977,18 +2024,123 @@ export class FSMEngine {
                   .parse(this._definition.documentTypes?.[agentDocTypeName])
               : undefined;
 
+            // B4 (melodic-strolling-seal-pt2): resolve the per-action
+            // validation decision PRE-call so it can ride through
+            // `AgentExecutorOptions` to the orchestrator's prompt-assembly
+            // site (`convertLLMToAgent`'s system-prompt builder). The same
+            // shape `case "llm"` uses inline — empty `calledToolNames` and
+            // `emittedProse: false` because we don't have observed signals
+            // yet — plus `resolvedAgentType` from the optional resolver so
+            // the classifier can short-circuit `user`/`atlas` paths to
+            // `skip` (rule 1 in `validate-classifier.ts`).
+            const resolvedAgentType = this.options.resolveAgentType?.(action.agentId);
+            // Agent actions don't carry a `tools:` allowlist — the agent
+            // itself owns its tool surface (workspace.yml `agents.<id>`).
+            // From the FSM engine's vantage we only know structural fields:
+            // `outputType`, `inputFrom`, and the resolved agent kind. The
+            // classifier short-circuits on type "user" / "atlas" before
+            // reaching any tool-based rule, and for type "llm" without
+            // declared tools it falls through to "default-self" — same
+            // safe-by-default behavior as `case "llm"` with no tools.
+            const agentClassifierInput: ClassifierInput = {
+              declaredTools: [],
+              calledToolNames: [],
+              hasOutputType: !!action.outputType,
+              hasInputFrom: !!action.inputFrom,
+              resolvedAgentType,
+              emittedProse: false,
+              toolsAvailable: false,
+            };
+            const {
+              decision: agentValidateDecision,
+              source: agentValidateSource,
+              reason: agentValidateReason,
+            } = resolveValidateDecision(action.validate, agentClassifierInput);
+            const agentValidateSkill =
+              typeof action.validate === "object" ? action.validate.skill : undefined;
+
             // Execute agent via callback, passing full action object for prompt access
             // Agent returns AgentResult envelope directly
+            const executorOptions: AgentExecutorOptions = {
+              ...(agentOutputSchema ? { outputSchema: agentOutputSchema } : {}),
+              validateDecision: agentValidateDecision,
+              ...(agentValidateSkill ? { validateSkill: agentValidateSkill } : {}),
+            };
             const result = await this.options.agentExecutor(
               action,
               agentContext,
               sig,
-              agentOutputSchema ? { outputSchema: agentOutputSchema } : undefined,
+              executorOptions,
             );
+
+            // Mirror `case "llm"`'s `validate-decision resolved` info log so
+            // both paths surface uniformly in `global.log`. `validationSkillLoaded`
+            // is unknown from this side (the orchestrator owns the load) — we
+            // report whether the decision was "self" so a reader can correlate
+            // with orchestrator-side composeValidationBlock logs.
+            logger.info("validate-decision resolved", {
+              state: currentState,
+              action: action.agentId,
+              decision: agentValidateDecision,
+              source: agentValidateSource,
+              reason: agentValidateReason,
+              ranExternalJudge:
+                agentValidateDecision === "external" && !!this.options.validateOutput,
+              validationSkillLoaded: agentValidateDecision === "self",
+              resolvedAgentType: resolvedAgentType ?? "unknown",
+            });
 
             // Check envelope's ok discriminant for error
             if (!result.ok) {
               throw new Error(result.error.reason);
+            }
+
+            // B4: external-path mirror for `case "agent"`. Today the inline
+            // `case "llm"` path runs `validateOutput` post-call when the
+            // resolved decision is `external`; mirror that here using a
+            // trace synthesized from the agent envelope. Retry semantics
+            // are intentionally simpler than the LLM path — the agent
+            // process already owns its own retry / repair loop, so we run
+            // a single judge pass and either pass or throw. B7 will
+            // replace this whole external branch with delegate semantics,
+            // so we deliberately don't factor a shared helper out today.
+            if (agentValidateDecision === "external" && this.options.validateOutput) {
+              const validationActionId = this.getActionId(action);
+              this.emitValidationAttempt(sig, currentState, validationActionId, {
+                attempt: 1,
+                status: "running",
+              });
+              const trace: LLMActionTrace = {
+                content:
+                  result.ok && typeof result.data === "string"
+                    ? result.data
+                    : result.ok
+                      ? JSON.stringify(result.data)
+                      : "",
+                reasoning: result.ok ? result.reasoning : undefined,
+                toolCalls: result.ok ? result.toolCalls : undefined,
+                toolResults: result.ok ? result.toolResults : undefined,
+                model: `agent:${action.agentId}`,
+                prompt: action.prompt ?? "",
+              };
+              const { verdict } = await this.options.validateOutput(
+                trace,
+                sig._context?.abortSignal,
+              );
+              if (verdict.status === "fail") {
+                this.emitValidationAttempt(sig, currentState, validationActionId, {
+                  attempt: 1,
+                  status: "failed",
+                  terminal: true,
+                  verdict,
+                });
+                throw new ValidationFailedError(verdict, action.agentId);
+              }
+              this.emitValidationAttempt(sig, currentState, validationActionId, {
+                attempt: 1,
+                status: "passed",
+                verdict,
+              });
             }
 
             // Store result if outputTo specified
