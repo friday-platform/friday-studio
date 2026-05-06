@@ -183,7 +183,20 @@ func TestImportDotEnvIntoProcessEnv_StripsSurroundingQuotes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", tmpHome)
+	// importDotEnvIntoProcessEnv calls os.Setenv directly with no restore,
+	// and t.Setenv("", "") won't work here because the import skips keys
+	// already set (LookupEnv returns true for empty strings). Capture the
+	// prior value and restore it via t.Cleanup so these keys don't leak
+	// into sibling tests.
 	for _, k := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MIXED_QUOTE", "PLAIN_KEY"} {
+		prev, hadPrev := os.LookupEnv(k)
+		t.Cleanup(func() {
+			if hadPrev {
+				_ = os.Setenv(k, prev)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		})
 		_ = os.Unsetenv(k)
 	}
 

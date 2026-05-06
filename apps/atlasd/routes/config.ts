@@ -39,14 +39,17 @@ async function exists(path: string): Promise<boolean> {
  * writes unquoted, so this matches the format the rest of the stack
  * already expects.
  *
- * Quoting rules picked to round-trip through @std/dotenv's parse
- * (used on the read side) and shell-style readers like the launcher:
- *   - newline / CR / NUL  → double-quote with `\n`/`\r` escapes
+ * Inputs are pre-validated by envVarsPutRequestSchema: keys are POSIX
+ * identifiers and values contain no CR/LF, so we don't need to handle
+ * multi-line escapes here (the Go launcher's unquoteEnvValue strips
+ * outer quotes only — it would forward `\n` literally).
+ *
+ * Quoting rules picked to round-trip through @std/dotenv's parse:
  *   - whitespace, `#`, `$`, leading `'`/`"`, or backslash
- *                         → single-quote (literal, no expansion)
- *   - anything with a `'` or that needs newline escaping
- *                         → double-quote with backslash escapes
- *   - otherwise           → unquoted
+ *                  → single-quote (literal, no expansion)
+ *   - value containing `'`
+ *                  → double-quote with `\` and `"` escapes
+ *   - otherwise    → unquoted
  */
 function stringifyEnv(envVars: Record<string, string>): string {
   const lines: string[] = [];
@@ -54,25 +57,19 @@ function stringifyEnv(envVars: Record<string, string>): string {
     if (key.startsWith("#")) continue;
     const v = value ?? "";
 
-    const hasNewline = /[\r\n]/.test(v);
-    const needsQuoting = hasNewline || /[\s#$"'\\]/.test(v) || /^['"]/.test(v);
+    const needsQuoting = /[\s#$"'\\]/.test(v) || /^['"]/.test(v);
 
     if (!needsQuoting) {
       lines.push(`${key}=${v}`);
       continue;
     }
 
-    if (!hasNewline && !v.includes("'")) {
+    if (!v.includes("'")) {
       lines.push(`${key}='${v}'`);
       continue;
     }
 
-    const escaped = v
-      .replaceAll("\\", "\\\\")
-      .replaceAll('"', '\\"')
-      .replaceAll("\n", "\\n")
-      .replaceAll("\r", "\\r")
-      .replaceAll("\t", "\\t");
+    const escaped = v.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
     lines.push(`${key}="${escaped}"`);
   }
   return lines.join("\n");
@@ -94,7 +91,24 @@ const envVarsGetResponseSchema = z.object({
   error: z.string().optional(),
 });
 
-const envVarsPutRequestSchema = z.object({ envVars: z.record(z.string(), z.string()) });
+/**
+ * Keys: POSIX env-var identifiers — `[A-Za-z_][A-Za-z0-9_]*`. Tighter than
+ * what @std/dotenv parse accepts on the read side, deliberately: a key
+ * containing `\n` would let one PUT entry split into two on-disk lines and
+ * smuggle additional env vars into spawned services on the next launcher
+ * import.
+ *
+ * Values: no CR/LF. The Settings UI never sends multi-line values today,
+ * and the Go launcher's unquoteEnvValue strips outer quotes only — it
+ * doesn't expand `\n` escapes — so any multi-line value would reach
+ * spawned services with literal backslash-n. Reject at the boundary.
+ */
+const envVarsPutRequestSchema = z.object({
+  envVars: z.record(
+    z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "env var keys must be POSIX identifiers"),
+    z.string().regex(/^[^\r\n]*$/, "env var values must not contain newlines"),
+  ),
+});
 
 const envVarsPutResponseSchema = z.object({ success: z.boolean(), error: z.string().optional() });
 
