@@ -374,6 +374,7 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
         latestVersion: r.version,
         createdAt: new Date(r.createdAt),
         source: typeof r.frontmatter.source === "string" ? r.frontmatter.source : undefined,
+        userInvocable: r.frontmatter["user-invocable"] !== false,
       });
     }
 
@@ -583,6 +584,7 @@ export class JetStreamSkillAdapter implements SkillStorageAdapter {
         createdAt: new Date(record.createdAt),
         source:
           typeof record.frontmatter.source === "string" ? record.frontmatter.source : undefined,
+        userInvocable: record.frontmatter["user-invocable"] !== false,
       });
     }
     out.sort(

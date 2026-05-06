@@ -143,6 +143,44 @@ describe("JetStreamSkillAdapter", () => {
     expect(jobOnly.data).not.toContain(a.data.skillId);
   });
 
+  it("propagates user-invocable frontmatter into SkillSummary.userInvocable", async () => {
+    const adapter = new JetStreamSkillAdapter(nc);
+
+    const hidden = await adapter.publish("user", "hidden-system-skill", "alice", {
+      description: "runtime composes this",
+      instructions: "ins",
+      frontmatter: { "user-invocable": false },
+    });
+    expect.assert(hidden.ok === true);
+
+    const visible = await adapter.publish("user", "visible-author-skill", "alice", {
+      description: "regular skill",
+      instructions: "ins",
+      frontmatter: { "user-invocable": true },
+    });
+    expect.assert(visible.ok === true);
+
+    const defaultFlag = await adapter.publish("user", "default-flag-skill", "alice", {
+      description: "no frontmatter flag",
+      instructions: "ins",
+    });
+    expect.assert(defaultFlag.ok === true);
+
+    const list = await adapter.list("user");
+    expect.assert(list.ok === true);
+    const byName = new Map(list.data.map((s) => [s.name, s]));
+    expect(byName.get("hidden-system-skill")?.userInvocable).toBe(false);
+    expect(byName.get("visible-author-skill")?.userInvocable).toBe(true);
+    expect(byName.get("default-flag-skill")?.userInvocable).toBe(true);
+
+    // Direct `get(namespace, name)` returns the skill regardless of the flag —
+    // the runtime relies on this for `composeValidationBlock` to load the body.
+    const direct = await adapter.get("user", "hidden-system-skill");
+    expect.assert(direct.ok === true);
+    expect(direct.data?.name).toBe("hidden-system-skill");
+    expect(direct.data?.frontmatter["user-invocable"]).toBe(false);
+  });
+
   it("deleteSkill removes all versions, assignments, and indexes", async () => {
     const adapter = new JetStreamSkillAdapter(nc);
     const r = await adapter.publish("user", "ephemeral-skill", "alice", {

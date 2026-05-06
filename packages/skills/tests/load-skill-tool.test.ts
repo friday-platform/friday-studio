@@ -229,6 +229,7 @@ describe("createLoadSkillTool — workspace scoping", () => {
     disabled: false,
     latestVersion: 1,
     createdAt: new Date(),
+    userInvocable: true,
   };
 
   /**

@@ -17,6 +17,7 @@ function makeSummary(overrides: Partial<SkillSummary> & { skillId: string }): Sk
     disabled: overrides.disabled ?? false,
     latestVersion: overrides.latestVersion ?? 1,
     createdAt: overrides.createdAt ?? new Date("2026-01-01"),
+    userInvocable: overrides.userInvocable ?? true,
   };
 }
 
@@ -231,5 +232,65 @@ describe("resolveVisibleSkills", () => {
     const result = await resolveVisibleSkills(WS, skills, { jobName: "x" });
 
     expect(result.map((s) => s.skillId)).toEqual(["sk-ws"]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // user-invocable filter (E3) — runtime-composed system skills are excluded
+  // from the workspace's user-facing catalog. The runtime still pulls them by
+  // name via SkillStorage.get(); only the resolver layer hides them.
+  // ---------------------------------------------------------------------------
+
+  it("excludes skills with userInvocable: false from the resolved list", async () => {
+    const userSkill = makeSummary({ skillId: "sk-user", userInvocable: true });
+    const systemSkill = makeSummary({
+      skillId: "sk-validating-llm-outputs",
+      name: "validating-llm-outputs",
+      namespace: "friday",
+      userInvocable: false,
+    });
+
+    const skills = createMockSkillAdapter({
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
+        .mockResolvedValue({ ok: true, data: [userSkill, systemSkill] }),
+    });
+
+    const result = await resolveVisibleSkills(WS, skills);
+
+    expect(result.map((s) => s.skillId)).toEqual(["sk-user"]);
+  });
+
+  it("includes skills with userInvocable: true (default) in the resolved list", async () => {
+    const skill = makeSummary({ skillId: "sk-default", userInvocable: true });
+
+    const skills = createMockSkillAdapter({
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
+        .mockResolvedValue({ ok: true, data: [skill] }),
+    });
+
+    const result = await resolveVisibleSkills(WS, skills);
+
+    expect(result.map((s) => s.skillId)).toEqual(["sk-default"]);
+  });
+
+  it("filters userInvocable: false even when assigned at workspace or job level", async () => {
+    const hidden = makeSummary({ skillId: "sk-hidden", userInvocable: false });
+
+    const skills = createMockSkillAdapter({
+      list: vi
+        .fn<() => ReturnType<SkillStorageAdapter["list"]>>()
+        .mockResolvedValue({ ok: true, data: [] }),
+      listAssigned: vi
+        .fn<(ws: string) => ReturnType<SkillStorageAdapter["listAssigned"]>>()
+        .mockResolvedValue({ ok: true, data: [hidden] }),
+      listAssignmentsForJob: vi
+        .fn<(ws: string, job: string) => ReturnType<SkillStorageAdapter["listAssignmentsForJob"]>>()
+        .mockResolvedValue({ ok: true, data: [hidden] }),
+    });
+
+    const result = await resolveVisibleSkills(WS, skills, { jobName: "any-job" });
+
+    expect(result).toEqual([]);
   });
 });
