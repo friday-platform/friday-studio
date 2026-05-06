@@ -58,7 +58,7 @@ func TestSupervisedProcesses_NatsServerHonorsExplicitStoreDir(t *testing.T) {
 	}
 
 	specs := supervisedProcesses("/tmp/bin")
-	nats := findSpec(t, specs, "nats-server")
+	nats := findNatsSpec(t, specs)
 
 	assertSdArg(t, nats.args, explicit)
 }
@@ -98,7 +98,7 @@ func TestSupervisedProcesses_NatsServerDefaultsWhenKeyMissing(t *testing.T) {
 	}
 
 	specs := supervisedProcesses("/tmp/bin")
-	nats := findSpec(t, specs, "nats-server")
+	nats := findNatsSpec(t, specs)
 	assertSdArg(t, nats.args, wantDefault)
 }
 
@@ -131,7 +131,7 @@ func TestSupervisedProcesses_NatsServerEmptyValueFallsBack(t *testing.T) {
 	}
 
 	specs := supervisedProcesses("/tmp/bin")
-	nats := findSpec(t, specs, "nats-server")
+	nats := findNatsSpec(t, specs)
 	assertSdArg(t, nats.args, wantDefault)
 }
 
@@ -162,20 +162,20 @@ func TestSupervisedProcesses_NatsServerHonorsLauncherHomeOverride(t *testing.T) 
 	}
 
 	specs := supervisedProcesses("/tmp/bin")
-	nats := findSpec(t, specs, "nats-server")
+	nats := findNatsSpec(t, specs)
 	assertSdArg(t, nats.args, wantDefault)
 }
 
-// findSpec returns a pointer to the named processSpec, failing the
-// test if it's missing. Centralized so tests don't repeat the loop.
-func findSpec(t *testing.T, specs []processSpec, name string) *processSpec {
+// findNatsSpec returns a pointer to the nats-server processSpec, failing
+// the test if it's missing. Centralized so tests don't repeat the loop.
+func findNatsSpec(t *testing.T, specs []processSpec) *processSpec {
 	t.Helper()
 	for i := range specs {
-		if specs[i].name == name {
+		if specs[i].name == "nats-server" {
 			return &specs[i]
 		}
 	}
-	t.Fatalf("service %q missing from supervisedProcesses", name)
+	t.Fatalf("service \"nats-server\" missing from supervisedProcesses")
 	return nil
 }
 
@@ -202,7 +202,7 @@ func assertSdArg(t *testing.T, args []string, wantValue string) {
 	if jsIdx == -1 || httpIdx == -1 {
 		t.Fatalf("args missing --jetstream or --http_port: %v", args)
 	}
-	if !(jsIdx < idx && idx < httpIdx) {
+	if jsIdx >= idx || idx >= httpIdx {
 		t.Errorf("-sd not positioned between --jetstream and --http_port: jetstream@%d sd@%d http_port@%d (args=%v)",
 			jsIdx, idx, httpIdx, args)
 	}
