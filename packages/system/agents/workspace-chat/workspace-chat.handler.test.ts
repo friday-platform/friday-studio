@@ -641,6 +641,45 @@ describe("workspace-chat handler", () => {
     );
   });
 
+  it("Block 4 preface is sent to the model but not persisted", async () => {
+    // The synthetic user-message preface (memory + temporal facts) is
+    // injected into the LLM call but must not leak into ChatStorage —
+    // it would accumulate across turns and corrupt the conversation.
+    const userMessage = makeMessage("user", "Hello");
+    setupDefaultMocks([userMessage]);
+
+    let streamTextMessages: unknown[] | undefined;
+    mockStreamText.mockImplementation((opts) => {
+      streamTextMessages = opts.messages as unknown[];
+      opts.onFinish?.({ text: "Hi" });
+      return {
+        toUIMessageStream: vi.fn().mockReturnValue(
+          new ReadableStream({
+            start(controller) {
+              controller.close();
+            },
+          }),
+        ),
+      };
+    });
+
+    const handler = getHandler();
+    const ctx = makeContext();
+    await handler("", ctx);
+
+    // The model saw a message with the temporal-facts preface tag.
+    expect(streamTextMessages).toBeDefined();
+    const serializedModelMessages = JSON.stringify(streamTextMessages);
+    expect(serializedModelMessages).toContain("<retrieved_content");
+
+    // But the persisted assistant message must NOT carry preface bytes.
+    expect(mockAppendMessage).toHaveBeenCalledOnce();
+    const persistedMessage = mockAppendMessage.mock.calls[0]?.[1] as AtlasUIMessage;
+    expect(persistedMessage.role).toBe("assistant");
+    const persistedSerialized = JSON.stringify(persistedMessage);
+    expect(persistedSerialized).not.toContain("<retrieved_content");
+  });
+
   // -----------------------------------------------------------------------
   // Seamless auto-continue after connect_service
   // -----------------------------------------------------------------------

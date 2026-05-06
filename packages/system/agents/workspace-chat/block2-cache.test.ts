@@ -122,4 +122,43 @@ describe("getBlock2Inputs", () => {
     expect(a.config).toEqual({ id: "a" });
     expect(b.config).toEqual({ id: "b" });
   });
+
+  it("evicts least-recently-used entries past the cap", async () => {
+    // Cap is 64; queue 65 unique workspaces. The oldest should be
+    // evicted, forcing a re-fetch when re-asked.
+    const CAP = 64;
+    const N = CAP + 1;
+    for (let i = 0; i < N; i++) {
+      mockFetchWorkspaceDetails.mockResolvedValueOnce(stubDetails(`ws-${i}`));
+      mockParseResult.mockResolvedValueOnce({ ok: true, data: { config: { i } } });
+    }
+    for (let i = 0; i < N; i++) {
+      await getBlock2Inputs(`ws-${i}`, logger);
+    }
+    // 65 fills triggered 65 fetches.
+    expect(mockFetchWorkspaceDetails).toHaveBeenCalledTimes(N);
+
+    // ws-0 should have been evicted (oldest at the time the 65th was inserted).
+    // Re-asking it triggers a fresh fetch (#66).
+    mockFetchWorkspaceDetails.mockResolvedValueOnce(stubDetails("ws-0-refetched"));
+    mockParseResult.mockResolvedValueOnce({ ok: true, data: { config: { refetched: true } } });
+    const refetched = await getBlock2Inputs("ws-0", logger);
+    expect(refetched.details.name).toBe("ws-0-refetched");
+    expect(mockFetchWorkspaceDetails).toHaveBeenCalledTimes(N + 1);
+
+    // ws-1 should still be cached (it was the oldest after ws-0's eviction,
+    // but no further inserts happened past it before refetching ws-0…
+    // actually inserting ws-0-refetched evicted ws-1). So ws-1 is also a miss.
+    mockFetchWorkspaceDetails.mockResolvedValueOnce(stubDetails("ws-1-refetched"));
+    mockParseResult.mockResolvedValueOnce({ ok: true, data: { config: {} } });
+    await getBlock2Inputs("ws-1", logger);
+    expect(mockFetchWorkspaceDetails).toHaveBeenCalledTimes(N + 2);
+
+    // But ws-N-1 (the most recent in the original fill) is still cached:
+    // a re-read should hit without a fetch.
+    const lastIdx = N - 1;
+    const fetchesBefore = mockFetchWorkspaceDetails.mock.calls.length;
+    await getBlock2Inputs(`ws-${lastIdx}`, logger);
+    expect(mockFetchWorkspaceDetails).toHaveBeenCalledTimes(fetchesBefore);
+  });
 });
