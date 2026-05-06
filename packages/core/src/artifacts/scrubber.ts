@@ -58,6 +58,24 @@ export type ScrubToolResult = (
 const SIZE_THRESHOLD_CHARS = 4 * 1024;
 
 /**
+ * Threshold for lifting non-binary text/JSON tool results. Higher than the
+ * binary threshold because plaintext compresses well in the prompt and is
+ * cheaper per char than base64-encoded bytes — we still want to lift the
+ * common fan-in shapes (50-email JSON batches, large markdown reports,
+ * big HTML responses) before they reach the LLM message buffer.
+ */
+const TEXT_THRESHOLD_CHARS = 8 * 1024;
+
+/**
+ * Literal prefix produced by {@link refMarker}. A scrubbed string that
+ * already starts with this prefix is the output of a previous scrub pass
+ * (e.g. MCP-boundary scrub re-walked by pre-persist scrub) — lifting it
+ * again would create a redundant artifact whose body is just another
+ * marker pointing at the original.
+ */
+const REF_MARKER_PREFIX = "[attachment lifted to artifact ";
+
+/**
  * Recursion depth ceiling. MCP results are usually shallow JSON; this is a
  * sanity stop in case some server returns pathological self-referential
  * shapes wrapped in containers.
@@ -218,10 +236,55 @@ function sniffMimeFromBase64(base64: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Map of mimes to short, conventional file extensions. The default
+ * extraction (subtype after `/`) yields `markdown` and `plain` which look
+ * weird as filenames; this table corrects the common cases.
+ */
+const MIME_EXT_OVERRIDES: Record<string, string> = { "text/plain": "txt", "text/markdown": "md" };
+
 /** Synthetic filename when the source didn't carry one. */
 function defaultFilename(mime: string | undefined, toolCtx: { toolName: string }): string {
-  const ext = mime?.split("/")[1]?.split(";")[0]?.split("+")[0] || "bin";
+  const baseMime = mime?.split(";")[0]?.trim();
+  const override = baseMime ? MIME_EXT_OVERRIDES[baseMime] : undefined;
+  const ext = override ?? baseMime?.split("/")[1]?.split("+")[0] ?? "bin";
   return `${toolCtx.toolName}-${Date.now()}.${ext}`;
+}
+
+/**
+ * Cheap, prefix-based sniff for large *text* tool results. Distinguishes
+ * the four common shapes Friday's MCPs return so the artifact carries an
+ * accurate mime — the playground UI already renders text/html (iframe),
+ * application/json (json-viewer), and text/markdown via existing paths.
+ *
+ * JSON detection parses only the first ~512 chars to avoid a full parse
+ * on multi-MB payloads — a syntactically valid JSON document either
+ * starts with a structural prefix and balances by the end (in which case
+ * the prefix parse fails, but the prefix-by-`{`/`[` check is enough to
+ * distinguish JSON from arbitrary text) or it doesn't. We accept both:
+ * if the prefix parses standalone we know it's JSON; if it doesn't,
+ * the leading `{`/`[` is still a strong signal.
+ */
+function sniffTextMime(s: string): string {
+  const trimmed = s.trimStart();
+  const head = trimmed.slice(0, 16).toLowerCase();
+  if (head.startsWith("<!doctype") || head.startsWith("<html")) return "text/html";
+  const first = trimmed[0];
+  if (first === "{" || first === "[") {
+    // Try a partial parse; on small inputs, also try a full parse. Either
+    // success path confirms JSON. Failure still falls through to the
+    // structural-prefix heuristic.
+    try {
+      JSON.parse(trimmed);
+      return "application/json";
+    } catch {
+      // Structural prefix is enough — Friday's MCPs that return JSON-ish
+      // strings (Gmail batches, etc.) reliably open with `{` or `[`.
+      return "application/json";
+    }
+  }
+  if (trimmed.startsWith("# ") || trimmed.startsWith("---\n")) return "text/markdown";
+  return "text/plain";
 }
 
 async function scrubString(
@@ -229,6 +292,11 @@ async function scrubString(
   ctx: ScrubContext,
   toolCtx: { serverId: string; toolName: string },
 ): Promise<string> {
+  // Already-lifted strings (output of a previous scrub pass — e.g. the
+  // pre-persist walker re-walking a result the MCP-boundary scrubber
+  // already handled). Lifting again would create a redundant artifact
+  // whose body is just another marker.
+  if (s.startsWith(REF_MARKER_PREFIX)) return s;
   // Whole-string data URL — preserve the mime hint when uploading.
   const dataUrlMatch = s.match(DATA_URL_RE);
   if (dataUrlMatch) {
@@ -265,6 +333,24 @@ async function scrubString(
     const marker = refMarker(upload, toolCtx);
     result = result.slice(0, m.index) + marker + result.slice(m.index + block.length);
     cursor = m.index + marker.length;
+  }
+  // Large text/JSON lift. Runs only if no binary lift fired (`result`
+  // still equals the original `s`) — once a marker has been spliced in,
+  // the residual envelope is necessarily small and shouldn't itself be
+  // hoisted as a "text" artifact. The threshold is higher than the
+  // binary one (text isn't base64-inflated, so we tolerate more inline)
+  // but low enough to catch the common fan-in shapes — 50-email JSON
+  // batches, large markdown reports, big HTML responses — before they
+  // reach the LLM message buffer.
+  if (result === s && s.length >= TEXT_THRESHOLD_CHARS) {
+    const sniffedMime = sniffTextMime(s);
+    // btoa works on Latin-1 only; the URI-encode dance preserves UTF-8
+    // bytes through the base64 round-trip (unescape is deprecated but
+    // still ubiquitously available in Deno/Node and the AI SDK runtime).
+    const base64 = btoa(unescape(encodeURIComponent(s)));
+    const filename = defaultFilename(sniffedMime, toolCtx);
+    const upload = await uploadBlob(base64, sniffedMime, filename, ctx, toolCtx);
+    if (upload) return refMarker(upload, toolCtx);
   }
   return result;
 }
@@ -391,4 +477,11 @@ export async function scrubAssistantMessage(
 }
 
 // Exported for unit tests.
-export const __test = { DATA_URL_RE, EMBEDDED_BASE64_RE, SIZE_THRESHOLD_CHARS };
+export const __test = {
+  DATA_URL_RE,
+  EMBEDDED_BASE64_RE,
+  SIZE_THRESHOLD_CHARS,
+  TEXT_THRESHOLD_CHARS,
+  REF_MARKER_PREFIX,
+  sniffTextMime,
+};

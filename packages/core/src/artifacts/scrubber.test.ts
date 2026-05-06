@@ -10,7 +10,7 @@ vi.mock("@atlas/oapi-client", () => ({ getAtlasDaemonUrl: () => "http://localhos
 
 import { __test, createScrubber, scrubAssistantMessage } from "./scrubber.ts";
 
-const { DATA_URL_RE, EMBEDDED_BASE64_RE, SIZE_THRESHOLD_CHARS } = __test;
+const { DATA_URL_RE, EMBEDDED_BASE64_RE, SIZE_THRESHOLD_CHARS, TEXT_THRESHOLD_CHARS } = __test;
 
 const logger: Logger = {
   info: vi.fn(),
@@ -185,6 +185,96 @@ describe("createScrubber (MCP-boundary)", () => {
     const text = `Here's a small chunk: ${bigBase64(SIZE_THRESHOLD_CHARS - 1)} that fits inline.`;
     const result = await scrub({ content: [{ type: "text", text }] }, TOOL_CTX);
     expect(result).toEqual({ content: [{ type: "text", text }] });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("createScrubber — text/JSON lifting", () => {
+  // Padding generator that doesn't look like base64 (avoid colliding with
+  // EMBEDDED_BASE64_RE — `A`-only strings would match its character class
+  // at threshold and get lifted as binary).
+  const lorem = (size: number) =>
+    "the quick brown fox jumps over the lazy dog. ".repeat(Math.ceil(size / 45)).slice(0, size);
+
+  it("lifts a 10 KB JSON object with application/json mime", async () => {
+    mockArtifactCreate("art_json", 10 * 1024, "application/json");
+    const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
+    // Build a parseable JSON document just above the threshold.
+    const body = lorem(200);
+    const json = JSON.stringify({ items: Array.from({ length: 50 }, (_, i) => ({ id: i, body })) });
+    expect(json.length).toBeGreaterThanOrEqual(TEXT_THRESHOLD_CHARS);
+    const result = (await scrub({ content: [{ type: "text", text: json }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.content[0]?.text).toMatch(/artifact art_json/);
+    // Confirm the upload was sent with application/json mime.
+    const reqInit = mockFetch.mock.calls[0]?.[1];
+    const sentBody = JSON.parse(reqInit?.body as string) as { data: { mimeType: string } };
+    expect(sentBody.data.mimeType).toBe("application/json");
+  });
+
+  it("lifts a 10 KB HTML page with text/html mime", async () => {
+    mockArtifactCreate("art_html", 10 * 1024, "text/html");
+    const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
+    const html = `<!DOCTYPE html>\n<html><body>${lorem(TEXT_THRESHOLD_CHARS + 256)}</body></html>`;
+    const result = (await scrub({ content: [{ type: "text", text: html }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.content[0]?.text).toMatch(/artifact art_html/);
+    const sentBody = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string) as {
+      data: { mimeType: string };
+    };
+    expect(sentBody.data.mimeType).toBe("text/html");
+  });
+
+  it("lifts a 10 KB markdown document with text/markdown mime", async () => {
+    mockArtifactCreate("art_md", 10 * 1024, "text/markdown");
+    const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
+    const md = `# Report\n\n${lorem(TEXT_THRESHOLD_CHARS + 256)}`;
+    const result = (await scrub({ content: [{ type: "text", text: md }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.content[0]?.text).toMatch(/artifact art_md/);
+    const sentBody = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string) as {
+      data: { mimeType: string };
+    };
+    expect(sentBody.data.mimeType).toBe("text/markdown");
+  });
+
+  it("lifts a 10 KB plain text blob with text/plain mime", async () => {
+    mockArtifactCreate("art_txt", 10 * 1024, "text/plain");
+    const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
+    const text = lorem(TEXT_THRESHOLD_CHARS + 1024);
+    const result = (await scrub({ content: [{ type: "text", text }] }, TOOL_CTX)) as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.content[0]?.text).toMatch(/artifact art_txt/);
+    const sentBody = JSON.parse(mockFetch.mock.calls[0]?.[1]?.body as string) as {
+      data: { mimeType: string };
+    };
+    expect(sentBody.data.mimeType).toBe("text/plain");
+  });
+
+  it("does NOT lift text below the text threshold", async () => {
+    const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
+    const text = lorem(5 * 1024); // 5 KB — well below 8 KB threshold.
+    const result = await scrub({ content: [{ type: "text", text }] }, TOOL_CTX);
+    expect(result).toEqual({ content: [{ type: "text", text }] });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("does NOT re-lift an already-lifted refMarker string above threshold", async () => {
+    const scrub = createScrubber({ workspaceId: "ws", chatId: "ch", logger });
+    // Marker prefix + arbitrary padding above threshold to prove the
+    // length check alone would otherwise trip the text-lift path.
+    const marker = `[attachment lifted to artifact art_prev (50 KB, application/pdf, from x/y) — use display_artifact or artifacts_get to read]${lorem(TEXT_THRESHOLD_CHARS)}`;
+    expect(marker.length).toBeGreaterThanOrEqual(TEXT_THRESHOLD_CHARS);
+    const result = await scrub({ content: [{ type: "text", text: marker }] }, TOOL_CTX);
+    expect(result).toEqual({ content: [{ type: "text", text: marker }] });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
