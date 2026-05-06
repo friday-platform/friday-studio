@@ -317,6 +317,37 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
       const body = (await res.json()) as { messages: Array<{ id: string }> };
       expect(body.messages).toHaveLength(100);
     });
+
+    // `validateAtlasUIMessages` walks every message and sanitises HTML, so
+    // an unbounded array on `?full=true` lets a single pathological chat
+    // pin the daemon. The cap rejects with 413 *before* we hand the array
+    // to the validator. The trimmed view is bounded at 100 so it isn't
+    // affected.
+    test("?full=true with messages.length > 5000 returns 413 without invoking validator", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(5001) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as JsonBody;
+      expect(body.error).toBe("Chat too large to export");
+      expect(body.messageCount).toBe(5001);
+      expect(body.limit).toBe(5000);
+      expect(mockValidateMessages).not.toHaveBeenCalled();
+    });
+
+    test("?full=true with messages.length === 5000 succeeds at the boundary", async () => {
+      mockChatStorage.getChat.mockResolvedValue({ ok: true, data: makeChatData(5000) });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { messages: Array<{ id: string }> };
+      expect(body.messages).toHaveLength(5000);
+      expect(mockValidateMessages).toHaveBeenCalledOnce();
+    });
   });
 });
 

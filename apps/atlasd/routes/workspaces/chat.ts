@@ -18,6 +18,15 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
 
+/**
+ * Hard cap on the number of messages returned by `GET /:chatId?full=true`.
+ * `validateAtlasUIMessages` walks every message and sanitises HTML in each
+ * part, which is unbounded RAM + CPU on the daemon for pathological chats.
+ * The trimmed view (`slice(-100)`) doesn't need this — only the export
+ * preview path that opts in via `?full=true` does.
+ */
+const MAX_FULL_EXPORT_MESSAGES = 5000;
+
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
   cursor: z.coerce.number().optional(),
@@ -204,6 +213,20 @@ const workspaceChatRoutes = daemonFactory
     const { messages, systemPromptContext, ...chat } = chatResult.data;
     // Export preview (`?full=true`) needs the whole conversation; the live
     // UI rehydrate path keeps the last-100 trim to bound payload size.
+    // Reject `?full=true` for chats above the export cap before sanitising
+    // — `validateAtlasUIMessages` is unbounded work per message, so a giant
+    // chat would otherwise pin the daemon. The trimmed view is always
+    // bounded at 100 so it doesn't need the guard.
+    if (full && messages.length > MAX_FULL_EXPORT_MESSAGES) {
+      return c.json(
+        {
+          error: "Chat too large to export",
+          messageCount: messages.length,
+          limit: MAX_FULL_EXPORT_MESSAGES,
+        },
+        413,
+      );
+    }
     const selectedMessages = full ? messages : messages.slice(-100);
     const sanitized = await validateAtlasUIMessages(selectedMessages);
 
