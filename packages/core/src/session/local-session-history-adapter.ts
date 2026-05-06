@@ -54,6 +54,17 @@ export class LocalSessionHistoryAdapter implements SessionHistoryAdapter {
     await writeFile(join(sessionDir, "metadata.json"), JSON.stringify(summary, null, 2), "utf-8");
   }
 
+  /**
+   * Overwrite metadata.json for an already-saved session. C2's detached
+   * aiSummary path calls this once `generateSessionSummary` finishes so
+   * subsequent reads see the polished summary. Doesn't touch events.jsonl.
+   */
+  async updateSummary(sessionId: string, summary: SessionSummary): Promise<void> {
+    const sessionDir = join(this.baseDir, sessionId);
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(join(sessionDir, "metadata.json"), JSON.stringify(summary, null, 2), "utf-8");
+  }
+
   /** Read JSONL events and reduce to SessionView. Returns null if not found. */
   async get(sessionId: string): Promise<SessionView | null> {
     const eventsPath = join(this.baseDir, sessionId, "events.jsonl");

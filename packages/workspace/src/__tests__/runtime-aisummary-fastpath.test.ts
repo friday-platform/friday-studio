@@ -10,6 +10,7 @@ import type { FSMDefinition, Document as FSMDocument } from "@atlas/fsm-engine";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildFastPathAiSummary,
+  buildSynchronousFallbackAiSummary,
   deriveKeyDetailsFromOutputDoc,
   findTerminalAction,
   humanizeFieldKey,
@@ -245,6 +246,60 @@ describe("buildFastPathAiSummary", () => {
       },
     };
     expect(buildFastPathAiSummary(definition, [])).toBeUndefined();
+  });
+});
+
+describe("buildSynchronousFallbackAiSummary (C2)", () => {
+  // Used when the C1 fast path is unavailable. Caller emits this
+  // immediately on `job-complete` and detaches the LLM round-trip;
+  // tests cover the source-preference rules.
+
+  it("uses the terminal-action's declared `summary:` even without an outputTo doc", () => {
+    const definition: FSMDefinition = {
+      id: "j",
+      initial: "s",
+      states: {
+        s: {
+          type: "final",
+          entry: [{ type: "llm", provider: "p", model: "m", prompt: "x", summary: "Done it" }],
+        },
+      },
+    };
+    const out = buildSynchronousFallbackAiSummary(definition, []);
+    expect(out).toEqual({ summary: "Done it", keyDetails: [] });
+  });
+
+  it("falls back to truncated terminal-doc data when no `summary:` is declared", () => {
+    const definition: FSMDefinition = {
+      id: "j",
+      initial: "s",
+      states: {
+        s: {
+          type: "final",
+          entry: [{ type: "agent", agentId: "a", prompt: "x", outputTo: "result" }],
+        },
+      },
+    };
+    const docs: FSMDocument[] = [{ id: "result", type: "Result", data: { ok: true, count: 4 } }];
+    const out = buildSynchronousFallbackAiSummary(definition, docs);
+    // Truncated JSON of the doc data (~300 chars cap).
+    expect(out.summary).toContain('"ok":true');
+    expect(out.summary).toContain('"count":4');
+    // keyDetails still derived from the outputTo doc.
+    expect(out.keyDetails).toEqual([{ label: "Count", value: "4" }]);
+  });
+
+  it("returns an empty SessionAISummary when there's no terminal action and no docs", () => {
+    const definition: FSMDefinition = {
+      id: "j",
+      initial: "a",
+      states: {
+        a: { entry: [{ type: "emit", event: "noop" }], on: { done: { target: "b" } } },
+        b: { type: "final" },
+      },
+    };
+    const out = buildSynchronousFallbackAiSummary(definition, []);
+    expect(out).toEqual({ summary: "", keyDetails: [] });
   });
 });
 

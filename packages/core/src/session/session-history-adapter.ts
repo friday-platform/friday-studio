@@ -27,6 +27,16 @@ export interface SessionHistoryAdapter {
   save(sessionId: string, events: SessionStreamEvent[], summary: SessionSummary): Promise<void>;
 
   /**
+   * Overwrite the persisted summary for an already-finalized session. Used
+   * by the C2 detached `aiSummary` flow: `save()` lands a synchronous-fallback
+   * summary on the critical path; once the LLM-generated summary completes
+   * out-of-band, this method updates the metadata KV / metadata.json without
+   * touching the events log. Last-write-wins by sessionId; safe to call
+   * concurrently for the same session.
+   */
+  updateSummary(sessionId: string, summary: SessionSummary): Promise<void>;
+
+  /**
    * Load a session by ID, reducing stored events into a SessionView.
    * Returns null if the session does not exist.
    */

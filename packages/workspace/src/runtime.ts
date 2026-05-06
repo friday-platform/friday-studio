@@ -332,6 +332,13 @@ interface SessionStream {
   emit(event: SessionStreamEvent): void;
   emitEphemeral(chunk: EphemeralChunk): void;
   finalize(summary: SessionSummaryV2): Promise<void>;
+  /**
+   * C2 — overwrite the persisted summary after finalize. Called by the
+   * detached `generateSessionSummary` flow once the LLM-generated aiSummary
+   * is ready. Optional so test stubs that don't care about post-finalize
+   * updates can omit it.
+   */
+  updateSummary?(summary: SessionSummaryV2): Promise<void>;
   getBufferedEvents(): SessionStreamEvent[];
 }
 
@@ -749,6 +756,38 @@ export function buildFastPathAiSummary(
     ? documents.find((d) => d.id === terminalAction.outputTo)
     : undefined;
   return { summary: declared, keyDetails: deriveKeyDetailsFromOutputDoc(outputDoc) };
+}
+
+/**
+ * C2 synchronous-fallback aiSummary — used when the C1 fast path produced
+ * nothing (no terminal action, or no declared `summary:`) but we still
+ * need *some* aiSummary to return immediately on SSE `job-complete`
+ * instead of waiting ~1-2s for `generateSessionSummary` to finish.
+ *
+ * Source preference for `summary` text:
+ *   1. Terminal action's declared `summary:` (same lookup as the C1 path —
+ *      lets actions without an `outputTo` still hit a fast answer).
+ *   2. Truncated `JSON.stringify` of the terminal-state document's data,
+ *      via {@link synthesizeFallbackSummary}. ~300 chars.
+ *
+ * `keyDetails` comes from {@link deriveKeyDetailsFromOutputDoc} when an
+ * `outputTo` doc is present; otherwise `[]`. The polished LLM summary
+ * (when generation completes out-of-band) overwrites this entry.
+ */
+export function buildSynchronousFallbackAiSummary(
+  definition: FSMDefinition,
+  documents: FSMDocument[],
+): SessionAISummary {
+  const terminalAction = findTerminalAction(definition);
+  const declared = terminalAction?.summary?.trim();
+  const outputDoc = terminalAction?.outputTo
+    ? documents.find((d) => d.id === terminalAction.outputTo)
+    : undefined;
+  const summary =
+    declared && declared.length > 0
+      ? declared
+      : synthesizeFallbackSummary(documents.filter((d) => !PLUMBING_DOCUMENT_TYPES.has(d.type)));
+  return { summary, keyDetails: deriveKeyDetailsFromOutputDoc(outputDoc) };
 }
 
 /**
@@ -2081,20 +2120,30 @@ export class WorkspaceRuntime {
             const platformModels = this.options.platformModels;
             // C1 fast path — when the terminal LLM/agent action declared a
             // Phase 2.A `summary:`, build SessionAISummary synchronously
-            // without the ~1-2s LLM round-trip. Falls through to
-            // generateSessionSummary when no terminal action can be
-            // identified or it didn't declare `summary`.
+            // without the ~1-2s LLM round-trip.
             const fastPathAiSummary = buildFastPathAiSummary(engine.definition, engine.documents);
-            const aiSummary = fastPathAiSummary
-              ? fastPathAiSummary
-              : platformModels && executedBlocks.length > 0
-                ? await generateSessionSummary(
-                    view,
-                    { platformModels },
-                    job.description,
-                    this.workspace.name,
-                  )
-                : undefined;
+            // C2 — when the fast path is unavailable (no declared summary)
+            // we still want SSE `job-complete` to respond immediately. Build
+            // a synchronous fallback aiSummary now and detach the LLM-
+            // generated path; on resolution we update completedSessionMetadata
+            // + persisted KV + emit a follow-up session:summary event.
+            const eligibleForLlmSummary =
+              !fastPathAiSummary && platformModels !== undefined && executedBlocks.length > 0;
+            const synchronousFallback = fastPathAiSummary
+              ? undefined
+              : buildSynchronousFallbackAiSummary(engine.definition, engine.documents);
+            // Suppress the synchronous emission when there's literally
+            // nothing to say (no terminal action + no docs) AND we're going
+            // to detach a real LLM call that will emit later. Avoids a
+            // noisy empty-string `session:summary` followed by the polished
+            // one a beat later.
+            const synchronousFallbackHasContent = !!(
+              synchronousFallback &&
+              (synchronousFallback.summary.length > 0 || synchronousFallback.keyDetails.length > 0)
+            );
+            const aiSummary: SessionAISummary | undefined =
+              fastPathAiSummary ??
+              (synchronousFallbackHasContent ? synchronousFallback : undefined);
             if (aiSummary) {
               sessionStream.emit({
                 type: "session:summary",
@@ -2131,6 +2180,69 @@ export class WorkspaceRuntime {
             await sessionStream.finalize(summaryV2).catch((err) => {
               logger.warn("Failed to finalize session stream", { sessionId, error: String(err) });
             });
+
+            // C2 — detached LLM aiSummary generation. SSE `job-complete`
+            // fired above with the synchronous fallback; the polished
+            // summary writes to completedSessionMetadata + persisted KV
+            // when the LLM round-trip resolves. Activity page picks it up
+            // on next read; live SSE subscribers see the follow-up
+            // `session:summary` event.
+            if (eligibleForLlmSummary && platformModels) {
+              const updateStream = sessionStream;
+              const llmSummaryV2Base = summaryV2;
+              void generateSessionSummary(
+                view,
+                { platformModels },
+                job.description,
+                this.workspace.name,
+              )
+                .then(async (llmSummary) => {
+                  if (!llmSummary) return;
+                  // 1. Update in-memory cache so getSessionJobResult
+                  //    returns the polished summary on subsequent calls.
+                  const existing = this.completedSessionMetadata.get(sessionId);
+                  if (existing) {
+                    this.completedSessionMetadata.set(sessionId, {
+                      ...existing,
+                      aiSummary: llmSummary,
+                    });
+                  }
+                  // 2. Emit a follow-up session:summary event for live SSE
+                  //    subscribers (cascade-stream forwards arbitrary
+                  //    session events; no allowlist update needed).
+                  try {
+                    updateStream.emit({
+                      type: "session:summary",
+                      timestamp: new Date().toISOString(),
+                      summary: llmSummary.summary,
+                      keyDetails: llmSummary.keyDetails,
+                    });
+                  } catch (emitErr) {
+                    logger.warn("Failed to emit follow-up session:summary", {
+                      sessionId,
+                      error: String(emitErr),
+                    });
+                  }
+                  // 3. Overwrite the persisted SessionSummary so Activity
+                  //    page (listByWorkspace) reflects the polished aiSummary.
+                  if (updateStream.updateSummary) {
+                    await updateStream
+                      .updateSummary({ ...llmSummaryV2Base, aiSummary: llmSummary })
+                      .catch((err) => {
+                        logger.warn("Failed to persist async aiSummary update", {
+                          sessionId,
+                          error: String(err),
+                        });
+                      });
+                  }
+                })
+                .catch((err) => {
+                  logger.warn("async aiSummary generation failed", {
+                    sessionId,
+                    error: String(err),
+                  });
+                });
+            }
 
             // Side-effect hook for the daemon to broadcast the final output
             // across chat communicators. Errors are isolated — a failed

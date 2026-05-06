@@ -148,6 +148,18 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     await inflight.delete([sessionId]);
   }
 
+  /**
+   * Overwrite the metadata KV entry for an already-saved session. C2's
+   * detached aiSummary path calls this once `generateSessionSummary`
+   * finishes so the Activity page (which reads via `listByWorkspace`) sees
+   * the polished summary on next read. KV history=1 means the previous
+   * value is dropped on write — desired semantics.
+   */
+  async updateSummary(sessionId: string, summary: SessionSummary): Promise<void> {
+    const metadata = await this.getMetadataKV();
+    await metadata.set([sessionId], summary);
+  }
+
   async get(sessionId: string): Promise<SessionView | null> {
     await this.ensureStream();
     const subject = this.subject(sessionId);
