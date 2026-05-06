@@ -17,6 +17,7 @@ import {
 } from "@atlas/core";
 import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
+import { initElicitationStorage } from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { CronManager } from "@atlas/cron";
 import { initDocumentStore } from "@atlas/document-store";
@@ -61,6 +62,7 @@ import {
 import { configRoutes } from "../routes/config.ts";
 import { cronRoutes } from "../routes/cron.ts";
 import { daemonApp } from "../routes/daemon.ts";
+import { elicitationApp } from "../routes/elicitations/index.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { instanceEventsRoutes } from "../routes/instance-events.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
@@ -552,6 +554,12 @@ export class AtlasDaemon {
     // ~/.atlas/storage.db artifact rows + reads file contents from
     // disk into the Object Store, content-addressed by SHA-256.
     initArtifactStorage(nc);
+
+    // Wire elicitation storage to JetStream — `ELICITATIONS` stream for
+    // the durable audit trail of envelopes, `ELICITATION_STATUS` KV
+    // bucket for O(1) status lookups. Phase 12 HITL primitive; HTTP
+    // routes mounted at `/api/elicitations` below.
+    initElicitationStorage(nc);
 
     // Wire workspace-state storage (state_append/lookup/filter MCP tools)
     // to JetStream — one KV bucket per workspace (WS_STATE_<wsid>).
@@ -1114,6 +1122,7 @@ export class AtlasDaemon {
     this.app.route("/api/config", configRoutes);
     this.app.route("/api/user", userRoutes);
     this.app.route("/api/scratchpad", scratchpadApp);
+    this.app.route("/api/elicitations", elicitationApp);
     this.app.route("/api/sessions", sessionsRoutes);
     this.app.route("/api/agents", agentsRoutes);
     this.app.route("/api/daemon", daemonApp);
