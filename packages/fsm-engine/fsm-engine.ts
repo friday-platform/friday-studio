@@ -25,6 +25,7 @@ import {
   UserConfigurationError,
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
+import { composeMemoryBlocks } from "@atlas/core/agent-context/compose-blocks";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
 import { createScrubber } from "@atlas/core/artifacts/scrubber";
@@ -1164,9 +1165,17 @@ export class FSMEngine {
               skillNames: skills.map((s) => s.name),
             });
 
-            const buildResult = action.tools
-              ? await this.buildTools(action.tools, context, sig._context)
-              : { tools: {}, dispose: async () => {} };
+            // Always run buildTools so atlas-platform's auto-injected tool set
+            // (memory_save, memory_read, artifacts_create, artifacts_get,
+            // parse_artifact, webfetch, etc.) is available regardless of
+            // whether the action declares `tools:`. Authors don't need to
+            // know which tools are platform vs workspace-defined; the
+            // platform set is additive, mirroring chat-side behavior. When
+            // the action declares tools, those *narrow* the workspace-server
+            // side via buildTools' existing allowlist; platform tools remain
+            // ambient (PLATFORM_TOOL_ALLOWLIST in buildTools is already
+            // filtered there). Phase 5 of the fan-in plan.
+            const buildResult = await this.buildTools(action.tools ?? [], context, sig._context);
             const baseTools = buildResult.tools;
 
             let cleanupSkills: (() => Promise<void>) | undefined;
@@ -1233,6 +1242,34 @@ export class FSMEngine {
                 effectivePrepareResult,
                 skills,
               );
+
+              // Auto-inject recent narrative-memory entries — same XML envelope
+              // workspace-chat uses (`<memory workspace="..." store="...">`).
+              // Mirrors the chat path's `composeMemoryBlocks` call so an FSM
+              // `type: llm` action sees the same memory surface a chat turn
+              // would see at action-start. Per-FSM-session narrowing is Phase
+              // 9 territory; today this is "last 20 entries per declared
+              // narrative store", matching chat behavior. Skipped without a
+              // workspaceId (pre-1.0 callers / unit tests) — without one we
+              // can't authoritatively scope memory. Failures are swallowed
+              // and logged; never blocks the action. Phase 5.
+              if (workspaceId) {
+                try {
+                  const memoryBlocks = await composeMemoryBlocks(workspaceId, [], logger);
+                  if (memoryBlocks.length > 0) {
+                    contextPrompt = `${memoryBlocks.join("\n\n")}\n\n${contextPrompt}`;
+                    logger.debug("Injected memory blocks into LLM action prompt", {
+                      workspaceId,
+                      blockCount: memoryBlocks.length,
+                    });
+                  }
+                } catch (err) {
+                  logger.warn("composeMemoryBlocks failed — proceeding without memory blocks", {
+                    workspaceId,
+                    error: stringifyError(err),
+                  });
+                }
+              }
 
               if (completeToolInjected) {
                 contextPrompt +=

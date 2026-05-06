@@ -80,23 +80,34 @@ describe("FSM LLM action — scrubber wiring (Phase 3)", () => {
     // ran on the tool output before it landed in the message buffer.
     const llmReceivedToolResults: unknown[] = [];
 
-    // Stub artifact upload — scrubber POSTs once per oversized blob.
-    mockFetch.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          artifact: {
-            id: "art_fsm_lift",
-            type: "file",
-            revision: 1,
-            data: { type: "file", contentRef: "x", size: 24_000, mimeType: "application/pdf" },
-            title: "x",
-            summary: "y",
-            createdAt: new Date().toISOString(),
-          },
-        }),
-        { status: 201, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+    // Route fetches per URL. The artifact upload (POST /artifacts/storage)
+    // gets the success envelope; Phase 5's auto-injection of memory blocks
+    // means the LLM action also fires `GET /api/memory/<workspaceId>`,
+    // which we 404 to keep the test focused on scrubber wiring. Using
+    // `mockImplementation` instead of `mockResolvedValue` because each
+    // fetch needs its own Response (Response bodies are stream-once).
+    mockFetch.mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/api/memory/")) {
+        return Promise.resolve(new Response("not found", { status: 404 }));
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            artifact: {
+              id: "art_fsm_lift",
+              type: "file",
+              revision: 1,
+              data: { type: "file", contentRef: "x", size: 24_000, mimeType: "application/pdf" },
+              title: "x",
+              summary: "y",
+              createdAt: new Date().toISOString(),
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    });
 
     // The mocked MCP server exposes one tool. createMCPTools wraps the
     // tool's execute with the caller's scrubResult — same contract as the

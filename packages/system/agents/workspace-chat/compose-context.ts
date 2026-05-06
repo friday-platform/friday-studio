@@ -1,16 +1,21 @@
 import type { AtlasTools } from "@atlas/agent-sdk";
 import { client, parseResult } from "@atlas/client/v2";
 import type { WorkspaceConfig } from "@atlas/config";
+import { composeMemoryBlocks } from "@atlas/core/agent-context/compose-blocks";
 import type { Logger } from "@atlas/logger";
-import { getAtlasDaemonUrl } from "@atlas/oapi-client";
 import type { SkillSummary } from "@atlas/skills";
 import { resolveVisibleSkills, SkillStorage } from "@atlas/skills";
-import { z } from "zod";
 import {
   fetchWorkspaceDetails,
   formatWorkspaceSection,
   type WorkspaceDetails,
 } from "./workspace-chat.agent.ts";
+
+// Re-export so existing chat-side imports keep working unchanged.
+// The canonical implementation now lives in @atlas/core so the FSM
+// engine can consume it without crossing the chat-package layering
+// boundary. See `packages/core/src/agent-context/compose-blocks.ts`.
+export { composeMemoryBlocks };
 
 export interface ComposedForegroundContext {
   workspaceId: string;
@@ -99,95 +104,4 @@ export function composeTools(
     }
   }
   return merged;
-}
-
-const MemoryListSchema = z.array(
-  z.object({ workspaceId: z.string(), name: z.string(), kind: z.string() }),
-);
-
-const NarrativeEntrySchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  author: z.string().optional(),
-  createdAt: z.string(),
-});
-
-export async function composeMemoryBlocks(
-  primaryId: string,
-  foregroundIds: string[],
-  logger: Logger,
-): Promise<string[]> {
-  const daemonUrl = getAtlasDaemonUrl();
-  const allIds = [primaryId, ...foregroundIds];
-  const blocks: string[] = [];
-
-  // Track which (source workspace, store name) pairs have already been emitted
-  // so that mounts and explicit foreground IDs pointing to the same store don't
-  // produce duplicate blocks.
-  const emittedStoreKeys = new Set<string>();
-
-  const results = await Promise.allSettled(
-    allIds.map(async (workspaceId) => {
-      const listRes = await fetch(`${daemonUrl}/api/memory/${encodeURIComponent(workspaceId)}`);
-      if (!listRes.ok) return [];
-
-      const listData = MemoryListSchema.safeParse(await listRes.json());
-      if (!listData.success || listData.data.length === 0) return [];
-
-      const narrativeStores = listData.data.filter((m) => m.kind === "narrative");
-      if (narrativeStores.length === 0) return [];
-
-      // Group stores by their source workspace. Own stores have
-      // store.workspaceId === workspaceId; mounted stores point elsewhere.
-      const bySource = new Map<string, z.infer<typeof MemoryListSchema>[number][]>();
-      for (const store of narrativeStores) {
-        const src = store.workspaceId;
-        const existing = bySource.get(src) ?? [];
-        existing.push(store);
-        bySource.set(src, existing);
-      }
-
-      const wsBlocks: string[] = [];
-      for (const [sourceId, stores] of bySource) {
-        const storeResults = await Promise.allSettled(
-          stores.map(async (store) => {
-            const key = `${sourceId}:${store.name}`;
-            if (emittedStoreKeys.has(key)) return null;
-            emittedStoreKeys.add(key);
-
-            const url = `${daemonUrl}/api/memory/${encodeURIComponent(store.workspaceId)}/narrative/${encodeURIComponent(store.name)}?limit=20`;
-            const res = await fetch(url);
-            if (!res.ok) return null;
-            const data = z.array(NarrativeEntrySchema).safeParse(await res.json());
-            const entries = data.success ? data.data : [];
-            if (entries.length === 0) return null;
-
-            const lines = entries.map((e) => `- ${e.text}`);
-            return `<memory workspace="${sourceId}" store="${store.name}">\n${lines.join("\n")}\n</memory>`;
-          }),
-        );
-
-        for (const r of storeResults) {
-          if (r.status === "fulfilled" && r.value !== null) {
-            wsBlocks.push(r.value);
-          }
-        }
-      }
-
-      return wsBlocks;
-    }),
-  );
-
-  for (const [i, result] of results.entries()) {
-    if (result.status === "fulfilled") {
-      blocks.push(...result.value);
-    } else if (result.status === "rejected") {
-      logger.warn("Failed to fetch memory for workspace", {
-        workspaceId: allIds[i],
-        error: result.reason,
-      });
-    }
-  }
-
-  return blocks;
 }
