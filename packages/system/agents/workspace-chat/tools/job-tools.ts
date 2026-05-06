@@ -242,13 +242,23 @@ interface ExecuteJobViaSSEDeps {
   parentSessionId?: string;
 }
 
-async function executeJobViaSSE(
-  deps: ExecuteJobViaSSEDeps,
-): Promise<{
+async function executeJobViaSSE(deps: ExecuteJobViaSSEDeps): Promise<{
   success: boolean;
   sessionId?: string;
   status?: string;
   output?: unknown[];
+  /**
+   * Phase 2.C — persisted-artifact ids surfaced on `job-complete`. Optional
+   * during the transition window: only callers that opt into the new
+   * shape need to read it. The supervisor still ingests `output` until
+   * the chat-side consumer flips.
+   */
+  artifactIds?: string[];
+  /**
+   * Phase 2.C — short session summary. Same transition-window optionality
+   * as `artifactIds`.
+   */
+  summary?: string;
   error?: string;
   statusCode?: number;
 }> {
@@ -347,13 +357,30 @@ async function executeJobViaSSE(
         const sessionId = typeof d.sessionId === "string" ? d.sessionId : undefined;
         const status = typeof d.status === "string" ? d.status : "completed";
         const output = Array.isArray(d.output) ? d.output : [];
+        // Phase 2.C — additive fields. Surfaced on the return value but
+        // not yet preferred by chat consumers; that switch flips in a
+        // follow-on. Defensive parse: drop on shape mismatch.
+        const artifactIds =
+          Array.isArray(d.artifactIds) && d.artifactIds.every((x) => typeof x === "string")
+            ? (d.artifactIds as string[])
+            : undefined;
+        const summary = typeof d.summary === "string" ? d.summary : undefined;
         logger.info("Job tool completed (SSE)", {
           jobName,
           sessionId,
           status,
           outputDocCount: output.length,
+          artifactIdCount: artifactIds?.length ?? 0,
+          hasSummary: Boolean(summary),
         });
-        return { success: true, sessionId, status, output };
+        return {
+          success: true,
+          sessionId,
+          status,
+          output,
+          ...(artifactIds !== undefined && { artifactIds }),
+          ...(summary !== undefined && { summary }),
+        };
       }
       return { success: true };
     }

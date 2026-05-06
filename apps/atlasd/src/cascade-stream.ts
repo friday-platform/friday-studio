@@ -160,6 +160,18 @@ export type CascadeDispatcher = (
 ) => Promise<{
   sessionId: string;
   output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+  /**
+   * Phase 2.C — persisted artifact ids (Phase 2.B), forwarded onto the
+   * SSE `job-complete` event so supervisor consumers can prefer refs
+   * over the full `Document[]`. Empty when no eligible documents.
+   */
+  artifactIds: string[];
+  /**
+   * Phase 2.C — short session summary (AI-generated or synthesized
+   * from the terminal-state action's declared `summary` / output
+   * data). Empty when nothing is summarizable.
+   */
+  summary: string;
 }>;
 
 /**

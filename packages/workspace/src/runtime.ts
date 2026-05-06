@@ -46,6 +46,7 @@ import {
   mapStateSkippedToStepSkipped,
   mapValidationAttemptToStepValidation,
   ReasoningResultStatus,
+  type SessionAISummary,
   SessionHistoryStorage,
   type SessionStreamEvent,
   type SessionSummary as SessionSummaryV2,
@@ -451,6 +452,17 @@ interface SessionResult {
    * fails or no eligible documents were emitted.
    */
   artifactRefs: SessionArtifactRef[];
+  /**
+   * AI-generated session summary from `generateSessionSummary` (used for
+   * `SessionSummary.aiSummary` finalization). Captured here so synchronous
+   * callers — like the cascade dispatcher feeding the SSE `job-complete`
+   * event — can surface the summary alongside `artifactRefs` without
+   * re-reading the persisted summary stream. Phase 2.C of the fan-in fix.
+   *
+   * Undefined when the summarizer was skipped (no agent blocks) or
+   * silently failed.
+   */
+  aiSummary?: SessionAISummary;
   error?: Error;
   /** User ID from signal data */
   userId?: string;
@@ -560,6 +572,21 @@ export function synthesizeArtifactSummary(doc: FSMDocument): string {
   }
   if (!body) return `[${doc.type}]`;
   return body.length > MAX ? `${body.slice(0, MAX - 1)}…` : body;
+}
+
+/**
+ * Phase 2.C fallback when {@link generateSessionSummary} didn't produce a
+ * summary AND no terminal-state document has a declared
+ * (Phase 2.A) `summary`. Picks the last non-plumbing document and reuses
+ * the artifact-summary truncation. Returns an empty string when there's
+ * nothing summarizable — the caller decides what to do with that.
+ */
+export function synthesizeFallbackSummary(
+  docs: Array<{ id: string; type: string; data: Record<string, unknown> }>,
+): string {
+  const last = [...docs].reverse().find((d) => !PLUMBING_DOCUMENT_TYPES.has(d.type));
+  if (!last) return "";
+  return synthesizeArtifactSummary(last);
 }
 
 /**
@@ -830,6 +857,19 @@ export class WorkspaceRuntime {
   private completedSessionDocuments = new Map<
     string,
     Array<{ id: string; type: string; data: Record<string, unknown> }>
+  >();
+
+  /**
+   * Phase 2.C — post-completion snapshot of `artifactRefs` + `aiSummary` +
+   * FSM definition, paired with {@link completedSessionDocuments}. Used by
+   * the cascade dispatcher to surface `artifactIds` and `summary` on the
+   * SSE `job-complete` event after `handleSessionCompletion` has cleared
+   * the live `sessions` map. Bounded by the same FIFO pass as the docs
+   * cache (capped at 100 entries; per-runtime lifetime).
+   */
+  private completedSessionMetadata = new Map<
+    string,
+    { artifactRefs: SessionArtifactRef[]; aiSummary?: SessionAISummary; definition?: FSMDefinition }
   >();
   private sessionCompletionEmitter = new EventEmitter();
 
@@ -1849,6 +1889,10 @@ export class WorkspaceRuntime {
                 summary: aiSummary.summary,
                 keyDetails: aiSummary.keyDetails,
               });
+              // Phase 2.C — capture on the in-memory SessionResult so the
+              // cascade dispatcher (which reads via getSessionAiSummary
+              // post-completion) can forward `summary` on `job-complete`.
+              session.aiSummary = aiSummary;
             }
             const summaryV2: SessionSummaryV2 = {
               sessionId,
@@ -1919,6 +1963,22 @@ export class WorkspaceRuntime {
 
           session.engineDocuments = engine.documents;
           session.finalState = engine.state;
+          // Phase 2.C — capture the FSM definition into the post-completion
+          // metadata cache so the synchronous summary-synthesis fallback
+          // (terminal-state action.summary lookup) still works after the
+          // per-signal engine has been torn down a few lines below.
+          this.completedSessionMetadata.set(sessionId, {
+            artifactRefs: session.artifactRefs,
+            aiSummary: session.aiSummary,
+            definition: engine.definition,
+          });
+          // Mirror the docs cache bound — same FIFO eviction window.
+          const COMPLETED_META_CAP = 100;
+          while (this.completedSessionMetadata.size > COMPLETED_META_CAP) {
+            const oldestKey = this.completedSessionMetadata.keys().next().value;
+            if (oldestKey === undefined) break;
+            this.completedSessionMetadata.delete(oldestKey);
+          }
           this.agentResultSideChannel.delete(sessionId);
           this.activeAbortControllers.delete(sessionId);
           this.sessionEngines.delete(sessionId);
@@ -2823,6 +2883,55 @@ export class WorkspaceRuntime {
       "signal-payload",
     ]);
     return engine.documents.filter((d) => !plumbingTypes.has(d.type));
+  }
+
+  /**
+   * Phase 2.C — return the persisted artifact ids + summary for a completed
+   * session so the cascade dispatcher can include them on the SSE
+   * `job-complete` event payload (the fan-in fix's data half: supervisors
+   * prefer `artifactIds + summary` over the full `Document[]`).
+   *
+   * Summary preference order:
+   *   1. `aiSummary.summary` from {@link generateSessionSummary}.
+   *   2. The terminal-state action's declared `summary` (Phase 2.A schema).
+   *   3. Truncated `JSON.stringify` of that document's `data` (~300 chars).
+   *
+   * Returns `undefined` for unknown sessions. Either field can be empty —
+   * `artifactIds: []` when no eligible documents were emitted, `summary:
+   * ""` when the FSM produced nothing summarizable.
+   */
+  getSessionJobResult(sessionId: string): { artifactIds: string[]; summary: string } | undefined {
+    const meta = this.completedSessionMetadata.get(sessionId);
+    if (!meta) return undefined;
+
+    const artifactIds = meta.artifactRefs.map((r) => r.artifactId);
+
+    if (meta.aiSummary?.summary) {
+      return { artifactIds, summary: meta.aiSummary.summary };
+    }
+
+    // Fallback: synthesize from terminal-state document. The FSM definition
+    // tells us which document ids belong to terminal states; the docs cache
+    // gives us the actual emitted data + (post-Phase 2.A) the action's
+    // declared `summary`.
+    const docs = this.completedSessionDocuments.get(sessionId) ?? [];
+    if (!meta.definition) {
+      return { artifactIds, summary: synthesizeFallbackSummary(docs) };
+    }
+
+    const terminalIds = buildDocumentTerminalIndex(meta.definition);
+    const actionIndex = buildDocumentActionIndex(meta.definition);
+    for (const doc of docs) {
+      if (!terminalIds.has(doc.id)) continue;
+      const declared = actionIndex.get(doc.id)?.summary;
+      if (declared && declared.length > 0) {
+        return { artifactIds, summary: declared };
+      }
+      // Synthesize from this terminal doc's data.
+      return { artifactIds, summary: synthesizeArtifactSummary(doc) };
+    }
+
+    return { artifactIds, summary: synthesizeFallbackSummary(docs) };
   }
 
   /**

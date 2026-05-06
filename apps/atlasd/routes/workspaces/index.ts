@@ -1694,7 +1694,13 @@ const workspacesRoutes = daemonFactory
             const result = response.result as {
               sessionId: string;
               output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+              artifactIds?: string[];
+              summary?: string;
             };
+            // Phase 2.C — additive payload extension. `output: Document[]`
+            // stays for one transition window so existing supervisor
+            // consumers don't break; new fields let opt-in callers prefer
+            // refs + a synthesized summary over the bulky doc array.
             safeEnqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
@@ -1704,6 +1710,8 @@ const workspacesRoutes = daemonFactory
                     sessionId: result.sessionId,
                     status: "completed",
                     output: result.output,
+                    artifactIds: result.artifactIds ?? [],
+                    summary: result.summary ?? "",
                   },
                 })}\n\n`,
               ),

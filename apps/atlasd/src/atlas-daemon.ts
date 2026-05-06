@@ -1933,6 +1933,20 @@ export class AtlasDaemon {
   ): Promise<{
     sessionId: string;
     output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+    /**
+     * Phase 2.C — persisted artifact ids for this session's eligible
+     * outputs (Phase 2.B persisted them; this surfaces the ids so SSE
+     * `job-complete` consumers can prefer refs over the full
+     * `Document[]`). Empty when no eligible documents were emitted.
+     */
+    artifactIds: string[];
+    /**
+     * Phase 2.C — short session summary. Prefers the AI-generated
+     * `aiSummary.summary` and falls back to the terminal-state action's
+     * declared `summary` (Phase 2.A schema) or a truncated stringify of
+     * the terminal output's `data`. Empty when nothing's summarizable.
+     */
+    summary: string;
   }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
@@ -1979,7 +1993,16 @@ export class AtlasDaemon {
     // complete but workspace-chat has no content to render.
     const output = runtime.getSessionFsmDocuments(session.id);
 
-    return { sessionId: session.id, output };
+    // Phase 2.C — additive: surface persisted artifact ids and a session
+    // summary so SSE `job-complete` consumers can prefer refs over the
+    // bulky `output: Document[]`. `output` stays for back-compat during
+    // the transition window. Empty arrays / strings when persistence
+    // failed or no eligible documents were emitted.
+    const jobResult = runtime.getSessionJobResult(session.id);
+    const artifactIds = jobResult?.artifactIds ?? [];
+    const summary = jobResult?.summary ?? "";
+
+    return { sessionId: session.id, output, artifactIds, summary };
   }
 
   /**

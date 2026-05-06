@@ -697,4 +697,99 @@ describe("createJobTools execute (SSE streaming)", () => {
     const callArgs = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(callArgs?.[1]).toHaveProperty("signal", abortController.signal);
   });
+
+  // Phase 2.C — additive `artifactIds` + `summary` on `job-complete`. The
+  // chat-side consumer keeps reading `output` for now; these tests just
+  // confirm the new fields propagate through `executeJobViaSSE` so the
+  // follow-on supervisor switch has data to work with.
+  it("parses artifactIds and summary off job-complete and surfaces them", async () => {
+    globalThis.fetch = vi.fn(() =>
+      makeMockFetchResponse([
+        `data: ${JSON.stringify({
+          type: "job-complete",
+          data: {
+            success: true,
+            sessionId: "sess-2c-1",
+            status: "completed",
+            output: [{ id: "doc-1", type: "report", data: { ok: true } }],
+            artifactIds: ["art-abc", "art-def"],
+            summary: "Drafted report and emailed it.",
+          },
+        })}
+\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    ) as unknown as typeof fetch;
+
+    const { execute } = buildStreamingTool();
+    const result = await execute({ prompt: "report" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-2c-1",
+      status: "completed",
+      output: [{ id: "doc-1", type: "report", data: { ok: true } }],
+      artifactIds: ["art-abc", "art-def"],
+      summary: "Drafted report and emailed it.",
+    });
+  });
+
+  it("omits artifactIds and summary when the daemon doesn't emit them (back-compat)", async () => {
+    globalThis.fetch = vi.fn(() =>
+      makeMockFetchResponse([
+        `data: ${JSON.stringify({
+          type: "job-complete",
+          data: { success: true, sessionId: "sess-2c-2", status: "completed", output: [] },
+        })}
+\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    ) as unknown as typeof fetch;
+
+    const { execute } = buildStreamingTool();
+    const result = await execute({ prompt: "go" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-2c-2",
+      status: "completed",
+      output: [],
+    });
+    // Defensive: the consumer must not invent the fields.
+    expect(result).not.toHaveProperty("artifactIds");
+    expect(result).not.toHaveProperty("summary");
+  });
+
+  it("drops artifactIds when the shape is wrong (defensive parse)", async () => {
+    globalThis.fetch = vi.fn(() =>
+      makeMockFetchResponse([
+        `data: ${JSON.stringify({
+          type: "job-complete",
+          data: {
+            success: true,
+            sessionId: "sess-2c-3",
+            status: "completed",
+            output: [],
+            // Mixed types — must be rejected wholesale, not partially.
+            artifactIds: ["ok", 42, null],
+            summary: 123,
+          },
+        })}
+\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    ) as unknown as typeof fetch;
+
+    const { execute } = buildStreamingTool();
+    const result = await execute({ prompt: "go" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-2c-3",
+      status: "completed",
+      output: [],
+    });
+    expect(result).not.toHaveProperty("artifactIds");
+    expect(result).not.toHaveProperty("summary");
+  });
 });
