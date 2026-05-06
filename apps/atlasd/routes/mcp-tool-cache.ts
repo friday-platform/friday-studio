@@ -14,6 +14,22 @@ export type CachedTool = {
   inputSchema: Record<string, unknown> | null;
 };
 
+/**
+ * Distinct from a generic connect failure: the server *appeared* to start
+ * (no thrown error, no `disconnected` entry) but exposed no tools. In
+ * practice this is `createMCPTools` silently dropping a server that hit a
+ * connect error / MCPStartupError / list-tools timeout — for the user the
+ * outcome is the same as a connect failure, but the dedicated type lets
+ * callers distinguish "we couldn't reach the server" from "the server is
+ * legitimately tool-less" if that ever matters.
+ */
+export class MCPProbeNoToolsError extends Error {
+  constructor(public readonly serverId: string) {
+    super(`MCP server "${serverId}" failed to start or expose tools`);
+    this.name = "MCPProbeNoToolsError";
+  }
+}
+
 export type ProbePhase = "dns" | "connect" | "auth" | "tools";
 
 export type PrewarmResult =
@@ -158,7 +174,7 @@ export async function probeAndExtract(
   // caching `[]` for an hour.
   if (Object.keys(result.tools).length === 0) {
     await result.dispose();
-    throw new Error(`MCP server "${serverId}" failed to start or expose tools`);
+    throw new MCPProbeNoToolsError(serverId);
   }
   const tools: CachedTool[] = Object.entries(result.tools).map(([name, tool]) => {
     const t = tool as Record<string, unknown>;
@@ -231,17 +247,11 @@ export function classifyProbeError(error: unknown): { error: string; phase: Prob
     inner = error.cause;
   }
 
-  // Match by `name` as well as `instanceof` — tests that drive the prewarm
-  // through a deferred mock can produce instances whose prototype chain
-  // disagrees with this module's class reference (vitest module-graph
-  // quirk). The constructors all set `name` to a stable string.
-  const credName =
-    inner instanceof Error &&
-    (inner.name === "LinkCredentialNotFoundError" ||
-      inner.name === "LinkCredentialExpiredError" ||
-      inner.name === "NoDefaultCredentialError");
+  if (inner instanceof MCPProbeNoToolsError) {
+    return { error: inner.message, phase: "connect" };
+  }
+
   if (
-    credName ||
     inner instanceof LinkCredentialNotFoundError ||
     inner instanceof LinkCredentialExpiredError ||
     inner instanceof NoDefaultCredentialError
