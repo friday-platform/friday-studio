@@ -357,9 +357,6 @@ async function executeJobViaSSE(deps: ExecuteJobViaSSEDeps): Promise<{
         const sessionId = typeof d.sessionId === "string" ? d.sessionId : undefined;
         const status = typeof d.status === "string" ? d.status : "completed";
         const output = Array.isArray(d.output) ? d.output : [];
-        // Phase 2.C — additive fields. Surfaced on the return value but
-        // not yet preferred by chat consumers; that switch flips in a
-        // follow-on. Defensive parse: drop on shape mismatch.
         const artifactIds =
           Array.isArray(d.artifactIds) && d.artifactIds.every((x) => typeof x === "string")
             ? (d.artifactIds as string[])
@@ -373,6 +370,16 @@ async function executeJobViaSSE(deps: ExecuteJobViaSSEDeps): Promise<{
           artifactIdCount: artifactIds?.length ?? 0,
           hasSummary: Boolean(summary),
         });
+        // Supervisor flip (Phase 2.C consumer side): when the job
+        // returned artifactIds + a summary, return the COMPACT shape to
+        // the LLM so the supervisor's next-turn input doesn't ingest
+        // the full Document[]. The artifacts are still in JetStream;
+        // the LLM can `parse_artifact(<id>)` if it needs detail.
+        // Fall back to the legacy shape only when refs/summary aren't
+        // available (e.g. an older daemon emitting pre-2.C events).
+        if (artifactIds !== undefined && summary !== undefined) {
+          return { success: true, sessionId, status, artifactIds, summary };
+        }
         return {
           success: true,
           sessionId,

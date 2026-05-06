@@ -700,9 +700,11 @@ describe("createJobTools execute (SSE streaming)", () => {
 
   // Phase 2.C — additive `artifactIds` + `summary` on `job-complete`. The
   // chat-side consumer keeps reading `output` for now; these tests just
-  // confirm the new fields propagate through `executeJobViaSSE` so the
-  // follow-on supervisor switch has data to work with.
-  it("parses artifactIds and summary off job-complete and surfaces them", async () => {
+  // Phase 2.C consumer-side flip: when both artifactIds + summary are
+  // present on job-complete, the tool returns the compact shape WITHOUT
+  // the full Document[] in `output` so the supervisor's next-turn input
+  // doesn't ingest it. This is the user-visible fan-in fix.
+  it("returns compact shape (drops output) when artifactIds + summary present", async () => {
     globalThis.fetch = vi.fn(() =>
       makeMockFetchResponse([
         `data: ${JSON.stringify({
@@ -728,10 +730,12 @@ describe("createJobTools execute (SSE streaming)", () => {
       success: true,
       sessionId: "sess-2c-1",
       status: "completed",
-      output: [{ id: "doc-1", type: "report", data: { ok: true } }],
       artifactIds: ["art-abc", "art-def"],
       summary: "Drafted report and emailed it.",
     });
+    // The full Document[] is intentionally absent — the supervisor sees
+    // refs + summary only; LLM can `parse_artifact(<id>)` for detail.
+    expect((result as Record<string, unknown>).output).toBeUndefined();
   });
 
   it("omits artifactIds and summary when the daemon doesn't emit them (back-compat)", async () => {
