@@ -86,15 +86,21 @@
     return `${e.workspaceId}:${e.signalId}:${e.scheduledAt}`;
   }
 
-  // Live updates via SSE. EventSource auto-reconnects on transient
-  // disconnects; on reconnect we don't replay missed events here —
-  // operator action endpoints already invalidate the query and refetch
-  // the replay path, which catches up state. A pure SSE-driven UI
-  // would want a `since=<seq>` cursor on reconnect, but the
-  // /schedules surface is fine being eventually-consistent with a
-  // bounded replay window.
+  // Live updates via SSE. Gated on `eventsQuery.isSuccess` so the
+  // EventSource doesn't open until the replay's `queryFn` has resolved
+  // and seeded the cache — without the gate, an SSE event landing
+  // mid-fetch is merged via `setQueryData` and then clobbered when
+  // TanStack overwrites the cache with the replay snapshot. Mirrors
+  // the hydrate-then-subscribe ordering in `CascadeStatusBanner`.
+  // EventSource auto-reconnects on transient disconnects; we don't
+  // replay missed events on reconnect here — operator action endpoints
+  // already invalidate the query and refetch the replay path, which
+  // catches up state. A pure SSE-driven UI would want a `since=<seq>`
+  // cursor on reconnect, but the /schedules surface is fine being
+  // eventually-consistent with a bounded replay window.
   $effect(() => {
     if (!browser) return;
+    if (!eventsQuery.isSuccess) return;
     const es = new EventSource("/api/daemon/api/events?stream=true");
     es.addEventListener("error", () => {
       // EventSource auto-reconnects; surfacing the error so a stale

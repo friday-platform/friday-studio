@@ -197,22 +197,41 @@ describe("createMessageHandler", () => {
       },
     );
     const handler = createMessageHandler("ws-test", triggerFn, registry);
+    const appendEventSpy = vi.spyOn(registry, "appendEvent");
 
     const turn1Buffer = registry.createStream("chat-race");
-    // Model the race: turn 2 replaces the chatId-keyed buffer BEFORE turn 1's
-    // handler runs (i.e. while turn 1 was still awaiting subscribe / append).
-    const turn2Buffer = registry.createStream("chat-race");
+
+    // Model the actual race window: turn 2 replaces the chatId-keyed buffer
+    // *during* turn 1's `await ChatStorage.appendMessage()` call, not before
+    // the handler starts. This is the production race — the swap happens
+    // between `thread.subscribe` and the buffer-capture line where the bug
+    // fixed here used to be visible.
+    let turn2Buffer: ReturnType<typeof registry.createStream> | undefined;
+    mockAppendMessage.mockImplementationOnce(() => {
+      turn2Buffer = registry.createStream("chat-race");
+      return Promise.resolve({ ok: true });
+    });
 
     const thread = makeThread("chat-race");
     await handler(thread, makeMessage({ threadId: "chat-race", raw: { turnBuffer: turn1Buffer } }));
 
-    // Turn 1's late chunk fires after turn 2 owns the chatId. Pre-fix this
-    // would have appended into turn2Buffer because getStream returned it;
-    // post-fix the handler used turn1Buffer from raw, and the identity
-    // check at appendEvent drops the chunk.
+    // Turn 1's late chunk fires after turn 2 owns the chatId.
     captureChunkCallback?.({ type: "text-delta", delta: "from-turn-1" });
 
-    expect(turn2Buffer.events).toEqual([]);
+    // Positive: the handler called `appendEvent` with `turn1Buffer` as the
+    // `expectedBuffer`. Pre-fix the third arg was `getStream(chatId)`, which
+    // would resolve to `turn2Buffer` by now. This catches a regression that
+    // disables the tap entirely (in which case the negative-only assertions
+    // below would still pass).
+    expect(appendEventSpy).toHaveBeenCalledWith(
+      "chat-race",
+      expect.objectContaining({ type: "text-delta" }),
+      turn1Buffer,
+    );
+    // Negative: the chunk lands nowhere — `appendEvent`'s identity check
+    // rejected it because the registry's current buffer is turn 2.
+    expect(turn1Buffer.events).toEqual([]);
+    expect(turn2Buffer?.events).toEqual([]);
   });
 
   it("does not finish a follow-up turn's buffer when the prior turn cleans up", async () => {

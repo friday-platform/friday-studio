@@ -26,7 +26,7 @@ import {
   TelegramCredentialSecretSchema,
 } from "../services/communicator-wiring.ts";
 import { isClientSafeEvent } from "../stream-event-filter.ts";
-import type { StreamBuffer, StreamRegistry } from "../stream-registry.ts";
+import { isStreamBuffer, type StreamRegistry } from "../stream-registry.ts";
 import {
   buildChatSdkAdapters,
   type CommunicatorEntry,
@@ -887,14 +887,17 @@ export function createMessageHandler(
     // late events from this turn into it. Non-web adapters don't set
     // `turnBuffer`, so `ownBuffer` stays undefined and the `appendEvent`
     // tap below short-circuits, matching prior behavior.
-    const ownBuffer =
-      typeof message.raw === "object" &&
-      message.raw !== null &&
-      "turnBuffer" in message.raw &&
-      typeof message.raw.turnBuffer === "object" &&
-      message.raw.turnBuffer !== null
-        ? (message.raw.turnBuffer as StreamBuffer)
+    const rawTurnBuffer =
+      typeof message.raw === "object" && message.raw !== null && "turnBuffer" in message.raw
+        ? message.raw.turnBuffer
         : undefined;
+    // `isStreamBuffer` validates the structural shape rather than relying on
+    // a `as StreamBuffer` assertion against an unknown-typed field. If a
+    // future adapter ever stuffs the wrong thing onto `raw.turnBuffer`,
+    // `ownBuffer` falls through to undefined and the tap short-circuits —
+    // strictly safer than asserting and trusting the identity check in
+    // `appendEvent` to silently drop every chunk.
+    const ownBuffer = isStreamBuffer(rawTurnBuffer) ? rawTurnBuffer : undefined;
 
     // signalToStream fans events two ways: the tap pushes ALL client-safe
     // events to StreamRegistry for the full web SSE stream, while the async
