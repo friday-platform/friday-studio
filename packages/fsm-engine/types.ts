@@ -71,6 +71,11 @@ export interface LLMAction {
    * (undefined ⇒ inherit, [] ⇒ opt-out, populated ⇒ whitelist).
    */
   skills?: string[];
+  /**
+   * Short human-readable summary of what this action does. See
+   * `LLMActionSchema.summary` in schema.ts.
+   */
+  summary?: string;
   outputTo?: string;
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType?: string;
@@ -92,6 +97,15 @@ export interface AgentAction {
   outputType?: string;
   /** Task instructions for the agent. Takes precedence over agent config prompt. */
   prompt?: string;
+  /**
+   * Step-level skill allowlist. See `AgentActionSchema.skills` in schema.ts.
+   */
+  skills?: string[];
+  /**
+   * Short human-readable summary of what this action does. See
+   * `LLMActionSchema.summary` in schema.ts.
+   */
+  summary?: string;
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
    * chains a single prior step's `outputTo`; array form concatenates

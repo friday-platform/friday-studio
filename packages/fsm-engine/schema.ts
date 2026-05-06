@@ -31,6 +31,13 @@ export const LLMActionSchema = z.object({
    * not in this list are dropped, even if they would otherwise be visible).
    */
   skills: z.array(z.string()).optional(),
+  /**
+   * Short human-readable summary of what this action does. Used as the
+   * artifact title/summary when the action's `outputTo` document is
+   * persisted as an artifact for compact return to a parent supervisor.
+   * Absent → runtime synthesizes a short truncation from the output.
+   */
+  summary: z.string().optional(),
   outputTo: z.string().optional(),
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType: z.string().optional(),
@@ -60,6 +67,8 @@ export const AgentActionSchema = z.object({
   prompt: z.string().optional(),
   /** Step-level skill allowlist — see LLMActionSchema.skills for semantics. */
   skills: z.array(z.string()).optional(),
+  /** Short human-readable summary — see LLMActionSchema.summary. */
+  summary: z.string().optional(),
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
    * chains a single prior step's `outputTo`; array form concatenates
