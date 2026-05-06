@@ -57,7 +57,7 @@ import {
   wrapPlatformToolsWithScope,
 } from "@atlas/core";
 import { buildValidateDecisionConfig } from "@atlas/core/agent-context/validate-decision";
-import { UserAdapter } from "@atlas/core/agent-loader";
+import { getSystemAgentType, UserAdapter } from "@atlas/core/agent-loader";
 import type { ArtifactLifecycle } from "@atlas/core/artifacts";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
@@ -1634,6 +1634,30 @@ export class WorkspaceRuntime {
         workspaceValidation: this.config.workspace.validation,
       }),
       ...(job.validation && { jobValidation: job.validation }),
+      // E2 (melodic-strolling-seal-pt2): resolve agent type for the FSM
+      // classifier's user/atlas → skip rule. Workspace-config-declared
+      // agents (`workspace.agents.<id>`) are the common case. Bundled
+      // system agents like `workspace-chat` and `judge-agent` don't appear
+      // in workspace config — they resolve through `SystemAgentAdapter`.
+      // Without this fall-through, `case "agent"` on `workspace-chat`
+      // produced `resolvedAgentType: undefined` → classifier hit
+      // `default-self` instead of `non-llm-agent-type:atlas`.
+      resolveAgentType: (agentId: string): "llm" | "user" | "atlas" | undefined => {
+        const declared = this.config.workspace.agents?.[agentId]?.type;
+        if (declared === "llm" || declared === "user" || declared === "atlas") {
+          return declared;
+        }
+        // `type: "system"` workspace-config entries (legacy SystemAgentConfig)
+        // are also fixed-prompt — same classifier semantics as "atlas".
+        if (declared === "system") {
+          return "atlas";
+        }
+        // Bundled system agents (workspace-chat, judge-agent) — see
+        // `getSystemAgentType` in `@atlas/core/agent-loader`.
+        const bundled = getSystemAgentType(agentId);
+        if (bundled) return bundled;
+        return undefined;
+      },
       // Review N3 follow-up — surface job timeout so scope-injected
       // elicitation tools derive `expiresAt = now + jobTimeoutMs`. Parsed
       // once at job registration (see FSMJob.timeoutMs).
@@ -2460,6 +2484,12 @@ export class WorkspaceRuntime {
       validateSkill?: string;
     },
   ): Promise<AgentResult> {
+    // E1 (melodic-strolling-seal-pt2): when the FSM engine resolved an
+    // `outputSchema` for this action (i.e. the action declared an
+    // `outputType:`), thread that fact through `__atlas_validate` so the
+    // orchestrator's prompt-assembly site (`convertLLMToAgent`) can skip
+    // `record_validation` injection on the structured + self path.
+    const hasOutputType = !!options?.outputSchema;
     const agentId = action.agentId;
 
     logger.debug("Executing agent via orchestrator", {
@@ -2597,7 +2627,11 @@ export class WorkspaceRuntime {
     const mergedConfig = options?.validateDecision
       ? {
           ...baseMergedConfig,
-          ...buildValidateDecisionConfig(options.validateDecision, options.validateSkill),
+          ...buildValidateDecisionConfig(
+            options.validateDecision,
+            options.validateSkill,
+            hasOutputType,
+          ),
         }
       : baseMergedConfig;
 

@@ -111,14 +111,25 @@ export function convertLLMToAgent(
         // streamText result's toolCalls back in fsm-engine's `case "agent"`
         // post-execution site so `step:complete.validation` carries them
         // identically to the inline `case "llm"` path.
-        const toolsWithValidation =
-          validateCtx.decision === "self"
-            ? {
-                ...filteredTools,
-                [RECORD_VALIDATION_TOOL_NAME]:
-                  createRecordValidationTool() as (typeof filteredTools)[string],
-              }
-            : filteredTools;
+        //
+        // E1 (melodic-strolling-seal-pt2): when the action declares an
+        // `outputType:` (structured schema), the orchestrator skips
+        // `record_validation` injection. The structured schema IS the
+        // validation contract; injecting `record_validation` here forces
+        // toolChoice off the forced-complete pin and lets the LLM emit
+        // free-form prose instead of structured output. Verdict on the
+        // structured + self path is implicit pass on successful structured
+        // emission. Skill body still composes (reasoning guidance is useful
+        // even without an explicit verdict tool).
+        const injectRecordValidation =
+          validateCtx.decision === "self" && !validateCtx.hasOutputType;
+        const toolsWithValidation = injectRecordValidation
+          ? {
+              ...filteredTools,
+              [RECORD_VALIDATION_TOOL_NAME]:
+                createRecordValidationTool() as (typeof filteredTools)[string],
+            }
+          : filteredTools;
 
         const result = streamText({
           model,

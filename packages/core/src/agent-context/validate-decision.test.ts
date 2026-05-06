@@ -90,4 +90,25 @@ describe("buildValidateDecisionConfig", () => {
     expect(merged.foo).toEqual("bar");
     expect(readValidateDecisionFromConfig(merged)).toEqual({ decision: "external" });
   });
+
+  it("E1: includes hasOutputType when provided", () => {
+    expect(buildValidateDecisionConfig("self", undefined, true)).toEqual({
+      [VALIDATE_DECISION_CONFIG_KEY]: { decision: "self", hasOutputType: true },
+    });
+  });
+
+  it("E1: round-trips hasOutputType", () => {
+    const cfg = buildValidateDecisionConfig("self", "custom", true);
+    expect(readValidateDecisionFromConfig(cfg)).toEqual({
+      decision: "self",
+      skill: "custom",
+      hasOutputType: true,
+    });
+  });
+
+  it("E1: omits hasOutputType when false", () => {
+    expect(buildValidateDecisionConfig("self", undefined, false)).toEqual({
+      [VALIDATE_DECISION_CONFIG_KEY]: { decision: "self" },
+    });
+  });
 });

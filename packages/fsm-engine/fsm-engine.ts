@@ -1901,7 +1901,23 @@ export class FSMEngine {
               // verdict from the post-call path, ignoring whatever the LLM
               // recorded). The same asymmetry-tolerance applies to the skill
               // body — see the longer comment above `preCallResolution`.
-              if (preCallDecision === "self") {
+              //
+              // E1 (melodic-strolling-seal-pt2): structured-output actions
+              // (those with `outputType:` resolving to a defined schema, i.e.
+              // `completeToolInjected`) skip `record_validation` injection.
+              // The structured schema IS the validation contract — pinning
+              // toolChoice to `complete` is what makes structured output
+              // reliable, and `record_validation` injection forces toolChoice
+              // back to `auto` (see `llmToolChoice` below), letting the LLM
+              // emit free-form prose instead of calling `complete`. Authors
+              // who want explicit self-verdict on structured output should
+              // split into two FSM steps (free-form analyze → structured
+              // emit). The skill body is still composed into the prompt
+              // above — reasoning guidance is useful even without a verdict
+              // tool; verdict on the structured + self path is implicit pass
+              // on successful complete-tool emission.
+              const recordValidationInjected = preCallDecision === "self" && !completeToolInjected;
+              if (recordValidationInjected) {
                 tools[RECORD_VALIDATION_TOOL_NAME] = createRecordValidationTool();
                 logger.debug("Injected record_validation tool", {
                   decision: preCallDecision,
@@ -1937,7 +1953,11 @@ export class FSMEngine {
               // OR failStep, so the second-tool-call assumption stays
               // sound. When only complete is injected, today's pinned
               // toolChoice path is preserved.
-              const recordValidationInjected = preCallDecision === "self";
+              //
+              // E1: with the `recordValidationInjected` guard above
+              // (structured + self skips `record_validation` injection),
+              // structured-output actions always pin toolChoice to
+              // `complete` — which is the whole reason E1 exists.
               const llmToolChoice =
                 completeToolInjected && !recordValidationInjected
                   ? ({ type: "tool", toolName: "complete" } as const)

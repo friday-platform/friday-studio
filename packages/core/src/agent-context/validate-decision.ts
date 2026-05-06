@@ -22,6 +22,15 @@ export interface ValidateDecisionContext {
   decision: "skip" | "self" | "external";
   /** Optional skill name override for the `self` path. */
   skill?: string;
+  /**
+   * E1 (melodic-strolling-seal-pt2): whether the action declares an
+   * `outputType:` resolving to a structured schema. When `true` AND
+   * `decision === "self"`, the orchestrator skips `record_validation`
+   * tool injection — the structured schema IS the validation contract,
+   * and injecting `record_validation` would force toolChoice off the
+   * forced-complete pin that makes structured output reliable.
+   */
+  hasOutputType?: boolean;
 }
 
 /**
@@ -42,7 +51,8 @@ export function readValidateDecisionFromConfig(
     return { decision: "skip" };
   }
   const skill = typeof obj.skill === "string" ? obj.skill : undefined;
-  return skill ? { decision, skill } : { decision };
+  const hasOutputType = obj.hasOutputType === true ? true : undefined;
+  return { decision, ...(skill ? { skill } : {}), ...(hasOutputType ? { hasOutputType } : {}) };
 }
 
 /**
@@ -53,6 +63,10 @@ export function readValidateDecisionFromConfig(
 export function buildValidateDecisionConfig(
   decision: "skip" | "self" | "external",
   skill?: string,
+  hasOutputType?: boolean,
 ): Record<string, unknown> {
-  return { [VALIDATE_DECISION_CONFIG_KEY]: skill ? { decision, skill } : { decision } };
+  const inner: Record<string, unknown> = { decision };
+  if (skill) inner.skill = skill;
+  if (hasOutputType) inner.hasOutputType = true;
+  return { [VALIDATE_DECISION_CONFIG_KEY]: inner };
 }
