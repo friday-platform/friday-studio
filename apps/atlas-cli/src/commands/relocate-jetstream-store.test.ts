@@ -25,7 +25,7 @@ let targetRoot: string;
 
 async function seedStore(rootPath: string, streams: string[]): Promise<void> {
   for (const name of streams) {
-    const dir = join(rootPath, "jetstream", "$G", "streams", name);
+    const dir = join(rootPath, "$G", "streams", name);
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "meta.inf"), `stream ${name}`);
   }
@@ -51,6 +51,32 @@ afterEach(async () => {
 });
 
 describe("relocateJetStreamStore", () => {
+  it("regression: legacy at $TMPDIR/nats/jetstream/$G/streams/* is detected and moved", async () => {
+    // Pin the on-disk shape observed in QA (2026-05-06): the OLD
+    // launcher passed `-sd $TMPDIR/nats`, so NATS produced data at
+    // `$TMPDIR/nats/jetstream/$G/streams/<name>/`. An earlier version
+    // of this helper probed `<legacyPath>/jetstream/$G/streams` (one
+    // level too deep) and silently noop'd against this real-world
+    // layout — losing the user's workspace data on upgrade.
+    //
+    // The fixture mirrors the real layout: legacyRoot itself IS the
+    // JetStream root (contains `$G/streams/<stream>` directly).
+    await seedStore(legacyRoot, ["MEMORY_workspace_notes", "CHAT_demo", "OBJ_artifacts"]);
+    const result = await relocateJetStreamStore(noopLogger, {
+      legacyPath: legacyRoot,
+      targetPath: targetRoot,
+    });
+    expect(result.moved).toBe(true);
+    expect(result.streamsMoved).toBe(3);
+    // Source gone, target has all streams.
+    expect(await dirExists(legacyRoot)).toBe(false);
+    expect((await readdir(join(targetRoot, "$G", "streams"))).sort()).toEqual([
+      "CHAT_demo",
+      "MEMORY_workspace_notes",
+      "OBJ_artifacts",
+    ]);
+  });
+
   it("noop when legacy is missing", async () => {
     const result = await relocateJetStreamStore(noopLogger, {
       legacyPath: legacyRoot,
@@ -70,7 +96,7 @@ describe("relocateJetStreamStore", () => {
     });
     expect(result.moved).toBe(false);
     // Source still there.
-    expect(await readdir(join(legacyRoot, "jetstream", "$G", "streams"))).toEqual(["S1"]);
+    expect(await readdir(join(legacyRoot, "$G", "streams"))).toEqual(["S1"]);
   });
 
   it("moves streams via rename when legacy is populated and target is empty", async () => {
@@ -82,7 +108,7 @@ describe("relocateJetStreamStore", () => {
     expect(result.moved).toBe(true);
     expect(result.streamsMoved).toBe(2);
     expect(await dirExists(legacyRoot)).toBe(false);
-    const moved = await readdir(join(targetRoot, "jetstream", "$G", "streams"));
+    const moved = await readdir(join(targetRoot, "$G", "streams"));
     expect(moved.sort()).toEqual(["FRIDAY_CHATS", "FRIDAY_MEMORY"]);
   });
 
@@ -95,8 +121,8 @@ describe("relocateJetStreamStore", () => {
     });
     expect(result.moved).toBe(false);
     // Both stores intact — operator gets a chance to merge manually.
-    expect(await readdir(join(legacyRoot, "jetstream", "$G", "streams"))).toEqual(["A"]);
-    expect(await readdir(join(targetRoot, "jetstream", "$G", "streams"))).toEqual(["B"]);
+    expect(await readdir(join(legacyRoot, "$G", "streams"))).toEqual(["A"]);
+    expect(await readdir(join(targetRoot, "$G", "streams"))).toEqual(["B"]);
   });
 
   it("falls back to copy + rm on EXDEV", async () => {
@@ -116,7 +142,7 @@ describe("relocateJetStreamStore", () => {
     expect(result.moved).toBe(true);
     expect(result.streamsMoved).toBe(1);
     expect(await dirExists(legacyRoot)).toBe(false);
-    expect(await readdir(join(targetRoot, "jetstream", "$G", "streams"))).toEqual(["S1"]);
+    expect(await readdir(join(targetRoot, "$G", "streams"))).toEqual(["S1"]);
   });
 
   it("cleans up partial target on copy failure mid-stream", async () => {
@@ -125,7 +151,7 @@ describe("relocateJetStreamStore", () => {
     const fakeRename = vi.fn(() => Promise.reject(xdev));
     // Mirror the real on-disk shape: partial subtree under the target.
     const fakeCp = vi.fn(async (_src: string, dst: string) => {
-      const partial = join(dst, "jetstream", "$G", "streams", "S1");
+      const partial = join(dst, "$G", "streams", "S1");
       await mkdir(partial, { recursive: true });
       await writeFile(join(partial, "meta.inf"), "partial");
       throw new Error("disk read error mid-copy");
@@ -141,7 +167,7 @@ describe("relocateJetStreamStore", () => {
     ).rejects.toThrow(/disk read error/);
 
     // Source intact, partial target wiped.
-    expect(await readdir(join(legacyRoot, "jetstream", "$G", "streams"))).toEqual(["S1"]);
+    expect(await readdir(join(legacyRoot, "$G", "streams"))).toEqual(["S1"]);
     expect(await dirExists(targetRoot)).toBe(false);
   });
 
@@ -162,6 +188,6 @@ describe("relocateJetStreamStore", () => {
     ).rejects.toThrow(/permission denied/);
 
     // Source intact; target left clean.
-    expect(await readdir(join(legacyRoot, "jetstream", "$G", "streams"))).toEqual(["S1"]);
+    expect(await readdir(join(legacyRoot, "$G", "streams"))).toEqual(["S1"]);
   });
 });

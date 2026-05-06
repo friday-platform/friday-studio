@@ -2,11 +2,27 @@
  * Move legacy JetStream data from `$TMPDIR/nats/jetstream` (where macOS
  * silently garbage-collects $TMPDIR) to the canonical store path.
  *
+ * Path semantics — the load-bearing detail this module gets right:
+ *   `nats-server -sd <storeDir>` writes streams to
+ *   `<storeDir>/jetstream/$G/streams/<name>` (NATS appends a `jetstream/`
+ *   segment internally).
+ *
+ *   - `legacyPath` is the **JetStream root** of the legacy on-disk
+ *     layout, NOT the legacy storeDir. Default: `$TMPDIR/nats/jetstream`
+ *     — the directory that contains `$G/streams/...` directly. (The
+ *     legacy launcher passed `-sd $TMPDIR/nats`, so NATS produced
+ *     `$TMPDIR/nats/jetstream/$G/streams/...`.)
+ *   - `targetPath` is the **JetStream root** of the canonical layout,
+ *     i.e. `<storeDir>/jetstream` where storeDir is whatever the new
+ *     launcher passes via `-sd`. Default: `<FRIDAY_JETSTREAM_STORE_DIR
+ *     OR <fridayHome>/jetstream>/jetstream`.
+ *
+ * The probe (`<root>/$G/streams`) and the move treat both paths
+ * symmetrically as JetStream roots — moving the legacy root in place
+ * leaves a layout NATS can read directly.
+ *
  * Idempotent: noop when there's nothing to move (fresh install, already
  * relocated, or target already populated). Safe to run repeatedly.
- *
- * Tests inject `legacyPath`/`targetPath`/`rename`/`cp` overrides; in
- * production all four resolve from the environment.
  */
 
 import { cp, mkdir, readdir, realpath, rename, rm } from "node:fs/promises";
@@ -40,10 +56,13 @@ function isNodeError(err: unknown): err is NodeError {
   return err instanceof Error && typeof (err as NodeError).code === "string";
 }
 
-/** List streams under `<root>/jetstream/$G/streams`, or null if missing. */
-async function probeStreams(root: string): Promise<string[] | null> {
+/** List streams under `<jsRoot>/$G/streams`, or null if missing.
+ *  `jsRoot` is the JetStream root — the directory that contains
+ *  `$G/streams/<stream-name>` directly (one level under the storeDir
+ *  given to `nats-server -sd`). */
+async function probeStreams(jsRoot: string): Promise<string[] | null> {
   try {
-    return await readdir(join(root, "jetstream", "$G", "streams"));
+    return await readdir(join(jsRoot, "$G", "streams"));
   } catch (err) {
     if (isNodeError(err) && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
       return null;
@@ -75,11 +94,19 @@ export async function relocateJetStreamStore(
   logger: Logger,
   overrides: RelocateOverrides = {},
 ): Promise<RelocateResult> {
+  // legacyPath: JetStream root of the legacy layout. Old launcher
+  // passed `-sd $TMPDIR/nats`, so NATS produced
+  // `$TMPDIR/nats/jetstream/$G/streams/...`. The "JetStream root" is
+  // therefore $TMPDIR/nats/jetstream — the dir that contains $G/.
   const legacyPath = overrides.legacyPath ?? join(tmpdir(), "nats", "jetstream");
+  // targetPath: JetStream root of the canonical layout. The new
+  // launcher passes `-sd <storeDir>`, so NATS produces
+  // `<storeDir>/jetstream/$G/streams/...`. The JetStream root is
+  // <storeDir>/jetstream — one level deeper than storeDir itself.
   const envOverride = process.env.FRIDAY_JETSTREAM_STORE_DIR;
-  const targetPath =
-    overrides.targetPath ??
-    (envOverride && envOverride.length > 0 ? envOverride : join(getFridayHome(), "jetstream"));
+  const storeDir =
+    envOverride && envOverride.length > 0 ? envOverride : join(getFridayHome(), "jetstream");
+  const targetPath = overrides.targetPath ?? join(storeDir, "jetstream");
 
   const renameImpl = overrides.rename ?? rename;
   const cpImpl = overrides.cp ?? cp;
