@@ -42,7 +42,15 @@ const cache = new Map<string, Entry>();
 // onto the v1 promise — that would cache v1 tools under a v2 hash, leaving
 // a subsequent GET to fall through to the foreground 5s probe instead of
 // the prewarm fast-path.
-type InFlightPrewarm = { configHash: string; promise: Promise<PrewarmResult> };
+type InFlightPrewarm = {
+  configHash: string;
+  promise: Promise<PrewarmResult>;
+  // Unique marker the IIFE compares against in its `finally` so it only
+  // evicts the slot if it's still the registered entry. Avoids a forward
+  // reference to its own promise — TS doesn't track that the IIFE body is
+  // async-deferred and would flag `promise === promise` as use-before-assign.
+  marker: symbol;
+};
 const inFlightPrewarm = new Map<string, InFlightPrewarm>();
 
 function hashConfig(config: MCPServerConfig): string {
@@ -189,7 +197,7 @@ export function prewarmTools(
     return Promise.resolve({ ok: true, tools: cached });
   }
 
-  let entry: InFlightPrewarm | undefined;
+  const marker = Symbol();
   const promise = (async (): Promise<PrewarmResult> => {
     try {
       const tools = await probeAndExtract(serverId, config, logger, PREWARM_TIMEOUT_MS);
@@ -203,10 +211,10 @@ export function prewarmTools(
     } finally {
       // Only clear our own slot — a racing v2 prewarm may have replaced us
       // and we mustn't evict it.
-      if (inFlightPrewarm.get(serverId) === entry) inFlightPrewarm.delete(serverId);
+      if (inFlightPrewarm.get(serverId)?.marker === marker) inFlightPrewarm.delete(serverId);
     }
   })();
-  entry = { configHash: newHash, promise };
+  const entry: InFlightPrewarm = { configHash: newHash, promise, marker };
 
   inFlightPrewarm.set(serverId, entry);
   return promise;
