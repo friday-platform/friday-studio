@@ -17,6 +17,7 @@ import {
 import { DelegationBudgetSchema } from "./delegation.ts";
 import { PermissionsConfigSchema } from "./permissions.ts";
 import { SkillRefSchema } from "./skills.ts";
+import { ValidationDefaultsSchema } from "./validation.ts";
 
 // ==============================================================================
 // TRIGGER SPECIFICATION
@@ -199,6 +200,14 @@ export const JobSpecificationSchema = z
      * job's `type: llm` actions.
      */
     delegation: DelegationBudgetSchema.optional(),
+
+    /**
+     * Phase B5 — per-job validation policy override. Per-field merge
+     * with the workspace-level `validation:` block: job wins per field
+     * over workspace; unset fields fall through. Action-level
+     * `validate:` always wins over both.
+     */
+    validation: ValidationDefaultsSchema.optional(),
 
     /**
      * Phase 6 — per-job artifact lifecycle override. When set, every

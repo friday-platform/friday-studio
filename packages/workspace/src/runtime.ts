@@ -435,6 +435,14 @@ interface FSMJob {
   permissions?: import("@atlas/config").PermissionsConfig;
   /** Parsed `jobSpec.config.timeout` in milliseconds. See doc above. */
   timeoutMs?: number;
+  /**
+   * Phase B5 — per-job validation override from
+   * `JobSpecification.validation`. Forwarded into FSMEngineOptions so
+   * the engine resolves action-level `validate:` against this and the
+   * workspace-level default. Optional; undefined = "no per-job
+   * override; fall through to workspace then to "auto" classifier".
+   */
+  validation?: import("@atlas/config").ValidationDefaults;
 }
 
 /**
@@ -1333,6 +1341,7 @@ export class WorkspaceRuntime {
         maxSteps: jobSpec.config?.max_steps,
         delegationOverride: jobSpec.delegation,
         ...(jobSpec.permissions && { permissions: jobSpec.permissions }),
+        ...(jobSpec.validation && { validation: jobSpec.validation }),
         // Review N3 follow-up: parse `jobSpec.config.timeout` once at
         // registration so the engine path doesn't re-parse on every signal.
         // Becomes the source for FSMEngineOptions.jobTimeoutMs at engine
@@ -1605,6 +1614,15 @@ export class WorkspaceRuntime {
       ...(this.config.workspace.permissions && {
         workspacePermissions: this.config.workspace.permissions,
       }),
+      // Phase B5 — workspace + per-job validation defaults. Resolved at
+      // action-execution time inside `resolveValidateDecision` (action >
+      // job > workspace > "auto" classifier). No merge here: the engine
+      // itself walks the precedence chain, so unsetting one tier doesn't
+      // require the other to clone.
+      ...(this.config.workspace.validation && {
+        workspaceValidation: this.config.workspace.validation,
+      }),
+      ...(job.validation && { jobValidation: job.validation }),
       // Review N3 follow-up — surface job timeout so scope-injected
       // elicitation tools derive `expiresAt = now + jobTimeoutMs`. Parsed
       // once at job registration (see FSMJob.timeoutMs).

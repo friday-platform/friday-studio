@@ -13,7 +13,8 @@ import {
   PLATFORM_TOOL_NAMES,
 } from "@atlas/agent-sdk";
 import { extractToolCallInput, unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
-import type { MCPServerConfig } from "@atlas/config";
+import type { MCPServerConfig, ValidationDefaults } from "@atlas/config";
+import { normalizeActionValidate, resolveValidation } from "@atlas/config";
 import { resolvePermissions } from "@atlas/config/permissions";
 import {
   createErrorCause,
@@ -91,34 +92,88 @@ import {
 } from "./validate-classifier.ts";
 
 /**
- * Resolve the final `ValidateDecision` for an action.
+ * Resolve the final `ValidateDecision` + skill for an action, factoring
+ * in workspace + job-level defaults (Phase B5).
  *
- * If an explicit strategy is set (string form other than `"auto"`, or object
- * form), honor it. Otherwise — including the explicit `"auto"` keyword —
- * delegate to the runtime classifier. Returns the resolved decision plus
- * provenance for the observability log.
+ * Precedence (strategy and skill independently):
+ *   action.validate
+ *     > job.validation.default
+ *     > workspace.validation.default
+ *     > "auto"  (the runtime classifier)
  *
- * The classifier's `external` decision is intentionally unreachable from
- * `auto`: the classifier itself enforces this, so picking the slower
- * separate-judge path remains an explicit author opt-in.
+ * `resolveValidation` (in @atlas/config) does the merge across the three
+ * config tiers; if the merged strategy is `"auto"`, we hand off to
+ * `classifyAction` for the final decision. Skill is propagated up so the
+ * orchestrator-side prompt-assembly site (case "agent") and the inline
+ * prompt builder (case "llm") can pass it to `composeValidationBlock`
+ * without re-running the merge.
+ *
+ * The classifier's `external` decision remains unreachable from `auto`
+ * — the classifier itself enforces this so picking the slower
+ * separate-judge path stays an explicit opt-in.
  */
 function resolveValidateDecision(
   explicit: ValidateStrategy | undefined,
   classifierInput: ClassifierInput,
-): { decision: ValidateDecision; source: "explicit" | "auto"; reason: string } {
+  defaults: { job?: ValidationDefaults; workspace?: ValidationDefaults } = {},
+): {
+  decision: ValidateDecision;
+  source: "explicit" | "auto" | "merged-default";
+  reason: string;
+  skill?: string;
+} {
+  const merged = resolveValidation({
+    action: normalizeActionValidate(explicit),
+    job: defaults.job,
+    workspace: defaults.workspace,
+  });
+
+  // Carry the merged skill forward so callers don't have to re-derive
+  // it. `composeValidationBlock` defaults to DEFAULT_VALIDATION_SKILL
+  // when caller passes undefined; we only forward the resolved skill
+  // when at least one tier set it (preserves "explicit when explicit"
+  // semantics for the observability log).
+  const explicitSkillSet =
+    (typeof explicit === "object" && explicit.skill !== undefined) ||
+    defaults.job?.skill !== undefined ||
+    defaults.workspace?.skill !== undefined;
+  const skill = explicitSkillSet ? merged.skill : undefined;
+
+  if (merged.strategy === "auto") {
+    const auto = classifyAction(classifierInput);
+    return {
+      decision: auto.decision,
+      source: "auto",
+      reason: auto.reason,
+      ...(skill !== undefined ? { skill } : {}),
+    };
+  }
+
+  // The merged strategy came from action / job / workspace — record
+  // which level supplied it so the observability log stays useful.
+  // Action wins → `explicit`; otherwise → `merged-default`.
   if (typeof explicit === "string" && explicit !== "auto") {
-    return { decision: explicit, source: "explicit", reason: `explicit:${explicit}` };
+    return {
+      decision: explicit,
+      source: "explicit",
+      reason: `explicit:${explicit}`,
+      ...(skill !== undefined ? { skill } : {}),
+    };
   }
   if (typeof explicit === "object") {
     return {
       decision: explicit.strategy,
       source: "explicit",
       reason: `explicit-object:${explicit.strategy}`,
+      ...(skill !== undefined ? { skill } : {}),
     };
   }
-  // explicit absent or "auto" → classifier.
-  const auto = classifyAction(classifierInput);
-  return { decision: auto.decision, source: "auto", reason: auto.reason };
+  return {
+    decision: merged.strategy,
+    source: "merged-default",
+    reason: `merged-default:${merged.strategy}`,
+    ...(skill !== undefined ? { skill } : {}),
+  };
 }
 
 /**
@@ -582,6 +637,21 @@ export interface FSMEngineOptions {
    * `agents.<id>` block in memory at engine-construction time.
    */
   resolveAgentType?: (agentId: string) => "llm" | "user" | "atlas" | undefined;
+  /**
+   * Phase B5 — workspace-level validation defaults. Merged at
+   * decision-resolution time inside `case "llm"` and `case "agent"`:
+   * `action.validate > job.validation.default > workspace.validation.default
+   * > "auto"` (classifier). Skill name follows the same merge.
+   * Optional — undefined means "no workspace-level default; fall through
+   * to "auto" classifier when neither job nor action set it".
+   */
+  workspaceValidation?: ValidationDefaults;
+  /**
+   * Phase B5 — per-job validation override. Wins over
+   * `workspaceValidation` per field. Action-level `validate:` still
+   * wins over both. See `workspaceValidation` for full precedence.
+   */
+  jobValidation?: ValidationDefaults;
 }
 
 export class FSMEngine {
@@ -1604,18 +1674,26 @@ export class FSMEngine {
               // only adds prompt tokens; nothing downstream depends on the
               // pre-call decision.
               const declaredToolsStatic = action.tools ?? [];
-              const preCallDecision = resolveValidateDecision(action.validate, {
-                declaredTools: declaredToolsStatic,
-                calledToolNames: [],
-                hasOutputType: !!action.outputType,
-                hasInputFrom: !!action.inputFrom,
-                resolvedAgentType: undefined,
-                emittedProse: false,
-                toolsAvailable: declaredToolsStatic.length > 0,
-              }).decision;
+              const preCallResolution = resolveValidateDecision(
+                action.validate,
+                {
+                  declaredTools: declaredToolsStatic,
+                  calledToolNames: [],
+                  hasOutputType: !!action.outputType,
+                  hasInputFrom: !!action.inputFrom,
+                  resolvedAgentType: undefined,
+                  emittedProse: false,
+                  toolsAvailable: declaredToolsStatic.length > 0,
+                },
+                { job: this.options.jobValidation, workspace: this.options.workspaceValidation },
+              );
+              const preCallDecision = preCallResolution.decision;
               const validationBlock = await composeValidationBlock({
                 decision: preCallDecision,
-                skillName: typeof action.validate === "object" ? action.validate.skill : undefined,
+                // B5: prefer merged skill (factors action object form +
+                // job + workspace overrides) over the older direct read
+                // of action.validate.skill.
+                skillName: preCallResolution.skill,
                 logger,
               });
               const validationSkillLoaded = validationBlock.length > 0;
@@ -1711,7 +1789,10 @@ export class FSMEngine {
                 decision: validateDecision,
                 source: validateSource,
                 reason: validateReason,
-              } = resolveValidateDecision(action.validate, classifierInput);
+              } = resolveValidateDecision(action.validate, classifierInput, {
+                job: this.options.jobValidation,
+                workspace: this.options.workspaceValidation,
+              });
               logger.info("validate-decision resolved", {
                 state: currentState,
                 action: action.outputTo ?? "anonymous",
@@ -2055,9 +2136,11 @@ export class FSMEngine {
               decision: agentValidateDecision,
               source: agentValidateSource,
               reason: agentValidateReason,
-            } = resolveValidateDecision(action.validate, agentClassifierInput);
-            const agentValidateSkill =
-              typeof action.validate === "object" ? action.validate.skill : undefined;
+              skill: agentValidateSkill,
+            } = resolveValidateDecision(action.validate, agentClassifierInput, {
+              job: this.options.jobValidation,
+              workspace: this.options.workspaceValidation,
+            });
 
             // Execute agent via callback, passing full action object for prompt access
             // Agent returns AgentResult envelope directly
