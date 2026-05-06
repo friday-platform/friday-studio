@@ -288,8 +288,12 @@ pub fn write_env_file(
     // genuinely want a different store path can edit .env after install
     // (the launcher re-reads it on every restart), with the explicit
     // understanding that the next reinstall will reset it.
+    // `nats` (not `jetstream`) because nats-server itself appends a
+    // `jetstream/` segment internally — naming the storeDir `nats`
+    // produces the clean `<home>/nats/jetstream/$G/streams/...` layout
+    // rather than the awkward `<home>/jetstream/jetstream/...`.
     let jetstream_store_dir = friday_home_dir()?
-        .join("jetstream")
+        .join("nats")
         .display()
         .to_string();
 

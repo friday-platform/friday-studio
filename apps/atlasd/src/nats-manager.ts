@@ -73,7 +73,7 @@ export class NatsManager {
         }
       }
     } else {
-      const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+      const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
       // Earlier daemon versions wrote JetStream data to nats-server's
       // built-in default location (`$TMPDIR/nats/jetstream`). Operators
       // upgrading past that change saw a fresh empty broker. Detect
@@ -148,9 +148,10 @@ export class NatsManager {
 
     // nats-server appends `/jetstream/$G/streams` under its configured
     // store_dir. Legacy default was `$TMPDIR/nats` (broker creates
-    // `$TMPDIR/nats/jetstream/$G/...`). The recover command must rsync
-    // the broker's full prefix so the double `jetstream/jetstream`
-    // layout matches.
+    // `$TMPDIR/nats/jetstream/$G/...`); current default is
+    // `<fridayHome>/nats` (broker creates `<fridayHome>/nats/jetstream
+    // /$G/...`). Same one-level shape on both sides — the recover
+    // command rsyncs the JetStream root verbatim.
     const legacyRoot = join(tmpdir(), "nats", "jetstream");
     const newRoot = join(currentStoreDir, "jetstream");
     logger.warn(

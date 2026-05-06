@@ -64,10 +64,10 @@ func TestSupervisedProcesses_NatsServerHonorsExplicitStoreDir(t *testing.T) {
 }
 
 // TestSupervisedProcesses_NatsServerDefaultsWhenKeyMissing pins that
-// an .env without the key resolves to <friendlyHome()>/jetstream.
-// This is the canonical default the writers (installer, dev script)
-// also emit, so an absent key + present key must produce identical
-// args for the launcher.
+// an .env without the key resolves to <friendlyHome()>/nats. This is
+// the canonical default the writers (installer, dev script) also
+// emit, so an absent key + present key must produce identical args
+// for the launcher.
 func TestSupervisedProcesses_NatsServerDefaultsWhenKeyMissing(t *testing.T) {
 	tmpHome := t.TempDir()
 	envDir := filepath.Join(tmpHome, ".friday", "local")
@@ -89,7 +89,7 @@ func TestSupervisedProcesses_NatsServerDefaultsWhenKeyMissing(t *testing.T) {
 	// friendlyHome() treats empty and unset identically.
 	t.Setenv("FRIDAY_LAUNCHER_HOME", "")
 
-	wantDefault := filepath.Join(tmpHome, ".friday", "local", "jetstream")
+	wantDefault := filepath.Join(tmpHome, ".friday", "local", "nats")
 
 	storeDir, source := resolveJetStreamStoreDir()
 	if storeDir != wantDefault {
@@ -126,7 +126,7 @@ func TestSupervisedProcesses_NatsServerEmptyValueFallsBack(t *testing.T) {
 	// runtime auto-restores at test end.
 	t.Setenv("FRIDAY_LAUNCHER_HOME", "")
 
-	wantDefault := filepath.Join(tmpHome, ".friday", "local", "jetstream")
+	wantDefault := filepath.Join(tmpHome, ".friday", "local", "nats")
 
 	storeDir, source := resolveJetStreamStoreDir()
 	if storeDir != wantDefault {
@@ -157,7 +157,7 @@ func TestSupervisedProcesses_NatsServerHonorsLauncherHomeOverride(t *testing.T) 
 	// No .env at customHome → resolveJetStreamStoreDir must use the
 	// computed fallback.
 
-	wantDefault := filepath.Join(customHome, "jetstream")
+	wantDefault := filepath.Join(customHome, "nats")
 
 	storeDir, source := resolveJetStreamStoreDir()
 	if storeDir != wantDefault {

@@ -441,15 +441,13 @@ for home in "${FRIDAY_HOMES[@]}"; do
     upsert_env "UV_PYTHON_INSTALL_DIR"        "$home/uv/python"
     upsert_env "UV_CACHE_DIR"                 "$home/uv/cache"
     upsert_env "FRIDAY_AGENT_SDK_VERSION"     "$PINNED_SDK_VERSION"
-    # JetStream store dir: identical to the daemon's current default
-    # (apps/atlasd/src/nats-manager.ts → join(getFridayHome(), "jetstream")),
-    # but pinned in .env so the value is immune to default-changes in the
-    # daemon and visible in `cat ~/.atlas/.env` for operators debugging.
-    # @ljagiello — the studio-installer launcher should emit this same env
-    # var at runtime so installer-mode and dev-mode keep JetStream data
-    # under friday_home rather than $TMPDIR. Pair this with the existing
-    # uv path emission in the launcher.
-    upsert_env "FRIDAY_JETSTREAM_STORE_DIR"   "$home/jetstream"
+    # JetStream store dir: identical to the daemon/launcher default
+    # (apps/atlasd/src/nats-manager.ts and tools/friday-launcher/project.go
+    # both compute join(getFridayHome(), "nats")). Pinned in .env so the
+    # value is immune to default-changes and visible in `cat ~/.atlas/.env`
+    # for operators debugging. nats-server appends `jetstream/` itself, so
+    # data lands at $home/nats/jetstream/$G/streams/...
+    upsert_env "FRIDAY_JETSTREAM_STORE_DIR"   "$home/nats"
     echo "→ Wrote env vars to $ENV_FILE"
 done
 

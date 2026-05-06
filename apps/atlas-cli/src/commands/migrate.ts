@@ -125,7 +125,7 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
 
   const url = resolveNatsUrl({ url: argv.natsUrl });
   const cfg = readJetStreamConfig();
-  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
 
   let handle: ConnectionHandle;
   try {
@@ -191,7 +191,7 @@ export const handler = async (argv: MigrateArgs): Promise<void> => {
 async function handleList(argv: MigrateArgs): Promise<void> {
   const url = resolveNatsUrl({ url: argv.natsUrl });
   const cfg = readJetStreamConfig();
-  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "jetstream");
+  const storeDir = cfg.server.storeDir.value ?? join(getFridayHome(), "nats");
 
   let handle: ConnectionHandle;
   try {

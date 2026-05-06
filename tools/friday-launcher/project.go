@@ -285,7 +285,13 @@ const jetStreamStoreDirEnvKey = "FRIDAY_JETSTREAM_STORE_DIR"
 // Resolution order:
 //  1. FRIDAY_JETSTREAM_STORE_DIR in ~/.friday/local/.env, if present
 //     and non-empty → ("env-from-dotenv").
-//  2. Fallback: <friendlyHome()>/jetstream → ("default").
+//  2. Fallback: <friendlyHome()>/nats → ("default").
+//
+// Why "nats" and not "jetstream": nats-server itself appends a
+// `jetstream/` segment to whatever is passed via `-sd`, so a storeDir
+// named `jetstream` produces an awkward `<home>/jetstream/jetstream/$G/
+// streams/...` on disk. Using `nats` gives the cleaner
+// `<home>/nats/jetstream/$G/streams/...`.
 //
 // The fallback default MUST match the value the installer's
 // write_env_file emits and the dev script writes, so an absent .env
@@ -308,7 +314,7 @@ func resolveJetStreamStoreDir() (storeDir, source string) {
 		// fallback rule.
 		break
 	}
-	return filepath.Join(friendlyHome(), "jetstream"), "default"
+	return filepath.Join(friendlyHome(), "nats"), "default"
 }
 
 // natsServerArgs builds the argv slice for the supervised nats-server

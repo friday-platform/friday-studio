@@ -15,7 +15,9 @@
  *   - `targetPath` is the **JetStream root** of the canonical layout,
  *     i.e. `<storeDir>/jetstream` where storeDir is whatever the new
  *     launcher passes via `-sd`. Default: `<FRIDAY_JETSTREAM_STORE_DIR
- *     OR <fridayHome>/jetstream>/jetstream`.
+ *     OR <fridayHome>/nats>/jetstream`. (storeDir is named `nats` not
+ *     `jetstream` so NATS' internal `jetstream/` segment doesn't
+ *     produce the awkward `<home>/jetstream/jetstream/...` layout.)
  *
  * The probe (`<root>/$G/streams`) and the move treat both paths
  * symmetrically as JetStream roots — moving the legacy root in place
@@ -105,7 +107,7 @@ export async function relocateJetStreamStore(
   // <storeDir>/jetstream — one level deeper than storeDir itself.
   const envOverride = process.env.FRIDAY_JETSTREAM_STORE_DIR;
   const storeDir =
-    envOverride && envOverride.length > 0 ? envOverride : join(getFridayHome(), "jetstream");
+    envOverride && envOverride.length > 0 ? envOverride : join(getFridayHome(), "nats");
   const targetPath = overrides.targetPath ?? join(storeDir, "jetstream");
 
   const renameImpl = overrides.rename ?? rename;
