@@ -4,6 +4,7 @@ import {
   cleanMarkdownSyntax,
   extractLinkData,
   markdownToHTML,
+  markdownToHTMLSafe,
   parseMarkdownToAST,
 } from "./markdown.ts";
 
@@ -448,5 +449,27 @@ More text.`;
   it("strikethrough", () => {
     const result = markdownToHTML("~~deleted~~");
     expect(result).toContain("<del>deleted</del>");
+  });
+});
+
+// ─── markdownToHTMLSafe (DOMPurify-backed sanitizer) ───────────────────
+// These assertions exercise the REAL sanitizer (no mocks) — the chat-export
+// pipeline writes this output to a static HTML file recipients open directly,
+// so a sanitization regression here would mean stored XSS.
+describe("markdownToHTMLSafe", () => {
+  it("strips raw <script> tags so they cannot execute in the rendered file", () => {
+    const result = markdownToHTMLSafe("<script>alert(1)</script>");
+    // DOMPurify removes the script element entirely; the literal opening tag
+    // must not survive in any form (escaped text is also fine — what we
+    // forbid is `<script` appearing as a real tag start).
+    expect(result).not.toContain("<script");
+    expect(result).not.toContain("alert(1)");
+  });
+
+  it("removes inline event handlers like onerror from img tags", () => {
+    const result = markdownToHTMLSafe("<img src=x onerror=alert(1)>");
+    // The img element may pass through; the onerror handler must not.
+    expect(result.toLowerCase()).not.toContain("onerror");
+    expect(result).not.toContain("alert(1)");
   });
 });
