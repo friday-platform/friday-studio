@@ -1,0 +1,67 @@
+# Phase 1.B fixture — same narrow tool list, but with
+# `permissions.dangerouslySkipAllowlist: true` at job level. Per Phase 1
+# spec, this should bypass the allowlist narrowing — the action ends up
+# with the full atlas-platform tool set.
+
+version: "1.0"
+
+workspace:
+  name: "Inbox Corpus QA — Bypass"
+  description: "Phase 1.B scenario fixture: per-job allowlist bypass."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+signals:
+  inbox-event-bypass:
+    provider: http
+    description: "Triggers the bypass scenario."
+    config:
+      path: "/inbox-event-bypass"
+    schema:
+      type: object
+      properties:
+        inboxPath:
+          type: string
+        limit:
+          type: number
+      required: ["inboxPath"]
+
+jobs:
+  auto-triage-bypass:
+    description: "Phase 1.B — workspace-strict; per-job bypass."
+    triggers:
+      - signal: inbox-event-bypass
+    permissions:
+      dangerouslySkipAllowlist: true
+    config:
+      timeout: "5m"
+      max_steps: 30
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            inbox-event-bypass: { target: triage }
+        triage:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Bypass-mode triage: should have access to fs_read_file even though tools narrow."
+              outputTo: triage-bypass-summary
+              tools:
+                - fs_glob
+              prompt: |
+                Bypass mode is on — your allowlist nominally only declares
+                fs_glob, but with bypass the runtime grants the full
+                tool set. Confirm by:
+                1. Calling `fs_glob` with `pattern: "email-*.md"` and
+                   `path` from inboxPath to list files.
+                2. Calling `fs_read_file` on the FIRST file (NOT in your
+                   declared allowlist) to demonstrate bypass works.
+                3. Returning a one-line markdown summary.
+
+                If fs_read_file is unavailable, just describe what
+                happened and end. Do NOT call failStep.
+          type: final

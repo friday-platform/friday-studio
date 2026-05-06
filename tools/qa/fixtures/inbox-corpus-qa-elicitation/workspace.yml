@@ -1,0 +1,60 @@
+# Phase 12 fixture — strict permissions; the action calls
+# `request_tool_access` to elicit user approval for a tool not in
+# its allowlist. Confirms the elicitation appears via /api/elicitations.
+
+version: "1.0"
+
+workspace:
+  name: "Inbox Corpus QA — Elicitation"
+  description: "Phase 12 scenario fixture: tool-allowlist elicitation."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+signals:
+  elicit-event:
+    provider: http
+    description: "Triggers the elicitation scenario."
+    config:
+      path: "/elicit-event"
+    schema:
+      type: object
+      properties:
+        toolName:
+          type: string
+        reason:
+          type: string
+      required: ["toolName", "reason"]
+
+jobs:
+  elicit-tool:
+    description: "Phase 12 — emit a request_tool_access elicitation."
+    triggers:
+      - signal: elicit-event
+    config:
+      timeout: "2m"
+      max_steps: 5
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            elicit-event: { target: elicit }
+        elicit:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Request user approval for a forbidden tool."
+              outputTo: elicit-result
+              tools:
+                - request_tool_access
+              prompt: |
+                Use the `request_tool_access` tool to formally request
+                permission to call the tool named in `toolName` with the
+                rationale given in `reason` from the signal payload.
+
+                The runtime will return a structured denial. Acknowledge
+                that you saw the elicitation id and end with a one-line
+                markdown summary.
+          type: final

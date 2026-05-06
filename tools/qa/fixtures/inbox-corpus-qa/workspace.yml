@@ -1,0 +1,99 @@
+version: "1.0"
+
+workspace:
+  name: "Inbox Corpus QA"
+  description: "No-auth fan-in fixture for melodic-strolling-seal QA harness."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+delegation:
+  max_depth: 1
+  max_steps_per_call: 20
+  max_output_tokens: 8000
+  max_input_tokens: 60000
+  max_wall_time_ms: 60000
+
+artifacts:
+  default_grace: "5m"
+
+signals:
+  inbox-event:
+    provider: http
+    description: "Triggers the auto-triage job against a fixture inbox directory."
+    config:
+      path: "/inbox-event"
+    schema:
+      type: object
+      properties:
+        inboxPath:
+          type: string
+          description: "Absolute path to the inbox-corpus fixture directory."
+        limit:
+          type: number
+          description: "Optional cap on how many emails to process. Default 50."
+      required: ["inboxPath"]
+
+jobs:
+  auto-triage:
+    description: >-
+      Reads N fixture emails from inboxPath, classifies each into
+      {inbox, archive, important}, and emits a triage-summary document.
+      The fan-in workload that drives QA metrics.
+    triggers:
+      - signal: inbox-event
+    config:
+      timeout: "10m"
+      max_steps: 60
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            inbox-event: { target: triage }
+        triage:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Triage the inbox corpus into buckets and emit a markdown summary."
+              outputTo: triage-summary
+              tools:
+                - fs_glob
+                - fs_read_file
+              prompt: |
+                You are an inbox triage agent. The signal payload contains
+                `inboxPath` — an absolute directory path of markdown emails
+                (`email-NNN.md`) with YAML frontmatter (from, subject, date,
+                labels) and a short body.
+
+                Steps:
+                1. Call `fs_glob` with `pattern: "email-*.md"` and `path`
+                   set to the inboxPath from the signal payload, to list
+                   files.
+                2. For each listed file (cap at `limit` if provided in
+                   payload, default 50), call `fs_read_file` with the
+                   file's absolute path to fetch its contents.
+                3. Classify each email into ONE bucket:
+                   - `important`: alerts, work threads with action items
+                     ('action required', 'EOD', 'urgent', security advisories)
+                   - `archive`: low-signal newsletters, social pings
+                   - `inbox`: everything else (default)
+                4. After processing all files, write a SHORT markdown
+                   triage summary (≤200 words) of this exact shape:
+
+                     # Triage summary
+                     - Total: N
+                     - Buckets: inbox=A, archive=B, important=C
+                     - Highlights:
+                       - email-NNN.md — <short reason>
+                       - …  (up to 5)
+
+                Constraints:
+                - Do NOT echo full email bodies in your final response.
+                  The tool-result bytes are the fan-in we are measuring;
+                  the summary is the compact return.
+                - When done, just output the markdown summary as your
+                  final response (no tool call needed). The runtime will
+                  capture it as the action's output document.
+          type: final

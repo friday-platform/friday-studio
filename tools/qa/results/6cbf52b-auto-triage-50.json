@@ -1,0 +1,19 @@
+{
+  "gitSha": "6cbf52b",
+  "scenario": "auto-triage-baseline",
+  "startedAt": "2026-05-06T09:23:17.355Z",
+  "inboxCount": 50,
+  "wallTimeMs": 45518,
+  "jobToolResultShape": "compact",
+  "artifactCountInPayload": 1,
+  "artifactCountInJetStream": 1,
+  "summaryLength": 255,
+  "supervisorInputTokens": 57786,
+  "supervisorOutputTokens": 4298,
+  "cacheReadTokens": 0,
+  "cacheWriteTokens": 0,
+  "validatorRunCount": 2,
+  "validatorSkipCount": 0,
+  "toolCallCount": 51,
+  "sessionId": "117dfe56-4e79-4164-8aae-0fa28193068d"
+}
