@@ -13,9 +13,10 @@
  * start of `run()` — before any filesystem probe — with the resolved
  * paths. `@atlas/logger`'s `info` level calls `console.info`, which in
  * Node/Deno writes to **stdout** (only `console.error`/`console.warn`
- * go to stderr). The installer's Tauri wrapper shape-discriminates the
- * outcome line from these logger lines — see `find_outcome_line` in
- * apps/studio-installer/src-tauri/src/commands/migrate.rs.
+ * go to stderr). The migrate handler emits its outcome JSON LAST on
+ * stdout, so the installer's Tauri wrapper picks it via a backward
+ * scan and ignores any earlier logger lines without needing to know
+ * the outcome schema.
  */
 
 import { cp, mkdir, readdir, realpath, rename, rm } from "node:fs/promises";
@@ -145,8 +146,9 @@ export async function runRelocate(
 
   // Resolved-paths log — fires on EVERY invocation (noop, dry-run, error,
   // success), exactly once per call, before any filesystem probe. Lands
-  // on stdout (Node/Deno's console.info target); the Tauri wrapper's
-  // find_outcome_line skips it via shape discrimination.
+  // on stdout (Node/Deno's console.info target); the migrate handler
+  // emits its outcome JSON LAST so this earlier logger line doesn't
+  // confuse the installer's backward-scan parser.
   ctx.logger.info("pre-nats migration: relocate-jetstream-store", {
     id,
     legacy_path: legacyPath,

@@ -88,20 +88,24 @@ async fn stub_emits_known_json_returns_parsed_outcome() {
 
     write_friday_stub(
         &install_dir,
-        r#"echo '{"preNats":[{"id":"relocate-jetstream-store","status":"noop"}],"ran":[],"skipped":[]}'"#,
+        r#"echo '{"status":"ok","streams_moved":3,"label":"relocate"}'"#,
         0,
     );
 
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
     let outcome = result.expect("expected Ok outcome");
-    let pre_nats = outcome.pre_nats.as_ref().expect("preNats present");
-    assert_eq!(pre_nats.len(), 1);
-    assert_eq!(pre_nats[0]["id"], "relocate-jetstream-store");
-    assert_eq!(pre_nats[0]["status"], "noop");
+    // The Tauri command forwards the outcome JSON verbatim — no schema
+    // interpretation. Whatever atlas-cli emits, Svelte gets.
+    assert_eq!(outcome["status"], "ok");
+    assert_eq!(outcome["streams_moved"], 3);
 }
 
 #[tokio::test]
-async fn stub_with_log_lines_before_json_finds_outcome() {
+async fn stub_with_log_lines_around_json_picks_the_last_object() {
+    // The producer emits logger lines and the outcome on the same
+    // stream (Node/Deno's console.info goes to stdout). The outcome is
+    // always the LAST JSON-object line; the Tauri command picks it
+    // with a backward scan.
     let _g = env_lock();
     let (_tmp, friday_home, install_dir) = fixture_dirs();
     let _env = EnvGuard::install(&friday_home);
@@ -109,20 +113,17 @@ async fn stub_with_log_lines_before_json_finds_outcome() {
     write_friday_stub(
         &install_dir,
         r#"
-echo 'INFO: starting migrate'
-echo '[2026-01-01] resolving paths'
-echo '{"preNats":[],"ran":[],"skipped":[]}'
-echo 'INFO: done'
+echo '{"level":"info","msg":"starting migrate"}'
+echo 'INFO: resolving paths'
+echo '{"status":"ok","streams_moved":7}'
 "#,
         0,
     );
 
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
     let outcome = result.expect("Ok outcome");
-    // preNats is present (the source has it explicitly as []).
-    assert_eq!(outcome.pre_nats.as_deref(), Some(&[][..]));
-    // `ran` and `skipped` survive in `extra` via #[serde(flatten)].
-    assert!(outcome.extra.contains_key("ran"));
+    assert_eq!(outcome["status"], "ok");
+    assert_eq!(outcome["streams_moved"], 7);
 }
 
 #[tokio::test]
@@ -146,7 +147,7 @@ async fn env_keys_are_forwarded_to_subprocess() {
             r#"
 echo "PORT=$FRIDAY_PORT_FRIDAY" > '{sentinel}'
 echo "STORE=$FRIDAY_JETSTREAM_STORE_DIR" >> '{sentinel}'
-echo '{{"preNats":[],"ran":[],"skipped":[],"failed":[]}}'
+echo '{{"status":"ok"}}'
 "#,
             sentinel = sentinel.display(),
         ),
@@ -202,7 +203,7 @@ async fn jsonl_record_appended_on_success() {
 
     write_friday_stub(
         &install_dir,
-        r#"echo '{"preNats":[],"ran":[]}'"#,
+        r#"echo '{"status":"ok"}'"#,
         0,
     );
 
@@ -298,11 +299,7 @@ async fn locate_friday_finds_binary_under_install_dir_bin() {
 
     // Now write the stub at the CORRECT bin/friday path. It should be
     // found and the command should succeed.
-    write_friday_stub(
-        &install_dir,
-        r#"echo '{"preNats":[],"ran":[],"skipped":[],"failed":[]}'"#,
-        0,
-    );
+    write_friday_stub(&install_dir, r#"echo '{"status":"ok"}'"#, 0);
     let result =
         migrate(install_dir.to_string_lossy().to_string()).await;
     assert!(result.is_ok(), "expected Ok with binary at bin/friday: {result:?}");
@@ -326,7 +323,7 @@ async fn install_dir_bin_is_prepended_to_subprocess_path() {
         &format!(
             r#"
 echo "PATH=$PATH" > '{sentinel}'
-echo '{{"preNats":[],"ran":[],"skipped":[],"failed":[]}}'
+echo '{{"status":"ok"}}'
 "#,
             sentinel = sentinel.display(),
         ),
@@ -352,17 +349,17 @@ echo '{{"preNats":[],"ran":[],"skipped":[],"failed":[]}}'
 async fn logger_line_on_stdout_does_not_match_as_outcome() {
     // @atlas/logger writes `info`-level records via `console.info`,
     // which in Node.js/Deno goes to stdout (not stderr — only
-    // `console.error` / `console.warn` hit stderr). The pre-NATS
-    // step's resolved-paths log line therefore lands on the same
-    // stream we scan for the JSON outcome. Without the shape check
-    // in `find_outcome_line`, the parser matched the logger line
-    // first (because `serde(flatten)` swallows unknown fields into
-    // `extra`) and the audit JSONL ended up with logger gunk in the
-    // `outcome` field instead of the real `{preNats:[...], ran:...}`.
+    // `console.error` / `console.warn` hit stderr). So a single
+    // `friday migrate --json` run can produce two JSON-object lines
+    // on stdout: the logger line, then the outcome.
+    //
+    // The Tauri command's contract is "outcome is the last JSON object
+    // on stdout." A backward scan picks the real outcome and ignores
+    // the earlier logger line — no schema knowledge needed.
     //
     // VM-tested 2026-05-06: an installed wizard's first run produced
-    // exactly this misleading audit record. This test guards against
-    // a regression.
+    // a misleading audit record because an earlier parser locked onto
+    // the logger line. This test guards against the regression.
     let _g = env_lock();
     let (_tmp, friday_home, install_dir) = fixture_dirs();
     let _env = EnvGuard::install(&friday_home);
@@ -372,9 +369,9 @@ async fn logger_line_on_stdout_does_not_match_as_outcome() {
         r#"
 # Logger-style line FIRST (this is what relocate-store's
 # logger.info() emits via @atlas/logger's console.info → stdout).
-echo '{"timestamp":"2026-01-01T00:00:00Z","level":"info","message":"pre-nats migration: relocate-jetstream-store","context":{"id":"relocate-jetstream-store","legacy_path":"/tmp/legacy","target_path":"/tmp/target","target_source":"default","dry_run":false}}'
+echo '{"timestamp":"2026-01-01T00:00:00Z","level":"info","message":"resolved paths","context":{"legacy":"/tmp/legacy","target":"/tmp/target"}}'
 # Real outcome line SECOND.
-echo '{"preNats":[{"id":"relocate-jetstream-store","status":"migrated","streams_moved":3}],"ran":["m1"],"skipped":[],"failed":[]}'
+echo '{"status":"ok","streams_moved":3,"label":"relocate"}'
 "#,
         0,
     );
@@ -382,21 +379,14 @@ echo '{"preNats":[{"id":"relocate-jetstream-store","status":"migrated","streams_
     let result = migrate(install_dir.to_string_lossy().to_string()).await;
     let outcome = result.expect("Ok outcome");
 
-    // The parser must have skipped the logger line and locked onto
-    // the real outcome — `streams_moved: 3` is a sentinel that only
-    // the real line carries.
-    let pre_nats = outcome.pre_nats.as_ref().expect("preNats present in real outcome");
-    assert_eq!(pre_nats.len(), 1);
+    // The backward scan must have picked the outcome line, not the
+    // logger line. `streams_moved: 3` is a sentinel only the outcome
+    // carries; `level`/`timestamp` would mean we got the logger line.
     assert_eq!(
-        pre_nats[0]["streams_moved"], 3,
-        "parser locked onto wrong line; got: {pre_nats:?}"
+        outcome["streams_moved"], 3,
+        "scan locked onto wrong line; got: {outcome:?}"
     );
-    assert_eq!(pre_nats[0]["status"], "migrated");
-    // And the post-NATS arrays are populated, not the logger's
-    // `level`/`message`/`timestamp`/`context`.
-    assert!(outcome.extra.contains_key("ran"));
-    assert!(!outcome.extra.contains_key("timestamp"));
-    assert!(!outcome.extra.contains_key("level"));
-    assert!(!outcome.extra.contains_key("message"));
-    assert!(!outcome.extra.contains_key("context"));
+    assert_eq!(outcome["status"], "ok");
+    assert!(outcome.get("level").is_none(), "logger line leaked through");
+    assert!(outcome.get("timestamp").is_none(), "logger line leaked through");
 }

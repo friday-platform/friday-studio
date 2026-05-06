@@ -1,28 +1,21 @@
-// migrate — Tauri command that drives `friday migrate
-// --json` from the installer wizard.
+// migrate — Tauri command that drives `friday migrate --json` from the
+// installer wizard.
 //
-// Why this exists:
-//   The installer needs to relocate JetStream data from the legacy
-//   $TMPDIR/nats/jetstream path (where macOS's TMPDIR rotation silently
-//   garbage-collects it) to the canonical <friday_home>/jetstream path
-//   before the launcher boots. The migration logic itself lives in
-//   atlas-cli (TypeScript); this command is a thin Tauri wrapper that
-//   shells out to the friday binary, captures stdout/stderr, finds the
-//   JSON outcome line, and persists a JSONL audit record.
+// What this does:
+//   1. spawn `<install_dir>/bin/friday migrate --json`
+//   2. capture stdout / stderr / exit code
+//   3. take the last JSON-object line from stdout as the outcome
+//   4. append one JSONL record to <friday_home>/logs/migrate.jsonl
+//   5. return Ok(outcome) | Err(stderr_tail) to Svelte
 //
-// Trust contract:
-//   - No business logic. This is a shallow wrapper at the Tauri ↔
-//     Go-binary boundary that earns its keep because Svelte cannot
-//     shell out directly.
-//   - Stdout parsing is tolerant: log lines on stdout don't break the
-//     JSON outcome discovery (defense in depth — the producer is
-//     supposed to keep logs on stderr, but we don't trust it).
-//   - The JSONL record is durably persisted to <friday_home>/logs/
-//     migrate.jsonl on every invocation, regardless of outcome. The
-//     command creates `logs/` if absent. Dedicated per-command file
-//     so it doesn't collide with `installer.log` (which the
-//     agent-browser-chrome step already writes to with arbitrary
-//     stdout, making mixed parsing painful).
+// The installer is schema-agnostic. It does not know what migrations
+// `friday migrate` runs, what fields they emit, or what changed
+// between versions. The contract is just "the binary prints its
+// outcome as a JSON object on the last non-empty line of stdout."
+//
+// Why a dedicated audit file: `installer.log` is already written by
+// `ensure_agent_browser_chrome` with arbitrary stdout. Splitting
+// per-command into `migrate.jsonl` keeps the trail jq-parseable.
 
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
@@ -30,41 +23,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
-
 use crate::commands::env_file::parse_env_lines;
 use crate::friday_home::friday_home_dir;
-
-/// Outcome shape returned to Svelte. Matches the top-level JSON object
-/// emitted by `friday migrate --json`. The pre-NATS portion is strongly
-/// typed; the post-NATS portion is kept loose with `serde_json::Value`
-/// so future schema additions in atlas-cli don't break the Tauri
-/// boundary.
-///
-/// `pre_nats` is `Option<Vec>` rather than `Vec` with `default` so
-/// `find_outcome_line` can distinguish a real outcome JSON (which
-/// always emits `preNats: [...]`, possibly empty) from a stray
-/// logger-formatted line on stdout. See the `find_outcome_line` doc
-/// comment for the @atlas/logger info-on-stdout backstory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MigrationOutcome {
-    /// One element per registered pre-NATS migration entry. The CLI's
-    /// `--json` output always includes this field (possibly as `[]`);
-    /// `None` here means the source line lacked the field entirely
-    /// — typically a logger line that happens to also be JSON.
-    #[serde(rename = "preNats", skip_serializing_if = "Option::is_none")]
-    pub pre_nats: Option<Vec<serde_json::Value>>,
-    /// Everything else the CLI emits (post-NATS `ran`, `skipped`,
-    /// `failed`, etc.). We preserve unknown fields so atlas-cli can
-    /// extend the schema without coordination with this Stream.
-    #[serde(flatten)]
-    pub extra: HashMap<String, serde_json::Value>,
-}
 
 #[tauri::command]
 pub async fn migrate(
     install_dir: String,
-) -> Result<MigrationOutcome, String> {
+) -> Result<serde_json::Value, String> {
     let install_path = PathBuf::from(&install_dir);
     let friday_home = friday_home_dir()?;
 
@@ -117,17 +82,12 @@ pub async fn migrate(
         }
     }
     // Prepend `<install_dir>/bin` to PATH so the spawned `friday migrate`
-    // can locate the bundled `nats-server` (and any other in-bundle
-    // binaries it may shell out to). At install time, no daemon is up
-    // and the post-NATS phase needs to spawn an ephemeral nats-server
-    // via packages/jetstream's `findNatsServerBinary()`, which does a
-    // bare `which nats-server`. The Tauri app's parent shell typically
-    // has `/usr/bin:/bin` etc. on PATH but NOT the freshly-extracted
-    // `<install_dir>/bin`, so without this, every install would hit
-    // the "nats-server not found, brew install nats-server" error and
-    // the migrate row would render red ✗ even on a successful pre-NATS
-    // move. Mirrors the launcher's own PATH augmentation in
-    // tools/friday-launcher/project.go.
+    // can locate any bundled binaries it may shell out to (notably
+    // `nats-server`). The Tauri app's parent shell typically has
+    // `/usr/bin:/bin` etc. on PATH but NOT the freshly-extracted
+    // `<install_dir>/bin`, so without this the migrate step would render
+    // red ✗ on what should be a successful run. Mirrors the launcher's
+    // own PATH augmentation in tools/friday-launcher/project.go.
     let bin_dir = install_path.join("bin");
     let existing_path = env_kv
         .get("PATH")
@@ -150,26 +110,23 @@ pub async fn migrate(
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
-    // Tolerant stdout parsing — find the first line that parses as our
-    // expected outcome shape. Leaked log lines (anything that isn't
-    // valid JSON of the right shape) are skipped silently.
-    let outcome = find_outcome_line(&stdout);
+    // The contract: `friday migrate --json` prints its outcome as a JSON
+    // object on the last non-empty line of stdout. We don't interpret
+    // the schema — just take the last JSON-object line and forward it.
+    let outcome = last_json_object_line(&stdout);
 
-    // Always persist a JSONL record before returning. Failure to write
-    // the log is logged but doesn't shadow the migrate outcome — the
-    // installer UI still gets the success/failure signal.
+    // Always persist a JSONL record before returning. A log-write
+    // failure is reported on stderr but doesn't shadow the migrate
+    // outcome — the installer UI still gets the success/failure signal.
     let stderr_tail = if exit_code != 0 {
         Some(stderr_tail(&stderr))
     } else {
         None
     };
-    let outcome_for_log = outcome
-        .as_ref()
-        .and_then(|o| serde_json::to_value(o).ok());
     if let Err(e) = append_log_record(
         &friday_home,
         exit_code,
-        outcome_for_log,
+        outcome.clone(),
         stderr_tail.as_deref(),
     ) {
         eprintln!("[installer] could not append migrate.jsonl record: {e}");
@@ -214,47 +171,24 @@ fn env_keys_from(content: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// Search stdout for the first line that successfully parses as the
-/// real `friday migrate --json` outcome shape (NOT a stray log line
-/// that happens to also be JSON). Returns None if no line matches.
+/// Return the last line of `stdout` that parses as a JSON object.
 ///
-/// Why the shape check matters: `@atlas/logger` writes `info`-level
-/// records with `console.info(...)`, which in Node.js / Deno goes to
-/// **stdout**, not stderr (only `console.error` and `console.warn`
-/// hit stderr). The `friday migrate` CLI's pre-NATS step emits a
-/// resolved-paths log line on stdout for that reason. Without this
-/// shape check, the parser would match the logger line first
-/// (because of `serde(flatten)` swallowing `timestamp`/`level`/etc.
-/// into `extra`) and the audit JSONL would record logger gunk
-/// instead of the real outcome.
-///
-/// We require the line to carry BOTH `preNats` (pre-NATS array, may be
-/// empty) AND at least one of `ran`/`skipped`/`failed` (the post-NATS
-/// arrays from `runMigrations`). The `migrate --json` handler always
-/// emits all four keys — on success, on post-NATS failure, and on the
-/// pre-NATS-aborted path. Logger lines carry neither. The
-/// `migrate --list --json` shape (`{preNats, migrations}`) carries
-/// `preNats` but no post-NATS array — requiring both keeps a future
-/// caller that pipes `--list` output through this resolver from
-/// receiving a half-populated outcome.
-fn find_outcome_line(stdout: &str) -> Option<MigrationOutcome> {
-    for line in stdout.lines() {
+/// `friday migrate --json` may emit one or more lines on stdout (the
+/// outcome itself, plus any `@atlas/logger` info-level lines that share
+/// the stdout stream because Node/Deno's `console.info` goes there).
+/// The producer guarantees the OUTCOME is the last JSON-object line —
+/// any logger lines come earlier in execution — so a backward scan
+/// reliably picks it without needing schema knowledge.
+fn last_json_object_line(stdout: &str) -> Option<serde_json::Value> {
+    for line in stdout.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let Ok(o) = serde_json::from_str::<MigrationOutcome>(trimmed) else {
-            continue;
-        };
-        // Reject lines that parsed only because `serde(flatten)` is
-        // permissive. The real outcome always emits `preNats` (even
-        // as `[]`) AND the post-NATS arrays.
-        let has_outcome_shape = o.pre_nats.is_some()
-            && (o.extra.contains_key("ran")
-                || o.extra.contains_key("skipped")
-                || o.extra.contains_key("failed"));
-        if has_outcome_shape {
-            return Some(o);
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if v.is_object() {
+                return Some(v);
+            }
         }
     }
     None
@@ -406,58 +340,41 @@ mod tests {
     }
 
     #[test]
-    fn find_outcome_line_skips_non_json() {
+    fn last_json_object_line_picks_the_last_object() {
+        // Mixed plain-text + JSON lines. The OUTCOME (last JSON object)
+        // wins — the earlier object on line 3 is logger noise that the
+        // producer emits before the real result.
         let stdout = concat!(
             "INFO: starting migrate\n",
             "[2026-01-01] something happened\n",
-            "{\"preNats\":[],\"ran\":[]}\n",
-            "INFO: done\n",
+            "{\"level\":\"info\",\"msg\":\"resolved paths\"}\n",
+            "{\"status\":\"ok\",\"streams_moved\":3}\n",
         );
-        let outcome = find_outcome_line(stdout).expect("should parse");
-        assert_eq!(outcome.pre_nats.as_deref(), Some(&[][..]));
-        assert!(outcome.extra.contains_key("ran"));
+        let outcome = last_json_object_line(stdout).expect("should parse");
+        assert_eq!(outcome["status"], "ok");
+        assert_eq!(outcome["streams_moved"], 3);
     }
 
     #[test]
-    fn find_outcome_line_returns_none_when_no_json() {
+    fn last_json_object_line_returns_none_when_no_json() {
         let stdout = "no json here\nplain logs only\n";
-        assert!(find_outcome_line(stdout).is_none());
+        assert!(last_json_object_line(stdout).is_none());
     }
 
     #[test]
-    fn find_outcome_line_rejects_list_shape() {
-        // `friday migrate --list --json` emits `{preNats, migrations}` —
-        // it carries `preNats` but none of `ran`/`skipped`/`failed`. The
-        // resolver MUST reject it so a future caller that pipes --list
-        // output through this command doesn't get a half-populated
-        // outcome silently treated as a real run result.
-        let stdout = "{\"preNats\":[],\"migrations\":[]}\n";
-        assert!(find_outcome_line(stdout).is_none());
-    }
-
-    #[test]
-    fn find_outcome_line_rejects_logger_with_post_nats_key() {
-        // Defense-in-depth: a logger line that happened to carry a `ran`
-        // field in its structured context (no `preNats`) must be rejected.
-        // Today no @atlas/logger consumer emits this shape, but the
-        // assertion pins the new "BOTH preNats AND post-NATS" contract
-        // against future drift.
-        let stdout =
-            "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"info\",\"ran\":\"foo\"}\n";
-        assert!(find_outcome_line(stdout).is_none());
-    }
-
-    #[test]
-    fn find_outcome_line_accepts_pre_nats_aborted_outcome() {
-        // The pre-NATS-aborted path emits all four arrays so the resolver
-        // matches it. Pins migrate.ts:177's exit-1 JSON shape.
+    fn last_json_object_line_ignores_arrays_and_scalars() {
+        // Top-level JSON values that aren't objects (arrays, numbers,
+        // strings) are not the outcome — `migrate --json` always emits
+        // an object. Reject them so a stray `[1,2,3]` line doesn't get
+        // forwarded as the outcome.
         let stdout = concat!(
-            "{\"timestamp\":\"2026-01-01\",\"level\":\"info\",\"context\":{}}\n",
-            "{\"preNats\":[{\"id\":\"x\"}],\"ran\":[],\"skipped\":[],\"failed\":[]}\n",
+            "{\"status\":\"ok\"}\n",
+            "[1, 2, 3]\n",
+            "42\n",
+            "\"a string\"\n",
         );
-        let outcome = find_outcome_line(stdout).expect("pre-NATS-aborted outcome should match");
-        assert_eq!(outcome.pre_nats.as_ref().map(|v| v.len()), Some(1));
-        assert!(outcome.extra.contains_key("failed"));
+        let outcome = last_json_object_line(stdout).expect("should pick the object");
+        assert_eq!(outcome["status"], "ok");
     }
 
     #[test]
