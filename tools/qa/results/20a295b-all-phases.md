@@ -1,0 +1,120 @@
+# QA Run: 20a295b
+**Started:** 2026-05-06T23:24:51.663Z
+**Result:** 6/7 phases passed
+
+## Per-phase
+
+| # | Phase | Result | Notes |
+|---|---|---|---|
+| 1.A | 1.A — narrow allowlist enforced (toolCount=1) | ✓ pass | workspace minty_pineapple registered; resolved toolCount for narrow action: 1 |
+| 1.B | 1.B — per-job bypass grants full tool set | ✓ pass | workspace spiral_gouda registered; tool names called: (none); bypass info-log lines: 1 |
+| 2.B | 2.B — outputTo doc persists as artifact | ✓ pass | artifact count in JetStream: 1 |
+| 2.C | 2.C — SSE job-complete carries { artifactIds, summary } | ✓ pass | artifactIds: 1; summary length: 65; shape: compact |
+| 4 | 4 — validator runs on prose-emitting actions | ✗ fail | validator runs (events): 0; skip-log lines: 0 |
+| 11 | 11 — step:complete events carry usage{inputTokens,outputTokens} | ✓ pass | inputTokens total: 56246; outputTokens total: 1001; tool calls captured: 7 |
+| 12 | 12 — request_tool_access emits tool-allowlist elicitation | ✓ pass | workspace baked_garlic registered; elicitations returned: 1; first elicitation kind: tool-allowlist |
+
+## Detail metrics
+
+```json
+[
+  {
+    "phase": "1.A — narrow allowlist enforced (toolCount=1)",
+    "pass": true,
+    "notes": [
+      "workspace minty_pineapple registered",
+      "resolved toolCount for narrow action: 1"
+    ],
+    "metrics": {
+      "wallTimeMs": 6941,
+      "sessionId": "802abb96-b5a4-4f1d-ba16-0bc0e64cd328",
+      "resolvedToolCount": 1
+    }
+  },
+  {
+    "phase": "1.B — per-job bypass grants full tool set",
+    "pass": true,
+    "notes": [
+      "workspace spiral_gouda registered",
+      "tool names called: (none)",
+      "bypass info-log lines: 1"
+    ],
+    "metrics": {
+      "wallTimeMs": 12445,
+      "sessionId": "0cd44174-74eb-40fb-9989-8f75c8d3062b",
+      "toolNamesCalled": [],
+      "bypassLogCount": 1
+    }
+  },
+  {
+    "phase": "2.B — outputTo doc persists as artifact",
+    "pass": true,
+    "notes": [
+      "artifact count in JetStream: 1"
+    ],
+    "metrics": {
+      "artifactsInJetStream": 1
+    }
+  },
+  {
+    "phase": "2.C — SSE job-complete carries { artifactIds, summary }",
+    "pass": true,
+    "notes": [
+      "artifactIds: 1",
+      "summary length: 65",
+      "shape: compact"
+    ],
+    "metrics": {
+      "jobToolResultShape": "compact",
+      "artifactIdsInPayload": 1,
+      "summaryLength": 65
+    }
+  },
+  {
+    "phase": "4 — validator runs on prose-emitting actions",
+    "pass": false,
+    "notes": [
+      "validator runs (events): 0",
+      "skip-log lines: 0"
+    ],
+    "metrics": {
+      "validatorRunCount": 0,
+      "validatorSkipCountFromLog": 0
+    }
+  },
+  {
+    "phase": "11 — step:complete events carry usage{inputTokens,outputTokens}",
+    "pass": true,
+    "notes": [
+      "inputTokens total: 56246",
+      "outputTokens total: 1001",
+      "tool calls captured: 7"
+    ],
+    "metrics": {
+      "totalUsage": {
+        "inputTokens": 56246,
+        "outputTokens": 1001,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "toolCallCount": 7
+    }
+  },
+  {
+    "phase": "12 — request_tool_access emits tool-allowlist elicitation",
+    "pass": true,
+    "notes": [
+      "workspace baked_garlic registered",
+      "elicitations returned: 1",
+      "first elicitation kind: tool-allowlist"
+    ],
+    "metrics": {
+      "wallTimeMs": 11162,
+      "sessionId": "29093554-8d68-4f55-afce-072ed2d2407d",
+      "elicitationCount": 1,
+      "firstElicitationKind": "tool-allowlist",
+      "firstElicitationToolName": "secret_tool"
+    }
+  }
+]
+```
