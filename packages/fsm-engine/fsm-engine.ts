@@ -14,6 +14,7 @@ import {
 } from "@atlas/agent-sdk";
 import { extractToolCallInput, unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
 import type { MCPServerConfig } from "@atlas/config";
+import { resolvePermissions } from "@atlas/config/permissions";
 import {
   createErrorCause,
   hasUnusableCredentialCause,
@@ -2273,8 +2274,33 @@ export class FSMEngine {
     // still see every other server's tools (e.g. `send_gmail_message`) —
     // the source of the daily-memo "fetcher agents send their own emails"
     // bug.
+    //
+    // Phase 1.C bypass — when the resolved permissions for this action
+    // declare `dangerouslySkipAllowlist`, skip the per-agent narrowing
+    // and pass every platform-allowlisted tool through to the LLM.
+    // Mirrors Claude Code's `--dangerously-skip-permissions`. Resolution
+    // precedence: job > workspace > FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS
+    // env var. resolvePermissions is the canonical merge helper.
+    // Falls through to wrapPlatformToolsWithScope below so request_tool_access
+    // and other scope-injected tools still receive sessionId/actionId/perms.
+    const effectivePermissions = resolvePermissions({
+      job: this.options.jobPermissions,
+      workspace: this.options.workspacePermissions,
+      daemonDangerouslySkipAllowlist:
+        typeof Deno !== "undefined"
+          ? Deno.env.get("FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS") === "1"
+          : undefined,
+    });
+    const bypassActive = effectivePermissions.dangerouslySkipAllowlist === true;
+    if (bypassActive) {
+      logger.info("Bypassing per-agent tool allowlist (dangerouslySkipAllowlist)", {
+        jobName: this._definition.id,
+        toolCount: Object.keys(filtered).length,
+      });
+    }
+
     let scoped: Record<string, Tool> = filtered;
-    if (hasNameAllowlist) {
+    if (hasNameAllowlist && !bypassActive) {
       scoped = {};
       for (const [serverId, names] of Object.entries(mcpResult.toolsByServer)) {
         if (serverId === "atlas-platform") {

@@ -134,10 +134,12 @@ describe("CreateElicitationSchema", () => {
     expect(CreateElicitationSchema.safeParse(createInput).success).toBe(true);
   });
 
-  it("rejects passing id at create time", () => {
-    // CreateElicitationSchema is built via .omit, which strips the field
-    // — extras pass under default Zod object behavior. The contract is
-    // documented in TS; the runtime check is on the *required* shape.
+  it("accepts but does not require id at create time (.omit semantics; extras pass)", () => {
+    // CreateElicitationSchema is built via .omit, which removes `id` from
+    // the *required* shape. Default Zod object behavior allows extras —
+    // the test name now reflects what the assertion actually verifies
+    // (succeeds without `id`, and would also succeed with one), not the
+    // misleading "rejects" framing the prior version had.
     const result = CreateElicitationSchema.safeParse({
       workspaceId: "ws",
       sessionId: "sess",
