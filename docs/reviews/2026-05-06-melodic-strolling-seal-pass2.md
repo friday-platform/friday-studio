@@ -45,31 +45,27 @@ None.
 
 #### Important
 
-**N1. `request_tool_access` does not surface in chat's tool catalog**
+**N1. `request_tool_access` does not surface in chat's tool catalog** — ✓ Fixed (`60bc30c`)
 - **Location:** `packages/system/agents/workspace-chat/workspace-chat.agent.ts:741`
 - **Problem:** Chat composes its `primaryTools` from chat-side factories and doesn't pull from atlas-platform MCP. So the LLM in chat can't actually call `request_tool_access` — only FSM `type:llm` actions and `executeCodeAgent` paths can. The Phase 12.C+1.C agent flagged this in their report; the spec described chat surfacing as a "report back" sanity check, not a deliverable. But the user-felt experience is "I'm chatting with workspace-chat, my agent wants a tool, and the elicitation flow doesn't fire from chat."
-- **Recommendation:** Add a small `createRequestToolAccessTool` factory in `packages/system/agents/workspace-chat/tools/` and include it in the primary tool composition. Mirror the artifacts/memory-tool pattern.
-- **Worth doing:** Yes — without it, the supervisor (chat) can never elicit tool-access on the user's behalf, which is the headline use case for Phase 12.
+- **Resolution:** Added `packages/system/agents/workspace-chat/tools/request-tool-access.ts` mirroring the MCP tool's behavior. Wired into `workspace-chat.agent.ts` primaryTools alongside `createMemorySaveTool`. 7 unit tests covering bypass / precedence / elicitation shape / storage failure / network error.
 
-**N2. The bypass + `request_tool_access` flow has overlapping but distinct fires**
+**N2. The bypass + `request_tool_access` flow has overlapping but distinct fires** — ✓ Fixed (`18230fc`)
 - **Location:** `packages/fsm-engine/fsm-engine.ts:buildTools` (Phase 1.C bypass — review #5 fix in `f4622f6`) + `packages/mcp-server/src/tools/permissions/request-tool-access.ts` (Phase 12.C tool)
-- **Problem:** Two layers now read `resolvePermissions`. `buildTools` reads it once at action construction to decide whether to skip the per-agent allowlist filter; the tool reads it again at call time when the LLM invokes `request_tool_access`. They use the same precedence rules and should agree, but they're independent calls — if `dangerouslySkipAllowlist` flips between construction and call, behavior diverges. In practice the daemon env var won't change mid-call, and the workspace/job config is loaded at construction; risk is low. But the duplication is a foot-gun.
-- **Recommendation:** Either resolve once at construction time and pass the resolved result through the scope (one source of truth), or accept the duplication and document the (low-risk) divergence window.
-- **Worth doing:** No (today) — duplicated reads are correct for now and the practical divergence window is empty. Flag for future refactor.
+- **Problem:** Two layers now read `resolvePermissions`. `buildTools` reads it once at action construction to decide whether to skip the per-agent allowlist filter; the tool reads it again at call time when the LLM invokes `request_tool_access`. They use the same precedence rules and should agree, but they're independent calls.
+- **Resolution:** `ToolScope` gains `resolvedPermissions: ResolvedPermissions`. fsm-engine resolves once for the bypass check, then passes the resolved result through scope. The tool prefers `scope.resolvedPermissions` when present; falls back to resolving from raw fields for callers without a resolution context. Single source of truth.
 
-**N3. Elicitation `expiresAt` defaults to 30 minutes, not job-timeout-derived**
+**N3. Elicitation `expiresAt` defaults to 30 minutes, not job-timeout-derived** — ✓ Fixed (`18230fc`)
 - **Location:** `packages/mcp-server/src/tools/permissions/request-tool-access.ts`
-- **Problem:** The plan's resolved decision was "tied to job timeout; per-job override." The Phase 12.C+1.C agent shipped 30 minutes hardcoded ("no job-timeout plumbing for now since the spec explicitly excludes auto-suspend; the elicitation TTL is informational"). That's a reasonable stopgap but doesn't match the user-resolved policy. With the cascade-suspend pattern not yet built, 30 minutes vs 24h vs job-timeout doesn't matter functionally — the elicitation expires either way. But once the runtime starts honoring the elicitation answer (real auto-suspend land), the timeout will start mattering.
-- **Recommendation:** Plumb `signal._context?.jobTimeoutMs` (if available) into the tool's scope; default to `30 minutes` only when no job timeout is wired. Document in the tool's docstring that the runtime auto-suspend behavior is pending.
-- **Worth doing:** No (today) — informational TTL is sufficient until auto-suspend lands; revisit then.
+- **Problem:** Plan's resolved decision was "tied to job timeout; per-job override." Agent shipped 30 minutes hardcoded.
+- **Resolution:** `ToolScope` + `FSMEngineOptions` gain `jobTimeoutMs?: number`. Tool derives `expiresAt = now + jobTimeoutMs` when injected; falls back to `DEFAULT_ELICITATION_TTL_MS` (30 min) when absent. Workspace runtime is responsible for surfacing the resolved per-job timeout into the engine options (not yet wired — the field is plumbed; `FSMJob.timeout` → `FSMEngineOptions.jobTimeoutMs` is the small follow-up that activates the path end-to-end).
 
 #### Minor
 
-**N4. `sessionId: "unknown"` fallback in `request_tool_access`**
+**N4. `sessionId: "unknown"` fallback in `request_tool_access`** — ✓ Fixed (`18230fc`)
 - **Location:** `packages/mcp-server/src/tools/permissions/request-tool-access.ts`
-- **Problem:** The tool falls back to `sessionId: "unknown"` if scope didn't inject one. In practice FSM and chat always set it, but the fallback masks bugs where future call sites forget to thread `sessionId` through scope.
-- **Recommendation:** Either error loudly (`return { ok: false, reason: "missing_session_context" }`) or log a warning. Silently writing `sessionId: "unknown"` to the elicitation makes the Activity feed harder to filter.
-- **Worth doing:** Yes — small, removes a future debuggability hole.
+- **Problem:** Silent "unknown" fallback masked future scope-plumbing bugs.
+- **Resolution:** Tool now logs a `warn` with `{ toolName, workspaceId, actionId }` whenever the fallback fires. Activity feed integrity preserved (no error response); operators get a breadcrumb in `~/.atlas/logs/global.log`.
 
 **N5. New tests are well-formed**
 - `request-tool-access.test.ts` (11 tests): bypass via job perms / workspace perms / daemon env, precedence (`job:false` beats `workspace:true`), elicitation envelope shape, `ElicitationStorage.create` failure, sessionId/actionId fallbacks, registration sanity. Covers each branch of the resolution + creation paths. Mocks `ElicitationStorage` cleanly without re-implementing it.
