@@ -1,14 +1,13 @@
 /**
- * Tests for agent prompt precedence + output validation.
+ * Tests for agent prompt composition + output validation.
  *
  * These tests verify:
- * 1. action.prompt takes priority over agentConfig.prompt
- * 2. If no action.prompt, falls back to agentConfig.prompt
- * 3. If neither exists, returns context only
- * 4. validateAgentOutput hallucination-detection branching
+ * 1. agentConfig.prompt and action.prompt are concatenated (config first) by buildFinalAgentPrompt
+ * 2. composeAgentPrompt wires extract + interpolate + concat in the same order as runtime.executeAgent
+ * 3. validateAgentOutput hallucination-detection branching
  */
 
-import type { AgentResult } from "@atlas/agent-sdk";
+import type { AgentResult, AtlasAgentConfig } from "@atlas/agent-sdk";
 import type { Context } from "@atlas/fsm-engine";
 import {
   ValidationFailedError,
@@ -19,12 +18,43 @@ import type { PlatformModels } from "@atlas/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildFinalAgentPrompt,
+  composeAgentPrompt,
   extractAgentConfigPrompt,
   validateAgentOutput,
 } from "./agent-helpers.ts";
 
+// `@atlas/fsm-engine`'s `mod.ts` transitively pulls in Deno-only modules, so
+// `vi.importActual` fails under vitest's Node runtime. Stub the two functions
+// the helpers call: `expandArtifactRefsInDocuments` becomes a passthrough,
+// and `interpolatePromptPlaceholders` does the same `{{path}}` substitution
+// the real implementation does (the substring-substitution contract is pinned
+// in `packages/fsm-engine/tests/prompt-interpolation.test.ts`; this stub
+// just covers enough for `composeAgentPrompt` to round-trip its inputs).
 vi.mock("@atlas/fsm-engine", () => ({
   expandArtifactRefsInDocuments: vi.fn((docs: unknown[]) => Promise.resolve(docs)),
+  interpolatePromptPlaceholders: (
+    prompt: string,
+    prepareResult: { config?: Record<string, unknown> } | undefined,
+  ): string => {
+    const config = prepareResult?.config ?? {};
+    const scopes: Record<string, unknown> = { inputs: config, config, signal: { payload: config } };
+    const re =
+      /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:\|\s*default\s*:\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g;
+    return prompt.replace(re, (original, path, sq, dq) => {
+      const fallback: string | undefined = sq ?? dq;
+      let cursor: unknown = scopes;
+      for (const segment of String(path).split(".")) {
+        if (cursor === null || cursor === undefined || typeof cursor !== "object") {
+          return fallback ?? original;
+        }
+        cursor = (cursor as Record<string, unknown>)[segment];
+      }
+      if (cursor === undefined || cursor === null) return fallback ?? original;
+      if (typeof cursor === "string") return cursor === "" ? (fallback ?? cursor) : cursor;
+      if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
+      return JSON.stringify(cursor);
+    });
+  },
 }));
 
 const mockValidate = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<ValidationVerdict>>());
@@ -121,29 +151,33 @@ describe("extractAgentConfigPrompt", () => {
 describe("buildFinalAgentPrompt", () => {
   const documentContext = "## Context Facts\n- Current Date: Monday, January 26, 2026";
 
-  describe("prompt precedence", () => {
-    it("uses action.prompt when both action.prompt and agentConfig.prompt exist", () => {
+  describe("prompt composition", () => {
+    it("concatenates agentConfig.prompt before action.prompt when both exist", () => {
       const result = buildFinalAgentPrompt(
         "Action task instructions",
-        "Config fallback prompt",
+        "Agent-wide guidance",
         documentContext,
       );
 
+      expect(result).toBe(`Agent-wide guidance\n\nAction task instructions\n\n${documentContext}`);
+    });
+
+    it("uses agentConfig.prompt alone when action.prompt is undefined", () => {
+      const result = buildFinalAgentPrompt(undefined, "Agent-wide guidance", documentContext);
+
+      expect(result).toBe(`Agent-wide guidance\n\n${documentContext}`);
+    });
+
+    it("uses agentConfig.prompt alone when action.prompt is empty string", () => {
+      const result = buildFinalAgentPrompt("", "Agent-wide guidance", documentContext);
+
+      expect(result).toBe(`Agent-wide guidance\n\n${documentContext}`);
+    });
+
+    it("uses action.prompt alone when agentConfig.prompt is empty", () => {
+      const result = buildFinalAgentPrompt("Action task instructions", "", documentContext);
+
       expect(result).toBe(`Action task instructions\n\n${documentContext}`);
-      expect(result).not.toContain("Config fallback prompt");
-    });
-
-    it("falls back to agentConfig.prompt when action.prompt is undefined", () => {
-      const result = buildFinalAgentPrompt(undefined, "Config fallback prompt", documentContext);
-
-      expect(result).toBe(`Config fallback prompt\n\n${documentContext}`);
-    });
-
-    it("falls back to agentConfig.prompt when action.prompt is empty string", () => {
-      // Empty string is falsy, so falls back to config prompt
-      const result = buildFinalAgentPrompt("", "Config fallback prompt", documentContext);
-
-      expect(result).toBe(`Config fallback prompt\n\n${documentContext}`);
     });
 
     it("returns context only when neither action.prompt nor agentConfig.prompt exist", () => {
@@ -175,21 +209,22 @@ describe("buildFinalAgentPrompt", () => {
   });
 
   describe("custom agent scenario", () => {
-    it("custom agent uses action.prompt over agentConfig.prompt", () => {
-      // Custom agents defined in workspace.yml have agentConfig.prompt
-      // But if the FSM action also specifies a prompt, it takes precedence
+    it("agentConfig.prompt is prepended as agent-wide guidance to action.prompt", () => {
+      // Custom agents defined in workspace.yml have agentConfig.prompt — this
+      // is treated as agent-wide guidance (e.g. "always use neon green bg")
+      // and is prepended to the per-step action.prompt so both apply.
       const result = buildFinalAgentPrompt(
-        "Override: specific task for this step",
-        "Default: general purpose for this agent",
+        "Specific task for this step",
+        "Agent-wide: always use neon green background",
         documentContext,
       );
 
-      expect(result).toBe(`Override: specific task for this step\n\n${documentContext}`);
-      expect(result).not.toContain("Default: general purpose");
+      expect(result).toBe(
+        `Agent-wide: always use neon green background\n\nSpecific task for this step\n\n${documentContext}`,
+      );
     });
 
-    it("custom agent uses agentConfig.prompt when no action.prompt", () => {
-      // Custom agent with config prompt, but FSM action doesn't override
+    it("custom agent uses agentConfig.prompt alone when no action.prompt", () => {
       const result = buildFinalAgentPrompt(
         undefined,
         "Default: general purpose for this agent",
@@ -238,6 +273,94 @@ describe("buildFinalAgentPrompt", () => {
       expect(result).toContain("## Available Documents");
       expect(result).toContain("task-plan");
     });
+  });
+});
+
+describe("composeAgentPrompt", () => {
+  // Pins the call-site composition in WorkspaceRuntime.executeAgent. If a
+  // future refactor drops the agent-config prompt from the pipeline (the
+  // exact regression that caused the select_noodle "neon green" bug), these
+  // tests fail.
+
+  const documentContext = "## Context Facts\n- Current Date: 2026-05-06";
+
+  const atlasAgent = (prompt: string): AtlasAgentConfig => ({
+    type: "atlas",
+    agent: "image-generation",
+    description: "test atlas agent",
+    prompt,
+  });
+
+  it("includes BOTH agentConfig.prompt and action.prompt in the final prompt", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "Generate a sprite of a noodle" },
+      atlasAgent("Background must be solid neon green"),
+      undefined,
+      documentContext,
+    );
+
+    expect(prompt).toContain("Background must be solid neon green");
+    expect(prompt).toContain("Generate a sprite of a noodle");
+    expect(prompt).toContain(documentContext);
+  });
+
+  it("places agentConfig.prompt before action.prompt", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "ACTION_TASK" },
+      atlasAgent("CONFIG_GUIDANCE"),
+      undefined,
+      documentContext,
+    );
+
+    expect(prompt.indexOf("CONFIG_GUIDANCE")).toBeLessThan(prompt.indexOf("ACTION_TASK"));
+  });
+
+  it("interpolates `{{inputs.x}}` in the action prompt", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "Describe: {{inputs.subject}}" },
+      atlasAgent("Always be concise"),
+      { config: { subject: "neon mushroom" } },
+      documentContext,
+    );
+
+    expect(prompt).toContain("Describe: neon mushroom");
+    expect(prompt).not.toContain("{{inputs.subject}}");
+  });
+
+  it("interpolates `{{inputs.x}}` in the agentConfig prompt too", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: "Make it pop" },
+      atlasAgent("Use {{inputs.color | default: 'red'}} background"),
+      { config: { color: "neon green" } },
+      documentContext,
+    );
+
+    expect(prompt).toContain("Use neon green background");
+    expect(prompt).not.toContain("{{inputs.color");
+  });
+
+  it("falls back to agentConfig.prompt alone when action.prompt is undefined", () => {
+    const prompt = composeAgentPrompt(
+      { prompt: undefined },
+      atlasAgent("Solo guidance"),
+      undefined,
+      documentContext,
+    );
+
+    expect(prompt).toBe(`Solo guidance\n\n${documentContext}`);
+  });
+
+  it("returns just action.prompt + context when no agent config exists (bundled-agent path)", () => {
+    // Bundled agents invoked without a workspace.yml entry have no agentConfig.
+    // The action prompt must still reach the agent.
+    const prompt = composeAgentPrompt(
+      { prompt: "Bundled task instructions" },
+      undefined,
+      undefined,
+      documentContext,
+    );
+
+    expect(prompt).toBe(`Bundled task instructions\n\n${documentContext}`);
   });
 });
 
