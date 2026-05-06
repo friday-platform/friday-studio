@@ -200,6 +200,55 @@ async fn jsonl_record_appended_on_success() {
 }
 
 #[tokio::test]
+async fn jsonl_record_separates_stdout_and_stderr() {
+    // The stub writes distinguishable markers to BOTH streams; the
+    // audit record's `stdout` field must carry only OUT-MARKER and the
+    // `stderr` field only ERR-MARKER. Pins against a regression that
+    // swaps the two fields, drops one, or interleaves them.
+    let _g = env_lock();
+    let (_tmp, friday_home, install_dir) = fixture_dirs();
+    let _env = EnvGuard::install(&friday_home);
+
+    write_friday_stub(
+        &install_dir,
+        r#"
+echo 'OUT-MARKER ran 2 migrations'
+echo 'ERR-MARKER warning surfaced' >&2
+"#,
+        0,
+    );
+
+    let result = migrate(install_dir.to_string_lossy().to_string()).await;
+    assert!(result.is_ok(), "expected Ok, got {result:?}");
+
+    let log_path = friday_home.join("logs").join("migrate.jsonl");
+    let content = fs::read_to_string(&log_path).unwrap();
+    let line = content.lines().next().expect("a record");
+    let record: serde_json::Value =
+        serde_json::from_str(line).expect("parse record");
+
+    let stdout = record["stdout"].as_str().expect("stdout field");
+    let stderr = record["stderr"].as_str().expect("stderr field");
+
+    assert!(
+        stdout.contains("OUT-MARKER"),
+        "stdout field missing OUT-MARKER: {stdout}"
+    );
+    assert!(
+        !stdout.contains("ERR-MARKER"),
+        "stdout field leaked ERR-MARKER (streams swapped/interleaved?): {stdout}"
+    );
+    assert!(
+        stderr.contains("ERR-MARKER"),
+        "stderr field missing ERR-MARKER: {stderr}"
+    );
+    assert!(
+        !stderr.contains("OUT-MARKER"),
+        "stderr field leaked OUT-MARKER (streams swapped/interleaved?): {stderr}"
+    );
+}
+
+#[tokio::test]
 async fn jsonl_record_appended_on_failure() {
     let _g = env_lock();
     let (_tmp, friday_home, install_dir) = fixture_dirs();
