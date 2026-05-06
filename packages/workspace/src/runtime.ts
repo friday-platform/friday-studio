@@ -2011,12 +2011,29 @@ export class WorkspaceRuntime {
             aiSummary: session.aiSummary,
             definition: engine.definition,
           });
-          // Mirror the docs cache bound — same FIFO eviction window.
-          const COMPLETED_META_CAP = 100;
+          // 2026-05-06 review #7 — cap was 100; the cascade-dispatch path
+          // (atlas-daemon.triggerWorkspaceSignal → getSessionJobResult)
+          // reads this map to surface { artifactIds, summary } on the SSE
+          // job-complete event. Under burst load (autopilot fanouts, cron
+          // bursts) >100 completions could push older sessions out before
+          // their cascade dispatched, silently regressing the user-visible
+          // fan-in fix to the legacy output: Document[] shape. Per-entry
+          // cost is tiny (artifact refs + summary text + def reference);
+          // 10k entries is hundreds of KB at most. The proper fix is an
+          // explicit "consumed" event from the cascade that GCs by ID
+          // rather than age — filed as a follow-up. For now, raise the
+          // cap so eviction is genuinely improbable and warn-log when it
+          // happens so we can tell if the band-aid leaks.
+          const COMPLETED_META_CAP = 10_000;
           while (this.completedSessionMetadata.size > COMPLETED_META_CAP) {
             const oldestKey = this.completedSessionMetadata.keys().next().value;
             if (oldestKey === undefined) break;
             this.completedSessionMetadata.delete(oldestKey);
+            logger.warn("completedSessionMetadata evicted (cap reached)", {
+              evictedSessionId: oldestKey,
+              cap: COMPLETED_META_CAP,
+              currentWorkspaceId: this.workspace.id,
+            });
           }
           this.agentResultSideChannel.delete(sessionId);
           this.activeAbortControllers.delete(sessionId);
