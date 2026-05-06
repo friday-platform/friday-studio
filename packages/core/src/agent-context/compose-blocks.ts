@@ -10,6 +10,7 @@
 
 import type { Logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/oapi-client";
+import { SkillStorage } from "@atlas/skills";
 import { stringifyError } from "@atlas/utils";
 import { z } from "zod";
 import type { ArtifactSummary } from "../artifacts/model.ts";
@@ -234,4 +235,64 @@ export async function composeArtifactBlocks(
     const body = a.summary.trim();
     return `<retrieved_content provenance="${provenance}" origin="${origin}" fetched_at="${fetchedAt}">\n${body}\n</retrieved_content>`;
   });
+}
+
+/**
+ * Default system skill that powers `validate: self` — the inline self-check
+ * pass an LLM action runs over its own draft output before emitting. Authors
+ * can override per-action via `validate: { strategy: "self", skill: "..." }`,
+ * but the unqualified default points at the bundled `@friday/...` skill.
+ */
+export const DEFAULT_VALIDATION_SKILL = "validating-llm-outputs" as const;
+
+/**
+ * Compose a validation skill block when the resolved validate decision is
+ * `"self"`. Returns the skill body for inline appending to the action's
+ * system prompt, or empty string when no skill should be injected (decision
+ * is `skip`/`external`, or the requested skill is missing).
+ *
+ * Called from the FSM engine's `case "llm"` prompt assembly (B3) AND from
+ * the agent orchestrator's prompt assembly when dispatching to a workspace-
+ * level `type: llm` agent (B4 — pending). Same helper, same source skill —
+ * keeps validation behavior identical regardless of FSM action shape.
+ *
+ * Failure modes are warn-and-continue: if the skill catalog is unreachable
+ * or the requested skill isn't published, we log and fall through to "no
+ * validation guidance injected" rather than blocking the action. The
+ * external-judge path (`decision: "external"`) is unaffected; only the
+ * inline `self` augmentation degrades.
+ */
+export async function composeValidationBlock(opts: {
+  decision: "skip" | "self" | "external";
+  skillName?: string;
+  logger: Logger;
+}): Promise<string> {
+  if (opts.decision !== "self") return "";
+  const name = opts.skillName ?? DEFAULT_VALIDATION_SKILL;
+  try {
+    const result = await SkillStorage.get("friday", name);
+    if (!result.ok) {
+      opts.logger.warn(
+        "composeValidationBlock: skill catalog lookup failed; falling through to no-validation",
+        { skillName: name, error: result.error },
+      );
+      return "";
+    }
+    if (!result.data) {
+      opts.logger.warn(
+        "composeValidationBlock: validate: self requested but skill not found; falling through to no-validation",
+        { skillName: name },
+      );
+      return "";
+    }
+    return result.data.instructions;
+  } catch (err) {
+    // Skill storage might not be initialized in some unit-test paths
+    // (mirrors composeArtifactBlocks's swallow-and-log behavior).
+    opts.logger.warn("composeValidationBlock: skill storage unavailable", {
+      skillName: name,
+      error: stringifyError(err),
+    });
+    return "";
+  }
 }

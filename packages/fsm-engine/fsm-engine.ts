@@ -29,6 +29,7 @@ import {
 import {
   composeArtifactBlocks,
   composeMemoryBlocks,
+  composeValidationBlock,
 } from "@atlas/core/agent-context/compose-blocks";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
@@ -1538,6 +1539,47 @@ export class FSMEngine {
                 }
               }
 
+              // Phase B3 (melodic-strolling-seal-pt2): when the action's
+              // resolved validate decision is `self`, compose the
+              // validating-llm-outputs system skill into the prompt so the
+              // LLM self-checks its draft before emitting. Same call shape
+              // B4 will use from the agent orchestrator's prompt assembly.
+              //
+              // We resolve the decision PRE-call here using only static
+              // signals — `calledToolNames` and `emittedProse` are unknowable
+              // at prompt-build time, so the static path treats them as
+              // empty/false. The post-call gating site below re-resolves
+              // with observed signals; in the rare edge case where they
+              // disagree (e.g. mutating-tool declared but never called),
+              // the prompt-time path may inject the skill while the
+              // post-call path picks `skip` — we eat that asymmetry rather
+              // than build a two-phase classifier knob. Inline self-check
+              // only adds prompt tokens; nothing downstream depends on the
+              // pre-call decision.
+              const declaredToolsStatic = action.tools ?? [];
+              const preCallDecision = resolveValidateDecision(action.validate, {
+                declaredTools: declaredToolsStatic,
+                calledToolNames: [],
+                hasOutputType: !!action.outputType,
+                hasInputFrom: !!action.inputFrom,
+                resolvedAgentType: undefined,
+                emittedProse: false,
+                toolsAvailable: declaredToolsStatic.length > 0,
+              }).decision;
+              const validationBlock = await composeValidationBlock({
+                decision: preCallDecision,
+                skillName: typeof action.validate === "object" ? action.validate.skill : undefined,
+                logger,
+              });
+              const validationSkillLoaded = validationBlock.length > 0;
+              if (validationBlock) {
+                contextPrompt = `${contextPrompt}\n\n${validationBlock}`;
+                logger.debug("Injected validation skill block into LLM action prompt", {
+                  decision: preCallDecision,
+                  blockChars: validationBlock.length,
+                });
+              }
+
               if (completeToolInjected) {
                 contextPrompt +=
                   "\n\nIMPORTANT: When you have gathered all necessary information, you MUST call the `complete` tool to store your results. " +
@@ -1630,6 +1672,12 @@ export class FSMEngine {
                 source: validateSource,
                 reason: validateReason,
                 ranExternalJudge: validateDecision === "external" && !!this.options.validateOutput,
+                // B3: whether the inline self-check skill was injected at
+                // prompt-build time. Useful to verify in `global.log` that
+                // self-decisions actually got the skill body — and to spot
+                // pre/post-call decision asymmetry (preCall=self injected
+                // skill, postCall=skip).
+                validationSkillLoaded,
               });
 
               // Validate output if validator provided AND the resolved
@@ -1789,11 +1837,12 @@ export class FSMEngine {
                   });
                 }
               } else if (validateDecision === "self") {
-                // TODO(B3): inject the validating-llm-outputs skill into prompt
-                // assembly + auto-inject the `record_validation` tool so the
-                // model self-validates inside the same call. Until then, "self"
-                // is a no-op — the action emits without separate validation
-                // overhead.
+                // B3: the validating-llm-outputs skill was already composed
+                // into `contextPrompt` pre-call (see `composeValidationBlock`
+                // above), so the LLM self-checked its draft inside the same
+                // call. No separate post-call step needed at this gate.
+                // B6 will additionally inject the `record_validation` tool
+                // so the self-check verdict is observable in the trace.
               } else if (validateDecision === "skip") {
                 // No validation. The decision was logged above; nothing else
                 // to do here.
