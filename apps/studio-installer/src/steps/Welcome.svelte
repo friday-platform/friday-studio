@@ -77,7 +77,11 @@ async function applyDevOverride(): Promise<void> {
   } catch (err) {
     devError = err instanceof Error ? err.message : String(err);
     // Roll back — don't leave the store with an override the user
-    // didn't get a chance to confirm via the wizard advancing.
+    // didn't get a chance to confirm via the wizard advancing. This
+    // wipes any previously-confirmed override too (e.g. tester had
+    // 0.0.10 working, fat-fingers 0.99.99 on the next pass) — null
+    // is safer than mid-state and the tester can re-enter. Revisit
+    // if this gets painful in practice.
     store.devVersionOverride = null;
   } finally {
     devApplying = false;

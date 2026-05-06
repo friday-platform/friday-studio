@@ -13,6 +13,29 @@
 // `shasum -a 256` / `sha256sum` output. We split on whitespace and
 // take the first token.
 
+/// Parse the body of a `.sha256` file and return the validated hex
+/// digest. Standard `shasum -a 256` / `sha256sum` output is
+/// `<hex-digest>  <filename>`; we accept either that form or a bare
+/// `<hex-digest>` line. Rejects empty / non-hex / wrong-length input
+/// so callers don't pass a garbage hash into the verify step.
+///
+/// Extracted as a sync helper so unit tests exercise the EXACT same
+/// code that `fetch_sha256` calls — not a duplicated copy that could
+/// drift away from production.
+pub(crate) fn parse_sha256_body(text: &str) -> Result<String, String> {
+    let hash = text.split_whitespace().next().unwrap_or("");
+    if hash.is_empty() {
+        return Err(format!("SHA-256 file empty or malformed: {text:?}"));
+    }
+    // Hex digest for SHA-256 is 64 chars. Reject obvious garbage early
+    // so we surface a useful error before the verify step compares
+    // against a bad value.
+    if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("SHA-256 file does not contain a hex digest: {hash:?}"));
+    }
+    Ok(hash.to_string())
+}
+
 #[tauri::command]
 pub async fn fetch_sha256(url: String) -> Result<String, String> {
     let client = reqwest::Client::builder()
@@ -39,45 +62,23 @@ pub async fn fetch_sha256(url: String) -> Result<String, String> {
         .await
         .map_err(|e| format!("SHA-256 read body: {e}"))?;
 
-    // Standard `shasum -a 256` output is `<hex>  <filename>`. Take the
-    // first whitespace-delimited token. Reject empty / malformed.
-    let hash = text.split_whitespace().next().unwrap_or("");
-    if hash.is_empty() {
-        return Err(format!("SHA-256 file empty or malformed: {text:?}"));
-    }
-    // Hex digest for SHA-256 is 64 chars. Reject obvious garbage early
-    // so we surface a useful error before the verify step compares
-    // against a bad value.
-    if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(format!("SHA-256 file does not contain a hex digest: {hash:?}"));
-    }
-    Ok(hash.to_string())
+    parse_sha256_body(&text)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::parse_sha256_body;
 
-    // Smoke tests for the parsing branches. The HTTP path is exercised
-    // end-to-end manually + by the existing fetch_manifest tests.
-
-    fn parse(text: &str) -> Result<String, String> {
-        let hash = text.split_whitespace().next().unwrap_or("");
-        if hash.is_empty() {
-            return Err(format!("SHA-256 file empty or malformed: {text:?}"));
-        }
-        if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("SHA-256 file does not contain a hex digest: {hash:?}"));
-        }
-        Ok(hash.to_string())
-    }
+    // The unit tests exercise the SHARED parser the production async
+    // function calls (above). The HTTP path is exercised manually
+    // and by the dev-panel end-to-end flow.
 
     #[test]
     fn parses_standard_shasum_output() {
         let body =
             "7ce7932cd6443d58d17d8459aee751b4dd407b61e5e9aee3bdc00f09c01a82a3  artifact.tar.zst\n";
         assert_eq!(
-            parse(body).unwrap(),
+            parse_sha256_body(body).unwrap(),
             "7ce7932cd6443d58d17d8459aee751b4dd407b61e5e9aee3bdc00f09c01a82a3"
         );
     }
@@ -87,29 +88,29 @@ mod tests {
         // Some tools emit the hash with no filename — handle both.
         let body = "7ce7932cd6443d58d17d8459aee751b4dd407b61e5e9aee3bdc00f09c01a82a3\n";
         assert_eq!(
-            parse(body).unwrap(),
+            parse_sha256_body(body).unwrap(),
             "7ce7932cd6443d58d17d8459aee751b4dd407b61e5e9aee3bdc00f09c01a82a3"
         );
     }
 
     #[test]
     fn rejects_empty() {
-        assert!(parse("").is_err());
-        assert!(parse("\n").is_err());
-        assert!(parse("   ").is_err());
+        assert!(parse_sha256_body("").is_err());
+        assert!(parse_sha256_body("\n").is_err());
+        assert!(parse_sha256_body("   ").is_err());
     }
 
     #[test]
     fn rejects_non_hex() {
         // 64 chars but contains a non-hex character.
         let bad = "7ce7932cd6443d58d17d8459aee751b4dd407b61e5e9aee3bdc00f09c01a82aZ";
-        assert!(parse(bad).is_err());
+        assert!(parse_sha256_body(bad).is_err());
     }
 
     #[test]
     fn rejects_wrong_length() {
         // Truncated hash.
         let short = "7ce7932cd6443d58d17d8459aee751b4";
-        assert!(parse(short).is_err());
+        assert!(parse_sha256_body(short).is_err());
     }
 }

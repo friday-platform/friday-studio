@@ -433,3 +433,39 @@ func TestLoadDotEnv_LFOnly(t *testing.T) {
 		t.Errorf("unexpected entries on LF-only file: %v", entries)
 	}
 }
+
+// TestLoadDotEnv_StripsCRLF_AndQuotes pins the ordering of the
+// composed `unquoteEnvValue(strings.TrimRight(line[eq+1:], "\r"))`.
+//
+// `\r` MUST be trimmed before quote-stripping. If the order were
+// reversed:
+//   - line[eq+1:]                  = `"sk-ant-foo"\r`
+//   - unquoteEnvValue first        = `"sk-ant-foo"\r` (last byte is
+//     `\r` not `"`, so the matched-quote check refuses to strip)
+//   - TrimRight after              = `"sk-ant-foo"` (the `\r` is gone
+//     but the literal quotes leak through to the spawned service)
+//
+// PR #203 covered the LF + quoted case; the round-2 CRLF fix covered
+// CRLF without quotes. This test pins the COMBINATION the rebase
+// merge had to compose. A future refactor that swaps the call order
+// is caught here.
+func TestLoadDotEnv_StripsCRLF_AndQuotes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := []byte("API_KEY=\"sk-ant-foo\"\r\nNUM=42\r\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := loadDotEnv(path)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %v", len(entries), entries)
+	}
+	if entries[0] != "API_KEY=sk-ant-foo" {
+		t.Errorf("api_key entry = %q, want API_KEY=sk-ant-foo (CRLF + quotes both stripped)",
+			entries[0])
+	}
+	if entries[1] != "NUM=42" {
+		t.Errorf("num entry = %q, want NUM=42", entries[1])
+	}
+}
