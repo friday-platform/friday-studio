@@ -654,8 +654,9 @@ Three cases worth the explicit field:
   composes into the action prompt when `validate` resolves to
   `self`. Authors don't load it via `load_skill`.
 - For workspace-wide / per-job defaults, see the `validation:`
-  block on workspace and job specs (TODO: cross-link once D2 lands
-  alongside the workspace-level B5 phase).
+  section in `@friday/workspace-api` — covers the workspace and
+  job-level block, full precedence chain (action > job >
+  workspace > `"auto"`), skill override, and real-world configs.
 
 ## Delegating to a sub-agent from an FSM action
 

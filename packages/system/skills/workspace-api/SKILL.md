@@ -369,9 +369,10 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 
 11. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
-12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring. All three precedence chains follow **per-job > per-workspace > daemon-level** (env var or runtime default).
+12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring. All precedence chains follow **per-job > per-workspace > daemon-level** (env var or runtime default), except `validation:` which extends one level higher to action-level.
     - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Floor: daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only. Without bypass, allowlist denials become elicitations: an agent that calls `request_tool_access(toolName, reason)` produces a `tool-allowlist` elicitation surfaced via `GET /api/elicitations` and the Activity page; the user answers (allow once / allow always for the job / deny) and re-runs.
     - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level + per-job override (`jobs.<name>.delegation`) — per-field merge, job wins. Default `max_depth: 1`.
+    - **`validation: { default, skill }`** — default LLM-output validation strategy applied to `type: llm` / `type: agent` actions that don't set `validate:` themselves. See the dedicated `validation:` section below for the full precedence chain (action > job > workspace > `"auto"`).
     - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.
     - **`artifacts: { default_grace: <duration> }`** — workspace-level grace window after job completion before ephemeral artifacts are swept (default `24h`). Per-job override: `jobs.<name>.artifacts: { default_grace, ephemeral }`. Promotion-by-reference (a `memory_save` text containing the artifact id, a `display_artifact` call, or `aiSummary.keyDetails[].url`) keeps an artifact alive past the grace window with no author opt-in.
     - **`jobs.<name>.elicitations: { timeout: <duration> }`** — per-job elicitation timeout, independent of `config.timeout`. Useful for long batch jobs whose individual prompts shouldn't sit unanswered.
@@ -397,6 +398,14 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
       max_input_tokens: 100000
       max_wall_time_ms: 120000
       max_cost_usd: null          # reserved; not enforced until cost-tracking lands
+
+    validation:
+      # Default LLM-output validation strategy. Per-field merge with
+      # per-job override; action-level `validate:` always wins. See the
+      # `validation:` section below for the four-level precedence chain
+      # and what each strategy means at runtime.
+      default: auto               # auto | skip | self | external
+      skill: validating-llm-outputs   # OPTIONAL: override the validator skill
 
     artifacts:
       # Workspace-level grace window after job completion before ephemeral
@@ -434,6 +443,12 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
           max_depth: 2            # only this job; siblings inherit workspace 1
           max_wall_time_ms: 60000
 
+        # Per-job validation override. Per-field merge with workspace;
+        # action-level `validate:` still wins over both.
+        validation:
+          default: external       # this job's actions get judged unless action overrides
+          # skill: "@my/financial-claims"   # OPTIONAL: domain-specific judge
+
         # Per-job artifact lifecycle. EITHER ephemeral (whole-job) OR
         # default_grace (window override) — both can coexist; ephemeral
         # is the kind, default_grace is the sweep delay.
@@ -469,6 +484,116 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
     - `delegation.max_cost_usd` accepts `null` for "no enforcement";
       a positive number is reserved for the future cost-tracking layer
       and currently has no runtime effect.
+
+---
+
+## `validation:` — LLM-output validation defaults
+
+Workspace- and job-level defaults for the LLM-output validation
+policy applied to every `type: llm` and `type: agent` action that
+doesn't set `validate:` itself. Sits alongside `permissions:` and
+`delegation:` and follows the same merge model — except the
+precedence chain extends one level higher to action-level.
+
+### The block
+
+```yaml
+# workspace.yml — workspace-wide default
+validation:
+  default: external      # auto | skip | self | external
+  skill: "@my/judge"     # optional; defaults to validating-llm-outputs
+
+# workspace.yml — job-level override
+jobs:
+  review-inbox:
+    validation:
+      default: skip
+```
+
+Both `default` and `skill` are optional. Per-field merge with the
+workspace block: a job that sets only `default:` inherits
+`workspace.validation.skill`, and vice versa.
+
+### Precedence (highest wins)
+
+```
+action.validate.strategy
+  > job.validation.default
+  > workspace.validation.default
+  > "auto"   (the classifier — see writing-workspace-jobs)
+```
+
+`skill` resolution follows the same chain; falls back to
+`validating-llm-outputs` when nothing is set.
+
+### What each `default:` value means
+
+- `auto` — runtime classifier picks per-action: `skip` for
+  read-only / structured actions, `self` for prose / mutating
+  actions. Never auto-picks `external`.
+- `skip` — bypass validation entirely.
+- `self` — LLM self-checks its draft via the
+  `validating-llm-outputs` skill (or your `skill:` override).
+- `external` — separate-judge LLM call after the action emits.
+
+For the deeper auto-detect rules (which tools count as read-only,
+which verbs as mutating), see the **Validation strategies**
+section in `@friday/writing-workspace-jobs`.
+
+### Skill override
+
+Pin a domain-specific validator with `skill:`:
+
+```yaml
+validation:
+  default: self
+  skill: "@my/financial-claims"
+```
+
+The same skill works for both `self` and `external` strategies —
+one source-of-truth for what counts as a sourced claim. Useful for
+financial / medical / legal workspaces where the generic validator
+under-flags domain claims.
+
+### Real-world configs
+
+Always check everything (high-stakes workspace, latency-tolerant):
+
+```yaml
+validation:
+  default: external
+```
+
+Trust everything; the FSMs verify with deterministic agents:
+
+```yaml
+validation:
+  default: skip
+```
+
+Per-job mix — workspace defaults to `external`, one high-volume
+job downgrades to `self`:
+
+```yaml
+validation:
+  default: external
+
+jobs:
+  triage-inbox:
+    validation:
+      default: self     # cheaper; runs on every inbound message
+    fsm:
+      # ...
+```
+
+### Cross-references
+
+- `@friday/writing-workspace-jobs` — **Validation strategies**
+  section covers action-level `validate:` (string and object form),
+  the auto-detect classifier rules, and worked overrides.
+- `@friday/validating-llm-outputs` — system skill the runtime
+  composes into action prompts when the resolved strategy is
+  `self`. Not user-loadable; runtime composes it automatically.
 
 ---
 
