@@ -36,12 +36,14 @@ To remove a stale entry: `memory_remove(memoryName, entryId)`.
 
 Check `<memory_stores>` in your workspace context for what's available. Pick the store that best matches the content — do not default to `notes` without considering the alternatives.
 
-| Store | Type | Use for |
-|---|---|---|
-| `notes` | short_term | In-progress state, working context, things that will expire |
-| `memory` | long_term | Durable facts — what was built, decided, observed |
-| `preferences` | long_term | User standing instructions, formatting rules, explicit preferences |
-| custom | any | Domain-specific; declared via `upsert_memory_own` |
+| Store | Type | Default lifecycle | Use for |
+|---|---|---|---|
+| `notes` | short_term | **ephemeral, session-bound** — auto-deleted at session-complete | In-progress state, working context, things that don't need to persist |
+| `memory` | long_term | **durable** | Facts the agent should remember next turn / next session — what was built, decided, observed |
+| `preferences` | long_term | **durable** | User standing instructions, formatting rules, explicit preferences |
+| custom | any | follows `type:` default; override with `ttl:` | Domain-specific; declared via `upsert_memory_own` |
+
+`type: short_term` is genuinely short-term post-Phase-6: notes you write during a session don't survive past it unless you explicitly write the same content to a long_term store. `type: long_term` persists across sessions until explicitly removed via `memory_remove`. Override per-store via `memory.own[].ttl: <duration>` in workspace.yml when you want a specific TTL different from the type default.
 
 If the right store doesn't exist yet, call `upsert_memory_own` to declare it before writing. A store must exist in `workspace.yml` (or the active draft) before `memory_save` will accept it.
 
