@@ -45,11 +45,9 @@ let tools = $state<Tool[]>([
     status: "pending",
   },
   {
-    // Runs `friday migrate`. Idempotent — fresh installs are a noop.
-    // Failures are non-fatal: the row flips to ✗ and the launcher
-    // boots anyway. What `migrate` actually does is owned by atlas-cli
-    // (today: relocate JetStream store, tomorrow: whatever's next);
-    // the installer doesn't need to know.
+    // Runs `friday migrate`. Idempotent. Failures are non-fatal — the
+    // row flips to ✗ and the launcher boots anyway. What `migrate`
+    // does is atlas-cli's concern, not the installer's.
     display: "Running migrations",
     command: "migrate",
     args: async () => ({ installDir: await installDir() }),

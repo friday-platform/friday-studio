@@ -269,11 +269,9 @@ async fn locate_friday_finds_binary_under_install_dir_bin() {
 #[tokio::test]
 async fn install_dir_bin_is_prepended_to_subprocess_path() {
     // The Tauri command must prepend `<install_dir>/bin` to PATH so the
-    // spawned `friday migrate` can locate bundled binaries (especially
-    // `nats-server`, which atlas-cli's post-NATS phase tries to spawn
-    // via a bare `which nats-server`). Without this, every install
-    // hits "nats-server not found" and the migrate step renders red ✗
-    // even on a successful pre-NATS move.
+    // spawned `friday migrate` can locate bundled binaries via a bare
+    // `which <name>` lookup. Without this, every install hits "binary
+    // not found" and the migrate step renders red ✗.
     let _g = env_lock();
     let (_tmp, friday_home, install_dir) = fixture_dirs();
     let _env = EnvGuard::install(&friday_home);
