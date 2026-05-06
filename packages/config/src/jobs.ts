@@ -14,6 +14,7 @@ import {
   // SuccessConfigSchema,  // Currently unused
   SupervisionLevel,
 } from "./base.ts";
+import { DelegationBudgetSchema } from "./delegation.ts";
 import { PermissionsConfigSchema } from "./permissions.ts";
 import { SkillRefSchema } from "./skills.ts";
 
@@ -191,6 +192,15 @@ export const JobSpecificationSchema = z
     permissions: PermissionsConfigSchema.optional(),
 
     /**
+     * Phase 8 — per-job delegation budget override. Per-field merge with
+     * the workspace-level `delegation:` block: job wins per-field over
+     * workspace; unset fields fall through to workspace then to runtime
+     * defaults. Bounds the `delegate` tool invocations spawned from this
+     * job's `type: llm` actions.
+     */
+    delegation: DelegationBudgetSchema.optional(),
+
+    /**
      * Phase 6 — per-job artifact lifecycle override. When set, every
      * non-plumbing FSM document this job emits gets the matching
      * `lifecycle.kind`. Without an override, the runtime falls back to
@@ -206,6 +216,11 @@ export const JobSpecificationSchema = z
             "true → all artifacts ephemeral (session-bound). false → all durable. " +
               "Omit for per-action defaults.",
           ),
+        default_grace: DurationSchema.optional().describe(
+          "Grace window after job completion before ephemeral artifacts are " +
+            "swept (Phase 6.B). Inherits from workspace.artifacts.default_grace " +
+            "when omitted; that defaults to '24h'.",
+        ),
       })
       .optional(),
 
