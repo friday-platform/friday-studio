@@ -28,7 +28,7 @@ import type {
 import { Message, parseMarkdown, stringifyMarkdown } from "chat";
 import { z } from "zod";
 import type { ChatTurnRegistry } from "../chat-turn-registry.ts";
-import type { StreamRegistry } from "../stream-registry.ts";
+import type { StreamBuffer, StreamRegistry } from "../stream-registry.ts";
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -102,6 +102,14 @@ export interface WebChatPayload {
    * request may be long gone before the FSM is done.
    */
   abortSignal?: AbortSignal;
+  /**
+   * The StreamRegistry buffer this turn owns. The shared chat-sdk handler
+   * reads this back instead of calling `streamRegistry.getStream(chatId)`,
+   * which has a race window: by the time the handler captures it, a
+   * follow-up POST may have already replaced the buffer for the same
+   * chatId. Stashing the reference at dispatch makes capture deterministic.
+   */
+  turnBuffer?: StreamBuffer;
 }
 
 export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
@@ -249,6 +257,7 @@ export class AtlasWebAdapter implements Adapter<string, WebChatPayload> {
       datetime,
       foregroundWorkspaceIds,
       abortSignal,
+      turnBuffer,
     };
     const message = this.parseMessage(payload);
     this.chat.processMessage(this, chatId, message, {

@@ -102,11 +102,11 @@ describe("createMessageHandler", () => {
     };
 
     const thread = makeThread("chat-abc");
-    registry.createStream("chat-abc");
+    const turnBuffer = registry.createStream("chat-abc");
 
     await handler(
       thread,
-      makeMessage({ id: "m-1", text: "Hi", threadId: "chat-abc", raw: { datetime } }),
+      makeMessage({ id: "m-1", text: "Hi", threadId: "chat-abc", raw: { datetime, turnBuffer } }),
     );
 
     expect(thread.subscribe).toHaveBeenCalled();
@@ -162,7 +162,10 @@ describe("createMessageHandler", () => {
     const thread = makeThread("chat-cross");
     const turn1Buffer = registry.createStream("chat-cross");
 
-    await handler(thread, makeMessage({ threadId: "chat-cross" }));
+    await handler(
+      thread,
+      makeMessage({ threadId: "chat-cross", raw: { turnBuffer: turn1Buffer } }),
+    );
 
     // Simulate a follow-up turn replacing the buffer mid-flight, then a
     // late producer from turn 1 emits one more chunk.
@@ -171,6 +174,64 @@ describe("createMessageHandler", () => {
 
     expect(turn1Buffer.events).toEqual([]); // turn 1's buffer was closed by createStream replacement
     expect(turn2Buffer.events).toEqual([]); // and turn 1's stale chunk did NOT leak into turn 2
+  });
+
+  it("captures turnBuffer from message.raw, not via getStream, to defeat subscribe-window race", async () => {
+    // The race: handler awaits `thread.subscribe()` and `ChatStorage.appendMessage()`
+    // before capturing its buffer. If a follow-up POST replaces the chatId-keyed
+    // buffer in that window, `streamRegistry.getStream(chatId)` would hand back
+    // the next turn's buffer — turn 1's chunks then land under turn 2's identity
+    // and leak in as orphan deltas. Stashing the buffer on `Message.raw.turnBuffer`
+    // at dispatch makes capture deterministic.
+    const registry = new StreamRegistry();
+    let captureChunkCallback: ((chunk: unknown) => void) | undefined;
+    const triggerFn = vi.fn(
+      (
+        _signalName: string,
+        _payload: Record<string, unknown>,
+        _streamId: string,
+        onStreamEvent: (chunk: unknown) => void,
+      ) => {
+        captureChunkCallback = onStreamEvent;
+        return Promise.resolve({ sessionId: "sess-1" });
+      },
+    );
+    const handler = createMessageHandler("ws-test", triggerFn, registry);
+    const appendEventSpy = vi.spyOn(registry, "appendEvent");
+
+    const turn1Buffer = registry.createStream("chat-race");
+
+    // Model the actual race window: turn 2 replaces the chatId-keyed buffer
+    // *during* turn 1's `await ChatStorage.appendMessage()` call, not before
+    // the handler starts. This is the production race — the swap happens
+    // between `thread.subscribe` and the buffer-capture line where the bug
+    // fixed here used to be visible.
+    let turn2Buffer: ReturnType<typeof registry.createStream> | undefined;
+    mockAppendMessage.mockImplementationOnce(() => {
+      turn2Buffer = registry.createStream("chat-race");
+      return Promise.resolve({ ok: true });
+    });
+
+    const thread = makeThread("chat-race");
+    await handler(thread, makeMessage({ threadId: "chat-race", raw: { turnBuffer: turn1Buffer } }));
+
+    // Turn 1's late chunk fires after turn 2 owns the chatId.
+    captureChunkCallback?.({ type: "text-delta", delta: "from-turn-1" });
+
+    // Positive: the handler called `appendEvent` with `turn1Buffer` as the
+    // `expectedBuffer`. Pre-fix the third arg was `getStream(chatId)`, which
+    // would resolve to `turn2Buffer` by now. This catches a regression that
+    // disables the tap entirely (in which case the negative-only assertions
+    // below would still pass).
+    expect(appendEventSpy).toHaveBeenCalledWith(
+      "chat-race",
+      expect.objectContaining({ type: "text-delta" }),
+      turn1Buffer,
+    );
+    // Negative: the chunk lands nowhere — `appendEvent`'s identity check
+    // rejected it because the registry's current buffer is turn 2.
+    expect(turn1Buffer.events).toEqual([]);
+    expect(turn2Buffer?.events).toEqual([]);
   });
 
   it("does not finish a follow-up turn's buffer when the prior turn cleans up", async () => {
@@ -194,9 +255,12 @@ describe("createMessageHandler", () => {
 
     const handler = createMessageHandler("ws-test", triggerFn, registry);
     const thread = makeThread("chat-no-rip");
-    registry.createStream("chat-no-rip"); // turn 1's buffer
+    const turn1Buffer = registry.createStream("chat-no-rip"); // turn 1's buffer
 
-    await handler(thread, makeMessage({ threadId: "chat-no-rip" }));
+    await handler(
+      thread,
+      makeMessage({ threadId: "chat-no-rip", raw: { turnBuffer: turn1Buffer } }),
+    );
 
     // After turn 1's handler ran its finally, turn 2's buffer must still be
     // active — the identity check made the finishStream call a no-op.
@@ -216,8 +280,8 @@ describe("createMessageHandler", () => {
     const handler = createMessageHandler("ws-test", triggerFn, registry);
 
     const thread = makeThread("chat-filter");
-    registry.createStream("chat-filter");
-    await handler(thread, makeMessage({ threadId: "chat-filter" }));
+    const turnBuffer = registry.createStream("chat-filter");
+    await handler(thread, makeMessage({ threadId: "chat-filter", raw: { turnBuffer } }));
 
     // Only client-safe events reach StreamRegistry; thread.post sees them all.
     const types = registry
@@ -310,11 +374,11 @@ describe("createMessageHandler", () => {
     (thread as unknown as { post: ReturnType<typeof vi.fn> }).post = vi
       .fn()
       .mockRejectedValue(new Error("Slack API down"));
-    registry.createStream("chat-err");
+    const turnBuffer = registry.createStream("chat-err");
 
-    await expect(handler(thread, makeMessage({ threadId: "chat-err" }))).rejects.toThrow(
-      "Slack API down",
-    );
+    await expect(
+      handler(thread, makeMessage({ threadId: "chat-err", raw: { turnBuffer } })),
+    ).rejects.toThrow("Slack API down");
     expect(mockAppendMessage).toHaveBeenCalled();
     // finally block ran even though post threw
     expect(registry.getStream("chat-err")?.active).toBe(false);

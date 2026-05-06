@@ -61,6 +61,26 @@ export interface StreamBuffer {
 }
 
 /**
+ * Structural type guard — used at the `Message.raw` boundary in the chat
+ * SDK handler where the value comes back as `unknown`. A bare cast there
+ * would silently accept any object shape; if a buggy adapter ever stuffed
+ * the wrong thing into `raw.turnBuffer`, the identity check in
+ * `appendEvent` would just always mismatch and events would silently
+ * drop. Better to validate the shape and short-circuit cleanly.
+ */
+export function isStreamBuffer(value: unknown): value is StreamBuffer {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Partial<Record<keyof StreamBuffer, unknown>>;
+  return (
+    typeof v.chatId === "string" &&
+    typeof v.active === "boolean" &&
+    Array.isArray(v.events) &&
+    v.subscribers instanceof Set &&
+    v.openParts instanceof Map
+  );
+}
+
+/**
  * Map a chunk to its slot in {@link StreamBuffer.openParts}.
  *
  * `tool-input-available` is also an opener: it carries the fully-formed
