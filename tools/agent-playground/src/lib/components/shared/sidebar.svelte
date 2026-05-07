@@ -34,6 +34,7 @@
   const toolLinks: NavItem[] = [
     { label: "Chat", href: "/platform/user/chat", icon: IconLarge.SpeechBubble },
     { label: "Memory", href: "/memory", icon: IconLarge.Write },
+    { label: "Activity", href: "/activity", icon: IconLarge.SpeechBubble },
     { label: "Agent Tester", href: "/agents", icon: IconLarge.Chip },
     { label: "Job Inspector", href: "/inspector", icon: IconLarge.DiamondCheck },
     { label: "Schedules", href: "/schedules", icon: IconLarge.Target },
@@ -162,6 +163,11 @@
                     label: "Memory",
                     href: `/memory/${ws.id}`,
                     isActive: pathname.startsWith(`/memory/${ws.id}`),
+                  },
+                  {
+                    label: "Activity",
+                    href: `${base}/activity`,
+                    isActive: pathname.startsWith(`${base}/activity`),
                   },
                 ]}
                 <ul class="sub-nav">
