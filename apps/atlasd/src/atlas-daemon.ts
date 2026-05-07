@@ -121,6 +121,10 @@ import {
   type ArtifactsSweeperHandle,
   startArtifactsSweeper,
 } from "./sweepers/artifacts-sweeper.ts";
+import {
+  type ElicitationsSweeperHandle,
+  startElicitationsSweeper,
+} from "./sweepers/elicitations-sweeper.ts";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -301,6 +305,15 @@ export class AtlasDaemon {
    * domain-layer teardown phase of {@link shutdown}.
    */
   private artifactsSweeper: ArtifactsSweeperHandle | null = null;
+
+  /**
+   * G4 — pending→expired elicitation sweeper. Walks
+   * `ELICITATION_STATUS` KV on a 60s tick, CAS-flips past-deadline
+   * pending entries to expired. Started after JetStream init in
+   * {@link initialize}; stopped during the domain-layer teardown
+   * phase of {@link shutdown}.
+   */
+  private elicitationsSweeper: ElicitationsSweeperHandle | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     // Read CORS origins from environment or options
@@ -856,6 +869,14 @@ export class AtlasDaemon {
         return Promise.resolve(runtime.getPromotionScanContext());
       },
     });
+
+    // G4 — start the elicitations sweeper. Walks past-deadline
+    // pending elicitations on a 60s tick (override via
+    // FRIDAY_ELICITATION_SWEEP_INTERVAL_MS) and durably flips them to
+    // expired with a CAS-guarded write. Pairs with read-time
+    // derivation in ElicitationStorage.get/list so subscribers never
+    // observe stale `pending` between sweeper ticks.
+    this.elicitationsSweeper = startElicitationsSweeper();
 
     this.isInitialized = true;
 
@@ -2617,6 +2638,10 @@ export class AtlasDaemon {
     if (this.artifactsSweeper) {
       this.artifactsSweeper.stop();
       this.artifactsSweeper = null;
+    }
+    if (this.elicitationsSweeper) {
+      this.elicitationsSweeper.stop();
+      this.elicitationsSweeper = null;
     }
 
     // SSE clients — the HTTP server already drained in Phase 1, but any

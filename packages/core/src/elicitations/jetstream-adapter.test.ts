@@ -243,3 +243,149 @@ describe("JetStreamElicitationStorageAdapter", () => {
     expect(tryAnswer.error).toMatch(/declined/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// G4 — pending → expired sweeper + read-time derivation
+// ---------------------------------------------------------------------------
+
+describe("JetStreamElicitationStorageAdapter — expirePending sweep", () => {
+  it("flips a past-deadline pending entry to expired on tick", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    // Created with a tight deadline (200ms) so by sweep time it's past.
+    const created = await adapter.create(
+      baseInput({ workspaceId: `ws-sweep-${crypto.randomUUID()}`, expiresAt: expiresIn(200) }),
+    );
+    expect.assert(created.ok === true);
+
+    // Inject a fake "now" 1 minute past the entry's expiresAt. The KV
+    // entry stays untouched between create and sweep — the sweep is
+    // the first thing that observes the past-deadline state.
+    const fakeNow = new Date(Date.parse(created.data.expiresAt) + 60_000);
+    const swept = await adapter.expirePending({ now: fakeNow });
+    expect.assert(swept.ok === true);
+    expect(swept.data.expired).toContain(created.data.id);
+
+    // KV reflects the durable transition.
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(got.data?.status).toBe("expired");
+  });
+
+  it("leaves an already-answered entry alone (terminal-state idempotence)", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({ workspaceId: `ws-noop-answered-${crypto.randomUUID()}` }),
+    );
+    expect.assert(created.ok === true);
+
+    const answered = await adapter.answer({
+      id: created.data.id,
+      answer: { value: "ok", answeredAt: new Date().toISOString() },
+    });
+    expect.assert(answered.ok === true);
+
+    // Sweep with a far-future "now" so any past-deadline pending
+    // entry would be caught — answered entries must still be skipped.
+    const farFuture = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const swept = await adapter.expirePending({ now: farFuture });
+    expect.assert(swept.ok === true);
+    expect(swept.data.expired).not.toContain(created.data.id);
+
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(got.data?.status).toBe("answered");
+  });
+
+  it("is idempotent across ticks — re-sweeping an already-expired entry is a no-op", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({ workspaceId: `ws-idem-${crypto.randomUUID()}`, expiresAt: expiresIn(200) }),
+    );
+    expect.assert(created.ok === true);
+
+    const fakeNow = new Date(Date.parse(created.data.expiresAt) + 60_000);
+    const first = await adapter.expirePending({ now: fakeNow });
+    expect.assert(first.ok === true);
+    expect(first.data.expired).toContain(created.data.id);
+
+    // Second tick — the entry is already `expired`, so the sweep
+    // walks past it without writing again.
+    const second = await adapter.expirePending({ now: fakeNow });
+    expect.assert(second.ok === true);
+    expect(second.data.expired).not.toContain(created.data.id);
+    expect(second.data.skipped).not.toContain(created.data.id);
+  });
+
+  it("CAS-skips when a concurrent answer wins the race", async () => {
+    // Race the answer in BEFORE the sweep starts. With the answer
+    // already landed, the entry is no longer `pending` so the sweep
+    // skips it before the CAS — same observable outcome as a true
+    // mid-flight race (answer wins, sweep does not write `expired`).
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({ workspaceId: `ws-cas-${crypto.randomUUID()}`, expiresAt: expiresIn(200) }),
+    );
+    expect.assert(created.ok === true);
+
+    const answered = await adapter.answer({
+      id: created.data.id,
+      answer: { value: "allow_once", answeredAt: new Date().toISOString() },
+    });
+    expect.assert(answered.ok === true);
+
+    const fakeNow = new Date(Date.parse(created.data.expiresAt) + 60_000);
+    const swept = await adapter.expirePending({ now: fakeNow });
+    expect.assert(swept.ok === true);
+    expect(swept.data.expired).not.toContain(created.data.id);
+
+    // Final state is "answered" — answer wins.
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(got.data?.status).toBe("answered");
+  });
+});
+
+describe("JetStreamElicitationStorageAdapter — read-time derivation", () => {
+  it("get() surfaces `expired` for a past-deadline pending entry without a sweep", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    // 100ms deadline — past by the time we sleep below.
+    const created = await adapter.create(
+      baseInput({ workspaceId: `ws-rt-get-${crypto.randomUUID()}`, expiresAt: expiresIn(100) }),
+    );
+    expect.assert(created.ok === true);
+
+    // Wait past the deadline, no sweep, just a read.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const got = await adapter.get({ id: created.data.id });
+    expect.assert(got.ok === true);
+    expect(got.data?.status).toBe("expired");
+  });
+
+  it("list({status:'pending'}) excludes a past-deadline pending entry", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const wsTag = `ws-rt-list-${crypto.randomUUID()}`;
+    const stale = await adapter.create(
+      baseInput({ workspaceId: wsTag, expiresAt: expiresIn(100) }),
+    );
+    const fresh = await adapter.create(
+      baseInput({ workspaceId: wsTag, expiresAt: expiresIn(60_000) }),
+    );
+    expect.assert(stale.ok === true);
+    expect.assert(fresh.ok === true);
+
+    // Wait past the stale entry's deadline so read-time derivation
+    // kicks in. No sweep — the durable status is still `pending`,
+    // but the filter must see `expired`.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const pending = await adapter.list({ workspaceId: wsTag, status: "pending" });
+    expect.assert(pending.ok === true);
+    const ids = pending.data.map((e) => e.id);
+    expect(ids).toContain(fresh.data.id);
+    expect(ids).not.toContain(stale.data.id);
+
+    // The same entry shows up under status:"expired" via derivation.
+    const expired = await adapter.list({ workspaceId: wsTag, status: "expired" });
+    expect.assert(expired.ok === true);
+    expect(expired.data.map((e) => e.id)).toContain(stale.data.id);
+  });
+});

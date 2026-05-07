@@ -30,7 +30,7 @@
 
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { dec, enc, isStreamNotFound } from "jetstream";
+import { dec, enc, isCASConflict, isStreamNotFound } from "jetstream";
 import {
   type KV,
   type NatsConnection,
@@ -45,7 +45,7 @@ import {
   ElicitationSchema,
   type ElicitationStatus,
 } from "./model.ts";
-import type { ElicitationStorageAdapter } from "./types.ts";
+import type { ElicitationStorageAdapter, ExpireSweepResult } from "./types.ts";
 
 const logger = createLogger({ component: "jetstream-elicitation-storage" });
 
@@ -155,7 +155,11 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
       const entry = await kv.get(input.id);
       if (!entry || entry.operation !== "PUT") return success(null);
       const parsed = ElicitationSchema.parse(JSON.parse(dec.decode(entry.value)));
-      return success(parsed);
+      // Read-time derivation: surface `expired` immediately for past-
+      // deadline pending entries so callers don't see stale `pending`
+      // between sweeper ticks. The sweeper still does the durable
+      // status flip + watch-event emission; this just smooths reads.
+      return success(deriveExpired(parsed, new Date()));
     } catch (err) {
       return fail(stringifyError(err));
     }
@@ -181,6 +185,7 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
       const keys: string[] = [];
       for await (const key of keysIter) keys.push(key);
       const out: Elicitation[] = [];
+      const now = new Date();
       for (const key of keys) {
         const entry = await kv.get(key);
         if (!entry || entry.operation !== "PUT") continue;
@@ -194,13 +199,14 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
           });
           continue;
         }
-        if (input.workspaceId !== undefined && elicitation.workspaceId !== input.workspaceId)
-          continue;
-        if (input.sessionId !== undefined && elicitation.sessionId !== input.sessionId) continue;
-        if (input.status !== undefined && elicitation.status !== input.status) {
-          continue;
-        }
-        out.push(elicitation);
+        // Read-time derivation: a past-deadline pending entry must
+        // surface as `expired` to filters and consumers, even before
+        // the durable sweep flips its KV status.
+        const view = deriveExpired(elicitation, now);
+        if (input.workspaceId !== undefined && view.workspaceId !== input.workspaceId) continue;
+        if (input.sessionId !== undefined && view.sessionId !== input.sessionId) continue;
+        if (input.status !== undefined && view.status !== input.status) continue;
+        out.push(view);
       }
       out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       return success(out);
@@ -251,4 +257,122 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
       return fail(stringifyError(err));
     }
   }
+
+  /**
+   * Sweep past-deadline `pending` entries and durably flip them to
+   * `expired`. Called by the daemon-side sweeper on a timer (default
+   * 60s) so KV/stream consumers see the terminal state without waiting
+   * for an answer/decline that will never come.
+   *
+   * **CAS-guarded write**: we read the entry's KV revision, then write
+   * via {@link KV.update}; if a concurrent `/answer` or `/decline`
+   * lands between the read and write the CAS fails and we skip — the
+   * answer wins. Idempotent across ticks: an already-`expired` entry
+   * is filtered out before the write attempt.
+   *
+   * **Bounded work**: stop after `limit` entries per tick. The next
+   * tick picks up any backlog. Mirrors the artifacts-sweeper cap so
+   * one sweep can't monopolize the daemon if a backlog accumulates.
+   */
+  async expirePending(
+    input: { now?: Date; limit?: number } = {},
+  ): Promise<Result<ExpireSweepResult, string>> {
+    const now = input.now ?? new Date();
+    const limit = input.limit ?? 500;
+    const expired: string[] = [];
+    const skipped: string[] = [];
+    let scanned = 0;
+    let errors = 0;
+    try {
+      const kv = await this.kv();
+      // Same two-pass key/get pattern as `list()` — fetching each entry
+      // inside the keys() iterator drains the underlying ordered
+      // consumer prematurely (see comment in list()).
+      const keysIter = await kv.keys();
+      const keys: string[] = [];
+      for await (const key of keysIter) keys.push(key);
+
+      for (const key of keys) {
+        if (expired.length >= limit) break;
+        scanned += 1;
+        const entry = await kv.get(key);
+        if (!entry || entry.operation !== "PUT") continue;
+
+        let elicitation: Elicitation;
+        try {
+          elicitation = ElicitationSchema.parse(JSON.parse(dec.decode(entry.value)));
+        } catch (parseErr) {
+          logger.warn("expirePending: skipping malformed entry", {
+            key,
+            error: stringifyError(parseErr),
+          });
+          continue;
+        }
+        if (elicitation.status !== "pending") continue; // idempotent
+        if (new Date(elicitation.expiresAt).getTime() > now.getTime()) continue; // not yet due
+
+        const next: Elicitation = { ...elicitation, status: "expired" };
+        const body = enc.encode(JSON.stringify(next));
+        try {
+          // CAS on the KV revision — concurrent answer/decline wins.
+          await kv.update(elicitation.id, body, entry.revision);
+          // Also re-publish the envelope to the stream so SSE
+          // subscribers + the audit trail see the transition. Mirror
+          // the writeEnvelope() shape but skip the KV write (already
+          // done atomically above) so we don't clobber the revision
+          // we just CAS-acquired.
+          await this.publishEnvelope(next);
+          expired.push(elicitation.id);
+        } catch (err) {
+          if (isCASConflict(err)) {
+            skipped.push(elicitation.id);
+            logger.info("expirePending: CAS skip — concurrent transition", {
+              elicitationId: elicitation.id,
+            });
+            continue;
+          }
+          errors += 1;
+          logger.warn("expirePending: per-entry write failed", {
+            elicitationId: elicitation.id,
+            error: stringifyError(err),
+          });
+        }
+      }
+      return success({ scanned, expired, skipped, errors });
+    } catch (err) {
+      return fail(stringifyError(err));
+    }
+  }
+
+  /**
+   * Re-publish an envelope to the stream without touching the KV.
+   * Used by {@link expirePending} after a CAS-guarded KV update so the
+   * stream stays in sync without overwriting the revision we just
+   * acquired. The TTL math is intentionally identical to
+   * {@link writeEnvelope} (1s floor) — past-expired entries hit the
+   * floor, so the broker drops the envelope quickly after delivery.
+   */
+  private async publishEnvelope(elicitation: Elicitation): Promise<void> {
+    await this.ensureStream();
+    const subject = subjectFor(elicitation);
+    const body = enc.encode(JSON.stringify(elicitation));
+    const ttlMs = Math.max(1000, new Date(elicitation.expiresAt).getTime() - Date.now());
+    const h = natsHeaders();
+    h.set("Nats-TTL", `${Math.floor(ttlMs / 1000)}s`);
+    const js = this.nc.jetstream();
+    await js.publish(subject, body, { headers: h });
+  }
+}
+
+/**
+ * Read-time projection: surface `status: "expired"` for a `pending`
+ * entry whose `expiresAt` has passed. Pure function — does not touch
+ * the KV. Pairs with the durable {@link
+ * JetStreamElicitationStorageAdapter.expirePending} sweep so consumers
+ * never see a stale `pending` between sweeper ticks.
+ */
+function deriveExpired(elicitation: Elicitation, now: Date): Elicitation {
+  if (elicitation.status !== "pending") return elicitation;
+  if (new Date(elicitation.expiresAt).getTime() > now.getTime()) return elicitation;
+  return { ...elicitation, status: "expired" };
 }

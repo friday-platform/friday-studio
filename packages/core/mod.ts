@@ -45,6 +45,7 @@ export type {
   ElicitationPendingTool,
   ElicitationStatus,
   ElicitationStorageAdapter,
+  ExpireSweepResult,
 } from "./src/elicitations/mod.ts";
 export {
   CreateElicitationSchema,

@@ -28,4 +28,4 @@ export {
 } from "./storage.ts";
 
 // Adapter interface
-export type { ElicitationStorageAdapter } from "./types.ts";
+export type { ElicitationStorageAdapter, ExpireSweepResult } from "./types.ts";

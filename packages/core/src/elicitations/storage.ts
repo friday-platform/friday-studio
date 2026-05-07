@@ -7,7 +7,7 @@ import type {
   ElicitationAnswer,
   ElicitationStatus,
 } from "./model.ts";
-import type { ElicitationStorageAdapter } from "./types.ts";
+import type { ElicitationStorageAdapter, ExpireSweepResult } from "./types.ts";
 
 let adapter: ElicitationStorageAdapter | null = null;
 
@@ -58,4 +58,7 @@ export const ElicitationStorage: ElicitationStorageAdapter = {
   }): Promise<Result<Elicitation, string>> => require_().answer(input),
   decline: (input: { id: string; note?: string }): Promise<Result<Elicitation, string>> =>
     require_().decline(input),
+  expirePending: (
+    input: { now?: Date; limit?: number } = {},
+  ): Promise<Result<ExpireSweepResult, string>> => require_().expirePending(input),
 };

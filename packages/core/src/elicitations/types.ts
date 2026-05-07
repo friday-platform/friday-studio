@@ -7,6 +7,23 @@ import type {
 } from "./model.ts";
 
 /**
+ * Outcome of one expirePending sweep. `expired` and `skipped` are
+ * disjoint id sets so the caller can log / surface both — `skipped`
+ * collects entries the CAS fenced off (concurrent answer/decline won)
+ * which is informational, not an error.
+ */
+export interface ExpireSweepResult {
+  /** Number of KV entries inspected this tick (subject to `limit`). */
+  scanned: number;
+  /** Ids successfully transitioned `pending → expired`. */
+  expired: string[];
+  /** Ids the CAS skipped — concurrent terminal write landed first. */
+  skipped: string[];
+  /** Per-entry writes that failed for reasons other than CAS. */
+  errors: number;
+}
+
+/**
  * Storage adapter for elicitations. Single intended implementation
  * (`JetStreamElicitationStorageAdapter`, JetStream stream + KV bucket).
  * All methods return Result<T, string> for consistent error handling.
@@ -40,4 +57,13 @@ export interface ElicitationStorageAdapter {
 
   /** Mark declined. Optional note carried into the elicitation envelope. */
   decline(input: { id: string; note?: string }): Promise<Result<Elicitation, string>>;
+
+  /**
+   * Sweep past-deadline `pending` entries and durably flip them to
+   * `expired`. Called by the daemon-side sweeper on a timer; pairs
+   * with read-time derivation in `get`/`list` so subscribers never
+   * see a stale `pending` between sweeper ticks. CAS-guarded — a
+   * concurrent answer/decline lands wins, the sweeper skips that id.
+   */
+  expirePending(input?: { now?: Date; limit?: number }): Promise<Result<ExpireSweepResult, string>>;
 }
