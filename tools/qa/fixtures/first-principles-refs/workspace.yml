@@ -99,6 +99,17 @@ signals:
         query:
           type: string
       required: []
+  llm-agent-inputfrom-event:
+    provider: http
+    description: "Trigger LLM-agent inputFrom artifact hydration scenario."
+    config:
+      path: "/llm-agent-inputfrom-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
   fanout-delegate-event:
     provider: http
     description: "Trigger delegate fan-out without parent fan-in scenario."
@@ -124,6 +135,20 @@ agents:
         You are a deterministic contract writer. Return only the requested
         final payload. Do not use tools unless the runtime requires a final
         output tool.
+
+  inputfrom-reviewer:
+    type: llm
+    description: "LLM-backed agent used to prove type:agent inputFrom sees hydrated artifact contents."
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      temperature: 0
+      max_steps: 6
+      prompt: |
+        You are a deterministic inputFrom reviewer. Use only the context and
+        input supplied by the FSM action. Do not fetch artifacts, parse
+        artifacts, display artifacts, delegate, or rerun any job. Return only
+        the requested final payload.
 
 jobs:
   refs-check:
@@ -389,6 +414,96 @@ jobs:
                 Produce the final action output. The stored output MUST be
                 exactly this non-empty JSON object:
                 {"marker":"AGENT_OUTPUT_CONTRACT_OK","value":11,"explanation":"llm agent outputTo used complete contract"}
+          type: final
+
+  llm-agent-inputfrom-check:
+    description: "LLM-backed agent action consumes a ref-backed inputFrom document without artifact fan-in tools."
+    triggers:
+      - signal: llm-agent-inputfrom-event
+    config:
+      timeout: "5m"
+      max_steps: 12
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        EmailBatch:
+          type: object
+          properties:
+            marker: { type: string }
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  body: { type: string }
+                required: ["id", "subject", "body"]
+          required: ["marker", "messages"]
+        AgentHydrationResult:
+          type: object
+          properties:
+            marker: { type: string }
+            count: { type: number }
+            firstId: { type: string }
+            sawBodySentinel: { type: boolean }
+          required: ["marker", "count", "firstId", "sawBodySentinel"]
+      states:
+        idle:
+          on:
+            llm-agent-inputfrom-event: { target: seed }
+        seed:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce bulky EmailBatch for LLM-agent inputFrom."
+              outputTo: agent-emails-result
+              outputType: EmailBatch
+              validate: skip
+              tools: []
+              prompt: |
+                Emit an EmailBatch object directly. Do not call tools.
+
+                The object MUST contain:
+                - marker: "LLM_AGENT_INPUTFROM_EMAIL_BATCH"
+                - messages: exactly 12 synthetic messages.
+
+                Message ids must be fake-001 through fake-012. The first
+                message subject must be "Synthetic digest 1". Every message
+                body must include the sentinel text
+                "FIRST_PRINCIPLES_EMAIL_BODY" plus the message id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: review }
+        review:
+          entry:
+            - type: agent
+              agentId: inputfrom-reviewer
+              summary: "Consume EmailBatch via type:agent inputFrom."
+              inputFrom: agent-emails-result
+              outputTo: agent-hydration-result
+              outputType: AgentHydrationResult
+              validate: skip
+              prompt: |
+                Read the EmailBatch document from the visible action input and
+                available documents. Do not call artifacts_get,
+                display_artifact, parse_artifact, delegate, or any job tool.
+
+                The previous document may be represented as compact
+                artifactRefs plus artifactContent. Use the hydrated
+                artifactContent as the source of truth. You must inspect the
+                message bodies, not only the summary.
+
+                Emit an AgentHydrationResult object with:
+                - marker: "LLM_AGENT_INPUTFROM_HYDRATED"
+                - count: number of messages in the EmailBatch
+                - firstId: id of the first message
+                - sawBodySentinel: true only if a message body contains
+                  "FIRST_PRINCIPLES_EMAIL_BODY"
           type: final
 
   ack-mutation-check:

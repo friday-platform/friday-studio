@@ -711,6 +711,87 @@ async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResu
   ];
 }
 
+async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles LLM Agent InputFrom" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "llm-agent-inputfrom-event", {
+    payload: { query: "llm-agent-inputfrom" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "llm-agent-inputfrom-ref-hydration",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/llm-agent-inputfrom-check/agent-hydration-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  const artifactFanInTools = toolNames.filter((name) =>
+    ["artifacts_get", "parse_artifact", "display_artifact", "delegate"].includes(String(name)),
+  );
+
+  metrics.bucket = bucket;
+  metrics.docBytes = doc ? byteLen(doc) : 0;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.payload = payload ?? null;
+  metrics.toolNames = toolNames;
+  metrics.artifactFanInTools = artifactFanInTools;
+
+  const pass =
+    payload?.marker === "LLM_AGENT_INPUTFROM_HYDRATED" &&
+    numberValue(payload?.count) === 12 &&
+    payload?.firstId === "fake-001" &&
+    isTrue(payload?.sawBodySentinel) &&
+    artifactFanInTools.length === 0;
+
+  return [
+    {
+      id: "llm-agent-inputfrom-ref-hydration",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `count: ${String(payload?.count ?? "(missing)")}`,
+        `firstId: ${String(payload?.firstId ?? "(missing)")}`,
+        `saw body sentinel: ${String(payload?.sawBodySentinel ?? "(missing)")}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+        `artifact fan-in tools: ${artifactFanInTools.join(",") || "(none)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -1170,6 +1251,8 @@ async function main() {
     results.push(...(await runValidationContractScenario(daemon)));
     console.log("\n── LLM agent output contract ──");
     results.push(...(await runAgentOutputContractScenario(daemon)));
+    console.log("\n── LLM agent inputFrom ref hydration ──");
+    results.push(...(await runLlmAgentInputFromHydrationScenario(daemon)));
     console.log("\n── ack-only fake inbox mutation ──");
     results.push(...(await runAckOnlyMutationScenario(daemon)));
     console.log("\n── unknown tool request guard ──");
