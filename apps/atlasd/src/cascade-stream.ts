@@ -47,6 +47,7 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import {
   AckPolicy,
+  type ConsumerMessages,
   DeliverPolicy,
   type JsMsg,
   type NatsConnection,
@@ -204,6 +205,8 @@ interface InFlightCascade {
 export class CascadeConsumer {
   private running = false;
   private loop: Promise<void> | null = null;
+  /** See SignalConsumer.currentBatch — same role on the CASCADES stream. */
+  private currentBatch: ConsumerMessages | null = null;
   private readonly name: string;
   private readonly expiresMs: number;
   private readonly batchSize: number;
@@ -376,8 +379,19 @@ export class CascadeConsumer {
     );
   }
 
-  async stop(): Promise<void> {
+  /**
+   * Stop the loop. Sets `running = false` AND closes any in-flight fetch
+   * iterator so the runLoop returns promptly instead of waiting up to
+   * `expiresMs` for the current `consumer.fetch()` to expire naturally.
+   * If `signal` is supplied, an abort during `await this.loop` triggers
+   * the same close (used by shutdown-step timeouts to bound stop()).
+   */
+  async stop(signal?: AbortSignal): Promise<void> {
     this.running = false;
+    void this.currentBatch?.close();
+    if (signal && !signal.aborted) {
+      signal.addEventListener("abort", () => void this.currentBatch?.close(), { once: true });
+    }
     if (this.loop) {
       try {
         await this.loop;
@@ -417,6 +431,7 @@ export class CascadeConsumer {
         await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
+      this.currentBatch = batch;
       for await (const msg of batch) {
         // Critical: do NOT await — the whole point is to keep delivery
         // decoupled from cascade execution. handleMessage acks and
@@ -429,6 +444,7 @@ export class CascadeConsumer {
           });
         });
       }
+      this.currentBatch = null;
     }
   }
 

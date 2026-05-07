@@ -16,6 +16,7 @@ import { logger } from "@atlas/logger";
 import { stringifyError } from "@atlas/utils";
 import {
   AckPolicy,
+  type ConsumerMessages,
   DeliverPolicy,
   type JsMsg,
   type NatsConnection,
@@ -220,6 +221,13 @@ export interface SignalConsumerOptions {
 export class SignalConsumer {
   private running = false;
   private loop: Promise<void> | null = null;
+  /**
+   * In-flight fetch iterator. `consumer.fetch({ expires })` blocks for the
+   * full expires window even after `running = false`; closing the iterator
+   * breaks that immediately so `stop(signal)` can return promptly on
+   * shutdown abort instead of stalling up to `expiresMs`.
+   */
+  private currentBatch: ConsumerMessages | null = null;
   private readonly name: string;
   private readonly expiresMs: number;
   private readonly batchSize: number;
@@ -264,8 +272,20 @@ export class SignalConsumer {
     this.loop = this.runLoop();
   }
 
-  async stop(): Promise<void> {
+  /**
+   * Stop the loop. Sets `running = false` AND closes any in-flight fetch
+   * iterator so the runLoop returns promptly instead of waiting up to
+   * `expiresMs` for the current `consumer.fetch()` to expire naturally.
+   * If `signal` is supplied, an abort during `await this.loop` triggers
+   * the same close (used by shutdown-step timeouts to bound stop()).
+   */
+  async stop(signal?: AbortSignal): Promise<void> {
     this.running = false;
+    // Close any iterator already in flight so the for-await breaks now.
+    void this.currentBatch?.close();
+    if (signal && !signal.aborted) {
+      signal.addEventListener("abort", () => void this.currentBatch?.close(), { once: true });
+    }
     if (this.loop) {
       try {
         await this.loop;
@@ -303,10 +323,12 @@ export class SignalConsumer {
         await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
+      this.currentBatch = batch;
 
       for await (const msg of batch) {
         await this.handleMessage(msg);
       }
+      this.currentBatch = null;
     }
   }
 

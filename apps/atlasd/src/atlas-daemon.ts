@@ -2499,8 +2499,16 @@ export class AtlasDaemon {
       withShutdownTimeout("discord gateway", this.discordGatewayService?.stop(), 1500),
       // Stop the SIGNALS forwarder first so no new envelopes land on
       // CASCADES while the cascade consumer is draining.
-      withShutdownTimeout("signals consumer", this.signalConsumer?.stop(), 1500),
-      withShutdownTimeout("cascades consumer", this.cascadeConsumer?.stop(), 1500),
+      withShutdownTimeout(
+        "signals consumer",
+        (signal) => this.signalConsumer?.stop(signal) ?? Promise.resolve(),
+        1500,
+      ),
+      withShutdownTimeout(
+        "cascades consumer",
+        (signal) => this.cascadeConsumer?.stop(signal) ?? Promise.resolve(),
+        1500,
+      ),
       withShutdownTimeout("tool workers", Promise.all(this.toolWorkers.map((w) => w.stop())), 1500),
     ]);
     this.server = null;
