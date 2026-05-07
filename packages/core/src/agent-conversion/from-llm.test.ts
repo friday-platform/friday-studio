@@ -57,11 +57,21 @@ vi.mock("@atlas/llm", async (importOriginal) => {
 // registered before the import resolves.
 const { convertLLMToAgent } = await import("./from-llm.ts");
 
-function makeMockStreamTextResult() {
+function makeMockStreamTextResult(opts: { complete?: boolean } = {}) {
+  const toolCalls = opts.complete
+    ? [
+        {
+          type: "tool-call",
+          toolCallId: "tc-complete",
+          toolName: "complete",
+          input: { response: "done" },
+        },
+      ]
+    : [];
   return {
     text: Promise.resolve(""),
     reasoningText: Promise.resolve(""),
-    toolCalls: Promise.resolve([]),
+    toolCalls: Promise.resolve(toolCalls),
     toolResults: Promise.resolve([]),
     steps: Promise.resolve([]),
     usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
@@ -159,14 +169,7 @@ function buildContext(opts: {
     env: {},
     config: validateConfig,
     ...(opts.hasOutputType
-      ? {
-          outputSchema: {
-            type: "object",
-            properties: { response: { type: "string", minLength: 1 } },
-            required: ["response"],
-            additionalProperties: false,
-          },
-        }
+      ? { outputSchema: { type: "object", minProperties: 1, additionalProperties: true } }
       : {}),
     stream: makeStreamEmitter(),
     logger: makeLogger(),
@@ -188,7 +191,8 @@ async function runOrchestrator(opts: {
       toolChoice: params.toolChoice,
       systemPrompt,
     };
-    return makeMockStreamTextResult();
+    const tools = (params.tools as Record<string, unknown>) ?? {};
+    return makeMockStreamTextResult({ complete: "complete" in tools });
   });
 
   const agent = convertLLMToAgent(buildLLMConfig(), "h3-test-agent", makeLogger());

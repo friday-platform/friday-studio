@@ -1863,8 +1863,10 @@ export class FSMEngine {
                 }
               }
 
-              // Check if outputTo document type has a structured schema (properties defined)
-              // If so, inject a `complete` tool to capture structured output
+              // Every output document needs a mechanical emission contract.
+              // Explicit outputType schemas use the declared document schema;
+              // untyped outputTo actions get a non-empty object contract
+              // instead of relying on free-form prose.
               let capturedCompleteOutput: Record<string, unknown> | undefined;
               let completeToolInjected = false;
 
@@ -1874,32 +1876,34 @@ export class FSMEngine {
                 // 2. Fall back to document.type if document exists
                 const outputDoc = documents.get(action.outputTo);
                 const docTypeName = action.outputType ?? outputDoc?.type;
+                const jsonSchema = docTypeName
+                  ? this._definition.documentTypes?.[docTypeName]
+                  : undefined;
+                const compiledSchema =
+                  docTypeName && hasDefinedSchema(jsonSchema)
+                    ? this._compiledSchemas.get(docTypeName)
+                    : undefined;
+                const outputSchema =
+                  compiledSchema ??
+                  z
+                    .record(z.string(), z.unknown())
+                    .refine((value) => Object.keys(value).length > 0, {
+                      message: "complete output must not be empty",
+                    });
 
-                if (docTypeName) {
-                  const jsonSchema = this._definition.documentTypes?.[docTypeName];
+                completeToolInjected = true;
+                tools.complete = {
+                  description:
+                    "Call this to complete the task and store results. You MUST call this when finished.",
+                  inputSchema: outputSchema,
+                  execute: () => ({ success: true }),
+                };
 
-                  // Only inject complete tool if schema has properties defined (not just catch-all)
-                  if (hasDefinedSchema(jsonSchema)) {
-                    const compiledSchema = this._compiledSchemas.get(docTypeName);
-                    if (compiledSchema) {
-                      completeToolInjected = true;
-
-                      // Create tool object directly (same pattern as buildTools at line 1118)
-                      // This avoids type inference issues with the tool() helper
-                      tools.complete = {
-                        description:
-                          "Call this to complete the task and store results. You MUST call this when finished.",
-                        inputSchema: compiledSchema,
-                        execute: () => ({ success: true }),
-                      };
-
-                      logger.debug("Injected complete tool for structured output", {
-                        docType: docTypeName,
-                        outputTo: action.outputTo,
-                      });
-                    }
-                  }
-                }
+                logger.debug("Injected complete tool for output document", {
+                  docType: docTypeName ?? "LLMResult",
+                  outputTo: action.outputTo,
+                  hasExplicitOutputType: Boolean(action.outputType),
+                });
               }
 
               // Build prompt with curated input from prepare function, skills, and image resolution
@@ -2013,7 +2017,7 @@ export class FSMEngine {
                 {
                   declaredTools: declaredToolsStatic,
                   calledToolNames: [],
-                  hasOutputType: !!action.outputType,
+                  hasOutputType: completeToolInjected,
                   hasInputFrom: !!action.inputFrom,
                   resolvedAgentType: undefined,
                   emittedProse: false,
@@ -2128,8 +2132,9 @@ export class FSMEngine {
               // (structured + self skips `record_validation` injection),
               // structured-output actions always pin toolChoice to
               // `complete` — which is the whole reason E1 exists.
+              const hasActionTools = (action.tools?.length ?? 0) > 0;
               const llmToolChoice =
-                completeToolInjected && !recordValidationInjected
+                completeToolInjected && !recordValidationInjected && !hasActionTools
                   ? ({ type: "tool", toolName: "complete" } as const)
                   : ("auto" as const);
 
@@ -2162,11 +2167,25 @@ export class FSMEngine {
                 throw new Error(`LLM step failed: ${JSON.stringify(failArgs)}`);
               }
 
-              // Check if LLM called complete tool - capture the structured output.
-              // The adapter already extracts complete args into result.data, but we
-              // also check toolCalls for backward compatibility with mock providers.
+              // Check if LLM called complete tool - capture the contracted output.
               if (completeToolInjected) {
                 capturedCompleteOutput = findCompleteToolArgs(result);
+                if (!capturedCompleteOutput) {
+                  throw new Error(
+                    `LLM action with outputTo '${action.outputTo}' did not call complete`,
+                  );
+                }
+                if (Object.keys(capturedCompleteOutput).length === 0) {
+                  throw new Error(
+                    `LLM action with outputTo '${action.outputTo}' emitted empty output`,
+                  );
+                }
+                const response = capturedCompleteOutput.response;
+                if (typeof response === "string" && response.trim().length === 0) {
+                  throw new Error(
+                    `LLM action with outputTo '${action.outputTo}' emitted an empty response`,
+                  );
+                }
               }
 
               // Phase B2 (melodic-strolling-seal-pt2): resolve the per-action
@@ -2180,7 +2199,7 @@ export class FSMEngine {
               const classifierInput: ClassifierInput = {
                 declaredTools,
                 calledToolNames: observedTrace.toolCalls?.map((tc) => tc.toolName) ?? [],
-                hasOutputType: !!action.outputType,
+                hasOutputType: completeToolInjected,
                 hasInputFrom: !!action.inputFrom,
                 // case "llm" — type is always "llm". The case "agent" path
                 // will fill in resolvedAgentType in B4.
@@ -2557,12 +2576,7 @@ export class FSMEngine {
             const resolvedAgentType = this.options.resolveAgentType?.(action.agentId);
             const defaultAgentOutputSchema =
               action.outputTo && !agentOutputSchema && resolvedAgentType === "llm"
-                ? {
-                    type: "object",
-                    properties: { response: { type: "string", minLength: 1 } },
-                    required: ["response"],
-                    additionalProperties: false,
-                  }
+                ? { type: "object", minProperties: 1, additionalProperties: true }
                 : undefined;
             const executorOutputSchema = agentOutputSchema ?? defaultAgentOutputSchema;
 

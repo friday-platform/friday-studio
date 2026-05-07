@@ -285,6 +285,22 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
 function parseJsonResponsePayload(
   rawPayload: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
+  if (
+    rawPayload &&
+    rawPayload.response &&
+    typeof rawPayload.response === "object" &&
+    !Array.isArray(rawPayload.response)
+  ) {
+    return rawPayload.response as Record<string, unknown>;
+  }
+  if (
+    rawPayload &&
+    rawPayload.result &&
+    typeof rawPayload.result === "object" &&
+    !Array.isArray(rawPayload.result)
+  ) {
+    return rawPayload.result as Record<string, unknown>;
+  }
   const responseText =
     rawPayload && typeof rawPayload.response === "string" ? rawPayload.response.trim() : "";
   if (!responseText) return rawPayload;
@@ -294,6 +310,23 @@ function parseJsonResponsePayload(
   } catch {
     return rawPayload;
   }
+}
+
+function isTrue(value: unknown): boolean {
+  return value === true || value === "true";
+}
+
+function isFalse(value: unknown): boolean {
+  return value === false || value === "false";
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
 }
 
 function validationSummary(events: Awaited<ReturnType<typeof fetchSessionEvents>>): string {
@@ -449,6 +482,96 @@ async function runValidationContractScenario(d: DaemonHandle): Promise<EvalResul
   ];
 }
 
+async function runAgentOutputContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Agent Contract" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "agent-output-contract-event", {
+    payload: { query: "agent-output-contract" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "agent-output-contract",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/agent-output-contract-check/agent-contract-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+  const rawOutput = artifactData ?? data;
+  const responseValue = rawOutput?.response;
+  const responseText =
+    typeof responseValue === "string" ? responseValue : JSON.stringify(responseValue ?? "");
+  const responsePresent =
+    typeof responseValue === "string"
+      ? responseValue.trim().length > 0
+      : responseValue !== undefined && responseText !== "{}" && responseText !== "";
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  const validationHasImplicitPass = events.stepValidations.some(
+    (v) => v.strategy === "self" && v.verdict === "pass",
+  );
+  const containsRecordValidation = toolNames.includes("record_validation");
+
+  metrics.bucket = bucket;
+  metrics.docBytes = doc ? byteLen(doc) : 0;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.responseLength = responseText.length;
+  metrics.toolNames = toolNames;
+  metrics.stepValidations = events.stepValidations;
+
+  const pass =
+    payload?.marker === "AGENT_OUTPUT_CONTRACT_OK" &&
+    numberValue(payload?.value) === 11 &&
+    (responsePresent || Object.keys(payload ?? {}).length > 0) &&
+    validationHasImplicitPass &&
+    toolNames.includes("complete") &&
+    !containsRecordValidation;
+
+  return [
+    {
+      id: "agent-output-contract",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `value: ${String(payload?.value ?? "(missing)")}`,
+        `response length: ${responseText.length}`,
+        `validation: ${validationSummary(events) || "(missing)"}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+        `record_validation called: ${containsRecordValidation}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -513,8 +636,8 @@ async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]
 
   const pass =
     payload?.marker === "ACK_ONLY_MUTATION_OK" &&
-    payload?.ok === true &&
-    payload?.modifiedCount === 3 &&
+    isTrue(payload?.ok) &&
+    numberValue(payload?.modifiedCount) === 3 &&
     payload?.operation === "batch_modify_message_labels" &&
     receipt.startsWith("fake-mutation-") &&
     !containsBodySentinel &&
@@ -592,7 +715,7 @@ async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
 
   const pass =
     payload?.marker === "UNKNOWN_TOOL_REQUEST_DONE" &&
-    payload?.granted === false &&
+    isFalse(payload?.granted) &&
     payload?.reason === "unknown_tool" &&
     discoveryTools.includes("list_mcp_tools") &&
     toolNames.includes("request_tool_access") &&
@@ -670,7 +793,7 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
     pending !== null &&
     answered?.status === "answered" &&
     payload?.marker === "BLOCKING_ELICITATION_RESUMED" &&
-    payload?.granted === true &&
+    isTrue(payload?.granted) &&
     payload?.reason === "answered" &&
     payload?.answer === "allow_once";
 
@@ -713,6 +836,8 @@ async function main() {
     results.push(...(await runInputFromArrayScenario(daemon)));
     console.log("\n── validation output contract ──");
     results.push(...(await runValidationContractScenario(daemon)));
+    console.log("\n── LLM agent output contract ──");
+    results.push(...(await runAgentOutputContractScenario(daemon)));
     console.log("\n── ack-only fake inbox mutation ──");
     results.push(...(await runAckOnlyMutationScenario(daemon)));
     console.log("\n── unknown tool request guard ──");

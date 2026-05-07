@@ -88,6 +88,31 @@ signals:
         query:
           type: string
       required: []
+  agent-output-contract-event:
+    provider: http
+    description: "Trigger LLM-backed agent output contract scenario."
+    config:
+      path: "/agent-output-contract-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+
+agents:
+  contract-writer:
+    type: llm
+    description: "LLM-backed agent used to prove agent outputTo has a mechanical output contract."
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      temperature: 0
+      max_steps: 4
+      prompt: |
+        You are a deterministic contract writer. Return only the requested
+        final payload. Do not use tools unless the runtime requires a final
+        output tool.
 
 jobs:
   refs-check:
@@ -325,6 +350,34 @@ jobs:
                 - marker: "VALIDATION_CONTRACT_OK"
                 - value: 7
                 - explanation: "structured output survived validation"
+          type: final
+
+  agent-output-contract-check:
+    description: "LLM-backed agent action without outputType still emits a real output document."
+    triggers:
+      - signal: agent-output-contract-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "self"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            agent-output-contract-event: { target: write }
+        write:
+          entry:
+            - type: agent
+              agentId: contract-writer
+              summary: "Emit agent output contract marker."
+              outputTo: agent-contract-result
+              validate: self
+              prompt: |
+                Produce the final action output. The stored output MUST be
+                exactly this non-empty JSON object:
+                {"marker":"AGENT_OUTPUT_CONTRACT_OK","value":11,"explanation":"llm agent outputTo used complete contract"}
           type: final
 
   ack-mutation-check:

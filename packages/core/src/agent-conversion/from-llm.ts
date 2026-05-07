@@ -32,10 +32,11 @@ import { filterWorkspaceAgentTools } from "./agent-tool-filters.ts";
 
 /**
  * Default output schema for LLM agents.
- * Text response wrapped as `{ response: string }` for consistent extraction.
+ * Runtime output contracts may supply a stricter schema; otherwise LLM agents
+ * can return any non-empty object-shaped payload.
  */
-export const LLMOutputSchema = z.object({ response: z.string().describe("LLM text response") });
-export type LLMOutput = z.infer<typeof LLMOutputSchema>;
+export const LLMOutputSchema = z.object({}).passthrough();
+export type LLMOutput = Record<string, unknown>;
 
 /**
  * Convert workspace LLM config to AtlasAgent.
@@ -155,6 +156,8 @@ export function convertLLMToAgent(
             }
           : toolsWithValidation;
 
+        const hasNonOutputTools = Object.keys(toolsWithValidation).length > 0;
+
         const result = streamText({
           model,
           // role:"system" in messages (rather than the `system:` parameter)
@@ -172,9 +175,12 @@ export function convertLLMToAgent(
             { role: "user", content: prompt },
           ],
           tools: toolsWithOutputContract,
-          toolChoice: hasRuntimeOutputSchema
-            ? ({ type: "tool", toolName: "complete" } as const)
-            : config.config.tool_choice || "auto",
+          toolChoice:
+            hasRuntimeOutputSchema && !hasNonOutputTools
+              ? ({ type: "tool", toolName: "complete" } as const)
+              : hasRuntimeOutputSchema
+                ? "auto"
+                : config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,
           maxRetries,
@@ -249,6 +255,19 @@ export function convertLLMToAgent(
         const completeOutput = hasRuntimeOutputSchema
           ? extractToolCallInput<LLMOutput>(assembledToolCalls, "complete")
           : undefined;
+        if (hasRuntimeOutputSchema && !completeOutput) {
+          throw new Error(`LLM agent '${agentId}' did not call complete`);
+        }
+        if (completeOutput && Object.keys(completeOutput).length === 0) {
+          throw new Error(`LLM agent '${agentId}' emitted empty output`);
+        }
+        if (
+          completeOutput &&
+          typeof (completeOutput as { response?: unknown }).response === "string" &&
+          ((completeOutput as { response: string }).response as string).trim().length === 0
+        ) {
+          throw new Error(`LLM agent '${agentId}' emitted an empty response`);
+        }
         const output = completeOutput ?? { response: resolvedText };
         const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
 
