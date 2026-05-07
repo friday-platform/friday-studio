@@ -24,37 +24,16 @@ import {
 } from "./agent-helpers.ts";
 
 // `@atlas/fsm-engine`'s `mod.ts` transitively pulls in Deno-only modules, so
-// `vi.importActual` fails under vitest's Node runtime. Stub the two functions
-// the helpers call: `expandArtifactRefsInDocuments` becomes a passthrough,
-// and `interpolatePromptPlaceholders` does the same `{{path}}` substitution
-// the real implementation does (the substring-substitution contract is pinned
-// in `packages/fsm-engine/tests/prompt-interpolation.test.ts`; this stub
-// just covers enough for `composeAgentPrompt` to round-trip its inputs).
+// `vi.importActual` fails under vitest's Node runtime. Stub with a sentinel
+// wrapper so tests can check *that* interpolation ran without re-implementing
+// (and drifting from) the real regex. The substitution contract is pinned in
+// `packages/fsm-engine/tests/prompt-interpolation.test.ts`.
+// Pass-through on empty strings so `composeAgentPrompt`'s `extractAgentConfigPrompt() === ""`
+// branches behave the same as with the real impl (which returns "" for input "").
+const INTERPOLATED = (raw: string) => (raw ? `INTERP[${raw}]` : raw);
 vi.mock("@atlas/fsm-engine", () => ({
   expandArtifactRefsInDocuments: vi.fn((docs: unknown[]) => Promise.resolve(docs)),
-  interpolatePromptPlaceholders: (
-    prompt: string,
-    prepareResult: { config?: Record<string, unknown> } | undefined,
-  ): string => {
-    const config = prepareResult?.config ?? {};
-    const scopes: Record<string, unknown> = { inputs: config, config, signal: { payload: config } };
-    const re =
-      /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:\|\s*default\s*:\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g;
-    return prompt.replace(re, (original, path, sq, dq) => {
-      const fallback: string | undefined = sq ?? dq;
-      let cursor: unknown = scopes;
-      for (const segment of String(path).split(".")) {
-        if (cursor === null || cursor === undefined || typeof cursor !== "object") {
-          return fallback ?? original;
-        }
-        cursor = (cursor as Record<string, unknown>)[segment];
-      }
-      if (cursor === undefined || cursor === null) return fallback ?? original;
-      if (typeof cursor === "string") return cursor === "" ? (fallback ?? cursor) : cursor;
-      if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
-      return JSON.stringify(cursor);
-    });
-  },
+  interpolatePromptPlaceholders: (prompt: string): string => INTERPOLATED(prompt),
 }));
 
 const mockValidate = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<ValidationVerdict>>());
@@ -315,7 +294,12 @@ describe("composeAgentPrompt", () => {
     expect(prompt.indexOf("CONFIG_GUIDANCE")).toBeLessThan(prompt.indexOf("ACTION_TASK"));
   });
 
-  it("interpolates `{{inputs.x}}` in the action prompt", () => {
+  // The interpolation tests below verify the helper *invokes*
+  // interpolatePromptPlaceholders on each layer. They do NOT verify the
+  // substitution result — that contract is pinned in
+  // `packages/fsm-engine/tests/prompt-interpolation.test.ts`. The mock at the
+  // top of this file is a sentinel wrapper so we can detect "ran".
+  it("invokes interpolatePromptPlaceholders on the action prompt", () => {
     const prompt = composeAgentPrompt(
       { prompt: "Describe: {{inputs.subject}}" },
       atlasAgent("Always be concise"),
@@ -323,11 +307,10 @@ describe("composeAgentPrompt", () => {
       documentContext,
     );
 
-    expect(prompt).toContain("Describe: neon mushroom");
-    expect(prompt).not.toContain("{{inputs.subject}}");
+    expect(prompt).toContain("INTERP[Describe: {{inputs.subject}}]");
   });
 
-  it("interpolates `{{inputs.x}}` in the agentConfig prompt too", () => {
+  it("invokes interpolatePromptPlaceholders on the agentConfig prompt too", () => {
     const prompt = composeAgentPrompt(
       { prompt: "Make it pop" },
       atlasAgent("Use {{inputs.color | default: 'red'}} background"),
@@ -335,8 +318,7 @@ describe("composeAgentPrompt", () => {
       documentContext,
     );
 
-    expect(prompt).toContain("Use neon green background");
-    expect(prompt).not.toContain("{{inputs.color");
+    expect(prompt).toContain("INTERP[Use {{inputs.color | default: 'red'}} background]");
   });
 
   it("falls back to agentConfig.prompt alone when action.prompt is undefined", () => {
@@ -347,7 +329,8 @@ describe("composeAgentPrompt", () => {
       documentContext,
     );
 
-    expect(prompt).toBe(`Solo guidance\n\n${documentContext}`);
+    // Sentinel wrap from the interpolation mock — see top-of-file comment.
+    expect(prompt).toBe(`INTERP[Solo guidance]\n\n${documentContext}`);
   });
 
   it("returns just action.prompt + context when no agent config exists (bundled-agent path)", () => {
@@ -360,7 +343,8 @@ describe("composeAgentPrompt", () => {
       documentContext,
     );
 
-    expect(prompt).toBe(`Bundled task instructions\n\n${documentContext}`);
+    // Sentinel wrap from the interpolation mock — see top-of-file comment.
+    expect(prompt).toBe(`INTERP[Bundled task instructions]\n\n${documentContext}`);
   });
 });
 

@@ -11,6 +11,7 @@
  */
 
 import { atlasAgent } from "@atlas/config/testing";
+import { interpolatePromptPlaceholders } from "@atlas/fsm-engine";
 import { registry, traceModel } from "@atlas/llm";
 import { generateText } from "ai";
 import { composeAgentPrompt } from "../../../../apps/atlasd/src/agent-helpers.ts";
@@ -154,22 +155,27 @@ export const evals: EvalRegistration[] = cases.map((testCase) =>
       input: testCase.input,
       run: () => runConfigPromptCase(testCase),
       // Structural sanity: both prompt layers must appear in the composed
-      // prompt before we even ask the model. Catches a regression in
-      // composeAgentPrompt itself — separately from the LLM-side score.
-      // Both layers must appear in the composed prompt before we ask the
-      // model — substring-match the prefix up to the first `{{`, since
-      // composeAgentPrompt interpolates placeholders out.
+      // prompt — fully interpolated — before we ask the model. Catches a
+      // regression in composeAgentPrompt itself, separately from the
+      // LLM-side score. We reconstruct the expected post-interpolation
+      // string by running the SAME interpolatePromptPlaceholders the
+      // helper uses, against `prepareConfig`.
       assert: ({ composedPrompt }) => {
-        const requirePrefix = (label: string, raw: string) => {
-          const prefix = raw.split("{{")[0] ?? "";
-          if (prefix && !composedPrompt.includes(prefix)) {
+        const prepareResult = testCase.prepareConfig
+          ? { config: testCase.prepareConfig }
+          : undefined;
+        const requireLayer = (label: string, raw: string) => {
+          const expected = interpolatePromptPlaceholders(raw, prepareResult);
+          if (!composedPrompt.includes(expected)) {
             throw new Error(
-              `Composed prompt missing ${label} prefix.\nGot: ${JSON.stringify(composedPrompt)}`,
+              `Composed prompt missing ${label} (post-interpolation).\n` +
+                `Expected substring: ${JSON.stringify(expected)}\n` +
+                `Got: ${JSON.stringify(composedPrompt)}`,
             );
           }
         };
-        requirePrefix("agentConfig.prompt", testCase.agentConfigPrompt);
-        if (testCase.actionPrompt) requirePrefix("action.prompt", testCase.actionPrompt);
+        requireLayer("agentConfig.prompt", testCase.agentConfigPrompt);
+        if (testCase.actionPrompt) requireLayer("action.prompt", testCase.actionPrompt);
       },
       score: ({ responseText }) => {
         const scores: Score[] = [honorsConfigPromptScore(responseText, testCase.requiredToken)];
