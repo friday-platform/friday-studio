@@ -78,6 +78,24 @@ async function fetchTextArtifactJson(
   return JSON.parse(body.contents) as Record<string, unknown>;
 }
 
+function artifactPayload(doc: Record<string, unknown> | null): Record<string, unknown> | undefined {
+  const nested = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  return nested ?? doc ?? undefined;
+}
+
+async function fetchFirstArtifactPayload(
+  d: DaemonHandle,
+  data: Record<string, unknown> | undefined,
+): Promise<Record<string, unknown> | undefined> {
+  const ref = Array.isArray(data?.artifactRefs)
+    ? (data.artifactRefs[0] as { id?: string } | undefined)
+    : undefined;
+  if (!ref?.id) return undefined;
+  return artifactPayload(await fetchTextArtifactJson(d, ref.id));
+}
+
 function hasArtifactRef(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const obj = value as Record<string, unknown>;
@@ -138,15 +156,7 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
   metrics.toolCallCount = events.toolCallCount;
   metrics.usage = events.totalUsage;
 
-  const reviewArtifactRef = Array.isArray(reviewData?.artifactRefs)
-    ? (reviewData.artifactRefs[0] as { id?: string } | undefined)
-    : undefined;
-  const reviewArtifactDoc = reviewArtifactRef?.id
-    ? await fetchTextArtifactJson(d, reviewArtifactRef.id)
-    : null;
-  const nestedReviewArtifactData = (reviewArtifactDoc?.data as Record<string, unknown> | undefined)
-    ?.data as Record<string, unknown> | undefined;
-  const reviewArtifactData = nestedReviewArtifactData ?? reviewArtifactDoc ?? undefined;
+  const reviewArtifactData = await fetchFirstArtifactPayload(d, reviewData);
   metrics.reviewArtifactData = reviewArtifactData ?? null;
 
   const emailDocHasRefs = hasArtifactRef(emailsData);
@@ -209,6 +219,74 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
   ];
 }
 
+async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Refs Array" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "refs-array-event", {
+    payload: { query: "inputFrom-array" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  metrics.wallTimeMs = trigger.durationMs;
+  metrics.sessionId = trigger.sessionId;
+  metrics.jobComplete = trigger.jobComplete;
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "inputFrom-ref-resolution-array",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const reviewKey = `doc/session/${trigger.sessionId}/refs-array-check/array-review-result`;
+  const reviewDoc = await natsKvGetJson(d.natsUrl, bucket, reviewKey);
+  const reviewData = (reviewDoc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const reviewArtifactData = await fetchFirstArtifactPayload(d, reviewData);
+  const reviewPayload = reviewArtifactData ?? reviewData;
+  const artifacts = await listArtifactsForSession(d, ws.id, trigger.sessionId);
+
+  metrics.bucket = bucket;
+  metrics.reviewDocBytes = reviewDoc ? byteLen(reviewDoc) : 0;
+  metrics.reviewData = reviewData ?? null;
+  metrics.reviewArtifactData = reviewArtifactData ?? null;
+  metrics.artifactCount = artifacts.length;
+
+  const firstIds = Array.isArray(reviewPayload?.firstIds) ? reviewPayload.firstIds : [];
+  const pass =
+    reviewPayload?.marker === "CONSUMED_INPUTFROM_ARRAY" &&
+    reviewPayload?.totalCount === 5 &&
+    firstIds[0] === "a-001" &&
+    firstIds[1] === "b-001" &&
+    artifacts.length >= 3;
+
+  return [
+    {
+      id: "inputFrom-ref-resolution-array",
+      pass,
+      notes: [
+        ...notes,
+        `array marker: ${String(reviewPayload?.marker ?? "(missing)")}`,
+        `array totalCount: ${String(reviewPayload?.totalCount ?? "(missing)")}`,
+        `array firstIds: ${JSON.stringify(firstIds)}`,
+        `session artifact count: ${artifacts.length}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function main() {
   await ensureCredentialsLoaded();
   if (!Deno.env.get("ANTHROPIC_API_KEY")) {
@@ -227,6 +305,8 @@ async function main() {
     console.log(`✓ daemon up: ${daemon.baseUrl}`);
     console.log("\n── refs over data / inputFrom / compact return ──");
     results.push(...(await runRefsOverDataScenario(daemon)));
+    console.log("\n── inputFrom array ref resolution ──");
+    results.push(...(await runInputFromArrayScenario(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });

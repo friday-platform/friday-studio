@@ -33,6 +33,17 @@ signals:
         query:
           type: string
       required: []
+  refs-array-event:
+    provider: http
+    description: "Trigger inputFrom array artifact-ref resolution scenario."
+    config:
+      path: "/refs-array-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 jobs:
   refs-check:
@@ -127,4 +138,106 @@ jobs:
                 - marker: "CONSUMED_EMAIL_BATCH"
                 - count: number of messages in the EmailBatch
                 - firstId: id of the first message.
+          type: final
+
+  refs-array-check:
+    description: "Produce two artifact-backed documents, then consume both via inputFrom array."
+    triggers:
+      - signal: refs-array-event
+    config:
+      timeout: "5m"
+      max_steps: 16
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        EmailBatch:
+          type: object
+          properties:
+            marker: { type: string }
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  body: { type: string }
+                required: ["id", "subject", "body"]
+          required: ["marker", "messages"]
+        ArrayReviewResult:
+          type: object
+          properties:
+            marker: { type: string }
+            totalCount: { type: number }
+            firstIds:
+              type: array
+              items: { type: string }
+          required: ["marker", "totalCount", "firstIds"]
+      states:
+        idle:
+          on:
+            refs-array-event: { target: seed-a }
+        seed-a:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce first EmailBatch for inputFrom array."
+              outputTo: batch-a
+              outputType: EmailBatch
+              validate: skip
+              tools: []
+              prompt: |
+                Emit an EmailBatch object directly. Do not call tools.
+                The object MUST contain marker "ARRAY_BATCH_A" and exactly
+                2 messages with ids a-001 and a-002. Every body must include
+                "FIRST_PRINCIPLES_EMAIL_BODY" plus its id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: seed-b }
+        seed-b:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce second EmailBatch for inputFrom array."
+              outputTo: batch-b
+              outputType: EmailBatch
+              validate: skip
+              tools: []
+              prompt: |
+                Emit an EmailBatch object directly. Do not call tools.
+                The object MUST contain marker "ARRAY_BATCH_B" and exactly
+                3 messages with ids b-001, b-002, and b-003. Every body must
+                include "FIRST_PRINCIPLES_EMAIL_BODY" plus its id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: consume-array }
+        consume-array:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Consume both batches via inputFrom array."
+              inputFrom: [batch-a, batch-b]
+              outputTo: array-review-result
+              outputType: ArrayReviewResult
+              validate: skip
+              tools: []
+              prompt: |
+                Read both EmailBatch documents from Input.
+
+                Important: each previous document may be represented as a
+                compact artifact reference plus an `artifactContent` map. For
+                each input item, if its data has `artifactRefs`, use the
+                matching entry in `artifactContent` as the EmailBatch payload.
+
+                Emit an ArrayReviewResult object with:
+                - marker: "CONSUMED_INPUTFROM_ARRAY"
+                - totalCount: total messages across both batches
+                - firstIds: first message id from each batch, in input order.
           type: final
