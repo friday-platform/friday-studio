@@ -18,18 +18,10 @@
  * The case "llm" inline path (FSM-side) is covered by
  * `packages/fsm-engine/tests/validation-with-output-type.test.ts`.
  *
- * Note on toolChoice: the orchestrator (this file) sets
- * `toolChoice: config.config.tool_choice || "auto"` independent of the
- * validation decision — structured-output forcing happens via
- * `outputSchema` wired into the agent's `outputSchema` field, NOT via
- * toolChoice pinning the way the FSM `case "llm"` site does. So at the
- * orchestrator boundary the `toolChoice` story is uniform: whatever the
- * author configured, default `auto`. The structured/free-form contrast
- * lives in the *tool-set* (record_validation present or not) and the
- * *system prompt* (skill body composed or not). Tests below assert
- * those two, and assert toolChoice equals the author's config across
- * all six crossings to confirm the orchestrator does not silently
- * override it on any validation path.
+ * Runtime `outputSchema` is now the mechanical output contract for LLM-backed
+ * agent actions. When present, the orchestrator injects and pins the `complete`
+ * tool, mirroring inline FSM LLM actions. Free-form actions keep the author's
+ * toolChoice/default `auto` behavior.
  */
 
 import type { AgentContext, StreamEmitter } from "@atlas/agent-sdk";
@@ -166,6 +158,16 @@ function buildContext(opts: {
     session: { sessionId: "h3-sess", workspaceId: "h3-ws" },
     env: {},
     config: validateConfig,
+    ...(opts.hasOutputType
+      ? {
+          outputSchema: {
+            type: "object",
+            properties: { response: { type: "string", minLength: 1 } },
+            required: ["response"],
+            additionalProperties: false,
+          },
+        }
+      : {}),
     stream: makeStreamEmitter(),
     logger: makeLogger(),
     platformModels: createStubPlatformModels(),
@@ -213,29 +215,31 @@ describe("H3: convertLLMToAgent toolChoice + tool injection audit (B6 / E1 / E1.
   // Structured (hasOutputType: true) crossings — E1 + E1.1 enforced
   // -------------------------------------------------------------------
 
-  it("structured + skip → no record_validation, no skill body, toolChoice 'auto'", async () => {
+  it("structured + skip → complete tool pinned, no validation tool/body", async () => {
     const call = await runOrchestrator({ decision: "skip", hasOutputType: true });
+    expect(call.tools).toContain("complete");
     expect(call.tools).not.toContain("record_validation");
     expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    // Author didn't set tool_choice; orchestrator defaults to "auto".
-    expect(call.toolChoice).toBe("auto");
+    expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
   });
 
-  it("structured + self → no record_validation (E1), no skill body (E1.1), toolChoice 'auto'", async () => {
+  it("structured + self → complete tool pinned, no validation tool/body", async () => {
     const call = await runOrchestrator({ decision: "self", hasOutputType: true });
+    expect(call.tools).toContain("complete");
     // E1: structured-output skip suppresses tool injection.
     expect(call.tools).not.toContain("record_validation");
     // E1.1: skill body is also skipped on this path (would otherwise tell
     // the LLM to call a tool that doesn't exist).
     expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toBe("auto");
+    expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
   });
 
-  it("structured + external → no record_validation, no skill body, toolChoice 'auto'", async () => {
+  it("structured + external → complete tool pinned, no validation tool/body", async () => {
     const call = await runOrchestrator({ decision: "external", hasOutputType: true });
+    expect(call.tools).toContain("complete");
     expect(call.tools).not.toContain("record_validation");
     expect(call.systemPrompt).not.toContain(SENTINEL_BODY);
-    expect(call.toolChoice).toBe("auto");
+    expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
   });
 
   // -------------------------------------------------------------------

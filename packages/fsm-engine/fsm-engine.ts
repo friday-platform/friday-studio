@@ -701,7 +701,7 @@ export function buildLLMActionTrace(
  * melodic-strolling-seal-pt2.
  */
 export interface AgentExecutorOptions {
-  /** JSON Schema resolved from FSM `documentTypes` for the action's `outputType`. */
+  /** JSON Schema resolved from FSM `documentTypes` or default outputTo contract. */
   outputSchema?: Record<string, unknown>;
   /**
    * Resolved validation decision for this action — already factored across
@@ -890,6 +890,7 @@ export interface FSMEngineOptions {
 export class FSMEngine {
   private _currentState: string;
   private _documents = new Map<string, Document>();
+  /** Auxiliary, non-document context values such as seeded __meta and __lastPrepare. */
   private _results = new Map<string, Record<string, unknown>>();
   private _signalQueue: SignalWithContext[] = [];
   private _processing = false;
@@ -1160,6 +1161,17 @@ export class FSMEngine {
    * runtime side); this method itself wraps in a try/catch so a
    * misbehaving callback can't crash the action loop.
    */
+  private materializeResults(
+    documents: Map<string, Document>,
+    auxiliary: Map<string, Record<string, unknown>> = this._results,
+  ): Record<string, Record<string, unknown>> {
+    const projected = new Map<string, Record<string, unknown>>(auxiliary);
+    for (const [id, doc] of documents) {
+      projected.set(id, doc.data);
+    }
+    return Object.fromEntries(projected);
+  }
+
   private async maybePersistActionArtifact(
     action: LLMAction | AgentAction,
     doc: Document | undefined,
@@ -1543,14 +1555,14 @@ export class FSMEngine {
         );
 
         // After an action produces a prepareResult without artifactRefs,
-        // collect any artifactRefs from prior agent results in the accumulator.
-        // This ensures LLM steps see artifact content even when the upstream
-        // action only forwards .response (the common compiled-workspace pattern).
-        if (prepareResult && !prepareResult.artifactRefs && results) {
+        // collect any artifactRefs from prior documents. Documents are the
+        // canonical action-output surface; context.results is only a derived
+        // projection for callers.
+        if (prepareResult && !prepareResult.artifactRefs) {
           const seen = new Set<string>();
           const collectedRefs: ArtifactRef[] = [];
-          for (const entry of results.values()) {
-            const refs = entry.artifactRefs;
+          for (const entry of documents.values()) {
+            const refs = entry.data.artifactRefs;
             if (Array.isArray(refs)) {
               for (const ref of refs) {
                 const parsed = ArtifactRefSchema.safeParse(ref);
@@ -1640,14 +1652,20 @@ export class FSMEngine {
       });
     }
 
-    // Create a context bound to the pending documents/signals
+    // Create a context bound to the pending documents/signals. Action outputs
+    // are projected from documents; setResult remains only for auxiliary
+    // caller-provided values such as __meta.
     const resultsMap = results ?? this._results;
     const context: Context = {
       documents: Array.from(documents.values()),
       state: currentState,
-      results: Object.fromEntries(resultsMap),
+      results: this.materializeResults(documents, resultsMap),
       setResult: (key: string, data: Record<string, unknown>) => {
-        resultsMap.set(key, data);
+        if (documents.has(key)) {
+          documents.set(key, { ...documents.get(key)!, data });
+        } else {
+          resultsMap.set(key, data);
+        }
       },
       emit: (s: Signal) => {
         logger.debug("Signal emitted from action", {
@@ -2433,25 +2451,20 @@ export class FSMEngine {
                   });
                 }
 
-                // Dual-write: results accumulator (replace semantics)
-                // LLMs sometimes stringify nested JSON fields (e.g. arrays as
-                // JSON strings). Parse them so downstream .map() calls don't crash.
-                if (results && dataToStore) {
-                  const sanitized = unstringifyNestedJson(dataToStore);
-                  const parsed = z.record(z.string(), z.unknown()).safeParse(sanitized);
-                  if (parsed.success) {
-                    results.set(action.outputTo, parsed.data);
-                  }
-                }
-
-                // Dual-write: documents (backward compat)
+                // Documents are the canonical action-output surface. LLMs
+                // sometimes stringify nested JSON fields (e.g. arrays as JSON
+                // strings); normalize before storing so downstream inputFrom
+                // consumers receive the usable shape.
+                const sanitized = unstringifyNestedJson(dataToStore);
+                const parsed = z.record(z.string(), z.unknown()).safeParse(sanitized);
+                const docData = parsed.success ? parsed.data : dataToStore;
                 if (outputDoc) {
-                  outputDoc.data = { ...outputDoc.data, ...dataToStore };
+                  outputDoc.data = { ...outputDoc.data, ...docData };
                 } else {
                   documents.set(action.outputTo, {
                     id: action.outputTo,
                     type: newDocType,
-                    data: dataToStore,
+                    data: docData,
                   });
                 }
 
@@ -2559,14 +2572,14 @@ export class FSMEngine {
               hasSignalContext: !!sig._context,
               hasOnStreamEvent: !!sig._context?.onStreamEvent,
               hasPrepareInput: !!prepareResult,
-              resultKeys: Object.keys(Object.fromEntries(resultsMap)),
+              resultKeys: Object.keys(this.materializeResults(documents, resultsMap)),
             });
 
             // Build context for agent execution
             const agentContext: Context = {
               documents: Array.from(documents.values()),
               state: currentState,
-              results: Object.fromEntries(resultsMap),
+              results: this.materializeResults(documents, resultsMap),
               ...(effectivePrepareResult ? { input: effectivePrepareResult } : {}),
               emit: context.emit,
               updateDoc: this.makeUpdateDocFn(documents),
@@ -2585,6 +2598,17 @@ export class FSMEngine {
                   .optional()
                   .parse(this._definition.documentTypes?.[agentDocTypeName])
               : undefined;
+            const resolvedAgentType = this.options.resolveAgentType?.(action.agentId);
+            const defaultAgentOutputSchema =
+              action.outputTo && !agentOutputSchema && resolvedAgentType === "llm"
+                ? {
+                    type: "object",
+                    properties: { response: { type: "string", minLength: 1 } },
+                    required: ["response"],
+                    additionalProperties: false,
+                  }
+                : undefined;
+            const executorOutputSchema = agentOutputSchema ?? defaultAgentOutputSchema;
 
             // B4 (melodic-strolling-seal-pt2): resolve the per-action
             // validation decision PRE-call so it can ride through
@@ -2595,7 +2619,6 @@ export class FSMEngine {
             // yet — plus `resolvedAgentType` from the optional resolver so
             // the classifier can short-circuit `user`/`atlas` paths to
             // `skip` (rule 1 in `validate-classifier.ts`).
-            const resolvedAgentType = this.options.resolveAgentType?.(action.agentId);
             // Agent actions don't carry a `tools:` allowlist — the agent
             // itself owns its tool surface (workspace.yml `agents.<id>`).
             // From the FSM engine's vantage we only know structural fields:
@@ -2607,7 +2630,7 @@ export class FSMEngine {
             const agentClassifierInput: ClassifierInput = {
               declaredTools: [],
               calledToolNames: [],
-              hasOutputType: !!action.outputType,
+              hasOutputType: !!executorOutputSchema,
               hasInputFrom: !!action.inputFrom,
               resolvedAgentType,
               emittedProse: false,
@@ -2626,7 +2649,7 @@ export class FSMEngine {
             // Execute agent via callback, passing full action object for prompt access
             // Agent returns AgentResult envelope directly
             const executorOptions: AgentExecutorOptions = {
-              ...(agentOutputSchema ? { outputSchema: agentOutputSchema } : {}),
+              ...(executorOutputSchema ? { outputSchema: executorOutputSchema } : {}),
               validateDecision: agentValidateDecision,
               ...(agentValidateSkill ? { validateSkill: agentValidateSkill } : {}),
             };
@@ -2760,6 +2783,9 @@ export class FSMEngine {
               ...(agentValidateDecision === "external" && agentExternalSurvivingVerdict
                 ? { externalVerdict: agentExternalSurvivingVerdict }
                 : {}),
+              ...(agentValidateDecision === "self" && executorOutputSchema
+                ? { implicitPass: true }
+                : {}),
             });
 
             // B6: failStep semantics on a self-recorded `blocking` verdict.
@@ -2829,12 +2855,6 @@ export class FSMEngine {
                   ? { ...baseData, artifactRefs: result.artifactRefs }
                   : baseData;
 
-              // Dual-write: results accumulator (replace semantics)
-              if (results) {
-                results.set(action.outputTo, data);
-              }
-
-              // Dual-write: documents (backward compat)
               const existingDoc = documents.get(action.outputTo);
               if (existingDoc) {
                 existingDoc.data = { ...existingDoc.data, ...data };
@@ -3481,7 +3501,7 @@ export class FSMEngine {
   }
 
   get results(): Record<string, Record<string, unknown>> {
-    return Object.fromEntries(this._results);
+    return this.materializeResults(this._documents);
   }
 
   getDocument(id: string): Document | undefined {
@@ -3492,9 +3512,13 @@ export class FSMEngine {
     return {
       documents: this.documents,
       state: this._currentState,
-      results: Object.fromEntries(this._results),
+      results: this.materializeResults(this._documents),
       setResult: (key: string, data: Record<string, unknown>) => {
-        this._results.set(key, data);
+        if (this._documents.has(key)) {
+          this._documents.set(key, { ...this._documents.get(key)!, data });
+        } else {
+          this._results.set(key, data);
+        }
       },
       emit: (s: Signal) => this.signal(s),
       updateDoc: this.makeUpdateDocFn(),

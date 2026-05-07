@@ -5,6 +5,7 @@ import { createAgent, err, ok, repairToolCall } from "@atlas/agent-sdk";
 import {
   collectToolUsageFromSteps,
   extractArtifactRefsFromToolResults,
+  extractToolCallInput,
 } from "@atlas/agent-sdk/vercel-helpers";
 import type { LLMAgentConfig } from "@atlas/config";
 import {
@@ -15,7 +16,7 @@ import {
   validateProvider,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { stepCountIs, streamText } from "ai";
+import { jsonSchema, stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { composeValidationBlock } from "../agent-context/compose-blocks.ts";
 import {
@@ -61,7 +62,7 @@ export function convertLLMToAgent(
     outputSchema: LLMOutputSchema,
     expertise: { examples: [] },
     useWorkspaceSkills: true,
-    handler: async (prompt, { tools, stream, abortSignal, config: ctxConfig }) => {
+    handler: async (prompt, { tools, stream, abortSignal, config: ctxConfig, outputSchema }) => {
       try {
         // Use agent's system prompt directly - no attribution protocol injection
         let systemPrompt = config.config.prompt || "";
@@ -141,6 +142,18 @@ export function convertLLMToAgent(
                 createRecordValidationTool() as (typeof filteredTools)[string],
             }
           : filteredTools;
+        const hasRuntimeOutputSchema = !!outputSchema;
+        const toolsWithOutputContract = hasRuntimeOutputSchema
+          ? {
+              ...toolsWithValidation,
+              complete: {
+                description:
+                  "Call this when finished to store the final output for the FSM action.",
+                inputSchema: jsonSchema(outputSchema as Parameters<typeof jsonSchema>[0]),
+                execute: () => ({ success: true }),
+              } as (typeof toolsWithValidation)[string],
+            }
+          : toolsWithValidation;
 
         const result = streamText({
           model,
@@ -158,8 +171,10 @@ export function convertLLMToAgent(
             temporalGroundingMessage(),
             { role: "user", content: prompt },
           ],
-          tools: toolsWithValidation,
-          toolChoice: config.config.tool_choice || "auto",
+          tools: toolsWithOutputContract,
+          toolChoice: hasRuntimeOutputSchema
+            ? ({ type: "tool", toolName: "complete" } as const)
+            : config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,
           maxRetries,
@@ -231,17 +246,18 @@ export function convertLLMToAgent(
           toolResults,
         });
 
+        const completeOutput = hasRuntimeOutputSchema
+          ? extractToolCallInput<LLMOutput>(assembledToolCalls, "complete")
+          : undefined;
+        const output = completeOutput ?? { response: resolvedText };
         const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
 
-        return ok(
-          { response: resolvedText },
-          {
-            reasoning: reasoning || undefined,
-            toolCalls: assembledToolCalls,
-            toolResults: assembledToolResults,
-            artifactRefs,
-          },
-        );
+        return ok(output, {
+          reasoning: reasoning || undefined,
+          toolCalls: assembledToolCalls,
+          toolResults: assembledToolResults,
+          artifactRefs,
+        });
       } catch (error) {
         // Simply check if we were aborted, don't try to detect from error
         if (abortSignal?.aborted) {
