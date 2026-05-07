@@ -177,7 +177,7 @@ function workspaceHasBroadcastDestination(workspace: {
  * warn fires, so the underlying work (NATS drain, fetch loop, subprocess
  * wait) stops leaking event-loop handles and the process can actually exit.
  */
-async function withShutdownTimeout<T>(
+export async function withShutdownTimeout<T>(
   label: string,
   task: Promise<T> | undefined | null | ((signal: AbortSignal) => Promise<T>),
   ms: number,
@@ -185,14 +185,14 @@ async function withShutdownTimeout<T>(
   if (!task) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
-  let work: Promise<T>;
-  if (typeof task === "function") {
-    controller = new AbortController();
-    work = task(controller.signal);
-  } else {
-    work = task;
-  }
   try {
+    let work: Promise<T>;
+    if (typeof task === "function") {
+      controller = new AbortController();
+      work = task(controller.signal);
+    } else {
+      work = task;
+    }
     await Promise.race([
       work,
       new Promise<never>((_, reject) => {
