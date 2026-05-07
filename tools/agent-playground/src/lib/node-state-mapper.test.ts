@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deriveNodeStates, type NodeStateEntry, type NodeVisualState } from "./node-state-mapper.ts";
 import type { Topology } from "@atlas/config";
-import type { ActionEntry, ExecutionReport, StateTransition } from "./execution-context.svelte.ts";
+import type { ActionEntry, ExecutionReport, StateTransition } from "./types/execution-report.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers

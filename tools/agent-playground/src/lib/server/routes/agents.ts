@@ -1,7 +1,9 @@
+import { join } from "node:path";
 import type { BundledAgentConfigField } from "@atlas/bundled-agents";
 import { bundledAgents, bundledAgentsRegistry } from "@atlas/bundled-agents";
+import { UserAdapter } from "@atlas/core/agent-loader";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import { Hono } from "hono";
-import { listUserAgents } from "../lib/user-agents.ts";
 
 /**
  * Maps a required config field to the API response shape.
@@ -57,7 +59,7 @@ export const agentsRoute = new Hono().get("/", async (c) => {
   });
 
   // Discover user agents from ~/.friday/local/agents/
-  const userAgents = await listUserAgents();
+  const userAgents = await new UserAdapter(join(getFridayHome(), "agents")).listAgents();
   const emptyExamples: string[] = [];
   const emptyRequired: ReturnType<typeof toRequiredConfigEntry>[] = [];
   const emptyOptional: ReturnType<typeof toOptionalConfigEntry>[] = [];
