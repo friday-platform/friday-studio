@@ -198,7 +198,14 @@ describe("E1: structured-output + self validation interaction", () => {
     expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
   });
 
-  it("structured + self → step:complete.validation = { strategy: 'self' } (no verdict)", async () => {
+  it("structured + self → step:complete.validation = { strategy: 'self', verdict: 'pass' } (B5 implicit pass)", async () => {
+    // B5 (review-2): structured + self path is implicit-pass on successful
+    // complete-tool emission. Pre-B5 this returned bare `{strategy: "self"}`,
+    // which made step:complete.validation telemetry silently empty for
+    // every structured action; downstream consumers couldn't distinguish
+    // "self resolved, LLM emitted nothing" from "self resolved, structured
+    // emit succeeded." Now the runtime synthesizes a pass verdict so the
+    // stream event is honest about what happened.
     _setSkillStorageForTest(stubSkillAdapter());
     const { completionEvent } = await runStructuredAction({
       validate: "self",
@@ -208,7 +215,7 @@ describe("E1: structured-output + self validation interaction", () => {
 
     const validation = completionEvent?.data.llmResult?.validation;
     expect(validation?.strategy).toBe("self");
-    expect(validation?.verdict).toBeUndefined();
+    expect(validation?.verdict).toBe("pass");
   });
 
   it("structured + self → skill body NOT composed into the prompt (E1.1)", async () => {

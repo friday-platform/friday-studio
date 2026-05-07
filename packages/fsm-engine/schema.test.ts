@@ -25,17 +25,16 @@ describe("ValidateStrategySchema", () => {
   it("accepts object form with all optional fields", () => {
     // B7 (melodic-strolling-seal-pt2): `retryOnFail` is dropped — the
     // delegate-driven judge has no built-in retry concept. `agent` is
-    // added so authors can swap in domain-specific judges.
+    // added so authors can swap in domain-specific judges. O4 (review-2)
+    // dropped `threshold` (parsed-but-never-read).
     const parsed = ValidateStrategySchema.parse({
       strategy: "external",
       skill: "@my/validator-skill",
-      threshold: "standard",
       agent: "fin-judge",
     });
     expect(parsed).toMatchObject({
       strategy: "external",
       skill: "@my/validator-skill",
-      threshold: "standard",
       agent: "fin-judge",
     });
   });
@@ -66,9 +65,9 @@ describe("ValidateStrategySchema", () => {
     expect(() => ValidateStrategySchema.parse({ strategy: "self", extraField: true })).toThrow();
   });
 
-  it("rejects object form with bad threshold value", () => {
+  it("rejects object form with `threshold` (dropped in O4)", () => {
     expect(() =>
-      ValidateStrategySchema.parse({ strategy: "self", threshold: "lenient" }),
+      ValidateStrategySchema.parse({ strategy: "self", threshold: "standard" }),
     ).toThrow();
   });
 });
@@ -87,15 +86,11 @@ describe.each([
     expect((parsed as { validate?: unknown }).validate).toEqual(value);
   });
 
-  it("parses object form with skill + threshold", () => {
-    const parsed = schema.parse({
-      ...base,
-      validate: { strategy: "self", skill: "@my/skill", threshold: "standard" },
-    });
+  it("parses object form with skill (O4 dropped threshold)", () => {
+    const parsed = schema.parse({ ...base, validate: { strategy: "self", skill: "@my/skill" } });
     expect((parsed as { validate?: unknown }).validate).toMatchObject({
       strategy: "self",
       skill: "@my/skill",
-      threshold: "standard",
     });
   });
 

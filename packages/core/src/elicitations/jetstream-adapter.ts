@@ -30,7 +30,7 @@
 
 import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
-import { dec, enc, isCASConflict, isStreamNotFound } from "jetstream";
+import { dec, enc, isCASConflict, isStreamNotFound, registerReconnectReset } from "jetstream";
 import {
   type KV,
   type NatsConnection,
@@ -73,7 +73,15 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
   private cachedKv: KV | null = null;
   private streamEnsured = false;
 
-  constructor(private readonly nc: NatsConnection) {}
+  constructor(private readonly nc: NatsConnection) {
+    // N6: invalidate cached ensure-state on NATS reconnect so the first
+    // post-bounce access re-provisions instead of failing with
+    // stream-not-found / bucket-not-found.
+    registerReconnectReset(this.nc, () => {
+      this.cachedKv = null;
+      this.streamEnsured = false;
+    });
+  }
 
   private async ensureStream(): Promise<void> {
     if (this.streamEnsured) return;

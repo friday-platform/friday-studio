@@ -482,12 +482,22 @@ function buildValidationOutput(input: {
   recordedArgs?: Record<string, unknown>;
   /** Final verdict from the external judge; undefined when judge didn't run. */
   externalVerdict?: ValidationVerdict;
+  /**
+   * B5: structured + self path. The action declared an outputType with a
+   * defined schema, so the runtime injected a `complete` tool and elided
+   * `record_validation` (E1.1). Successful structured emission is the
+   * implicit verdict — surface as `pass` so step:complete.validation isn't
+   * silently empty.
+   */
+  implicitPass?: boolean;
 }): NonNullable<FSMActionExecutionEvent["data"]["llmResult"]>["validation"] {
   if (input.decision === "skip") {
     return { strategy: "skip", skipReason: input.reason };
   }
   if (input.decision === "self") {
-    if (!input.recordedArgs) return { strategy: "self" };
+    if (!input.recordedArgs) {
+      return input.implicitPass ? { strategy: "self", verdict: "pass" } : { strategy: "self" };
+    }
     const verdict = input.recordedArgs.verdict;
     const issues = Array.isArray(input.recordedArgs.issues)
       ? (input.recordedArgs.issues as Array<Record<string, unknown>>).map((i) => ({
@@ -994,7 +1004,72 @@ export class FSMEngine {
     // from storage regardless of which initialization path was taken
     await this.persistDocuments();
 
+    // B1: emit one info log per (state × llm/agent action) summarizing the
+    // statically-resolved validation decision. Authors can grep their
+    // daemon logs to confirm "what's resolving where" without bisecting
+    // the workspace > job > action precedence chain by hand. The
+    // classifier runs with the static context (declared tools, no
+    // calledToolNames, no emittedProse) which matches the pre-call
+    // resolution at runtime — explicit/merged-default decisions are
+    // identical; only `auto` may shift if the LLM emits unexpected prose.
+    this.logResolvedValidationDecisions();
+
     this._initialized = true;
+  }
+
+  /** B1: see the inline call site in `initialize()` for rationale. */
+  private logResolvedValidationDecisions(): void {
+    const job = this.options.jobValidation;
+    const workspace = this.options.workspaceValidation;
+    for (const [stateId, stateNode] of Object.entries(this._definition.states ?? {})) {
+      const collectActions = (): Array<{ trigger: string; action: Action }> => {
+        const out: Array<{ trigger: string; action: Action }> = [];
+        for (const a of stateNode.entry ?? []) out.push({ trigger: "entry", action: a });
+        for (const [event, transition] of Object.entries(stateNode.on ?? {})) {
+          const actions = Array.isArray(transition)
+            ? []
+            : ((transition as { actions?: Action[] }).actions ?? []);
+          for (const a of actions) out.push({ trigger: `on:${event}`, action: a });
+        }
+        return out;
+      };
+      for (const { trigger, action } of collectActions()) {
+        if (action.type !== "llm" && action.type !== "agent") continue;
+        const declaredTools = "tools" in action && Array.isArray(action.tools) ? action.tools : [];
+        const resolution = resolveValidateDecision(
+          "validate" in action ? action.validate : undefined,
+          {
+            declaredTools,
+            calledToolNames: [],
+            hasOutputType:
+              action.type === "llm" && !!(action as { outputType?: string }).outputType,
+            hasInputFrom: "inputFrom" in action && !!action.inputFrom,
+            resolvedAgentType: undefined,
+            emittedProse: false,
+            toolsAvailable: declaredTools.length > 0,
+            ...(action.type === "llm" &&
+            (action as { run_code?: { readOnly?: boolean } }).run_code?.readOnly
+              ? { runCodeReadOnly: true }
+              : {}),
+          },
+          { ...(job && { job }), ...(workspace && { workspace }) },
+        );
+        logger.info("FSM action validation resolved", {
+          fsm: this._definition.id,
+          state: stateId,
+          trigger,
+          actionType: action.type,
+          ...(action.type === "llm" && action.outputTo ? { outputTo: action.outputTo } : {}),
+          ...(action.type === "agent" && (action as { agentId?: string }).agentId
+            ? { agentId: (action as { agentId: string }).agentId }
+            : {}),
+          decision: resolution.decision,
+          source: resolution.source,
+          reason: resolution.reason,
+          ...(resolution.skill ? { skill: resolution.skill } : {}),
+        });
+      }
+    }
   }
 
   async signal(
@@ -2249,10 +2324,54 @@ export class FSMEngine {
                 decision: validateDecision,
                 reason: validateReason,
                 recordedArgs: recordedValidationArgs,
+                // B5: structured + self path emits an implicit pass verdict.
+                ...(validateDecision === "self" && completeToolInjected
+                  ? { implicitPass: true }
+                  : {}),
                 ...(validateDecision === "external" && externalSurvivingVerdict
                   ? { externalVerdict: externalSurvivingVerdict }
                   : {}),
               });
+
+              // F9: sentinel-text guard. When `validate: self` resolves and
+              // the LLM had no `complete` tool to pin a structured output,
+              // the outputDoc falls back to `result.data.response` — i.e.
+              // the model's most recent text turn before its closing tool
+              // call. If that text reads like a transition phrase ("Now let
+              // me record validation and return the final output:") rather
+              // than the actual content the action was asked to produce,
+              // the persisted doc will be a stub. Log a warn so the
+              // operator can correlate and either tighten the action's
+              // prompt or add an outputType schema. Heuristic — this
+              // doesn't fail the action, just surfaces it. Repro:
+              // fizzy_cauliflower/chat_dnFo9lv7cI auto-triage 2026-05-07.
+              if (
+                validateDecision === "self" &&
+                !completeToolInjected &&
+                recordedValidationArgs !== undefined
+              ) {
+                const responseText =
+                  typeof (result.data as { response?: unknown })?.response === "string"
+                    ? ((result.data as { response: string }).response as string)
+                    : "";
+                const trimmed = responseText.trim();
+                const looksTransitional =
+                  trimmed.length > 0 &&
+                  trimmed.length < 500 &&
+                  (trimmed.endsWith(":") || /^(now\s+(let|i)|let\s+me|i'?ll\s+now)/i.test(trimmed));
+                if (looksTransitional) {
+                  logger.warn(
+                    "LLM action validate:self may have terminated on record_validation without emitting final output",
+                    {
+                      state: currentState,
+                      outputTo: action.outputTo,
+                      responseChars: trimmed.length,
+                      responseHead: trimmed.slice(0, 120),
+                      hint: "Update the action's prompt (or the validating-llm-outputs skill) so the LLM emits its final output before calling record_validation.",
+                    },
+                  );
+                }
+              }
 
               // B6: failStep semantics on a self-recorded `blocking` verdict.
               // The LLM has explicitly told us its output is unsourced and

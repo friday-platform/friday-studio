@@ -52,12 +52,40 @@ If a claim cannot be sourced, drop it from your output. If the task genuinely re
 
 ## ACTION — RECORDING YOUR VERDICT
 
-Before emitting your final output, you MUST call the `record_validation` tool exactly once with your self-check verdict:
+**Output first, then record.** The `record_validation` call is the closing punctuation on your turn — once you call it, your turn is over and any text you generate after it is discarded by the runtime.
 
-- `{ verdict: "pass" }` — every factual claim in your draft is sourced and you have no concerns. Emit normally.
-- `{ verdict: "advisory", issues: [...] }` — claims are sourced but you have specific concerns to surface. Emit normally; the issues ride alongside the output for downstream review.
-- `{ verdict: "blocking", issues: [...] }` — you cannot source your output and cannot fix it via the FIX-UP RULE above. The runtime treats this like `failStep` — the action errors and the FSM does not transition. **Do not emit your output** when you record `blocking`.
+Required ordering for `pass` and `advisory`:
+
+1. Walk your draft and apply the FIX-UP RULE above.
+2. **Emit your final output** — the full text response (or, for actions with structured output, the structured payload) that the action is supposed to produce. Do not emit a transitional sentence like "Now let me record validation and return the final output" and stop there — that prefix is not the output, and the runtime captures it as if it were. Produce the full content first.
+3. **Then call `record_validation` exactly once** as the closing tool call. Do not say anything else after.
+
+Verdicts:
+
+- `{ verdict: "pass" }` — every factual claim in your output is sourced and you have no concerns. Use this after emitting normally. **Common case.**
+- `{ verdict: "advisory", issues: [...] }` — claims are sourced but you have specific concerns to surface. Use this after emitting normally; the issues ride alongside the output for downstream review.
+- `{ verdict: "blocking", issues: [...] }` — you cannot source your output and cannot fix it via the FIX-UP RULE above. **Do not emit any output**; call `record_validation` with `blocking` as your only action. The runtime treats this like `failStep` — the action errors and the FSM does not transition.
 
 Each `issues` entry should describe one unsourced claim with at minimum a `claim` string. Optional fields: `category` (e.g. `sourcing`, `no-tools-called`, `judge-uncertain`), `reasoning` (why you flagged it), `severity`, and `citation`.
 
-Do not skip this call. The runtime relies on `record_validation` to mark the action's verdict on the session event stream so downstream consumers (compact result shapes, the Activity page, future crystallization signals) see what you concluded. If your output is correct and sourced — which is the common case — record `verdict: "pass"` and emit normally.
+### Why ordering matters
+
+The runtime captures your `response` from the model's last text turn before the closing tool call. If you call `record_validation` first and then try to "return the final output" afterwards, that text never makes it into the recorded response — only the prefix that came before the call does. The action's downstream consumer (the document store, the next FSM step, the chat reply) sees an incomplete output.
+
+The correct sequence for an action that produces a markdown report:
+
+```
+[full markdown report text emitted as your response]
+→ record_validation({ verdict: "pass" })
+→ end of turn
+```
+
+NOT:
+
+```
+"Report saved successfully. Now let me record validation and return the final output:"
+→ record_validation({ verdict: "pass" })
+→ (turn ends here; the actual report never gets emitted)
+```
+
+Do not skip the call. The runtime relies on `record_validation` to mark the action's verdict on the session event stream so downstream consumers (compact result shapes, the Activity page, future crystallization signals) see what you concluded. If your output is correct and sourced — which is the common case — emit it, then record `verdict: "pass"`.

@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { createLogger } from "@atlas/logger";
 import { createJetStreamKVStorage, type KVStorage } from "@atlas/storage";
-import { dec, enc, isStreamNotFound } from "jetstream";
+import { dec, enc, isStreamNotFound, registerReconnectReset } from "jetstream";
 import { AckPolicy, DeliverPolicy, type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import type { SessionStreamEvent, SessionSummary, SessionView } from "./session-events.ts";
 import { SessionStreamEventSchema, SessionSummarySchema } from "./session-events.ts";
@@ -77,7 +77,14 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
   private inflightKV: KVStorage | null = null;
   private streamReady = false;
 
-  constructor(private readonly nc: NatsConnection) {}
+  constructor(private readonly nc: NatsConnection) {
+    // N6: invalidate cached ensure-state on NATS reconnect.
+    registerReconnectReset(this.nc, () => {
+      this.metadataKV = null;
+      this.inflightKV = null;
+      this.streamReady = false;
+    });
+  }
 
   /** Lazily provision the SESSION_EVENTS stream with the right config. */
   private async ensureStream(): Promise<void> {
@@ -228,6 +235,7 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
       if (total === 0) return null;
       let received = 0;
       while (received < total) {
+        const before = received;
         const batch = await consumer.fetch({
           max_messages: Math.min(500, total - received),
           expires: 1000,
@@ -240,6 +248,19 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
           } catch (err) {
             logger.warn("Skipping corrupted session event", { sessionId, error: String(err) });
           }
+        }
+        if (received === before) {
+          // Fetch timed out without delivering anything. info() saw `total`
+          // pending but the consumer never produced them — typically
+          // mid-read drift (events were ack'd by another reader, or the
+          // consumer's filter raced a stream purge). Break instead of
+          // spinning so a degraded stream doesn't wedge the read path.
+          logger.warn("session-history get() stalled mid-read", {
+            sessionId,
+            expectedTotal: total,
+            actualReceived: received,
+          });
+          break;
         }
       }
     } finally {

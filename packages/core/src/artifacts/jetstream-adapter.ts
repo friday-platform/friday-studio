@@ -29,7 +29,7 @@ import { createLogger } from "@atlas/logger";
 import { fail, type Result, stringifyError, success } from "@atlas/utils";
 import { encodeHex } from "@std/encoding/hex";
 import { fileTypeFromBuffer } from "file-type";
-import { dec, enc, isCASConflict } from "jetstream";
+import { dec, enc, isCASConflict, registerReconnectReset } from "jetstream";
 import type { KV, NatsConnection, ObjectStore } from "nats";
 import {
   type Artifact,
@@ -111,7 +111,15 @@ export class JetStreamArtifactStorageAdapter implements ArtifactStorageAdapter {
   private cachedKv: KV | null = null;
   private cachedOs: ObjectStore | null = null;
 
-  constructor(private readonly nc: NatsConnection) {}
+  constructor(private readonly nc: NatsConnection) {
+    // N6: invalidate cached KV/OS handles on NATS reconnect so the first
+    // post-bounce access re-fetches instead of using a handle bound to
+    // the prior connection's session.
+    registerReconnectReset(this.nc, () => {
+      this.cachedKv = null;
+      this.cachedOs = null;
+    });
+  }
 
   private async kv(): Promise<KV> {
     if (this.cachedKv) return this.cachedKv;

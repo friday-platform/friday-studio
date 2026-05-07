@@ -262,6 +262,43 @@ export const DEFAULT_VALIDATION_SKILL = "validating-llm-outputs" as const;
  * external-judge path (`decision: "external"`) is unaffected; only the
  * inline `self` augmentation degrades.
  */
+/**
+ * O10: circuit-breaker counter for `composeValidationBlock` failures.
+ * Module-level state — counts consecutive failures across calls. After
+ * `VALIDATION_SKILL_FAILURE_THRESHOLD` in a row, escalates the next failure
+ * to `error` level (instead of `warn`) and resets the counter to avoid
+ * log spam. Ensures a flapping skill backend doesn't silently degrade
+ * every action's validation guidance — operators see an error in the log
+ * stream once the run-of-failures crosses the threshold. Resets on first
+ * successful skill fetch.
+ */
+let consecutiveValidationSkillFailures = 0;
+const VALIDATION_SKILL_FAILURE_THRESHOLD = 5;
+
+function reportValidationSkillFailure(opts: {
+  logger: Logger;
+  message: string;
+  skillName: string;
+  extra?: Record<string, unknown>;
+}): void {
+  consecutiveValidationSkillFailures++;
+  const ctx = {
+    skillName: opts.skillName,
+    consecutiveFailures: consecutiveValidationSkillFailures,
+    ...opts.extra,
+  };
+  if (consecutiveValidationSkillFailures >= VALIDATION_SKILL_FAILURE_THRESHOLD) {
+    opts.logger.error(
+      `composeValidationBlock: ${consecutiveValidationSkillFailures} consecutive failures — validation guidance NOT being injected`,
+      ctx,
+    );
+    // Reset so we re-escalate after the next run rather than spam every call.
+    consecutiveValidationSkillFailures = 0;
+  } else {
+    opts.logger.warn(opts.message, ctx);
+  }
+}
+
 export async function composeValidationBlock(opts: {
   decision: "skip" | "self" | "external";
   skillName?: string;
@@ -272,26 +309,34 @@ export async function composeValidationBlock(opts: {
   try {
     const result = await SkillStorage.get("friday", name);
     if (!result.ok) {
-      opts.logger.warn(
-        "composeValidationBlock: skill catalog lookup failed; falling through to no-validation",
-        { skillName: name, error: result.error },
-      );
+      reportValidationSkillFailure({
+        logger: opts.logger,
+        message:
+          "composeValidationBlock: skill catalog lookup failed; falling through to no-validation",
+        skillName: name,
+        extra: { error: result.error },
+      });
       return "";
     }
     if (!result.data) {
-      opts.logger.warn(
-        "composeValidationBlock: validate: self requested but skill not found; falling through to no-validation",
-        { skillName: name },
-      );
+      reportValidationSkillFailure({
+        logger: opts.logger,
+        message:
+          "composeValidationBlock: validate: self requested but skill not found; falling through to no-validation",
+        skillName: name,
+      });
       return "";
     }
+    consecutiveValidationSkillFailures = 0;
     return result.data.instructions;
   } catch (err) {
     // Skill storage might not be initialized in some unit-test paths
     // (mirrors composeArtifactBlocks's swallow-and-log behavior).
-    opts.logger.warn("composeValidationBlock: skill storage unavailable", {
+    reportValidationSkillFailure({
+      logger: opts.logger,
+      message: "composeValidationBlock: skill storage unavailable",
       skillName: name,
-      error: stringifyError(err),
+      extra: { error: stringifyError(err) },
     });
     return "";
   }
