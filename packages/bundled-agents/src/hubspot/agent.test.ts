@@ -512,7 +512,7 @@ describe("hubspotAgent deterministic create-note", () => {
       hsTimestamp: "2026-05-07T12:00:00.000Z",
     });
 
-    await hubspotAgent.execute(prompt, validContext());
+    const result = await hubspotAgent.execute(prompt, validContext());
 
     expect(mockBatchCreate).toHaveBeenCalledOnce();
     expect(mockBatchCreate).toHaveBeenCalledWith("notes", {
@@ -528,6 +528,12 @@ describe("hubspotAgent deterministic create-note", () => {
         },
       ],
     });
+    // Also pin the agent's return — the SDK-call shape and the
+    // user-visible outcome should agree on what happened.
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(true);
+    expect(result.data.response).toBe("CRM Note 601 created on ticket 5501");
   });
 
   it("returns err when the SDK batch-create rejects", async () => {
@@ -583,8 +589,12 @@ describe("hubspotAgent deterministic create-note", () => {
     expect.assert(result.ok);
     expect(result.data.success).toBe(false);
     expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned 1 error");
-    expect(result.data.data).toMatchObject({
+    // Pin the full data shape — including the `properties: {}` default
+    // that round-5 introduced for stable JSON output on the no-result path.
+    expect(result.data.data).toEqual({
       noteId: null,
+      ticketId: "5501",
+      properties: {},
       numErrors: 1,
       errors: [{ status: "error", message: "Property hs_timestamp is required" }],
     });
@@ -627,7 +637,13 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned no usable id");
     // Empty-string id from the SDK should be normalized to `null` in the
     // structured payload — consumers shouldn't see an empty noteId string.
-    expect(result.data.data).toMatchObject({ noteId: null });
+    expect(result.data.data).toEqual({
+      noteId: null,
+      ticketId: "5501",
+      properties: {},
+      numErrors: 0,
+      errors: [],
+    });
   });
 
   it("substitutes a fresh hs_timestamp when upstream sends an empty string", async () => {
@@ -750,5 +766,19 @@ describe("hubspotAgent deterministic noop", () => {
     expect(result.data.response).toBe("Noop — upstream signalled nothing to do.");
     // Empty-string reason should not surface in the structured payload.
     expect(result.data.data).toEqual({ skipped: true });
+  });
+
+  it("preserves explicit skipped: false (boolean uses ??, not ||)", async () => {
+    // Round-6 changed string fallbacks from `??` to `||`; for `skipped`
+    // (boolean) we kept `??` because `false` is a valid intentional value.
+    // This test pins that distinction so a future "consistency" refactor
+    // doesn't accidentally flip false → true.
+    const prompt = JSON.stringify({ operation: "noop", skipped: false, reason: "x" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.data).toEqual({ skipped: false, reason: "x" });
   });
 });
