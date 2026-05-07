@@ -236,6 +236,10 @@ export class AtlasDaemon {
   private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private shutdownPromise: Promise<void> | null = null;
   private server: Deno.HttpServer | null = null;
+  // Aborted on shutdown-step timeout to force-close the Deno.serve listener
+  // immediately, instead of letting it linger after server.shutdown() exceeds
+  // its per-step ceiling. Wired into both Deno.serve sites at start time.
+  private serverAbortController = new AbortController();
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
   private platformModels: PlatformModels | null = null;
@@ -2278,6 +2282,7 @@ export class AtlasDaemon {
       {
         port,
         hostname,
+        signal: this.serverAbortController.signal,
         onListen: ({ hostname, port }) => {
           this.#port = port;
           logger.info("👹 Atlas daemon running", { hostname, port });
@@ -2318,6 +2323,7 @@ export class AtlasDaemon {
       {
         port,
         hostname,
+        signal: this.serverAbortController.signal,
         onListen: ({ hostname, port }) => {
           this.#port = port; // Store the actual port
           logger.info("Atlas daemon running", { hostname, port });
@@ -2477,7 +2483,19 @@ export class AtlasDaemon {
     // need them); the rest just stop accepting new work. Each step has its
     // own ceiling so a hung component can't block the others.
     await Promise.allSettled([
-      withShutdownTimeout("http server drain", this.server?.shutdown(), 3000),
+      withShutdownTimeout(
+        "http server drain",
+        (signal) => {
+          // Forward step-timeout cancellation to the Deno.serve listener so a
+          // hung drain (refusing SSE client, long-poll request) doesn't leak
+          // the listener after the per-step ceiling fires.
+          signal.addEventListener("abort", () => {
+            this.serverAbortController.abort(signal.reason);
+          }, { once: true });
+          return this.server?.shutdown() ?? Promise.resolve();
+        },
+        3000,
+      ),
       withShutdownTimeout("discord gateway", this.discordGatewayService?.stop(), 1500),
       // Stop the SIGNALS forwarder first so no new envelopes land on
       // CASCADES while the cascade consumer is draining.
