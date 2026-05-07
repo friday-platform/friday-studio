@@ -49,35 +49,45 @@ function extractJsonCandidates(text: string): string[] {
  * Searches for JSON blocks in code fences, raw JSON objects, or the entire
  * prompt as JSON. Generic over the Zod schema so all agents (bb, gh, jira)
  * can share this logic.
+ *
+ * When multiple matches exist (e.g. an FSM step's prompt accumulates
+ * envelopes from prior steps as `### Document:` sections), prefer the
+ * LAST matching candidate. Workspace prompts append documents in order,
+ * so the most recent — the one this step is meant to act on — appears
+ * latest in the prompt. Returning the first match would dispatch on a
+ * stale upstream envelope.
  */
 export function parseOperationConfig<T extends z.ZodType>(prompt: string, schema: T): z.infer<T> {
-  // Try to find JSON blocks in code fences
-  const jsonBlockPattern = /```json\s*([\s\S]*?)```/g;
+  let lastMatch: z.infer<T> | undefined;
 
+  // Try JSON code fences
+  const jsonBlockPattern = /```json\s*([\s\S]*?)```/g;
   for (const blockMatch of prompt.matchAll(jsonBlockPattern)) {
     const jsonContent = blockMatch[1];
     if (!jsonContent) continue;
     try {
       const parsed: unknown = JSON.parse(jsonContent);
       const result = schema.safeParse(parsed);
-      if (result.success) return result.data;
+      if (result.success) lastMatch = result.data;
     } catch {
       // Not valid JSON, continue
     }
   }
+  if (lastMatch !== undefined) return lastMatch;
 
-  // Try finding raw JSON objects containing "operation" key
+  // Try raw JSON objects containing "operation" key
   for (const candidate of extractJsonCandidates(prompt)) {
     try {
       const parsed: unknown = JSON.parse(candidate);
       const result = schema.safeParse(parsed);
-      if (result.success) return result.data;
+      if (result.success) lastMatch = result.data;
     } catch {
       // Not valid JSON, continue
     }
   }
+  if (lastMatch !== undefined) return lastMatch;
 
-  // Last resort: try parsing the entire prompt as JSON
+  // Last resort: parse the entire prompt as JSON
   try {
     const parsed: unknown = JSON.parse(prompt);
     const result = schema.safeParse(parsed);
