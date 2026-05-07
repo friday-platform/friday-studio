@@ -192,6 +192,39 @@ export function convertLLMToAgent(
           usage,
         });
 
+        // N2 (melodic-strolling-seal-pt3): defensive fallback for empty
+        // `result.text`. The AI SDK's `result.text` reflects only the
+        // FINAL step's assistant text. When the LLM ends on a tool call
+        // (e.g. `record_validation` injected by the validate:self path)
+        // its final assistant message has no text part, so `result.text`
+        // is "" and the orchestrator wraps that as `{response: ""}`.
+        // Earlier steps may still carry the actual text emission. Scan
+        // backward through `steps` for the latest text content as a
+        // fallback so we don't drop legitimate output. Cross-package
+        // contract preserved: pass-through when `result.text` is
+        // already populated.
+        let resolvedText = text;
+        if (!resolvedText) {
+          for (let i = steps.length - 1; i >= 0; i--) {
+            const step = steps[i];
+            if (!step) continue;
+            const parts = Array.isArray(step.content) ? step.content : [];
+            const textParts = parts
+              .filter((p): p is { type: "text"; text: string } => p?.type === "text")
+              .map((p) => p.text)
+              .filter((t): t is string => typeof t === "string" && t.length > 0);
+            if (textParts.length > 0) {
+              resolvedText = textParts.join("");
+              logger.debug("Recovered empty result.text from earlier step (N2)", {
+                agentId,
+                recoveredFromStep: i,
+                recoveredChars: resolvedText.length,
+              });
+              break;
+            }
+          }
+        }
+
         const { assembledToolCalls, assembledToolResults } = collectToolUsageFromSteps({
           steps,
           toolCalls,
@@ -201,7 +234,7 @@ export function convertLLMToAgent(
         const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
 
         return ok(
-          { response: text },
+          { response: resolvedText },
           {
             reasoning: reasoning || undefined,
             toolCalls: assembledToolCalls,
