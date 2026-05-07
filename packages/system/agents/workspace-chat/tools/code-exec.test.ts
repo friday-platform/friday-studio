@@ -144,10 +144,7 @@ describe("run_code — PTY wrap for interactive-auth commands", () => {
     // out under vitest's default 5 s ceiling.
     setTimeout(() => controller.abort(), 50);
     const started = Date.now();
-    const result = await run({
-      language: "bash",
-      source: "sleep 5; echo done",
-    });
+    const result = await run({ language: "bash", source: "sleep 5; echo done" });
     const elapsed = Date.now() - started;
 
     expect(elapsed).toBeLessThan(2000);
