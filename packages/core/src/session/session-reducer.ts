@@ -126,6 +126,23 @@ function reduceStepStart(
   view: SessionView,
   event: SessionStreamEvent & { type: "step:start" },
 ): SessionView {
+  // Defense in depth (J2 / review H1): if a `step:start` for this exact
+  // (stepNumber, agentName) pair already lives in the view, treat the
+  // re-publish as a no-op. Pre-J2 the broker dedup window (default 2m)
+  // was shorter than long-running FSM jobs, so a `save()` republish past
+  // the window landed as a NEW message. The reducer would then fail to
+  // find a *pending* match (the prior copy was already running/done) and
+  // append a duplicate block — status derivation then saw both pending
+  // and complete simultaneously, surfacing as `status: "active"` post-
+  // completion. The dedup_window bump fixes the broker side; this guard
+  // protects the reducer regardless.
+  if (event.stepNumber !== undefined) {
+    const dupIdx = view.agentBlocks.findIndex(
+      (b) => b.stepNumber === event.stepNumber && b.agentName === event.agentName,
+    );
+    if (dupIdx !== -1) return view;
+  }
+
   // Find first pending block with matching agentName
   const pendingIdx = view.agentBlocks.findIndex(
     (b) => b.status === "pending" && b.agentName === event.agentName,

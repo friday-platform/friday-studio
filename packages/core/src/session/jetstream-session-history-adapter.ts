@@ -51,6 +51,21 @@ const METADATA_BUCKET = "SESSION_METADATA";
 const INFLIGHT_BUCKET = "SESSION_INFLIGHT";
 
 const NINETY_DAYS_NS = 90 * 24 * 60 * 60 * 1_000_000_000;
+/**
+ * Default broker-side dedup window for `SESSION_EVENTS`. The default
+ * `duplicate_window` (2m) was insufficient for long-running FSM jobs
+ * (auto-triage > 2 min, review-inbox 63s, chat-flip ~150s end-to-end):
+ * past 2m a re-publish of the stable-msg-id event from `save()` lands
+ * AS NEW instead of being deduped. The reducer's `step:start` matcher
+ * (agentName + pending) then appends a duplicate AgentBlock, and status
+ * derivation sees both pending and complete simultaneously — surfaces
+ * to the user as `status: "active"` post-completion (J2 / pt1 §7 #2).
+ *
+ * 24h matches the default chosen by the JetStream config module
+ * (`packages/jetstream/src/config.ts`), and by the chat backend and
+ * narrative store. ~Few hundred MB of extra disk on bursty workloads.
+ */
+const DEFAULT_DUPLICATE_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000;
 
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
 function sanitize(s: string): string {
@@ -68,16 +83,24 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
   private async ensureStream(): Promise<void> {
     if (this.streamReady) return;
     const jsm = await this.nc.jetstreamManager();
+    const cfg = {
+      name: STREAM_NAME,
+      subjects: [`${SUBJECT_PREFIX}.>`],
+      retention: RetentionPolicy.Limits,
+      storage: StorageType.File,
+      max_age: NINETY_DAYS_NS,
+      duplicate_window: DEFAULT_DUPLICATE_WINDOW_NS,
+    };
     try {
       await jsm.streams.info(STREAM_NAME);
+      // Reconcile config for streams created before the J2 fix (default
+      // duplicate_window was 2m). `streams.update` is idempotent when the
+      // config matches and harmless otherwise. Keeps existing deployments
+      // in sync with the long-job reality without a manual `nats stream
+      // update`.
+      await jsm.streams.update(STREAM_NAME, cfg);
     } catch {
-      await jsm.streams.add({
-        name: STREAM_NAME,
-        subjects: [`${SUBJECT_PREFIX}.>`],
-        retention: RetentionPolicy.Limits,
-        storage: StorageType.File,
-        max_age: NINETY_DAYS_NS,
-      });
+      await jsm.streams.add(cfg);
     }
     this.streamReady = true;
   }
@@ -127,14 +150,16 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     await this.ensureStream();
     const js = this.nc.jetstream();
     // Idempotent backfill: republish each event with a stable
-    // `Nats-Msg-Id`. The broker silently rejects duplicates within its
-    // dedup window (default 2m, plenty for "appendEvent → save" in the
-    // same handler), so the common case where appendEvent already
-    // streamed every event becomes a no-op at the stream layer.
-    // Without this, the reducer would see two `step:start` events for
-    // every step on a save() that follows appendEvent (the reducer
-    // matches step:start by agentName+pending, so a re-publish appends
-    // a duplicate block instead of merging — verified in repro).
+    // `Nats-Msg-Id`. The broker silently rejects duplicates within the
+    // configured dedup window (24h post-J2; see DEFAULT_DUPLICATE_WINDOW_NS
+    // above for why we bumped it from the 2m default), so the common
+    // case where appendEvent already streamed every event becomes a
+    // no-op at the stream layer. Without this, the reducer would see
+    // two `step:start` events for every step on a save() that follows
+    // appendEvent (pre-J2 reducer matched step:start by agentName+pending,
+    // so a re-publish appended a duplicate block instead of merging —
+    // verified in repro). J2 also added a reducer-side guard against the
+    // same dup as defense-in-depth.
     if (events.length > 0) {
       for (const e of events) {
         await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(e)), {
@@ -168,7 +193,14 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     // Spin up an ephemeral pull consumer filtered to this session's
     // subject. Cheaper than scanning the whole stream by sequence;
     // ephemeral so we don't accumulate per-session consumer entries.
-    const consumerName = `session-read-${sanitize(sessionId)}-${Date.now()}`;
+    //
+    // Suffix uses `crypto.randomUUID()` rather than `Date.now()` because
+    // two reads of the same session can race within the same millisecond
+    // (cron + HTTP). With the timestamp-based suffix the second
+    // `consumers.add` threw `consumer-already-exists`, the catch
+    // swallowed, and the second reader returned `null` — surfacing as a
+    // session that vanished between requests (review N1).
+    const consumerName = `session-read-${sanitize(sessionId)}-${crypto.randomUUID()}`;
     try {
       await jsm.consumers.add(STREAM_NAME, {
         name: consumerName,

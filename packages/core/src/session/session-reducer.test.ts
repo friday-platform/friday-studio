@@ -331,6 +331,28 @@ describe("step:start", () => {
     expect(secondAfter.status).toBe("running");
     expect(secondAfter.stepNumber).toBe(2);
   });
+
+  // J2: defense-in-depth against a late `step:start` re-publish past the
+  // broker's dedup window. Pre-J2 the reducer would not find a *pending*
+  // match (the prior copy was already running), fall to the append path,
+  // and create a duplicate AgentBlock — status derivation then saw both
+  // pending and complete simultaneously, surfacing as `status: "active"`
+  // post-completion. Now the duplicate is a no-op.
+  test("duplicate step:start (same stepNumber + agentName) is a no-op (J2)", () => {
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "researcher" }));
+    view = reduceSessionEvent(view, stepComplete({ stepNumber: 1, status: "completed" }));
+
+    expect(view.agentBlocks).toHaveLength(1);
+    expect(view.agentBlocks[0]?.status).toBe("completed");
+
+    // Late re-publish of the original step:start lands AS NEW because
+    // the broker dedup window expired. Reducer should swallow it.
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "researcher" }));
+
+    expect(view.agentBlocks).toHaveLength(1);
+    expect(view.agentBlocks[0]?.status).toBe("completed");
+  });
 });
 
 // ---------------------------------------------------------------------------
