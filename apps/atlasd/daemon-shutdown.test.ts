@@ -132,7 +132,7 @@ async function spawnDaemonAndWaitForSentinel(): Promise<SpawnedDaemon> {
   // `deno.json` `tasks.test`), and `@atlas/logger` short-circuits all log
   // output when it's `"true"`. Without this delete, the spawned daemon
   // never emits the readiness sentinel and this test hangs.
-  const childEnv: Record<string, string> = { ...process.env } as Record<string, string>;
+  const childEnv: NodeJS.ProcessEnv = { ...process.env };
   childEnv.ANTHROPIC_API_KEY = "test-key";
   delete childEnv.OTEL_DENO;
   delete childEnv.OTEL_EXPORTER_OTLP_ENDPOINT;
@@ -231,8 +231,8 @@ describe("daemon /shutdown route", () => {
         method: "POST",
       });
       expect(response.status).toBe(200);
-      const body = (await response.json()) as { message?: string };
-      expect(body.message).toBe("Daemon shutdown initiated");
+      const body = await response.json();
+      expect(body).toMatchObject({ message: "Daemon shutdown initiated" });
 
       const exitStatus = await withDeadline(spawned.exit, EXIT_DEADLINE_MS, "daemon exit wait");
       expect(exitStatus.code).toBe(0);
