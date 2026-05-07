@@ -171,22 +171,36 @@ function workspaceHasBroadcastDestination(workspace: {
  * MCP subprocess refusing SIGTERM, runtime hang) gets force-skipped on its
  * own ceiling instead of eating the global shutdown budget. Errors and
  * timeouts are logged and swallowed — the rest of shutdown continues.
+ *
+ * Accepts either a bare promise (back-compat) or a signal-aware thunk. With
+ * a thunk, a step-local AbortController is aborted on timeout BEFORE the
+ * warn fires, so the underlying work (NATS drain, fetch loop, subprocess
+ * wait) stops leaking event-loop handles and the process can actually exit.
  */
 async function withShutdownTimeout<T>(
   label: string,
-  task: Promise<T> | undefined | null,
+  task: Promise<T> | undefined | null | ((signal: AbortSignal) => Promise<T>),
   ms: number,
 ): Promise<void> {
   if (!task) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | undefined;
+  let work: Promise<T>;
+  if (typeof task === "function") {
+    controller = new AbortController();
+    work = task(controller.signal);
+  } else {
+    work = task;
+  }
   try {
     await Promise.race([
-      task,
+      work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`shutdown step "${label}" exceeded ${ms}ms`)),
-          ms,
-        );
+        timer = setTimeout(() => {
+          const error = new Error(`shutdown step "${label}" exceeded ${ms}ms`);
+          controller?.abort(error);
+          reject(error);
+        }, ms);
       }),
     ]);
   } catch (error) {
