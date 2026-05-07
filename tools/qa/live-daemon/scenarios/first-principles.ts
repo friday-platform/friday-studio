@@ -20,6 +20,7 @@ import {
   HARNESS_PATHS,
   listArtifactsForSession,
   registerWorkspace,
+  type SSEEvent,
   startDaemon,
   stopDaemon,
   triggerSignalSSE,
@@ -140,6 +141,144 @@ async function answerElicitation(
   });
   if (!resp.ok) throw new Error(`answer elicitation ${resp.status}: ${await resp.text()}`);
   return (await resp.json()) as Record<string, unknown>;
+}
+
+interface ChatToolCall {
+  toolCallId: string;
+  toolName: string;
+  input?: unknown;
+  output?: unknown;
+}
+
+async function postChatMessage(
+  d: DaemonHandle,
+  workspaceId: string,
+  chatId: string,
+  messageText: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<{
+  events: SSEEvent[];
+  chatSessionId: string | null;
+  innerSessionIds: string[];
+  toolCalls: ChatToolCall[];
+  durationMs: number;
+}> {
+  const startedAt = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 600_000);
+
+  let resp: Response;
+  try {
+    resp = await fetch(`${d.baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({ id: chatId, message: messageText }),
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    throw new Error(`Chat POST failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!resp.ok) {
+    clearTimeout(timer);
+    throw new Error(`Chat POST ${resp.status}: ${await resp.text()}`);
+  }
+  if (!resp.body) {
+    clearTimeout(timer);
+    throw new Error("Chat POST response had no body");
+  }
+
+  const events: SSEEvent[] = [];
+  let chatSessionId: string | null = null;
+  const innerSessionIds = new Set<string>();
+  const toolCallsById = new Map<string, ChatToolCall>();
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      while (true) {
+        const idx = buffer.indexOf("\n\n");
+        if (idx === -1) break;
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const dataLine = chunk.split("\n").find((line) => line.startsWith("data:"));
+        if (!dataLine) continue;
+        const raw = dataLine.slice(5).trim();
+        if (raw === "[DONE]") {
+          buffer = "";
+          break;
+        }
+
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        if (typeof parsed.type !== "string") continue;
+        const data = (parsed.data as Record<string, unknown> | undefined) ?? {};
+        const evt: SSEEvent = { type: parsed.type, data, raw };
+        events.push(evt);
+
+        if (evt.type === "data-session-start" && typeof data.sessionId === "string") {
+          if (chatSessionId === null) chatSessionId = data.sessionId;
+          else innerSessionIds.add(data.sessionId);
+        }
+        if (evt.type === "data-nested-chunk") {
+          const inner = data.chunk as { type?: string; data?: Record<string, unknown> } | undefined;
+          if (inner?.type === "data-session-start" && typeof inner.data?.sessionId === "string") {
+            innerSessionIds.add(inner.data.sessionId);
+          }
+        }
+
+        if (parsed.type === "tool-input-available") {
+          const toolCallId = parsed.toolCallId;
+          const toolName = parsed.toolName;
+          if (typeof toolCallId === "string" && typeof toolName === "string") {
+            const existing = toolCallsById.get(toolCallId);
+            toolCallsById.set(toolCallId, {
+              toolCallId,
+              toolName,
+              ...(parsed.input !== undefined ? { input: parsed.input } : {}),
+              ...(existing?.output !== undefined ? { output: existing.output } : {}),
+            });
+          }
+        }
+        if (parsed.type === "tool-output-available") {
+          const toolCallId = parsed.toolCallId;
+          if (typeof toolCallId === "string") {
+            const existing = toolCallsById.get(toolCallId);
+            toolCallsById.set(toolCallId, {
+              toolCallId,
+              toolName: existing?.toolName ?? "<unknown>",
+              ...(existing?.input !== undefined ? { input: existing.input } : {}),
+              output: parsed.output,
+            });
+          }
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+    try {
+      reader.releaseLock();
+    } catch {
+      // ignore
+    }
+  }
+
+  return {
+    events,
+    chatSessionId,
+    innerSessionIds: [...innerSessionIds],
+    toolCalls: [...toolCallsById.values()],
+    durationMs: Date.now() - startedAt,
+  };
 }
 
 function artifactPayload(doc: Record<string, unknown> | null): Record<string, unknown> | undefined {
@@ -814,6 +953,100 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
   ];
 }
 
+async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Chat Compactness" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const chatId = crypto.randomUUID();
+  const first = await postChatMessage(
+    d,
+    ws.id,
+    chatId,
+    [
+      "Call the refs-check job tool exactly once with query 'chat-compactness'.",
+      "After the job completes, do not inspect artifacts or delegate.",
+      "Reply with a short acknowledgement that includes the returned summary.",
+    ].join("\n"),
+    { timeoutMs: 12 * 60 * 1000 },
+  );
+
+  const refsToolCalls = first.toolCalls.filter((tc) => tc.toolName === "refs-check");
+  const refsOutput = refsToolCalls.find((tc) => tc.output !== undefined)?.output as
+    | Record<string, unknown>
+    | undefined;
+  const firstSerialized = JSON.stringify({ events: first.events, toolCalls: first.toolCalls });
+  const artifactIds = Array.isArray(refsOutput?.artifactIds) ? refsOutput.artifactIds : [];
+  const jobToolCompact =
+    refsOutput?.success === true &&
+    artifactIds.length > 0 &&
+    typeof refsOutput.summary === "string" &&
+    !("output" in (refsOutput ?? {})) &&
+    !JSON.stringify(refsOutput ?? {}).includes("FIRST_PRINCIPLES_EMAIL_BODY") &&
+    byteLen(refsOutput) < 2_000;
+
+  const second = await postChatMessage(
+    d,
+    ws.id,
+    chatId,
+    [
+      "Follow-up: answer from the previous compact job-tool result only.",
+      "Do not call any tools, do not fetch/display/parse artifacts, and do not delegate.",
+      "Say whether artifact ids were returned.",
+    ].join("\n"),
+    { timeoutMs: 8 * 60 * 1000 },
+  );
+  const secondToolNames = second.toolCalls.map((tc) => tc.toolName);
+  const fanInTools = new Set([
+    "artifacts_get",
+    "display_artifact",
+    "parse_artifact",
+    "delegate",
+    "refs-check",
+  ]);
+  const fanInToolCalls = secondToolNames.filter((name) => fanInTools.has(name));
+  const secondSerialized = JSON.stringify({ events: second.events, toolCalls: second.toolCalls });
+  const followupCompact =
+    fanInToolCalls.length === 0 && !secondSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY");
+
+  metrics.chatId = chatId;
+  metrics.firstChatSessionId = first.chatSessionId;
+  metrics.firstInnerSessionIds = first.innerSessionIds;
+  metrics.firstDurationMs = first.durationMs;
+  metrics.refsToolCallCount = refsToolCalls.length;
+  metrics.refsToolOutputBytes = refsOutput ? byteLen(refsOutput) : 0;
+  metrics.refsToolOutput = refsOutput ?? null;
+  metrics.secondChatSessionId = second.chatSessionId;
+  metrics.secondDurationMs = second.durationMs;
+  metrics.secondToolNames = secondToolNames;
+  metrics.fanInToolCalls = fanInToolCalls;
+
+  const pass = jobToolCompact && followupCompact;
+  return [
+    {
+      id: "chat-followup-compactness",
+      pass,
+      notes: [
+        ...notes,
+        `refs-check tool calls: ${refsToolCalls.length}`,
+        `refs-check output bytes: ${refsOutput ? byteLen(refsOutput) : 0}`,
+        `refs-check artifact ids: ${artifactIds.length}`,
+        `refs-check has legacy output field: ${"output" in (refsOutput ?? {})}`,
+        `job-tool output contains body sentinel: ${JSON.stringify(refsOutput ?? {}).includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+        `first SSE stream contains nested body sentinel: ${firstSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+        `follow-up tool calls: ${secondToolNames.join(",") || "(none)"}`,
+        `follow-up fan-in tool calls: ${fanInToolCalls.join(",") || "(none)"}`,
+        `follow-up contains body sentinel: ${secondSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function main() {
   await ensureCredentialsLoaded();
   if (!Deno.env.get("ANTHROPIC_API_KEY")) {
@@ -844,6 +1077,8 @@ async function main() {
     results.push(...(await runUnknownToolScenario(daemon)));
     console.log("\n── blocking elicitation resume ──");
     results.push(...(await runBlockingElicitationScenario(daemon)));
+    console.log("\n── chat follow-up compactness ──");
+    results.push(...(await runChatFollowupCompactnessScenario(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });
