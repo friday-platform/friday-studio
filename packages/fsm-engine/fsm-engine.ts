@@ -2739,9 +2739,7 @@ export class FSMEngine {
             // the orchestrator's prompt-assembly site (`from-llm.ts`) when
             // decision === "self"; capture its args off the agent result's
             // toolCalls — same mechanism `findCompleteToolArgs` uses, just
-            // applied to the agent envelope. The data flows back to
-            // `step:complete.validation` via the workspace runtime's side
-            // channel (`AgentResultData.validation`).
+            // applied to the agent envelope.
             const agentRecordedValidationArgs =
               agentValidateDecision === "self" && result.ok
                 ? extractToolCallInput(result.toolCalls ?? [], RECORD_VALIDATION_TOOL_NAME)
@@ -2758,17 +2756,40 @@ export class FSMEngine {
                 : {}),
             });
 
+            const agentResultsByCallId = new Map(
+              result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+            );
+            const rawAgentToolCalls = (result.toolCalls ?? []).map((tc) => ({
+              toolName: tc.toolName,
+              args: tc.input,
+              ...(agentResultsByCallId.has(tc.toolCallId) && {
+                result: agentResultsByCallId.get(tc.toolCallId),
+              }),
+            }));
+            const liftWorkspaceId = sig._context?.workspaceId;
+            const liftSessionId = sig._context?.sessionId;
+            const agentToolCalls =
+              liftWorkspaceId && liftSessionId
+                ? await liftToolResultsForPersist(rawAgentToolCalls, {
+                    workspaceId: liftWorkspaceId,
+                    chatId: liftSessionId,
+                    logger,
+                  })
+                : rawAgentToolCalls;
+            const agentCompleteCall = agentToolCalls.find((tc) => tc.toolName === "complete");
+            llmResultData = {
+              toolCalls: agentToolCalls,
+              reasoning: result.reasoning,
+              output: agentCompleteCall?.args ?? result.data,
+              ...(result.artifactRefs ? { artifactRefs: result.artifactRefs } : {}),
+              ...(result.usage ? { usage: result.usage } : {}),
+              ...(agentValidationOutput ? { validation: agentValidationOutput } : {}),
+            };
+
             // B6: failStep semantics on a self-recorded `blocking` verdict.
-            // Mirrors the case "llm" path. The workspace runtime's executeAgent
-            // populates the side-channel before this throw, but the
-            // try/catch around action execution emits the failure event
-            // without an `llmResult` (agent path uses the side-channel
-            // exclusively), so the validation block is read by
-            // mapActionToStepComplete from the side-channel below — which
-            // we populate before the throw via a side-channel update via
-            // the workspace runtime path. For unit tests that don't exercise
-            // the workspace runtime, the throw still produces a `failed`
-            // step:complete; the validation field is best-effort.
+            // Mirrors the case "llm" path. The agent result projection above
+            // lives directly on the action event; workspace runtime no longer
+            // needs an out-of-band side-channel to build step:complete.
             if (
               agentValidationOutput?.strategy === "self" &&
               agentValidationOutput.verdict === "blocking"
@@ -2778,23 +2799,6 @@ export class FSMEngine {
                   ?.map((i) => `${i.category ?? "issue"}: ${i.claim}`)
                   .join("; ") || "no issues recorded";
               throw new Error(`Agent action self-validation: blocking. ${issuesSummary}`);
-            }
-
-            // B6: stash the validation block on `llmResultData` so the
-            // workspace runtime's session-stream emit (`step:complete`) can
-            // surface it. `case "agent"` doesn't otherwise populate
-            // `llmResultData` (the runtime uses its side-channel for agent
-            // result data), but writing a minimal projection here is the
-            // smallest surface that lets the existing
-            // `actionEvent.data.llmResult` consumer in workspace runtime
-            // pick up the structured validation without growing a new event
-            // shape or duplicating the capture logic in the runtime.
-            if (agentValidationOutput) {
-              llmResultData = {
-                toolCalls: [],
-                output: undefined,
-                validation: agentValidationOutput,
-              };
             }
 
             // Store result if outputTo specified
@@ -2914,6 +2918,7 @@ export class FSMEngine {
               error: stringifyError(error),
               timestamp: Date.now(),
               inputSnapshot,
+              llmResult: llmResultData,
             },
           });
         }

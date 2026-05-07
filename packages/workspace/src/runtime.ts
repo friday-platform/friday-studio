@@ -34,7 +34,6 @@ import {
 } from "@atlas/config";
 import {
   AgentOrchestrator,
-  type AgentResultData,
   buildSessionView,
   type EphemeralChunk,
   extractPlannedSteps,
@@ -59,7 +58,6 @@ import {
 import { buildValidateDecisionConfig } from "@atlas/core/agent-context/validate-decision";
 import { getSystemAgentType, UserAdapter } from "@atlas/core/agent-loader";
 import type { ArtifactLifecycle } from "@atlas/core/artifacts";
-import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
@@ -1195,10 +1193,6 @@ export class WorkspaceRuntime {
    */
   private sessionEngines = new Map<string, FSMEngine>();
 
-  // Agent result side-channel: sessionId → (sideChannelKey → AgentResultData)
-  // Populated by executeAgent, consumed by onEvent callback for step:complete events
-  private agentResultSideChannel = new Map<string, Map<string, AgentResultData>>();
-
   // Resolved store mount bindings, keyed by mount name
   private mountBindings = new Map<string, MountedStoreBinding>();
 
@@ -1897,10 +1891,7 @@ export class WorkspaceRuntime {
           userId,
         };
 
-        // Session history v2: create stream + side-channel for this session
         const sessionStream = this.options.createSessionStream?.(sessionId);
-        const sideChannel = new Map<string, AgentResultData>();
-        this.agentResultSideChannel.set(sessionId, sideChannel);
         let stepCounter = 0;
         /** Tracks the FSM state where a non-agent action (code/emit) failed, so we
          *  can attribute the error to the correct planned step in the catch block. */
@@ -1988,34 +1979,8 @@ export class WorkspaceRuntime {
                   actionEvent.data.status === "completed" ||
                   actionEvent.data.status === "failed"
                 ) {
-                  // LLM actions carry result data directly on the event (populated by FSM engine).
-                  // Agent actions use the side-channel (populated by executeAgent callback).
-                  let agentResult: AgentResultData | undefined;
-                  if (actionEvent.data.actionType === "llm" && actionEvent.data.llmResult) {
-                    agentResult = actionEvent.data.llmResult;
-                  } else {
-                    // Side-channel key must use job.name (workspace-level key) to match
-                    // what executeAgent stores — NOT actionEvent.data.jobName which is
-                    // the FSM definition's id (may differ from the workspace job key).
-                    const sideChannelKey = `${job.name}/${actionEvent.data.actionId}/${actionEvent.data.state}`;
-                    agentResult = sideChannel.get(sideChannelKey);
-                    sideChannel.delete(sideChannelKey);
-                    // B6 (melodic-strolling-seal-pt2): agent actions don't
-                    // populate `llmResult` for the full result projection,
-                    // but the FSM engine writes a minimal projection
-                    // carrying the structured validation outcome. Merge it
-                    // onto the side-channel record so `step:complete` for
-                    // `case "agent" → type: llm` carries the same
-                    // `validation` shape an inline `case "llm"` action does.
-                    const validationFromEvent = actionEvent.data.llmResult?.validation;
-                    if (validationFromEvent) {
-                      agentResult = agentResult
-                        ? { ...agentResult, validation: validationFromEvent }
-                        : { toolCalls: [], output: undefined, validation: validationFromEvent };
-                    }
-                  }
                   sessionStream.emit(
-                    mapActionToStepComplete(actionEvent, agentResult, stepCounter),
+                    mapActionToStepComplete(actionEvent, actionEvent.data.llmResult, stepCounter),
                   );
                 }
               }
@@ -2466,7 +2431,6 @@ export class WorkspaceRuntime {
               currentWorkspaceId: this.workspace.id,
             });
           }
-          this.agentResultSideChannel.delete(sessionId);
           this.activeAbortControllers.delete(sessionId);
           this.sessionEngines.delete(sessionId);
         }
@@ -2794,54 +2758,6 @@ export class WorkspaceRuntime {
     takeMountContext(ctxKey);
 
     logger.debug("Agent execution completed", { agentId, ok: result.ok });
-
-    const sideChannelSessionId = signal._context?.sessionId;
-    if (sideChannelSessionId) {
-      const sideChannel = this.agentResultSideChannel.get(sideChannelSessionId);
-      if (sideChannel) {
-        const key = `${job.name}/${action.agentId}/${fsmContext.state}`;
-        const resultsByCallId = new Map(
-          (result.ok ? result.toolResults : undefined)?.map((tr) => [tr.toolCallId, tr.output]) ??
-            [],
-        );
-        const rawToolCalls =
-          (result.ok ? result.toolCalls : undefined)?.map((tc) => ({
-            toolName: tc.toolName,
-            args: tc.input,
-            ...(resultsByCallId.has(tc.toolCallId) && {
-              result: resultsByCallId.get(tc.toolCallId),
-            }),
-          })) ?? [];
-        // N4 (melodic-strolling-seal-pt3) — lift oversized tool results
-        // post-streamText so persisted session events + cross-action
-        // handoffs stay compact while the producer LLM (which has
-        // already finished) saw full bytes during its streamText loop.
-        // See `liftToolResultsForPersist` for the rationale.
-        const toolCalls = await liftToolResultsForPersist(rawToolCalls, {
-          workspaceId,
-          chatId: streamId ?? sideChannelSessionId,
-          logger,
-        });
-        // Structured output = args from the "complete" tool call (the actual result
-        // stored in context.results). Falls back to result.data (LLM text) when no
-        // complete tool call exists.
-        const completeCall = toolCalls.find((tc) => tc.toolName === "complete");
-        const agentResultData: AgentResultData = {
-          toolCalls,
-          reasoning: result.ok ? result.reasoning : undefined,
-          output: completeCall?.args ?? (result.ok ? result.data : undefined),
-          artifactRefs: result.ok ? result.artifactRefs : undefined,
-          // H4 (melodic-strolling-seal-pt3 J1): pipe through the agent
-          // executor's `usage` so the `step:complete` mapper can persist
-          // it. Mirrors the FSM `case "llm"` side-channel population in
-          // fsm-engine.ts (~line 2263). Without this, bundled agents
-          // (workspace-chat, etc.) silently drop token counts even when
-          // their underlying provider call returned `usage`.
-          ...(result.ok && result.usage && { usage: result.usage }),
-        };
-        sideChannel.set(key, agentResultData);
-      }
-    }
 
     return result;
   }

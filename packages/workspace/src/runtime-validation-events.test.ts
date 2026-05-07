@@ -40,7 +40,14 @@ vi.mock("@atlas/fsm-engine", async (importActual) => {
         input: params.prompt,
         ok: true,
         data: { response: "stub llm output" },
-        toolCalls: [],
+        toolCalls: [
+          {
+            type: "tool-call",
+            toolCallId: "tc-complete",
+            toolName: "complete",
+            input: { response: "stub llm output" },
+          },
+        ],
         toolResults: [],
         durationMs: 0,
       });
