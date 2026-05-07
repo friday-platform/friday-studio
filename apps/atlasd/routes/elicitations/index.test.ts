@@ -13,7 +13,9 @@
 
 import { fail, success } from "@atlas/utils";
 import { Hono } from "hono";
+import type { NatsConnection } from "nats";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { getTestNc } from "../../../../vitest.setup.ts";
 
 // ---------------------------------------------------------------------------
 // Hoisted mock for the storage facade
@@ -264,5 +266,216 @@ describe("POST /:id/decline", () => {
       body: JSON.stringify({ note: 42 }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /stream — SSE feed (H5)
+//
+// Drives a real NATS connection (the worker-shared fixture from
+// vitest.setup.ts) so the subscribe → flush → for-await teardown is the
+// real code path. Each test uses a UUID workspaceId so concurrent suites
+// can't pollute each other's subject space.
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal mock daemon context that hands the route a live NATS
+ * connection. The real `daemon.getNatsConnection()` returns the daemon's
+ * shared connection; we substitute the worker's test-server connection.
+ */
+function createSseTestApp(nc: NatsConnection) {
+  type Ctx = { daemon: { getNatsConnection: () => NatsConnection } };
+  const app = new Hono<{ Variables: { app: Ctx } }>();
+  app.use("*", async (c, next) => {
+    c.set("app", { daemon: { getNatsConnection: () => nc } });
+    await next();
+  });
+  app.route("/", rawElicitationApp);
+  return app;
+}
+
+/**
+ * Read text frames from the SSE response body until `predicate(buf)`
+ * returns truthy or `timeoutMs` elapses. The response body is a
+ * `ReadableStream<Uint8Array>`; we accumulate decoded text in `buf`.
+ *
+ * Returns the accumulated text on resolve; throws on timeout.
+ */
+async function readUntil(
+  res: Response,
+  predicate: (buf: string) => boolean,
+  timeoutMs = 2000,
+): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("response has no body");
+  const decoder = new TextDecoder();
+  let buf = "";
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    const next = reader.read();
+    const tick = new Promise<{ done: true; value: undefined }>((r) =>
+      setTimeout(() => r({ done: true, value: undefined }), remaining),
+    );
+    const chunk = (await Promise.race([next, tick])) as ReadableStreamReadResult<Uint8Array>;
+    if (chunk.done) break;
+    buf += decoder.decode(chunk.value, { stream: true });
+    if (predicate(buf)) return buf;
+  }
+  throw new Error(`readUntil timed out after ${timeoutMs}ms; buf=${JSON.stringify(buf)}`);
+}
+
+/**
+ * Snapshot the connection's active subscription count. The nats client
+ * doesn't expose this in the public API, so we reach into the protocol
+ * handler. This is the only reliable way to assert "the SSE handler
+ * unsubscribed on abort" — `nc.stats()` only tracks message counts.
+ */
+function activeSubs(nc: NatsConnection): number {
+  return (
+    nc as unknown as { protocol: { subscriptions: { size: () => number } } }
+  ).protocol.subscriptions.size();
+}
+
+describe("GET /stream — SSE", () => {
+  let nc: NatsConnection;
+
+  beforeEach(() => {
+    nc = getTestNc();
+  });
+
+  test("503 when NATS is not ready", async () => {
+    // Mirror createTestApp's null-NATS context to exercise the early-return path.
+    const app = new Hono<{ Variables: { app: { daemon: { getNatsConnection: () => null } } } }>();
+    app.use("*", async (c, next) => {
+      c.set("app", { daemon: { getNatsConnection: () => null } });
+      await next();
+    });
+    app.route("/", rawElicitationApp);
+
+    const res = await app.request("/stream");
+    expect(res.status).toBe(503);
+  });
+
+  test("subscribe → publish envelope → SSE frame received with correct framing", async () => {
+    const wsId = `ws-sse-${crypto.randomUUID().slice(0, 8)}`;
+    const app = createSseTestApp(nc);
+
+    const controller = new AbortController();
+    try {
+      const res = await app.request(`/stream?workspaceId=${wsId}`, { signal: controller.signal });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+      expect(res.headers.get("Cache-Control")).toBe("no-cache");
+
+      // Handler awaits `nc.flush()` before returning, so by the time we have
+      // `res` the broker has registered the subscription. A publish here is
+      // guaranteed to be delivered.
+      const envelope = { id: "elc_sse_1", workspaceId: wsId, status: "pending", question: "ok?" };
+      nc.publish(`elicitations.${wsId}.sess.elc_sse_1`, JSON.stringify(envelope));
+
+      const buf = await readUntil(res, (b) => b.includes("elc_sse_1"));
+
+      // Well-formed SSE frame: `data: <json>\n\n`. No `event:` field is
+      // emitted by this handler (default event type "message"), and there
+      // should be exactly one frame for our one publish.
+      const frames = buf.split("\n\n").filter((f) => f.length > 0);
+      expect(frames.length).toBe(1);
+      expect(frames[0]).toBe(`data: ${JSON.stringify(envelope)}`);
+    } finally {
+      controller.abort();
+    }
+  });
+
+  test("abort → handler unsubscribes from NATS (no leaked subscription)", async () => {
+    const wsId = `ws-abort-${crypto.randomUUID().slice(0, 8)}`;
+    const app = createSseTestApp(nc);
+    const baseline = activeSubs(nc);
+
+    const controller = new AbortController();
+    const res = await app.request(`/stream?workspaceId=${wsId}`, { signal: controller.signal });
+    expect(res.status).toBe(200);
+
+    // Subscription should now be live.
+    expect(activeSubs(nc)).toBe(baseline + 1);
+
+    // Aborting the request signal should fire the abort listener inside the
+    // ReadableStream `start()` and call `sub.unsubscribe()` + `controller.close()`.
+    controller.abort();
+
+    // The handler's abort listener runs synchronously, but the body reader
+    // also needs to drain — give the event loop a tick or two for the
+    // unsubscribe to land in the protocol's subscription map.
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(activeSubs(nc)).toBe(baseline);
+  });
+
+  test("late subscriber does NOT replay envelopes published before subscribe (Core NATS, no JetStream consumer)", async () => {
+    // This documents a real limitation of the SSE handler: it uses a Core
+    // NATS subscribe (`nc.subscribe`), not a JetStream pull/push consumer
+    // bound to the ELICITATIONS stream. Pre-subscribe envelopes on the wire
+    // are dropped — only events published AFTER the handshake reach the
+    // client. Per the review (H2 / N3), accepting this means reconnects /
+    // late-attach flows lose history; the activity page must reconcile via
+    // the REST list endpoint, not assume SSE replay.
+    const wsId = `ws-late-${crypto.randomUUID().slice(0, 8)}`;
+    const app = createSseTestApp(nc);
+
+    // Publish BEFORE any subscriber exists. With Core NATS this drops the
+    // message at the broker (no interest, no delivery).
+    nc.publish(
+      `elicitations.${wsId}.sess.elc_pre`,
+      JSON.stringify({ id: "elc_pre", workspaceId: wsId, status: "pending", question: "early?" }),
+    );
+    await nc.flush();
+
+    const controller = new AbortController();
+    try {
+      const res = await app.request(`/stream?workspaceId=${wsId}`, { signal: controller.signal });
+      expect(res.status).toBe(200);
+
+      // Now publish a fresh envelope — that one MUST arrive.
+      const live = { id: "elc_live", workspaceId: wsId, status: "pending", question: "now?" };
+      nc.publish(`elicitations.${wsId}.sess.elc_live`, JSON.stringify(live));
+
+      const buf = await readUntil(res, (b) => b.includes("elc_live"));
+      expect(buf).toContain("elc_live");
+      // The pre-subscribe envelope must NOT be replayed.
+      expect(buf).not.toContain("elc_pre");
+    } finally {
+      controller.abort();
+    }
+  });
+
+  test("multiple envelopes are emitted as distinct, well-formed frames in order", async () => {
+    const wsId = `ws-flush-${crypto.randomUUID().slice(0, 8)}`;
+    const app = createSseTestApp(nc);
+
+    const controller = new AbortController();
+    try {
+      const res = await app.request(`/stream?workspaceId=${wsId}`, { signal: controller.signal });
+      expect(res.status).toBe(200);
+
+      const envs = [
+        { id: "elc_a", workspaceId: wsId, status: "pending", question: "a?" },
+        { id: "elc_b", workspaceId: wsId, status: "pending", question: "b?" },
+        { id: "elc_c", workspaceId: wsId, status: "pending", question: "c?" },
+      ];
+      for (const e of envs) {
+        nc.publish(`elicitations.${wsId}.sess.${e.id}`, JSON.stringify(e));
+      }
+
+      const buf = await readUntil(res, (b) => b.includes("elc_c"));
+      const frames = buf.split("\n\n").filter((f) => f.length > 0);
+      // Each publish becomes exactly one frame — no duplicates from the
+      // initial-flush + per-envelope-flush handshake.
+      expect(frames.length).toBe(3);
+      expect(frames[0]).toBe(`data: ${JSON.stringify(envs[0])}`);
+      expect(frames[1]).toBe(`data: ${JSON.stringify(envs[1])}`);
+      expect(frames[2]).toBe(`data: ${JSON.stringify(envs[2])}`);
+    } finally {
+      controller.abort();
+    }
   });
 });
