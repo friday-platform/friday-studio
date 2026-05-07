@@ -383,7 +383,7 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
             data: {
               noteId: created?.id ?? null,
               ticketId: config.ticketId,
-              properties: created?.properties,
+              properties: created?.properties ?? {},
               numErrors: result.numErrors,
               errors: result.errors,
             },

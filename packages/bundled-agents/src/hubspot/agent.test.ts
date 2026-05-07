@@ -482,9 +482,19 @@ describe("hubspotAgent deterministic create-note", () => {
     expect.assert(result.ok);
     expect(result.data.operation).toBe("create-note");
     expect(result.data.success).toBe(true);
-    expect(result.data.data).toMatchObject({ noteId: "601", ticketId: "5501" });
-    expect(result.data.response).toContain("601");
-    expect(result.data.response).toContain("5501");
+    expect(result.data.response).toBe("CRM Note 601 created on ticket 5501");
+    // Pin the full data shape — protects the structured-output contract.
+    expect(result.data.data).toEqual({
+      noteId: "601",
+      ticketId: "5501",
+      properties: {
+        hs_note_body: "<h3>Briefing</h3><p>body</p>",
+        hs_timestamp: "2026-05-07T12:00:00.000Z",
+      },
+      numErrors: 0,
+      errors: [],
+    });
+    expect(mockBatchCreate).toHaveBeenCalledOnce();
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
 
