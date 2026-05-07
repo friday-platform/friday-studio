@@ -5,7 +5,6 @@ import { z } from "zod";
 import type { MemoryAdapter, NarrativeEntry } from "./memory-adapter.ts";
 import type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart } from "./messages.ts";
 import type { AgentPayload } from "./result.ts";
-import type { ScratchpadAdapter } from "./scratchpad-adapter.ts";
 
 export type { AtlasUIMessage, AtlasUIMessageChunk, AtlasUIMessagePart };
 
@@ -342,7 +341,6 @@ export interface StoreMountBinding {
 export interface AgentMemoryContext {
   mounts: Record<string, StoreMountBinding>;
   adapter?: MemoryAdapter;
-  scratchpad?: ScratchpadAdapter;
 }
 
 /** Built by AtlasAgentsMCPServer before agent.execute() */

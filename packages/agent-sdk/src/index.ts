@@ -22,14 +22,13 @@ export {
   MemoryRollbackEventSchema,
   MemoryWriteEventSchema,
   MessageMetadataSchema,
-  ScratchpadWriteEventSchema,
   SkillRollbackEventSchema,
   SkillWriteEventSchema,
   validateAtlasUIMessages,
 } from "./messages.ts";
 export { createNestedChunkWriter } from "./nested-chunk-writer.ts";
 export { normalizeToUIMessages } from "./normalize-to-ui-messages.ts";
-export { createPlatformTools, PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
+export { PLATFORM_TOOL_NAMES } from "./platform-tools.ts";
 export * from "./resolved-memory.ts";
 export type {
   AgentExtras,
@@ -41,7 +40,6 @@ export { err, ok } from "./result.ts";
 // Schema boundary
 export type { SchemaBoundaryConfig } from "./schema-boundary.ts";
 export { withSchemaBoundary } from "./schema-boundary.ts";
-export * from "./scratchpad-adapter.ts";
 export * from "./skill-adapter.ts";
 export type {
   AgentContext,

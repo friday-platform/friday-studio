@@ -1,6 +1,3 @@
-import { createScratchpadTools } from "./platform-tools/scratchpad-tools.ts";
-import type { AgentContext } from "./types.ts";
-
 /**
  * All platform tool names registered by the atlas-platform MCP server.
  * Used to distinguish platform tools (subject to filtering) from external
@@ -52,18 +49,13 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "csv",
   "system_version",
   "webfetch",
-  // Memory
+  // Memory — canonical surface for ephemeral and durable working state.
+  // The legacy scratchpad primitive (`{kind, body}` chunks) was removed;
+  // agents needing chunked working state use a `short_term` memory store
+  // via memory_save / memory_read.
   "memory_save",
   "memory_read",
   "memory_remove",
-  // Scratchpad
-  "scratchpad_append",
-  "scratchpad_read",
-  "scratchpad_clear",
   // Permissions (Phase 12.C / Phase 1.C)
   "request_tool_access",
 ]);
-
-export function createPlatformTools(ctx: AgentContext) {
-  return { ...createScratchpadTools(ctx) };
-}

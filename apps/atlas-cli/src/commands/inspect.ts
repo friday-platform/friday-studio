@@ -2,8 +2,6 @@ import process from "node:process";
 import type {
   HistoryEntry,
   MemoryAdapter,
-  ScratchpadAdapter,
-  ScratchpadChunk,
   SkillAdapter,
   SkillMetadata,
   SkillVersion,
@@ -12,22 +10,20 @@ import type {
 import type { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "inspect";
-export const desc = "Inspect workspace memory, skills, and scratchpad";
+export const desc = "Inspect workspace memory and skills";
 export const aliases = ["insp"];
 
 export interface InspectArgs {
-  kind: "memory" | "skills" | "scratchpad";
+  kind: "memory" | "skills";
   workspace?: string;
   json?: boolean;
   history?: boolean;
   since?: string;
-  session?: string;
 }
 
 export interface InspectDeps {
   memory: MemoryAdapter;
   skills: SkillAdapter;
-  scratchpad: ScratchpadAdapter;
 }
 
 export interface InspectResult {
@@ -38,18 +34,14 @@ export function builder(y: YargsInstance) {
   return y
     .option("kind", {
       type: "string",
-      choices: ["memory", "skills", "scratchpad"] as const,
+      choices: ["memory", "skills"] as const,
       demandOption: true,
       describe: "What to inspect",
     })
     .option("workspace", { type: "string", describe: "Workspace ID (defaults to 'default')" })
     .option("json", { type: "boolean", describe: "Output as JSON", default: false })
     .option("history", { type: "boolean", describe: "Show version history", default: false })
-    .option("since", { type: "string", describe: "Filter entries since timestamp" })
-    .option("session", {
-      type: "string",
-      describe: "Session key for scratchpad (defaults to 'default')",
-    });
+    .option("since", { type: "string", describe: "Filter entries since timestamp" });
 }
 
 function formatTable(headers: string[], rows: string[][]): string {
@@ -73,9 +65,9 @@ function formatTable(headers: string[], rows: string[][]): string {
 
   const sepParts: string[] = [];
   for (const w of widths) {
-    sepParts.push("\u2500".repeat(w));
+    sepParts.push("─".repeat(w));
   }
-  lines.push(sepParts.join("\u2500\u2500"));
+  lines.push(sepParts.join("──"));
 
   for (const row of rows) {
     const cells: string[] = [];
@@ -151,38 +143,12 @@ async function inspectSkills(deps: InspectDeps, args: InspectArgs): Promise<Insp
   return { output: formatTable(headers, rows) };
 }
 
-async function inspectScratchpad(deps: InspectDeps, args: InspectArgs): Promise<InspectResult> {
-  const sessionKey = args.session ?? "default";
-  const chunks = await deps.scratchpad.read(sessionKey, { since: args.since });
-
-  const sorted = [...chunks].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  );
-
-  if (args.json) {
-    return { output: JSON.stringify(sorted, null, 2) };
-  }
-  if (sorted.length === 0) {
-    return { output: "No scratchpad chunks found." };
-  }
-  const headers = ["ID", "KIND", "CREATED", "BODY"];
-  const rows = sorted.map((c: ScratchpadChunk) => [
-    c.id,
-    c.kind,
-    c.createdAt,
-    c.body.length > 60 ? `${c.body.slice(0, 57)}...` : c.body,
-  ]);
-  return { output: formatTable(headers, rows) };
-}
-
 export function inspectCommand(deps: InspectDeps, args: InspectArgs): Promise<InspectResult> {
   switch (args.kind) {
     case "memory":
       return inspectMemory(deps, args);
     case "skills":
       return inspectSkills(deps, args);
-    case "scratchpad":
-      return inspectScratchpad(deps, args);
   }
 }
 
