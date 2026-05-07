@@ -638,6 +638,11 @@ export function createGetPipelinesTool(client: Client) {
  * `abortSignal` is honored as a pre-call short-circuit — the HubSpot SDK
  * doesn't expose a per-call abort, so we can't cancel a request mid-flight,
  * but we bail before issuing it if the caller has already aborted.
+ *
+ * Multi-record caveat: callers must inspect both `results[]` and
+ * `numErrors` to decide success per-record. The deterministic create-note
+ * path in agent.ts only ever sends a single record, so it can treat
+ * "results[0]?.id present" as full success; multi-record callers cannot.
  */
 export async function batchCreateCrmObjects(
   client: Client,

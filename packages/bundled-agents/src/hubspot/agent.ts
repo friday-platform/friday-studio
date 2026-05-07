@@ -41,12 +41,14 @@ const SendThreadCommentOpSchema = z.object({
  * Schema for the deterministic create-note operation.
  *
  * Deterministic equivalent of asking the LLM to call `create_crm_objects`
- * with `objectType: "notes"` and a notes↔tickets association.
+ * with `objectType: "notes"` and a notes↔tickets association. Empty
+ * `ticketId` or `body` fail-parse here (rather than late at the SDK)
+ * — malformed envelopes from LLM-authored upstreams get caught early.
  */
 const CreateNoteOpSchema = z.object({
   operation: z.literal("create-note"),
-  ticketId: z.string(),
-  body: z.string(),
+  ticketId: z.string().min(1),
+  body: z.string().min(1),
   hsTimestamp: z.string().optional(),
 });
 
@@ -367,9 +369,14 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
           }
 
           const created = result.results[0];
-          const hasErrors = result.numErrors > 0;
           const hasId = Boolean(created?.id);
-          const success = !hasErrors && hasId;
+          // For our single-record batch, a returned id IS success — even if
+          // HubSpot also reports `numErrors > 0` (which would have to come
+          // from a partial-success on inputs we didn't send). Without this
+          // priority, the response would say "returned N errors" while
+          // `data.noteId` carried a real created id — a dishonest response.
+          const success = hasId;
+          const hasErrors = result.numErrors > 0;
           let response: string;
           if (success) {
             response = `CRM Note ${created?.id} created on ticket ${config.ticketId}`;
