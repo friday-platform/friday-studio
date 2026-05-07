@@ -219,6 +219,12 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
   ];
 }
 
+function validationSummary(events: Awaited<ReturnType<typeof fetchSessionEvents>>): string {
+  return events.stepValidations
+    .map((v) => `${v.strategy}:${v.verdict ?? v.skipReason ?? "none"}`)
+    .join(",");
+}
+
 async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -287,6 +293,86 @@ async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]>
   ];
 }
 
+async function runValidationContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Validation" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "validation-contract-event", {
+    payload: { query: "validation-contract" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  metrics.wallTimeMs = trigger.durationMs;
+  metrics.sessionId = trigger.sessionId;
+  metrics.jobComplete = trigger.jobComplete;
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "validation-output-contract",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/validation-contract-check/validation-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = artifactData ?? data;
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  const serializedDoc = JSON.stringify(data ?? {});
+  const serializedPayload = JSON.stringify(payload ?? {});
+  const hasRecordValidationStub =
+    serializedDoc.includes("record_validation") || serializedPayload.includes("record_validation");
+  const looksTransitional = /now\s+(let|i)|record validation|validation and return/i.test(
+    serializedPayload,
+  );
+  const validationHasImplicitPass = events.stepValidations.some(
+    (v) => v.strategy === "self" && v.verdict === "pass",
+  );
+
+  metrics.bucket = bucket;
+  metrics.docBytes = doc ? byteLen(doc) : 0;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.stepValidations = events.stepValidations;
+  metrics.toolCallCount = events.toolCallCount;
+
+  const pass =
+    payload?.marker === "VALIDATION_CONTRACT_OK" &&
+    payload?.value === 7 &&
+    payload?.explanation === "structured output survived validation" &&
+    validationHasImplicitPass &&
+    !hasRecordValidationStub &&
+    !looksTransitional;
+
+  return [
+    {
+      id: "validation-output-contract",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `value: ${String(payload?.value ?? "(missing)")}`,
+        `validation: ${validationSummary(events) || "(missing)"}`,
+        `record_validation stub: ${hasRecordValidationStub}`,
+        `transitional prose: ${looksTransitional}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function main() {
   await ensureCredentialsLoaded();
   if (!Deno.env.get("ANTHROPIC_API_KEY")) {
@@ -307,6 +393,8 @@ async function main() {
     results.push(...(await runRefsOverDataScenario(daemon)));
     console.log("\n── inputFrom array ref resolution ──");
     results.push(...(await runInputFromArrayScenario(daemon)));
+    console.log("\n── validation output contract ──");
+    results.push(...(await runValidationContractScenario(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });

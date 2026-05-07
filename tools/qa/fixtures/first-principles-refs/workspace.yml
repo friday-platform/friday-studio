@@ -44,6 +44,17 @@ signals:
         query:
           type: string
       required: []
+  validation-contract-event:
+    provider: http
+    description: "Trigger structured-output validation contract scenario."
+    config:
+      path: "/validation-contract-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 jobs:
   refs-check:
@@ -240,4 +251,45 @@ jobs:
                 - marker: "CONSUMED_INPUTFROM_ARRAY"
                 - totalCount: total messages across both batches
                 - firstIds: first message id from each batch, in input order.
+          type: final
+
+  validation-contract-check:
+    description: "Ensure structured validate:self emits output, not a validation stub."
+    triggers:
+      - signal: validation-contract-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "self"
+    fsm:
+      initial: idle
+      documentTypes:
+        ValidationContractResult:
+          type: object
+          properties:
+            marker: { type: string }
+            value: { type: number }
+            explanation: { type: string }
+          required: ["marker", "value", "explanation"]
+      states:
+        idle:
+          on:
+            validation-contract-event: { target: validated }
+        validated:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Emit structured validation contract output."
+              outputTo: validation-result
+              outputType: ValidationContractResult
+              validate: self
+              tools: []
+              prompt: |
+                Emit a ValidationContractResult object directly.
+                The object MUST contain:
+                - marker: "VALIDATION_CONTRACT_OK"
+                - value: 7
+                - explanation: "structured output survived validation"
           type: final
