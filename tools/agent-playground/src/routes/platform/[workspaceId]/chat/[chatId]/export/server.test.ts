@@ -397,13 +397,48 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     expect(body.totalBytes).toBeGreaterThan(TEST_MAX_TOTAL_ARTIFACT_BYTES);
   });
 
-  it("bails with 499 when the request signal aborts mid-pipeline (no zip generated)", async () => {
-    // Simulate the closed-tab path: preview returns OK, then the client
-    // signal aborts before the artifact fan-out finishes. The orchestrator
-    // should detect the aborted signal and short-circuit instead of
-    // building a zip nobody's waiting for.
+  it("bails with 499 when the signal aborts after preview (post-preview check)", async () => {
+    // Exercises the *first* `requestSignal.aborted` check (right after the
+    // preview fetch resolves). Aborting inside the preview handler makes
+    // the signal aborted before control reaches that check; the orchestrator
+    // short-circuits and never fans out to chat/artifacts/bytes.
     const abortController = new AbortController();
-    let zipGenerateCalled = false;
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: { signal: abortController.signal },
+      fetch: ((async (input: Parameters<typeof globalThis.fetch>[0]) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        if (url.includes("/export/preview")) {
+          abortController.abort();
+          return htmlResponse("<html>ok</html>");
+        }
+        // If we reach this branch the post-preview check failed to fire.
+        throw new Error(`Unexpected fetch after abort: ${url}`);
+      }) as typeof globalThis.fetch),
+    };
+    const generateSpy = vi
+      .spyOn(JSZip.prototype, "generateAsync")
+      .mockResolvedValue(new ArrayBuffer(0));
+
+    const res = await callGet(event);
+
+    expect(res.status).toBe(499);
+    expect(generateSpy).not.toHaveBeenCalled();
+  });
+
+  it("bails with 499 when the signal aborts after Promise.allSettled (post-fanout check)", async () => {
+    // Exercises the *second* `requestSignal.aborted` check (right after
+    // the per-artifact `Promise.allSettled` resolves). Preview + chat +
+    // artifact list all complete normally; the abort fires once the
+    // per-artifact fetch starts, so allSettled finishes with rejected
+    // entries and the post-fanout check trips.
+    const abortController = new AbortController();
+    const a1 = sampleArtifact("art-aaaa", "a.txt");
     const event: FakeEvent = {
       params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
       request: { signal: abortController.signal },
@@ -415,36 +450,83 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
               ? input.toString()
               : input.url;
         if (url.includes("/export/preview")) {
-          // Abort right before returning the preview body so the next
-          // `requestSignal.aborted` check fires.
-          abortController.abort();
           return htmlResponse("<html>ok</html>");
         }
-        // Per-artifact / chat / artifact-list fetches all honour the
-        // signal in production; mirror that so the orchestrator's
-        // `Promise.allSettled` sees rejected entries.
-        if (init?.signal?.aborted) {
-          throw new DOMException("aborted", "AbortError");
+        if (url.includes("/api/daemon/api/workspaces/") && url.includes("?full=true")) {
+          return jsonResponse(sampleChatPayload);
         }
-        return jsonResponse(sampleChatPayload);
+        if (url.includes("/api/daemon/api/artifacts?chatId=")) {
+          return jsonResponse({ artifacts: [a1] });
+        }
+        // Per-artifact byte fetch — abort the request signal here, then
+        // reject so allSettled records a rejection and the post-fanout
+        // abort check fires when control returns to the orchestrator.
+        if (url.endsWith("/art-aaaa/content")) {
+          abortController.abort();
+          if (init?.signal?.aborted) {
+            throw new DOMException("aborted", "AbortError");
+          }
+          throw new Error("artifact byte fetch was not given the request signal");
+        }
+        throw new Error(`Unexpected fetch in test: ${url}`);
       }) as typeof globalThis.fetch),
     };
-
-    // Spy on JSZip.prototype.generateAsync to confirm we never reach the
-    // pack step. Restored by the surrounding `afterEach` via
-    // `vi.restoreAllMocks`.
     const generateSpy = vi
       .spyOn(JSZip.prototype, "generateAsync")
-      .mockImplementation(async () => {
-        zipGenerateCalled = true;
-        return new ArrayBuffer(0);
-      });
+      .mockResolvedValue(new ArrayBuffer(0));
 
     const res = await callGet(event);
 
     expect(res.status).toBe(499);
+    // The post-fanout check guards `zip.generateAsync` from ever running
+    // — even though the preview / chat / artifact-list fetches completed,
+    // we don't pay for packing a zip the client closed.
     expect(generateSpy).not.toHaveBeenCalled();
-    expect(zipGenerateCalled).toBe(false);
+  });
+
+  it("slugs a hostile artifact id end-to-end so the produced zip cannot escape `assets/artifacts/`", async () => {
+    // Pairs with the `artifactZipPath` unit test in `preview.test.ts`. The
+    // unit test proves the helper, this one proves the orchestrator's
+    // wire-up: a hostile id at the daemon API boundary lands on a slugged
+    // path inside the zip, with no `..` segment anywhere in the entry list.
+    const hostile = sampleArtifact("../../etc/passwd", "x.txt");
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
+      fetch: makeFetch([
+        {
+          match: (u) => u.includes("/export/preview"),
+          respond: () => htmlResponse("<html>ok</html>"),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/workspaces/") && u.includes("?full=true"),
+          respond: () => jsonResponse(sampleChatPayload),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/artifacts?chatId="),
+          respond: () => jsonResponse({ artifacts: [hostile] }),
+        },
+        {
+          // The orchestrator URL-encodes the id when building the byte
+          // fetch URL, so the upstream stub matches on the encoded form.
+          match: (u) => u.includes(`/${encodeURIComponent("../../etc/passwd")}/content`),
+          respond: () => bytesResponse("safe"),
+        },
+      ]),
+    };
+
+    const res = await callGet(event);
+    expect(res.status).toBe(200);
+    const zip = await decodeZip(res);
+    const entries = Object.keys(zip.files);
+    // No entry escapes the assets dir — the slug rewrites every `/` and
+    // the pure-dot reject collapses `..` segments to `artifact`.
+    for (const entry of entries) {
+      expect(entry).not.toMatch(/(^|\/)\.\.(\/|$)/);
+    }
+    // The hostile id maps to the slugged dir name; the basename `x.txt`
+    // survives unchanged because it's already ASCII-safe.
+    expect(zip.file("assets/artifacts/.._.._etc_passwd/x.txt")).not.toBeNull();
   });
 
   it("forwards a non-2xx preview status (e.g. 404 for missing chat) verbatim", async () => {

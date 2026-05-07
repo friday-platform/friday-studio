@@ -331,4 +331,23 @@ describe("artifactZipPath helper (resolveUrl contract)", () => {
     expect(path).toBe("assets/artifacts/.._.._etc_passwd/x.txt");
     expect(path).not.toMatch(/(^|\/)\.\.(\/|$)/);
   });
+
+  // `.` and `-` are in the slug whitelist, so a pure-dot input (`..`, `.`,
+  // `...`) sails through unchanged unless we reject it explicitly. Without
+  // the explicit reject the helper produces `assets/artifacts/../<base>`
+  // — a path-traversal escape the previous fix missed.
+  it.each([
+    ["double-dot", ".."],
+    ["single-dot", "."],
+    ["triple-dot", "..."],
+  ])("rejects pure-dot id (%s) and falls back to the artifact default", (_label, id) => {
+    const path = artifactZipPath({
+      id,
+      mimeType: "text/plain",
+      originalName: "x.txt",
+      title: "Untitled",
+    });
+    expect(path).toBe("assets/artifacts/artifact/x.txt");
+    expect(path).not.toMatch(/(^|\/)\.+(\/|$)/);
+  });
 });

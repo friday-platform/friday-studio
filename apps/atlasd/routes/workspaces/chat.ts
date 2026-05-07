@@ -8,6 +8,7 @@
  * DELETE /:chatId/stream — Stop stream (cosmetic)
  */
 
+import { Buffer } from "node:buffer";
 import process from "node:process";
 import { normalizeToUIMessages, validateAtlasUIMessages } from "@atlas/agent-sdk";
 import { ChatStorage } from "@atlas/core/chat/storage";
@@ -245,7 +246,13 @@ const workspaceChatRoutes = daemonFactory
       // raw `c.body(string, …)` widens the return type to `string | {…}`
       // and breaks downstream typed callers). The trimmed live-UI path is
       // bounded at 100 messages so it skips this branch entirely.
-      const serializedBytes = JSON.stringify(responseBody).length;
+      //
+      // `Buffer.byteLength` measures the actual UTF-8 wire size, not the
+      // JS string length (UTF-16 code units). For ASCII content the two
+      // match; for emoji-heavy or CJK chats the wire bytes can be 3-4×
+      // the code-unit count, so the field name `payloadBytes` would be a
+      // lie if we kept the cheaper `.length`.
+      const serializedBytes = Buffer.byteLength(JSON.stringify(responseBody), "utf8");
       if (serializedBytes > MAX_FULL_EXPORT_BYTES) {
         return c.json(
           {

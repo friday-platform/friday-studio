@@ -16,7 +16,13 @@ import { deriveDownloadFilename } from "@atlas/core/artifacts/file-upload";
  */
 export function slugifyZipBasename(name: string): string {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return cleaned.length > 0 ? cleaned : "artifact";
+  // `.` and `-` survive the charset filter, so a pure-dot input like `..`
+  // or `.` would otherwise pass through unchanged and let the caller
+  // assemble `assets/artifacts/../<basename>` — a path-traversal escape.
+  // Reject inputs that collapse to nothing but dots (any number) and fall
+  // through to the empty-string default.
+  if (cleaned.length === 0 || /^\.+$/.test(cleaned)) return "artifact";
+  return cleaned;
 }
 
 /**

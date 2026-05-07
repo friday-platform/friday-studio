@@ -933,50 +933,63 @@
   async function handleExportChat(): Promise<void> {
     if (exportInFlight) return;
     exportInFlight = true;
-    const url = `/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
-
-    let res: Response;
+    // Outer try/finally guarantees `exportInFlight` is cleared on EVERY
+    // exit path — early returns, thrown errors, blob-read failures. A
+    // sticky in-flight rune leaves the button permanently disabled until
+    // page reload, which is worse than a stale toast.
     try {
-      res = await fetch(url);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast({ title: "Export failed", description: msg, error: true });
-      exportInFlight = false;
-      return;
-    }
+      const url = `/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
 
-    if (!res.ok) {
-      // Try to surface the structured error body the orchestrator/daemon
-      // returns ({error, messageCount, limit} for 413, {error} for 504/502).
-      // Fall back to status text if the body isn't JSON.
-      let description = `HTTP ${res.status}`;
+      let res: Response;
       try {
-        const body = (await res.json()) as { error?: unknown };
-        if (typeof body.error === "string" && body.error.length > 0) {
-          description = body.error;
-        }
-      } catch {
-        // body wasn't JSON — keep the HTTP fallback
+        res = await fetch(url);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast({ title: "Export failed", description: msg, error: true });
+        return;
       }
-      toast({ title: "Export failed", description, error: true });
-      exportInFlight = false;
-      return;
-    }
 
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    try {
-      const cd = res.headers.get("content-disposition") ?? "";
-      const filename =
-        /filename="?([^"]+)"?/.exec(cd)?.[1] ?? `friday-chat-${chatId.slice(0, 8)}.zip`;
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      if (!res.ok) {
+        // Try to surface the structured error body the orchestrator/daemon
+        // returns ({error, payloadBytes, limit} for 413, {error} for 504/502).
+        // Fall back to status text if the body isn't JSON.
+        let description = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: unknown };
+          if (typeof body.error === "string" && body.error.length > 0) {
+            description = body.error;
+          }
+        } catch {
+          // body wasn't JSON — keep the HTTP fallback
+        }
+        toast({ title: "Export failed", description, error: true });
+        return;
+      }
+
+      let blob: Blob;
+      try {
+        blob = await res.blob();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast({ title: "Export failed", description: msg, error: true });
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const cd = res.headers.get("content-disposition") ?? "";
+        const filename =
+          /filename="?([^"]+)"?/.exec(cd)?.[1] ?? `friday-chat-${chatId.slice(0, 8)}.zip`;
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
     } finally {
-      URL.revokeObjectURL(objectUrl);
       exportInFlight = false;
     }
   }
