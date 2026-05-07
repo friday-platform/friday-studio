@@ -543,7 +543,7 @@
 
     (async () => {
       try {
-        for await (const event of sessionEventStream(sid)) {
+        for await (const event of sessionEventStream(sid, { signal: controller.signal })) {
           if (controller.signal.aborted) return;
           if ("type" in event && event.type === "step:validation") {
             untrack(() => {

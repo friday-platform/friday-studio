@@ -28,7 +28,7 @@ const handler: RequestHandler = async ({ params, request }) => {
 
   let res: Response;
   try {
-    res = await fetch(target, { method: request.method, headers, body });
+    res = await fetch(target, { method: request.method, headers, body, signal: request.signal });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return new Response(
