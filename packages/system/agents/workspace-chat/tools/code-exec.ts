@@ -137,8 +137,16 @@ export interface RunCodeError {
  * Build the `run_code` tool. Each tool instance is scoped to a single chat
  * session via its `sessionId` — scripts can read files they wrote earlier
  * in the same session, but never from other sessions.
+ *
+ * `parentSignal` (optional) ties any in-flight subprocess to the chat-turn
+ * AbortController. When the chat turn aborts (drain shutdown, supersede,
+ * etc.), Node's exec layer SIGKILLs the child within a few ms.
  */
-export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools {
+export function createRunCodeTool(
+  sessionId: string,
+  logger: Logger,
+  parentSignal?: AbortSignal,
+): AtlasTools {
   return {
     run_code: tool({
       description:
@@ -190,6 +198,7 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
             PYTHONUNBUFFERED: "1",
           },
           killSignal: "SIGKILL",
+          signal: parentSignal,
         };
 
         const started = Date.now();
@@ -213,6 +222,25 @@ export function createRunCodeTool(sessionId: string, logger: Logger): AtlasTools
           );
         } catch (err) {
           const duration = Date.now() - started;
+          // Parent chat-turn aborted (drain shutdown, supersede). exec
+          // SIGKILLs the child and rejects with name `AbortError` /
+          // code `ABORT_ERR`. Surface a clean error rather than leaking
+          // the AbortError shape — the LLM never sees this anyway since
+          // the chat turn is being torn down, but downstream telemetry
+          // still ingests it.
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            (("name" in err && (err as { name?: unknown }).name === "AbortError") ||
+              ("code" in err && (err as { code?: unknown }).code === "ABORT_ERR"))
+          ) {
+            logger.info("run_code aborted by parent signal", {
+              sessionId,
+              language: lang,
+              duration,
+            });
+            return { error: "run_code aborted by chat turn cancellation" };
+          }
           // exec() throws on non-zero exit OR on exec-layer errors (timeout,
           // maxBuffer, ENOENT). Both kinds of error object carry
           // `stdout`/`stderr` when they exist, and we want to surface them

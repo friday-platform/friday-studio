@@ -134,6 +134,29 @@ describe("run_code — PTY wrap for interactive-auth commands", () => {
     }
   });
 
+  it("aborts the in-flight subprocess when the parent signal fires", async () => {
+    const controller = new AbortController();
+    const tools = createRunCodeTool("test-session-abort", logger, controller.signal);
+    const run = getExecute(tools.run_code);
+
+    // Fire the abort shortly after exec spawns. Without parent-signal
+    // wiring this would run for the full 5 s and the test would time
+    // out under vitest's default 5 s ceiling.
+    setTimeout(() => controller.abort(), 50);
+    const started = Date.now();
+    const result = await run({
+      language: "bash",
+      source: "sleep 5; echo done",
+    });
+    const elapsed = Date.now() - started;
+
+    expect(elapsed).toBeLessThan(2000);
+    if (!hasKey(result, "error")) {
+      throw new Error(`expected error shape, got ${JSON.stringify(result)}`);
+    }
+    expect(String(result.error)).toContain("aborted");
+  });
+
   it("preserves stderr on nonzero exit (regression — was lost via the 'code is number' condition)", async () => {
     const tools = createRunCodeTool("test-session-preserve", logger);
     const run = getExecute(tools.run_code);

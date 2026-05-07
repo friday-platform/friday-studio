@@ -652,7 +652,7 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const adHocSessionId = session.sessionId || `session-${Date.now()}`;
         const webFetchTool = createWebFetchTool(logger);
         const webSearchTool = createWebSearchTool(logger);
-        const runCodeTool = createRunCodeTool(adHocSessionId, logger);
+        const runCodeTool = createRunCodeTool(adHocSessionId, logger, abortSignal);
         const fileIOTools = createFileIOTools(adHocSessionId, logger);
 
         // delegate runs nested streamText sub-agents in-process. The child's
