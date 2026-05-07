@@ -1,0 +1,72 @@
+# Phase 7 fixture — delegate isolation.
+#
+# Action declares `tools: [delegate, ...]`. The parent prompt instructs the
+# LLM to spawn a delegate child that does the actual multi-step work; the
+# child returns a brief answer string. The scenario asserts:
+#   - the parent's `step:complete.toolCalls` includes a "delegate" call
+#   - the parent's `step:complete.output` (the prose return) is short
+#     relative to the work the child did
+
+version: "1.0"
+
+workspace:
+  name: "Inbox Corpus QA — Delegate"
+  description: "Phase 7 scenario fixture: delegate-tool isolation."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+delegation:
+  max_depth: 1
+  max_steps_per_call: 12
+  max_output_tokens: 4000
+  max_input_tokens: 40000
+  max_wall_time_ms: 60000
+
+signals:
+  delegate-event:
+    provider: http
+    description: "Triggers the delegate scenario."
+    config:
+      path: "/delegate-event"
+    schema:
+      type: object
+      properties:
+        topic:
+          type: string
+      required: ["topic"]
+
+jobs:
+  delegate-task:
+    description: "Phase 7 — declare delegate; spawn child; assert isolation."
+    triggers:
+      - signal: delegate-event
+    config:
+      timeout: "5m"
+      max_steps: 10
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            delegate-event: { target: run }
+        run:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Spawn a delegate child to brainstorm three short bullet points; return a brief summary."
+              outputTo: delegate-summary
+              tools:
+                - delegate
+              prompt: |
+                Use the `delegate` tool exactly once. Pass:
+                  - goal: "Brainstorm three short bullet points about the
+                    topic and return them"
+                  - handoff: "topic = <topic from signal payload>; output as
+                    a brief markdown bullet list"
+
+                When the delegate returns, reply with a SINGLE one-line
+                markdown summary (≤ 80 characters) that does NOT echo the
+                child's full bullet list. Then call `complete`.
+          type: final

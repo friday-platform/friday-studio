@@ -1,0 +1,67 @@
+# Phase 5 fixture — platform-tool parity.
+#
+# The action declares only `fs_glob` in its `tools:` array but the prompt
+# instructs the LLM to call `memory_save`. Phase 5 made the platform tool
+# surface ambient: every type:llm action gets `memory_save`/`memory_read`/
+# `artifacts_*`/etc. regardless of declaration. The scenario asserts a
+# `narrative` memory entry persists after the run.
+
+version: "1.0"
+
+workspace:
+  name: "Inbox Corpus QA — Parity"
+  description: "Phase 5 scenario fixture: platform tools always available."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+memory:
+  own:
+    - name: notes
+      type: long_term
+
+signals:
+  parity-event:
+    provider: http
+    description: "Triggers the parity scenario."
+    config:
+      path: "/parity-event"
+    schema:
+      type: object
+      properties:
+        note:
+          type: string
+      required: ["note"]
+
+jobs:
+  save-note:
+    description: "Phase 5 — call memory_save without declaring it in tools."
+    triggers:
+      - signal: parity-event
+    config:
+      timeout: "2m"
+      max_steps: 5
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            parity-event: { target: save }
+        save:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Save the signal payload's note text into the notes memory store."
+              outputTo: save-result
+              # Intentionally omit memory_save from declared tools — Phase 5
+              # parity makes the platform-tool surface ambient regardless.
+              tools:
+                - fs_glob
+              prompt: |
+                Call the `memory_save` tool with:
+                  - `workspaceId`: the runtime workspace id (you are inside it)
+                  - `memoryName`: "notes"
+                  - `text`: the `note` field from the signal payload
+                Then call `complete` with a one-line confirmation.
+          type: final

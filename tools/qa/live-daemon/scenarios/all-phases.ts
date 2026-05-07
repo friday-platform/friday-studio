@@ -12,16 +12,22 @@
  *   1.B  — per-job dangerouslySkipAllowlist: true bypasses narrowing
  *   2.B  — Phase 2.B artifact persists in JetStream Object Store
  *   2.C  — Phase 2.C SSE job-complete carries compact { artifactIds, summary }
+ *   3    — scrubber lifts >4KB tool result to a JetStream artifact
  *   4.A  — read-only fetcher action emits step:complete.validation with
  *          strategy="skip" and a classifier reason (read-only-fetcher)
  *   4.B  — free-form prose action emits step:complete.validation with
  *          strategy="self" (verdict optional — LLM may or may not call
  *          record_validation; self-strategy presence is the contract)
+ *   5    — platform-tool parity: ambient memory_save without declaration
+ *   6    — ephemeral artifact lifecycle: pre-sweep present, post-sweep gone
+ *   7    — delegate isolation: parent stays compact when child does work
+ *   8    — delegate budget exhaustion: clean budget_exhausted reason returned
+ *   9    — retrieval-gated artifact injection (<retrieved_content> block)
  *   11   — Phase 11 step:complete events carry `usage`
  *   12   — request_tool_access emits a tool-allowlist elicitation
  *          surfaced via GET /api/elicitations
  *
- * Cost: ~$0.50 of LLM calls (4 short scenarios + 1 medium baseline).
+ * Cost: ~$0.80 of LLM calls (8 baseline scenarios + 6 H1 scenarios).
  */
 
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
@@ -39,6 +45,7 @@ import {
   stopDaemon,
   triggerSignalSSE,
 } from "../harness.ts";
+import { runPhases3to9 } from "./phases-3-9.ts";
 
 interface PhaseResult {
   phase: string;
@@ -413,7 +420,15 @@ async function main() {
   const startedAt = new Date().toISOString();
   console.log(`▶ all-phases @ ${sha}`);
 
-  const daemon = await startDaemon({ healthTimeoutMs: 90_000 });
+  // Phase 6's ephemeral-artifact scenario relies on the artifacts sweeper
+  // ticking quickly enough to claim a 1-second-grace artifact within the
+  // harness's wait window. The default sweeper interval is 1 hour;
+  // override to 1s for the whole daemon run. No effect on other scenarios
+  // (their artifacts are durable or have hour-scale grace).
+  const daemon = await startDaemon({
+    healthTimeoutMs: 90_000,
+    env: { FRIDAY_SWEEPER_INTERVAL_MS: "1000" },
+  });
   console.log(`✓ daemon up: ${daemon.baseUrl}`);
 
   const results: PhaseResult[] = [];
@@ -433,6 +448,12 @@ async function main() {
 
     console.log("\n── Phase 12 (elicitation) ──");
     results.push(await runPhase12(daemon));
+
+    // H1 (melodic-strolling-seal-pt3) — Phases 3, 5, 6, 7, 8, 9 live
+    // scenarios. Defined alongside in `phases-3-9.ts` to keep this file
+    // focused on the baseline 8. Each is 30-80 LOC reusing harness
+    // primitives.
+    results.push(...(await runPhases3to9(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });

@@ -1,0 +1,79 @@
+# Phase 3 fixture — auto-lift scrubber.
+#
+# Wires a stub MCP server (`stub_big`) that returns a ~6 KB synthetic blob
+# from `fetch_big_blob`. The action calls the tool; the scrubber should
+# lift the response to an artifact and rewrite the message buffer with an
+# `<artifact-ref:...>` placeholder. Live-daemon Phase 3 scenario asserts
+# that the artifact persists in the JetStream Object Store.
+#
+# Synthetic payload only (see big-string-server.ts).
+
+version: "1.0"
+
+workspace:
+  name: "Inbox Corpus QA — Scrubber"
+  description: "Phase 3 scenario fixture: auto-lift threshold."
+
+permissions:
+  dangerouslySkipAllowlist: false
+
+tools:
+  mcp:
+    servers:
+      stub_big:
+        transport:
+          type: stdio
+          command: deno
+          # The path is rewritten by the live-daemon harness at registration
+          # time (see materializeScrubberFixture in scenarios/phases-3-9.ts)
+          # so the absolute filesystem location of the worktree doesn't need
+          # to be hardcoded.
+          args:
+            - run
+            - --allow-all
+            - "__STUB_MCP_PATH__"
+        skipResolverCheck: true
+
+signals:
+  fetch-event:
+    provider: http
+    description: "Triggers the scrubber scenario."
+    config:
+      path: "/fetch-event"
+    schema:
+      type: object
+      properties:
+        reason:
+          type: string
+      required: ["reason"]
+
+jobs:
+  fetch-blob:
+    description: "Phase 3 — call a stub MCP returning >4 KB; expect lift."
+    triggers:
+      - signal: fetch-event
+    config:
+      timeout: "2m"
+      max_steps: 5
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            fetch-event: { target: fetch }
+        fetch:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Fetch a synthetic 6 KB blob via the stub MCP and emit a one-line summary."
+              outputTo: blob-summary
+              tools:
+                - stub_big/fetch_big_blob
+              prompt: |
+                Call the `stub_big/fetch_big_blob` tool with `reason` set to
+                the value from the signal payload. The tool returns a large
+                synthetic body. Do NOT echo the body back. Reply with a
+                single short line confirming you received the response, then
+                call `complete`.
+          type: final
