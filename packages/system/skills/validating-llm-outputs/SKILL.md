@@ -54,11 +54,13 @@ If a claim cannot be sourced, drop it from your output. If the task genuinely re
 
 **Output first, then record.** The `record_validation` call is the closing punctuation on your turn — once you call it, your turn is over and any text you generate after it is discarded by the runtime.
 
-Required ordering for `pass` and `advisory`:
+If the runtime instead provided a `complete` tool for an `outputTo` action, validate the payload before calling `complete`; that `complete` call is the output document. Do not invent a `record_validation` call when it is not available, and never use validation as a substitute for emitting the required output.
+
+Required ordering for `pass` and `advisory` when `record_validation` is available:
 
 1. Walk your draft and apply the FIX-UP RULE above.
-2. **Emit your final output** — the full text response (or, for actions with structured output, the structured payload) that the action is supposed to produce. Do not emit a transitional sentence like "Now let me record validation and return the final output" and stop there — that prefix is not the output, and the runtime captures it as if it were. Produce the full content first.
-3. **Then call `record_validation` exactly once** as the closing tool call. Do not say anything else after.
+2. **Emit your final output** — the full text response (or, when a `complete` tool is present, the `complete(...)` payload) that the action is supposed to produce. Do not emit a transitional sentence like "Now let me record validation and return the final output" and stop there — that prefix is not the output, and the runtime captures it as if it were. Produce the full content first.
+3. **Then call `record_validation` exactly once** as the closing tool call, if that tool is available for this action. Do not say anything else after.
 
 Verdicts:
 
@@ -88,4 +90,4 @@ NOT:
 → (turn ends here; the actual report never gets emitted)
 ```
 
-Do not skip the call. The runtime relies on `record_validation` to mark the action's verdict on the session event stream so downstream consumers (compact result shapes, the Activity page, future crystallization signals) see what you concluded. If your output is correct and sourced — which is the common case — emit it, then record `verdict: "pass"`.
+Do not skip the call when `record_validation` is available. The runtime relies on it to mark the action's verdict on the session event stream so downstream consumers (compact result shapes, the Activity page, future crystallization signals) see what you concluded. If the runtime gave you only `complete`, use `complete` as the emission contract. If your output is correct and sourced — which is the common case — emit it, then record `verdict: "pass"` when that tool is present.

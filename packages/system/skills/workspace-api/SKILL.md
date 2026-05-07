@@ -17,7 +17,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 |---|---|---|
 | `atlas` | A bundled platform agent fits the task **and its `constraints` allow it** | `type: atlas, agent: "web"` |
 | `llm` | Default for open-ended work — classifying, summarizing, scoring, choosing among options. Use when in doubt. | `type: llm, config: { prompt, tools }` |
-| `user` | ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the agent body would call `ctx.llm.generate` to decide anything, this is wrong — use `llm`. | `type: user, agent: "csv-parser"` |
+| `user` | ONLY when each call's decision is mechanical (regex, schema, fixed routing). If the agent body would call `ctx.llm.generate` to decide anything, this is wrong — use `llm`. User agents must use host capabilities (`ctx.tools`, `ctx.http`, `ctx.llm`) rather than direct local MCP/API calls. | `type: user, agent: "csv-parser"` |
 
 **Decision rule.** Call `list_capabilities` first. If a bundled agent's `constraints` cover the user's intent end-to-end, pick `atlas`. Otherwise default to `llm` with the right MCP tools wired. Reach for `user` only when you can name the deterministic decision the agent body makes — never as a fallback. If the user names a type explicitly (`use an llm agent`), respect it.
 
@@ -48,6 +48,7 @@ Create and manage Friday workspaces. This skill is where LLM judgment lives: whe
 - Jobs must use `fsm:`, not `execution:` — the runtime silently skips jobs without `fsm:`.
 - `write_file` writes to scratch only; use `run_code` with an absolute path to edit `workspace.yml`.
 - Tool names in `agents.*.config.tools` resolve against `tools.mcp.servers.*` for workspace-scoped MCP servers. Atlas-platform built-ins (memory, artifacts, fs, request_tool_access) auto-inject everywhere and use bare names (`memory_save`, `fs_glob`); no `serverId/` prefix.
+- Jobs that return data need `outputTo`; LLM-backed `outputTo` actions must finish with the injected `complete` tool (`outputType` schema args, or `{ response }` for untyped output).
 
 ---
 
@@ -369,7 +370,7 @@ The cheat-sheet table covers the decision rule. These are worked examples for ea
 11. **Never DELETE+CREATE a workspace to edit it.** That loses the runtime id, kills sessions, and breaks cross-workspace mounts. Use in-place updates (`POST /update` or partial endpoints) instead.
 
 12. **Per-job and per-workspace policy blocks.** workspace.yml carries a few optional blocks beyond the core wiring. All precedence chains follow **per-job > per-workspace > daemon-level** (env var or runtime default), except `validation:` which extends one level higher to action-level.
-    - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Floor: daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only. Without bypass, allowlist denials become elicitations: an agent that calls `request_tool_access(toolName, reason)` produces a `tool-allowlist` elicitation surfaced via `GET /api/elicitations` and the Activity page; the user answers (allow once / allow always for the job / deny) and re-runs.
+    - **`permissions: { dangerouslySkipAllowlist: bool }`** — bypass tool/skill allowlist enforcement. Floor: daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1` env var. Trusted contexts only. Without bypass, allowlist denials become elicitations: an agent that calls `request_tool_access(toolName, reason)` produces a `tool-allowlist` elicitation surfaced via `GET /api/elicitations`, the Activity page, and sidebar pending badges. The blocked action waits for allow/deny/expiry; on allow it resumes in the same session.
     - **`delegation: { max_depth, max_steps_per_call, max_output_tokens, max_input_tokens, max_wall_time_ms, max_cost_usd }`** — bounds for the `delegate` tool when an agent uses it. Workspace-level + per-job override (`jobs.<name>.delegation`) — per-field merge, job wins. Default `max_depth: 1`.
     - **`validation: { default, skill }`** — default LLM-output validation strategy applied to `type: llm` / `type: agent` actions that don't set `validate:` themselves. See the dedicated `validation:` section below for the full precedence chain (action > job > workspace > `"auto"`).
     - **`memory.own[].ttl: <duration>`** — explicit TTL on a memory store. Without it, `type: short_term` (notes) defaults to ephemeral session-bound and `type: long_term` (memory) to durable.

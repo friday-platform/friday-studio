@@ -17,6 +17,7 @@ Validate cleanly. Run reliably. Load before authoring any `fsm:` job.
 - [ ] MCP tools use `serverId/toolName` format
 - [ ] `emit` event names match `on` transition keys exactly
 - [ ] Multi-step jobs chain via `outputTo` → `inputFrom` (array form when step needs >1 prior output)
+- [ ] Every LLM-backed `outputTo` action has a `complete` output contract (`outputType` schema args, or `{ response }` when untyped)
 
 ## Trigger contract (common silent failure)
 
@@ -157,6 +158,8 @@ Key fields:
 `outputTo` does double duty. Inside a multi-step FSM it chains a step's output into the next step's `inputFrom` (above). It is **also the only mechanism for surfacing data back to whoever fired the signal** — the synchronous signal response (`POST /api/workspaces/:id/signals/:id`) returns docs collected from `engine.documents` as `output: [{ id, type, data }]`. No `outputTo` → no doc → caller sees `output: []` even on `status: completed`.
 
 There is no separate `outputs:` block on a job that pipes the FSM result to the caller. The schema has an `outputs:` field but it's a memory-write declaration (`{ memory, entryKind }`) — unrelated.
+
+**Mechanical output contract:** every LLM-backed action with `outputTo` must finish by calling the runtime-injected `complete` tool. If the action declares `outputType`, `complete` args must match that document schema. If it does not, emit the full final text as `complete({ response: "..." })`. Do not rely on prose after the last MCP/tool call; if `complete` is not called, the session fails instead of persisting an empty/stub document.
 
 **Single-step jobs that need to return data:** put `outputTo` on the entry action even when the state is `type: final`. Entry actions still execute on entering a final state, and the doc is captured before session completion.
 
@@ -330,7 +333,7 @@ jobs:
 
 `type: user` Python agents that call `parse_input(prompt, MyDataclass)` see the wrapped shape `{ "config": { ... } }` rather than the fields at the top level. Either keep `{{inputs.<field>}}` interpolation in the action prompt as above, or unwrap `config` in the agent before typing — see `writing-friday-python-agents` → `references/input-parsing.md` for the snippet.
 
-For data too large for the payload, persist with the artifact + memory pattern — producer calls `artifacts_create` then `memory_save` to record the id; consumer reads the id from injected memory and calls `artifacts_get`. See the `writing-to-memory` skill.
+For large data **inside the same FSM session**, prefer `outputTo` → `inputFrom`; the runtime stores bulky documents as artifact refs and hydrates those refs before the next action runs. For data that must cross session boundaries, persist with the artifact + memory pattern — producer calls `artifacts_create` then `memory_save` to record the id; a later session reads the id from memory and calls `parse_artifact`. See the `writing-to-memory` skill.
 
 ## Single-action FSMs post-supervisor-flip
 
@@ -659,33 +662,30 @@ an action down to "memory only," you can't (today) — the platform
 tool surface is fixed. Long-term: a `platform_tools: [...]` opt-in is
 on the roadmap (see pt3 N7-followup).
 
-### Why your action might emit nothing despite tool calls succeeding
+### Output contract: `complete` is the only durable emission for `outputTo`
 
-When an LLM action ends on a tool call (e.g., the LLM called
-`fs_write_file` then `memory_save` and decided it was done), the AI
-SDK's `result.text` returns empty — the final assistant message had
-no text part. The runtime captures `text` and wraps it as
-`{response: text}` in the action's `outputTo` document; if `text`
-is empty the document body is `{"response": ""}` even though all the
-work succeeded.
+When an LLM-backed action has `outputTo`, the runtime injects a
+`complete` tool and treats that call as the action's durable output.
+This is true even when `outputType` is omitted:
 
-Two ways to avoid this:
+- With `outputType: <DocumentType>`, call `complete` with fields that
+  match the declared document schema.
+- Without `outputType`, call `complete({ response: "<full final text>" })`.
+- If the action also has MCP tools, the runtime uses `toolChoice: "required"`
+  until `complete` appears, so the model cannot stop with prose after a
+  search/write/memory call.
 
-1. **Declare `outputType: <DocumentType>` on the action.** This pins
-   `toolChoice` to a `complete` tool that the LLM is required to
-   call with structured args; the args become your output. Robust
-   and makes the contract explicit. Works for any structured shape.
+Do **not** end an `outputTo` action on `record_validation`, `fs_write_file`,
+`memory_save`, or any other non-`complete` tool. Those calls may be useful
+side effects, but they are not the output document. If `complete` is missing,
+the session fails with `LLM action with outputTo '<id>' did not call complete`
+rather than persisting an empty `{ response: "" }` stub.
 
-2. **Engineer the prompt to emit text after the last tool call.** Be
-   explicit: "After saving the file, your final assistant message
-   MUST be the markdown report itself, not a tool call. Do not end
-   on a `tool_use` block." This is fragile across model versions and
-   easy to regress; option 1 is preferred.
-
-A defensive runtime fallback (post-N2) recovers the latest text from
-earlier steps if the final step is text-less, but it can't recover
-text the LLM never emitted at all. If the LLM operated entirely in
-tool-call mode, the artifact body will be empty.
+Preferred pattern for reports: call any tools needed, write auxiliary files if
+useful, then `complete` with a compact structured/report payload containing the
+report path/ref, counts, and summary. The supervisor sees the compact
+`{ artifactIds, summary }` job result first and only calls `parse_artifact` when
+it needs the full body.
 
 ## Validation strategies
 
@@ -749,12 +749,13 @@ blocking the step.
 - **`skip`** — no validation. `step:complete.validation` records
   `{ strategy: "skip", skipReason }` for observability.
 - **`self`** — runtime composes `@friday/validating-llm-outputs`
-  (or your `skill:` override) into the action's prompt. The LLM
-  walks every claim in its draft and drops anything not sourced to
-  a tool result, input, or direct inference. (The
-  `record_validation` tool is auto-injected when this lands in
-  pt2's B6 phase; today the inline path is a no-op and behaves like
-  `skip`.)
+  (or your `skill:` override) into the action's prompt when the
+  action does not already have a mechanical `complete` output
+  contract. The LLM walks every claim in its draft and drops anything
+  not sourced to a tool result, input, or direct inference, then calls
+  `record_validation`. For `outputTo` actions, `complete` owns output
+  emission and validation is recorded as step metadata; do not try to
+  make `record_validation` the produced document.
 - **`external`** — post-emit judge call. Returns a
   `ValidationVerdict` with `status` (`pass` / `uncertain` /
   `fail`), `confidence`, `threshold`, and an `issues` array with
@@ -1088,18 +1089,23 @@ keep the supervisor cheap.
 
 ## Requesting access to a tool not in your allowlist
 
-When an action discovers it needs a tool it didn't declare, the action
-calls `request_tool_access(toolName, reason)`. Two paths:
+When an action discovers it needs a real runtime-visible tool it didn't
+declare, the action calls `request_tool_access(toolName, reason)`. Two paths:
 
 - **Bypass on** (job or workspace `permissions.dangerouslySkipAllowlist:
   true`, or daemon `FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS=1`): tool
   returns `{ ok: true, granted: true, reason: "bypass" }` synchronously.
   Action proceeds.
-- **Bypass off** (default): tool returns `{ ok: false, granted: false,
-  elicitationId, reason: "pending_user_approval" }`. The runtime
-  emits a tool-allowlist elicitation surfaced via the Activity page +
-  `GET /api/elicitations`. The action should `failStep` or route around;
-  the user re-runs the job after answering.
+- **Bypass off** (default): the runtime creates a `tool-allowlist`
+  elicitation surfaced in Activity/sidebar and **blocks the tool call**
+  until the user answers, declines, or the elicitation expires. On allow,
+  `request_tool_access` returns granted and the same action continues; on
+  deny/expiry it returns a terminal denial that the action must handle.
+
+Unknown tools are rejected without creating an elicitation. If
+`request_tool_access` returns `reason: "unknown_tool"`, stop guessing: call
+`list_capabilities` / `list_mcp_tools`, install/enable the correct server if
+needed, or ask the user which real tool/provider they meant.
 
 ```yaml
 - type: llm
@@ -1107,15 +1113,15 @@ calls `request_tool_access(toolName, reason)`. Two paths:
     - fs_read_file
     - request_tool_access
   prompt: |
-    If you discover you need fs_write_file (not in your allowlist), use
-    request_tool_access first. Acknowledge the elicitation id to the
-    user and stop — they will re-run the job after approving.
+    If you discover you need fs_write_file (not in your allowlist), call
+    request_tool_access("fs_write_file", "Need to apply the requested patch").
+    If granted, continue in this same action and finish with complete(...).
+    If denied or expired, explain what was blocked and stop safely.
 ```
 
-Authoring rule: only list `request_tool_access` in the allowlist when
-the action has a known fallback path (failStep, partial result, retry
-on next signal). The runtime suspend/resume layer is a follow-on; today
-the user re-runs after answering.
+Authoring rule: only list `request_tool_access` when the action can continue
+safely after an allow or produce a useful denial/partial result. Do not use it
+as a way to ask for hallucinated tool names.
 
 **Per-job elicitation timeout.** Defaults to the parent job's `config.timeout`
 (elicitations expire when the job times out). Override per-job to constrain
@@ -1138,12 +1144,14 @@ one does not reify the timed-out job.
 A few behaviors fire automatically. You don't opt in or out, but
 knowing they exist saves debugging time.
 
-- **Oversized tool results auto-lift to artifacts.** When an MCP tool
-  returns more than ~4 KB, the runtime writes it to the JetStream
-  Object Store and replaces the value in the action's message buffer
-  with `<artifact-ref:...>`. If you see unexpected artifacts in
-  `GET /api/artifacts?sessionId=...`, this is the source. Don't try to
-  manage it manually.
+- **Oversized tool results and action documents auto-lift to artifacts.**
+  When an MCP tool or `outputTo` document is bulky, the runtime writes it to
+  the JetStream Object Store and carries compact refs/summaries at supervisor
+  boundaries. Downstream same-session `inputFrom` actions are hydrated before
+  the model sees them, so keep using `outputTo` → `inputFrom` instead of
+  scraping session logs or re-fetching artifacts manually. If you see
+  unexpected artifacts in `GET /api/artifacts?sessionId=...`, this is the
+  source.
 - **Validator skips on tool-passthrough.** The hallucination judge
   runs only when the action's output is LLM-generated prose. If the
   output is empty or trivially echoes a tool result, the validator
@@ -1248,7 +1256,7 @@ Without `outputTo`, agent result not saved as document. Next step's `inputFrom` 
 
 Symptom: Second agent receives empty or undefined input.
 
-Fix: Add `outputTo: <doc-id>` to producer and `inputFrom: <same-doc-id>` to consumer.
+Fix: Add `outputTo: <doc-id>` to producer and `inputFrom: <same-doc-id>` to consumer. For LLM-backed producers, also make sure the action finishes with `complete(...)` (schema args when `outputType` is set, `{ response }` otherwise).
 
 ### `inputFrom` reaching across sessions
 

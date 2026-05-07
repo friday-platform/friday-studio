@@ -142,6 +142,10 @@ def execute(prompt: str, ctx: AgentContext):
 `{{env.VARIABLE}}` in MCP config references agent environment variables.
 Currently only `stdio` transport is supported.
 
+**Do not bypass `ctx.tools`.** Python agents must not call local MCP HTTP endpoints such as `http://localhost:8002/mcp`, hardcode bearer tokens, or guess provider-specific tool names. Use `ctx.tools.list()` to inspect the runtime tool surface and `ctx.tools.call(name, args)` to invoke it. Host-side tool calls are credentialed, audited, and recorded in session history; direct HTTP calls are invisible to Friday and commonly fail with unknown-tool or invalid-token errors.
+
+If `ctx.tools.call` raises `ToolCallError("Unknown tool ...")`, list tools and fix the workspace/agent config rather than retrying a guessed name.
+
 ### Memory — `memory_save` / `memory_read` (platform tools)
 
 The host injects platform memory tools into every agent's tool surface
@@ -299,7 +303,7 @@ and audit logging centrally.
 
 - `ctx.http.fetch()` instead of `requests`/`httpx` — host manages TLS, logging, limits
 - `ctx.llm.generate()` instead of `anthropic`/`openai` — host manages API keys, routing
-- `ctx.tools.call()` instead of direct API calls — MCP servers run centrally
+- `ctx.tools.list()` + `ctx.tools.call()` instead of direct API/MCP HTTP calls — MCP servers run centrally and calls remain observable
 - `ctx.stream.progress()` instead of `print()` — UI integration, not stdout
 - `ctx.env` instead of `os.environ` — only declared variables are injected
 
@@ -331,7 +335,7 @@ curl -X POST http://localhost:8080/api/agents/register \
 into the agents registry (under `{FRIDAY_HOME}/agents/{id}@{version}/` — the
 home dir is mid-migration from `~/.atlas` to `~/.friday/local`), and reloads
 the registry. No compilation step — the agent process is spawned per
-invocation and communicates with the host via NATS request/reply.
+invocation and communicates with the host via NATS request/reply. The daemon sets `FRIDAY_NATS_URL` for registration and execution; agent code should not open its own NATS connection or assume `nats://localhost:4222`.
 
 The register response returns `agent.path` (the install dir). To look up the
 source path of an existing agent, query `GET /api/agents/:id` and read
