@@ -34,6 +34,10 @@
   vars:
     scenarioId: python-user-agent-ctx-tools-observability
 
+- description: bundled type:atlas agent artifact output
+  vars:
+    scenarioId: atlas-agent-artifact-output
+
 - description: auto-triage report output contract
   vars:
     scenarioId: auto-triage-report-output-contract

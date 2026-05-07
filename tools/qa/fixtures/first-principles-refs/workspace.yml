@@ -159,6 +159,17 @@ signals:
         query:
           type: string
       required: []
+  atlas-agent-event:
+    provider: http
+    description: "Trigger bundled/type:atlas agent scenario."
+    config:
+      path: "/atlas-agent-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 agents:
   contract-writer:
@@ -192,6 +203,15 @@ agents:
     type: user
     agent: fake-inbox-python-agent
     description: "Python user-agent fixture that must call fake inbox MCP tools through ctx.tools."
+
+  atlas-summary-writer:
+    type: atlas
+    agent: get-summary
+    description: "Bundled Atlas summary agent fixture for first-principles coverage."
+    prompt: |
+      You are running inside the first-principles no-auth eval. Summarize only
+      the provided text and create exactly one summary artifact. Preserve the
+      marker BUILT_IN_ATLAS_AGENT_OK in the artifact text.
 
 jobs:
   refs-check:
@@ -813,6 +833,35 @@ jobs:
                 Return the marker PY_USER_AGENT_TOOL_OK, listed tool names,
                 count, firstId, and whether any body contained
                 FIRST_PRINCIPLES_EMAIL_BODY.
+          type: final
+
+  atlas-agent-check:
+    description: "Bundled type:atlas agent executes with artifact refs and observable tool calls."
+    triggers:
+      - signal: atlas-agent-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            atlas-agent-event: { target: summarize }
+        summarize:
+          entry:
+            - type: agent
+              agentId: atlas-summary-writer
+              summary: "Use bundled get-summary Atlas agent."
+              outputTo: atlas-agent-result
+              validate: skip
+              prompt: |
+                Summarize this deterministic no-auth fixture text:
+                BUILT_IN_ATLAS_AGENT_OK proves type: atlas wrappers can run as
+                FSM agent actions, create summary artifacts, and surface
+                tool-call metadata without direct MCP configuration.
           type: final
 
   fanout-delegate-check:

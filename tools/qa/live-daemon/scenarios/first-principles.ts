@@ -965,6 +965,105 @@ async function runPythonUserAgentToolsScenario(d: DaemonHandle): Promise<EvalRes
   ];
 }
 
+async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Atlas Agent" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "atlas-agent-event", {
+    payload: { query: "atlas-agent" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "atlas-agent-artifact-output",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/atlas-agent-check/atlas-agent-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  const artifacts = await listArtifactsForSession(d, ws.id, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+
+  const stepCompletes = events.events.filter((ev) => ev.type === "step:complete");
+  const stepToolCalls = stepCompletes.flatMap(
+    (ev) => (ev as { toolCalls?: Array<Record<string, unknown>> }).toolCalls ?? [],
+  );
+  const toolNames = stepToolCalls.map((tc) => String(tc.toolName ?? ""));
+  const stepValidationStrategies = stepCompletes
+    .map((ev) => (ev as { validation?: { strategy?: string } }).validation?.strategy)
+    .filter((strategy): strategy is string => typeof strategy === "string");
+  const nonSkipValidationStrategies = stepValidationStrategies.filter(
+    (strategy) => strategy !== "skip",
+  );
+  const outputArtifactRefs = Array.isArray(data?.artifactRefs)
+    ? (data.artifactRefs as Array<Record<string, unknown>>)
+    : [];
+  const createdArtifactId = outputArtifactRefs.find((ref) => typeof ref.id === "string")?.id as
+    | string
+    | undefined;
+  let createdArtifactContents = "";
+  if (createdArtifactId) {
+    const resp = await fetch(`${d.baseUrl}/api/artifacts/${encodeURIComponent(createdArtifactId)}`);
+    if (resp.ok) {
+      const body = (await resp.json()) as { contents?: string };
+      createdArtifactContents = body.contents ?? "";
+    }
+  }
+
+  metrics.bucket = bucket;
+  metrics.docBytes = doc ? byteLen(doc) : 0;
+  metrics.data = data ?? null;
+  metrics.artifactCount = artifacts.length;
+  metrics.outputArtifactRefs = outputArtifactRefs;
+  metrics.createdArtifactId = createdArtifactId ?? null;
+  metrics.createdArtifactBytes = createdArtifactContents.length;
+  metrics.createdArtifactHasMarker = createdArtifactContents.includes("BUILT_IN_ATLAS_AGENT_OK");
+  metrics.toolNames = toolNames;
+  metrics.stepValidationStrategies = stepValidationStrategies;
+  metrics.nonSkipValidationStrategies = nonSkipValidationStrategies;
+
+  const pass =
+    trigger.jobComplete?.success === true &&
+    outputArtifactRefs.length > 0 &&
+    toolNames.includes("artifacts_create") &&
+    createdArtifactContents.length > 50 &&
+    nonSkipValidationStrategies.length === 0;
+
+  return [
+    {
+      id: "atlas-agent-artifact-output",
+      pass,
+      notes: [
+        ...notes,
+        `job success: ${String(trigger.jobComplete?.success ?? false)}`,
+        `output artifact refs: ${outputArtifactRefs.length}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+        `artifact bytes: ${createdArtifactContents.length}`,
+        `artifact has marker: ${createdArtifactContents.includes("BUILT_IN_ATLAS_AGENT_OK")}`,
+        `validation strategies: ${stepValidationStrategies.join(",") || "(none)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runAutoTriageReportOutputContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -1822,6 +1921,8 @@ async function main() {
     results.push(...(await runLlmAgentInputFromHydrationScenario(daemon)));
     console.log("\n── Python user-agent ctx.tools observability ──");
     results.push(...(await runPythonUserAgentToolsScenario(daemon)));
+    console.log("\n── bundled/type:atlas agent artifact output ──");
+    results.push(...(await runAtlasAgentScenario(daemon)));
     console.log("\n── auto-triage report output contract ──");
     results.push(...(await runAutoTriageReportOutputContractScenario(daemon)));
     console.log("\n── ack-only fake inbox mutation ──");
