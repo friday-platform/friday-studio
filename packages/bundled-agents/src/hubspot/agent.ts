@@ -367,6 +367,16 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
           if ("error" in result) {
             return err(`create-note failed (ticket ${config.ticketId}): ${result.error}`);
           }
+          // Defend against future changes to DEFAULT_ASSOCIATION_TYPES — if
+          // notes↔tickets ever drops out of the lookup table, the helper
+          // would skip the association silently and return a successful
+          // batch with an orphaned note. Without this guard the response
+          // would say "Note created on ticket X" while the link is missing.
+          if (result.skippedAssociations) {
+            return err(
+              `create-note failed (ticket ${config.ticketId}): ${result.skippedAssociations}`,
+            );
+          }
 
           const created = result.results[0];
           const hasId = Boolean(created?.id);

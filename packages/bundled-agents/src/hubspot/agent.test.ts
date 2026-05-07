@@ -513,10 +513,14 @@ describe("hubspotAgent deterministic create-note", () => {
       numErrors: 0,
       errors: [],
     });
-    // Pin auth wiring — without this assertion, an agent regression that
-    // dropped or corrupted the access token would have no test signal.
+    // Pin auth + retry + rate-limit wiring — without these, regressions
+    // that dropped any of the three Client args would have no test signal.
     expect(mockClientConstructor).toHaveBeenCalledWith(
-      expect.objectContaining({ accessToken: "tok", numberOfApiCallRetries: 3 }),
+      expect.objectContaining({
+        accessToken: "tok",
+        numberOfApiCallRetries: 3,
+        limiterOptions: expect.anything(),
+      }),
     );
     expect(mockBatchCreate).toHaveBeenCalledOnce();
     expect(mockGenerateText).not.toHaveBeenCalled();
@@ -651,7 +655,15 @@ describe("hubspotAgent deterministic create-note", () => {
     expect.assert(result.ok);
     expect(result.data.success).toBe(true);
     expect(result.data.response).toBe("CRM Note 601 created on ticket 5501");
-    expect(result.data.data).toMatchObject({ noteId: "601", numErrors: 1 });
+    // Pin the full data shape — match the strictness of sibling tests so
+    // unintended extra fields on this branch can't slip through.
+    expect(result.data.data).toEqual({
+      noteId: "601",
+      ticketId: "5501",
+      properties: { hs_note_body: "<p>x</p>", hs_timestamp: "2026-05-07T12:00:00.000Z" },
+      numErrors: 1,
+      errors: [{ status: "error", message: "stale request to a phantom input" }],
+    });
   });
 
   it("pluralizes the error noun when numErrors > 1", async () => {
@@ -700,24 +712,27 @@ describe("hubspotAgent deterministic create-note", () => {
     });
   });
 
-  it("substitutes a fresh hs_timestamp when upstream sends an empty string", async () => {
+  it.each([
+    { label: "empty string", envelope: { hsTimestamp: "" } },
+    { label: "omitted", envelope: {} },
+  ])("substitutes a fresh hs_timestamp when upstream hsTimestamp is $label", async ({
+    envelope,
+  }) => {
     mockBatchCreate.mockResolvedValue(createNoteSdkResponse);
 
     const before = Date.now();
     await hubspotAgent.execute(
-      JSON.stringify({
-        operation: "create-note",
-        ticketId: "5501",
-        body: "<p>x</p>",
-        hsTimestamp: "",
-      }),
+      JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>", ...envelope }),
       validContext(),
     );
     const after = Date.now();
 
-    // Pin freshness — not just "any ISO string". A regression that forwarded
-    // a stale upstream timestamp instead of generating a new one would pass
-    // a regex-only check; this proves the timestamp was generated in-handler.
+    // Pin freshness — not just "any ISO string". A regression that
+    // forwarded a stale upstream timestamp instead of generating a new
+    // one would pass a regex-only check; this proves the timestamp was
+    // generated in-handler. Both `hsTimestamp: ""` and `hsTimestamp`
+    // omitted entirely share the `||` fallback in agent.ts; this
+    // parameterized test pins both branches.
     expect(mockBatchCreate).toHaveBeenCalledOnce();
     const firstCall = mockBatchCreate.mock.calls[0];
     expect(firstCall).toBeDefined();
@@ -786,6 +801,7 @@ describe("hubspotAgent deterministic noop", () => {
     env.ANTHROPIC_API_KEY = "sk-test";
     mockGenerateText.mockReset();
     mockBatchCreate.mockReset();
+    mockClientConstructor.mockReset();
   });
 
   afterEach(() => {
