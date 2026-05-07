@@ -730,8 +730,8 @@ describe("hubspotAgent deterministic noop", () => {
     expect.assert(result.ok);
     expect(result.data.operation).toBe("noop");
     expect(result.data.success).toBe(true);
-    expect(result.data.data).toMatchObject({ skipped: true, reason: "no ticket to brief" });
-    expect(result.data.response).toContain("no ticket to brief");
+    expect(result.data.data).toEqual({ skipped: true, reason: "no ticket to brief" });
+    expect(result.data.response).toBe("no ticket to brief");
     expect(mockBatchCreate).not.toHaveBeenCalled();
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
@@ -780,5 +780,6 @@ describe("hubspotAgent deterministic noop", () => {
     expect(result.ok).toBe(true);
     expect.assert(result.ok);
     expect(result.data.data).toEqual({ skipped: false, reason: "x" });
+    expect(result.data.response).toBe("x");
   });
 });
