@@ -49,6 +49,8 @@ export interface DaemonHandle {
   port: number;
   baseUrl: string;
   fridayHome: string;
+  /** NATS URL dedicated to this harness daemon. */
+  natsUrl: string;
   process: Deno.ChildProcess;
   stop: () => Promise<void>;
 }
@@ -133,6 +135,20 @@ function pickPort(): number {
   return 49152 + Math.floor(Math.random() * (65535 - 49152));
 }
 
+async function waitForTcp(port: number, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const conn = await Deno.connect({ hostname: "127.0.0.1", port });
+      conn.close();
+      return;
+    } catch {
+      await delay(100);
+    }
+  }
+  throw new Error(`TCP port ${port} did not open within ${timeoutMs}ms`);
+}
+
 const WORKTREE_ROOT = (() => {
   // tools/qa/live-daemon/harness.ts → ../../../ → worktree root
   const here = new URL(".", import.meta.url).pathname;
@@ -155,7 +171,30 @@ export interface StartDaemonOptions {
 export async function startDaemon(opts: StartDaemonOptions = {}): Promise<DaemonHandle> {
   await ensureCredentialsLoaded();
   const port = opts.port ?? pickPort();
+  const natsPort = pickPort();
   const fridayHome = opts.fridayHome ?? (await Deno.makeTempDir({ prefix: "friday-qa-" }));
+  const natsUrl = `nats://127.0.0.1:${natsPort}`;
+
+  const natsStoreDir = join(fridayHome, "jetstream");
+  const natsProc = new Deno.Command("nats-server", {
+    args: [
+      "--addr",
+      "127.0.0.1",
+      "--port",
+      String(natsPort),
+      "--jetstream",
+      "--store_dir",
+      natsStoreDir,
+    ],
+    stdout: opts.inherit ? "inherit" : "piped",
+    stderr: opts.inherit ? "inherit" : "piped",
+    stdin: "null",
+  }).spawn();
+  if (!opts.inherit) {
+    drainToLog(natsProc.stdout, join(fridayHome, "harness-nats.stdout.log"));
+    drainToLog(natsProc.stderr, join(fridayHome, "harness-nats.stderr.log"));
+  }
+  await waitForTcp(natsPort);
 
   // Construct env: clone process.env, override FRIDAY_HOME, set
   // FRIDAY_LOCAL_ONLY so credential fetch is skipped, set OTEL flags
@@ -175,6 +214,7 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
     FRIDAY_LOCAL_ONLY: "true",
     FRIDAYD_URL: `http://127.0.0.1:${port}`,
     FRIDAY_PORT_FRIDAY: String(port),
+    FRIDAY_NATS_URL: natsUrl,
     OTEL_DENO: "false",
     // Drop any incoming OTEL endpoint config so the daemon doesn't try
     // to ship spans during the test run.
@@ -229,8 +269,22 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
               // already dead
             }
           }
+          try {
+            natsProc.kill("SIGTERM");
+          } catch {
+            // already dead
+          }
+          const natsStatus = await Promise.race([natsProc.status, delay(3_000).then(() => null)]);
+          if (!natsStatus) {
+            try {
+              natsProc.kill("SIGKILL");
+              await natsProc.status;
+            } catch {
+              // already dead
+            }
+          }
         };
-        return { port, baseUrl, fridayHome, process: proc, stop };
+        return { port, baseUrl, fridayHome, natsUrl, process: proc, stop };
       }
       await resp.body?.cancel();
     } catch {
@@ -246,6 +300,12 @@ export async function startDaemon(opts: StartDaemonOptions = {}): Promise<Daemon
     // ignore
   }
   await proc.status;
+  try {
+    natsProc.kill("SIGTERM");
+  } catch {
+    // ignore
+  }
+  await natsProc.status;
   throw new Error(
     `Daemon at ${baseUrl} did not become healthy within ${
       opts.healthTimeoutMs ?? 60_000

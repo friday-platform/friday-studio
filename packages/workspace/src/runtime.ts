@@ -1167,6 +1167,13 @@ export class WorkspaceRuntime {
     string,
     { artifactRefs: SessionArtifactRef[]; aiSummary?: SessionAISummary; definition?: FSMDefinition }
   >();
+  /**
+   * Per-action artifacts persisted before the FSM drains, keyed by session.
+   * These make refs available to downstream `inputFrom` actions in the same
+   * run and are merged into the final job-tool result instead of being
+   * re-persisted at session completion.
+   */
+  private midSessionArtifactRefs = new Map<string, SessionArtifactRef[]>();
   private sessionCompletionEmitter = new EventEmitter();
 
   /**
@@ -1638,6 +1645,8 @@ export class WorkspaceRuntime {
         "WorkspaceRuntime requires platformModels to construct AtlasLLMProviderAdapter",
       );
     }
+    let definition!: FSMDefinition;
+
     const engineOptions = {
       documentStore,
       scope,
@@ -1719,9 +1728,18 @@ export class WorkspaceRuntime {
       // elicitation tools derive `expiresAt = now + jobTimeoutMs`. Parsed
       // once at job registration (see FSMJob.timeoutMs).
       ...(job.timeoutMs !== undefined && { jobTimeoutMs: job.timeoutMs }),
+      persistFsmActionArtifact: async (input: {
+        doc: FSMDocument;
+        action: LLMAction | AgentAction;
+        workspaceId: string;
+        sessionId: string;
+        fromTerminalState: boolean;
+      }) => {
+        if (!definition) return;
+        await this.persistActionOutputAsRef(input, definition, job.name);
+      },
     };
 
-    let definition: FSMDefinition;
     if (job.fsmDefinition) {
       logger.debug("Loading FSM from inline definition", {
         workspaceId: this.workspace.id,
@@ -2047,12 +2065,19 @@ export class WorkspaceRuntime {
           // instead of the full Document[] payload. Non-blocking: failures
           // log and are skipped, the in-memory `session.artifacts` list and
           // the document store remain authoritative.
-          session.artifactRefs = await this.persistSessionArtifacts(
-            engine.documents,
+          const midSessionRefs = this.midSessionArtifactRefs.get(session.id) ?? [];
+          const alreadyPersistedDocIds = new Set(midSessionRefs.map((r) => r.documentId));
+          const remainingDocuments = engine.documents.filter(
+            (d) => !alreadyPersistedDocIds.has(d.id),
+          );
+          const completionRefs = await this.persistSessionArtifacts(
+            remainingDocuments,
             engine.definition,
             job.name,
             session.id,
           );
+          session.artifactRefs = [...midSessionRefs, ...completionRefs];
+          this.midSessionArtifactRefs.delete(session.id);
           session.completedAt = new Date();
 
           // A cancelled agent call currently returns a successful-looking
@@ -3108,6 +3133,54 @@ export class WorkspaceRuntime {
         createdAt: new Date(),
         createdBy: "fsm-engine",
       }));
+  }
+
+  private async persistActionOutputAsRef(
+    input: {
+      doc: FSMDocument;
+      action: LLMAction | AgentAction;
+      workspaceId: string;
+      sessionId: string;
+      fromTerminalState: boolean;
+    },
+    definition: FSMDefinition,
+    jobName: string,
+  ): Promise<void> {
+    if (PLUMBING_DOCUMENT_TYPES.has(input.doc.type)) return;
+
+    let originalDoc: FSMDocument;
+    try {
+      originalDoc = {
+        id: input.doc.id,
+        type: input.doc.type,
+        data: JSON.parse(JSON.stringify(input.doc.data)) as Record<string, unknown>,
+      };
+    } catch (err) {
+      logger.warn("Skipping mid-session artifact persist: doc.data is not JSON-serializable", {
+        documentId: input.doc.id,
+        documentType: input.doc.type,
+        error: stringifyError(err),
+      });
+      return;
+    }
+
+    const refs = await this.persistSessionArtifacts(
+      [originalDoc],
+      definition,
+      jobName,
+      input.sessionId,
+    );
+    const ref = refs[0];
+    if (!ref) return;
+
+    const summary = input.action.summary?.trim() || synthesizeArtifactSummary(originalDoc);
+    const artifactRef = { id: ref.artifactId, type: originalDoc.type, summary };
+    input.doc.data = { summary, artifactRefs: [artifactRef] };
+
+    const existing = this.midSessionArtifactRefs.get(input.sessionId) ?? [];
+    const withoutPriorForDoc = existing.filter((r) => r.documentId !== ref.documentId);
+    withoutPriorForDoc.push(ref);
+    this.midSessionArtifactRefs.set(input.sessionId, withoutPriorForDoc);
   }
 
   private persistSessionArtifacts(

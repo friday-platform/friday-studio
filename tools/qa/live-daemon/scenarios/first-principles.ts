@@ -46,9 +46,13 @@ async function materializeFixture(srcDir: string, replacements: Record<string, s
   return tmpDir;
 }
 
-async function natsKvGetJson(bucket: string, key: string): Promise<Record<string, unknown> | null> {
+async function natsKvGetJson(
+  natsUrl: string,
+  bucket: string,
+  key: string,
+): Promise<Record<string, unknown> | null> {
   const cmd = new Deno.Command("nats", {
-    args: ["-s", "nats://localhost:4222", "kv", "get", bucket, key, "--raw"],
+    args: ["-s", natsUrl, "kv", "get", bucket, key, "--raw"],
     stdout: "piped",
     stderr: "piped",
   });
@@ -61,6 +65,17 @@ async function natsKvGetJson(bucket: string, key: string): Promise<Record<string
 
 function byteLen(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+async function fetchTextArtifactJson(
+  d: DaemonHandle,
+  artifactId: string,
+): Promise<Record<string, unknown> | null> {
+  const resp = await fetch(`${d.baseUrl}/api/artifacts/${encodeURIComponent(artifactId)}`);
+  if (!resp.ok) return null;
+  const body = (await resp.json()) as { contents?: string };
+  if (!body.contents) return null;
+  return JSON.parse(body.contents) as Record<string, unknown>;
 }
 
 function hasArtifactRef(value: unknown): boolean {
@@ -103,8 +118,8 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const bucket = `WS_DOCS_${ws.id}`;
   const emailsKey = `doc/session/${trigger.sessionId}/refs-check/emails-result`;
   const reviewKey = `doc/session/${trigger.sessionId}/refs-check/review-result`;
-  const emailsDoc = await natsKvGetJson(bucket, emailsKey);
-  const reviewDoc = await natsKvGetJson(bucket, reviewKey);
+  const emailsDoc = await natsKvGetJson(d.natsUrl, bucket, emailsKey);
+  const reviewDoc = await natsKvGetJson(d.natsUrl, bucket, reviewKey);
   const emailsData = (emailsDoc?.data as Record<string, unknown> | undefined)?.data as
     | Record<string, unknown>
     | undefined;
@@ -123,15 +138,27 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
   metrics.toolCallCount = events.toolCallCount;
   metrics.usage = events.totalUsage;
 
+  const reviewArtifactRef = Array.isArray(reviewData?.artifactRefs)
+    ? (reviewData.artifactRefs[0] as { id?: string } | undefined)
+    : undefined;
+  const reviewArtifactDoc = reviewArtifactRef?.id
+    ? await fetchTextArtifactJson(d, reviewArtifactRef.id)
+    : null;
+  const nestedReviewArtifactData = (reviewArtifactDoc?.data as Record<string, unknown> | undefined)
+    ?.data as Record<string, unknown> | undefined;
+  const reviewArtifactData = nestedReviewArtifactData ?? reviewArtifactDoc ?? undefined;
+  metrics.reviewArtifactData = reviewArtifactData ?? null;
+
   const emailDocHasRefs = hasArtifactRef(emailsData);
   const emailDocStillInlineMessages = Array.isArray(emailsData?.messages);
   const emailDocContainsBodySentinel = JSON.stringify(emailsData ?? {}).includes(
     "FIRST_PRINCIPLES_EMAIL_BODY",
   );
+  const reviewPayload = reviewArtifactData ?? reviewData;
   const reviewConsumedInput =
-    reviewData?.marker === "CONSUMED_EMAIL_BATCH" &&
-    reviewData?.count === 12 &&
-    reviewData?.firstId === "fake-001";
+    reviewPayload?.marker === "CONSUMED_EMAIL_BATCH" &&
+    reviewPayload?.count === 12 &&
+    reviewPayload?.firstId === "fake-001";
   const jobPayload = (trigger.jobComplete ?? {}) as Record<string, unknown>;
   const artifactIds = Array.isArray(jobPayload.artifactIds) ? jobPayload.artifactIds : [];
   const jobResultCompact =
@@ -157,9 +184,9 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
       id: "inputFrom-ref-resolution-single",
       pass: reviewConsumedInput,
       notes: [
-        `review-result marker: ${String(reviewData?.marker ?? "(missing)")}`,
-        `review-result count: ${String(reviewData?.count ?? "(missing)")}`,
-        `review-result firstId: ${String(reviewData?.firstId ?? "(missing)")}`,
+        `review-result marker: ${String(reviewPayload?.marker ?? "(missing)")}`,
+        `review-result count: ${String(reviewPayload?.count ?? "(missing)")}`,
+        `review-result firstId: ${String(reviewPayload?.firstId ?? "(missing)")}`,
       ],
       metrics,
     },

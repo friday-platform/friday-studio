@@ -114,9 +114,17 @@ jobs:
               validate: skip
               tools: []
               prompt: |
-                Read the EmailBatch document from input.
+                Read the EmailBatch document from Input.
+
+                Important: the previous document may be represented as a
+                compact artifact reference plus an `artifactContent` map. If
+                you see `artifactRefs`, use the matching entry in
+                `artifactContent` as the EmailBatch payload. The artifact body
+                is JSON for the original emails-result document; its
+                `messages` array is the source of truth.
+
                 Emit a ReviewResult object with:
                 - marker: "CONSUMED_EMAIL_BATCH"
-                - count: number of messages in the input EmailBatch
+                - count: number of messages in the EmailBatch
                 - firstId: id of the first message.
           type: final

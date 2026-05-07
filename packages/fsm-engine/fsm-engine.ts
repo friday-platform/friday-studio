@@ -325,13 +325,38 @@ export function getInputSnapshot(
   prepareResult: PrepareResult | undefined,
   action: { type: string; outputTo?: string; inputFrom?: string | string[] },
   documents: Map<string, unknown>,
-): { task?: string; config?: Record<string, unknown> } | undefined {
+): { task?: string; config?: Record<string, unknown>; artifactRefs?: ArtifactRef[] } | undefined {
   // inputFrom: explicit chain from a prior step's output document.
   // Fails loud — running with empty context is the bug we're trying to
   // avoid; if the referenced doc isn't there, the FSM is misconfigured.
   const inputFrom = action.type === "agent" || action.type === "llm" ? action.inputFrom : undefined;
   if (inputFrom !== undefined) {
     const ids = Array.isArray(inputFrom) ? inputFrom : [inputFrom];
+
+    const artifactRefs: ArtifactRef[] = [];
+    const seenArtifactRefs = new Set<string>();
+
+    const collectArtifactRefs = (data: unknown) => {
+      if (!data || typeof data !== "object" || Array.isArray(data)) return;
+      const obj = data as Record<string, unknown>;
+      const candidates = [
+        obj.artifactRef,
+        ...(Array.isArray(obj.artifactRefs) ? obj.artifactRefs : []),
+      ];
+      for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+        const ref = candidate as Record<string, unknown>;
+        if (
+          typeof ref.id === "string" &&
+          typeof ref.type === "string" &&
+          typeof ref.summary === "string" &&
+          !seenArtifactRefs.has(ref.id)
+        ) {
+          seenArtifactRefs.add(ref.id);
+          artifactRefs.push({ id: ref.id, type: ref.type, summary: ref.summary });
+        }
+      }
+    };
 
     const items = ids.map((id) => {
       const doc = documents.get(id);
@@ -346,6 +371,7 @@ export function getInputSnapshot(
       if (data === undefined || data === null) {
         throw new Error(`inputFrom: document '${id}' has no data`);
       }
+      collectArtifactRefs(data);
       return { id, data };
     });
 
@@ -363,7 +389,7 @@ export function getInputSnapshot(
     const config: Record<string, unknown> = Object.fromEntries(
       items.map(({ id, data }) => [id, data]),
     );
-    return { task, config };
+    return { task, config, ...(artifactRefs.length > 0 ? { artifactRefs } : {}) };
   }
 
   // Carried-over prepareResult — from a prior action or auto-seeded
