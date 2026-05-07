@@ -63,7 +63,7 @@ Usage:
         await stat(filepath);
         exists = true;
       } catch (error) {
-        if (isErrnoException(error) && error.code === "ENOENT") {
+        if (!(isErrnoException(error) && error.code === "ENOENT")) {
           throw error;
         }
       }

@@ -792,6 +792,113 @@ async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<E
   ];
 }
 
+async function runAutoTriageReportOutputContractScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Report Contract" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "auto-triage-report-event", {
+    payload: { query: "auto-triage-report" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "auto-triage-report-output-contract",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/auto-triage-report-contract-check/triage-report`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  const serialized = JSON.stringify({ jobComplete: trigger.jobComplete, data, payload });
+  const reportPath = typeof payload?.reportPath === "string" ? payload.reportPath : "";
+  const reportSummary = typeof payload?.reportSummary === "string" ? payload.reportSummary : "";
+  const looksLikeStub =
+    Object.keys(payload ?? {}).length <= 2 || /completed successfully\.?$/i.test(reportSummary);
+  const containsBodySentinel = serialized.includes("FIRST_PRINCIPLES_EMAIL_BODY");
+  const exploratoryTools = toolNames.filter((name) =>
+    ["bash", "fs_glob", "fs_list_files", "artifacts_get", "parse_artifact", "delegate"].includes(
+      String(name),
+    ),
+  );
+
+  metrics.bucket = bucket;
+  metrics.docBytes = doc ? byteLen(doc) : 0;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.payload = payload ?? null;
+  metrics.toolNames = toolNames;
+  metrics.reportPath = reportPath;
+  metrics.reportSummary = reportSummary;
+  metrics.looksLikeStub = looksLikeStub;
+  metrics.containsBodySentinel = containsBodySentinel;
+  metrics.exploratoryTools = exploratoryTools;
+
+  const pass =
+    payload?.marker === "AUTO_TRIAGE_REPORT_CONTRACT_OK" &&
+    reportPath === "triage-reports/first-principles-triage.md" &&
+    numberValue(payload?.emailsReviewed) === 4 &&
+    numberValue(payload?.actionsTaken) === 0 &&
+    numberValue(payload?.skippedCount) === 4 &&
+    payload?.firstId === "fake-001" &&
+    reportSummary.length > 20 &&
+    toolNames.includes("search_messages") &&
+    toolNames.includes("get_messages_content_batch") &&
+    toolNames.includes("fs_write_file") &&
+    toolNames.includes("complete") &&
+    exploratoryTools.length === 0 &&
+    !containsBodySentinel &&
+    !looksLikeStub;
+
+  return [
+    {
+      id: "auto-triage-report-output-contract",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `reportPath: ${reportPath || "(missing)"}`,
+        `emailsReviewed: ${String(payload?.emailsReviewed ?? "(missing)")}`,
+        `actionsTaken: ${String(payload?.actionsTaken ?? "(missing)")}`,
+        `skippedCount: ${String(payload?.skippedCount ?? "(missing)")}`,
+        `firstId: ${String(payload?.firstId ?? "(missing)")}`,
+        `summary: ${reportSummary || "(missing)"}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+        `exploratory tools: ${exploratoryTools.join(",") || "(none)"}`,
+        `looks like stub: ${looksLikeStub}`,
+        `contains body sentinel: ${containsBodySentinel}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -1253,6 +1360,8 @@ async function main() {
     results.push(...(await runAgentOutputContractScenario(daemon)));
     console.log("\n── LLM agent inputFrom ref hydration ──");
     results.push(...(await runLlmAgentInputFromHydrationScenario(daemon)));
+    console.log("\n── auto-triage report output contract ──");
+    results.push(...(await runAutoTriageReportOutputContractScenario(daemon)));
     console.log("\n── ack-only fake inbox mutation ──");
     results.push(...(await runAckOnlyMutationScenario(daemon)));
     console.log("\n── unknown tool request guard ──");

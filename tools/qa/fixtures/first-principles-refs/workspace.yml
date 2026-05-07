@@ -110,6 +110,17 @@ signals:
         query:
           type: string
       required: []
+  auto-triage-report-event:
+    provider: http
+    description: "Trigger auto-triage report output contract scenario."
+    config:
+      path: "/auto-triage-report-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
   fanout-delegate-event:
     provider: http
     description: "Trigger delegate fan-out without parent fan-in scenario."
@@ -504,6 +515,56 @@ jobs:
                 - firstId: id of the first message
                 - sawBodySentinel: true only if a message body contains
                   "FIRST_PRINCIPLES_EMAIL_BODY"
+          type: final
+
+  auto-triage-report-contract-check:
+    description: "Report-writing triage job returns useful structured output, not a stub."
+    triggers:
+      - signal: auto-triage-report-event
+    config:
+      timeout: "5m"
+      max_steps: 10
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            auto-triage-report-event: { target: report }
+        report:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Review fake inbox and write a compact triage report."
+              outputTo: triage-report
+              validate: skip
+              tools:
+                - search_messages
+                - get_messages_content_batch
+                - fs_write_file
+              prompt: |
+                Run an autonomous triage report over the fake inbox.
+
+                Steps:
+                1. Call search_messages with query "is:unread" and limit 4.
+                2. Call get_messages_content_batch for the returned ids.
+                3. Write a markdown report to
+                   "triage-reports/first-principles-triage.md" with a concise
+                   summary. The report may mention ids and subjects but MUST
+                   NOT include full message bodies or FIRST_PRINCIPLES_EMAIL_BODY.
+                4. Finish with ONLY a JSON object containing:
+                   - marker: "AUTO_TRIAGE_REPORT_CONTRACT_OK"
+                   - reportPath: "triage-reports/first-principles-triage.md"
+                   - emailsReviewed: 4
+                   - actionsTaken: 0
+                   - skippedCount: 4
+                   - firstId: "fake-001"
+                   - reportSummary: a one-sentence summary of the report
+
+                The final output must contain the path and counts. Do not
+                return a one-line success stub.
           type: final
 
   ack-mutation-check:
