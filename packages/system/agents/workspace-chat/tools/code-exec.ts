@@ -231,8 +231,8 @@ export function createRunCodeTool(
           if (
             typeof err === "object" &&
             err !== null &&
-            (("name" in err && (err as { name?: unknown }).name === "AbortError") ||
-              ("code" in err && (err as { code?: unknown }).code === "ABORT_ERR"))
+            (("name" in err && err.name === "AbortError") ||
+              ("code" in err && err.code === "ABORT_ERR"))
           ) {
             logger.info("run_code aborted by parent signal", {
               sessionId,
