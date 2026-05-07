@@ -39,7 +39,7 @@ def execute(prompt: str, ctx: AgentContext):
                 "marker": "PY_USER_AGENT_HUMAN_INPUT_RESUMED",
                 "listedTools": tool_names,
                 "status": parsed.get("status"),
-                "answer": parsed.get("answer"),
+                "answer": parsed.get("answer", ""),
                 "elicitationId": parsed.get("elicitationId"),
             })
 

@@ -196,6 +196,22 @@ async function answerElicitation(
   return (await resp.json()) as Record<string, unknown>;
 }
 
+async function declineElicitation(
+  d: DaemonHandle,
+  id: string,
+  note = "declined by first-principles eval",
+): Promise<Record<string, unknown>> {
+  const resp = await fetch(`${d.baseUrl}/api/elicitations/${encodeURIComponent(id)}/decline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
+  });
+  if (!resp.ok) {
+    throw new Error(`decline elicitation ${resp.status}: ${await resp.text()}`);
+  }
+  return (await resp.json()) as Record<string, unknown>;
+}
+
 async function readMemoryEntries(
   d: DaemonHandle,
   workspaceId: string,
@@ -1421,38 +1437,45 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
   ];
 }
 
-async function runRequestUserDecisionScenario(d: DaemonHandle): Promise<EvalResult[]> {
+async function runRequestUserDecisionScenario(
+  d: DaemonHandle,
+  mode: "answer" | "decline" = "answer",
+): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
   const wsPath = await materializeFixture(REFS_FIXTURE, {
     __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
   });
-  const ws = await registerWorkspace(d, wsPath, { name: "First Principles User Decision HITL" });
+  const ws = await registerWorkspace(d, wsPath, {
+    name:
+      mode === "answer"
+        ? "First Principles User Decision HITL"
+        : "First Principles User Decision Decline HITL",
+  });
   notes.push(`workspace ${ws.id} registered`);
 
   const startedAt = Date.now();
   const triggerPromise = triggerSignalSSE(d, ws.id, "user-decision-event", {
-    payload: { query: "request-user-decision" },
+    payload: {
+      query: mode === "answer" ? "request-user-decision" : "request-user-decision-decline",
+    },
     timeoutMs: 8 * 60 * 1000,
   });
   const pending = await waitForPendingElicitation(d, ws.id);
   metrics.pendingObservedAtMs = Date.now() - startedAt;
   metrics.pending = pending ?? null;
   if (pending?.id && typeof pending.id === "string") {
-    metrics.answer = await answerElicitation(d, pending.id, "archive");
+    metrics.answer =
+      mode === "answer"
+        ? await answerElicitation(d, pending.id, "archive")
+        : await declineElicitation(d, pending.id);
   }
   const trigger = await triggerPromise;
   recordJobMetrics(metrics, trigger);
 
+  const id = mode === "answer" ? "request-user-decision" : "request-user-decision-decline";
   if (!trigger.sessionId) {
-    return [
-      {
-        id: "request-user-decision",
-        pass: false,
-        notes: [...notes, "no session id returned"],
-        metrics,
-      },
-    ];
+    return [{ id, pass: false, notes: [...notes, "no session id returned"], metrics }];
   }
 
   const bucket = `WS_DOCS_${ws.id}`;
@@ -1464,7 +1487,7 @@ async function runRequestUserDecisionScenario(d: DaemonHandle): Promise<EvalResu
   const artifactData = await fetchFirstArtifactPayload(d, data);
   const payload = parseJsonResponsePayload(artifactData ?? data);
   const finalElicitations = await listElicitations(d, ws.id);
-  const answered = finalElicitations.find((e) => e.id === pending?.id);
+  const terminal = finalElicitations.find((e) => e.id === pending?.id);
   const events = await fetchSessionEvents(d, trigger.sessionId);
   recordEventMetrics(metrics, events);
   const toolNames = events.events
@@ -1482,25 +1505,27 @@ async function runRequestUserDecisionScenario(d: DaemonHandle): Promise<EvalResu
   metrics.finalElicitations = finalElicitations;
   metrics.toolNames = toolNames;
 
+  const terminalStatus = mode === "answer" ? "answered" : "declined";
+  const expectedAnswer = mode === "answer" ? "archive" : "";
   const pass =
     pending !== null &&
     pending.kind === "open-question" &&
-    answered?.status === "answered" &&
+    terminal?.status === terminalStatus &&
     payload?.marker === "PY_USER_AGENT_HUMAN_INPUT_RESUMED" &&
-    payload?.status === "answered" &&
-    payload?.answer === "archive" &&
+    payload?.status === terminalStatus &&
+    payload?.answer === expectedAnswer &&
     listedTools.includes("request_human_input") &&
     toolNames.includes("request_human_input");
 
   return [
     {
-      id: "request-user-decision",
+      id,
       pass,
       notes: [
         ...notes,
         `pending observed: ${pending !== null}`,
         `kind: ${String(pending?.kind ?? "(missing)")}`,
-        `terminal status: ${String(answered?.status ?? "(missing)")}`,
+        `terminal status: ${String(terminal?.status ?? "(missing)")}`,
         `marker: ${String(payload?.marker ?? "(missing)")}`,
         `answer: ${String(payload?.answer ?? "(missing)")}`,
         `listed request_human_input: ${listedTools.includes("request_human_input")}`,
@@ -2048,7 +2073,9 @@ async function main() {
     console.log("\n── blocking elicitation resume ──");
     results.push(...(await runBlockingElicitationScenario(daemon)));
     console.log("\n── request user decision HITL ──");
-    results.push(...(await runRequestUserDecisionScenario(daemon)));
+    results.push(...(await runRequestUserDecisionScenario(daemon, "answer")));
+    console.log("\n── request user decision decline HITL ──");
+    results.push(...(await runRequestUserDecisionScenario(daemon, "decline")));
     console.log("\n── fan-out delegate compactness ──");
     results.push(...(await runFanoutDelegateScenario(daemon)));
     console.log("\n── chat follow-up compactness ──");

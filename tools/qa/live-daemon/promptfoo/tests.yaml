@@ -58,6 +58,10 @@
   vars:
     scenarioId: request-user-decision
 
+- description: request user decision decline HITL
+  vars:
+    scenarioId: request-user-decision-decline
+
 - description: fan-out delegate compactness
   vars:
     scenarioId: fanout-no-fanin-delegate
