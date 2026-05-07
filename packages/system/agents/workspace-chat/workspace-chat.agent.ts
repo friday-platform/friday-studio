@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { AtlasTools, AtlasUIMessage } from "@atlas/agent-sdk";
+import type { AtlasTools, AtlasUIMessage, ToolCall, ToolResult } from "@atlas/agent-sdk";
 import {
   closePendingToolParts,
   createAgent,
@@ -7,7 +7,11 @@ import {
   repairToolCall,
   validateAtlasUIMessages,
 } from "@atlas/agent-sdk";
-import { pipeUIMessageStream } from "@atlas/agent-sdk/vercel-helpers";
+import {
+  collectToolUsageFromSteps,
+  extractArtifactRefsFromToolResults,
+  pipeUIMessageStream,
+} from "@atlas/agent-sdk/vercel-helpers";
 import { bundledAgents } from "@atlas/bundled-agents";
 import { client, parseResult } from "@atlas/client/v2";
 import { CommunicatorKindSchema, type WorkspaceConfig } from "@atlas/config";
@@ -418,6 +422,18 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
     }
 
     let finalText: string | undefined;
+    // J3 (melodic-strolling-seal-pt3): capture the bundled-agent's
+    // internal tool calls so the workspace-runtime side-channel
+    // (runtime.ts:executeAgent) can mirror them onto
+    // `step:complete.toolCalls`. Pre-J3 the chat agent returned only
+    // `ok({ text })`, so `agentBlocks[].toolCalls` for `case "agent" →
+    // workspace-chat` actions came back empty even though the LLM had
+    // invoked many tools internally. The FSM `case "llm"` path already
+    // surfaces these via emitToolEvents (fsm-engine.ts) — we mirror that
+    // shape here for parity.
+    let assembledToolCalls: ToolCall[] = [];
+    let assembledToolResults: ToolResult[] = [];
+    let assembledReasoning: string | undefined;
     let cleanupSkills: (() => Promise<void>) | undefined;
 
     const persistStreamMessage = createUIMessageStream<AtlasUIMessage>({
@@ -933,8 +949,17 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             maxRetries: 3,
             abortSignal,
             providerOptions: getDefaultProviderOpts("anthropic"),
-            onFinish: ({ text }) => {
+            onFinish: ({ text, steps, toolCalls, toolResults, reasoningText }) => {
               finalText = text;
+              // J3: harvest internal tool calls from streamText's terminal
+              // event. `collectToolUsageFromSteps` flattens per-step calls
+              // (the AI SDK populates them under `steps[*].toolCalls` /
+              // `.toolResults`) and falls back to top-level arrays. Mirrors
+              // the canonical pattern in `from-llm.ts:195-211`.
+              const collected = collectToolUsageFromSteps({ steps, toolCalls, toolResults });
+              assembledToolCalls = collected.assembledToolCalls;
+              assembledToolResults = collected.assembledToolResults;
+              assembledReasoning = reasoningText || undefined;
             },
             onError: ({ error }) => {
               if (!error) return;
@@ -1005,7 +1030,23 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
       cleanupSkills?.();
     }
 
-    return ok({ text: finalText });
+    // J3: surface assembled tool-call telemetry on the result envelope.
+    // The workspace-runtime side-channel writer (runtime.ts) reads
+    // `result.toolCalls` / `result.toolResults` / `result.reasoning` to
+    // populate `step:complete.{toolCalls,reasoning,artifactRefs}`. Without
+    // these `extras`, agentBlocks for `type: atlas` agents (workspace-chat,
+    // auto-triage flows) showed an empty `toolNames` array in the session
+    // view even when many tools had been invoked internally.
+    const artifactRefs = extractArtifactRefsFromToolResults(assembledToolResults, logger);
+    return ok(
+      { text: finalText },
+      {
+        toolCalls: assembledToolCalls,
+        toolResults: assembledToolResults,
+        ...(assembledReasoning && { reasoning: assembledReasoning }),
+        ...(artifactRefs.length > 0 && { artifactRefs }),
+      },
+    );
   },
   environment: {
     required: [],

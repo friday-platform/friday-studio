@@ -65,9 +65,17 @@ vi.mock("@atlas/agent-sdk", async () => {
   };
 });
 
-vi.mock("@atlas/agent-sdk/vercel-helpers", () => ({
-  pipeUIMessageStream: mockPipeUIMessageStream,
-}));
+// J3: handler now imports `collectToolUsageFromSteps` and
+// `extractArtifactRefsFromToolResults` from this module to harvest
+// streamText `onFinish` tool calls. Re-export the real implementations
+// (importActual) so the unit test exercises the same flatten /
+// artifact-extraction logic that runs in production; only
+// `pipeUIMessageStream` needs the mock (it drives the stream
+// consumption fan-out).
+vi.mock("@atlas/agent-sdk/vercel-helpers", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, pipeUIMessageStream: mockPipeUIMessageStream };
+});
 
 vi.mock("@atlas/client/v2", () => {
   // Build a deeply-nested proxy that returns mock functions at leaf $get/$post/$patch calls
@@ -943,5 +951,109 @@ describe("workspace-chat handler", () => {
         }),
     );
     expect(hasCredentialLinked).toBe(true);
+  });
+
+  // -----------------------------------------------------------------------
+  // J3 (melodic-strolling-seal-pt3) — bundled-agent internal tool-call
+  // mirroring. The chat agent now harvests tool calls from streamText's
+  // `onFinish` event so the workspace-runtime side-channel can populate
+  // `step:complete.toolCalls` for `case "agent" → workspace-chat` actions.
+  // -----------------------------------------------------------------------
+
+  it("propagates streamText onFinish toolCalls onto the result envelope", async () => {
+    setupDefaultMocks([makeMessage("user", "Run a tool for me")]);
+
+    // Override streamText to fire onFinish with N tool calls + steps,
+    // mirroring the AI SDK's terminal-event shape. The handler should
+    // collectToolUsageFromSteps(...) and pass them through `ok()`.
+    const fakeToolCalls = [
+      { type: "tool-call", toolCallId: "tc-a", toolName: "list_capabilities", input: {} },
+      { type: "tool-call", toolCallId: "tc-b", toolName: "web_search", input: { query: "atlas" } },
+      { type: "tool-call", toolCallId: "tc-c", toolName: "read_file", input: { path: "/tmp/x" } },
+    ];
+    const fakeToolResults = [
+      {
+        type: "tool-result",
+        toolCallId: "tc-a",
+        toolName: "list_capabilities",
+        input: {},
+        output: { capabilities: [] },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "tc-b",
+        toolName: "web_search",
+        input: { query: "atlas" },
+        output: { results: [] },
+      },
+    ];
+    const fakeSteps = [{ toolCalls: fakeToolCalls, toolResults: fakeToolResults }];
+
+    mockStreamText.mockImplementation(
+      (opts: {
+        onFinish?: (arg: {
+          text: string;
+          steps: unknown[];
+          toolCalls: unknown[];
+          toolResults: unknown[];
+          reasoningText?: string;
+        }) => void;
+      }) => {
+        opts.onFinish?.({
+          text: "Done.",
+          steps: fakeSteps,
+          toolCalls: fakeToolCalls,
+          toolResults: fakeToolResults,
+          reasoningText: "considered the options",
+        });
+        return {
+          toUIMessageStream: vi.fn().mockReturnValue(
+            new ReadableStream({
+              start(controller) {
+                controller.close();
+              },
+            }),
+          ),
+        };
+      },
+    );
+
+    const handler = getHandler();
+    const ctx = makeContext();
+    const result = (await handler("", ctx)) as {
+      ok: boolean;
+      data?: { text?: string };
+      toolCalls?: Array<{ toolName: string }>;
+      toolResults?: unknown[];
+      reasoning?: string;
+    };
+
+    expect(result.ok).toBe(true);
+    expect(result.toolCalls).toBeDefined();
+    expect(result.toolCalls).toHaveLength(3);
+    const toolNames = (result.toolCalls ?? []).map((tc) => tc.toolName);
+    expect(toolNames).toEqual(["list_capabilities", "web_search", "read_file"]);
+    expect(result.toolResults).toHaveLength(2);
+    expect(result.reasoning).toBe("considered the options");
+  });
+
+  it("returns empty tool arrays when streamText onFinish reports no tools", async () => {
+    setupDefaultMocks([makeMessage("user", "Just chat")]);
+
+    // setupDefaultMocks already mocks streamText with an onFinish that
+    // omits steps/toolCalls/toolResults — exercise that path explicitly.
+    const handler = getHandler();
+    const ctx = makeContext();
+    const result = (await handler("", ctx)) as {
+      ok: boolean;
+      toolCalls?: unknown[];
+      toolResults?: unknown[];
+      reasoning?: string;
+    };
+
+    expect(result.ok).toBe(true);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.toolResults).toEqual([]);
+    expect(result.reasoning).toBeUndefined();
   });
 });

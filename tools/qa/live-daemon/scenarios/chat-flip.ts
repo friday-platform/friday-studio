@@ -101,10 +101,17 @@ interface Metrics {
  * stream. Two chunk types correlate by `toolCallId`:
  *   - `tool-input-available` carries `{toolCallId, toolName, input}`
  *   - `tool-output-available` carries `{toolCallId, output}`
- * The chat session's persisted `step:complete.toolCalls` is empty for
- * `case "agent" → workspace-chat` actions today (the side-channel
- * writer at `runtime.ts:2740` doesn't unpack the agent's nested tool
- * calls), so we reconstruct from the live stream.
+ *
+ * Pre-J3 (melodic-strolling-seal-pt3) the chat session's persisted
+ * `step:complete.toolCalls` was empty for `case "agent" → workspace-chat`
+ * actions because the workspace-chat handler returned `ok({ text })`
+ * without forwarding the streamText result's `toolCalls` / `toolResults`
+ * arrays. J3 wired the handler to harvest them in the streamText
+ * `onFinish` hook so the side-channel writer (`runtime.ts:executeAgent`)
+ * now populates `step:complete.toolCalls` end-to-end. Stream-side
+ * reconstruction below stays as the source-of-truth for compact-bytes
+ * (the SSE chunk's `output` is the exact byte shape that drove the −95.1%
+ * pt1 claim — persisted toolCalls are summary-shaped not raw-shaped).
  */
 interface ChatToolCall {
   toolCallId: string;
@@ -409,10 +416,13 @@ async function main() {
       throw new Error("chat run produced no data-session-start event");
     }
 
-    // The chat session's persisted `step:complete.toolCalls` is empty
-    // for `case "agent" → workspace-chat` actions (runtime.ts:2740 only
-    // surfaces the orchestrator's own toolCalls, not the agent's nested
-    // ones). Reconstruct from the live AI-SDK chunks instead.
+    // Pre-J3 (melodic-strolling-seal-pt3) the chat session's persisted
+    // `step:complete.toolCalls` was empty for `case "agent" →
+    // workspace-chat` actions; J3 fixed it by forwarding streamText
+    // toolCalls through the agent's `ok()` extras. We still reconstruct
+    // from the live AI-SDK chunks here because the chunk `output` is the
+    // exact byte shape needed for the −95.1% comparison (persisted
+    // toolCalls are summary-shaped via the side-channel writer).
     const extracted = extractAutoTriageToolResult(chat.toolCalls);
     // Still walk the persisted events for usage-aggregate visibility
     // (currently absent for agent steps — see header note).
