@@ -64,9 +64,9 @@ export interface ArtifactsSweeperOptions {
   getScanContext: (workspaceId: string) => Promise<PromotionScanContext | undefined>;
   /**
    * Optional fallback aiSummary provider used when the per-workspace
-   * `getScanContext` doesn't supply one. Wired by the daemon to the
-   * `completedSessionMetadata` snapshot maintained on each runtime;
-   * left undefined in tests that exercise memory-only promotion.
+   * `getScanContext` doesn't supply one. Wired by the daemon to durable
+   * session history; left undefined in tests that exercise memory-only
+   * promotion.
    */
   aiSummaryFallback?: AiSummaryProvider;
   /**

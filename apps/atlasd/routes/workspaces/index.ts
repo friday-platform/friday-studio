@@ -1849,6 +1849,8 @@ const workspacesRoutes = daemonFactory
         const result = response.result as {
           sessionId: string;
           output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+          artifactIds?: string[];
+          summary?: string;
         };
         return c.json({
           message: "Signal completed",
@@ -1857,6 +1859,8 @@ const workspacesRoutes = daemonFactory
           signalId,
           sessionId: result.sessionId,
           output: result.output,
+          artifactIds: result.artifactIds ?? [],
+          summary: result.summary ?? "",
         });
       } catch (error) {
         const errorMessage = stringifyError(error);

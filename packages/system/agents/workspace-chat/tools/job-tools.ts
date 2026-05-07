@@ -174,6 +174,8 @@ async function executeJobViaJSON(
   sessionId?: string;
   status?: string;
   output?: unknown[];
+  artifactIds?: string[];
+  summary?: string;
   error?: string;
   statusCode?: number;
 }> {
@@ -206,7 +208,7 @@ async function executeJobViaJSON(
     return { success: false, statusCode: failure.statusCode, error: failure.message };
   }
 
-  const { sessionId, status, output } = result.data;
+  const { sessionId, status, output, artifactIds, summary } = result.data;
 
   if (status === "completed") {
     logger.info("Job tool completed", {
@@ -214,7 +216,12 @@ async function executeJobViaJSON(
       sessionId,
       status,
       outputDocCount: Array.isArray(output) ? output.length : 0,
+      artifactIdCount: Array.isArray(artifactIds) ? artifactIds.length : 0,
+      hasSummary: typeof summary === "string" && summary.length > 0,
     });
+    if (Array.isArray(artifactIds) && typeof summary === "string") {
+      return { success: true, sessionId, status, artifactIds, summary };
+    }
     return { success: true, sessionId, status, output: output ?? [] };
   }
 

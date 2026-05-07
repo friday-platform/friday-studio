@@ -4,7 +4,7 @@
  *    fallback aiSummary lands on `job-complete` immediately)
  *  - session:summary event is emitted asynchronously once the LLM round-trip
  *    completes
- *  - completedSessionMetadata + persisted KV are updated out-of-band
+ *  - persisted KV is updated out-of-band
  */
 
 import { rm } from "node:fs/promises";

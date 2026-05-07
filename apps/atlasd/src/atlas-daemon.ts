@@ -878,6 +878,14 @@ export class AtlasDaemon {
         if (!runtime) return Promise.resolve(undefined);
         return Promise.resolve(runtime.getPromotionScanContext());
       },
+      aiSummaryFallback: async (workspaceId) => {
+        const summaries = await this.sessionHistoryAdapter.listByWorkspace(workspaceId);
+        return summaries.flatMap((summary) =>
+          (summary.aiSummary?.keyDetails ?? [])
+            .filter((detail) => detail.url)
+            .map((detail) => ({ url: detail.url })),
+        );
+      },
     });
 
     // G4 — start the elicitations sweeper. Walks past-deadline
@@ -2010,7 +2018,7 @@ export class AtlasDaemon {
   }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
-    const session = await runtime.triggerSignalWithSession(
+    const result = await runtime.triggerSignalWithResult(
       signalId,
       payload || {},
       streamId,
@@ -2019,6 +2027,7 @@ export class AtlasDaemon {
       abortSignal,
       parentSessionId,
     );
+    const session = result.session;
 
     // Record signal trigger metric by provider type (http, schedule, slack, etc.)
     const signalProvider = runtime.getSignalProvider(signalId) ?? "unknown";
@@ -2047,22 +2056,12 @@ export class AtlasDaemon {
       throw new SessionFailedError(signalId, session.status, session.error);
     }
 
-    // Surface the FSM's final output documents so synchronous callers
-    // (workspace-chat job tool) can return the agent's actual answer to
-    // whatever invoked the job. Without this, calls like "search the KB"
-    // complete but workspace-chat has no content to render.
-    const output = runtime.getSessionFsmDocuments(session.id);
-
-    // Phase 2.C — additive: surface persisted artifact ids and a session
-    // summary so SSE `job-complete` consumers can prefer refs over the
-    // bulky `output: Document[]`. `output` stays for back-compat during
-    // the transition window. Empty arrays / strings when persistence
-    // failed or no eligible documents were emitted.
-    const jobResult = runtime.getSessionJobResult(session.id);
-    const artifactIds = jobResult?.artifactIds ?? [];
-    const summary = jobResult?.summary ?? "";
-
-    return { sessionId: session.id, output, artifactIds, summary };
+    return {
+      sessionId: session.id,
+      output: result.output,
+      artifactIds: result.artifactIds,
+      summary: result.summary,
+    };
   }
 
   /**

@@ -246,6 +246,31 @@ describe("createJobTools execute", () => {
     expect(result).toEqual({ success: true, sessionId: "sess-1", status: "completed", output: [] });
   });
 
+  it("returns compact shape in JSON mode when artifactIds and summary are present", async () => {
+    mockParseResult.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        sessionId: "sess-compact",
+        status: "completed",
+        output: [{ id: "legacy", type: "Result", data: { large: "payload" } }],
+        artifactIds: ["art-1", "art-2"],
+        summary: "Two artifacts produced",
+      },
+    });
+
+    const { execute } = buildTool();
+    const result = await execute({ prompt: "deploy to prod" }, TOOL_CALL_OPTS);
+
+    expect(result).toEqual({
+      success: true,
+      sessionId: "sess-compact",
+      status: "completed",
+      artifactIds: ["art-1", "art-2"],
+      summary: "Two artifacts produced",
+    });
+    expect(result).not.toHaveProperty("output");
+  });
+
   it("surfaces structured signal-error body to the chat agent", async () => {
     // Hono's RPC client wraps non-OK responses in DetailedError with the
     // parsed body in `detail.data`. Job-tools must extract the structured

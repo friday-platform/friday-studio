@@ -478,6 +478,13 @@ interface ActiveSession {
   waitForCompletion(): Promise<SessionSummary>; // Convenience method to avoid .session.waitForCompletion()
 }
 
+export interface WorkspaceSignalRunResult {
+  session: IWorkspaceSession;
+  output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+  artifactIds: string[];
+  summary: string;
+}
+
 /**
  * Reference to an FSM document that was persisted as a real artifact in
  * JetStream Object Store on session completion (Phase 2.B of the
@@ -526,6 +533,8 @@ interface SessionResult {
   collectedFsmEvents?: FSMEvent[];
   /** Snapshot of the per-signal engine's documents at completion. */
   engineDocuments?: FSMDocument[];
+  /** FSM definition that produced this session; used to derive compact job results. */
+  definition?: FSMDefinition;
   finalState?: string;
 }
 
@@ -855,6 +864,36 @@ export function buildSynchronousFallbackAiSummary(
   return { summary, keyDetails: deriveKeyDetailsFromOutputDoc(outputDoc) };
 }
 
+export function buildSessionJobResult(args: {
+  artifactRefs: SessionArtifactRef[];
+  aiSummary?: SessionAISummary;
+  definition?: FSMDefinition;
+  documents: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+}): { artifactIds: string[]; summary: string } {
+  const artifactIds = args.artifactRefs.map((r) => r.artifactId);
+
+  if (args.aiSummary?.summary) {
+    return { artifactIds, summary: args.aiSummary.summary };
+  }
+
+  if (!args.definition) {
+    return { artifactIds, summary: synthesizeFallbackSummary(args.documents) };
+  }
+
+  const terminalIds = buildDocumentTerminalIndex(args.definition);
+  const actionIndex = buildDocumentActionIndex(args.definition);
+  for (const doc of args.documents) {
+    if (!terminalIds.has(doc.id)) continue;
+    const declared = actionIndex.get(doc.id)?.summary;
+    if (declared && declared.length > 0) {
+      return { artifactIds, summary: declared };
+    }
+    return { artifactIds, summary: synthesizeArtifactSummary(doc) };
+  }
+
+  return { artifactIds, summary: synthesizeFallbackSummary(args.documents) };
+}
+
 /**
  * Persist non-plumbing FSM documents as real artifacts in JetStream
  * Object Store. Phase 2.B of the fan-out-without-fan-in plan — the
@@ -1130,41 +1169,6 @@ export class WorkspaceRuntime {
   // Session tracking
   private sessions = new Map<string, ActiveSession>();
   private sessionResults = new Map<string, SessionResult>();
-  /**
-   * FSM document snapshots captured at `handleSessionCompletion`, keyed by
-   * sessionId. The live `sessions` map is cleared before the signal endpoint
-   * returns, but synchronous callers (`triggerWorkspaceSignal` in atlas-daemon)
-   * still need to read the final output docs afterward. The map is bounded
-   * naturally by the runtime's lifecycle — daemon idle eviction at 5min
-   * tears down the runtime and frees the map. The bounded-by-runtime
-   * guarantee is sufficient for the single-host model. Cross-worker
-   * access in a future per-worker model needs to read from the
-   * persistent session-history store instead.
-   */
-  private completedSessionDocuments = new Map<
-    string,
-    Array<{ id: string; type: string; data: Record<string, unknown> }>
-  >();
-
-  /**
-   * Phase 2.C — post-completion snapshot of `artifactRefs` + `aiSummary` +
-   * FSM definition, paired with {@link completedSessionDocuments}. Used by
-   * the cascade dispatcher to surface `artifactIds` and `summary` on the
-   * SSE `job-complete` event after `handleSessionCompletion` has cleared
-   * the live `sessions` map.
-   *
-   * K4 (melodic-strolling-seal-pt3): GC'd by sessionId on first read from
-   * `getSessionJobResult` (the cascade-dispatch path is the sole consumer).
-   * Cap is now a defensive backstop, not the primary GC mechanism. The
-   * pt1-review-#7 band-aid raised the cap from 100 → 10_000 because age-
-   * based eviction could drop entries before their cascade read them under
-   * burst load; the consumed-on-read GC closes that race so the cap can
-   * relax back to a small bound.
-   */
-  private completedSessionMetadata = new Map<
-    string,
-    { artifactRefs: SessionArtifactRef[]; aiSummary?: SessionAISummary; definition?: FSMDefinition }
-  >();
   /**
    * Per-action artifacts persisted before the FSM drains, keyed by session.
    * These make refs available to downstream `inputFrom` actions in the same
@@ -1814,6 +1818,23 @@ export class WorkspaceRuntime {
       }
     }
 
+    const result = await this.processSignalWithJobResult(
+      job,
+      signal,
+      onStreamEvent,
+      abortSignal,
+      skipStates,
+    );
+    return result.session;
+  }
+
+  private async processSignalWithJobResult(
+    job: FSMJob,
+    signal: WorkspaceRuntimeSignal,
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    abortSignal?: AbortSignal,
+    skipStates?: string[],
+  ): Promise<WorkspaceSignalRunResult> {
     const sessionResult = await this.processSignalForJob(
       job,
       signal,
@@ -1821,7 +1842,9 @@ export class WorkspaceRuntime {
       abortSignal,
       skipStates,
     );
-    return this.finalizeSession(sessionResult, job, signal);
+    const output = this.buildCompletedSignalOutput(sessionResult);
+    const session = await this.finalizeSession(sessionResult, job, signal);
+    return { session, ...output };
   }
 
   private async processSignalForJob(
@@ -2133,6 +2156,26 @@ export class WorkspaceRuntime {
             });
           }
 
+          const failedMidSessionRefs = this.midSessionArtifactRefs.get(session.id) ?? [];
+          if (failedMidSessionRefs.length > 0) {
+            const existingDocIds = new Set(session.artifactRefs.map((r) => r.documentId));
+            session.artifactRefs = [
+              ...session.artifactRefs,
+              ...failedMidSessionRefs.filter((r) => !existingDocIds.has(r.documentId)),
+            ];
+            if (session.completedAt) {
+              this.expireEphemeralForSession(session.id, job.name, session.completedAt).catch(
+                (err) => {
+                  logger.warn("Ephemeral expire pass failed after failed session", {
+                    sessionId: session.id,
+                    jobName: job.name,
+                    error: stringifyError(err),
+                  });
+                },
+              );
+            }
+          }
+
           // Emit synthetic step:start + step:complete(failed) for the agent action
           // in the state that threw. Code actions run before agent actions in entry
           // sequences — when a code action throws, the agent never starts and its
@@ -2238,8 +2281,8 @@ export class WorkspaceRuntime {
             // C2 — when the fast path is unavailable (no declared summary)
             // we still want SSE `job-complete` to respond immediately. Build
             // a synchronous fallback aiSummary now and detach the LLM-
-            // generated path; on resolution we update completedSessionMetadata
-            // + persisted KV + emit a follow-up session:summary event.
+            // generated path; on resolution we update persisted KV and
+            // emit a follow-up session:summary event.
             const eligibleForLlmSummary =
               !fastPathAiSummary && platformModels !== undefined && executedBlocks.length > 0;
             const synchronousFallback = fastPathAiSummary
@@ -2296,10 +2339,9 @@ export class WorkspaceRuntime {
 
             // C2 — detached LLM aiSummary generation. SSE `job-complete`
             // fired above with the synchronous fallback; the polished
-            // summary writes to completedSessionMetadata + persisted KV
-            // when the LLM round-trip resolves. Activity page picks it up
-            // on next read; live SSE subscribers see the follow-up
-            // `session:summary` event.
+            // summary writes to persisted session-history KV when the LLM
+            // round-trip resolves. Activity page picks it up on next read;
+            // live SSE subscribers see the follow-up `session:summary` event.
             if (eligibleForLlmSummary && platformModels) {
               const updateStream = sessionStream;
               const llmSummaryV2Base = summaryV2;
@@ -2311,16 +2353,7 @@ export class WorkspaceRuntime {
               )
                 .then(async (llmSummary) => {
                   if (!llmSummary) return;
-                  // 1. Update in-memory cache so getSessionJobResult
-                  //    returns the polished summary on subsequent calls.
-                  const existing = this.completedSessionMetadata.get(sessionId);
-                  if (existing) {
-                    this.completedSessionMetadata.set(sessionId, {
-                      ...existing,
-                      aiSummary: llmSummary,
-                    });
-                  }
-                  // 2. Emit a follow-up session:summary event for live SSE
+                  // 1. Emit a follow-up session:summary event for live SSE
                   //    subscribers (cascade-stream forwards arbitrary
                   //    session events; no allowlist update needed).
                   try {
@@ -2336,7 +2369,7 @@ export class WorkspaceRuntime {
                       error: String(emitErr),
                     });
                   }
-                  // 3. Overwrite the persisted SessionSummary so Activity
+                  // 2. Overwrite the persisted SessionSummary so Activity
                   //    page (listByWorkspace) reflects the polished aiSummary.
                   if (updateStream.updateSummary) {
                     await updateStream
@@ -2400,37 +2433,9 @@ export class WorkspaceRuntime {
           }
 
           session.engineDocuments = engine.documents;
+          session.definition = engine.definition;
           session.finalState = engine.state;
-          // Phase 2.C — capture the FSM definition into the post-completion
-          // metadata cache so the synchronous summary-synthesis fallback
-          // (terminal-state action.summary lookup) still works after the
-          // per-signal engine has been torn down a few lines below.
-          this.completedSessionMetadata.set(sessionId, {
-            artifactRefs: session.artifactRefs,
-            aiSummary: session.aiSummary,
-            definition: engine.definition,
-          });
-          // K4 (melodic-strolling-seal-pt3) — consumed-on-read GC closes
-          // the cascade-vs-cap race that the pt1-review-#7 band-aid (cap
-          // 100 → 10_000) papered over. `getSessionJobResult` deletes its
-          // entry after first read, so the cascade-dispatch path is the
-          // primary GC trigger, not age-based eviction. Cap now functions
-          // as a defensive backstop for sessions whose cascade never
-          // fires (e.g. signal-spawn paths that never invoke
-          // `getSessionJobResult`); 1_000 is comfortable headroom even
-          // for autopilot bursts. Eviction still warn-logs so we can spot
-          // a backstop hit and investigate the missing consumer.
-          const COMPLETED_META_CAP = 1_000;
-          while (this.completedSessionMetadata.size > COMPLETED_META_CAP) {
-            const oldestKey = this.completedSessionMetadata.keys().next().value;
-            if (oldestKey === undefined) break;
-            this.completedSessionMetadata.delete(oldestKey);
-            logger.warn("completedSessionMetadata evicted (cap reached)", {
-              evictedSessionId: oldestKey,
-              cap: COMPLETED_META_CAP,
-              currentWorkspaceId: this.workspace.id,
-            });
-          }
+          this.midSessionArtifactRefs.delete(session.id);
           this.activeAbortControllers.delete(sessionId);
           this.sessionEngines.delete(sessionId);
         }
@@ -3063,6 +3068,7 @@ export class WorkspaceRuntime {
     jobName: string,
   ): Promise<void> {
     if (PLUMBING_DOCUMENT_TYPES.has(input.doc.type)) return;
+    if (!this.activeAbortControllers.has(input.sessionId)) return;
 
     let originalDoc: FSMDocument;
     try {
@@ -3170,36 +3176,20 @@ export class WorkspaceRuntime {
    * artifacts sweeper. The sweeper lives in atlasd; runtime keeps the
    * authoritative memory-adapter binding and configured store names,
    * so it surfaces them through this accessor instead of the daemon
-   * reaching into private fields.
-   *
-   * The aiSummary provider walks the in-memory completed-session
-   * snapshot (`completedSessionMetadata`); it's bounded by the same
-   * 100-entry FIFO. A session swept after eviction won't carry an
-   * aiSummary signal — acceptable because the eviction window
-   * (~hundreds of completions) is far larger than the grace window in
-   * practice.
+   * reaching into private fields. aiSummary reference scans are backed
+   * by the daemon's durable session-history adapter, not by runtime
+   * completion caches.
    */
   getPromotionScanContext(): {
     memoryAdapter?: MemoryAdapter;
     memoryStoreNames: string[];
-    aiSummary: () => Promise<Array<{ url?: string }>>;
+    aiSummary?: () => Promise<Array<{ url?: string }>>;
   } {
     const ctx: {
       memoryAdapter?: MemoryAdapter;
       memoryStoreNames: string[];
-      aiSummary: () => Promise<Array<{ url?: string }>>;
-    } = {
-      memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name),
-      aiSummary: () => {
-        const out: Array<{ url?: string }> = [];
-        for (const meta of this.completedSessionMetadata.values()) {
-          for (const detail of meta.aiSummary?.keyDetails ?? []) {
-            if (detail.url) out.push({ url: detail.url });
-          }
-        }
-        return Promise.resolve(out);
-      },
-    };
+      aiSummary?: () => Promise<Array<{ url?: string }>>;
+    } = { memoryStoreNames: (this.config.workspace.memory?.own ?? []).map((m) => m.name) };
     if (this.options.memoryAdapter) ctx.memoryAdapter = this.options.memoryAdapter;
     return ctx;
   }
@@ -3318,6 +3308,27 @@ export class WorkspaceRuntime {
      */
     parentSessionId?: string,
   ): Promise<IWorkspaceSession> {
+    const result = await this.triggerSignalWithResult(
+      signalName,
+      payload,
+      streamId,
+      onStreamEvent,
+      skipStates,
+      abortSignal,
+      parentSessionId,
+    );
+    return result.session;
+  }
+
+  async triggerSignalWithResult(
+    signalName: string,
+    payload?: Record<string, unknown>,
+    streamId?: string,
+    onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
+    skipStates?: string[],
+    abortSignal?: AbortSignal,
+    parentSessionId?: string,
+  ): Promise<WorkspaceSignalRunResult> {
     // Top-level `streamId` arg wins over any payload.streamId. The runtime
     // reads the merged value via `signal.data.streamId` (see processSignalForJob
     // ~line 1595 where streamId is derived). Both surfaces stay supported so
@@ -3334,7 +3345,32 @@ export class WorkspaceRuntime {
       parentSessionId,
     };
 
-    return await this.processSignal(signal, onStreamEvent, abortSignal, skipStates);
+    await this.ensureInitialized();
+    const matchingJobs = Array.from(this.jobs.values()).filter((job) =>
+      job.signals.includes(signal.id),
+    );
+    const job = matchingJobs[0];
+    if (!job) {
+      throw new Error(
+        `No FSM job handles signal '${signal.id}' in workspace '${this.workspace.id}'`,
+      );
+    }
+
+    const signalConfig = this.config.workspace.signals?.[signal.id];
+    if (signalConfig) {
+      const validation = validateSignalPayload(signalConfig, signal.data);
+      if (!validation.success) {
+        throw new Error(`Signal payload validation failed for '${signal.id}': ${validation.error}`);
+      }
+    }
+
+    return await this.processSignalWithJobResult(
+      job,
+      signal,
+      onStreamEvent,
+      abortSignal,
+      skipStates,
+    );
   }
 
   /**
@@ -3354,7 +3390,7 @@ export class WorkspaceRuntime {
 
     this.sessions.clear();
     this.sessionResults.clear();
-    this.completedSessionDocuments.clear();
+    this.midSessionArtifactRefs.clear();
     this.activeAbortControllers.clear();
     this.jobs.clear();
     this.mountBindings.clear();
@@ -3406,102 +3442,32 @@ export class WorkspaceRuntime {
     return this.sessions.get(sessionId)?.session;
   }
 
+  private buildCompletedSignalOutput(
+    sessionResult: SessionResult,
+  ): Omit<WorkspaceSignalRunResult, "session"> {
+    const output = (sessionResult.engineDocuments ?? []).filter(
+      (doc) => !PLUMBING_DOCUMENT_TYPES.has(doc.type),
+    );
+    const result = buildSessionJobResult({
+      artifactRefs: sessionResult.artifactRefs,
+      aiSummary: sessionResult.aiSummary,
+      definition: sessionResult.definition,
+      documents: output,
+    });
+    return { output, ...result };
+  }
+
   /**
-   * Return the FSM engine's final documents for a session, filtered to the
-   * ones a caller is likely to care about: agent / LLM action `outputTo`
-   * results and document-typed docs declared in the workspace. Excludes
-   * FSM bookkeeping documents (state transitions, chat-context, etc).
-   *
-   * Exists so synchronous callers of `triggerWorkspaceSignal` (notably the
-   * workspace-chat job tool) can surface the actual agent output to whoever
-   * invoked the job. Without this, the job tool returns `{success, sessionId,
-   * status}` and the agent output evaporates between the FSM and the caller.
+   * Return live FSM documents for an in-flight session. Completed signal
+   * callers receive their final output directly from `triggerSignalWithResult`
+   * instead of reading a post-completion runtime cache.
    */
   getSessionFsmDocuments(
     sessionId: string,
   ): Array<{ id: string; type: string; data: Record<string, unknown> }> {
-    // Post-completion: `handleSessionCompletion` has already cleared the
-    // live `sessions` map and snapshotted the docs here. The synchronous
-    // signal endpoint hits this path.
-    const cached = this.completedSessionDocuments.get(sessionId);
-    if (cached) return cached;
-
-    // Pre-completion: still live — read from the per-signal engine.
     const engine = this.sessionEngines.get(sessionId);
     if (!engine) return [];
-
-    // FSM plumbing documents that are noise for most callers. Everything
-    // else is passed through — the caller's job to pick fields it cares
-    // about. Keeps this method useful for multiple consumers.
-    const plumbingTypes = new Set([
-      "state-transition",
-      "fsm-state",
-      "ChatContext",
-      "signal-payload",
-    ]);
-    return engine.documents.filter((d) => !plumbingTypes.has(d.type));
-  }
-
-  /**
-   * Phase 2.C — return the persisted artifact ids + summary for a completed
-   * session so the cascade dispatcher can include them on the SSE
-   * `job-complete` event payload (the fan-in fix's data half: supervisors
-   * prefer `artifactIds + summary` over the full `Document[]`).
-   *
-   * Summary preference order:
-   *   1. `aiSummary.summary` from {@link generateSessionSummary}.
-   *   2. The terminal-state action's declared `summary` (Phase 2.A schema).
-   *   3. Truncated `JSON.stringify` of that document's `data` (~300 chars).
-   *
-   * Returns `undefined` for unknown sessions. Either field can be empty —
-   * `artifactIds: []` when no eligible documents were emitted, `summary:
-   * ""` when the FSM produced nothing summarizable.
-   */
-  getSessionJobResult(sessionId: string): { artifactIds: string[]; summary: string } | undefined {
-    const meta = this.completedSessionMetadata.get(sessionId);
-    if (!meta) return undefined;
-
-    const artifactIds = meta.artifactRefs.map((r) => r.artifactId);
-    const docs = this.completedSessionDocuments.get(sessionId) ?? [];
-
-    let result: { artifactIds: string[]; summary: string };
-    if (meta.aiSummary?.summary) {
-      result = { artifactIds, summary: meta.aiSummary.summary };
-    } else if (!meta.definition) {
-      // Fallback: no definition → synthesize from documents.
-      result = { artifactIds, summary: synthesizeFallbackSummary(docs) };
-    } else {
-      // Fallback: synthesize from terminal-state document. The FSM
-      // definition tells us which document ids belong to terminal states;
-      // the docs cache gives us the actual emitted data + (post-Phase 2.A)
-      // the action's declared `summary`.
-      const terminalIds = buildDocumentTerminalIndex(meta.definition);
-      const actionIndex = buildDocumentActionIndex(meta.definition);
-      let resolved: { artifactIds: string[]; summary: string } | undefined;
-      for (const doc of docs) {
-        if (!terminalIds.has(doc.id)) continue;
-        const declared = actionIndex.get(doc.id)?.summary;
-        if (declared && declared.length > 0) {
-          resolved = { artifactIds, summary: declared };
-          break;
-        }
-        // Synthesize from this terminal doc's data.
-        resolved = { artifactIds, summary: synthesizeArtifactSummary(doc) };
-        break;
-      }
-      result = resolved ?? { artifactIds, summary: synthesizeFallbackSummary(docs) };
-    }
-
-    // K4 (melodic-strolling-seal-pt3) — consumed-on-read GC. The cascade-
-    // dispatch path is the only consumer; once it has the result, the
-    // metadata + docs caches are dead weight. Drop them so the runtime
-    // doesn't accumulate. The age-based cap remains as a defensive
-    // backstop for sessions whose cascade never fires (signal paths that
-    // never invoke `getSessionJobResult`).
-    this.completedSessionMetadata.delete(sessionId);
-    this.completedSessionDocuments.delete(sessionId);
-
-    return result;
+    return engine.documents.filter((d) => !PLUMBING_DOCUMENT_TYPES.has(d.type));
   }
 
   /**
@@ -3589,35 +3555,6 @@ export class WorkspaceRuntime {
       status,
       userId: userId ?? "NOT_SET",
     });
-
-    // Snapshot the job's FSM documents BEFORE `onSessionFinished` fires.
-    // That callback (atlas-daemon's `destroyWorkspaceRuntime`) calls
-    // `runtime.shutdown()`, which stops every job's engine and drops its
-    // documents — after that, there is nothing to snapshot. And the live
-    // `sessions` map is cleared a few lines down, so the signal endpoint's
-    // subsequent `getSessionFsmDocuments(sessionId)` call would return `[]`
-    // without this cache. Net effect of the bug: retrieval jobs run, save
-    // their result doc, then the HTTP response is `output: []`.
-    const active = this.sessions.get(sessionResult.id);
-    if (active) {
-      const plumbingTypes = new Set([
-        "state-transition",
-        "fsm-state",
-        "ChatContext",
-        "signal-payload",
-      ]);
-      const docs = (sessionResult.engineDocuments ?? []).filter((d) => !plumbingTypes.has(d.type));
-      this.completedSessionDocuments.set(sessionResult.id, docs);
-      // Bound the map so a long-running workspace doesn't accumulate doc
-      // snapshots forever. FIFO eviction at 100 entries — well above the
-      // synchronous HTTP-cascade window we care about, well below "leak".
-      const COMPLETED_DOCS_CAP = 100;
-      while (this.completedSessionDocuments.size > COMPLETED_DOCS_CAP) {
-        const oldest = this.completedSessionDocuments.keys().next().value;
-        if (oldest === undefined) break;
-        this.completedSessionDocuments.delete(oldest);
-      }
-    }
 
     if (this.options.onSessionFinished) {
       await this.options.onSessionFinished({

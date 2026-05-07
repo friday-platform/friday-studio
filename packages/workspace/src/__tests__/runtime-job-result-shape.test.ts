@@ -3,7 +3,7 @@
  *
  * Targets the post-completion summary-synthesis fallback (`synthesizeFallbackSummary`)
  * and the lookup glue (terminal-state action.summary preference) used by
- * `WorkspaceRuntime.getSessionJobResult`. Pure-function tests — they don't
+ * compact signal result construction. Pure-function tests — they don't
  * spin up the full runtime; the runtime-level wiring is exercised by the
  * existing artifact-persist integration test plus the cascade-stream tests
  * that confirm the dispatcher contract.
@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocumentActionIndex,
   buildDocumentTerminalIndex,
+  buildSessionJobResult,
   synthesizeFallbackSummary,
 } from "../runtime.ts";
 
@@ -56,7 +57,71 @@ describe("synthesizeFallbackSummary", () => {
   });
 });
 
-describe("getSessionJobResult lookup glue", () => {
+describe("buildSessionJobResult", () => {
+  it("prefers aiSummary and projects artifact refs without consulting runtime caches", () => {
+    const result = buildSessionJobResult({
+      artifactRefs: [
+        { documentId: "draft", artifactId: "art-draft", revision: 1 },
+        { documentId: "final", artifactId: "art-final", revision: 1 },
+      ],
+      aiSummary: { summary: "Polished session summary", keyDetails: [] },
+      documents: [{ id: "final", type: "Result", data: { ok: true } }],
+    });
+
+    expect(result).toEqual({
+      artifactIds: ["art-draft", "art-final"],
+      summary: "Polished session summary",
+    });
+  });
+
+  it("falls back to terminal action summary when no aiSummary is present", () => {
+    const definition: FSMDefinition = {
+      id: "j",
+      initial: "start",
+      states: {
+        start: {
+          entry: [
+            {
+              type: "llm",
+              provider: "p",
+              model: "m",
+              prompt: "draft",
+              outputTo: "draft-doc",
+              summary: "intermediate",
+            },
+          ],
+          on: { next: { target: "done" } },
+        },
+        done: {
+          type: "final",
+          entry: [
+            {
+              type: "llm",
+              provider: "p",
+              model: "m",
+              prompt: "finalize",
+              outputTo: "final-doc",
+              summary: "terminal declared summary",
+            },
+          ],
+        },
+      },
+    };
+
+    const result = buildSessionJobResult({
+      artifactRefs: [{ documentId: "final-doc", artifactId: "art-final", revision: 1 }],
+      definition,
+      documents: [
+        { id: "draft-doc", type: "Draft", data: { phase: 1 } },
+        { id: "final-doc", type: "Final", data: { phase: 2 } },
+      ],
+    });
+
+    expect(result).toEqual({ artifactIds: ["art-final"], summary: "terminal declared summary" });
+  });
+});
+
+describe("compact job result lookup glue", () => {
   // The full method lives on WorkspaceRuntime; these tests cover the pure
   // building blocks (terminal-state index + action index) in the
   // arrangement the method itself uses to pick a summary.

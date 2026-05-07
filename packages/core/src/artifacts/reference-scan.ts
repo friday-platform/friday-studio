@@ -58,7 +58,7 @@ export interface PromotionScanContext {
    * Optional aiSummary key-details enumerator. When omitted, the
    * aiSummary signal is skipped — sweep falls back to the memory-only
    * path. Wired by the daemon to a snapshot of recent completed
-   * sessions (workspace-runtime keeps `completedSessionMetadata`).
+   * sessions (daemon can provide durable session-history reads).
    */
   aiSummary?: AiSummaryProvider;
 }
