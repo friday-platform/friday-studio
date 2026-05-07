@@ -4,10 +4,16 @@ import type { ZodRawShape } from "zod";
 
 const mockState = vi.hoisted(() => ({
   creates: [] as Record<string, unknown>[],
+  expireCalls: [] as Record<string, unknown>[],
+  stored: new Map<string, Record<string, unknown>>(),
+  getMode: "missing" as "missing" | "stored",
   nextId: "elc_human_input",
   nextOk: true,
   reset() {
     this.creates = [];
+    this.expireCalls = [];
+    this.stored = new Map();
+    this.getMode = "missing";
     this.nextId = "elc_human_input";
     this.nextOk = true;
   },
@@ -18,18 +24,27 @@ vi.mock("@atlas/core/elicitations", () => ({
     create: (input: Record<string, unknown>) => {
       mockState.creates.push(input);
       if (!mockState.nextOk) return Promise.resolve({ ok: false, error: "stub failure" });
+      const data = {
+        ...input,
+        id: mockState.nextId,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      };
+      mockState.stored.set(mockState.nextId, data);
+      return Promise.resolve({ ok: true, data });
+    },
+    get: ({ id }: { id: string }) =>
+      Promise.resolve({
+        ok: true,
+        data: mockState.getMode === "stored" ? (mockState.stored.get(id) ?? null) : null,
+      }),
+    expirePending: (input: Record<string, unknown>) => {
+      mockState.expireCalls.push(input);
       return Promise.resolve({
         ok: true,
-        data: {
-          ...input,
-          id: mockState.nextId,
-          status: "pending",
-          createdAt: new Date().toISOString(),
-        },
+        data: { scanned: 1, expired: [], skipped: [], errors: 0 },
       });
     },
-    get: () => Promise.resolve({ ok: true, data: null }),
-    expirePending: () => Promise.resolve({ ok: true, data: [] }),
   },
 }));
 
@@ -151,6 +166,26 @@ describe("request_human_input platform tool", () => {
     const expiresAt = new Date(env.expiresAt as string).getTime();
     expect(expiresAt).toBeGreaterThanOrEqual(before + 60_000);
     expect(expiresAt).toBeLessThanOrEqual(after + 60_000 + 100);
+  });
+
+  it("returns expired when stored pending input reaches its job timeout", async () => {
+    mockState.getMode = "stored";
+    const { registered } = captureRegistration();
+    const result = await registered.handler({
+      question: "Proceed?",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      jobTimeoutMs: 1,
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(parseBody(result)).toEqual({
+      ok: false,
+      status: "expired",
+      elicitationId: "elc_human_input",
+      reason: "expired",
+    });
+    expect(mockState.expireCalls).toHaveLength(1);
   });
 
   it("warns and falls back to sessionId='unknown' when scope is missing", async () => {

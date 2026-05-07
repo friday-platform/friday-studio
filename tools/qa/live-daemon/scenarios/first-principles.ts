@@ -1439,7 +1439,7 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
 
 async function runRequestUserDecisionScenario(
   d: DaemonHandle,
-  mode: "answer" | "decline" = "answer",
+  mode: "answer" | "decline" | "expire" = "answer",
 ): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -1450,36 +1450,50 @@ async function runRequestUserDecisionScenario(
     name:
       mode === "answer"
         ? "First Principles User Decision HITL"
-        : "First Principles User Decision Decline HITL",
+        : mode === "decline"
+          ? "First Principles User Decision Decline HITL"
+          : "First Principles User Decision Expire HITL",
   });
   notes.push(`workspace ${ws.id} registered`);
 
+  const scenarioId =
+    mode === "answer"
+      ? "request-user-decision"
+      : mode === "decline"
+        ? "request-user-decision-decline"
+        : "request-user-decision-expire";
+  const signalName = mode === "expire" ? "user-decision-expire-event" : "user-decision-event";
   const startedAt = Date.now();
-  const triggerPromise = triggerSignalSSE(d, ws.id, "user-decision-event", {
-    payload: {
-      query: mode === "answer" ? "request-user-decision" : "request-user-decision-decline",
-    },
+  const triggerPromise = triggerSignalSSE(d, ws.id, signalName, {
+    payload: { query: scenarioId },
     timeoutMs: 8 * 60 * 1000,
   });
   const pending = await waitForPendingElicitation(d, ws.id);
   metrics.pendingObservedAtMs = Date.now() - startedAt;
   metrics.pending = pending ?? null;
   if (pending?.id && typeof pending.id === "string") {
-    metrics.answer =
-      mode === "answer"
-        ? await answerElicitation(d, pending.id, "archive")
-        : await declineElicitation(d, pending.id);
+    if (mode === "answer") {
+      metrics.answer = await answerElicitation(d, pending.id, "archive");
+    } else if (mode === "decline") {
+      metrics.answer = await declineElicitation(d, pending.id);
+    } else {
+      notes.push("left pending elicitation unanswered to exercise expiry");
+    }
   }
   const trigger = await triggerPromise;
   recordJobMetrics(metrics, trigger);
 
-  const id = mode === "answer" ? "request-user-decision" : "request-user-decision-decline";
+  const id = scenarioId;
   if (!trigger.sessionId) {
     return [{ id, pass: false, notes: [...notes, "no session id returned"], metrics }];
   }
 
   const bucket = `WS_DOCS_${ws.id}`;
-  const key = `doc/session/${trigger.sessionId}/python-user-agent-decision-check/python-user-decision-result`;
+  const jobName =
+    mode === "expire"
+      ? "python-user-agent-decision-expire-check"
+      : "python-user-agent-decision-check";
+  const key = `doc/session/${trigger.sessionId}/${jobName}/python-user-decision-result`;
   const doc = await natsKvGetJson(d.natsUrl, bucket, key);
   const data = (doc?.data as Record<string, unknown> | undefined)?.data as
     | Record<string, unknown>
@@ -1505,7 +1519,8 @@ async function runRequestUserDecisionScenario(
   metrics.finalElicitations = finalElicitations;
   metrics.toolNames = toolNames;
 
-  const terminalStatus = mode === "answer" ? "answered" : "declined";
+  const terminalStatus =
+    mode === "answer" ? "answered" : mode === "decline" ? "declined" : "expired";
   const expectedAnswer = mode === "answer" ? "archive" : "";
   const pass =
     pending !== null &&
@@ -2076,6 +2091,8 @@ async function main() {
     results.push(...(await runRequestUserDecisionScenario(daemon, "answer")));
     console.log("\n── request user decision decline HITL ──");
     results.push(...(await runRequestUserDecisionScenario(daemon, "decline")));
+    console.log("\n── request user decision expiry HITL ──");
+    results.push(...(await runRequestUserDecisionScenario(daemon, "expire")));
     console.log("\n── fan-out delegate compactness ──");
     results.push(...(await runFanoutDelegateScenario(daemon)));
     console.log("\n── chat follow-up compactness ──");

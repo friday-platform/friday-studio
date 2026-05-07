@@ -62,6 +62,10 @@
   vars:
     scenarioId: request-user-decision-decline
 
+- description: request user decision expiry HITL
+  vars:
+    scenarioId: request-user-decision-expire
+
 - description: fan-out delegate compactness
   vars:
     scenarioId: fanout-no-fanin-delegate
