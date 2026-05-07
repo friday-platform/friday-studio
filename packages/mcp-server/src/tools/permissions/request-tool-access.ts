@@ -29,33 +29,96 @@ const DISCOVERY_TOOLS = [
   "connect_communicator",
 ];
 const WAIT_POLL_MS = 250;
+const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
+
+type TerminalElicitationResult = {
+  status: "pending" | "answered" | "declined" | "expired";
+  value?: string;
+  note?: string;
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function sanitizeSubjectToken(s: string): string {
+  return s.replace(SAFE_TOKEN_RE, "_");
+}
+
+function terminalFromEnvelope(envelope: unknown): TerminalElicitationResult | undefined {
+  if (!envelope || typeof envelope !== "object") return undefined;
+  const e = envelope as Record<string, unknown>;
+  if (e.status === "answered") {
+    const answer =
+      e.answer && typeof e.answer === "object" ? (e.answer as Record<string, unknown>) : {};
+    return {
+      status: "answered",
+      ...(typeof answer.value === "string" ? { value: answer.value } : {}),
+      ...(typeof answer.note === "string" ? { note: answer.note } : {}),
+    };
+  }
+  if (e.status === "declined") {
+    const answer =
+      e.answer && typeof e.answer === "object" ? (e.answer as Record<string, unknown>) : {};
+    return {
+      status: "declined",
+      ...(typeof answer.note === "string" ? { note: answer.note } : {}),
+    };
+  }
+  if (e.status === "expired") return { status: "expired" };
+  return undefined;
+}
+
+async function readTerminalElicitation(id: string): Promise<TerminalElicitationResult | null> {
+  const got = await ElicitationStorage.get({ id });
+  if (!got.ok) throw new Error(got.error);
+  if (!got.data) return { status: "pending" };
+  return terminalFromEnvelope(got.data) ?? null;
+}
+
 async function waitForTerminalElicitation(
-  id: string,
-  expiresAt: string,
-): Promise<{ status: "answered" | "declined" | "expired"; value?: string; note?: string }> {
-  while (Date.now() < new Date(expiresAt).getTime()) {
-    const got = await ElicitationStorage.get({ id });
-    if (!got.ok) throw new Error(got.error);
-    const current = got.data;
-    if (!current) throw new Error(`Elicitation ${id} disappeared while waiting`);
-    if (current.status === "answered") {
-      return {
-        status: "answered",
-        value: current.answer?.value,
-        ...(current.answer?.note ? { note: current.answer.note } : {}),
-      };
+  ctx: ToolContext,
+  input: { id: string; workspaceId: string; sessionId: string; expiresAt: string },
+): Promise<TerminalElicitationResult> {
+  const initial = await readTerminalElicitation(input.id);
+  if (initial) return initial;
+
+  const deadlineMs = new Date(input.expiresAt).getTime();
+  const nc = ctx.natsConnection;
+  if (nc) {
+    const subject = [
+      "elicitations",
+      sanitizeSubjectToken(input.workspaceId),
+      sanitizeSubjectToken(input.sessionId),
+      sanitizeSubjectToken(input.id),
+    ].join(".");
+    const sub = nc.subscribe(subject);
+    const iter = (sub as AsyncIterable<{ data: Uint8Array }>)[Symbol.asyncIterator]();
+    try {
+      await nc.flush();
+      while (Date.now() < deadlineMs) {
+        const remainingMs = Math.max(1, deadlineMs - Date.now());
+        const next = await Promise.race([iter.next(), sleep(remainingMs).then(() => null)]);
+        if (!next || next.done) break;
+        const text = new TextDecoder().decode(next.value.data);
+        const terminal = terminalFromEnvelope(JSON.parse(text));
+        if (terminal) return terminal;
+      }
+    } finally {
+      try {
+        sub.unsubscribe();
+      } catch {
+        // already closed
+      }
     }
-    if (current.status === "declined") {
-      return { status: "declined", ...(current.answer?.note ? { note: current.answer.note } : {}) };
-    }
-    if (current.status === "expired") return { status: "expired" };
+  }
+
+  while (Date.now() < deadlineMs) {
+    const current = await readTerminalElicitation(input.id);
+    if (current) return current;
     await sleep(WAIT_POLL_MS);
   }
+  await ElicitationStorage.expirePending({ now: new Date(input.expiresAt), limit: 500 });
   return { status: "expired" };
 }
 
@@ -166,8 +229,9 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           daemonDangerouslySkipAllowlist: process.env.FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS === "1",
         });
 
+      const shouldValidateToolName = availableToolNames !== undefined;
       const knownTools = new Set([...(availableToolNames ?? []), ...PLATFORM_TOOL_NAMES]);
-      if (!knownTools.has(toolName)) {
+      if (shouldValidateToolName && !knownTools.has(toolName)) {
         ctx.logger.warn("request_tool_access rejected unknown tool", {
           toolName,
           workspaceId,
@@ -249,7 +313,20 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           actionId,
           elicitationId: created.data.id,
         });
-        const terminal = await waitForTerminalElicitation(created.data.id, created.data.expiresAt);
+        const terminal = await waitForTerminalElicitation(ctx, {
+          id: created.data.id,
+          workspaceId: created.data.workspaceId,
+          sessionId: created.data.sessionId,
+          expiresAt: created.data.expiresAt,
+        });
+        if (terminal.status === "pending") {
+          return createSuccessResponse({
+            ok: false,
+            granted: false,
+            elicitationId: created.data.id,
+            reason: "pending_user_approval",
+          });
+        }
         if (terminal.status === "answered") {
           const granted = terminal.value === "allow_once" || terminal.value === "allow_always";
           return createSuccessResponse({

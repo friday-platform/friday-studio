@@ -8,6 +8,7 @@ import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { CancellationNotificationSchema } from "@atlas/core";
 import type { Logger } from "@atlas/logger";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { NatsConnection } from "nats";
 import { registerPrompts } from "./prompts/index.ts";
 import type { PromptContext } from "./prompts/types.ts";
 import { registerResources } from "./resources/index.ts";
@@ -31,6 +32,8 @@ export interface PlatformMCPServerDependencies {
    * `callTool` instead of running in-process.
    */
   toolDispatcher?: ToolDispatcher;
+  /** Optional raw NATS connection for tools that need event subscriptions. */
+  natsConnection?: NatsConnection;
 }
 
 export class PlatformMCPServer {
@@ -59,6 +62,7 @@ export class PlatformMCPServer {
       server: this.server,
       workspaceProvider: this.workspaceProvider,
       toolDispatcher: dependencies.toolDispatcher,
+      natsConnection: dependencies.natsConnection,
     };
 
     // Register all tools with shared context

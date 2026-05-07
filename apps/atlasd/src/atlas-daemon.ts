@@ -1019,6 +1019,7 @@ export class AtlasDaemon {
       workspaceConfigProvider: {
         getWorkspaceConfig: (id: string) => this.getWorkspaceManager().getWorkspaceConfig(id),
       },
+      natsConnection: nc,
       toolDispatcher: nc
         ? {
             callTool: async <Args, Result>(toolId: string, args: Args): Promise<Result> => {
