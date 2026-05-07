@@ -332,6 +332,112 @@ jobs:
 
 For data too large for the payload, persist with the artifact + memory pattern — producer calls `artifacts_create` then `memory_save` to record the id; consumer reads the id from injected memory and calls `artifacts_get`. See the `writing-to-memory` skill.
 
+## Single-action FSMs post-supervisor-flip
+
+Default to **one LLM action per job** when the work is "fetch some
+context, then emit a result." The two-state `fetch → format` shape
+(action A pulls structured data into `outputTo: foo-result`; action B
+takes `inputFrom: foo-result` and reformats it as the user-visible
+markdown) is a pre-supervisor-flip pattern — it doubled the LLM calls
+for no behavioral gain.
+
+Post-flip the supervisor (workspace-chat) is the consumer. It already
+sees `{ artifactIds, summary }` from the terminal action and renders
+the artifact body verbatim to the user. The second pass is wasted
+latency + tokens + a validator-judge LLM call.
+
+### When to collapse
+
+Collapse two states into one when **all** are true:
+
+- Both actions run the same kind of work (LLM with tools).
+- The first action's only consumer is the second action — no other
+  branch reads `outputTo: foo-result`.
+- The second action's only job is reformat / re-summarize the first's
+  output. No new tool calls beyond cosmetic ones.
+- The terminal output is what the user (via the supervisor) consumes.
+
+### When NOT to collapse
+
+Keep the two-state shape when **any** is true:
+
+- A genuine fan-in: the second action takes `inputFrom: [a-result, b-result]`
+  combining outputs from parallel branches.
+- The first action's output is also persisted for cross-session reuse
+  (a different job's signal payload references it later).
+- The two actions need independent budgets, allowlists, or models —
+  e.g. cheap-Haiku fetcher feeding paranoid-Opus drafter.
+- The first action's tools are mutating and you want a separate
+  read-only formatter to render the result safely.
+
+### Worked example
+
+Before — two states, two LLM calls (~24s of redundant work on a real run):
+
+```yaml
+fsm:
+  initial: idle
+  states:
+    idle:
+      on:
+        review-inbox: { target: fetch }
+    fetch:
+      entry:
+        - type: agent
+          agentId: inbox-fetcher       # gmail search + batch get
+          outputTo: emails-result
+        - type: emit
+          event: DONE
+      on:
+        DONE: { target: review }
+    review:
+      entry:
+        - type: agent
+          agentId: inbox-reviewer      # reformat JSON as markdown
+          inputFrom: emails-result
+          outputTo: review-result
+      type: final
+```
+
+After — one state, one LLM call. The terminal action both fetches
+AND emits the user-visible markdown:
+
+```yaml
+fsm:
+  initial: idle
+  states:
+    idle:
+      on:
+        review-inbox: { target: review }
+    review:
+      entry:
+        - type: agent
+          agentId: inbox-reviewer      # fetch + format in one prompt
+          outputTo: review-result
+      type: final
+```
+
+The merged agent's prompt is two short sections: "Step 1 — fetch"
+(declares the tools and call shape) and "Step 2 — emit" (declares the
+markdown shape and "no prose before or after"). Tools list is the
+union of what both agents needed; declared output is what the user
+sees.
+
+### Verify after collapse
+
+Re-fire the signal once. Confirm:
+
+- `output[0].id` is unchanged (still `review-result`); supervisor
+  consumers keep working.
+- `summary` reads sensibly without `parse_artifact` — the auto-derived
+  digest from the markdown is the supervisor's first-pass view.
+- `step:complete.validation.strategy` resolves to `skip` (the
+  classifier sees only read-only tools + structured `outputType`, or
+  no `outputType` + no mutating tool) — no validator-judge LLM call.
+
+If the auto-derived `summary` is too thin, set `summary:` on the
+action explicitly rather than reintroducing a second formatter step.
+
 ## Conditional branching
 
 **Currently agent-level, not FSM-level.** Guards and code-action helpers were
