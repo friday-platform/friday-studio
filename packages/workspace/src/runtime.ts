@@ -1152,8 +1152,15 @@ export class WorkspaceRuntime {
    * FSM definition, paired with {@link completedSessionDocuments}. Used by
    * the cascade dispatcher to surface `artifactIds` and `summary` on the
    * SSE `job-complete` event after `handleSessionCompletion` has cleared
-   * the live `sessions` map. Bounded by the same FIFO pass as the docs
-   * cache (capped at 100 entries; per-runtime lifetime).
+   * the live `sessions` map.
+   *
+   * K4 (melodic-strolling-seal-pt3): GC'd by sessionId on first read from
+   * `getSessionJobResult` (the cascade-dispatch path is the sole consumer).
+   * Cap is now a defensive backstop, not the primary GC mechanism. The
+   * pt1-review-#7 band-aid raised the cap from 100 → 10_000 because age-
+   * based eviction could drop entries before their cascade read them under
+   * burst load; the consumed-on-read GC closes that race so the cap can
+   * relax back to a small bound.
    */
   private completedSessionMetadata = new Map<
     string,
@@ -2412,20 +2419,17 @@ export class WorkspaceRuntime {
             aiSummary: session.aiSummary,
             definition: engine.definition,
           });
-          // 2026-05-06 review #7 — cap was 100; the cascade-dispatch path
-          // (atlas-daemon.triggerWorkspaceSignal → getSessionJobResult)
-          // reads this map to surface { artifactIds, summary } on the SSE
-          // job-complete event. Under burst load (autopilot fanouts, cron
-          // bursts) >100 completions could push older sessions out before
-          // their cascade dispatched, silently regressing the user-visible
-          // fan-in fix to the legacy output: Document[] shape. Per-entry
-          // cost is tiny (artifact refs + summary text + def reference);
-          // 10k entries is hundreds of KB at most. The proper fix is an
-          // explicit "consumed" event from the cascade that GCs by ID
-          // rather than age — filed as a follow-up. For now, raise the
-          // cap so eviction is genuinely improbable and warn-log when it
-          // happens so we can tell if the band-aid leaks.
-          const COMPLETED_META_CAP = 10_000;
+          // K4 (melodic-strolling-seal-pt3) — consumed-on-read GC closes
+          // the cascade-vs-cap race that the pt1-review-#7 band-aid (cap
+          // 100 → 10_000) papered over. `getSessionJobResult` deletes its
+          // entry after first read, so the cascade-dispatch path is the
+          // primary GC trigger, not age-based eviction. Cap now functions
+          // as a defensive backstop for sessions whose cascade never
+          // fires (e.g. signal-spawn paths that never invoke
+          // `getSessionJobResult`); 1_000 is comfortable headroom even
+          // for autopilot bursts. Eviction still warn-logs so we can spot
+          // a backstop hit and investigate the missing consumer.
+          const COMPLETED_META_CAP = 1_000;
           while (this.completedSessionMetadata.size > COMPLETED_META_CAP) {
             const oldestKey = this.completedSessionMetadata.keys().next().value;
             if (oldestKey === undefined) break;
@@ -3458,33 +3462,46 @@ export class WorkspaceRuntime {
     if (!meta) return undefined;
 
     const artifactIds = meta.artifactRefs.map((r) => r.artifactId);
-
-    if (meta.aiSummary?.summary) {
-      return { artifactIds, summary: meta.aiSummary.summary };
-    }
-
-    // Fallback: synthesize from terminal-state document. The FSM definition
-    // tells us which document ids belong to terminal states; the docs cache
-    // gives us the actual emitted data + (post-Phase 2.A) the action's
-    // declared `summary`.
     const docs = this.completedSessionDocuments.get(sessionId) ?? [];
-    if (!meta.definition) {
-      return { artifactIds, summary: synthesizeFallbackSummary(docs) };
-    }
 
-    const terminalIds = buildDocumentTerminalIndex(meta.definition);
-    const actionIndex = buildDocumentActionIndex(meta.definition);
-    for (const doc of docs) {
-      if (!terminalIds.has(doc.id)) continue;
-      const declared = actionIndex.get(doc.id)?.summary;
-      if (declared && declared.length > 0) {
-        return { artifactIds, summary: declared };
+    let result: { artifactIds: string[]; summary: string };
+    if (meta.aiSummary?.summary) {
+      result = { artifactIds, summary: meta.aiSummary.summary };
+    } else if (!meta.definition) {
+      // Fallback: no definition → synthesize from documents.
+      result = { artifactIds, summary: synthesizeFallbackSummary(docs) };
+    } else {
+      // Fallback: synthesize from terminal-state document. The FSM
+      // definition tells us which document ids belong to terminal states;
+      // the docs cache gives us the actual emitted data + (post-Phase 2.A)
+      // the action's declared `summary`.
+      const terminalIds = buildDocumentTerminalIndex(meta.definition);
+      const actionIndex = buildDocumentActionIndex(meta.definition);
+      let resolved: { artifactIds: string[]; summary: string } | undefined;
+      for (const doc of docs) {
+        if (!terminalIds.has(doc.id)) continue;
+        const declared = actionIndex.get(doc.id)?.summary;
+        if (declared && declared.length > 0) {
+          resolved = { artifactIds, summary: declared };
+          break;
+        }
+        // Synthesize from this terminal doc's data.
+        resolved = { artifactIds, summary: synthesizeArtifactSummary(doc) };
+        break;
       }
-      // Synthesize from this terminal doc's data.
-      return { artifactIds, summary: synthesizeArtifactSummary(doc) };
+      result = resolved ?? { artifactIds, summary: synthesizeFallbackSummary(docs) };
     }
 
-    return { artifactIds, summary: synthesizeFallbackSummary(docs) };
+    // K4 (melodic-strolling-seal-pt3) — consumed-on-read GC. The cascade-
+    // dispatch path is the only consumer; once it has the result, the
+    // metadata + docs caches are dead weight. Drop them so the runtime
+    // doesn't accumulate. The age-based cap remains as a defensive
+    // backstop for sessions whose cascade never fires (signal paths that
+    // never invoke `getSessionJobResult`).
+    this.completedSessionMetadata.delete(sessionId);
+    this.completedSessionDocuments.delete(sessionId);
+
+    return result;
   }
 
   /**
