@@ -7,7 +7,6 @@
 import {
   type AgentResult as AgentSDKExecutionResult,
   type ArtifactRef,
-  ArtifactRefSchema,
   type FailInput,
   FailInputSchema,
   PLATFORM_TOOL_NAMES,
@@ -306,20 +305,11 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
  *    inputFrom is set on the action.
  * 3. Legacy `foo_result` ↔ `foo-request` document convention.
  *
- * F6 (review-2): array-form `inputFrom` joins each doc's data as
+ * Array-form `inputFrom` joins each doc's data as
  * `<id>: <data>\n\n<id2>: <data2>` — the LLM sees a concatenated
- * `## Input` block. Note: artifact-ref expansion via
- * `expandArtifactRefsInInput` runs against `prepareResult.artifactRefs`
- * (collected post-action from `results`), NOT against doc data
- * inside this `task` join. If a chained doc carries lifted-marker text
- * (e.g. from N4's `liftToolResultsForPersist`), the marker arrives as
- * literal text in the next action's prompt; the next action calls
- * `artifacts_get` to recover the bytes. The single-doc path benefits
- * from `expandArtifactRefsInInput` indirectly when prior actions emit
- * `artifactRefs` on their result; the array-form path inherits the
- * same `prepareResult.artifactRefs` carry but does not expand refs
- * from inside the joined doc data. Asymmetric but matches the lift
- * intent — consumers fetch on demand.
+ * `## Input` block. Artifact refs are collected from the selected input
+ * documents themselves and expanded before prompt construction, so single
+ * and array inputFrom use the same explicit dependency surface.
  */
 export function getInputSnapshot(
   prepareResult: PrepareResult | undefined,
@@ -1553,36 +1543,6 @@ export class FSMEngine {
           results,
           prepareResult,
         );
-
-        // After an action produces a prepareResult without artifactRefs,
-        // collect any artifactRefs from prior documents. Documents are the
-        // canonical action-output surface; context.results is only a derived
-        // projection for callers.
-        if (prepareResult && !prepareResult.artifactRefs) {
-          const seen = new Set<string>();
-          const collectedRefs: ArtifactRef[] = [];
-          for (const entry of documents.values()) {
-            const refs = entry.data.artifactRefs;
-            if (Array.isArray(refs)) {
-              for (const ref of refs) {
-                const parsed = ArtifactRefSchema.safeParse(ref);
-                if (parsed.success) {
-                  if (!seen.has(parsed.data.id)) {
-                    seen.add(parsed.data.id);
-                    collectedRefs.push(parsed.data);
-                  }
-                } else {
-                  logger.warn("Malformed artifactRef in agent result, skipping", {
-                    error: parsed.error.message,
-                  });
-                }
-              }
-            }
-          }
-          if (collectedRefs.length > 0) {
-            prepareResult = { ...prepareResult, artifactRefs: collectedRefs };
-          }
-        }
       }
 
       // Persist prepareResult so subsequent states inherit config
@@ -1627,11 +1587,7 @@ export class FSMEngine {
       (action.type === "agent" || action.type === "llm") && action.inputFrom !== undefined;
     const effectivePrepareResult: PrepareResult | undefined =
       hasExplicitInputFrom && inputSnapshot
-        ? {
-            ...inputSnapshot,
-            config: { ...prepareResult?.config, ...inputSnapshot.config },
-            ...(prepareResult?.artifactRefs ? { artifactRefs: prepareResult.artifactRefs } : {}),
-          }
+        ? { ...inputSnapshot, config: { ...prepareResult?.config, ...inputSnapshot.config } }
         : prepareResult;
 
     // Emit action started event
