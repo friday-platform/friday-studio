@@ -625,6 +625,39 @@ describe("hubspotAgent deterministic create-note", () => {
     expect.assert(result.ok);
     expect(result.data.success).toBe(false);
     expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned no usable id");
+    // Empty-string id from the SDK should be normalized to `null` in the
+    // structured payload — consumers shouldn't see an empty noteId string.
+    expect(result.data.data).toMatchObject({ noteId: null });
+  });
+
+  it("substitutes a fresh hs_timestamp when upstream sends an empty string", async () => {
+    mockBatchCreate.mockResolvedValue(createNoteSdkResponse);
+
+    await hubspotAgent.execute(
+      JSON.stringify({
+        operation: "create-note",
+        ticketId: "5501",
+        body: "<p>x</p>",
+        hsTimestamp: "",
+      }),
+      validContext(),
+    );
+
+    // Verify the SDK was called with a non-empty ISO timestamp, not the
+    // literal empty string the upstream sent. The fallback is
+    // `new Date().toISOString()` — match the ISO 8601 shape directly.
+    expect(mockBatchCreate).toHaveBeenCalledWith(
+      "notes",
+      expect.objectContaining({
+        inputs: [
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              hs_timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+            }),
+          }),
+        ],
+      }),
+    );
   });
 
   it("falls through to LLM when ticketId or body is missing", async () => {
@@ -702,5 +735,20 @@ describe("hubspotAgent deterministic noop", () => {
     expect(result.data.data).toEqual({ skipped: true });
     expect(mockBatchCreate).not.toHaveBeenCalled();
     expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("treats empty-string reason the same as missing — non-empty fallback response", async () => {
+    const prompt = JSON.stringify({ operation: "noop", reason: "" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(true);
+    // Without the empty-string guard, `?? "Noop..."` would return "" and the
+    // agent would emit an empty user-facing response.
+    expect(result.data.response).toBe("Noop — upstream signalled nothing to do.");
+    // Empty-string reason should not surface in the structured payload.
+    expect(result.data.data).toEqual({ skipped: true });
   });
 });

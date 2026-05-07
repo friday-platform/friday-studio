@@ -350,7 +350,10 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
                 {
                   properties: {
                     hs_note_body: config.body,
-                    hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
+                    // `||` (not `??`) so an empty-string upstream value still
+                    // falls back to a fresh ISO timestamp instead of being
+                    // forwarded to the SDK as "" and rejected late.
+                    hs_timestamp: config.hsTimestamp || new Date().toISOString(),
                   },
                   associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
                 },
@@ -381,7 +384,9 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
             operation: "create-note",
             success,
             data: {
-              noteId: created?.id ?? null,
+              // `|| null` (not `?? null`) so an empty-string id is normalized
+              // to null — matches the empty-string-rejection in `success` above.
+              noteId: created?.id || null,
               ticketId: config.ticketId,
               properties: created?.properties ?? {},
               numErrors: result.numErrors,
@@ -394,11 +399,16 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
           // Skip sentinel — upstream agent decided there's nothing to do
           // (e.g. empty-cron-tick path). Return success without calling
           // HubSpot so the FSM drains cleanly.
+          //
+          // `||` (not `??`) for both the response fallback and the data
+          // inclusion check — treat empty-string `reason` the same as
+          // missing, so a malformed upstream envelope can't produce an
+          // empty response or a `data.reason: ""` field.
           logger.info("Deterministic noop", { reason: config.reason });
           const data: { skipped: boolean; reason?: string } = { skipped: config.skipped ?? true };
-          if (config.reason !== undefined) data.reason = config.reason;
+          if (config.reason) data.reason = config.reason;
           return ok({
-            response: config.reason ?? "Noop — upstream signalled nothing to do.",
+            response: config.reason || "Noop — upstream signalled nothing to do.",
             operation: "noop",
             success: true,
             data,
