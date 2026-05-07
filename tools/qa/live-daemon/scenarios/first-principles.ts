@@ -86,7 +86,9 @@ async function materializeFridayHomeWithUserAgents(): Promise<{
   ].filter((value): value is string => !!value);
   const sdkPath = await (async () => {
     for (const candidate of pythonPathCandidates) {
-      if (await pathExists(join(candidate, "friday_agent_sdk"))) return candidate;
+      if (await pathExists(join(candidate, "friday_agent_sdk"))) {
+        return candidate;
+      }
     }
     return undefined;
   })();
@@ -188,7 +190,9 @@ async function answerElicitation(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ value, answeredBy: "first-principles-eval" }),
   });
-  if (!resp.ok) throw new Error(`answer elicitation ${resp.status}: ${await resp.text()}`);
+  if (!resp.ok) {
+    throw new Error(`answer elicitation ${resp.status}: ${await resp.text()}`);
+  }
   return (await resp.json()) as Record<string, unknown>;
 }
 
@@ -394,7 +398,9 @@ function hasArtifactRef(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const obj = value as Record<string, unknown>;
   if (obj.artifactRef && typeof obj.artifactRef === "object") return true;
-  if (Array.isArray(obj.artifactRefs) && obj.artifactRefs.length > 0) return true;
+  if (Array.isArray(obj.artifactRefs) && obj.artifactRefs.length > 0) {
+    return true;
+  }
   if (typeof obj.artifactId === "string") return true;
   return false;
 }
@@ -499,7 +505,9 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
       notes: [
         `job artifactIds: ${artifactIds.length}`,
         `job payload bytes: ${byteLen(jobPayload)}`,
-        `job payload contains body sentinel: ${JSON.stringify(jobPayload).includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+        `job payload contains body sentinel: ${JSON.stringify(jobPayload).includes(
+          "FIRST_PRINCIPLES_EMAIL_BODY",
+        )}`,
       ],
       metrics,
     },
@@ -1503,7 +1511,9 @@ async function runFanoutDelegateScenario(d: DaemonHandle): Promise<EvalResult[]>
         `parent step tools: ${stepToolNames.join(",") || "(missing)"}`,
         `delegate ledger events: ${delegateLedgerEvents.length}`,
         `delegate chunk events: ${delegateChunkEvents.length}`,
-        `durable payload contains body sentinel: ${durableSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+        `durable payload contains body sentinel: ${durableSerialized.includes(
+          "FIRST_PRINCIPLES_EMAIL_BODY",
+        )}`,
         `child answer bytes: ${byteLen(childAnswer)}`,
         `job payload bytes: ${jobPayloadBytes}`,
       ],
@@ -1595,11 +1605,17 @@ async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<Eval
         `refs-check output bytes: ${refsOutput ? byteLen(refsOutput) : 0}`,
         `refs-check artifact ids: ${artifactIds.length}`,
         `refs-check has legacy output field: ${"output" in (refsOutput ?? {})}`,
-        `job-tool output contains body sentinel: ${JSON.stringify(refsOutput ?? {}).includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
-        `first SSE stream contains nested body sentinel: ${firstSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+        `job-tool output contains body sentinel: ${JSON.stringify(refsOutput ?? {}).includes(
+          "FIRST_PRINCIPLES_EMAIL_BODY",
+        )}`,
+        `first SSE stream contains nested body sentinel: ${firstSerialized.includes(
+          "FIRST_PRINCIPLES_EMAIL_BODY",
+        )}`,
         `follow-up tool calls: ${secondToolNames.join(",") || "(none)"}`,
         `follow-up fan-in tool calls: ${fanInToolCalls.join(",") || "(none)"}`,
-        `follow-up contains body sentinel: ${secondSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+        `follow-up contains body sentinel: ${secondSerialized.includes(
+          "FIRST_PRINCIPLES_EMAIL_BODY",
+        )}`,
       ],
       metrics,
     },
@@ -1825,7 +1841,15 @@ async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<Ev
   const ws = await registerWorkspace(d, wsPath, { name: "First Principles Workspace Fix" });
   notes.push(`workspace ${ws.id} registered`);
 
+  const targetJobId = "skill-repair-target";
   const targetDescription = "Skill-guided workspace repair applied.";
+  const targetJobConfig = {
+    description: targetDescription,
+    triggers: [{ signal: "skill-repair-event" }],
+    config: { timeout: "1m", max_steps: 1 },
+    validation: { default: "skip" },
+    fsm: { initial: "done", states: { done: { type: "final" } } },
+  };
   const chatId = crypto.randomUUID();
   const chat = await postChatMessage(
     d,
@@ -1834,16 +1858,17 @@ async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<Ev
     [
       "Make this workspace repair now.",
       "Load @friday/workspace-api and @friday/writing-workspace-jobs first.",
-      "Read the current workspace config once, then use upsert_job to update only the refs-check job description.",
-      `Set the refs-check description exactly to: ${targetDescription}`,
-      "Preserve refs-check triggers, config, validation, and fsm exactly as they are.",
+      `Call upsert_job exactly once with id ${JSON.stringify(
+        targetJobId,
+      )} and this exact config JSON:`,
+      JSON.stringify(targetJobConfig),
       "Do not call fake inbox tools directly and do not delegate.",
     ].join("\n"),
     { timeoutMs: 12 * 60 * 1000 },
   );
   const config = await fetchWorkspaceConfig(d, ws.id);
   const jobs = (config?.jobs as Record<string, unknown> | undefined) ?? {};
-  const refsCheck = jobs["refs-check"] as Record<string, unknown> | undefined;
+  const targetJob = jobs[targetJobId] as Record<string, unknown> | undefined;
   const toolNames = chat.toolCalls.map((tc) => tc.toolName);
   const serializedToolCalls = JSON.stringify(chat.toolCalls);
   const loadedWorkspaceApi = serializedToolCalls.includes("workspace-api");
@@ -1860,13 +1885,14 @@ async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<Ev
   metrics.loadedJobsSkill = loadedJobsSkill;
   metrics.upsertJobCalled = upsertJobCalled;
   metrics.bypassTools = bypassTools;
-  metrics.refsCheckDescription = refsCheck?.description ?? null;
+  metrics.targetJobId = targetJobId;
+  metrics.targetJobDescription = targetJob?.description ?? null;
 
   const pass =
     loadedWorkspaceApi &&
     loadedJobsSkill &&
     upsertJobCalled &&
-    refsCheck?.description === targetDescription &&
+    targetJob?.description === targetDescription &&
     bypassTools.length === 0;
 
   return [
@@ -1878,7 +1904,7 @@ async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<Ev
         `loaded workspace-api: ${loadedWorkspaceApi}`,
         `loaded writing-workspace-jobs: ${loadedJobsSkill}`,
         `upsert_job called: ${upsertJobCalled}`,
-        `refs-check description: ${String(refsCheck?.description ?? "(missing)")}`,
+        `${targetJobId} description: ${String(targetJob?.description ?? "(missing)")}`,
         `bypass tools: ${bypassTools.join(",") || "(none)"}`,
       ],
       metrics,

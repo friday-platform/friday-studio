@@ -49,6 +49,15 @@ signals:
         query:
           type: string
       required: []
+  skill-repair-event:
+    provider: http
+    description: "Trigger minimal skill-guided workspace repair target."
+    config:
+      path: "/skill-repair-event"
+    schema:
+      type: object
+      properties: {}
+      required: []
   validation-contract-event:
     provider: http
     description: "Trigger structured-output validation contract scenario."
@@ -214,6 +223,21 @@ agents:
       marker BUILT_IN_ATLAS_AGENT_OK in the artifact text.
 
 jobs:
+  skill-repair-target:
+    description: "Original skill repair target."
+    triggers:
+      - signal: skill-repair-event
+    config:
+      timeout: "1m"
+      max_steps: 1
+    validation:
+      default: "skip"
+    fsm:
+      initial: done
+      states:
+        done:
+          type: final
+
   refs-check:
     description: "Fetch fake inbox messages, persist output, then consume it via inputFrom."
     triggers:
@@ -814,7 +838,13 @@ jobs:
             count: { type: number }
             firstId: { type: string }
             sawBodySentinel: { type: boolean }
-          required: ["marker", "listedTools", "count", "firstId", "sawBodySentinel"]
+          required: [
+            "marker",
+            "listedTools",
+            "count",
+            "firstId",
+            "sawBodySentinel",
+          ]
       states:
         idle:
           on:
