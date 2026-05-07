@@ -10,6 +10,14 @@
  * to fsm-engine's call site; if a future revision wants user-supplied
  * judges (e.g. `fin-judge`), this is the dispatch point — match the
  * `agentId` against a small registry / fall back to the default.
+ *
+ * K2 (pt3): the judge agent now routes through the delegate primitive,
+ * so it consumes optional `ctx.config.budget` (DelegationBudget) and
+ * `ctx.config.depth` plumbing. The current `JudgeAgentRunner` signature
+ * doesn't carry those — when the FSM-side wiring grows budget/depth fields,
+ * thread them into `ctx.config` here. Likewise `ctx.tools` is empty today;
+ * to give the judge `artifacts_get` (so it can selectively pull lifted
+ * bytes), inject the MCP server's tool map here.
  */
 
 import type { JudgeAgentRunner } from "@atlas/fsm-engine";
