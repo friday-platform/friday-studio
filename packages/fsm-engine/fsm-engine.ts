@@ -2134,8 +2134,10 @@ export class FSMEngine {
               // `complete` — which is the whole reason E1 exists.
               const hasActionTools = (action.tools?.length ?? 0) > 0;
               const llmToolChoice =
-                completeToolInjected && !recordValidationInjected && !hasActionTools
-                  ? ({ type: "tool", toolName: "complete" } as const)
+                completeToolInjected && !recordValidationInjected
+                  ? hasActionTools
+                    ? ("required" as const)
+                    : ({ type: "tool", toolName: "complete" } as const)
                   : ("auto" as const);
 
               const result = await this.options.llmProvider.call({

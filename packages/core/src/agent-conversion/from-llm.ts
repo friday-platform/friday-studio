@@ -16,7 +16,7 @@ import {
   validateProvider,
 } from "@atlas/llm";
 import type { Logger } from "@atlas/logger";
-import { jsonSchema, stepCountIs, streamText } from "ai";
+import { hasToolCall, jsonSchema, stepCountIs, streamText } from "ai";
 import { z } from "zod";
 import { composeValidationBlock } from "../agent-context/compose-blocks.ts";
 import {
@@ -179,12 +179,14 @@ export function convertLLMToAgent(
             hasRuntimeOutputSchema && !hasNonOutputTools
               ? ({ type: "tool", toolName: "complete" } as const)
               : hasRuntimeOutputSchema
-                ? "auto"
+                ? "required"
                 : config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,
           maxRetries,
-          stopWhen: stepCountIs(config.config.max_steps || 10),
+          stopWhen: hasRuntimeOutputSchema
+            ? [stepCountIs(config.config.max_steps || 10), hasToolCall("complete")]
+            : stepCountIs(config.config.max_steps || 10),
           abortSignal,
           experimental_repairToolCall: repairToolCall,
           ...(config.config.provider_options || {}),

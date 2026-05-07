@@ -101,6 +101,7 @@ interface CapturedCall {
 async function runStructuredAction(opts: {
   validate?: ValidateStrategy;
   llmToolCalls?: ToolCall[];
+  tools?: string[];
   withOutputType: boolean;
 }): Promise<{
   events: FSMEvent[];
@@ -119,6 +120,7 @@ async function runStructuredAction(opts: {
     outputTo: "result",
     ...(opts.withOutputType ? { outputType: "TicketResult" } : {}),
     ...(opts.validate !== undefined ? { validate: opts.validate } : {}),
+    ...(opts.tools !== undefined ? { tools: opts.tools } : {}),
   };
 
   const fsm: FSMDefinition = {
@@ -342,5 +344,20 @@ describe("untyped outputTo contract at FSM case 'llm'", () => {
     expect(call.tools).toContain("complete");
     expect(call.prompt).not.toContain(SENTINEL_BODY);
     expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
+  });
+
+  it("untyped outputTo + declared tools → requires a tool call so complete cannot be skipped", async () => {
+    _setSkillStorageForTest(stubSkillAdapter());
+    const { captured } = await runStructuredAction({
+      validate: "skip",
+      withOutputType: false,
+      tools: ["memory_read"],
+      llmToolCalls: [completeCall({ response: "done" })],
+    });
+
+    const call = captured[0];
+    if (!call) throw new Error("expected captured call");
+    expect(call.tools).toContain("complete");
+    expect(call.toolChoice).toBe("required");
   });
 });
