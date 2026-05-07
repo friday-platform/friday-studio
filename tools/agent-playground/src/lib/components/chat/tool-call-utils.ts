@@ -23,7 +23,7 @@ export function needsUserAction(call: ToolCallDisplay): boolean {
   if (call.toolName === "request_human_input" && isInProgress(call.state)) return true;
   if (call.toolName === "connect_service" && call.state === "output-available") return true;
   if (call.toolName === "connect_communicator" && call.state === "output-available") return true;
-  return false;
+  return call.children?.some((child) => needsUserAction(child)) ?? false;
 }
 
 export function isError(state: ToolCallDisplay["state"]): boolean {

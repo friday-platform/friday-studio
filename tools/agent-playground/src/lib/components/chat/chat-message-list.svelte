@@ -183,9 +183,9 @@
   }
 
   /**
-   * Auto-expand bursts that contain tools requiring user interaction
-   * (connect_service, display_artifact).  Runs once per burst when it
-   * first appears in the rendered list.
+   * Auto-expand bursts that contain tools requiring user interaction,
+   * including nested HITL/tool cards under a running job. Runs once per
+   * burst when it first appears in the rendered list.
    */
   $effect(() => {
     for (const msg of messages) {
