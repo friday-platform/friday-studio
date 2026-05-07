@@ -1,7 +1,13 @@
 // Domain model
 
-// JetStream adapter (exposed for direct use in migrations/tests)
-export { JetStreamElicitationStorageAdapter } from "./jetstream-adapter.ts";
+// JetStream adapter (exposed for direct use in migrations/tests).
+// `bootstrapElicitationsStream` is the single source of truth for
+// stream config — called by the bootstrap migration in production and
+// by `vitest.setup.ts` in tests.
+export {
+  bootstrapElicitationsStream,
+  JetStreamElicitationStorageAdapter,
+} from "./jetstream-adapter.ts";
 export type {
   CreateElicitationInput,
   Elicitation,

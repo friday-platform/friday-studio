@@ -78,28 +78,41 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
   private async ensureStream(): Promise<void> {
     if (this.streamEnsured) return;
     const jsm = await this.nc.jetstreamManager();
+    // Stream provisioning is the migration's job (see
+    // `apps/atlasd/src/migrations/m_20260505_120000_elicitations_bootstrap.ts`).
+    // The adapter only validates that the migration ran with the
+    // current config — specifically `allow_msg_ttl: true`, without
+    // which every per-message `Nats-TTL` publish below is rejected by
+    // the broker (`per-message ttl is disabled`) and elicitation
+    // creates silently fail.
+    //
+    // Why not create-or-update here: the previous version raced the
+    // migration. If the adapter won (any code path touching
+    // ElicitationStorage before migrations finished) it created a
+    // legacy-config stream, then `streamEnsured = true` cached that
+    // mistake for the process lifetime — recovery required a daemon
+    // bounce. Surfacing a clear error makes the ordering invariant
+    // explicit instead of papering over it.
+    let info: Awaited<ReturnType<typeof jsm.streams.info>>;
     try {
-      await jsm.streams.info(STREAM_NAME);
+      info = await jsm.streams.info(STREAM_NAME);
     } catch (err) {
-      if (!isStreamNotFound(err)) throw err;
-      await jsm.streams.add({
-        name: STREAM_NAME,
-        subjects: [`${SUBJECT_PREFIX}.>`],
-        retention: RetentionPolicy.Limits,
-        storage: StorageType.File,
-        // Coarse upper bound on retention. Per-message TTL via the
-        // `Nats-TTL` header is the fine-grained mechanism (set per
-        // publish below); `max_age` is the floor for servers that
-        // don't honor the header yet. Seven days = enough headroom
-        // for day-long jobs to outlast their elicitations and still
-        // have audit trail visible in the Activity page.
-        max_age: 7 * 24 * 60 * 60 * 1_000_000_000,
-        // NATS 2.11+ rejects the `Nats-TTL` header unless the stream
-        // opts in. The nats.js v2.29 client doesn't expose this field
-        // in its `StreamConfig` type yet — it's accepted server-side
-        // as part of the JSON config — so we cast through `unknown`.
-        allow_msg_ttl: true,
-      } as unknown as Parameters<typeof jsm.streams.add>[0]);
+      if (isStreamNotFound(err)) {
+        throw new Error(
+          `ELICITATIONS stream missing — run migration ` +
+            `m_20260505_120000_elicitations_bootstrap before using ElicitationStorage`,
+        );
+      }
+      throw err;
+    }
+    // `allow_msg_ttl` is server-side JSON only in nats.js v2.29; the
+    // typed StreamConfig doesn't expose it yet. Read via cast.
+    const cfg = info.config as unknown as { allow_msg_ttl?: boolean };
+    if (cfg.allow_msg_ttl !== true) {
+      throw new Error(
+        `ELICITATIONS stream exists but allow_msg_ttl is not enabled — ` +
+          `re-run migration m_20260505_120000_elicitations_bootstrap to update config`,
+      );
     }
     this.streamEnsured = true;
   }
@@ -375,4 +388,42 @@ function deriveExpired(elicitation: Elicitation, now: Date): Elicitation {
   if (elicitation.status !== "pending") return elicitation;
   if (new Date(elicitation.expiresAt).getTime() > now.getTime()) return elicitation;
   return { ...elicitation, status: "expired" };
+}
+
+/**
+ * Provision the ELICITATIONS stream with the current desired config —
+ * single source of truth shared by the bootstrap migration
+ * (`apps/atlasd/src/migrations/m_20260505_120000_elicitations_bootstrap.ts`)
+ * and the test setup (`vitest.setup.ts`).
+ *
+ * Idempotent: creates if missing, otherwise updates in place so a
+ * legacy daemon picks up `allow_msg_ttl: true`. Production callers run
+ * this exactly once at startup (the migration) before any code path
+ * touches `ElicitationStorage`. The adapter then only validates — see
+ * `JetStreamElicitationStorageAdapter.ensureStream`.
+ */
+export async function bootstrapElicitationsStream(nc: NatsConnection): Promise<void> {
+  const jsm = await nc.jetstreamManager();
+  // The nats.js v2.29 StreamConfig type doesn't expose `allow_msg_ttl`
+  // (server-side JSON only) — cast through unknown. NATS 2.11+ rejects
+  // the `Nats-TTL` header without this flag.
+  const cfg = {
+    name: STREAM_NAME,
+    subjects: [`${SUBJECT_PREFIX}.>`],
+    retention: RetentionPolicy.Limits,
+    storage: StorageType.File,
+    // Coarse upper-bound retention. The runtime adapter publishes with
+    // per-message `Nats-TTL` headers derived from each elicitation's
+    // `expiresAt`; this max_age caps how long declined/answered
+    // envelopes hang around for the Activity page audit feed.
+    max_age: 7 * 24 * 60 * 60 * 1_000_000_000,
+    allow_msg_ttl: true,
+  } as unknown as Parameters<typeof jsm.streams.add>[0];
+  try {
+    await jsm.streams.info(STREAM_NAME);
+    await jsm.streams.update(STREAM_NAME, cfg);
+  } catch (err) {
+    if (!isStreamNotFound(err)) throw err;
+    await jsm.streams.add(cfg);
+  }
 }

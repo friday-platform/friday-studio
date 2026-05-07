@@ -18,12 +18,16 @@
  */
 
 import type { NatsConnection } from "nats";
-import { beforeAll, describe, expect, it } from "vitest";
+import { RetentionPolicy, StorageType } from "nats";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 // Re-use the worker-shared NATS server (vitest.setup.ts). Each test
 // keys its data by a unique workspaceId so writes don't collide with
 // other suites sharing the same KV bucket / stream.
 import { getTestNc } from "../../../../vitest.setup.ts";
-import { JetStreamElicitationStorageAdapter } from "./jetstream-adapter.ts";
+import {
+  bootstrapElicitationsStream,
+  JetStreamElicitationStorageAdapter,
+} from "./jetstream-adapter.ts";
 import type { CreateElicitationInput } from "./model.ts";
 
 let nc: NatsConnection;
@@ -387,5 +391,82 @@ describe("JetStreamElicitationStorageAdapter — read-time derivation", () => {
     const expired = await adapter.list({ workspaceId: wsTag, status: "expired" });
     expect.assert(expired.ok === true);
     expect(expired.data.map((e) => e.id)).toContain(stale.data.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C2 — ensureStream config-drift / migration-race guard
+// ---------------------------------------------------------------------------
+//
+// The adapter no longer self-creates the ELICITATIONS stream — it
+// validates the migration ran. These tests exercise the failure paths:
+// missing stream and config drift (allow_msg_ttl: false). Both must
+// surface a clear error pointing at the migration instead of silently
+// succeeding (and then having every publish rejected by the broker).
+//
+// Each test deletes the global ELICITATIONS stream up front so the
+// shared test-server state is well-defined. `afterEach` re-runs the
+// bootstrap helper so subsequent suites inherit a healthy stream.
+
+describe("JetStreamElicitationStorageAdapter — ensureStream validation (C2)", () => {
+  afterEach(async () => {
+    // Restore the healthy stream config so other suites can keep using
+    // the worker-shared server.
+    await bootstrapElicitationsStream(nc);
+  });
+
+  it("errors clearly when the ELICITATIONS stream is missing entirely", async () => {
+    const jsm = await nc.jetstreamManager();
+    await jsm.streams.delete("ELICITATIONS");
+
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const result = await adapter.create(baseInput({ workspaceId: "ws-no-stream" }));
+    expect(result.ok).toBe(false);
+    expect.assert(result.ok === false);
+    // The error must name the migration so an operator knows the fix.
+    expect(result.error).toMatch(/ELICITATIONS stream missing/);
+    expect(result.error).toMatch(/m_20260505_120000_elicitations_bootstrap/);
+  });
+
+  it("errors clearly when the stream exists with allow_msg_ttl disabled (legacy config)", async () => {
+    // Simulate a legacy daemon that created the stream before the
+    // allow_msg_ttl flag existed. Drop and recreate without the flag.
+    const jsm = await nc.jetstreamManager();
+    await jsm.streams.delete("ELICITATIONS");
+    await jsm.streams.add({
+      name: "ELICITATIONS",
+      subjects: ["elicitations.>"],
+      retention: RetentionPolicy.Limits,
+      storage: StorageType.File,
+      max_age: 7 * 24 * 60 * 60 * 1_000_000_000,
+      // Note: NO allow_msg_ttl flag — this is the C2 race outcome.
+    });
+
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const result = await adapter.create(baseInput({ workspaceId: "ws-legacy-cfg" }));
+    expect(result.ok).toBe(false);
+    expect.assert(result.ok === false);
+    expect(result.error).toMatch(/allow_msg_ttl is not enabled/);
+    expect(result.error).toMatch(/m_20260505_120000_elicitations_bootstrap/);
+  });
+
+  it("succeeds after bootstrapElicitationsStream heals a legacy-config stream", async () => {
+    // Legacy stream first.
+    const jsm = await nc.jetstreamManager();
+    await jsm.streams.delete("ELICITATIONS");
+    await jsm.streams.add({
+      name: "ELICITATIONS",
+      subjects: ["elicitations.>"],
+      retention: RetentionPolicy.Limits,
+      storage: StorageType.File,
+      max_age: 7 * 24 * 60 * 60 * 1_000_000_000,
+    });
+
+    // Run the bootstrap helper — it should `streams.update` in-place
+    // to add allow_msg_ttl: true. Adapter creates then succeed.
+    await bootstrapElicitationsStream(nc);
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const result = await adapter.create(baseInput({ workspaceId: "ws-healed" }));
+    expect(result.ok).toBe(true);
   });
 });

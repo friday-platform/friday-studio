@@ -21,6 +21,7 @@
 
 import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
+import { bootstrapElicitationsStream } from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { startNatsTestServer, type TestNatsServer } from "@atlas/core/test-utils/nats-test-server";
 import { initDocumentStore } from "@atlas/document-store";
@@ -50,6 +51,11 @@ beforeAll(async () => {
   initDocumentStore(nc);
   initSkillStorage(nc);
   initWorkspaceStateStorage(nc);
+  // Mirror the production bootstrap migration so the JetStream
+  // elicitation adapter's validate-only ensureStream check passes.
+  // The adapter no longer self-creates the ELICITATIONS stream — see
+  // `packages/core/src/elicitations/jetstream-adapter.ts`.
+  await bootstrapElicitationsStream(nc);
 }, 60_000);
 
 afterAll(async () => {
