@@ -9,6 +9,7 @@ import MarkdownIt from "markdown-it";
 import { z } from "zod";
 import { parseOperationConfig } from "../shared/operation-parser.ts";
 import {
+  batchCreateCrmObjects,
   createCreateCrmObjectsTool,
   createGetConversationThreadsTool,
   createGetCrmObjectsTool,
@@ -37,10 +38,44 @@ const SendThreadCommentOpSchema = z.object({
 });
 
 /**
+ * Schema for the deterministic create-note operation.
+ *
+ * Deterministic equivalent of asking the LLM to call `create_crm_objects`
+ * with `objectType: "notes"` and a notes↔tickets association. Empty
+ * `ticketId` or `body` fail-parse here (rather than late at the SDK)
+ * — malformed envelopes from LLM-authored upstreams get caught early.
+ */
+const CreateNoteOpSchema = z.object({
+  operation: z.literal("create-note"),
+  ticketId: z.string().min(1),
+  body: z.string().min(1),
+  hsTimestamp: z.string().optional(),
+});
+
+/**
+ * Schema for the deterministic noop operation.
+ *
+ * Lets upstream agents emit a "do-nothing" envelope when they detect a
+ * skip sentinel (e.g. the empty-cron-tick path where ticket-picker
+ * returns `{done: true}`). The dispatcher returns success without
+ * touching HubSpot — replaces the prior pattern of relying on the LLM
+ * to recognize a noop instruction in its prompt.
+ */
+const NoopOpSchema = z.object({
+  operation: z.literal("noop"),
+  reason: z.string().optional(),
+  skipped: z.boolean().optional(),
+});
+
+/**
  * Discriminated union of all deterministic HubSpot operations.
  * New operations are added as additional variants.
  */
-const HubSpotOperationSchema = z.discriminatedUnion("operation", [SendThreadCommentOpSchema]);
+const HubSpotOperationSchema = z.discriminatedUnion("operation", [
+  SendThreadCommentOpSchema,
+  CreateNoteOpSchema,
+  NoopOpSchema,
+]);
 
 /**
  * Output schema for the HubSpot agent.
@@ -298,8 +333,113 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
             data: result,
           });
         }
-        default:
-          return err(`Unknown operation: ${config.operation}`);
+
+        case "create-note": {
+          // Reuse the same SDK call + association-id lookup + response
+          // normalization as the LLM path. `batchCreateCrmObjects` is the
+          // plain helper that the LLM-facing tool also delegates to.
+          const client = new Client({
+            accessToken,
+            numberOfApiCallRetries: 3,
+            limiterOptions: DEFAULT_LIMITER_OPTIONS,
+          });
+
+          const result = await batchCreateCrmObjects(
+            client,
+            {
+              objectType: "notes",
+              records: [
+                {
+                  properties: {
+                    hs_note_body: config.body,
+                    // `||` (not `??`) so an empty-string upstream value still
+                    // falls back to a fresh ISO timestamp instead of being
+                    // forwarded to the SDK as "" and rejected late.
+                    hs_timestamp: config.hsTimestamp || new Date().toISOString(),
+                  },
+                  associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
+                },
+              ],
+            },
+            abortSignal,
+          );
+
+          if ("error" in result) {
+            return err(`create-note failed (ticket ${config.ticketId}): ${result.error}`);
+          }
+          // Defend against future changes to DEFAULT_ASSOCIATION_TYPES — if
+          // notes↔tickets ever drops out of the lookup table, the helper
+          // would skip the association silently and return a successful
+          // batch with an orphaned note. Without this guard the response
+          // would say "Note created on ticket X" while the link is missing.
+          if (result.skippedAssociations) {
+            return err(
+              `create-note failed (ticket ${config.ticketId}): ${result.skippedAssociations}`,
+            );
+          }
+
+          const created = result.results[0];
+          const hasId = Boolean(created?.id);
+          // For our single-record batch, a returned id IS success — even if
+          // HubSpot also reports `numErrors > 0` (which would have to come
+          // from a partial-success on inputs we didn't send). Without this
+          // priority, the response would say "returned N errors" while
+          // `data.noteId` carried a real created id — a dishonest response.
+          const success = hasId;
+          const hasErrors = result.numErrors > 0;
+          let response: string;
+          if (success) {
+            response = `CRM Note ${created?.id} created on ticket ${config.ticketId}`;
+          } else if (hasErrors) {
+            const noun = result.numErrors === 1 ? "error" : "errors";
+            response = `CRM Note creation on ticket ${config.ticketId} returned ${result.numErrors} ${noun}`;
+          } else {
+            response = `CRM Note creation on ticket ${config.ticketId} returned no usable id`;
+          }
+          return ok({
+            response,
+            operation: "create-note",
+            success,
+            data: {
+              // `|| null` (not `?? null`) so an empty-string id is normalized
+              // to null — matches the empty-string-rejection in `success` above.
+              noteId: created?.id || null,
+              ticketId: config.ticketId,
+              properties: created?.properties ?? {},
+              numErrors: result.numErrors,
+              errors: result.errors,
+            },
+          });
+        }
+
+        case "noop": {
+          // Skip sentinel — upstream agent decided there's nothing to do
+          // (e.g. empty-cron-tick path). Return success without calling
+          // HubSpot so the FSM drains cleanly.
+          //
+          // `||` (not `??`) for both the response fallback and the data
+          // inclusion check — treat empty-string `reason` the same as
+          // missing, so a malformed upstream envelope can't produce an
+          // empty response or a `data.reason: ""` field.
+          logger.info("Deterministic noop", { reason: config.reason });
+          const data: { skipped: boolean; reason?: string } = { skipped: config.skipped ?? true };
+          if (config.reason) data.reason = config.reason;
+          return ok({
+            response: config.reason || "Noop — upstream signalled nothing to do.",
+            operation: "noop",
+            success: true,
+            data,
+          });
+        }
+
+        default: {
+          // Exhaustive guard: assigning to `never` errors at compile time
+          // if HubSpotOperationSchema gains a new variant without a case.
+          // At runtime this branch is unreachable; `_exhaustive` is unused.
+          const _exhaustive: never = config;
+          void _exhaustive;
+          return err("Unknown operation in deterministic dispatch");
+        }
       }
     }
 
