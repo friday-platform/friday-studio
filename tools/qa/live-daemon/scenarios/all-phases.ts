@@ -38,6 +38,7 @@ import {
   type DaemonHandle,
   ensureCredentialsLoaded,
   fetchSessionEvents,
+  fetchSessionView,
   HARNESS_PATHS,
   listArtifactsForSession,
   registerWorkspace,
@@ -277,6 +278,16 @@ async function runPhase2BC4_11_baseline(d: DaemonHandle): Promise<PhaseResult[]>
     metrics.supervisorOutputTokens = events.totalUsage.outputTokens;
     metrics.cacheReadTokens = events.totalUsage.cacheReadTokens;
     metrics.validatorRunCount = events.validatorRunCount;
+
+    // J1 (melodic-strolling-seal-pt3): the reducer now propagates
+    // `step:complete.usage` onto `AgentBlock.usage`. Verify the
+    // projection surfaces it end-to-end so consumers (Activity page,
+    // session diagnostics) see real token counts.
+    const view = await fetchSessionView(d, t.sessionId);
+    const blocksWithUsage = (view.agentBlocks ?? []).filter((b) => (b.usage?.inputTokens ?? 0) > 0);
+    const firstUsage = view.agentBlocks?.[0]?.usage;
+    metrics.agentBlocksWithUsage = blocksWithUsage.length;
+    metrics.firstAgentBlockUsage = firstUsage;
     // Phase 4.B — the standard inbox-corpus-qa workspace's triage action
     // declares only read-only tools but has no `outputType`, so the
     // classifier (validate-classifier.ts rule 5: free-form-prose) falls
@@ -345,6 +356,19 @@ async function runPhase2BC4_11_baseline(d: DaemonHandle): Promise<PhaseResult[]>
           `tool calls captured: ${events.toolCallCount}`,
         ],
         metrics: { totalUsage: events.totalUsage, toolCallCount: events.toolCallCount },
+      },
+      {
+        // J1 of melodic-strolling-seal-pt3 — the reducer used to drop
+        // `step:complete.usage`, leaving downstream UI showing zero
+        // tokens even when the underlying step reported usage. Pass
+        // condition: at least one AgentBlock has inputTokens > 0.
+        phase: "J1 — SessionView agentBlocks[].usage propagated from step:complete",
+        pass: blocksWithUsage.length >= 1,
+        notes: [
+          `agentBlocks with usage.inputTokens>0: ${blocksWithUsage.length}`,
+          `first agentBlock usage: ${JSON.stringify(firstUsage ?? null)}`,
+        ],
+        metrics: { agentBlocksWithUsage: blocksWithUsage.length, firstAgentBlockUsage: firstUsage },
       },
     ];
   } catch (err) {

@@ -446,9 +446,10 @@ interface MaybeStepCompleteEvent {
 
 /**
  * Walk raw session events for usage aggregation + validator behavior
- * counts. The SessionView reducer drops `usage` from `step:complete`
- * (only `toolCalls`/`output`/`reasoning` survive into AgentBlock), so we
- * have to consume the raw event stream.
+ * counts. Post-J1 (melodic-strolling-seal-pt3) the SessionView reducer
+ * also surfaces `usage` onto `AgentBlock`, but we keep consuming the raw
+ * event stream here to retain access to other fields the projection
+ * collapses (e.g. per-step verdict shapes).
  *
  * `GET /api/sessions/:id/stream` opens an SSE feed backed by the
  * `sessions.<id>.events` JetStream subject with `deliverAll() +
@@ -609,6 +610,46 @@ export async function currentGitSha(): Promise<string> {
   } catch {
     return "unknown";
   }
+}
+
+/**
+ * Narrowed projection of `GET /api/sessions/:id` (the SessionView). Only
+ * the fields the harness asserts on are typed; unknown extras pass
+ * through. J1 of melodic-strolling-seal-pt3 added `usage` to AgentBlock
+ * — the harness asserts the post-reducer projection populates it from
+ * `step:complete.usage` end-to-end.
+ */
+export interface SessionViewAgentBlock {
+  agentName?: string;
+  status?: string;
+  usage?: StepUsage;
+}
+
+export interface SessionViewProjection {
+  sessionId?: string;
+  status?: string;
+  agentBlocks?: SessionViewAgentBlock[];
+}
+
+/**
+ * Fetch the SessionView projection (`GET /api/sessions/:id`). Returns the
+ * raw JSON body narrowed to the fields the harness uses. Throws on any
+ * non-2xx response other than 404, which yields an empty projection so
+ * callers can decide whether the absence is fatal in their context.
+ */
+export async function fetchSessionView(
+  d: DaemonHandle,
+  sessionId: string,
+): Promise<SessionViewProjection> {
+  const resp = await fetch(`${d.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`);
+  if (resp.status === 404) {
+    return {};
+  }
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`GET /api/sessions/${sessionId} failed: ${resp.status} ${text}`);
+  }
+  return (await resp.json()) as SessionViewProjection;
 }
 
 export async function listArtifactsForSession(

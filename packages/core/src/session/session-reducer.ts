@@ -191,6 +191,10 @@ function reduceStepComplete(
       output: event.output,
       artifactRefs: event.artifactRefs,
       error: event.error,
+      // J1: surface step:complete.usage on the placeholder block too so
+      // out-of-order completions (no preceding step:start) don't drop
+      // token counts that downstream UI relies on.
+      usage: event.usage,
     };
     return { ...view, agentBlocks: [...view.agentBlocks, placeholder] };
   }
@@ -208,6 +212,10 @@ function reduceStepComplete(
     artifactRefs: event.artifactRefs,
     error: event.error,
     ephemeral: undefined, // clear ephemeral on completion
+    // J1: aggregate step:complete.usage onto the parent agentBlock.
+    // Prefer the just-arrived event's usage; fall back to any value
+    // already present (mid-flight reducer replays should not regress).
+    usage: event.usage ?? existing.usage,
   };
   const blocks = [...view.agentBlocks];
   blocks[idx] = updated;

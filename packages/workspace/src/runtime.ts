@@ -2742,6 +2742,13 @@ export class WorkspaceRuntime {
           reasoning: result.ok ? result.reasoning : undefined,
           output: completeCall?.args ?? (result.ok ? result.data : undefined),
           artifactRefs: result.ok ? result.artifactRefs : undefined,
+          // H4 (melodic-strolling-seal-pt3 J1): pipe through the agent
+          // executor's `usage` so the `step:complete` mapper can persist
+          // it. Mirrors the FSM `case "llm"` side-channel population in
+          // fsm-engine.ts (~line 2263). Without this, bundled agents
+          // (workspace-chat, etc.) silently drop token counts even when
+          // their underlying provider call returned `usage`.
+          ...(result.ok && result.usage && { usage: result.usage }),
         };
         sideChannel.set(key, agentResultData);
       }

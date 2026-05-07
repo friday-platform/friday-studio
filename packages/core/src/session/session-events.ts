@@ -309,6 +309,14 @@ export const AgentBlockSchema = z.object({
   artifactRefs: z.array(z.unknown()).optional(),
   error: z.string().optional(),
   ephemeral: z.array(z.custom<AtlasUIMessageChunk>(() => true)).optional(),
+  /**
+   * LLM token usage aggregated from this block's `step:complete` event.
+   * Present when the underlying step carried `usage` (LLM actions and
+   * bundled agents that surface provider usage); absent for pure-agent
+   * steps. Mirrors {@link StepUsageSchema}. J1 of melodic-strolling-seal-pt3
+   * — closes the reducer drop that left this field invisible to UI surfaces.
+   */
+  usage: StepUsageSchema.optional(),
 });
 export type AgentBlock = z.infer<typeof AgentBlockSchema>;
 
