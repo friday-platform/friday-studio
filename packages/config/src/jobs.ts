@@ -65,7 +65,20 @@ const JobExecutionAgentDetailedSchema = z.strictObject({
   nickname: z.string().optional().describe("Optional nickname for reference"),
   context: AgentContextSchema.optional(),
   dependencies: z.array(z.string()).optional().describe("Explicit agent dependencies"),
-  tools: AllowDenyFilterSchema.optional().describe("Tool access override for this agent"),
+  /**
+   * TODO(pt3 L4 followup): Schema accepts a per-agent allow/deny filter but
+   * the execution-to-FSM compiler (`packages/workspace/src/execution-to-fsm.ts`)
+   * synthesizes `AgentAction` entries that don't carry it through, and
+   * `AgentActionSchema` in `@atlas/fsm-engine` has no matching `tools` field
+   * either. Wiring this end-to-end requires (1) adding a `tools` field to
+   * `AgentActionSchema`, (2) plumbing it through `compileExecutionToFsm`,
+   * and (3) honoring it at agent-invocation time in the FSM engine. Until
+   * then, this field parses but has no runtime effect.
+   */
+  tools: AllowDenyFilterSchema.optional().describe(
+    "Tool access override for this agent. NOTE: declarative only — not " +
+      "enforced at runtime yet (see TODO above).",
+  ),
 });
 
 export const JobExecutionAgentSchema = z.union([
