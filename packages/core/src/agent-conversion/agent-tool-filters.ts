@@ -26,6 +26,15 @@ export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
   "memory_save",
   "memory_read",
   "memory_remove",
+  // N5 (melodic-strolling-seal-pt3) — fs_write_file uses workspaceId
+  // to resolve relative paths against the workspace working directory
+  // (`<friday-home>/workspaces/<workspaceId>/`). Pre-N5, relative paths
+  // resolved against `process.cwd()` (the daemon's launch dir), so a
+  // workspace's auto-triage agent writing `triage-reports/triage-*.md`
+  // landed in the worktree on dev-mode daemons. Other fs_* tools
+  // (fs_read_file, fs_glob, fs_grep, fs_list_files) have the same
+  // ambient-cwd behavior; tracking as N5-followup.
+  "fs_write_file",
   // Phase 12.C — request_tool_access reads sessionId, actionId, jobPermissions,
   // and workspacePermissions from the wrapper to resolve effective bypass at
   // call time. Without scope injection it has no way to see permissions

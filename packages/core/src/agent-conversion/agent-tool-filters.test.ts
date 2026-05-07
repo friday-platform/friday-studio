@@ -125,19 +125,22 @@ describe("allowlist/wrap-list invariant", () => {
     }
   });
 
-  it("SCOPE_INJECTED holds only tools that need workspace-id injection", () => {
+  it("SCOPE_INJECTED holds tools that need workspace-id injection (incl. fs_write_file post-N5)", () => {
     // These tools are scope-bound to a workspace at the runtime layer; the
-    // LLM never passes workspaceId. Other LLM-allowed tools (bash, fs_*,
-    // csv) operate on the host directly and don't carry
-    // workspace identity.
+    // LLM never passes workspaceId.
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("memory_save")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("state_append")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("webfetch")).toBe(true);
-    // These are explicitly NOT scope-injected — they don't operate on
-    // workspace-scoped state.
-    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("fs_write_file")).toBe(false);
+    // N5 (melodic-strolling-seal-pt3): fs_write_file now scope-bound so
+    // relative paths resolve to the workspace working dir instead of
+    // the daemon's process.cwd(). Pre-N5 this was `false`.
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("fs_write_file")).toBe(true);
+    // bash + the fs_* read-side tools remain non-scope-injected. Reading
+    // is host-wide; bash is host-wide. N5-followup may add fs_read_file
+    // / fs_glob / fs_grep / fs_list_files for symmetry.
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("bash")).toBe(false);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("fs_read_file")).toBe(false);
   });
 });
 

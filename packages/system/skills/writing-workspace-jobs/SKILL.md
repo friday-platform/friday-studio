@@ -626,22 +626,66 @@ tool but the prompt is ambiguous, the agent now genuinely cannot send.
 ## Auto-injected built-ins for FSM `type: llm` actions
 
 You do **not** need to declare these in the action's `tools:` array;
-they're always available:
+they're **always** available regardless of what you put in `tools:`.
+The `tools:` field narrows MCP-server tools (workspace-declared
+external integrations); platform tools are ambient and not subject to
+that narrowing.
 
-- Memory: `memory_save`, `memory_read`, `memory_remove`
-- Artifacts: `artifacts_create`, `artifacts_get`, `parse_artifact`,
-  `display_artifact`
-- Filesystem (sandboxed): `fs_glob`, `fs_read_file`, `fs_write_file`,
-  `fs_list_files`, `fs_grep`
-- Permissions: `request_tool_access` (see below)
+**Memory** — `memory_save`, `memory_read`, `memory_remove`.
+**Artifacts** — `artifacts_create`, `artifacts_get`, `artifacts_update`,
+`artifacts_delete`, `artifacts_get_by_chat`, `parse_artifact`,
+`display_artifact`.
+**Filesystem** — `fs_read_file`, `fs_write_file`, `fs_list_files`,
+`fs_glob`, `fs_grep`. **Working directory: relative paths resolve
+to the workspace dir** (`~/.atlas/workspaces/<workspaceId>/`).
+Absolute paths still work but pin the file outside the workspace —
+prefer relative for portability and so `git`-style backups capture
+your output.
+**Shell + data** — `bash`, `csv`, `webfetch`. `bash` is workspace-CWD-
+scoped (same default as `fs_write_file`).
+**State** — `state_append`, `state_filter`, `state_lookup`.
+**Permissions** — `request_tool_access` (see below).
+**Skills** — `load_skill` (loads a versioned skill body into context).
+**Delegation** — `delegate` (spawn a sub-agent — see "Delegating to a
+sub-agent from an FSM action" below).
 
 Recent memory entries auto-prepend to the action's prompt. Recent
 session artifacts auto-inject as `<retrieved_content>` envelopes. No
 boilerplate.
 
-If you do declare `tools: [...]`, the built-ins still work — the
-allowlist narrows the **non-built-in** catalog. To genuinely lock the
-action down to "memory only," declare `tools: []`.
+If you declare `tools: [...]`, the built-ins still work — the
+allowlist narrows the **MCP-server** catalog only. To genuinely lock
+an action down to "memory only," you can't (today) — the platform
+tool surface is fixed. Long-term: a `platform_tools: [...]` opt-in is
+on the roadmap (see pt3 N7-followup).
+
+### Why your action might emit nothing despite tool calls succeeding
+
+When an LLM action ends on a tool call (e.g., the LLM called
+`fs_write_file` then `memory_save` and decided it was done), the AI
+SDK's `result.text` returns empty — the final assistant message had
+no text part. The runtime captures `text` and wraps it as
+`{response: text}` in the action's `outputTo` document; if `text`
+is empty the document body is `{"response": ""}` even though all the
+work succeeded.
+
+Two ways to avoid this:
+
+1. **Declare `outputType: <DocumentType>` on the action.** This pins
+   `toolChoice` to a `complete` tool that the LLM is required to
+   call with structured args; the args become your output. Robust
+   and makes the contract explicit. Works for any structured shape.
+
+2. **Engineer the prompt to emit text after the last tool call.** Be
+   explicit: "After saving the file, your final assistant message
+   MUST be the markdown report itself, not a tool call. Do not end
+   on a `tool_use` block." This is fragile across model versions and
+   easy to regress; option 1 is preferred.
+
+A defensive runtime fallback (post-N2) recovers the latest text from
+earlier steps if the final step is text-less, but it can't recover
+text the LLM never emitted at all. If the LLM operated entirely in
+tool-call mode, the artifact body will be empty.
 
 ## Validation strategies
 

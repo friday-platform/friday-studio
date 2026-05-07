@@ -2,6 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import process from "node:process";
 import { isErrnoException } from "@atlas/utils";
+import { getFridayHome } from "@atlas/utils/paths.server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createSuccessResponse } from "../utils.ts";
@@ -14,7 +15,8 @@ export function registerWriteTool(server: McpServer) {
 
 Usage:
 - This tool will overwrite the existing file if there is one at the provided path
-- The file path can be absolute or relative to the current working directory
+- Relative paths resolve to the workspace working directory (~/.atlas/workspaces/<workspaceId>/)
+  when invoked from a workspace context; absolute paths are honored as-is
 - Parent directories will be created automatically if they don't exist
 - Returns information about whether the file was created or overwritten
 - File size in bytes is calculated and returned in metadata
@@ -24,15 +26,36 @@ Usage:
       inputSchema: {
         filePath: z
           .string()
-          .describe("The path to the file to write (can be absolute or relative)"),
+          .describe(
+            "The path to the file to write. Relative paths resolve to the workspace " +
+              "working directory; absolute paths are honored as-is.",
+          ),
         content: z.string().describe("The content to write to the file"),
+        // N5 (melodic-strolling-seal-pt3): scope-injected by
+        // `wrapPlatformToolsWithScope` from the FSM/orchestrator runtime.
+        // Authors do NOT pass this; the runtime overwrites any
+        // caller-supplied value (defense-in-depth). When absent (CLI
+        // invocations, ad-hoc test calls) we fall back to `process.cwd()`
+        // matching the pre-N5 behavior.
+        workspaceId: z
+          .string()
+          .optional()
+          .describe(
+            "Runtime-injected. The workspace this call belongs to; the tool resolves " +
+              "relative paths against `<friday-home>/workspaces/<workspaceId>/`.",
+          ),
       },
     },
     async (params) => {
-      // Resolve file path
+      // N5 — relative path base = workspace working directory when we
+      // have a workspaceId, else the daemon's cwd. Absolute paths bypass
+      // this entirely.
+      const baseDir = params.workspaceId
+        ? path.join(getFridayHome(), "workspaces", params.workspaceId)
+        : process.cwd();
       const filepath = path.isAbsolute(params.filePath)
         ? params.filePath
-        : path.join(process.cwd(), params.filePath);
+        : path.join(baseDir, params.filePath);
 
       // Check if file exists
       let exists = false;
