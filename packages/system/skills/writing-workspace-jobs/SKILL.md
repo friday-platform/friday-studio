@@ -690,6 +690,151 @@ final `answer` (and the chunk stream for live UI). Bounded by:
 - Sequential pipelines (fetch → format → emit) → chain states with
   `outputTo` → `inputFrom`. No delegation needed.
 
+## Parallelizing per-item work via delegate fan-out
+
+Per-item workloads (triage N emails, classify N tickets, score N
+candidates) that today run sequentially in one LLM action collapse
+to roughly the cost of a single batch when you fan out via
+`delegate`. The parent emits one action that spawns K children in
+parallel; each child handles a chunk of items in its own isolated
+context; the parent aggregates only the final summaries. Target on
+N>10 per-item workloads: ~70% wall-time reduction vs. the
+single-action sequential shape.
+
+### When to fan out
+
+- **N > ~10 items**, and per-item work is independent (no item
+  reads another item's output).
+- **Item ordering doesn't matter** — children run concurrently and
+  return in arbitrary order.
+- **Per-item work is non-trivial** (each item needs LLM judgment +
+  ≥1 tool call). For pure-formatting passes, the per-call delegate
+  overhead exceeds the benefit.
+
+Don't fan out when:
+- N ≤ ~5 — sequential is faster end-to-end (single context warmup,
+  no aggregation step).
+- Items are dependent (item N's classification depends on items
+  1..N-1) — must run sequential.
+- Per-item work is sub-second (overhead dominates).
+
+### The pattern
+
+One `type: llm` parent action lists `delegate` in its `tools`. The
+prompt instructs the LLM to chunk the input into K batches and call
+`delegate` K times in parallel — modern LLMs (Claude Sonnet 4.6+)
+emit parallel `tool_use` blocks in a single turn, so the K children
+run concurrently. Each child runs in an isolated context with its
+own tool allowlist; the parent's message buffer only sees each
+child's final `answer`. The parent then emits one structured
+aggregate doc.
+
+### Worked example: triage 50 emails as 5 delegates of 10 each
+
+```yaml
+agents:
+  triage-fanout:
+    type: llm
+    config:
+      provider: anthropic
+      model: claude-sonnet-4-6
+      prompt: |
+        You receive a list of N emails on the signal payload. Your
+        job: classify and act on each one.
+
+        If N > 10, split the list into batches of ~10 and call
+        `delegate` once per batch IN PARALLEL (emit all delegate
+        tool_use blocks in a single response — do not await one
+        before issuing the next). Each child receives one batch and
+        the same per-item instructions; it returns a JSON digest of
+        per-email outcomes.
+
+        After all children return, aggregate their digests into one
+        structured `triage-summary` doc: total processed, counts by
+        outcome, ids of items needing manual review.
+      tools:
+        - delegate
+        - google-gmail/search_gmail_messages       # for the parent's pre-scan
+      delegation:
+        # Child tool surface — children inherit parent allowlist
+        # plus these. Per-child budgets enforced by the runtime.
+        child_tools:
+          - google-gmail/get_gmail_message_content
+          - google-gmail/batch_modify_gmail_message_labels
+
+jobs:
+  auto-triage:
+    triggers:
+      - signal: triage-now
+    delegation:
+      max_depth: 1               # children cannot themselves delegate
+      max_steps_per_call: 12     # ~10 items + a couple of tool retries
+      max_input_tokens: 40000    # bounded per child
+      max_output_tokens: 4000    # digest only, not per-email prose
+      max_wall_time_ms: 60000    # 60s per child; runaway → clean failure
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on: { triage-now: { target: fanout } }
+        fanout:
+          entry:
+            - type: agent
+              agentId: triage-fanout
+              outputTo: triage-summary
+              outputType: triage-summary
+          type: final
+```
+
+Children inherit workspace validation defaults (see "Validation
+strategies" above). Each child's mutating Gmail call gets the same
+`self`-validation pass it would have gotten in the sequential
+shape; the runtime's auto-classifier picks per-action.
+
+### Phase 8 budgets cross-reference
+
+Each child runs under the resolved `delegation:` budget — workspace
+default merged with per-job override (per-field, job wins). Knobs:
+
+- `max_depth` — children can't recursively fan out (default 1).
+- `max_steps_per_call` — agent loop iterations per child.
+- `max_input_tokens` / `max_output_tokens` — token bounds per
+  child.
+- `max_wall_time_ms` — wall-clock cap per child. A runaway child
+  returns `{ ok: false, reason: "budget_exhausted: max_wall_time_ms" }`
+  to the parent, which can choose to record the failure in the
+  aggregate or fail the step. The other children still complete.
+
+Full schema and merge precedence: see the `delegation:` section in
+the `workspace-api` skill.
+
+### Validation defaults
+
+Children inherit the workspace and job-level `validation:` config
+the same way any FSM action does — see "Validation strategies"
+above. The parent aggregator action is typically `validate: skip`
+(deterministic merge of structured child digests into one doc); the
+children's per-item mutating actions get `self` validation
+automatically because they call `batch_modify_*` / `send_*` tools.
+
+### Anti-patterns
+
+- **Fanning out dependent work.** If item N needs item N-1's
+  classification (e.g. dedupe across the batch), keep it
+  sequential. Children can't see each other's state.
+- **Sub-batch overhead.** Fanning out 4 items as 4 children of 1
+  costs more than running 4 sequentially in one action — the
+  per-child context warmup and aggregation round-trip dominate.
+  Aim for chunks where per-child work is multiple seconds.
+- **Unbounded fan-out.** Don't let the parent decide K from
+  untrusted input — cap chunk size in the prompt, and rely on
+  `delegation:` budgets as the runtime backstop. A 1000-item batch
+  fanned out as 1000 children will exhaust the daemon, not finish
+  faster.
+- **Forgetting `outputType:` on the aggregate.** Without a
+  structured contract, the parent emits free-form prose and the
+  caller can't programmatically consume "what got triaged."
+
 ## Requesting access to a tool not in your allowlist
 
 When an action discovers it needs a tool it didn't declare, the action
