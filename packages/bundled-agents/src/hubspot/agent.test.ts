@@ -539,6 +539,24 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
 
+  it("short-circuits when abortSignal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const prompt = JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" });
+
+    const result = await hubspotAgent.execute(
+      prompt,
+      createMockContext({ env: { HUBSPOT_ACCESS_TOKEN: "tok" }, abortSignal: controller.signal }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect.assert(!result.ok);
+    expect(result.error.reason).toContain("aborted");
+    expect(mockBatchCreate).not.toHaveBeenCalled();
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
   it("reports success=false when the batch response carries numErrors > 0", async () => {
     mockBatchCreate.mockResolvedValue({
       status: "COMPLETE",
@@ -560,6 +578,21 @@ describe("hubspotAgent deterministic create-note", () => {
       numErrors: 1,
       errors: [{ status: "error", message: "Property hs_timestamp is required" }],
     });
+  });
+
+  it("reports success=false when the SDK returns an empty-string id", async () => {
+    mockBatchCreate.mockResolvedValue({
+      status: "COMPLETE",
+      results: [{ id: "", properties: {} }],
+    });
+
+    const prompt = JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(false);
   });
 
   it("falls through to LLM when ticketId or body is missing", async () => {

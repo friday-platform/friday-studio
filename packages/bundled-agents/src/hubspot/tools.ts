@@ -634,10 +634,15 @@ export function createGetPipelinesTool(client: Client) {
  * create-note dispatch in agent.ts. Resolves inline `{toObjectType, toObjectId}`
  * associations through DEFAULT_ASSOCIATION_TYPES, calls the SDK batch-create
  * endpoint, and normalizes the response.
+ *
+ * `abortSignal` is honored as a pre-call short-circuit — the HubSpot SDK
+ * doesn't expose a per-call abort, so we can't cancel a request mid-flight,
+ * but we bail before issuing it if the caller has already aborted.
  */
 export async function batchCreateCrmObjects(
   client: Client,
   input: z.infer<typeof CreateCrmObjectsInput>,
+  abortSignal?: AbortSignal,
 ): Promise<
   | {
       results: Array<{ id: string; properties: Record<string, string | null> }>;
@@ -647,6 +652,9 @@ export async function batchCreateCrmObjects(
     }
   | { error: string }
 > {
+  if (abortSignal?.aborted) {
+    return { error: "aborted before batch-create call" };
+  }
   try {
     const skippedAssociations: string[] = [];
 

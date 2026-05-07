@@ -342,25 +342,29 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
             limiterOptions: DEFAULT_LIMITER_OPTIONS,
           });
 
-          const result = await batchCreateCrmObjects(client, {
-            objectType: "notes",
-            records: [
-              {
-                properties: {
-                  hs_note_body: config.body,
-                  hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
+          const result = await batchCreateCrmObjects(
+            client,
+            {
+              objectType: "notes",
+              records: [
+                {
+                  properties: {
+                    hs_note_body: config.body,
+                    hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
+                  },
+                  associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
                 },
-                associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
-              },
-            ],
-          });
+              ],
+            },
+            abortSignal,
+          );
 
           if ("error" in result) {
             return err(`create-note failed (ticket ${config.ticketId}): ${result.error}`);
           }
 
           const created = result.results[0];
-          const success = result.numErrors === 0 && created?.id !== undefined;
+          const success = result.numErrors === 0 && Boolean(created?.id);
           return ok({
             response: success
               ? `CRM Note ${created?.id} created on ticket ${config.ticketId}`
@@ -395,8 +399,10 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
         default: {
           // Exhaustive guard: assigning to `never` errors at compile time
           // if HubSpotOperationSchema gains a new variant without a case.
+          // At runtime this branch is unreachable; `_exhaustive` is unused.
           const _exhaustive: never = config;
-          return err(`Unknown operation in deterministic dispatch: ${String(_exhaustive)}`);
+          void _exhaustive;
+          return err("Unknown operation in deterministic dispatch");
         }
       }
     }
