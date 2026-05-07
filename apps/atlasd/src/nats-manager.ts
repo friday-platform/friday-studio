@@ -124,11 +124,9 @@ export class NatsManager {
       });
       if (signal) {
         const aborted = new Promise<never>((_, reject) => {
-          signal.addEventListener(
-            "abort",
-            () => reject(signal.reason ?? new Error("aborted")),
-            { once: true },
-          );
+          signal.addEventListener("abort", () => reject(signal.reason ?? new Error("aborted")), {
+            once: true,
+          });
         });
         try {
           await Promise.race([drainPromise, aborted]);

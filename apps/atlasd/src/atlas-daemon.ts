@@ -2489,9 +2489,13 @@ export class AtlasDaemon {
           // Forward step-timeout cancellation to the Deno.serve listener so a
           // hung drain (refusing SSE client, long-poll request) doesn't leak
           // the listener after the per-step ceiling fires.
-          signal.addEventListener("abort", () => {
-            this.serverAbortController.abort(signal.reason);
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              this.serverAbortController.abort(signal.reason);
+            },
+            { once: true },
+          );
           return this.server?.shutdown() ?? Promise.resolve();
         },
         3000,

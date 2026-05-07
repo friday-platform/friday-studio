@@ -239,10 +239,7 @@ describe("daemon /shutdown route", () => {
       expect(exitStatus.signal).toBeNull();
 
       // Streams close on child exit; gather the captured output.
-      const [stdoutText, stderrText] = await Promise.all([
-        spawned.stdoutDone,
-        spawned.stderrDone,
-      ]);
+      const [stdoutText, stderrText] = await Promise.all([spawned.stdoutDone, spawned.stderrDone]);
       const allOutput = `${stdoutText}\n${stderrText}`;
 
       // Two-sided check: clean-path log present, watchdog log absent.
