@@ -9,8 +9,6 @@
  *   - `step:complete` events accept the new `usage` field with the four
  *     token kinds + model, reject malformed shapes, and round-trip
  *     through the discriminated-union session-stream parser.
- *   - `successSignal` reserved field accepts the discriminated union
- *     and rejects unknown `kind` values.
  *   - A simple parent → child SessionSummary chain reproduces the
  *     intended walk-the-tree behavior end to end.
  *
@@ -23,7 +21,6 @@ import {
   SessionSummarySchema,
   StepCompleteEventSchema,
   StepUsageSchema,
-  SuccessSignalSchema,
 } from "./session-events.ts";
 
 const NOW = "2026-05-05T10:00:00.000Z";
@@ -91,57 +88,6 @@ describe("SessionSummary parent-linkage", () => {
     expect(() =>
       SessionSummarySchema.parse({ ...baseSummary(), parentEventId: { not: "a string" } }),
     ).toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// SessionSummary successSignal (reserved)
-// ---------------------------------------------------------------------------
-
-describe("SessionSummary.successSignal", () => {
-  test("accepts implicit kind with finalState", () => {
-    const parsed = SessionSummarySchema.parse({
-      ...baseSummary(),
-      successSignal: { kind: "implicit", finalState: "done" },
-    });
-    expect(parsed.successSignal).toEqual({ kind: "implicit", finalState: "done" });
-  });
-
-  test("accepts implicit kind without finalState", () => {
-    const parsed = SessionSummarySchema.parse({
-      ...baseSummary(),
-      successSignal: { kind: "implicit" },
-    });
-    expect(parsed.successSignal?.kind).toBe("implicit");
-  });
-
-  test("accepts explicit thumbs_up with note", () => {
-    const parsed = SessionSummarySchema.parse({
-      ...baseSummary(),
-      successSignal: { kind: "explicit", rating: "thumbs_up", note: "nice" },
-    });
-    expect(parsed.successSignal).toEqual({ kind: "explicit", rating: "thumbs_up", note: "nice" });
-  });
-
-  test("accepts explicit thumbs_down without note", () => {
-    const parsed = SessionSummarySchema.parse({
-      ...baseSummary(),
-      successSignal: { kind: "explicit", rating: "thumbs_down" },
-    });
-    expect(parsed.successSignal?.kind).toBe("explicit");
-  });
-
-  test("rejects unknown kind", () => {
-    expect(() =>
-      SessionSummarySchema.parse({
-        ...baseSummary(),
-        successSignal: { kind: "neither", rating: "thumbs_up" },
-      }),
-    ).toThrow();
-  });
-
-  test("rejects explicit with invalid rating", () => {
-    expect(() => SuccessSignalSchema.parse({ kind: "explicit", rating: "neutral" })).toThrow();
   });
 });
 

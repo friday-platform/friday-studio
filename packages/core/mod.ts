@@ -104,7 +104,6 @@ export {
 export { mapFsmEventToSessionEvent } from "./src/session/fsm-event-mapper.ts";
 export * from "./src/session/history-storage.ts";
 export { JetStreamSessionHistoryAdapter } from "./src/session/jetstream-session-history-adapter.ts";
-export { LocalSessionHistoryAdapter } from "./src/session/local-session-history-adapter.ts";
 // Planned Steps (FSM graph traversal)
 export {
   extractPlannedSteps,

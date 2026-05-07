@@ -342,26 +342,6 @@ export type SessionView = z.infer<typeof SessionViewSchema>;
 // List endpoint summary
 // ---------------------------------------------------------------------------
 
-/**
- * Reserved for future user-feedback integration. No UI surface today;
- * Phase 11 of the fan-out plan reserves the schema slot so writers can
- * start populating implicit signals (e.g. session completion as a weak
- * positive signal) ahead of the explicit-feedback rollout.
- *
- * - `implicit`: derived from session lifecycle. `finalState` is the FSM
- *   state name the session terminated in, when meaningful.
- * - `explicit`: user-supplied thumbs-up/down with optional note.
- */
-export const SuccessSignalSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("implicit"), finalState: z.string().optional() }),
-  z.object({
-    kind: z.literal("explicit"),
-    rating: z.enum(["thumbs_up", "thumbs_down"]),
-    note: z.string().optional(),
-  }),
-]);
-export type SuccessSignal = z.infer<typeof SuccessSignalSchema>;
-
 export const SessionSummarySchema = z.object({
   sessionId: z.string(),
   workspaceId: z.string(),
@@ -390,7 +370,5 @@ export const SessionSummarySchema = z.object({
    * pure session-level linkage works without it.
    */
   parentEventId: z.string().optional(),
-  /** Reserved for future user-feedback integration. See {@link SuccessSignalSchema}. */
-  successSignal: SuccessSignalSchema.optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;

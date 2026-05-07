@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { createLogger } from "@atlas/logger";
 import { createJetStreamKVStorage, type KVStorage } from "@atlas/storage";
-import { dec, enc } from "jetstream";
+import { dec, enc, isStreamNotFound } from "jetstream";
 import { AckPolicy, DeliverPolicy, type NatsConnection, RetentionPolicy, StorageType } from "nats";
 import type { SessionStreamEvent, SessionSummary, SessionView } from "./session-events.ts";
 import { SessionStreamEventSchema, SessionSummarySchema } from "./session-events.ts";
@@ -93,13 +93,18 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     };
     try {
       await jsm.streams.info(STREAM_NAME);
-      // Reconcile config for streams created before the J2 fix (default
-      // duplicate_window was 2m). `streams.update` is idempotent when the
-      // config matches and harmless otherwise. Keeps existing deployments
-      // in sync with the long-job reality without a manual `nats stream
-      // update`.
+      // Stream exists. Reconcile config for streams created before the J2
+      // fix (broker default duplicate_window was 2m). `streams.update` is
+      // idempotent when the config matches and harmless otherwise.
+      // F1 (review-2): typed catch — if the update itself fails for a
+      // permanent reason (incompatible config field, broker rejection),
+      // re-raise instead of silently falling through to `streams.add`
+      // (which would fail with stream-already-exists and mask the real
+      // error). Mirrors the elicitations adapter's `isStreamNotFound`
+      // discrimination.
       await jsm.streams.update(STREAM_NAME, cfg);
-    } catch {
+    } catch (err) {
+      if (!isStreamNotFound(err)) throw err;
       await jsm.streams.add(cfg);
     }
     this.streamReady = true;

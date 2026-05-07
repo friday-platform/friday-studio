@@ -31,9 +31,8 @@ export const DocumentSchema = z.object({
  *
  * Object form (escape hatch for tuning a specific step without rewriting the
  * action shape): pin the `strategy` to `self` or `external` and optionally
- * override the validating skill, the threshold band, or the retry-on-fail
- * behavior. The object form intentionally omits `skip` and `auto` — pick those
- * via the string form.
+ * override the validating skill or the judge agent. The object form
+ * intentionally omits `skip` and `auto` — pick those via the string form.
  */
 export const ValidateStrategySchema = z.union([
   z.literal("skip"),
@@ -43,7 +42,6 @@ export const ValidateStrategySchema = z.union([
   z.strictObject({
     strategy: z.enum(["self", "external"]),
     skill: z.string().optional(),
-    threshold: z.enum(["minimal", "standard", "paranoid"]).optional(),
     /**
      * Optional override for the `external` judge agent. B7 of
      * melodic-strolling-seal-pt2 — `external` is a delegate spawn to

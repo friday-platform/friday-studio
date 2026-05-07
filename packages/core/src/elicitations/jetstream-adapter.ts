@@ -139,6 +139,13 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     const ttlMs = Math.max(1000, new Date(elicitation.expiresAt).getTime() - Date.now());
     const h = natsHeaders();
     h.set("Nats-TTL", `${Math.floor(ttlMs / 1000)}s`);
+    // N5 (review-2): stable msg-id keyed on (id, status). Retried
+    // create/answer/decline/expire calls in the broker dedup window
+    // collapse to a single envelope — durable for the audit trail
+    // without producing duplicates after a network retry. Falls within
+    // the 2m broker-default duplicate_window which is appropriate for
+    // user-driven transitions (no FSM-job-class long delays here).
+    h.set("Nats-Msg-Id", `${elicitation.id}:${elicitation.status}`);
 
     const js = this.nc.jetstream();
     await js.publish(subject, body, { headers: h });
@@ -327,14 +334,18 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
         const next: Elicitation = { ...elicitation, status: "expired" };
         const body = enc.encode(JSON.stringify(next));
         try {
-          // CAS on the KV revision — concurrent answer/decline wins.
-          await kv.update(elicitation.id, body, entry.revision);
-          // Also re-publish the envelope to the stream so SSE
-          // subscribers + the audit trail see the transition. Mirror
-          // the writeEnvelope() shape but skip the KV write (already
-          // done atomically above) so we don't clobber the revision
-          // we just CAS-acquired.
+          // F2 (review-2): publish FIRST, CAS-update KV SECOND. Reasoning:
+          // if the publish fails (NATS hiccup), KV still says `pending`
+          // and the next sweeper tick retries. If the publish succeeds
+          // but the CAS fails (concurrent answer/decline), we leave a
+          // phantom `expired` envelope on the stream — but consumers
+          // reading state come through `get()` / `list()` which both
+          // run `deriveExpired()` against the KV-current status, so
+          // they observe the answered/declined value and ignore the
+          // stale envelope. The audit trail captures both transitions
+          // in publish order, which is the honest history.
           await this.publishEnvelope(next);
+          await kv.update(elicitation.id, body, entry.revision);
           expired.push(elicitation.id);
         } catch (err) {
           if (isCASConflict(err)) {
@@ -372,6 +383,9 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
     const ttlMs = Math.max(1000, new Date(elicitation.expiresAt).getTime() - Date.now());
     const h = natsHeaders();
     h.set("Nats-TTL", `${Math.floor(ttlMs / 1000)}s`);
+    // N5 (review-2): same dedup-msg-id as writeEnvelope so retried
+    // sweeper publishes (post-F2's publish-then-CAS) collapse cleanly.
+    h.set("Nats-Msg-Id", `${elicitation.id}:${elicitation.status}`);
     const js = this.nc.jetstream();
     await js.publish(subject, body, { headers: h });
   }

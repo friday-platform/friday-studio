@@ -10,7 +10,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  LocalSessionHistoryAdapter,
+  buildSessionView,
   type SessionHistoryAdapter,
   type SessionStartEvent,
   type SessionStreamEvent,
@@ -27,9 +27,66 @@ import type { AppContext, AppVariables } from "../../src/factory.ts";
 import { SessionStreamRegistry } from "../../src/session-stream-registry.ts";
 import { sessionsRoutes } from "./index.ts";
 
-// Mock getFridayHome so the v1 file check uses our temp directory
+// Mock getFridayHome so the v1 file check uses our temp directory.
 const mockAtlasHome = vi.hoisted(() => ({ value: "" }));
 vi.mock("@atlas/utils/paths.server", () => ({ getFridayHome: () => mockAtlasHome.value }));
+
+/**
+ * In-memory `SessionHistoryAdapter` for tests. Replaces the deleted
+ * `LocalSessionHistoryAdapter` (filesystem-JSONL) with a Map-backed
+ * impl so route tests don't depend on disk state and don't need the
+ * NATS test fixture either. Mirrors the public `SessionHistoryAdapter`
+ * contract exactly.
+ */
+class InMemorySessionHistoryAdapter implements SessionHistoryAdapter {
+  private events = new Map<string, SessionStreamEvent[]>();
+  private summaries = new Map<string, SessionSummary>();
+
+  appendEvent(sessionId: string, event: SessionStreamEvent): Promise<void> {
+    const arr = this.events.get(sessionId) ?? [];
+    arr.push(event);
+    this.events.set(sessionId, arr);
+    return Promise.resolve();
+  }
+
+  save(sessionId: string, events: SessionStreamEvent[], summary: SessionSummary): Promise<void> {
+    this.events.set(sessionId, [...events]);
+    this.summaries.set(sessionId, summary);
+    return Promise.resolve();
+  }
+
+  updateSummary(sessionId: string, summary: SessionSummary): Promise<void> {
+    this.summaries.set(sessionId, summary);
+    return Promise.resolve();
+  }
+
+  get(sessionId: string): Promise<SessionView | null> {
+    const events = this.events.get(sessionId);
+    return Promise.resolve(events ? buildSessionView(events) : null);
+  }
+
+  listByWorkspace(workspaceId?: string): Promise<SessionSummary[]> {
+    const out: SessionSummary[] = [];
+    for (const summary of this.summaries.values()) {
+      if (workspaceId === undefined || summary.workspaceId === workspaceId) {
+        out.push(summary);
+      }
+    }
+    out.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+    return Promise.resolve(out);
+  }
+
+  markInterruptedSessions(): Promise<number> {
+    // Sessions with events but no summary are "interrupted." For tests
+    // that don't exercise this path, the count is 0; tests that need it
+    // can pre-populate events without a corresponding summary.
+    let marked = 0;
+    for (const sessionId of this.events.keys()) {
+      if (!this.summaries.has(sessionId)) marked++;
+    }
+    return Promise.resolve(marked);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -188,18 +245,20 @@ function createTestApp(options: {
 
 describe("Session History v2 Routes", () => {
   let testDir: string;
-  let adapter: LocalSessionHistoryAdapter;
+  let adapter: InMemorySessionHistoryAdapter;
   let registry: SessionStreamRegistry;
 
   beforeEach(async () => {
+    // testDir is still required for the v1-format-session route test
+    // (line ~340) which writes a legacy session.json onto disk and asserts
+    // the route returns 410. The adapter itself is now in-memory.
     testDir = join(
       tmpdir(),
       `session-history-v2-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     await mkdir(testDir, { recursive: true });
-    // Point getFridayHome() at our temp directory so v1 file checks work
     mockAtlasHome.value = testDir;
-    adapter = new LocalSessionHistoryAdapter(testDir);
+    adapter = new InMemorySessionHistoryAdapter();
     registry = new SessionStreamRegistry(mockNatsConnection());
   });
 

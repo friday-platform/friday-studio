@@ -2,7 +2,9 @@
  * Session History v2 — Storage adapter interface.
  *
  * Defines the contract for persisting and retrieving session stream events.
- * Single implementation today (LocalSessionHistoryAdapter, JSONL files).
+ * Single production implementation today: `JetStreamSessionHistoryAdapter`.
+ * Tests use a thin in-memory implementation defined inline (e.g.
+ * `apps/atlasd/routes/sessions/sessions.test.ts`).
  *
  * @module
  */

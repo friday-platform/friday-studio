@@ -17,7 +17,7 @@ import {
 } from "@atlas/core";
 import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
-import { initElicitationStorage } from "@atlas/core/elicitations";
+import { bootstrapElicitationsStream, initElicitationStorage } from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { CronManager } from "@atlas/cron";
 import { initDocumentStore } from "@atlas/document-store";
@@ -585,6 +585,16 @@ export class AtlasDaemon {
     // bucket for O(1) status lookups. Phase 12 HITL primitive; HTTP
     // routes mounted at `/api/elicitations` below.
     initElicitationStorage(nc);
+
+    // F7 (review-2): boot-time pre-flight — ensure the ELICITATIONS
+    // stream exists with `allow_msg_ttl: true` BEFORE the first user
+    // request can hit `/api/elicitations` or `request_tool_access`. The
+    // adapter's lazy `ensureStream()` throws a "re-run migration"
+    // error on legacy streams whose config drifted; fail-loud at boot
+    // is far better UX than failing on the first elicitation publish
+    // an hour into a daemon's life. Idempotent — `streams.update`
+    // when present, `streams.add` when absent.
+    await bootstrapElicitationsStream(nc);
 
     // Wire workspace-state storage (state_append/lookup/filter MCP tools)
     // to JetStream — one KV bucket per workspace (WS_STATE_<wsid>).
