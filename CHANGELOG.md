@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-06
+
 ### Breaking changes
 
 - **Phantom bundled-agent references now hard-fail at validation.** Workspace YAMLs with `type: atlas, agent: "<id>"` referencing a non-existent bundled agent (e.g., the deleted `email` agent) previously survived load: the daemon logged "Base agent not found" and silently dropped the agent at registration, so any FSM step delegating to it stalled in production with no surfaced error. New `checkBundledAgentRefs` validator pass rejects unknown ids at create / lint / publish; daemon load path surfaces registration failures via `metadata.lastError` instead of dropping. Existing workspaces with phantom agents will show `lastError` in workspace metadata until the reference is removed. (#201)
