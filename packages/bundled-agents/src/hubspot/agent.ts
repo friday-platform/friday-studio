@@ -400,8 +400,12 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
           });
         }
 
-        default:
-          return err(`Unknown operation: ${(config as { operation: string }).operation}`);
+        default: {
+          // Exhaustive guard: assigning to `never` errors at compile time
+          // if HubSpotOperationSchema gains a new variant without a case.
+          const _exhaustive: never = config;
+          return err(`Unknown operation in deterministic dispatch: ${String(_exhaustive)}`);
+        }
       }
     }
 
