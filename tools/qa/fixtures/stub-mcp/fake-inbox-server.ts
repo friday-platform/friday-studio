@@ -98,6 +98,7 @@ server.registerTool(
         text: JSON.stringify({
           ok: true,
           modifiedCount: ids.length,
+          receipt: `fake-mutation-${crypto.randomUUID()}`,
           addLabels: addLabels ?? [],
           removeLabels: removeLabels ?? [],
         }),
@@ -123,6 +124,7 @@ server.registerTool(
         text: JSON.stringify({
           ok: true,
           id,
+          receipt: `fake-mutation-${crypto.randomUUID()}`,
           addLabels: addLabels ?? [],
           removeLabels: removeLabels ?? [],
         }),

@@ -373,6 +373,107 @@ async function runValidationContractScenario(d: DaemonHandle): Promise<EvalResul
   ];
 }
 
+async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Ack Mutation" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "ack-mutation-event", {
+    payload: { query: "ack-only" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  metrics.wallTimeMs = trigger.durationMs;
+  metrics.sessionId = trigger.sessionId;
+  metrics.jobComplete = trigger.jobComplete;
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "ack-only-mutation",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/ack-mutation-check/mutation-ack`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const rawPayload = artifactData ?? data;
+  const responseText =
+    rawPayload && typeof rawPayload.response === "string" ? rawPayload.response.trim() : "";
+  let parsedResponse: Record<string, unknown> | undefined;
+  if (responseText) {
+    const jsonText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    try {
+      parsedResponse = JSON.parse(jsonText) as Record<string, unknown>;
+    } catch {
+      parsedResponse = undefined;
+    }
+  }
+  const payload = parsedResponse ?? rawPayload;
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  const serializedJob = JSON.stringify(trigger.jobComplete ?? {});
+  const serializedDoc = JSON.stringify(data ?? {});
+  const serializedPayload = JSON.stringify(payload ?? {});
+  const containsBodySentinel = [serializedJob, serializedDoc, serializedPayload].some((s) =>
+    s.includes("FIRST_PRINCIPLES_EMAIL_BODY"),
+  );
+  const containsMessagesArray = [data, payload].some(
+    (v) => !!v && typeof v === "object" && Array.isArray((v as Record<string, unknown>).messages),
+  );
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  const receipt = typeof payload?.receipt === "string" ? payload.receipt : "";
+
+  metrics.bucket = bucket;
+  metrics.docBytes = doc ? byteLen(doc) : 0;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.toolNames = toolNames;
+  metrics.toolCallCount = events.toolCallCount;
+
+  const pass =
+    payload?.marker === "ACK_ONLY_MUTATION_OK" &&
+    payload?.ok === true &&
+    payload?.modifiedCount === 3 &&
+    payload?.operation === "batch_modify_message_labels" &&
+    receipt.startsWith("fake-mutation-") &&
+    !containsBodySentinel &&
+    !containsMessagesArray;
+
+  return [
+    {
+      id: "ack-only-mutation",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `modifiedCount: ${String(payload?.modifiedCount ?? "(missing)")}`,
+        `receipt: ${receipt || "(missing)"}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+        `contains body sentinel: ${containsBodySentinel}`,
+        `contains messages array: ${containsMessagesArray}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function main() {
   await ensureCredentialsLoaded();
   if (!Deno.env.get("ANTHROPIC_API_KEY")) {
@@ -395,6 +496,8 @@ async function main() {
     results.push(...(await runInputFromArrayScenario(daemon)));
     console.log("\n── validation output contract ──");
     results.push(...(await runValidationContractScenario(daemon)));
+    console.log("\n── ack-only fake inbox mutation ──");
+    results.push(...(await runAckOnlyMutationScenario(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });

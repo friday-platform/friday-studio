@@ -55,6 +55,17 @@ signals:
         query:
           type: string
       required: []
+  ack-mutation-event:
+    provider: http
+    description: "Trigger ack-only fake inbox mutation scenario."
+    config:
+      path: "/ack-mutation-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 jobs:
   refs-check:
@@ -292,4 +303,55 @@ jobs:
                 - marker: "VALIDATION_CONTRACT_OK"
                 - value: 7
                 - explanation: "structured output survived validation"
+          type: final
+
+  ack-mutation-check:
+    description: "Mutate fake inbox labels and ensure mutation output stays ack-only."
+    triggers:
+      - signal: ack-mutation-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        MutationAck:
+          type: object
+          properties:
+            marker: { type: string }
+            ok: { type: boolean }
+            modifiedCount: { type: number }
+            operation: { type: string }
+            receipt: { type: string }
+          required: ["marker", "ok", "modifiedCount", "operation", "receipt"]
+      states:
+        idle:
+          on:
+            ack-mutation-event: { target: mutate }
+        mutate:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Archive fake inbox messages with ack-only mutation."
+              outputTo: mutation-ack
+              validate: skip
+              tools:
+                - batch_modify_message_labels
+              prompt: |
+                Call batch_modify_message_labels exactly once with ids
+                ["fake-001", "fake-002", "fake-003"], addLabels ["archived"],
+                and removeLabels ["inbox"].
+
+                Then respond with ONLY a JSON MutationAck object with:
+                - marker: "ACK_ONLY_MUTATION_OK"
+                - ok: true if the tool result says ok
+                - modifiedCount from the tool result
+                - operation: "batch_modify_message_labels"
+                - receipt: copy the exact `receipt` string returned by the tool
+
+                Do not fetch message contents and do not include any message
+                bodies in the final output.
           type: final
