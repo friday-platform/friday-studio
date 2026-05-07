@@ -42,15 +42,26 @@ function envelope(
   mock: MockResponse,
   agentId: string,
   prompt: string,
+  opts: { complete?: boolean } = {},
 ): AgentResult<string, FSMLLMOutput> {
-  const data: FSMLLMOutput = { response: mock.content, ...mock.data };
+  const data: FSMLLMOutput = { response: opts.complete ? "" : mock.content, ...mock.data };
   return {
     agentId,
     timestamp: new Date().toISOString(),
     input: prompt,
     ok: true,
     data,
-    toolCalls: mock.toolCalls ?? [],
+    toolCalls: opts.complete
+      ? [
+          ...(mock.toolCalls ?? []),
+          {
+            type: "tool-call",
+            toolCallId: "tc-complete",
+            toolName: "complete",
+            input: { response: mock.content },
+          },
+        ]
+      : (mock.toolCalls ?? []),
     durationMs: 0,
   };
 }
@@ -75,7 +86,7 @@ async function runSingleLLMAction(opts: {
     provider: "test",
     model: "test-model",
     prompt: "do thing",
-    outputTo: "output",
+    ...(opts.outputType !== undefined && { outputTo: "output" }),
     ...(opts.tools !== undefined && { tools: opts.tools }),
     ...(opts.outputType !== undefined && { outputType: opts.outputType }),
     ...(opts.validate !== undefined && { validate: opts.validate }),
@@ -97,7 +108,9 @@ async function runSingleLLMAction(opts: {
   const provider: LLMProvider = {
     call: (params) => {
       llmCalls++;
-      return Promise.resolve(envelope(opts.llmResponse, params.agentId, params.prompt));
+      return Promise.resolve(
+        envelope(opts.llmResponse, params.agentId, params.prompt, { complete: !!opts.outputType }),
+      );
     },
   };
 

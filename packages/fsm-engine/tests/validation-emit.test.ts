@@ -42,14 +42,25 @@ function envelope(
   mock: MockLLMResponse,
   agentId: string,
   prompt: string,
+  opts: { complete?: boolean } = {},
 ): AgentResult<string, FSMLLMOutput> {
   return {
     agentId,
     timestamp: new Date().toISOString(),
     input: prompt,
     ok: true,
-    data: { response: mock.content },
-    toolCalls: mock.toolCalls ?? [],
+    data: { response: opts.complete ? "" : mock.content },
+    toolCalls: opts.complete
+      ? [
+          ...(mock.toolCalls ?? []),
+          {
+            type: "tool-call",
+            toolCallId: "tc-complete",
+            toolName: "complete",
+            input: { response: mock.content },
+          },
+        ]
+      : (mock.toolCalls ?? []),
     durationMs: 0,
   };
 }
@@ -102,7 +113,7 @@ async function runLLMActionAndCaptureEvents(opts: {
     provider: "test",
     model: "test-model",
     prompt: "do thing",
-    outputTo: "output",
+    ...(opts.outputType !== undefined && { outputTo: "output" }),
     ...(opts.tools !== undefined && { tools: opts.tools }),
     ...(opts.outputType !== undefined && { outputType: opts.outputType }),
     ...(opts.validate !== undefined && { validate: opts.validate }),
@@ -121,7 +132,10 @@ async function runLLMActionAndCaptureEvents(opts: {
   };
 
   const provider: LLMProvider = {
-    call: (params) => Promise.resolve(envelope(opts.llmResponse, params.agentId, params.prompt)),
+    call: (params) =>
+      Promise.resolve(
+        envelope(opts.llmResponse, params.agentId, params.prompt, { complete: !!opts.outputType }),
+      ),
   };
 
   // O2 (review-2): wrap the test-side `validator` (a function resolving
@@ -244,7 +258,6 @@ describe("LLM action validation emit (B6)", () => {
       provider: "test",
       model: "test-model",
       prompt: "do thing",
-      outputTo: "output",
       validate: "self",
     };
     const fsm: FSMDefinition = {

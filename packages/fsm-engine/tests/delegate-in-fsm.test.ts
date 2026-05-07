@@ -15,7 +15,7 @@
  *      (verified by simulating a depth=1 signal context).
  */
 
-import type { AgentResult } from "@atlas/agent-sdk";
+import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import type { Tool } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
@@ -55,6 +55,10 @@ const { getDocumentStore } = await import("../../document-store/mod.ts");
 const { createStubPlatformModels } = await import("@atlas/llm");
 
 import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
+
+function completeCall(input: Record<string, unknown>): ToolCall {
+  return { type: "tool-call", toolCallId: "tc-complete", toolName: "complete", input };
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -119,8 +123,8 @@ describe("FSM LLM action — delegate tool exposure (Phase 7)", () => {
           timestamp: new Date().toISOString(),
           input: params.prompt ?? "",
           ok: true,
-          data: { response: "done" },
-          toolCalls: [],
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
           toolResults: [],
           durationMs: 0,
         };
@@ -160,8 +164,8 @@ describe("FSM LLM action — delegate tool exposure (Phase 7)", () => {
           timestamp: new Date().toISOString(),
           input: params.prompt ?? "",
           ok: true,
-          data: { response: "done" },
-          toolCalls: [],
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
           toolResults: [],
           durationMs: 0,
         };
@@ -203,8 +207,8 @@ describe("FSM LLM action — delegate tool exposure (Phase 7)", () => {
           timestamp: new Date().toISOString(),
           input: params.prompt ?? "",
           ok: true,
-          data: { response: "done" },
-          toolCalls: [],
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
           toolResults: [],
           durationMs: 0,
         };
@@ -256,8 +260,8 @@ describe("FSM LLM action — delegate tool exposure (Phase 7)", () => {
           timestamp: new Date().toISOString(),
           input: params.prompt ?? "",
           ok: true,
-          data: { response: "done" },
-          toolCalls: [],
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
           toolResults: [],
           durationMs: 0,
         };
@@ -305,8 +309,8 @@ describe("FSM LLM action — delegate tool exposure (Phase 7)", () => {
           timestamp: new Date().toISOString(),
           input: params.prompt ?? "",
           ok: true,
-          data: { response: "done" },
-          toolCalls: [],
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
           toolResults: [],
           durationMs: 0,
         };

@@ -118,7 +118,6 @@ async function runWithDefaults(opts: {
     provider: "test",
     model: "test-model",
     prompt: "do thing",
-    outputTo: "output",
     ...(opts.tools !== undefined && { tools: opts.tools }),
     ...(opts.outputType !== undefined && { outputType: opts.outputType }),
     ...(opts.validate !== undefined && { validate: opts.validate }),

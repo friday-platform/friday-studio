@@ -170,7 +170,7 @@ export function validateAgentOutput(
   _platformModels?: PlatformModels,
   expectedSchema?: JSONSchema,
 ): Promise<void> {
-  return Promise.resolve(validateAgentOutputSync(result, context, expectedSchema));
+  return Promise.resolve().then(() => validateAgentOutputSync(result, context, expectedSchema));
 }
 
 function validateAgentOutputSync(
@@ -187,15 +187,15 @@ function validateAgentOutputSync(
     return;
   }
 
+  if (result.data === "") {
+    logger.error("Agent output is empty!", { agentId: result.agentId });
+    throw new Error(`Agent ${result.agentId} produced empty output`);
+  }
+
   // Skip validation if no data
   if (!result.data) {
     logger.warn("Agent produced no output", { agentId: result.agentId });
     return;
-  }
-
-  if (result.data === "") {
-    logger.error("Agent output is empty!", { agentId: result.agentId });
-    throw new Error(`Agent ${result.agentId} produced empty output`);
   }
 
   // Validate against schema if provided

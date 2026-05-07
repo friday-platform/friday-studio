@@ -20,7 +20,7 @@
  *      session's injection — locality is the point.
  */
 
-import type { AgentResult } from "@atlas/agent-sdk";
+import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import type { Tool } from "ai";
 import { describe, expect, it, vi } from "vitest";
@@ -60,6 +60,10 @@ const { FSMEngine } = await import("../fsm-engine.ts");
 const { getDocumentStore } = await import("../../document-store/mod.ts");
 
 import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
+
+function completeCall(input: Record<string, unknown>): ToolCall {
+  return { type: "tool-call", toolCallId: "tc-complete", toolName: "complete", input };
+}
 
 describe("FSM LLM action — Phase 9 retrieval-gated artifact injection", () => {
   it("prepends <retrieved_content> blocks for session-bound artifacts", async () => {
@@ -122,8 +126,8 @@ describe("FSM LLM action — Phase 9 retrieval-gated artifact injection", () => 
           timestamp: new Date().toISOString(),
           input: params.prompt ?? "",
           ok: true,
-          data: { response: "done" },
-          toolCalls: [],
+          data: { response: "" },
+          toolCalls: [completeCall({ response: "done" })],
           toolResults: [],
           durationMs: 0,
         };

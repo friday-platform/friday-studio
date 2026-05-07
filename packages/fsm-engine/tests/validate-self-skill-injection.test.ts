@@ -24,14 +24,27 @@ import type {
 const SENTINEL_BODY =
   "<<<VALIDATING-LLM-OUTPUTS-SKILL-BODY>>> self-check the draft before emitting.";
 
-function envelope(prompt: string, agentId: string): AgentResult<string, FSMLLMOutput> {
+function envelope(
+  prompt: string,
+  agentId: string,
+  opts: { complete?: boolean } = {},
+): AgentResult<string, FSMLLMOutput> {
   return {
     agentId,
     timestamp: new Date().toISOString(),
     input: prompt,
     ok: true,
-    data: { response: "ok" },
-    toolCalls: [],
+    data: { response: opts.complete ? "" : "ok" },
+    toolCalls: opts.complete
+      ? [
+          {
+            type: "tool-call",
+            toolCallId: "tc-complete",
+            toolName: "complete",
+            input: { ok: true },
+          },
+        ]
+      : [],
     durationMs: 0,
   };
 }
@@ -96,7 +109,7 @@ async function runAndCapturePrompt(opts: {
     provider: "test",
     model: "test-model",
     prompt: "do thing",
-    outputTo: "output",
+    ...(opts.outputType !== undefined && { outputTo: "output" }),
     ...(opts.tools !== undefined && { tools: opts.tools }),
     ...(opts.outputType !== undefined && { outputType: opts.outputType }),
     ...(opts.validate !== undefined && { validate: opts.validate }),
@@ -118,7 +131,9 @@ async function runAndCapturePrompt(opts: {
   const provider: LLMProvider = {
     call: (params) => {
       capturedPrompt = params.prompt;
-      return Promise.resolve(envelope(params.prompt, params.agentId));
+      return Promise.resolve(
+        envelope(params.prompt, params.agentId, { complete: !!opts.outputType }),
+      );
     },
   };
 

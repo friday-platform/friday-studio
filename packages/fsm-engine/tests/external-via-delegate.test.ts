@@ -62,7 +62,6 @@ async function runActionAndCapture(
     provider: "test",
     model: "test-model",
     prompt: "do thing",
-    outputTo: "output",
     validate: opts.validate,
   };
   const fsm: FSMDefinition = {

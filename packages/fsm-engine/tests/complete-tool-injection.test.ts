@@ -10,6 +10,7 @@ interface MockLLMResponse {
   content: string;
   calledTool?: { name: string; args: unknown };
   data?: { toolCalls?: ToolCall[]; toolResults?: unknown[]; [key: string]: unknown };
+  skipAutoComplete?: boolean;
 }
 
 /** Convert mock response to AgentResult (mirrors real adapter behavior) */
@@ -17,6 +18,7 @@ function mockToEnvelope(
   mock: MockLLMResponse,
   agentId: string,
   prompt: string,
+  completeAvailable = false,
 ): AgentResult<string, FSMLLMOutput> {
   const toolCalls: ToolCall[] = mock.data?.toolCalls ?? [];
 
@@ -30,8 +32,23 @@ function mockToEnvelope(
     });
   }
 
+  if (
+    completeAvailable &&
+    !mock.skipAutoComplete &&
+    !toolCalls.some((tc) => tc.toolName === "complete" || tc.toolName === "failStep")
+  ) {
+    toolCalls.push({
+      type: "tool-call",
+      toolCallId: "tc-complete",
+      toolName: "complete",
+      input: { response: mock.content },
+    });
+  }
+
   // Raw text - FSM engine extracts structured output from toolCalls
-  const data: FSMLLMOutput = { response: mock.content };
+  const data: FSMLLMOutput = {
+    response: completeAvailable && !mock.skipAutoComplete ? "" : mock.content,
+  };
 
   return {
     agentId,
@@ -64,7 +81,8 @@ describe("complete tool injection for LLM actions", () => {
     const mockLLMProvider: LLMProvider = {
       call: (params) => {
         capturedPrompts.push(params.prompt);
-        capturedTools.push(Object.keys(params.tools ?? {}));
+        const toolNames = Object.keys(params.tools ?? {});
+        capturedTools.push(toolNames);
 
         const mockResponse =
           opts.llmResponses[callCount] ?? opts.llmResponses[opts.llmResponses.length - 1];
@@ -72,7 +90,14 @@ describe("complete tool injection for LLM actions", () => {
         if (!mockResponse) {
           throw new Error("No LLM response available for mock");
         }
-        return Promise.resolve(mockToEnvelope(mockResponse, params.agentId, params.prompt));
+        return Promise.resolve(
+          mockToEnvelope(
+            mockResponse,
+            params.agentId,
+            params.prompt,
+            toolNames.includes("complete"),
+          ),
+        );
       },
     };
 
@@ -200,7 +225,7 @@ describe("complete tool injection for LLM actions", () => {
     expect(docResult.data?.data.data.toolCalls).toBeUndefined();
   });
 
-  it("does NOT inject complete tool when document type has no properties", async () => {
+  it("injects untyped complete tool when document type has no properties", async () => {
     const fsm: FSMDefinition = {
       id: "no-complete-tool-test",
       initial: "pending",
@@ -239,13 +264,13 @@ describe("complete tool injection for LLM actions", () => {
 
     await engine.signal({ type: "RUN" });
 
-    // Verify complete tool was NOT injected
+    // Untyped outputTo still requires complete({ response }) so empty/stub docs fail fast.
     const toolsProvided = getCapturedTools()[0];
-    expect(toolsProvided).not.toContain("complete");
-    expect(toolsProvided).toContain("failStep"); // Should still have failStep
+    expect(toolsProvided).toContain("complete");
+    expect(toolsProvided).toContain("failStep");
   });
 
-  it("falls back to raw response storage when LLM does not call complete", async () => {
+  it("fails when LLM does not call complete for outputTo", async () => {
     const fsm: FSMDefinition = {
       id: "fallback-test",
       initial: "pending",
@@ -278,18 +303,12 @@ describe("complete tool injection for LLM actions", () => {
       },
     };
 
-    const { engine, store, scope } = await createLLMEngine({
+    const { engine } = await createLLMEngine({
       fsm,
-      llmResponses: [{ content: "I found ticket PROJ-456" }],
+      llmResponses: [{ content: "I found ticket PROJ-456", skipAutoComplete: true }],
     });
 
-    await engine.signal({ type: "RUN" });
-
-    // Verify raw response was stored (fallback behavior) - now uses { response: string }
-    const docResult = await store.read(scope, fsm.id, "result", FSMDocumentDataSchema);
-    expect(docResult.ok).toBe(true);
-    if (!docResult.ok) throw new Error(docResult.error);
-    expect(docResult.data?.data.data.response).toEqual("I found ticket PROJ-456");
+    await expect(engine.signal({ type: "RUN" })).rejects.toThrow(/did not call complete/);
   });
 
   it("augments prompt with complete tool instruction", async () => {
@@ -492,8 +511,8 @@ describe("complete tool injection for LLM actions", () => {
   });
 
   it("gracefully handles outputType when type is not defined in documentTypes", async () => {
-    // When outputType references a non-existent type, should fall back gracefully
-    // (no complete tool injection, but no error)
+    // When outputType references a non-existent type, fallback to the untyped
+    // complete({ response }) contract rather than raw response storage.
     const fsm: FSMDefinition = {
       id: "output-type-missing-test",
       initial: "pending",
@@ -530,9 +549,8 @@ describe("complete tool injection for LLM actions", () => {
     // Should complete without error
     expect(engine.state).toEqual("done");
 
-    // Should NOT have complete tool (type not found)
     const toolsProvided = getCapturedTools()[0];
-    expect(toolsProvided).not.toContain("complete");
+    expect(toolsProvided).toContain("complete");
     expect(toolsProvided).toContain("failStep");
   });
 
@@ -753,7 +771,7 @@ describe("complete tool injection for LLM actions", () => {
     expect(engine.state).toEqual("done");
   });
 
-  it("falls through when LLM calls neither complete nor failStep", async () => {
+  it("fails when outputTo action calls neither complete nor failStep", async () => {
     const fsm: FSMDefinition = {
       id: "neither-tool-test",
       initial: "pending",
@@ -782,12 +800,10 @@ describe("complete tool injection for LLM actions", () => {
 
     const { engine } = await createLLMEngine({
       fsm,
-      llmResponses: [{ content: "just text response" }],
+      llmResponses: [{ content: "just text response", skipAutoComplete: true }],
     });
 
-    // Should succeed — falls through to normal storage path
-    await engine.signal({ type: "RUN" });
-    expect(engine.state).toEqual("done");
+    await expect(engine.signal({ type: "RUN" })).rejects.toThrow(/did not call complete/);
   });
 
   // B7 (melodic-strolling-seal-pt2). Pre-B7 retry test deleted — see the

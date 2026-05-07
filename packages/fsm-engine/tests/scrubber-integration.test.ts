@@ -25,7 +25,7 @@
  *     (it tries to read env vars / build a daemon URL otherwise).
  */
 
-import type { AgentResult } from "@atlas/agent-sdk";
+import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import type { Tool } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
@@ -75,6 +75,10 @@ const { FSMEngine } = await import("../fsm-engine.ts");
 const { getDocumentStore } = await import("../../document-store/mod.ts");
 
 import type { FSMDefinition, FSMLLMOutput, LLMProvider } from "../types.ts";
+
+function completeCall(input: Record<string, unknown>): ToolCall {
+  return { type: "tool-call", toolCallId: "tc-complete", toolName: "complete", input };
+}
 
 const SIZE_THRESHOLD_CHARS = 4 * 1024;
 
@@ -181,8 +185,11 @@ describe("FSM LLM action — scrubber wiring (N4: lift moved off MCP boundary)",
           timestamp: new Date().toISOString(),
           input: params.prompt ?? "",
           ok: true,
-          data: { response: "done" },
-          toolCalls: [{ type: "tool-call", toolCallId: "tc1", toolName: "fetch_thing", input: {} }],
+          data: { response: "" },
+          toolCalls: [
+            { type: "tool-call", toolCallId: "tc1", toolName: "fetch_thing", input: {} },
+            completeCall({ response: "done" }),
+          ],
           toolResults: [
             { type: "tool-result", toolCallId: "tc1", toolName: "fetch_thing", input: {}, output },
           ],

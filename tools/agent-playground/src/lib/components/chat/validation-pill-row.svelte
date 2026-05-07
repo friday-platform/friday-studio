@@ -35,7 +35,9 @@
   ): Lifecycle {
     if (s === "running") return "running";
     if (s === "passed") {
-      return v?.status === "uncertain" ? "passed-from-uncertain" : "passed-from-pass";
+      return v?.verdict === "advisory" || v?.status === "uncertain"
+        ? "passed-from-uncertain"
+        : "passed-from-pass";
     }
     return t === true ? "failed-terminal" : "failed-retrying";
   }
