@@ -5,25 +5,34 @@ import type { LogContext, Logger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createCommentFixture from "./fixtures/create-comment.json" with { type: "json" };
 
-const { mockGenerateText, mockBatchCreate, mockClientConstructor } = vi.hoisted(() => {
-  type BatchCreateRequest = {
-    inputs: Array<{
-      properties: Record<string, string>;
-      associations?: Array<{
-        to: { id: string };
-        types: Array<{ associationCategory: string; associationTypeId: number }>;
+const { mockGenerateText, mockBatchCreate, mockClientConstructor, helperOverride } = vi.hoisted(
+  () => {
+    type BatchCreateRequest = {
+      inputs: Array<{
+        properties: Record<string, string>;
+        associations?: Array<{
+          to: { id: string };
+          types: Array<{ associationCategory: string; associationTypeId: number }>;
+        }>;
       }>;
-    }>;
-  };
-  return {
-    mockGenerateText: vi.fn(),
-    mockBatchCreate: vi.fn<(objectType: string, request: BatchCreateRequest) => Promise<unknown>>(),
-    // Spy on the Client constructor so tests can pin the auth args (accessToken,
-    // retry config). Without this spy, an agent regression that dropped the
-    // accessToken or passed a wrong one would not fail any test.
-    mockClientConstructor: vi.fn(),
-  };
-});
+    };
+    return {
+      mockGenerateText: vi.fn(),
+      mockBatchCreate:
+        vi.fn<(objectType: string, request: BatchCreateRequest) => Promise<unknown>>(),
+      // Spy on the Client constructor so tests can pin the auth args (accessToken,
+      // retry config). Without this spy, an agent regression that dropped the
+      // accessToken or passed a wrong one would not fail any test.
+      mockClientConstructor: vi.fn(),
+      // When set, overrides `batchCreateCrmObjects`. Lets tests inject helper
+      // return shapes (e.g., a successful batch with `skippedAssociations` set)
+      // that the agent's natural inputs cannot produce — the agent hardcodes
+      // `toObjectType: "tickets"` which always resolves through DEFAULT_ASSOCIATION_TYPES,
+      // so the `skippedAssociations` guard in agent.ts has no other test path.
+      helperOverride: vi.fn(),
+    };
+  },
+);
 
 vi.mock("ai", () => ({
   generateText: mockGenerateText,
@@ -40,6 +49,20 @@ vi.mock("@hubspot/api-client", () => ({
   },
   DEFAULT_LIMITER_OPTIONS: {},
 }));
+
+vi.mock("./tools.ts", async () => {
+  const actual = await vi.importActual<typeof import("./tools.ts")>("./tools.ts");
+  return {
+    ...actual,
+    // Delegate to the real helper unless a test has set an override implementation.
+    batchCreateCrmObjects: (...args: Parameters<typeof actual.batchCreateCrmObjects>) => {
+      if (helperOverride.getMockImplementation()) {
+        return helperOverride(...args);
+      }
+      return actual.batchCreateCrmObjects(...args);
+    },
+  };
+});
 
 vi.mock("@atlas/llm", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -476,6 +499,7 @@ describe("hubspotAgent deterministic create-note", () => {
     mockGenerateText.mockReset();
     mockBatchCreate.mockReset();
     mockClientConstructor.mockReset();
+    helperOverride.mockReset();
   });
 
   afterEach(() => {
@@ -790,6 +814,33 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(result.ok).toBe(true);
     expect(mockBatchCreate).not.toHaveBeenCalled();
     expect(mockGenerateText).toHaveBeenCalledOnce();
+  });
+
+  it("returns err when batchCreateCrmObjects reports skippedAssociations", async () => {
+    // Defense-in-depth: if `DEFAULT_ASSOCIATION_TYPES.notes.tickets` ever
+    // drops out of the lookup table, the helper would skip the association
+    // silently and return success — the agent must convert that into an
+    // error so the orphan-note case is caught instead of looking like
+    // a successful create. The agent's natural inputs always resolve
+    // through the lookup table, so this is the only test path for the guard.
+    helperOverride.mockResolvedValue({
+      results: [{ id: "601", properties: {} }],
+      numErrors: 0,
+      errors: [],
+      skippedAssociations: "No default association type for: notes → tickets.",
+    });
+
+    const result = await hubspotAgent.execute(
+      JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" }),
+      validContext(),
+    );
+
+    expect(result.ok).toBe(false);
+    expect.assert(!result.ok);
+    expect(result.error.reason).toContain("create-note failed");
+    expect(result.error.reason).toContain("5501");
+    expect(result.error.reason).toContain("notes → tickets");
+    expect(mockGenerateText).not.toHaveBeenCalled();
   });
 });
 
