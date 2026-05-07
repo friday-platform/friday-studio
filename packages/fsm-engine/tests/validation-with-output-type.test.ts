@@ -274,3 +274,75 @@ describe("E1: structured-output + self validation interaction", () => {
     expect(call.toolChoice).toEqual({ type: "tool", toolName: "complete" });
   });
 });
+
+/**
+ * H3 (melodic-strolling-seal-pt3). B6's commit message claimed the
+ * `toolChoice` resolution rule:
+ *
+ *   - `completeToolInjected && !recordValidationInjected` → pin to
+ *     `{ type: "tool", toolName: "complete" }`
+ *   - otherwise → `"auto"` (so the LLM can sequence record_validation
+ *     before complete or skip both)
+ *
+ * E1 + E1.1 narrowed the second branch by skipping `record_validation`
+ * (and the skill body) on the structured + self path. The `structured + *`
+ * crossings above pin the `complete` branch. The free-form crossings
+ * below pin the `auto` branch — none of these assertions existed before
+ * H3 (the B3 skill-injection tests only checked prompt body, not
+ * toolChoice; B6's regression guard at line ~235 hand-waved the
+ * free-form-self case).
+ *
+ * Together with the structured cases above, this covers all six
+ * structured/free-form × skip/self/external crossings on the FSM
+ * `case "llm"` inline path. The orchestrator `case "agent"` path is
+ * covered by `packages/core/src/agent-conversion/from-llm.test.ts`.
+ */
+describe("H3: free-form toolChoice resolution at FSM case 'llm' (B6 audit)", () => {
+  afterEach(() => {
+    _setSkillStorageForTest(null);
+  });
+
+  it("free-form + skip → no record_validation, no skill body, toolChoice 'auto'", async () => {
+    _setSkillStorageForTest(stubSkillAdapter());
+    const { captured } = await runStructuredAction({ validate: "skip", withOutputType: false });
+
+    const call = captured[0];
+    if (!call) throw new Error("expected captured call");
+    expect(call.tools).not.toContain("record_validation");
+    expect(call.tools).not.toContain("complete");
+    expect(call.prompt).not.toContain(SENTINEL_BODY);
+    // No structured-output forcing, no record_validation injection;
+    // B6's rule degenerates to `auto` (the engine's only other branch).
+    expect(call.toolChoice).toBe("auto");
+  });
+
+  it("free-form + external → no record_validation, no skill body, toolChoice 'auto'", async () => {
+    _setSkillStorageForTest(stubSkillAdapter());
+    const { captured } = await runStructuredAction({ validate: "external", withOutputType: false });
+
+    const call = captured[0];
+    if (!call) throw new Error("expected captured call");
+    expect(call.tools).not.toContain("record_validation");
+    expect(call.tools).not.toContain("complete");
+    expect(call.prompt).not.toContain(SENTINEL_BODY);
+    expect(call.toolChoice).toBe("auto");
+  });
+
+  it("free-form + self → record_validation IS injected, skill body composed, toolChoice 'auto'", async () => {
+    // Pins the full free-form + self triple: tool injection + body
+    // composition + auto toolChoice. The earlier B6 regression guard
+    // only checked tool injection; this asserts the full set so future
+    // refactors can't silently drop one piece.
+    _setSkillStorageForTest(stubSkillAdapter());
+    const { captured } = await runStructuredAction({ validate: "self", withOutputType: false });
+
+    const call = captured[0];
+    if (!call) throw new Error("expected captured call");
+    expect(call.tools).toContain("record_validation");
+    expect(call.tools).not.toContain("complete");
+    expect(call.prompt).toContain(SENTINEL_BODY);
+    // record_validation injected → toolChoice cannot pin to complete
+    // (no complete tool here either) → falls to auto.
+    expect(call.toolChoice).toBe("auto");
+  });
+});
