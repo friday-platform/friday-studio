@@ -101,7 +101,7 @@ describe("withShutdownTimeout", () => {
 
     expect(captured?.aborted).toBe(true);
     expect(captured?.reason).toBeInstanceOf(Error);
-    expect((captured?.reason as Error).message).toContain('shutdown step "abort-me" exceeded 100ms');
+    expect(String(captured?.reason)).toContain('shutdown step "abort-me" exceeded 100ms');
     expect(abortedAtWarnTime).toBe(true);
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
