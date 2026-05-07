@@ -2609,7 +2609,11 @@ export class AtlasDaemon {
     await withShutdownTimeout("workspace manager", this.workspaceManager?.close(), 2000);
     this.workspaceManager = null;
 
-    await withShutdownTimeout("NATS", this.natsManager?.stop(), 2000);
+    await withShutdownTimeout(
+      "NATS",
+      (signal) => this.natsManager?.stop(signal) ?? Promise.resolve(),
+      2000,
+    );
     this.natsManager = null;
 
     logger.info("Atlas daemon shutdown complete");
