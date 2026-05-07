@@ -29,6 +29,29 @@ import { WorkspaceTimeoutConfigSchema } from "./base.ts";
 // are imported from @atlas/agent-sdk above
 
 /**
+ * K6 (melodic-strolling-seal-pt3) — workspace-level MCP server config that
+ * extends the agent-sdk's `MCPServerConfig` with an optional per-server
+ * `validation:` override. The `validate-classifier` honors this over its
+ * regex / allowlist defaults: `"read-only"` makes ALL tools from that
+ * server skip-eligible regardless of name; `"mutating"` makes them
+ * never skip-eligible. Default (omitted) falls back to the per-tool
+ * regex match in `READ_ONLY_ALLOWLIST` / `MUTATING_VERB_RE`.
+ *
+ * Structurally a superset of `MCPServerConfig` — values without the new
+ * field are assignable in either direction since `validation` is
+ * optional.
+ */
+export const WorkspaceMCPServerConfigSchema = MCPServerConfigSchema.extend({
+  validation: z
+    .enum(["read-only", "mutating"])
+    .optional()
+    .describe(
+      "Author override for the validate-classifier. read-only makes every tool from this server skip-eligible; mutating forces self-validation regardless of name. Omit to fall back to the per-tool regex defaults.",
+    ),
+});
+export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
+
+/**
  * MCP client configuration for calling external MCP servers
  */
 export const MCPClientConfigSchema = z.strictObject({
@@ -40,7 +63,7 @@ export const MCPClientConfigSchema = z.strictObject({
       }).describe("Watchdog timeout configuration"),
     })
     .default({ timeout: { progressTimeout: "2m", maxTotalTimeout: "30m" } }),
-  servers: z.record(z.string(), MCPServerConfigSchema).optional(),
+  servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(),
 });
 export type MCPClientConfig = z.infer<typeof MCPClientConfigSchema>;
 
@@ -127,3 +150,6 @@ export {
   type MCPTransportConfig,
   MCPTransportConfigSchema,
 };
+
+/** K6 — short alias for the per-server validation override. */
+export type WorkspaceMCPServerValidation = "read-only" | "mutating";

@@ -84,6 +84,15 @@ export interface LLMAction {
    * or `self`. The classifier never auto-resolves to `external`.
    */
   validate?: ValidateStrategy;
+  /**
+   * K6 (melodic-strolling-seal-pt3) — author opt-in to treat `run_code` as
+   * read-only for this action. See `LLMActionSchema.run_code` in schema.ts.
+   * `run_code` is excluded from the default `READ_ONLY_ALLOWLIST` because
+   * it can mutate state; this knob lets a deterministic SQL `SELECT` /
+   * HTTP `GET` / arithmetic transform skip self-validation. Combined with
+   * `outputType:`, the action then resolves to `validate: skip`.
+   */
+  run_code?: { readOnly: boolean };
   outputTo?: string;
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType?: string;

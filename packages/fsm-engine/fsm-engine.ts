@@ -13,7 +13,7 @@ import {
   PLATFORM_TOOL_NAMES,
 } from "@atlas/agent-sdk";
 import { extractToolCallInput, unstringifyNestedJson } from "@atlas/agent-sdk/vercel-helpers";
-import type { MCPServerConfig, ValidationDefaults } from "@atlas/config";
+import type { MCPServerConfig, ValidationDefaults, WorkspaceMCPServerConfig } from "@atlas/config";
 import { normalizeActionValidate, resolveValidation } from "@atlas/config";
 import { resolvePermissions } from "@atlas/config/permissions";
 import {
@@ -84,6 +84,7 @@ import type {
   JudgeAgentRunner,
   JudgeHandoff,
   JudgeToolCallEntry,
+  LLMAction,
   LLMActionTrace,
   LLMProvider,
   OutputValidator,
@@ -95,6 +96,7 @@ import type {
 import {
   type ClassifierInput,
   classifyAction,
+  type MCPValidationOverride,
   type ValidateDecision,
 } from "./validate-classifier.ts";
 
@@ -720,7 +722,16 @@ export interface FSMEngineOptions {
   scope: DocumentScope;
   agentExecutor?: AgentExecutor;
   /** MCP server configs from workspace — merged with atlas-platform at call time */
-  mcpServerConfigs?: Record<string, MCPServerConfig>;
+  /**
+   * MCP server configs from workspace — merged with atlas-platform at call time.
+   *
+   * K6 (melodic-strolling-seal-pt3): accepts the workspace-level superset
+   * `WorkspaceMCPServerConfig` so the per-server `validation:` override
+   * flows through to the validate-classifier. Plain `MCPServerConfig`
+   * from non-workspace callers (tests, atlas) remains structurally
+   * assignable since `validation` is optional.
+   */
+  mcpServerConfigs?: Record<string, MCPServerConfig | WorkspaceMCPServerConfig>;
   /**
    * Phase B7 of melodic-strolling-seal-pt2. Replaces the pre-B7
    * `validateOutput` hook with a delegate spawn to a system-level judge
@@ -832,6 +843,37 @@ export interface FSMEngineOptions {
    * wins over both. See `workspaceValidation` for full precedence.
    */
   jobValidation?: ValidationDefaults;
+  /**
+   * I4 (melodic-strolling-seal-pt3) — per-action artifact persistence
+   * hook. Fired immediately after a `case "llm"` or `case "agent"`
+   * action writes its `outputTo` document, so the workspace runtime
+   * can persist the artifact mid-session rather than waiting for the
+   * post-drain pass. Closes the H1 Phase 9 known-fail: without this,
+   * `composeArtifactBlocks({ workspaceId, sessionId })` finds zero
+   * artifacts for the in-flight session because nothing is persisted
+   * until the engine drains.
+   *
+   * The callback receives the freshly-written document, the action
+   * that produced it, and `fromTerminalState` (whether the emitting
+   * state has `type: "final"` — drives the durable vs ephemeral
+   * lifecycle decision identically to the post-drain pass).
+   *
+   * Implementations MUST tolerate repeat invocations for the same
+   * `outputTo` (later actions can overwrite an existing doc) — the
+   * runtime side issues an artifact `update` on the second hit.
+   * Failures should log-and-continue inside the callback; the engine
+   * never blocks on persistence. Optional — when unset, behavior
+   * matches the pre-I4 model (post-drain only). Wire-up on the
+   * runtime side is a follow-up; the field is shipped here so the
+   * engine half is ready when the runtime catches up.
+   */
+  persistFsmActionArtifact?: (input: {
+    doc: Document;
+    action: LLMAction | AgentAction;
+    workspaceId: string;
+    sessionId: string;
+    fromTerminalState: boolean;
+  }) => Promise<void>;
 }
 
 export class FSMEngine {
@@ -1005,6 +1047,63 @@ export class FSMEngine {
     this._signalQueue.push(signalWithContext);
     if (!this._processing) {
       await this.processQueue();
+    }
+  }
+
+  /**
+   * K6 (melodic-strolling-seal-pt3) — collect per-MCP `validation:` overrides
+   * from `mcpServerConfigs` into a flat `Record<serverId, override>` for the
+   * validate-classifier. Returns `undefined` when no servers carry an
+   * override so the classifier can short-circuit.
+   */
+  private buildMCPValidationOverrides(): Record<string, MCPValidationOverride> | undefined {
+    const configs = this.options.mcpServerConfigs;
+    if (!configs) return undefined;
+    let result: Record<string, MCPValidationOverride> | undefined;
+    for (const [id, config] of Object.entries(configs)) {
+      const override = (config as WorkspaceMCPServerConfig).validation;
+      if (override) {
+        result ??= {};
+        result[id] = override;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * I4 (melodic-strolling-seal-pt3) — bridge to the workspace runtime's
+   * mid-session artifact persister. Invoked by `case "llm"` and
+   * `case "agent"` immediately after `documents.set(action.outputTo, ...)`.
+   *
+   * No-op when the host hasn't wired `persistFsmActionArtifact`, when the
+   * signal context lacks a workspaceId/sessionId pair, or when the
+   * freshly-written document is missing. `fromTerminalState` is the
+   * static "is the emitting state's `type === "final"`?" check.
+   *
+   * Errors are swallowed inside the persister callback (logged on the
+   * runtime side); this method itself wraps in a try/catch so a
+   * misbehaving callback can't crash the action loop.
+   */
+  private async maybePersistActionArtifact(
+    action: LLMAction | AgentAction,
+    doc: Document | undefined,
+    sig: SignalWithContext,
+    currentState: string,
+  ): Promise<void> {
+    const persister = this.options.persistFsmActionArtifact;
+    if (!persister) return;
+    if (!doc) return;
+    const workspaceId = sig._context?.workspaceId;
+    const sessionId = sig._context?.sessionId;
+    if (!workspaceId || !sessionId) return;
+    const fromTerminalState = this._definition.states[currentState]?.type === "final";
+    try {
+      await persister({ doc, action, workspaceId, sessionId, fromTerminalState });
+    } catch (err) {
+      logger.warn("persistFsmActionArtifact threw — continuing", {
+        outputTo: action.outputTo,
+        error: stringifyError(err),
+      });
     }
   }
 
@@ -1854,6 +1953,11 @@ export class FSMEngine {
               // only adds prompt tokens; nothing downstream depends on the
               // pre-call decision.
               const declaredToolsStatic = action.tools ?? [];
+              // K6 (melodic-strolling-seal-pt3): thread per-MCP `validation:`
+              // overrides + the action's `run_code: { readOnly: true }`
+              // opt-in into the classifier so author overrides win over
+              // the default regex / allowlist.
+              const mcpServerOverrides = this.buildMCPValidationOverrides();
               const preCallResolution = resolveValidateDecision(
                 action.validate,
                 {
@@ -1864,6 +1968,8 @@ export class FSMEngine {
                   resolvedAgentType: undefined,
                   emittedProse: false,
                   toolsAvailable: declaredToolsStatic.length > 0,
+                  ...(mcpServerOverrides ? { mcpServerOverrides } : {}),
+                  ...(action.run_code?.readOnly ? { runCodeReadOnly: true } : {}),
                 },
                 { job: this.options.jobValidation, workspace: this.options.workspaceValidation },
               );
@@ -2033,6 +2139,9 @@ export class FSMEngine {
                   typeof observedTrace.content === "string" &&
                   observedTrace.content.trim().length > 0,
                 toolsAvailable: declaredTools.length > 0,
+                // K6: re-thread overrides for the post-call resolution.
+                ...(mcpServerOverrides ? { mcpServerOverrides } : {}),
+                ...(action.run_code?.readOnly ? { runCodeReadOnly: true } : {}),
               };
               const {
                 decision: validateDecision,
@@ -2234,6 +2343,20 @@ export class FSMEngine {
                     data: dataToStore,
                   });
                 }
+
+                // I4 (melodic-strolling-seal-pt3) — persist mid-session so
+                // a later action's `composeArtifactBlocks({ workspaceId,
+                // sessionId })` can see this document via
+                // `ArtifactStorage.listBySession`. Without this hook the
+                // post-drain pass is the only writer, so intra-session
+                // retrieval injection is empty (the H1 Phase 9 known-fail).
+                // No-op when the host hasn't wired the callback.
+                await this.maybePersistActionArtifact(
+                  action,
+                  documents.get(action.outputTo),
+                  sig,
+                  currentState,
+                );
               }
 
               // Capture LLM result for session history side-channel
@@ -2596,6 +2719,17 @@ export class FSMEngine {
               } else {
                 documents.set(action.outputTo, { id: action.outputTo, type: "AgentResult", data });
               }
+
+              // I4 (melodic-strolling-seal-pt3) — see the matching call in
+              // `case "llm"` above for rationale. Persist mid-session so
+              // `composeArtifactBlocks` sees agent-action artifacts during
+              // the same session that emitted them.
+              await this.maybePersistActionArtifact(
+                action,
+                documents.get(action.outputTo),
+                sig,
+                currentState,
+              );
             }
 
             logger.debug("Agent action completed", {

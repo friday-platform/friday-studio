@@ -13,6 +13,15 @@
 
 export type ValidateDecision = "skip" | "self" | "external";
 
+/**
+ * K6 (melodic-strolling-seal-pt3) — author override per MCP server.
+ * `"read-only"` makes every tool from that server skip-eligible regardless
+ * of name; `"mutating"` makes every tool from that server self-eligible.
+ * When omitted, the classifier falls back to the per-tool regex defaults
+ * in `READ_ONLY_ALLOWLIST` / `MUTATING_VERB_RE`.
+ */
+export type MCPValidationOverride = "read-only" | "mutating";
+
 export interface ClassifierInput {
   /** Action's declared `tools:` allowlist (action.tools ?? []). */
   declaredTools: string[];
@@ -28,6 +37,20 @@ export interface ClassifierInput {
   emittedProse: boolean;
   /** declaredTools.length > 0 (cached for clarity at call sites). */
   toolsAvailable: boolean;
+  /**
+   * K6 — per-MCP `validation:` overrides (workspace-yml authored). Tool
+   * names map by their `<server>/` prefix; built-ins (no prefix) ignore
+   * overrides entirely. Wins over the regex defaults.
+   */
+  mcpServerOverrides?: Record<string, MCPValidationOverride>;
+  /**
+   * K6 — `run_code: { readOnly: true }` opt-in. When set, the classifier
+   * treats this action's `run_code` invocation as read-only (joins the
+   * allowlist) so a structured-output `run_code` action can resolve to
+   * `skip`. Default (false / undefined): `run_code` is treated as
+   * potentially mutating per the comment on `READ_ONLY_ALLOWLIST` below.
+   */
+  runCodeReadOnly?: boolean;
 }
 
 export interface ClassifierResult {
@@ -41,15 +64,19 @@ export interface ClassifierResult {
  * Match is performed against both the full name and the suffix after `/`.
  *
  * `run_code` is intentionally NOT in this list — it can mutate state.
+ * Authors who know a particular invocation is genuinely read-only can opt in
+ * via `run_code: { readOnly: true }` (K6, melodic-strolling-seal-pt3).
+ *
+ * K6 (M1 dedup): `^search_/`, `^get_/`, `^list_/`, `^view_/` are vendor-
+ * agnostic — they match the suffix-after-slash for both gmail and github.
+ * Pre-pt3 we also listed `^get_gmail_/` and `^list_gmail_/` (dominated by
+ * the more general `^get_/` / `^list_/`) and `^search_/` twice (gmail +
+ * github sections). Dedup'd here; semantics unchanged.
  */
 export const READ_ONLY_ALLOWLIST: ReadonlyArray<string | RegExp> = [
-  // gmail
+  // verb-based prefixes (vendor-agnostic — covers gmail, github, etc.)
   /^search_/,
-  /^get_gmail_/,
-  /^list_gmail_/,
-  // github
   /^get_/,
-  /^search_/,
   /^list_/,
   /^view_/,
   // fs
@@ -82,6 +109,16 @@ export const MUTATING_VERB_RE =
 function stripPrefix(toolName: string): string {
   const slash = toolName.indexOf("/");
   return slash >= 0 ? toolName.slice(slash + 1) : toolName;
+}
+
+/**
+ * Extract the `<mcp-server>` prefix from a tool name, or `undefined` for
+ * built-ins (no slash). K6 — used for per-MCP `validation:` override
+ * lookup at classification time.
+ */
+function extractServerId(toolName: string): string | undefined {
+  const slash = toolName.indexOf("/");
+  return slash >= 0 ? toolName.slice(0, slash) : undefined;
 }
 
 /**
@@ -124,11 +161,35 @@ export function classifyAction(input: ClassifierInput): ClassifierResult {
     return { decision: "skip", reason: `non-llm-agent-type:${input.resolvedAgentType}` };
   }
 
+  // K6 (melodic-strolling-seal-pt3) — apply per-MCP `validation:` overrides
+  // and the `run_code: { readOnly }` opt-in over the regex defaults. Author
+  // intent wins. The closures capture `input` so `every`/`some` callbacks
+  // stay terse below.
+  const overrides = input.mcpServerOverrides;
+  const localIsReadOnly = (t: string): boolean => {
+    if (overrides) {
+      const serverId = extractServerId(t);
+      if (serverId && overrides[serverId] === "read-only") return true;
+      if (serverId && overrides[serverId] === "mutating") return false;
+    }
+    if (input.runCodeReadOnly && t === "run_code") return true;
+    return isReadOnly(t);
+  };
+  const localIsMutating = (t: string): boolean => {
+    if (overrides) {
+      const serverId = extractServerId(t);
+      if (serverId && overrides[serverId] === "mutating") return true;
+      if (serverId && overrides[serverId] === "read-only") return false;
+    }
+    if (input.runCodeReadOnly && t === "run_code") return false;
+    return isMutating(t);
+  };
+
   // Rule 2a: read-only fetcher — every declared tool is read-only AND there's
   // a structured outputType (so the schema, not prose, is the contract).
   if (
     input.declaredTools.length > 0 &&
-    input.declaredTools.every(isReadOnly) &&
+    input.declaredTools.every(localIsReadOnly) &&
     input.hasOutputType
   ) {
     return { decision: "skip", reason: "read-only-fetcher" };
@@ -141,12 +202,12 @@ export function classifyAction(input: ClassifierInput): ClassifierResult {
 
   // Rule 3: any declared OR called tool is mutating → self.
   for (const t of input.declaredTools) {
-    if (isMutating(t)) {
+    if (localIsMutating(t)) {
       return { decision: "self", reason: `mutating-tool:${t}` };
     }
   }
   for (const t of input.calledToolNames) {
-    if (isMutating(t)) {
+    if (localIsMutating(t)) {
       return { decision: "self", reason: `mutating-tool:${t}` };
     }
   }
