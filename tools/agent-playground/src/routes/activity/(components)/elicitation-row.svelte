@@ -9,7 +9,7 @@
 -->
 
 <script lang="ts">
-  import type { Elicitation, ElicitationStatus } from "@atlas/core/elicitations";
+  import type { Elicitation, ElicitationStatus } from "@atlas/core/elicitations/model";
   import { formatRelative } from "../activity-time.ts";
 
   type Props = {

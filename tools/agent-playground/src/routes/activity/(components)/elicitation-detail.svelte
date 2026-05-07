@@ -14,7 +14,7 @@
 -->
 
 <script lang="ts">
-  import type { Elicitation, ElicitationStatus } from "@atlas/core/elicitations";
+  import type { Elicitation, ElicitationStatus } from "@atlas/core/elicitations/model";
   import { Button } from "@atlas/ui";
   import {
     useAnswerElicitation,

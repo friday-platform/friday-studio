@@ -20,7 +20,7 @@
     type Elicitation,
     type ElicitationKind,
     type ElicitationStatus,
-  } from "@atlas/core/elicitations";
+  } from "@atlas/core/elicitations/model";
   import { PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";

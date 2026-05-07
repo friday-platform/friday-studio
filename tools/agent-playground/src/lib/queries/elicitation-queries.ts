@@ -11,7 +11,12 @@
  *
  * @module
  */
-import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations";
+// Import from the model-only subpath (not the umbrella mod). The umbrella
+// re-exports `bootstrapElicitationsStream` from `jetstream-adapter.ts` post-L5,
+// which transitively pulls `@atlas/logger` → `node:path` into client bundles
+// and 500s the playground at `paths.ts`. The model module only depends on zod,
+// so it bundles cleanly for browser code.
+import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
 import {
   createMutation,
   queryOptions,
