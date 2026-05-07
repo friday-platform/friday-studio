@@ -23,9 +23,26 @@ def _mcp_text(result: Any) -> str:
     description="Fetches synthetic inbox messages through ctx.tools for first-principles QA.",
 )
 def execute(prompt: str, ctx: AgentContext):
-    del prompt
     try:
         tool_names = [tool.name for tool in ctx.tools.list()]
+        if "request_human_input" in prompt:
+            ctx.stream.progress("Requesting user decision", tool_name="request_human_input")
+            decision = ctx.tools.call("request_human_input", {
+                "question": "Choose the fake inbox action for first-principles QA",
+                "options": [
+                    {"label": "Archive", "value": "archive"},
+                    {"label": "Keep", "value": "keep"},
+                ],
+            })
+            parsed = json.loads(_mcp_text(decision))
+            return ok({
+                "marker": "PY_USER_AGENT_HUMAN_INPUT_RESUMED",
+                "listedTools": tool_names,
+                "status": parsed.get("status"),
+                "answer": parsed.get("answer"),
+                "elicitationId": parsed.get("elicitationId"),
+            })
+
         ctx.stream.progress("Searching fake inbox", tool_name="search_messages")
         search_result = ctx.tools.call("search_messages", {"query": "from:newsletter@example.test", "limit": 4})
         ids = json.loads(_mcp_text(search_result)).get("ids", [])

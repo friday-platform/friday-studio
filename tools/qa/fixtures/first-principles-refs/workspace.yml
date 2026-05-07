@@ -102,6 +102,17 @@ signals:
         query:
           type: string
       required: []
+  user-decision-event:
+    provider: http
+    description: "Trigger generic request_human_input scenario."
+    config:
+      path: "/user-decision-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
   agent-output-contract-event:
     provider: http
     description: "Trigger LLM-backed agent output contract scenario."
@@ -814,6 +825,47 @@ jobs:
                 - granted: the granted value returned by request_tool_access
                 - reason: the reason returned by request_tool_access
                 - answer: the answer returned by request_tool_access
+          type: final
+
+  python-user-agent-decision-check:
+    description: "Python user-agent blocks on request_human_input and resumes with the answer."
+    triggers:
+      - signal: user-decision-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        PythonUserDecisionResult:
+          type: object
+          properties:
+            marker: { type: string }
+            listedTools:
+              type: array
+              items: { type: string }
+            status: { type: string }
+            answer: { type: string }
+            elicitationId: { type: string }
+          required: ["marker", "listedTools", "status", "answer", "elicitationId"]
+      states:
+        idle:
+          on:
+            user-decision-event: { target: ask }
+        ask:
+          entry:
+            - type: agent
+              agentId: python-inbox-fetcher
+              summary: "Ask for a generic user decision from a Python user agent."
+              outputTo: python-user-decision-result
+              outputType: PythonUserDecisionResult
+              validate: skip
+              prompt: |
+                Use ctx.tools to call request_human_input. Wait for the answer
+                and return marker PY_USER_AGENT_HUMAN_INPUT_RESUMED, listed
+                tool names, status, answer, and elicitationId.
           type: final
 
   python-user-agent-tool-check:

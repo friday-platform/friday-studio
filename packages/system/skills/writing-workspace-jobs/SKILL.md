@@ -1123,6 +1123,32 @@ Authoring rule: only list `request_tool_access` when the action can continue
 safely after an allow or produce a useful denial/partial result. Do not use it
 as a way to ask for hallucinated tool names.
 
+## Asking the user for a decision mid-job
+
+Use `request_human_input` for generic user decisions, approvals, or
+disambiguation — for example, choosing email actions, confirming which account
+to use, or selecting between safe alternatives. It creates an `open-question`
+elicitation in Activity/sidebar, blocks the current tool call, and returns the
+answer to the same action.
+
+```yaml
+- type: llm
+  outputTo: review-actions
+  tools:
+    - request_human_input
+  prompt: |
+    Present the choices, then call request_human_input with a clear question
+    and options such as [{ label: "Archive", value: "archive" }, ...].
+    After the tool returns { status: "answered", answer: ... }, finish with
+    complete({ response: ... }). If declined or expired, stop safely.
+```
+
+Python `type: user` agents use the same primitive through
+`ctx.tools.call("request_human_input", {"question": ..., "options": [...]})`.
+Do not fake this by streaming a menu and hoping a later chat turn resumes the
+FSM action; without `request_human_input`, an `outputTo` action must complete in
+one execution and will fail if it waits for a future user message.
+
 **Per-job elicitation timeout.** Defaults to the parent job's `config.timeout`
 (elicitations expire when the job times out). Override per-job to constrain
 finer:

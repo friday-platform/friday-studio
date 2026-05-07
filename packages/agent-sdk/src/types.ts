@@ -295,6 +295,10 @@ export const AgentSessionDataSchema = z.object({
    * (chat, conversation, ad-hoc runs).
    */
   jobName: z.string().optional(),
+  /** FSM action id when an agent is invoked from a specific action. */
+  actionId: z.string().optional(),
+  /** Parent job timeout in milliseconds, used by blocking HITL tools. */
+  jobTimeoutMs: z.number().int().positive().optional(),
   datetime: z
     .object({
       timezone: z.string(),

@@ -58,6 +58,7 @@ describe("filterWorkspaceAgentTools", () => {
       "artifacts_create",
       "convert_task_to_workspace",
       "workspace_signal_trigger",
+      "request_human_input",
     ]);
 
     const result = filterWorkspaceAgentTools(tools, stubLogger);
@@ -95,6 +96,7 @@ describe("filterWorkspaceAgentTools", () => {
     expect(PLATFORM_TOOL_NAMES.has("workspace_list")).toBe(true);
     expect(PLATFORM_TOOL_NAMES.has("bash")).toBe(true);
     expect(PLATFORM_TOOL_NAMES.has("webfetch")).toBe(true);
+    expect(PLATFORM_TOOL_NAMES.has("request_human_input")).toBe(true);
   });
 });
 
@@ -238,9 +240,10 @@ describe("wrapPlatformToolsWithScope", () => {
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("artifacts_create")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("state_append")).toBe(true);
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("webfetch")).toBe(true);
-    // Phase 12.C — request_tool_access reads sessionId, actionId, and
-    // permissions config from the wrapper to resolve effective bypass.
+    // HITL tools read sessionId/actionId from the wrapper so Activity can
+    // correlate the pending item and the blocked run can resume on answer.
     expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("request_tool_access")).toBe(true);
+    expect(SCOPE_INJECTED_PLATFORM_TOOLS.has("request_human_input")).toBe(true);
   });
 
   // Phase 12.C — sessionId, actionId, and permissions config flow through

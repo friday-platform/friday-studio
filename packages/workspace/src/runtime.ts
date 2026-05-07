@@ -2721,6 +2721,8 @@ export class WorkspaceRuntime {
                 workspaceId,
                 streamId,
                 onStreamEvent: signal._context?.onStreamEvent,
+                actionId: agentId,
+                jobTimeoutMs: job.timeoutMs,
                 config: mergedConfig,
                 outputSchema: options?.outputSchema,
                 datetime,
@@ -2736,6 +2738,8 @@ export class WorkspaceRuntime {
                 memoryContextKey: mountNames.length > 0 ? ctxKey : undefined,
                 foregroundWorkspaceIds,
                 jobName: job.name,
+                actionId: agentId,
+                jobTimeoutMs: job.timeoutMs,
                 // Agent UIMessageChunks flow through the dedicated onStreamEvent channel,
                 // keeping the FSM onEvent callback clean (FSMEvent types only)
                 onStreamEvent: signal._context?.onStreamEvent,
@@ -2782,6 +2786,8 @@ export class WorkspaceRuntime {
       workspaceId: string;
       streamId?: string;
       onStreamEvent?: (event: AtlasUIMessageChunk) => void;
+      actionId?: string;
+      jobTimeoutMs?: number;
       config?: Record<string, unknown>;
       outputSchema?: Record<string, unknown>;
       datetime?: unknown;
@@ -2960,6 +2966,9 @@ export class WorkspaceRuntime {
     const mcpTools = wrapPlatformToolsWithScope(filteredTools, {
       workspaceId: opts.workspaceId,
       workspaceName: this.workspace.name,
+      sessionId: opts.sessionId,
+      ...(opts.actionId && { actionId: opts.actionId }),
+      ...(opts.jobTimeoutMs !== undefined && { jobTimeoutMs: opts.jobTimeoutMs }),
     });
 
     // Inject built-in bash tool so code agents can shell out (overrides

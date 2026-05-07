@@ -66,6 +66,10 @@ export interface AgentExecutionContext {
   /** FSM job name — threaded across the MCP boundary so the agent-side
    *  context builder can resolve job-level skill assignments. */
   jobName?: string;
+  /** FSM action id for Activity correlation when an agent raises HITL. */
+  actionId?: string;
+  /** Parent job timeout in milliseconds for blocking HITL expiry. */
+  jobTimeoutMs?: number;
 }
 
 export interface AgentOrchestratorConfig {
@@ -326,6 +330,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           memoryContextKey: context.memoryContextKey,
           foregroundWorkspaceIds: context.foregroundWorkspaceIds,
           jobName: context.jobName,
+          actionId: context.actionId,
+          jobTimeoutMs: context.jobTimeoutMs,
         },
         outputSchema: context.outputSchema,
         config: context.config,

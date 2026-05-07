@@ -56,6 +56,7 @@ export const PLATFORM_TOOL_NAMES = new Set([
   "memory_save",
   "memory_read",
   "memory_remove",
-  // Permissions (Phase 12.C / Phase 1.C)
+  // Human-in-the-loop / permissions
   "request_tool_access",
+  "request_human_input",
 ]);

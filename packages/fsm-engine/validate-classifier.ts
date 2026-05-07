@@ -88,6 +88,7 @@ export const READ_ONLY_ALLOWLIST: ReadonlyArray<string | RegExp> = [
   "web_fetch",
   "web_search",
   "request_tool_access",
+  "request_human_input",
   // memory
   "memory_read",
   // artifacts

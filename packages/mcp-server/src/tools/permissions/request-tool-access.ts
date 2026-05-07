@@ -6,16 +6,10 @@ import { stringifyError } from "@atlas/utils";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { deriveElicitationExpiresAt, waitForTerminalElicitation } from "../elicitations/wait.ts";
 import type { ToolContext } from "../types.ts";
 import { createErrorResponse, createSuccessResponse } from "../utils.ts";
 
-/**
- * Fallback elicitation TTL when neither `jobTimeoutMs` (runtime-injected)
- * nor a workspace default propagates through scope. 30 minutes is the
- * informational TTL for MVP — the elicitation expires either way; the
- * real lifecycle gate is the parent job's timeout.
- */
-const DEFAULT_ELICITATION_TTL_MS = 30 * 60 * 1000;
 const DISCOVERY_TOOLS = [
   "list_capabilities",
   "search_mcp_servers",
@@ -28,100 +22,6 @@ const DISCOVERY_TOOLS = [
   "connect_service",
   "connect_communicator",
 ];
-const WAIT_POLL_MS = 250;
-const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
-
-type TerminalElicitationResult = {
-  status: "pending" | "answered" | "declined" | "expired";
-  value?: string;
-  note?: string;
-};
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function sanitizeSubjectToken(s: string): string {
-  return s.replace(SAFE_TOKEN_RE, "_");
-}
-
-function terminalFromEnvelope(envelope: unknown): TerminalElicitationResult | undefined {
-  if (!envelope || typeof envelope !== "object") return undefined;
-  const e = envelope as Record<string, unknown>;
-  if (e.status === "answered") {
-    const answer =
-      e.answer && typeof e.answer === "object" ? (e.answer as Record<string, unknown>) : {};
-    return {
-      status: "answered",
-      ...(typeof answer.value === "string" ? { value: answer.value } : {}),
-      ...(typeof answer.note === "string" ? { note: answer.note } : {}),
-    };
-  }
-  if (e.status === "declined") {
-    const answer =
-      e.answer && typeof e.answer === "object" ? (e.answer as Record<string, unknown>) : {};
-    return {
-      status: "declined",
-      ...(typeof answer.note === "string" ? { note: answer.note } : {}),
-    };
-  }
-  if (e.status === "expired") return { status: "expired" };
-  return undefined;
-}
-
-async function readTerminalElicitation(id: string): Promise<TerminalElicitationResult | null> {
-  const got = await ElicitationStorage.get({ id });
-  if (!got.ok) throw new Error(got.error);
-  if (!got.data) return { status: "pending" };
-  return terminalFromEnvelope(got.data) ?? null;
-}
-
-async function waitForTerminalElicitation(
-  ctx: ToolContext,
-  input: { id: string; workspaceId: string; sessionId: string; expiresAt: string },
-): Promise<TerminalElicitationResult> {
-  const initial = await readTerminalElicitation(input.id);
-  if (initial) return initial;
-
-  const deadlineMs = new Date(input.expiresAt).getTime();
-  const nc = ctx.natsConnection;
-  if (nc) {
-    const subject = [
-      "elicitations",
-      sanitizeSubjectToken(input.workspaceId),
-      sanitizeSubjectToken(input.sessionId),
-      sanitizeSubjectToken(input.id),
-    ].join(".");
-    const sub = nc.subscribe(subject);
-    const iter = (sub as AsyncIterable<{ data: Uint8Array }>)[Symbol.asyncIterator]();
-    try {
-      await nc.flush();
-      while (Date.now() < deadlineMs) {
-        const remainingMs = Math.max(1, deadlineMs - Date.now());
-        const next = await Promise.race([iter.next(), sleep(remainingMs).then(() => null)]);
-        if (!next || next.done) break;
-        const text = new TextDecoder().decode(next.value.data);
-        const terminal = terminalFromEnvelope(JSON.parse(text));
-        if (terminal) return terminal;
-      }
-    } finally {
-      try {
-        sub.unsubscribe();
-      } catch {
-        // already closed
-      }
-    }
-  }
-
-  while (Date.now() < deadlineMs) {
-    const current = await readTerminalElicitation(input.id);
-    if (current) return current;
-    await sleep(WAIT_POLL_MS);
-  }
-  await ElicitationStorage.expirePending({ now: new Date(input.expiresAt), limit: 500 });
-  return { status: "expired" };
-}
-
 /**
  * Zod shape for a `PermissionsConfig` mirror. Kept narrow on purpose — the
  * tool only cares about `dangerouslySkipAllowlist` today; future fields
@@ -143,12 +43,8 @@ const ResolvedPermissionsShape = z.object({ dangerouslySkipAllowlist: z.boolean(
  *    `true` → returns `{ ok: true, granted: true, reason: "bypass" }` and
  *    logs at info level so operators can see it in the global log.
  * 2. **Elicitation branch (Phase 12.C)** — emits a `tool-allowlist`
- *    elicitation via `ElicitationStorage.create` and returns
- *    `{ ok: false, granted: false, elicitationId, reason: "pending_user_approval" }`.
- *    The LLM sees the structured denial; it can `failStep` or route around.
- *
- * MVP scope: no runtime auto-suspend on answered elicitations — the user
- * re-runs the job after answering. Suspend/resume is a follow-on phase.
+ *    elicitation via `ElicitationStorage.create`, blocks on the shared
+ *    elicitation wait primitive, and returns the user's terminal decision.
  *
  * Scope injection: `workspaceId`, `sessionId`, `actionId`, `jobPermissions`,
  * and `workspacePermissions` are filled in by `wrapPlatformToolsWithScope`
@@ -164,10 +60,8 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
         "Use this when you need a capability you don't currently have. " +
         'Returns immediately with `{ granted: true, reason: "bypass" }` if the ' +
         "current job/workspace has `permissions.dangerouslySkipAllowlist`. " +
-        "Otherwise emits a user-facing elicitation and returns " +
-        '`{ granted: false, reason: "pending_user_approval", elicitationId }` — ' +
-        "the LLM should `failStep` or route around the missing capability " +
-        "(the user re-runs the job after answering).",
+        "Otherwise emits a user-facing elicitation, blocks until it is answered, " +
+        "declined, or expired, and returns the terminal decision to the current run.",
       inputSchema: {
         toolName: z.string().min(1).describe("Name of the tool you want to call"),
         reason: z
@@ -262,12 +156,11 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
       }
 
       // Phase 12.C — elicitation branch. Emit a tool-allowlist elicitation
-      // and surface a structured denial so the LLM can fail-step cleanly.
-      // Review N3: derive expiresAt from job timeout when available so the
-      // elicitation TTL matches the job lifetime; else default to 30 min.
-      const now = new Date();
-      const ttlMs = jobTimeoutMs ?? DEFAULT_ELICITATION_TTL_MS;
-      const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+      // and block on the shared NATS/KV wait path until the user answers,
+      // declines, or the request expires. Review N3: derive expiresAt from
+      // job timeout when available so the elicitation TTL matches the job
+      // lifetime; else default to 30 min.
+      const expiresAt = deriveElicitationExpiresAt(jobTimeoutMs);
 
       // Review N4: warn-log when sessionId fallback fires. The fallback is
       // safe (Activity feed shows "unknown" rather than crashing the

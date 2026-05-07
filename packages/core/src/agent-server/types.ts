@@ -132,6 +132,10 @@ const AgentSessionDataSchema = z.object({
    *  resolve job-level skill assignments. Must stay in sync with
    *  AgentSessionDataSchema in packages/agent-sdk/src/types.ts. */
   jobName: z.string().optional(),
+  /** FSM action id for Activity correlation when an agent raises HITL. */
+  actionId: z.string().optional(),
+  /** Parent job timeout in milliseconds for blocking HITL expiry. */
+  jobTimeoutMs: z.number().int().positive().optional(),
 });
 
 /**

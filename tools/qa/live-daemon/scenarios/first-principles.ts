@@ -1421,6 +1421,96 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
   ];
 }
 
+async function runRequestUserDecisionScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles User Decision HITL" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const startedAt = Date.now();
+  const triggerPromise = triggerSignalSSE(d, ws.id, "user-decision-event", {
+    payload: { query: "request-user-decision" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  const pending = await waitForPendingElicitation(d, ws.id);
+  metrics.pendingObservedAtMs = Date.now() - startedAt;
+  metrics.pending = pending ?? null;
+  if (pending?.id && typeof pending.id === "string") {
+    metrics.answer = await answerElicitation(d, pending.id, "archive");
+  }
+  const trigger = await triggerPromise;
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "request-user-decision",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/python-user-agent-decision-check/python-user-decision-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const finalElicitations = await listElicitations(d, ws.id);
+  const answered = finalElicitations.find((e) => e.id === pending?.id);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  const listedTools = Array.isArray(payload?.listedTools) ? payload.listedTools : [];
+
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.payload = payload ?? null;
+  metrics.finalElicitations = finalElicitations;
+  metrics.toolNames = toolNames;
+
+  const pass =
+    pending !== null &&
+    pending.kind === "open-question" &&
+    answered?.status === "answered" &&
+    payload?.marker === "PY_USER_AGENT_HUMAN_INPUT_RESUMED" &&
+    payload?.status === "answered" &&
+    payload?.answer === "archive" &&
+    listedTools.includes("request_human_input") &&
+    toolNames.includes("request_human_input");
+
+  return [
+    {
+      id: "request-user-decision",
+      pass,
+      notes: [
+        ...notes,
+        `pending observed: ${pending !== null}`,
+        `kind: ${String(pending?.kind ?? "(missing)")}`,
+        `terminal status: ${String(answered?.status ?? "(missing)")}`,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `answer: ${String(payload?.answer ?? "(missing)")}`,
+        `listed request_human_input: ${listedTools.includes("request_human_input")}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runFanoutDelegateScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -1957,6 +2047,8 @@ async function main() {
     results.push(...(await runUnknownToolScenario(daemon)));
     console.log("\n── blocking elicitation resume ──");
     results.push(...(await runBlockingElicitationScenario(daemon)));
+    console.log("\n── request user decision HITL ──");
+    results.push(...(await runRequestUserDecisionScenario(daemon)));
     console.log("\n── fan-out delegate compactness ──");
     results.push(...(await runFanoutDelegateScenario(daemon)));
     console.log("\n── chat follow-up compactness ──");

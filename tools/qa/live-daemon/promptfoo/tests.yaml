@@ -54,6 +54,10 @@
   vars:
     scenarioId: blocking-elicitation
 
+- description: request user decision HITL
+  vars:
+    scenarioId: request-user-decision
+
 - description: fan-out delegate compactness
   vars:
     scenarioId: fanout-no-fanin-delegate

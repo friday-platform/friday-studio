@@ -1,0 +1,122 @@
+import { ElicitationStorage } from "@atlas/core/elicitations";
+import { stringifyError } from "@atlas/utils";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+import { deriveElicitationExpiresAt, waitForTerminalElicitation } from "../elicitations/wait.ts";
+import type { ToolContext } from "../types.ts";
+import { createErrorResponse, createSuccessResponse } from "../utils.ts";
+
+const ElicitationOptionInputSchema = z.object({
+  label: z.string().min(1).describe("Human-readable option label"),
+  value: z.string().min(1).describe("Machine-readable answer value returned to the agent"),
+});
+
+export function registerRequestHumanInputTool(server: McpServer, ctx: ToolContext): void {
+  server.registerTool(
+    "request_human_input",
+    {
+      description:
+        "Ask the user a question when you need a decision, approval, or disambiguation " +
+        "instead of guessing. Creates an Activity elicitation and blocks until the user " +
+        "answers, declines, or the request expires. Returns the answer to the current run.",
+      inputSchema: {
+        question: z.string().min(1).describe("Question to show the user"),
+        options: z
+          .array(ElicitationOptionInputSchema)
+          .min(1)
+          .optional()
+          .describe("Optional selectable answers. Omit for free-form text input."),
+        // ── Scope-injected fields (do not provide; runtime overrides) ─────
+        workspaceId: z.string().describe("(runtime-injected) workspace identity"),
+        sessionId: z.string().optional().describe("(runtime-injected) session identity"),
+        actionId: z.string().optional().describe("(runtime-injected) FSM action id"),
+        jobTimeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("(runtime-injected) parent job timeout in ms"),
+      },
+    },
+    async ({
+      question,
+      options,
+      workspaceId,
+      sessionId,
+      actionId,
+      jobTimeoutMs,
+    }): Promise<CallToolResult> => {
+      const expiresAt = deriveElicitationExpiresAt(jobTimeoutMs);
+      if (!sessionId) {
+        ctx.logger.warn("request_human_input: missing sessionId in scope — using 'unknown'", {
+          workspaceId,
+          actionId,
+        });
+      }
+
+      try {
+        const created = await ElicitationStorage.create({
+          workspaceId,
+          sessionId: sessionId ?? "unknown",
+          ...(actionId && { actionId }),
+          kind: "open-question",
+          question,
+          ...(options && options.length > 0 ? { options } : {}),
+          expiresAt,
+        });
+        if (!created.ok) {
+          ctx.logger.error("request_human_input elicitation create failed", {
+            workspaceId,
+            sessionId,
+            actionId,
+            error: created.error,
+          });
+          return createErrorResponse("Failed to create elicitation", created.error);
+        }
+
+        ctx.logger.info("request_human_input elicitation created", {
+          workspaceId,
+          sessionId,
+          actionId,
+          elicitationId: created.data.id,
+        });
+
+        const terminal = await waitForTerminalElicitation(ctx, {
+          id: created.data.id,
+          workspaceId: created.data.workspaceId,
+          sessionId: created.data.sessionId,
+          expiresAt: created.data.expiresAt,
+        });
+
+        if (terminal.status === "pending") {
+          return createSuccessResponse({
+            ok: false,
+            status: "pending",
+            elicitationId: created.data.id,
+            reason: "pending_user_input",
+          });
+        }
+        if (terminal.status === "answered") {
+          return createSuccessResponse({
+            ok: true,
+            status: "answered",
+            elicitationId: created.data.id,
+            answer: terminal.value ?? "",
+            ...(terminal.note ? { note: terminal.note } : {}),
+          });
+        }
+        return createSuccessResponse({
+          ok: false,
+          status: terminal.status,
+          elicitationId: created.data.id,
+          reason: terminal.status,
+          ...(terminal.note ? { note: terminal.note } : {}),
+        });
+      } catch (err) {
+        ctx.logger.error("request_human_input threw", { workspaceId, sessionId, error: err });
+        return createErrorResponse("request_human_input failed", stringifyError(err));
+      }
+    },
+  );
+}

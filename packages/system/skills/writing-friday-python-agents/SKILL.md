@@ -146,6 +146,28 @@ Currently only `stdio` transport is supported.
 
 If `ctx.tools.call` raises `ToolCallError("Unknown tool ...")`, list tools and fix the workspace/agent config rather than retrying a guessed name.
 
+### Human input — `request_human_input` (platform tool)
+
+When a user agent needs a decision, approval, or disambiguation, call the
+platform tool instead of streaming a question and hoping a later chat turn
+resumes the process:
+
+```python
+choice = ctx.tools.call("request_human_input", {
+    "question": "What should I do with these messages?",
+    "options": [
+        {"label": "Archive", "value": "archive"},
+        {"label": "Keep", "value": "keep"},
+    ],
+})
+# returns JSON text/content with status, answer, and elicitationId
+```
+
+The host creates an Activity/sidebar `open-question` elicitation, blocks this
+same tool call until the user answers/declines/expires, then resumes the agent
+with the answer. Use this for interactive review workflows; do not implement a
+local polling loop or direct `/api/elicitations` HTTP calls.
+
 ### Memory — `memory_save` / `memory_read` (platform tools)
 
 The host injects platform memory tools into every agent's tool surface

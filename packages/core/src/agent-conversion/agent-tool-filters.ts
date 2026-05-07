@@ -35,11 +35,10 @@ export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
   // (fs_read_file, fs_glob, fs_grep, fs_list_files) have the same
   // ambient-cwd behavior; tracking as N5-followup.
   "fs_write_file",
-  // Phase 12.C — request_tool_access reads sessionId, actionId, jobPermissions,
-  // and workspacePermissions from the wrapper to resolve effective bypass at
-  // call time. Without scope injection it has no way to see permissions
-  // config.
+  // HITL tools read sessionId/actionId from the wrapper so Activity can
+  // correlate the pending item and the blocked run can resume on answer.
   "request_tool_access",
+  "request_human_input",
 ]);
 
 export interface ToolScope {
@@ -185,10 +184,9 @@ export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   // Workspace (limited)
   "convert_task_to_workspace",
   "workspace_signal_trigger",
-  // Permissions — Phase 12.C / Phase 1.C. The LLM calls this to ask for a
-  // tool not in its allowlist. Bypass returns granted; otherwise emits an
-  // elicitation and returns a structured denial.
+  // Human-in-the-loop / permissions.
   "request_tool_access",
+  "request_human_input",
 ]);
 
 /**

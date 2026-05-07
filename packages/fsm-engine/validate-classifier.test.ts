@@ -171,6 +171,7 @@ describe("isReadOnly — allowlist coverage", () => {
     ["core/web_fetch", true],
     ["web_search", true],
     ["request_tool_access", true],
+    ["request_human_input", true],
     ["memory_read", true],
     ["artifacts/artifacts_get", true],
     ["artifacts_get", true],
