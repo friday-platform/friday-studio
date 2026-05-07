@@ -27,7 +27,11 @@ describe("POST /shutdown", () => {
 
   beforeEach(() => {
     exitMock = vi.fn();
+    // Spread the real Deno first so node-compat helpers like `Deno.unrefTimer`
+    // (used internally by Timeout.unref → vitest fake timers on Deno 2.7.4)
+    // survive the stub.
     vi.stubGlobal("Deno", {
+      ...globalThis.Deno,
       exit: exitMock,
       env: { get: (key: string) => (key === "ATLAS_SHUTDOWN_WATCHDOG_MS" ? "1500" : undefined) },
       memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0 }),
