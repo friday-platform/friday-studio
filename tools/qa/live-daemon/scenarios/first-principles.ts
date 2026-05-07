@@ -67,6 +67,30 @@ function byteLen(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).length;
 }
 
+function recordJobMetrics(
+  metrics: Record<string, unknown>,
+  trigger: { durationMs: number; sessionId: string | null; jobComplete: unknown },
+): void {
+  metrics.wallTimeMs = trigger.durationMs;
+  metrics.sessionId = trigger.sessionId;
+  metrics.jobComplete = trigger.jobComplete;
+  metrics.jobPayloadBytes = byteLen(trigger.jobComplete ?? {});
+}
+
+function recordEventMetrics(
+  metrics: Record<string, unknown>,
+  events: Awaited<ReturnType<typeof fetchSessionEvents>>,
+): void {
+  metrics.usage = events.totalUsage;
+  metrics.totalTokens =
+    events.totalUsage.inputTokens +
+    events.totalUsage.outputTokens +
+    events.totalUsage.cacheReadTokens +
+    events.totalUsage.cacheWriteTokens;
+  metrics.toolCallCount = events.toolCallCount;
+  metrics.stepValidationCount = events.stepValidations.length;
+}
+
 async function fetchTextArtifactJson(
   d: DaemonHandle,
   artifactId: string,
@@ -158,9 +182,7 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
     payload: { query: "first-principles" },
     timeoutMs: 8 * 60 * 1000,
   });
-  metrics.wallTimeMs = trigger.durationMs;
-  metrics.sessionId = trigger.sessionId;
-  metrics.jobComplete = trigger.jobComplete;
+  recordJobMetrics(metrics, trigger);
 
   if (!trigger.sessionId) {
     return [
@@ -186,6 +208,7 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
     | undefined;
   const artifacts = await listArtifactsForSession(d, ws.id, trigger.sessionId);
   const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
 
   metrics.bucket = bucket;
   metrics.emailsDocBytes = emailsDoc ? byteLen(emailsDoc) : 0;
@@ -292,9 +315,7 @@ async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]>
     payload: { query: "inputFrom-array" },
     timeoutMs: 8 * 60 * 1000,
   });
-  metrics.wallTimeMs = trigger.durationMs;
-  metrics.sessionId = trigger.sessionId;
-  metrics.jobComplete = trigger.jobComplete;
+  recordJobMetrics(metrics, trigger);
 
   if (!trigger.sessionId) {
     return [
@@ -316,6 +337,8 @@ async function runInputFromArrayScenario(d: DaemonHandle): Promise<EvalResult[]>
   const reviewArtifactData = await fetchFirstArtifactPayload(d, reviewData);
   const reviewPayload = reviewArtifactData ?? reviewData;
   const artifacts = await listArtifactsForSession(d, ws.id, trigger.sessionId);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
 
   metrics.bucket = bucket;
   metrics.reviewDocBytes = reviewDoc ? byteLen(reviewDoc) : 0;
@@ -360,9 +383,7 @@ async function runValidationContractScenario(d: DaemonHandle): Promise<EvalResul
     payload: { query: "validation-contract" },
     timeoutMs: 8 * 60 * 1000,
   });
-  metrics.wallTimeMs = trigger.durationMs;
-  metrics.sessionId = trigger.sessionId;
-  metrics.jobComplete = trigger.jobComplete;
+  recordJobMetrics(metrics, trigger);
 
   if (!trigger.sessionId) {
     return [
@@ -384,6 +405,7 @@ async function runValidationContractScenario(d: DaemonHandle): Promise<EvalResul
   const artifactData = await fetchFirstArtifactPayload(d, data);
   const payload = artifactData ?? data;
   const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
   const serializedDoc = JSON.stringify(data ?? {});
   const serializedPayload = JSON.stringify(payload ?? {});
   const hasRecordValidationStub =
@@ -440,9 +462,7 @@ async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]
     payload: { query: "ack-only" },
     timeoutMs: 8 * 60 * 1000,
   });
-  metrics.wallTimeMs = trigger.durationMs;
-  metrics.sessionId = trigger.sessionId;
-  metrics.jobComplete = trigger.jobComplete;
+  recordJobMetrics(metrics, trigger);
 
   if (!trigger.sessionId) {
     return [
@@ -465,6 +485,7 @@ async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]
   const rawPayload = artifactData ?? data;
   const payload = parseJsonResponsePayload(rawPayload);
   const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
   const serializedJob = JSON.stringify(trigger.jobComplete ?? {});
   const serializedDoc = JSON.stringify(data ?? {});
   const serializedPayload = JSON.stringify(payload ?? {});
@@ -530,9 +551,7 @@ async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
     payload: { query: "unknown-tool" },
     timeoutMs: 8 * 60 * 1000,
   });
-  metrics.wallTimeMs = trigger.durationMs;
-  metrics.sessionId = trigger.sessionId;
-  metrics.jobComplete = trigger.jobComplete;
+  recordJobMetrics(metrics, trigger);
 
   if (!trigger.sessionId) {
     return [
@@ -555,6 +574,7 @@ async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const payload = parseJsonResponsePayload(artifactData ?? data);
   const elicitations = await listElicitations(d, ws.id);
   const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
   const discoveryTools = Array.isArray(payload?.discoveryTools) ? payload.discoveryTools : [];
   const toolNames = events.events
     .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
@@ -616,9 +636,7 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
     metrics.answer = await answerElicitation(d, pending.id, "allow_once");
   }
   const trigger = await triggerPromise;
-  metrics.wallTimeMs = trigger.durationMs;
-  metrics.sessionId = trigger.sessionId;
-  metrics.jobComplete = trigger.jobComplete;
+  recordJobMetrics(metrics, trigger);
 
   if (!trigger.sessionId) {
     return [
@@ -641,6 +659,8 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
   const payload = parseJsonResponsePayload(artifactData ?? data);
   const finalElicitations = await listElicitations(d, ws.id);
   const answered = finalElicitations.find((e) => e.id === pending?.id);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
 
   metrics.data = data ?? null;
   metrics.artifactData = artifactData ?? null;
