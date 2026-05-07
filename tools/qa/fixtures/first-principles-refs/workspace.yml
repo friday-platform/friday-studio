@@ -99,6 +99,17 @@ signals:
         query:
           type: string
       required: []
+  fanout-delegate-event:
+    provider: http
+    description: "Trigger delegate fan-out without parent fan-in scenario."
+    config:
+      path: "/fanout-delegate-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 agents:
   contract-writer:
@@ -503,4 +514,59 @@ jobs:
                 - granted: the granted value returned by request_tool_access
                 - reason: the reason returned by request_tool_access
                 - answer: the answer returned by request_tool_access
+          type: final
+
+  fanout-delegate-check:
+    description: "Delegate to a child that sees bulky fake inbox data without feeding it back to the parent."
+    triggers:
+      - signal: fanout-delegate-event
+    config:
+      timeout: "5m"
+      max_steps: 10
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            fanout-delegate-event: { target: delegate }
+        delegate:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Delegate fake inbox review and keep parent output compact."
+              outputTo: delegate-result
+              validate: skip
+              tools:
+                - delegate
+                - search_messages
+                - get_messages_content_batch
+              prompt: |
+                Call delegate exactly once. Do NOT call search_messages or
+                get_messages_content_batch directly from this parent action.
+
+                Delegate goal:
+                "Use the fake inbox tools. First call search_messages with
+                query 'fanout delegate' and limit 4. Then call
+                get_messages_content_batch with the returned ids. You may see
+                message bodies containing FIRST_PRINCIPLES_EMAIL_BODY, but do
+                not include any body text or that sentinel in your final answer.
+                Finish with a concise JSON string containing marker
+                FANOUT_DELEGATE_CHILD_OK, messageCount 4, and firstId fake-001."
+
+                Delegate handoff:
+                "This is a fan-out compactness test. The child may inspect
+                bulky inbox contents; the parent must receive only the
+                delegate tool's compact answer and toolsUsed ledger."
+
+                After delegate returns, emit ONLY a JSON object containing:
+                - marker: "FANOUT_DELEGATE_PARENT_OK"
+                - childOk: delegate ok boolean
+                - childAnswer: delegate answer string
+                - toolsUsed: array of tool names from delegate toolsUsed
+
+                The parent final output MUST NOT include FIRST_PRINCIPLES_EMAIL_BODY
+                and MUST NOT include any message body text.
           type: final

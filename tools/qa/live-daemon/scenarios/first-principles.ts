@@ -953,6 +953,105 @@ async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResu
   ];
 }
 
+async function runFanoutDelegateScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Fanout Delegate" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "fanout-delegate-event", {
+    payload: { query: "fanout-delegate" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "fanout-no-fanin-delegate",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/fanout-delegate-check/delegate-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+
+  const durableSerialized = JSON.stringify({ jobComplete: trigger.jobComplete, data, payload });
+  const streamSerialized = JSON.stringify(trigger.events);
+  const delegateLedgerEvents = trigger.events.filter((ev) => ev.type === "data-delegate-ledger");
+  const delegateChunkEvents = trigger.events.filter((ev) => ev.type === "data-delegate-chunk");
+  const stepToolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  const toolsUsed = Array.isArray(payload?.toolsUsed) ? payload.toolsUsed : [];
+  const childAnswer = typeof payload?.childAnswer === "string" ? payload.childAnswer : "";
+  const jobPayloadBytes = byteLen(trigger.jobComplete ?? {});
+
+  metrics.bucket = bucket;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.payload = payload ?? null;
+  metrics.stepToolNames = stepToolNames;
+  metrics.toolsUsed = toolsUsed;
+  metrics.delegateLedgerEventCount = delegateLedgerEvents.length;
+  metrics.delegateChunkEventCount = delegateChunkEvents.length;
+  metrics.durablePayloadBytes = byteLen({ jobComplete: trigger.jobComplete, data, payload });
+  metrics.streamContainsBodySentinel = streamSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY");
+
+  const childAnswerCompact =
+    childAnswer.length < 500 && !childAnswer.includes("FIRST_PRINCIPLES_EMAIL_BODY");
+  const pass =
+    payload?.marker === "FANOUT_DELEGATE_PARENT_OK" &&
+    isTrue(payload?.childOk) &&
+    childAnswerCompact &&
+    toolsUsed.includes("search_messages") &&
+    toolsUsed.includes("get_messages_content_batch") &&
+    stepToolNames.includes("delegate") &&
+    !stepToolNames.includes("search_messages") &&
+    !stepToolNames.includes("get_messages_content_batch") &&
+    !durableSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY") &&
+    jobPayloadBytes < 2_000;
+
+  return [
+    {
+      id: "fanout-no-fanin-delegate",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `childOk: ${String(payload?.childOk ?? "(missing)")}`,
+        `child answer compact: ${childAnswerCompact}`,
+        `delegate toolsUsed: ${toolsUsed.join(",") || "(missing)"}`,
+        `parent step tools: ${stepToolNames.join(",") || "(missing)"}`,
+        `delegate ledger events: ${delegateLedgerEvents.length}`,
+        `delegate chunk events: ${delegateChunkEvents.length}`,
+        `durable payload contains body sentinel: ${durableSerialized.includes("FIRST_PRINCIPLES_EMAIL_BODY")}`,
+        `child answer bytes: ${byteLen(childAnswer)}`,
+        `job payload bytes: ${jobPayloadBytes}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -1077,6 +1176,8 @@ async function main() {
     results.push(...(await runUnknownToolScenario(daemon)));
     console.log("\n── blocking elicitation resume ──");
     results.push(...(await runBlockingElicitationScenario(daemon)));
+    console.log("\n── fan-out delegate compactness ──");
+    results.push(...(await runFanoutDelegateScenario(daemon)));
     console.log("\n── chat follow-up compactness ──");
     results.push(...(await runChatFollowupCompactnessScenario(daemon)));
   } finally {
