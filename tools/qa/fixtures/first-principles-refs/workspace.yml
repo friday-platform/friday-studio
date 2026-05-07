@@ -77,6 +77,17 @@ signals:
         query:
           type: string
       required: []
+  blocking-elicitation-event:
+    provider: http
+    description: "Trigger blocking request_tool_access scenario."
+    config:
+      path: "/blocking-elicitation-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 jobs:
   refs-check:
@@ -402,4 +413,41 @@ jobs:
                 - granted: the granted value returned by request_tool_access
                 - reason: the reason returned by request_tool_access
                 - discoveryTools: the discoveryTools array returned by request_tool_access, or []
+          type: final
+
+  blocking-elicitation-check:
+    description: "request_tool_access blocks until the user answers."
+    triggers:
+      - signal: blocking-elicitation-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            blocking-elicitation-event: { target: request }
+        request:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Request real tool access and continue after answer."
+              outputTo: blocking-elicitation-result
+              validate: skip
+              tools:
+                - request_tool_access
+              prompt: |
+                Call request_tool_access exactly once with:
+                - toolName: "fs_read_file"
+                - reason: "first-principles blocking elicitation guard"
+
+                Wait for the tool result. Then respond with ONLY a JSON object containing:
+                - marker: "BLOCKING_ELICITATION_RESUMED"
+                - granted: the granted value returned by request_tool_access
+                - reason: the reason returned by request_tool_access
+                - answer: the answer returned by request_tool_access
           type: final

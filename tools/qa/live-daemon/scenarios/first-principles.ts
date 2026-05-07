@@ -90,6 +90,34 @@ async function listElicitations(
   return body.elicitations ?? [];
 }
 
+async function waitForPendingElicitation(
+  d: DaemonHandle,
+  workspaceId: string,
+  timeoutMs = 60_000,
+): Promise<Record<string, unknown> | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const pending = (await listElicitations(d, workspaceId)).find((e) => e.status === "pending");
+    if (pending) return pending;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
+}
+
+async function answerElicitation(
+  d: DaemonHandle,
+  id: string,
+  value: string,
+): Promise<Record<string, unknown>> {
+  const resp = await fetch(`${d.baseUrl}/api/elicitations/${encodeURIComponent(id)}/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value, answeredBy: "first-principles-eval" }),
+  });
+  if (!resp.ok) throw new Error(`answer elicitation ${resp.status}: ${await resp.text()}`);
+  return (await resp.json()) as Record<string, unknown>;
+}
+
 function artifactPayload(doc: Record<string, unknown> | null): Record<string, unknown> | undefined {
   const nested = (doc?.data as Record<string, unknown> | undefined)?.data as
     | Record<string, unknown>
@@ -567,6 +595,82 @@ async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
   ];
 }
 
+async function runBlockingElicitationScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Blocking HITL" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const startedAt = Date.now();
+  const triggerPromise = triggerSignalSSE(d, ws.id, "blocking-elicitation-event", {
+    payload: { query: "blocking-elicitation" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  const pending = await waitForPendingElicitation(d, ws.id);
+  metrics.pendingObservedAtMs = Date.now() - startedAt;
+  metrics.pending = pending ?? null;
+  if (pending?.id && typeof pending.id === "string") {
+    metrics.answer = await answerElicitation(d, pending.id, "allow_once");
+  }
+  const trigger = await triggerPromise;
+  metrics.wallTimeMs = trigger.durationMs;
+  metrics.sessionId = trigger.sessionId;
+  metrics.jobComplete = trigger.jobComplete;
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "blocking-elicitation",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/blocking-elicitation-check/blocking-elicitation-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const finalElicitations = await listElicitations(d, ws.id);
+  const answered = finalElicitations.find((e) => e.id === pending?.id);
+
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.finalElicitations = finalElicitations;
+
+  const pass =
+    pending !== null &&
+    answered?.status === "answered" &&
+    payload?.marker === "BLOCKING_ELICITATION_RESUMED" &&
+    payload?.granted === true &&
+    payload?.reason === "answered" &&
+    payload?.answer === "allow_once";
+
+  return [
+    {
+      id: "blocking-elicitation",
+      pass,
+      notes: [
+        ...notes,
+        `pending observed: ${pending !== null}`,
+        `terminal status: ${String(answered?.status ?? "(missing)")}`,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `granted: ${String(payload?.granted ?? "(missing)")}`,
+        `answer: ${String(payload?.answer ?? "(missing)")}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function main() {
   await ensureCredentialsLoaded();
   if (!Deno.env.get("ANTHROPIC_API_KEY")) {
@@ -593,6 +697,8 @@ async function main() {
     results.push(...(await runAckOnlyMutationScenario(daemon)));
     console.log("\n── unknown tool request guard ──");
     results.push(...(await runUnknownToolScenario(daemon)));
+    console.log("\n── blocking elicitation resume ──");
+    results.push(...(await runBlockingElicitationScenario(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });

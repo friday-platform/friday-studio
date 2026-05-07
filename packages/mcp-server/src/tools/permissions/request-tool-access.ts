@@ -28,6 +28,36 @@ const DISCOVERY_TOOLS = [
   "connect_service",
   "connect_communicator",
 ];
+const WAIT_POLL_MS = 250;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForTerminalElicitation(
+  id: string,
+  expiresAt: string,
+): Promise<{ status: "answered" | "declined" | "expired"; value?: string; note?: string }> {
+  while (Date.now() < new Date(expiresAt).getTime()) {
+    const got = await ElicitationStorage.get({ id });
+    if (!got.ok) throw new Error(got.error);
+    const current = got.data;
+    if (!current) throw new Error(`Elicitation ${id} disappeared while waiting`);
+    if (current.status === "answered") {
+      return {
+        status: "answered",
+        value: current.answer?.value,
+        ...(current.answer?.note ? { note: current.answer.note } : {}),
+      };
+    }
+    if (current.status === "declined") {
+      return { status: "declined", ...(current.answer?.note ? { note: current.answer.note } : {}) };
+    }
+    if (current.status === "expired") return { status: "expired" };
+    await sleep(WAIT_POLL_MS);
+  }
+  return { status: "expired" };
+}
 
 /**
  * Zod shape for a `PermissionsConfig` mirror. Kept narrow on purpose — the
@@ -219,11 +249,24 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           actionId,
           elicitationId: created.data.id,
         });
+        const terminal = await waitForTerminalElicitation(created.data.id, created.data.expiresAt);
+        if (terminal.status === "answered") {
+          const granted = terminal.value === "allow_once" || terminal.value === "allow_always";
+          return createSuccessResponse({
+            ok: granted,
+            granted,
+            elicitationId: created.data.id,
+            answer: terminal.value,
+            reason: granted ? "answered" : "declined",
+            ...(terminal.note ? { note: terminal.note } : {}),
+          });
+        }
         return createSuccessResponse({
           ok: false,
           granted: false,
           elicitationId: created.data.id,
-          reason: "pending_user_approval",
+          reason: terminal.status,
+          ...(terminal.note ? { note: terminal.note } : {}),
         });
       } catch (err) {
         ctx.logger.error("request_tool_access threw", { toolName, workspaceId, error: err });
