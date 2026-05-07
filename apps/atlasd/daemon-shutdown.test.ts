@@ -121,9 +121,13 @@ function parsePortFromSentinel(line: string): number | undefined {
 /**
  * Spawn the daemon test shim and wait for the "Atlas daemon running"
  * sentinel. Returns handles for the child, its discovered port, and
- * promises for full stdout/stderr capture.
+ * promises for full stdout/stderr capture. `extraEnv` is merged after the
+ * standard scrub — used to inject test-mode env like watchdog timeout or
+ * the wedge-shutdown flag.
  */
-async function spawnDaemonAndWaitForSentinel(): Promise<SpawnedDaemon> {
+async function spawnDaemonAndWaitForSentinel(
+  extraEnv: NodeJS.ProcessEnv = {},
+): Promise<SpawnedDaemon> {
   // Strip OTEL/auth env so the shim doesn't trigger telemetry exporters
   // or the cypher token fetch. Deno rejects `OTEL_DENO=` with a warning
   // (only "true"/"false" are accepted), so we must DELETE the keys, not
@@ -142,6 +146,7 @@ async function spawnDaemonAndWaitForSentinel(): Promise<SpawnedDaemon> {
   delete childEnv.FRIDAY_KEY;
   delete childEnv.CYPHER_TOKEN_URL;
   delete childEnv.DENO_TESTING;
+  Object.assign(childEnv, extraEnv);
 
   const child = spawn("deno", [...DENO_FLAGS, ENTRY_SCRIPT], {
     env: childEnv,
@@ -244,6 +249,85 @@ describe("daemon /shutdown route", () => {
       const allOutput = `${stdoutText}\n${stderrText}`;
 
       // Two-sided check: clean-path log present, watchdog log absent.
+      expect(allOutput).toContain(CLEAN_EXIT_MARKER);
+      expect(allOutput).not.toContain(WATCHDOG_MARKER);
+
+      spawned = undefined;
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "fires the watchdog and exits with code 1 when daemon.shutdown() deadlocks",
+    async () => {
+      // Negative-case for the safety net. Without this test, a regression
+      // that breaks the watchdog (wrong timeout, missing Deno.exit inside,
+      // misplaced clearTimeout) would ship undetected because the clean-
+      // path test never exercises the watchdog branch.
+      //
+      // The fixture's `ATLAS_TEST_WEDGE_SHUTDOWN=1` swaps `daemon.shutdown`
+      // for a never-resolving promise. `ATLAS_SHUTDOWN_WATCHDOG_MS=1500`
+      // shrinks the watchdog so the test resolves in ~2s instead of the
+      // production 15s.
+      spawned = await spawnDaemonAndWaitForSentinel({
+        ATLAS_TEST_WEDGE_SHUTDOWN: "1",
+        ATLAS_SHUTDOWN_WATCHDOG_MS: "1500",
+      });
+
+      const response = await fetch(`http://127.0.0.1:${spawned.port}/api/daemon/shutdown`, {
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      await response.json();
+
+      // Generous deadline (5s) above the 1500ms watchdog. Any value below
+      // EXIT_DEADLINE_MS would also work — we just want to bound flake.
+      const exitStatus = await withDeadline(spawned.exit, 5_000, "watchdog exit wait");
+      expect(exitStatus.code).toBe(1);
+      expect(exitStatus.signal).toBeNull();
+
+      const [stdoutText, stderrText] = await Promise.all([spawned.stdoutDone, spawned.stderrDone]);
+      const allOutput = `${stdoutText}\n${stderrText}`;
+
+      // The watchdog log is the load-bearing assertion: we deliberately
+      // wedged shutdown, so the watchdog firing is the proof the safety
+      // net works. Clean-exit log must be absent (we didn't reach it).
+      expect(allOutput).toContain(WATCHDOG_MARKER);
+      expect(allOutput).not.toContain(CLEAN_EXIT_MARKER);
+
+      spawned = undefined;
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "handles concurrent POST /shutdown requests safely (memoization holds)",
+    async () => {
+      // Pins the design contract: multiple POSTs coalesce via
+      // `AtlasDaemon.shutdownPromise` and the first `Deno.exit(0)` wins.
+      // No route-level dedupe — see comment in `routes/daemon.ts`. If
+      // someone refactors the memoization out, this test fails before the
+      // bug ships.
+      spawned = await spawnDaemonAndWaitForSentinel();
+
+      const url = `http://127.0.0.1:${spawned.port}/api/daemon/shutdown`;
+      const responses = await Promise.all([
+        fetch(url, { method: "POST" }),
+        fetch(url, { method: "POST" }),
+        fetch(url, { method: "POST" }),
+      ]);
+      for (const r of responses) {
+        expect(r.status).toBe(200);
+      }
+      // Drain the JSON bodies so connections close before the daemon exits.
+      await Promise.all(responses.map((r) => r.json()));
+
+      const exitStatus = await withDeadline(spawned.exit, EXIT_DEADLINE_MS, "daemon exit wait");
+      expect(exitStatus.code).toBe(0);
+      expect(exitStatus.signal).toBeNull();
+
+      const [stdoutText, stderrText] = await Promise.all([spawned.stdoutDone, spawned.stderrDone]);
+      const allOutput = `${stdoutText}\n${stderrText}`;
       expect(allOutput).toContain(CLEAN_EXIT_MARKER);
       expect(allOutput).not.toContain(WATCHDOG_MARKER);
 

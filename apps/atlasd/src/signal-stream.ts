@@ -274,8 +274,17 @@ export class SignalConsumer {
 
   /**
    * Stop the loop. Sets `running = false` AND closes any in-flight fetch
-   * iterator so the runLoop returns promptly instead of waiting up to
-   * `expiresMs` for the current `consumer.fetch()` to expire naturally.
+   * iterator so the runLoop returns promptly when a batch is currently
+   * being yielded.
+   *
+   * **Caveat — between-batches race.** `currentBatch` is null between
+   * iterations of the runLoop (just-completed batch, or first iteration).
+   * If `stop()` arrives in this window while `consumer.fetch()` is in
+   * flight, the close is a no-op and the pending fetch must wait up to
+   * `expiresMs` (default 10s) to resolve naturally. The firm bound on
+   * shutdown is therefore `nc.close()` in `NatsManager.stop()`, not this
+   * method — `stop()` is a fast-path optimization, not a guarantee.
+   *
    * If `signal` is supplied, an abort during `await this.loop` triggers
    * the same close (used by shutdown-step timeouts to bound stop()).
    */

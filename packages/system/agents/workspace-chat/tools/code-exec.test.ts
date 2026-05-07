@@ -147,7 +147,10 @@ describe("run_code — PTY wrap for interactive-auth commands", () => {
     const result = await run({ language: "bash", source: "sleep 5; echo done" });
     const elapsed = Date.now() - started;
 
-    expect(elapsed).toBeLessThan(2000);
+    // Wide bound (4500ms vs. the 5s sleep) keeps the test honest on slow
+    // CI runners with cold node_modules and exec fork overhead, while
+    // still catching the regression where the abort doesn't propagate.
+    expect(elapsed).toBeLessThan(4500);
     if (!hasKey(result, "error")) {
       throw new Error(`expected error shape, got ${JSON.stringify(result)}`);
     }

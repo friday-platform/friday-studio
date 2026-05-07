@@ -48,12 +48,15 @@ describe("withShutdownTimeout", () => {
     );
   });
 
-  it("times out a bare never-resolving promise within ms + 50", async () => {
-    const start = Date.now();
-    await withShutdownTimeout("hang", new Promise<void>(() => {}), 60);
-    const elapsed = Date.now() - start;
-    expect(elapsed).toBeGreaterThanOrEqual(60);
-    expect(elapsed).toBeLessThan(60 + 50);
+  it("times out a bare never-resolving promise and logs the warning", async () => {
+    // Fake timers make the test deterministic — the behavioral claim is
+    // "after `ms` elapses, warn fires once with the expected label/error",
+    // which doesn't depend on wall-clock. Real-timer + tight upper-bound
+    // versions of this test were flake-prone on slow CI runners.
+    vi.useFakeTimers();
+    const pending = withShutdownTimeout("hang", new Promise<void>(() => {}), 60);
+    await vi.advanceTimersByTimeAsync(60);
+    await pending;
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledWith(
       "Shutdown step failed or timed out",

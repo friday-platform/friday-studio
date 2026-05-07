@@ -22,4 +22,22 @@
 import { AtlasDaemon } from "../src/atlas-daemon.ts";
 
 const daemon = new AtlasDaemon({ port: 0, hostname: "127.0.0.1" });
+
+// Test-only wedge for the watchdog negative-case test in
+// `daemon-shutdown.test.ts`. When `ATLAS_TEST_WEDGE_SHUTDOWN=1`, replace
+// `daemon.shutdown` with a never-resolving promise so the HTTP `/shutdown`
+// route's watchdog has to fire to force exit. Pair with
+// `ATLAS_SHUTDOWN_WATCHDOG_MS` (read by `routes/daemon.ts`) to keep the
+// test fast.
+//
+// Patched BEFORE start() because start() registers SIGINT/SIGTERM handlers
+// that capture `this.shutdown` via a method reference — patching after
+// start would leave those handlers wired to the original method.
+if (Deno.env.get("ATLAS_TEST_WEDGE_SHUTDOWN") === "1") {
+  Deno.stderr.writeSync(
+    new TextEncoder().encode("[test-fixture] WEDGE: replacing daemon.shutdown with hang\n"),
+  );
+  daemon.shutdown = () => new Promise<void>(() => {});
+}
+
 await daemon.start();

@@ -211,6 +211,13 @@ export async function withShutdownTimeout<T>(
 }
 
 /**
+ * Coarse shutdown-phase marker surfaced to the HTTP watchdog log so a
+ * postmortem can see *which* phase wedged when the watchdog fired. Mirrors
+ * the structure of `_doShutdown` — three phases plus idle/complete bookends.
+ */
+export type ShutdownPhase = "idle" | "phase-1-drain" | "phase-2" | "phase-3-nats" | "complete";
+
+/**
  * AtlasDaemon - Single daemon managing multiple workspaces with on-demand runtime creation
  * Replaces the per-workspace WorkspaceServer architecture
  */
@@ -235,6 +242,10 @@ export class AtlasDaemon {
   // Private properties
   private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private shutdownPromise: Promise<void> | null = null;
+  // Surfaced by the HTTP watchdog log so postmortems show *which* phase
+  // wedged when the 15s watchdog fires. Updated at phase boundaries in
+  // `_doShutdown`. See `apps/atlasd/routes/daemon.ts` for the consumer.
+  public currentShutdownPhase: ShutdownPhase = "idle";
   private server: Deno.HttpServer | null = null;
   // Aborted on shutdown-step timeout to force-close the Deno.serve listener
   // immediately, instead of letting it linger after server.shutdown() exceeds
@@ -2470,6 +2481,7 @@ export class AtlasDaemon {
 
   private async _doShutdown(): Promise<void> {
     logger.info("Shutting down Atlas daemon...");
+    this.currentShutdownPhase = "phase-1-drain";
 
     // Drop our signal handlers up front — a second SIGINT/SIGTERM now hits
     // the OS default and force-exits, which is the desired escape hatch.
@@ -2545,6 +2557,7 @@ export class AtlasDaemon {
     // Phase 2 — tear down domain layer in parallel. destroyWorkspaceRuntime
     // calls workspaceManager.updateWorkspaceStatus (which goes through NATS)
     // so NATS + WorkspaceManager must remain alive until this phase ends.
+    this.currentShutdownPhase = "phase-2";
     await Promise.allSettled([
       withShutdownTimeout(
         "workspace runtimes",
@@ -2618,6 +2631,7 @@ export class AtlasDaemon {
 
     // Phase 3 — bottom of the stack. WorkspaceManager.close() may flush
     // through NATS, so close it before NATS stops.
+    this.currentShutdownPhase = "phase-3-nats";
     await withShutdownTimeout("workspace manager", this.workspaceManager?.close(), 2000);
     this.workspaceManager = null;
 
@@ -2628,6 +2642,7 @@ export class AtlasDaemon {
     );
     this.natsManager = null;
 
+    this.currentShutdownPhase = "complete";
     logger.info("Atlas daemon shutdown complete");
   }
 

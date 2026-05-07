@@ -460,6 +460,49 @@ describe("CascadeConsumer head-of-line decoupling", () => {
   });
 });
 
+describe("CascadeConsumer.stop(signal) iterator close", () => {
+  it("breaks the in-flight batch iterator on stop(signal) — synchronous close path", async () => {
+    // Regression guard: `void this.currentBatch?.close()` at the top of
+    // `stop()` ends the for-await iterator immediately, so the runLoop
+    // returns without waiting up to `expiresMs` for the batch to expire.
+    // Mirrors the signal-stream test of the same shape — same defect class
+    // (the 2026-05-07 incident) was fixed in both files.
+    const consumerName = `test-stop-abort-${crypto.randomUUID()}`;
+    let handlerResolve: (() => void) | undefined;
+    const handlerCalled = new Promise<void>((r) => {
+      handlerResolve = r;
+    });
+
+    const consumer = new CascadeConsumer(
+      nc,
+      (env) => {
+        handlerResolve?.();
+        return Promise.resolve({ sessionId: `s-${env.signalId}`, output: [] });
+      },
+      () => Promise.resolve("skip" as ConcurrencyPolicy),
+      { name: consumerName, expiresMs: 1000, batchSize: 16 },
+    );
+    await consumer.start();
+    await publishCascade(nc, envelope("ws-stop-abort", "msg-1"));
+
+    // Proves the consumer is mid-batch (currentBatch is set, for-await
+    // has yielded once and is waiting for the next message).
+    await handlerCalled;
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const start = Date.now();
+    await consumer.stop(controller.signal);
+    const elapsed = Date.now() - start;
+
+    // With the iterator-close, ~50ms typical. Without it, the for-await
+    // waits the full 1000ms `expires` budget. 500ms catches the regression
+    // with comfortable slack on slow CI.
+    expect(elapsed).toBeLessThan(500);
+  }, 15_000);
+});
+
 async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
