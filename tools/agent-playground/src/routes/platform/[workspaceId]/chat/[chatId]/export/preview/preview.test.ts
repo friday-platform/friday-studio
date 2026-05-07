@@ -22,7 +22,7 @@ import { render } from "svelte/server";
 import { describe, expect, it, vi } from "vitest";
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import type { ArtifactPrefetch } from "$lib/components/chat/export-context";
-import { artifactZipPath } from "$lib/export/artifact-zip-path";
+import { artifactZipPath, slugifyZipBasename } from "$lib/export/artifact-zip-path";
 
 // `@atlas/ui` is a single-entry barrel that pulls in `@tanstack/svelte-table`
 // at module load. The alpha dist ships extensionless `.svelte` imports that
@@ -349,5 +349,43 @@ describe("artifactZipPath helper (resolveUrl contract)", () => {
     });
     expect(path).toBe("assets/artifacts/artifact/x.txt");
     expect(path).not.toMatch(/(^|\/)\.+(\/|$)/);
+  });
+});
+
+// Direct unit tests of the slug helper — `artifactZipPath` calls
+// `slugifyZipBasename` twice (once for `id`, once for the derived
+// basename), and `deriveDownloadFilename` always appends a mime
+// extension so the basename branch can't currently receive a pure-dot
+// input. But the helper is the load-bearing rule, and any future
+// caller (or a refactor of `deriveDownloadFilename`) inherits it. Pin
+// the rule directly so a regression that gates the pure-dot reject
+// behind a call-site check (or accidentally narrows the regex) fails
+// here regardless of which caller it touches.
+describe("slugifyZipBasename — pure-dot reject and dotfile preservation", () => {
+  it.each([
+    ["double-dot", ".."],
+    ["single-dot", "."],
+    ["triple-dot", "..."],
+    ["five-dots", "....."],
+  ])("rejects pure-dot input (%s) and returns the artifact default", (_label, input) => {
+    expect(slugifyZipBasename(input)).toBe("artifact");
+  });
+
+  it.each([
+    ["leading-dot dotfile", ".gitignore"],
+    ["trailing-dot", "name."],
+    ["dot-in-middle", "name.ext"],
+    ["multi-extension", "archive.tar.gz"],
+    ["dot-prefix-with-letters", ".env.local"],
+  ])("preserves legitimate filenames containing dots (%s)", (_label, input) => {
+    expect(slugifyZipBasename(input)).toBe(input);
+  });
+
+  it("returns the artifact default for the empty string", () => {
+    expect(slugifyZipBasename("")).toBe("artifact");
+  });
+
+  it("rewrites disallowed characters to underscore but preserves allowed dots", () => {
+    expect(slugifyZipBasename("a/b\\c.d")).toBe("a_b_c.d");
   });
 });

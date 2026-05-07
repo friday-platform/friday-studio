@@ -529,6 +529,49 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     expect(zip.file("assets/artifacts/.._.._etc_passwd/x.txt")).not.toBeNull();
   });
 
+  it("slugs a pure-dot artifact id end-to-end so it lands at `assets/artifacts/artifact/...`", async () => {
+    // Pairs with the `slug e2e` test above (`../../etc/passwd` form). This
+    // covers the bare `..` case — the exact threat that slipped past round
+    // 2 because the round-2 fix only rewrote `/` and the round-3 fix added
+    // the pure-dot reject. A regression in the reject would land here.
+    //
+    // `encodeURIComponent("..") === ".."` (dots are unreserved), so the
+    // byte-fetch URL is literally `…/api/artifacts/../content`.
+    const dotty = sampleArtifact("..", "x.txt");
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: makeRequest(),
+      fetch: makeFetch([
+        {
+          match: (u) => u.includes("/export/preview"),
+          respond: () => htmlResponse("<html>ok</html>"),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/workspaces/") && u.includes("?full=true"),
+          respond: () => jsonResponse(sampleChatPayload),
+        },
+        {
+          match: (u) => u.includes("/api/daemon/api/artifacts?chatId="),
+          respond: () => jsonResponse({ artifacts: [dotty] }),
+        },
+        {
+          match: (u) => u.endsWith("/api/daemon/api/artifacts/../content"),
+          respond: () => bytesResponse("safe"),
+        },
+      ]),
+    };
+
+    const res = await callGet(event);
+    expect(res.status).toBe(200);
+    const zip = await decodeZip(res);
+    // Pure-dot id collapses to the `artifact` default; the basename
+    // (`x.txt`) is already ASCII-safe and survives unchanged.
+    expect(zip.file("assets/artifacts/artifact/x.txt")).not.toBeNull();
+    for (const entry of Object.keys(zip.files)) {
+      expect(entry).not.toMatch(/(^|\/)\.+(\/|$)/);
+    }
+  });
+
   it("forwards a non-2xx preview status (e.g. 404 for missing chat) verbatim", async () => {
     const event: FakeEvent = {
       params: { workspaceId: SAMPLE_WS_ID, chatId: "missing-chat" },
