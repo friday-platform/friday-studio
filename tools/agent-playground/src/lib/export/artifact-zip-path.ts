@@ -39,8 +39,16 @@ export interface ArtifactPathInput {
  * references resolve against the same path the orchestrator (Task #8)
  * writes to in the zip. No leading slash so the path is resolvable when
  * the file is opened directly off disk.
+ *
+ * Both `id` and the derived basename run through `slugifyZipBasename`.
+ * Artifact ids are daemon-generated today (so containing `..` or `/` is
+ * not currently possible) but a future change to id generation, or a
+ * compromised daemon, would otherwise let an attacker write outside
+ * `assets/artifacts/` — JSZip honours whatever path you hand it. Slug at
+ * the boundary instead of trusting the upstream charset.
  */
 export function artifactZipPath(input: ArtifactPathInput): string {
+  const safeId = slugifyZipBasename(input.id);
   const basename = slugifyZipBasename(
     deriveDownloadFilename({
       mimeType: input.mimeType,
@@ -48,5 +56,5 @@ export function artifactZipPath(input: ArtifactPathInput): string {
       title: input.title,
     }),
   );
-  return `assets/artifacts/${input.id}/${basename}`;
+  return `assets/artifacts/${safeId}/${basename}`;
 }

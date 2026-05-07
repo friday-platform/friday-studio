@@ -316,4 +316,19 @@ describe("artifactZipPath helper (resolveUrl contract)", () => {
       }),
     ).toBe("assets/artifacts/art-3/Project_Notes.md");
   });
+
+  it("slugifies the id so a hostile id cannot escape `assets/artifacts/`", () => {
+    // Defense in depth — daemon-generated ids today are UUID-shaped, but
+    // a future change or a compromised daemon shouldn't be able to write
+    // a zip entry outside the assets dir. JSZip honours whatever path
+    // string we hand it.
+    const path = artifactZipPath({
+      id: "../../etc/passwd",
+      mimeType: "text/plain",
+      originalName: "x.txt",
+      title: "Untitled",
+    });
+    expect(path).toBe("assets/artifacts/.._.._etc_passwd/x.txt");
+    expect(path).not.toMatch(/(^|\/)\.\.(\/|$)/);
+  });
 });

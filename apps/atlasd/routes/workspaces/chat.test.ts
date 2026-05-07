@@ -38,6 +38,19 @@ vi.mock("@atlas/agent-sdk", () => ({
   normalizeToUIMessages: (message: unknown) => [message],
 }));
 
+// Shrink the byte cap so the cap branch is testable without allocating
+// tens of megabytes per assertion. Hoisted so the `vi.mock` factory below
+// can reference it. 1 MiB sits well above the ~300 KiB serialised size of
+// the 5000-message boundary fixtures (so those tests still 200) but small
+// enough that one explicit oversize message can blow past it cheaply.
+const { TEST_MAX_FULL_EXPORT_BYTES } = vi.hoisted(() => ({
+  TEST_MAX_FULL_EXPORT_BYTES: 1024 * 1024,
+}));
+vi.mock("./chat-limits.ts", () => ({
+  MAX_FULL_EXPORT_MESSAGES: 5000,
+  MAX_FULL_EXPORT_BYTES: TEST_MAX_FULL_EXPORT_BYTES,
+}));
+
 // Import the routes after mocks are set up
 import workspaceChatRoutes from "./chat.ts";
 
@@ -347,6 +360,66 @@ describe("GET /:workspaceId/chat/:chatId — get chat", () => {
       const body = (await res.json()) as { messages: Array<{ id: string }> };
       expect(body.messages).toHaveLength(5000);
       expect(mockValidateMessages).toHaveBeenCalledOnce();
+    });
+
+    // The message-count cap bounds validator walk time but not per-message
+    // size. Without a byte cap, a 4-message chat with a 200 MB tool output
+    // would be sanitised, JSON-stringified, and shipped — pinning RAM on
+    // both the daemon and the orchestrator. The byte cap rejects the
+    // serialised payload before it leaves the daemon.
+    test("?full=true returns 413 when serialised payload exceeds MAX_FULL_EXPORT_BYTES", async () => {
+      // Within the 5000-message ceiling, but one message carries a string
+      // large enough that JSON-stringifying the whole response exceeds
+      // the test-only 1 MiB cap.
+      const fat = "x".repeat(TEST_MAX_FULL_EXPORT_BYTES + 1024);
+      mockChatStorage.getChat.mockResolvedValue({
+        ok: true,
+        data: {
+          id: "chat-1",
+          workspaceId: "ws-1",
+          userId: "user-123",
+          title: "Test Chat",
+          messages: [{ id: "msg-0", role: "user", content: fat }],
+          systemPromptContext: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1?full=true");
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as JsonBody;
+      expect(body.error).toBe("Chat too large to export");
+      expect(typeof body.payloadBytes).toBe("number");
+      expect(body.payloadBytes).toBeGreaterThan(TEST_MAX_FULL_EXPORT_BYTES);
+      expect(body.limit).toBe(TEST_MAX_FULL_EXPORT_BYTES);
+    });
+
+    test("default (live UI) path is unaffected by the byte cap", async () => {
+      // The trimmed view is bounded at 100 messages and uses `c.json` (not
+      // the byte-capped path), so a chat that would be 413 under
+      // `?full=true` still serves a normal 200 here.
+      const fat = "y".repeat(TEST_MAX_FULL_EXPORT_BYTES + 1024);
+      mockChatStorage.getChat.mockResolvedValue({
+        ok: true,
+        data: {
+          id: "chat-1",
+          workspaceId: "ws-1",
+          userId: "user-123",
+          title: "Test Chat",
+          messages: [{ id: "msg-0", role: "user", content: fat }],
+          systemPromptContext: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      });
+      const { app } = createTestApp();
+
+      const res = await app.request("/ws-1/chat/chat-1");
+
+      expect(res.status).toBe(200);
     });
   });
 });

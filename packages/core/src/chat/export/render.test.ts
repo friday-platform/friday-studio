@@ -1,6 +1,11 @@
 import type { AtlasUIMessage } from "@atlas/agent-sdk";
 import { describe, expect, it } from "vitest";
-import { extractToolCalls, formatMessageTimestamp } from "./render.ts";
+import {
+  buildSegments,
+  extractImages,
+  extractToolCalls,
+  formatMessageTimestamp,
+} from "./render.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -658,6 +663,214 @@ describe("extractToolCalls", () => {
       expect(parent?.progress).toEqual(["Analyzing query...", "Synthesizing..."]);
       expect(parent?.children).toHaveLength(1);
     });
+  });
+});
+
+describe("buildSegments", () => {
+  // `buildSegments` is what the export route's preview HTML actually walks
+  // to render the chat — every regression here ships into the static file
+  // recipients open. Tests exercise the chronological-ordering invariants
+  // that the live UI also depends on (text → tool burst → text), the
+  // reasoning-attachment rules (deltas during a tool burst attach to the
+  // burst, deltas outside attach to the surrounding text), and the
+  // `data-credential-linked` flush behavior used by the connect_service flow.
+
+  it("returns an empty array for messages without parts", () => {
+    expect(buildSegments(makeMessage([]))).toEqual([]);
+  });
+
+  it("coalesces consecutive text parts into a single text segment", () => {
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "Hello " },
+        { type: "text", text: "world" },
+      ]),
+    );
+    expect(segs).toEqual([{ type: "text", content: "Hello world" }]);
+  });
+
+  it("groups consecutive tool calls into a tool-burst segment after flushing prior text", () => {
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "Looking it up..." },
+        staticToolPart("web_fetch", "c1", "output-available"),
+        staticToolPart("web_fetch", "c2", "output-available"),
+        { type: "text", text: "Done." },
+      ]),
+    );
+    expect(segs).toHaveLength(3);
+    const [first, second, third] = segs;
+    expect(first).toEqual({ type: "text", content: "Looking it up..." });
+    expect(second?.type).toBe("tool-burst");
+    if (second?.type !== "tool-burst") throw new Error("expected tool-burst");
+    expect(second.calls.map((c) => c.toolCallId)).toEqual(["c1", "c2"]);
+    // Burst id is deterministic and namespaced by message id so SSR and
+    // hydrate land on the same `<details>` keys.
+    expect(second.id).toBe("msg-1-burst-0");
+    expect(third).toEqual({ type: "text", content: "Done." });
+  });
+
+  it("attaches reasoning to the surrounding text when no tool burst is open", () => {
+    // Pre-burst reasoning has nowhere to go but the text buffer; the
+    // segment-builder is intentionally permissive here so a stray
+    // reasoning chunk doesn't drop on the floor.
+    const segs = buildSegments(
+      makeMessage([
+        { type: "text", text: "I'll think about this. " },
+        { type: "reasoning-delta", delta: "Hmm... " },
+        { type: "reasoning", text: "Considering options." },
+      ]),
+    );
+    expect(segs).toEqual([
+      { type: "text", content: "I'll think about this. Hmm... Considering options." },
+    ]);
+  });
+
+  it("attaches reasoning deltas to the burst when a tool buffer is open", () => {
+    const segs = buildSegments(
+      makeMessage([
+        staticToolPart("web_fetch", "c1", "output-available"),
+        { type: "reasoning-delta", delta: "Trying again. " },
+        { type: "reasoning", text: "Fallback." },
+        staticToolPart("web_fetch", "c2", "output-available"),
+      ]),
+    );
+    expect(segs).toHaveLength(1);
+    const [only] = segs;
+    if (only?.type !== "tool-burst") throw new Error("expected tool-burst");
+    expect(only.reasoning).toBe("Trying again. Fallback.");
+    expect(only.calls.map((c) => c.toolCallId)).toEqual(["c1", "c2"]);
+  });
+
+  it("flushes the open burst when data-credential-linked arrives, then emits a confirmation text", () => {
+    const segs = buildSegments(
+      makeMessage([
+        staticToolPart("connect_service", "c1", "output-available"),
+        { type: "data-credential-linked", data: { displayName: "Google Calendar" } },
+        staticToolPart("web_fetch", "c2", "output-available"),
+      ]),
+    );
+    expect(segs).toHaveLength(3);
+    const [burstA, confirmation, burstB] = segs;
+    expect(burstA?.type).toBe("tool-burst");
+    expect(confirmation).toEqual({ type: "text", content: "Connected Google Calendar." });
+    expect(burstB?.type).toBe("tool-burst");
+  });
+
+  it("ignores tool parts whose toolCallId has no matching display entry", () => {
+    // A tool part can land in `parts[]` without a matching entry in the
+    // tool-display map (e.g. malformed stream). The walker skips it rather
+    // than rendering an empty card.
+    const segs = buildSegments(
+      makeMessage([
+        { type: "tool-web_fetch" }, // no toolCallId — toolMap.get("") is undefined
+      ]),
+    );
+    expect(segs).toEqual([]);
+  });
+
+  it("issues distinct burst ids for multiple bursts in the same message", () => {
+    const segs = buildSegments(
+      makeMessage([
+        staticToolPart("a", "c1", "output-available"),
+        { type: "text", text: "Between." },
+        staticToolPart("b", "c2", "output-available"),
+      ]),
+    );
+    const bursts = segs.filter(
+      (s): s is Extract<typeof s, { type: "tool-burst" }> => s.type === "tool-burst",
+    );
+    expect(bursts).toHaveLength(2);
+    expect(bursts[0]?.id).toBe("msg-1-burst-0");
+    expect(bursts[1]?.id).toBe("msg-1-burst-1");
+  });
+
+  it("ignores malformed parts (non-object, missing type, non-string type)", () => {
+    const segs = buildSegments(
+      makeMessage([
+        null,
+        "loose string",
+        { foo: "bar" },
+        { type: 42 },
+        { type: "text", text: "survived" },
+      ]),
+    );
+    expect(segs).toEqual([{ type: "text", content: "survived" }]);
+  });
+});
+
+describe("extractImages", () => {
+  // Images are rendered with `<img src={url}>` in the export — anything that
+  // makes it past `extractImages` lands directly in the static HTML, so the
+  // filter is the trust boundary for which file parts become rendered images.
+
+  it("returns an empty array for messages without parts", () => {
+    expect(extractImages(makeMessage([]))).toEqual([]);
+  });
+
+  it("returns image file parts in order", () => {
+    const imgs = extractImages(
+      makeMessage([
+        { type: "file", url: "https://a/img1.png", mediaType: "image/png", filename: "img1.png" },
+        { type: "file", url: "https://b/img2.jpg", mediaType: "image/jpeg" },
+      ]),
+    );
+    expect(imgs).toEqual([
+      { url: "https://a/img1.png", mediaType: "image/png", filename: "img1.png" },
+      { url: "https://b/img2.jpg", mediaType: "image/jpeg", filename: undefined },
+    ]);
+  });
+
+  it("defaults missing mediaType to image/png", () => {
+    // Older AI SDK versions occasionally emit file parts without mediaType.
+    // The default keeps such parts visible rather than silently dropping them.
+    const imgs = extractImages(makeMessage([{ type: "file", url: "https://x/legacy" }]));
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0]?.mediaType).toBe("image/png");
+  });
+
+  it("filters out non-image file parts", () => {
+    const imgs = extractImages(
+      makeMessage([
+        { type: "file", url: "https://x/img.png", mediaType: "image/png" },
+        { type: "file", url: "https://x/doc.pdf", mediaType: "application/pdf" },
+        { type: "file", url: "https://x/data.csv", mediaType: "text/csv" },
+        { type: "file", url: "https://x/audio.mp3", mediaType: "audio/mpeg" },
+      ]),
+    );
+    expect(imgs.map((i) => i.url)).toEqual(["https://x/img.png"]);
+  });
+
+  it("skips file parts with missing or non-string url", () => {
+    const imgs = extractImages(
+      makeMessage([
+        { type: "file", mediaType: "image/png" },
+        { type: "file", url: 42, mediaType: "image/png" },
+        { type: "file", url: "https://ok/img.png", mediaType: "image/png" },
+      ]),
+    );
+    expect(imgs.map((i) => i.url)).toEqual(["https://ok/img.png"]);
+  });
+
+  it("ignores non-file parts entirely", () => {
+    const imgs = extractImages(
+      makeMessage([
+        { type: "text", text: "hello" },
+        { type: "tool-fetch", toolCallId: "c1", state: "output-available" },
+      ]),
+    );
+    expect(imgs).toEqual([]);
+  });
+
+  it("ignores malformed parts (null, missing type)", () => {
+    const imgs = extractImages(
+      makeMessage([
+        null,
+        { url: "https://x/img.png" },
+        { type: "file", url: "https://ok/img.png", mediaType: "image/png" },
+      ]),
+    );
+    expect(imgs.map((i) => i.url)).toEqual(["https://ok/img.png"]);
   });
 });
 

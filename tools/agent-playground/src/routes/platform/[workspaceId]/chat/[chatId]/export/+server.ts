@@ -87,6 +87,12 @@ export const GET: RequestHandler = async (event) => {
       headers: previewRes.headers,
     });
   }
+  if (requestSignal.aborted) {
+    // Client closed the tab between the preview render and the next fetch.
+    // Bail before doing more work — the response we return is discarded by
+    // SvelteKit, but 499 is the right status to log if anything sees it.
+    return new Response(null, { status: 499 });
+  }
   const html = await previewRes.text();
 
   // Chat JSON and artifact list run in parallel — neither depends on the
@@ -176,6 +182,14 @@ export const GET: RequestHandler = async (event) => {
       };
     }),
   );
+
+  if (requestSignal.aborted) {
+    // Each per-artifact fetch reacts to the request signal by rejecting
+    // with `AbortError`, which `Promise.allSettled` swallows into a
+    // "rejected" entry — control still falls through here. Bail before
+    // building a zip that nobody is waiting for.
+    return new Response(null, { status: 499 });
+  }
 
   // Aggregate ceiling. Sum the byte lengths of everything that survived the
   // per-artifact cap; if the total still blows past the limit we 413 before

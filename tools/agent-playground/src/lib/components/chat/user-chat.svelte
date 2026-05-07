@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
+  import { toast } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
@@ -916,6 +917,70 @@
     goto(`/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(targetChatId)}`);
   }
 
+  /**
+   * Trigger a chat export. Uses `fetch` + Blob + a programmatic anchor
+   * click rather than `window.location.href = …` so non-2xx responses
+   * (413 over the message/byte cap, 504 timeout, 502 daemon failure)
+   * surface as a toast instead of dropping the user on a raw JSON page
+   * with no way back.
+   *
+   * The download filename comes from the response's
+   * `content-disposition: attachment; filename="…"` header so the
+   * orchestrator stays the source of truth for naming. Falls back to a
+   * chatId-derived name if the header is missing.
+   */
+  let exportInFlight = $state(false);
+  async function handleExportChat(): Promise<void> {
+    if (exportInFlight) return;
+    exportInFlight = true;
+    const url = `/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
+
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "Export failed", description: msg, error: true });
+      exportInFlight = false;
+      return;
+    }
+
+    if (!res.ok) {
+      // Try to surface the structured error body the orchestrator/daemon
+      // returns ({error, messageCount, limit} for 413, {error} for 504/502).
+      // Fall back to status text if the body isn't JSON.
+      let description = `HTTP ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: unknown };
+        if (typeof body.error === "string" && body.error.length > 0) {
+          description = body.error;
+        }
+      } catch {
+        // body wasn't JSON — keep the HTTP fallback
+      }
+      toast({ title: "Export failed", description, error: true });
+      exportInFlight = false;
+      return;
+    }
+
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const cd = res.headers.get("content-disposition") ?? "";
+      const filename =
+        /filename="?([^"]+)"?/.exec(cd)?.[1] ?? `friday-chat-${chatId.slice(0, 8)}.zip`;
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+      exportInFlight = false;
+    }
+  }
+
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (!chat) return;
     error = null;
@@ -1081,10 +1146,9 @@
     {#if chat && chat.messages.length > 0}
       <button
         class="new-chat-button"
-        onclick={() => {
-          window.location.href = `/platform/${encodeURIComponent(wsId)}/chat/${encodeURIComponent(chatId)}/export`;
-        }}
-      >Export chat</button>
+        onclick={handleExportChat}
+        disabled={exportInFlight}
+      >{exportInFlight ? "Exporting…" : "Export chat"}</button>
       <button class="new-chat-button" onclick={startNewChat}>New Chat</button>
     {/if}
   </header>

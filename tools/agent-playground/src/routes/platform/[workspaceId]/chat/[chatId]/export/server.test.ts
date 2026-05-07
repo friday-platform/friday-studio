@@ -397,6 +397,56 @@ describe("GET /platform/:wsId/chat/:chatId/export — zip orchestrator", () => {
     expect(body.totalBytes).toBeGreaterThan(TEST_MAX_TOTAL_ARTIFACT_BYTES);
   });
 
+  it("bails with 499 when the request signal aborts mid-pipeline (no zip generated)", async () => {
+    // Simulate the closed-tab path: preview returns OK, then the client
+    // signal aborts before the artifact fan-out finishes. The orchestrator
+    // should detect the aborted signal and short-circuit instead of
+    // building a zip nobody's waiting for.
+    const abortController = new AbortController();
+    let zipGenerateCalled = false;
+    const event: FakeEvent = {
+      params: { workspaceId: SAMPLE_WS_ID, chatId: SAMPLE_CHAT_ID },
+      request: { signal: abortController.signal },
+      fetch: ((async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        if (url.includes("/export/preview")) {
+          // Abort right before returning the preview body so the next
+          // `requestSignal.aborted` check fires.
+          abortController.abort();
+          return htmlResponse("<html>ok</html>");
+        }
+        // Per-artifact / chat / artifact-list fetches all honour the
+        // signal in production; mirror that so the orchestrator's
+        // `Promise.allSettled` sees rejected entries.
+        if (init?.signal?.aborted) {
+          throw new DOMException("aborted", "AbortError");
+        }
+        return jsonResponse(sampleChatPayload);
+      }) as typeof globalThis.fetch),
+    };
+
+    // Spy on JSZip.prototype.generateAsync to confirm we never reach the
+    // pack step. Restored by the surrounding `afterEach` via
+    // `vi.restoreAllMocks`.
+    const generateSpy = vi
+      .spyOn(JSZip.prototype, "generateAsync")
+      .mockImplementation(async () => {
+        zipGenerateCalled = true;
+        return new ArrayBuffer(0);
+      });
+
+    const res = await callGet(event);
+
+    expect(res.status).toBe(499);
+    expect(generateSpy).not.toHaveBeenCalled();
+    expect(zipGenerateCalled).toBe(false);
+  });
+
   it("forwards a non-2xx preview status (e.g. 404 for missing chat) verbatim", async () => {
     const event: FakeEvent = {
       params: { workspaceId: SAMPLE_WS_ID, chatId: "missing-chat" },

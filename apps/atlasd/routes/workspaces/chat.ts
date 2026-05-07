@@ -17,15 +17,7 @@ import { logger } from "@atlas/logger";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { daemonFactory } from "../../src/factory.ts";
-
-/**
- * Hard cap on the number of messages returned by `GET /:chatId?full=true`.
- * `validateAtlasUIMessages` walks every message and sanitises HTML in each
- * part, which is unbounded RAM + CPU on the daemon for pathological chats.
- * The trimmed view (`slice(-100)`) doesn't need this — only the export
- * preview path that opts in via `?full=true` does.
- */
-const MAX_FULL_EXPORT_MESSAGES = 5000;
+import { MAX_FULL_EXPORT_BYTES, MAX_FULL_EXPORT_MESSAGES } from "./chat-limits.ts";
 
 const listChatsQuerySchema = z.object({
   limit: z.coerce.number().min(1).max(100).optional(),
@@ -240,10 +232,33 @@ const workspaceChatRoutes = daemonFactory
     const selectedMessages = full ? messages : messages.slice(-100);
     const sanitized = await validateAtlasUIMessages(selectedMessages);
 
-    return c.json(
-      { chat, messages: sanitized, systemPromptContext: systemPromptContext ?? null },
-      200,
-    );
+    const responseBody = {
+      chat,
+      messages: sanitized,
+      systemPromptContext: systemPromptContext ?? null,
+    };
+
+    if (full) {
+      // Cap the serialised payload before shipping. Stringify once for the
+      // size check; `c.json` re-stringifies for the response body, which is
+      // a small cost vs. preserving Hono RPC's response-type inference (a
+      // raw `c.body(string, …)` widens the return type to `string | {…}`
+      // and breaks downstream typed callers). The trimmed live-UI path is
+      // bounded at 100 messages so it skips this branch entirely.
+      const serializedBytes = JSON.stringify(responseBody).length;
+      if (serializedBytes > MAX_FULL_EXPORT_BYTES) {
+        return c.json(
+          {
+            error: "Chat too large to export",
+            payloadBytes: serializedBytes,
+            limit: MAX_FULL_EXPORT_BYTES,
+          },
+          413,
+        );
+      }
+    }
+
+    return c.json(responseBody, 200);
   })
 
   .delete("/:chatId", async (c) => {
