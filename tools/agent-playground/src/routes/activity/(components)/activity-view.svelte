@@ -23,6 +23,7 @@
   } from "@atlas/core/elicitations/model";
   import { PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { countPendingElicitations, effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
   import { browser } from "$app/environment";
   import {
     elicitationListKey,
@@ -118,8 +119,7 @@
 
   // Effective expiry-aware status, matches what the row component shows.
   function effectiveStatus(e: Elicitation): ElicitationStatus {
-    if (e.status === "pending" && new Date(e.expiresAt).getTime() <= nowMs) return "expired";
-    return e.status;
+    return effectiveElicitationStatus(e, nowMs);
   }
 
   const filtered = $derived.by(() => {
@@ -180,9 +180,7 @@
   ];
 
   function counts(): { pending: number; total: number } {
-    let pending = 0;
-    for (const e of elicitations) if (effectiveStatus(e) === "pending") pending++;
-    return { pending, total: elicitations.length };
+    return { pending: countPendingElicitations(elicitations, nowMs), total: elicitations.length };
   }
   const summary = $derived(counts());
 </script>

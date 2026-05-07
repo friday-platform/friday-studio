@@ -19,6 +19,7 @@
     "./artifacts/converters": "./src/artifacts/converters/mod.ts",
     "./delegate": "./src/delegate/index.ts",
     "./elicitations": "./src/elicitations/mod.ts",
+    "./elicitations/model": "./src/elicitations/model.ts",
     "./elicitations/storage": "./src/elicitations/storage.ts",
     "./errors": "./src/errors.ts",
     "./chat/chat-sdk-state-adapter": "./src/chat/chat-sdk-state-adapter.ts",
