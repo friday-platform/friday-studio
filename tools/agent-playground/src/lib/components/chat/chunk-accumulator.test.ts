@@ -221,6 +221,82 @@ describe("accumulateChunks", () => {
     expect(entry?.state).toBe("input-available");
   });
 
+  describe("nested FSM context stamping", () => {
+    it("stamps session/action context from preceding nested FSM chunks", () => {
+      const chunks = [
+        {
+          type: "data-session-start",
+          data: {
+            sessionId: "sess-1",
+            workspaceId: "ws-1",
+            jobName: "plan-trip",
+          },
+        } as unknown as AtlasUIMessageChunk,
+        {
+          type: "data-fsm-action-execution",
+          data: {
+            sessionId: "sess-1",
+            workspaceId: "ws-1",
+            jobName: "plan-trip",
+            actionId: "itinerary-result",
+          },
+        } as unknown as AtlasUIMessageChunk,
+        toolInputAvailable("hitl-1", "request_human_input", {
+          question: "Which trip style sounds best to you?",
+        }),
+      ];
+
+      const result = accumulateChunks(chunks, "parent-tool");
+      const entry = result.get("hitl-1");
+      expect(entry).toMatchObject({
+        toolName: "request_human_input",
+        parentToolCallId: "parent-tool",
+        workspaceId: "ws-1",
+        sessionId: "sess-1",
+        jobName: "plan-trip",
+        actionId: "itinerary-result",
+      });
+    });
+
+    it("does not retroactively stamp tools that appeared before the session context", () => {
+      const chunks = [
+        toolInputAvailable("early", "request_human_input", {
+          question: "Too soon?",
+        }),
+        {
+          type: "data-fsm-action-execution",
+          data: { sessionId: "sess-1", actionId: "a1" },
+        } as unknown as AtlasUIMessageChunk,
+        toolInputAvailable("late", "request_human_input", { question: "Now?" }),
+      ];
+
+      const result = accumulateChunks(chunks);
+      expect(result.get("early")?.sessionId).toBeUndefined();
+      expect(result.get("late")?.sessionId).toBe("sess-1");
+      expect(result.get("late")?.actionId).toBe("a1");
+    });
+
+    it("clears stale action context when a new nested session starts", () => {
+      const chunks = [
+        {
+          type: "data-fsm-action-execution",
+          data: { sessionId: "sess-1", actionId: "a1" },
+        } as unknown as AtlasUIMessageChunk,
+        toolInputAvailable("first", "request_human_input", { question: "First?" }),
+        {
+          type: "data-session-start",
+          data: { sessionId: "sess-2", workspaceId: "ws-1" },
+        } as unknown as AtlasUIMessageChunk,
+        toolInputAvailable("second", "request_human_input", { question: "Second?" }),
+      ];
+
+      const result = accumulateChunks(chunks);
+      expect(result.get("first")?.actionId).toBe("a1");
+      expect(result.get("second")?.sessionId).toBe("sess-2");
+      expect(result.get("second")?.actionId).toBeUndefined();
+    });
+  });
+
   describe("parentToolCallId stamping", () => {
     it("stamps parentToolCallId on every entry when provided", () => {
       const chunks = [

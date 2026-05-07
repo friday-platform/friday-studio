@@ -74,6 +74,10 @@
   vars:
     scenarioId: chat-followup-compactness
 
+- description: chat human input inline/debug
+  vars:
+    scenarioId: chat-human-input-inline-debug
+
 - description: ambient artifact injection pruning
   vars:
     scenarioId: ambient-artifact-injection-pruning

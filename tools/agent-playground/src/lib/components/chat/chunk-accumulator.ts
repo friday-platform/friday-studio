@@ -19,6 +19,18 @@ function stringOr<T>(value: unknown, fallback: T): string | T {
 /** Accumulator entry shape with optional parent tagging. */
 type AccumulatedEntry = ToolCallDisplay & { parentToolCallId?: string };
 
+type ChunkContext = {
+  workspaceId?: string;
+  sessionId?: string;
+  actionId?: string;
+  jobName?: string;
+};
+
+function readStringField(source: Record<string, unknown>, key: string): string | undefined {
+  const value = source[key];
+  return typeof value === "string" ? value : undefined;
+}
+
 /**
  * Apply a single chunk to the accumulator map.
  *
@@ -30,7 +42,8 @@ type AccumulatedEntry = ToolCallDisplay & { parentToolCallId?: string };
 function applyChunk(
   acc: Map<string, AccumulatedEntry>,
   chunk: unknown,
-  parentToolCallId?: string,
+  parentToolCallId: string | undefined,
+  context: ChunkContext,
 ): void {
   if (typeof chunk !== "object" || chunk === null || !("type" in chunk)) return;
   const type = chunk.type;
@@ -41,7 +54,10 @@ function applyChunk(
       : undefined;
   if (!toolCallId) return;
 
-  const stamp = parentToolCallId ? { parentToolCallId } : {};
+  const stamp = {
+    ...(parentToolCallId ? { parentToolCallId } : {}),
+    ...context,
+  };
 
   switch (type) {
     case "tool-input-start": {
@@ -117,8 +133,34 @@ export function accumulateChunks(
   parentToolCallId?: string,
 ): Map<string, AccumulatedEntry> {
   const acc = new Map<string, AccumulatedEntry>();
+  const context: ChunkContext = {};
   for (const chunk of chunks) {
-    applyChunk(acc, chunk, parentToolCallId);
+    if (typeof chunk === "object" && chunk !== null && "type" in chunk) {
+      if (chunk.type === "data-session-start" && "data" in chunk) {
+        const data = chunk.data;
+        if (typeof data === "object" && data !== null) {
+          const d = data as Record<string, unknown>;
+          const nextSessionId = readStringField(d, "sessionId");
+          if (nextSessionId && nextSessionId !== context.sessionId) {
+            context.actionId = undefined;
+          }
+          context.sessionId = nextSessionId ?? context.sessionId;
+          context.workspaceId = readStringField(d, "workspaceId") ?? context.workspaceId;
+          context.jobName = readStringField(d, "jobName") ?? context.jobName;
+        }
+      }
+      if (chunk.type === "data-fsm-action-execution" && "data" in chunk) {
+        const data = chunk.data;
+        if (typeof data === "object" && data !== null) {
+          const d = data as Record<string, unknown>;
+          context.sessionId = readStringField(d, "sessionId") ?? context.sessionId;
+          context.workspaceId = readStringField(d, "workspaceId") ?? context.workspaceId;
+          context.jobName = readStringField(d, "jobName") ?? context.jobName;
+          context.actionId = readStringField(d, "actionId") ?? context.actionId;
+        }
+      }
+    }
+    applyChunk(acc, chunk, parentToolCallId, context);
   }
   return acc;
 }

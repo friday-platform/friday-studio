@@ -237,21 +237,29 @@ async function fetchWorkspaceConfig(
   return body.config ?? null;
 }
 
-async function fetchChatSystemPrompt(
+async function fetchChatBody(
   d: DaemonHandle,
   workspaceId: string,
   chatId: string,
-): Promise<string> {
+): Promise<Record<string, unknown> | null> {
   const resp = await fetch(
     `${d.baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(
       chatId,
     )}`,
   );
-  if (!resp.ok) return "";
-  const body = (await resp.json()) as {
+  if (!resp.ok) return null;
+  return (await resp.json()) as Record<string, unknown>;
+}
+
+async function fetchChatSystemPrompt(
+  d: DaemonHandle,
+  workspaceId: string,
+  chatId: string,
+): Promise<string> {
+  const body = (await fetchChatBody(d, workspaceId, chatId)) as {
     systemPromptContext?: { systemMessages?: string[] } | null;
-  };
-  return (body.systemPromptContext?.systemMessages ?? []).join("\n\n");
+  } | null;
+  return (body?.systemPromptContext?.systemMessages ?? []).join("\n\n");
 }
 
 interface ChatToolCall {
@@ -390,6 +398,44 @@ async function postChatMessage(
     toolCalls: [...toolCallsById.values()],
     durationMs: Date.now() - startedAt,
   };
+}
+
+function chunkContainsToolName(value: unknown, toolName: string): boolean {
+  if (typeof value !== "object" || value === null || !("type" in value)) {
+    return false;
+  }
+  const chunk = value as Record<string, unknown>;
+  if (chunk.toolName === toolName) return true;
+  const data = chunk.data;
+  if (typeof data === "object" && data !== null && "chunk" in data) {
+    return chunkContainsToolName((data as Record<string, unknown>).chunk, toolName);
+  }
+  return false;
+}
+
+function collectSessionIdsFromChunk(value: unknown, out: Set<string>): void {
+  if (typeof value !== "object" || value === null || !("type" in value)) return;
+  const chunk = value as Record<string, unknown>;
+  const data = chunk.data;
+  if (typeof data === "object" && data !== null) {
+    const d = data as Record<string, unknown>;
+    if (typeof d.sessionId === "string") out.add(d.sessionId);
+    if ("chunk" in d) collectSessionIdsFromChunk(d.chunk, out);
+  }
+}
+
+async function fetchChatDebug(
+  d: DaemonHandle,
+  workspaceId: string,
+  chatId: string,
+): Promise<Record<string, unknown> | null> {
+  const resp = await fetch(
+    `${d.baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(
+      chatId,
+    )}/_debug`,
+  );
+  if (!resp.ok) return null;
+  return (await resp.json()) as Record<string, unknown>;
 }
 
 function artifactPayload(doc: Record<string, unknown> | null): Record<string, unknown> | undefined {
@@ -1752,6 +1798,117 @@ async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<Eval
   ];
 }
 
+async function runChatHumanInputScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Chat HITL" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const chatId = crypto.randomUUID();
+  const startedAt = Date.now();
+  const chatPromise = postChatMessage(
+    d,
+    ws.id,
+    chatId,
+    [
+      "Call the chat-user-decision-check job tool exactly once with query 'chat-hitl'.",
+      "When the job asks for human input, wait for the answer from request_human_input.",
+      "After the job completes, reply with a short acknowledgement that includes CHAT_HUMAN_INPUT_RESUMED.",
+      "Do not call fake inbox tools directly and do not delegate.",
+    ].join("\n"),
+    { timeoutMs: 12 * 60 * 1000 },
+  );
+
+  const pending = await waitForPendingElicitation(d, ws.id);
+  metrics.pendingObservedAtMs = Date.now() - startedAt;
+  metrics.pending = pending ?? null;
+
+  const debugBeforeAnswer = await fetchChatDebug(d, ws.id, chatId);
+  const activeStream =
+    (debugBeforeAnswer?.activeStream as Record<string, unknown> | undefined) ?? {};
+  const activeEvents = Array.isArray(activeStream.events) ? activeStream.events : [];
+  const debugSessionIds = new Set<string>();
+  for (const event of activeEvents) {
+    collectSessionIdsFromChunk(event, debugSessionIds);
+  }
+  const debugHasHumanInput = activeEvents.some((event) =>
+    chunkContainsToolName(event, "request_human_input"),
+  );
+
+  if (pending?.id && typeof pending.id === "string") {
+    metrics.answer = await answerElicitation(d, pending.id, "archive");
+  }
+
+  const chat = await chatPromise;
+  const finalElicitations = await listElicitations(d, ws.id);
+  const terminal = finalElicitations.find((e) => e.id === pending?.id);
+  const chatBody = await fetchChatBody(d, ws.id, chatId);
+  const messages = Array.isArray(chatBody?.messages) ? chatBody.messages : [];
+  const assistantPersisted = messages.some(
+    (m) => typeof m === "object" && m !== null && (m as { role?: unknown }).role === "assistant",
+  );
+  const toolNames = chat.toolCalls.map((tc) => tc.toolName);
+  const jobToolOutput = chat.toolCalls.find(
+    (tc) => tc.toolName === "chat-user-decision-check" && tc.output !== undefined,
+  )?.output as Record<string, unknown> | undefined;
+  const nestedHasHumanInput = chat.events.some((event) =>
+    chunkContainsToolName(
+      event.raw ? JSON.parse(event.raw) : { type: event.type, data: event.data },
+      "request_human_input",
+    ),
+  );
+
+  metrics.chatId = chatId;
+  metrics.chatSessionId = chat.chatSessionId;
+  metrics.innerSessionIds = chat.innerSessionIds;
+  metrics.durationMs = chat.durationMs;
+  metrics.toolNames = toolNames;
+  metrics.jobToolOutput = jobToolOutput ?? null;
+  metrics.debugActiveStreamExists = activeStream.exists ?? null;
+  metrics.debugActiveStreamActive = activeStream.active ?? null;
+  metrics.debugActiveStreamEventCount = activeStream.eventCount ?? null;
+  metrics.debugSessionIds = [...debugSessionIds];
+  metrics.debugHasHumanInput = debugHasHumanInput;
+  metrics.nestedHasHumanInput = nestedHasHumanInput;
+  metrics.assistantPersisted = assistantPersisted;
+  metrics.terminal = terminal ?? null;
+
+  const pass =
+    pending !== null &&
+    pending.kind === "open-question" &&
+    terminal?.status === "answered" &&
+    toolNames.includes("chat-user-decision-check") &&
+    jobToolOutput?.success === true &&
+    nestedHasHumanInput &&
+    activeStream.exists === true &&
+    activeStream.active === true &&
+    debugHasHumanInput &&
+    debugSessionIds.has(String(pending.sessionId)) &&
+    assistantPersisted;
+
+  return [
+    {
+      id: "chat-human-input-inline-debug",
+      pass,
+      notes: [
+        ...notes,
+        `pending observed: ${pending !== null}`,
+        `terminal status: ${String(terminal?.status ?? "(missing)")}`,
+        `job tool called: ${toolNames.includes("chat-user-decision-check")}`,
+        `nested request_human_input streamed: ${nestedHasHumanInput}`,
+        `debug active stream exists: ${String(activeStream.exists ?? false)}`,
+        `debug active stream has request_human_input: ${debugHasHumanInput}`,
+        `debug stream includes pending session: ${debugSessionIds.has(String(pending?.sessionId))}`,
+        `assistant persisted after answer: ${assistantPersisted}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runAmbientArtifactInjectionPruningScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -2097,6 +2254,8 @@ async function main() {
     results.push(...(await runFanoutDelegateScenario(daemon)));
     console.log("\n── chat follow-up compactness ──");
     results.push(...(await runChatFollowupCompactnessScenario(daemon)));
+    console.log("\n── chat human input inline/debug ──");
+    results.push(...(await runChatHumanInputScenario(daemon)));
     console.log("\n── ambient artifact injection pruning ──");
     results.push(...(await runAmbientArtifactInjectionPruningScenario(daemon)));
     console.log("\n── review-choice memory learning ──");
