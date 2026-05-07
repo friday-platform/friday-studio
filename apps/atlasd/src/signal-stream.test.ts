@@ -121,15 +121,8 @@ describe("publishSignal + SignalConsumer", () => {
   });
 
   it("breaks the in-flight batch iterator on stop(signal) — synchronous close path", async () => {
-    // Regression guard for the smoking-gun fix from the 2026-05-07 incident:
-    // `void this.currentBatch?.close()` at the top of `stop()` ends the
-    // for-await iterator immediately, so the runLoop returns without
-    // waiting up to `expiresMs` for the batch to expire naturally.
-    //
-    // Setup: publish ONE message into a batchSize=16 batch with
-    // expiresMs=1000. After the handler runs, the for-await is waiting up
-    // to 1000ms for messages 2..16. Calling stop() in that window is
-    // exactly the scenario the close() rescues.
+    // Without `currentBatch?.close()` in stop(), the for-await waits up to
+    // `expiresMs` for the batch to fill naturally before the runLoop returns.
     const consumerName = `test-stop-abort-${crypto.randomUUID()}`;
     let handlerResolve: (() => void) | undefined;
     const handlerCalled = new Promise<void>((r) => {
@@ -147,8 +140,6 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.start();
     await publishSignal(nc, { workspaceId: "ws-stop-abort", signalId: "msg-1" });
 
-    // Proves the consumer is mid-batch (currentBatch is set, for-await
-    // has yielded once and is waiting for the next message).
     await handlerCalled;
 
     const controller = new AbortController();
@@ -158,14 +149,13 @@ describe("publishSignal + SignalConsumer", () => {
     await consumer.stop(controller.signal);
     const elapsed = Date.now() - start;
 
-    // With the iterator-close, ~50ms typical. Without it, the for-await
-    // waits the full 1000ms `expires` budget. 500ms catches the regression
-    // with comfortable slack on slow CI.
+    // 500ms bound: well above the ~50ms close path, below the 1000ms
+    // expiresMs that would elapse if the iterator-close regressed.
     expect(elapsed).toBeLessThan(500);
 
-    // Delete the durable so the next test's non-filtered consumer doesn't
-    // collide on the workqueue stream. (CASCADES gets reset in beforeEach
-    // in its own test file; SIGNALS doesn't, so we clean up locally.)
+    // SIGNALS isn't reset between tests in this file (unlike CASCADES);
+    // delete the durable so the next test's consumer doesn't collide on
+    // the workqueue stream.
     await consumer.destroy();
   }, 15_000);
 

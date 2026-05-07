@@ -15,46 +15,23 @@ const daemonApp = daemonFactory
     } as const);
   })
   /**
-   * Shutdown daemon.
+   * Shutdown daemon. Responds 200, then runs `daemon.shutdown()` and exits.
    *
-   * Responds 200 immediately, then runs `daemon.shutdown()` and calls
-   * `Deno.exit(0)`. A 15s watchdog is the safety net: if `shutdown()`
-   * hangs on a dangling async handle, the watchdog force-exits. On the
-   * clean path the watchdog is `clearTimeout`'d before `Deno.exit`, so it
-   * never gets to run — `Deno.exit` short-circuits regardless of pending
-   * timers, so neither side prolongs shutdown.
+   * Exit codes: 0 on clean resolve; 1 if the watchdog fires or shutdown rejects
+   * (supervisors distinguish failed teardown from clean exit).
    *
-   * Exit code semantics (matches the SIGTERM handler in atlas-daemon.ts):
-   * - **0** — `daemon.shutdown()` resolved cleanly.
-   * - **1** — watchdog fired (deadlock) OR `daemon.shutdown()` rejected.
-   *   Both are graceful-teardown failures, externally observable so
-   *   supervisors can distinguish them from a clean exit.
-   *
-   * Watchdog timeout is configurable via `ATLAS_SHUTDOWN_WATCHDOG_MS` for
-   * tests that exercise the deadlock path (default 15000ms).
-   *
-   * Subsequent tasks (#14-#19) shrink reliance on the watchdog by plumbing
-   * real per-subsystem cancellation.
+   * The 15s watchdog is a safety net for hangs on dangling async handles.
    */
   .post("/shutdown", (c) => {
     const ctx = c.get("app");
     const watchdogMs = Number(Deno.env.get("ATLAS_SHUTDOWN_WATCHDOG_MS") ?? "15000") || 15_000;
 
-    // Concurrent POSTs are safe: `daemon.shutdown()` is memoized internally
-    // (see `AtlasDaemon.shutdown` — `shutdownPromise` coalesces callers).
-    // Multiple POSTs fan out to N watchdogs and N `Deno.exit` calls, but
-    // the first `Deno.exit` wins and the rest are no-ops by the time they
-    // would fire. We accept the (rare) duplicate-watchdog log noise as the
-    // simpler design over route-level state — single source of truth on
-    // shutdown lives on the daemon, not in the HTTP handler.
+    // `daemon.shutdown()` is memoized, so concurrent POSTs coalesce; duplicate
+    // watchdogs/exits are accepted as cheap noise rather than tracked here.
     setTimeout(async () => {
       const watchdog = setTimeout(() => {
-        // Deno 2.x removed `Deno.metrics()`; `memoryUsage()` is the closest
-        // diagnostic surface we still have for a stuck process. If the
-        // watchdog fires regularly we want to see whether heap is climbing
-        // (leak) or flat (stuck on an unresolved promise / dangling I/O).
-        // `phase` shows *which* `_doShutdown` step was in flight when the
-        // deadlock happened — the diagnostic the watchdog exists for.
+        // memoryUsage() since Deno 2.x removed Deno.metrics(); `phase` shows
+        // which `_doShutdown` step was in flight when the deadlock happened.
         logger.error("Shutdown watchdog fired", {
           phase: ctx.daemon.currentShutdownPhase,
           memoryUsage: Deno.memoryUsage(),

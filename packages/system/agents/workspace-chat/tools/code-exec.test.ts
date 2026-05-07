@@ -139,17 +139,12 @@ describe("run_code — PTY wrap for interactive-auth commands", () => {
     const tools = createRunCodeTool("test-session-abort", logger, controller.signal);
     const run = getExecute(tools.run_code);
 
-    // Fire the abort shortly after exec spawns. Without parent-signal
-    // wiring this would run for the full 5 s and the test would time
-    // out under vitest's default 5 s ceiling.
     setTimeout(() => controller.abort(), 50);
     const started = Date.now();
     const result = await run({ language: "bash", source: "sleep 5; echo done" });
     const elapsed = Date.now() - started;
 
-    // Wide bound (4500ms vs. the 5s sleep) keeps the test honest on slow
-    // CI runners with cold node_modules and exec fork overhead, while
-    // still catching the regression where the abort doesn't propagate.
+    // Bound sits below the 5s sleep but leaves headroom for slow CI.
     expect(elapsed).toBeLessThan(4500);
     if (!hasKey(result, "error")) {
       throw new Error(`expected error shape, got ${JSON.stringify(result)}`);

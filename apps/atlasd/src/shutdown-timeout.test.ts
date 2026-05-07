@@ -1,11 +1,6 @@
 /**
- * Tests for withShutdownTimeout. Covers all four behavioral branches:
- * bare-promise back-compat, signal-aware thunk, timeout firing (which must
- * abort the step controller BEFORE the warn lands), and null/undefined.
- *
- * The warn-and-continue invariant is what keeps one hung shutdown step from
- * blocking the others — every path that produces an error must end in
- * logger.warn, never a thrown rejection.
+ * Every error path must end in logger.warn rather than a thrown rejection —
+ * one hung shutdown step must not block the others.
  */
 
 import { logger } from "@atlas/logger";
@@ -49,10 +44,6 @@ describe("withShutdownTimeout", () => {
   });
 
   it("times out a bare never-resolving promise and logs the warning", async () => {
-    // Fake timers make the test deterministic — the behavioral claim is
-    // "after `ms` elapses, warn fires once with the expected label/error",
-    // which doesn't depend on wall-clock. Real-timer + tight upper-bound
-    // versions of this test were flake-prone on slow CI runners.
     vi.useFakeTimers();
     const pending = withShutdownTimeout("hang", new Promise<void>(() => {}), 60);
     await vi.advanceTimersByTimeAsync(60);
@@ -82,6 +73,8 @@ describe("withShutdownTimeout", () => {
     expect(captured?.aborted).toBe(false);
   });
 
+  // Ordering invariant: the step signal must be aborted before warn fires,
+  // so downstream cancellation observers see the abort first.
   it("aborts the step signal BEFORE the warning is logged on timeout", async () => {
     vi.useFakeTimers();
     let captured: AbortSignal | undefined;

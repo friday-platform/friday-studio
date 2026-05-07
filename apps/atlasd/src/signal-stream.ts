@@ -222,10 +222,9 @@ export class SignalConsumer {
   private running = false;
   private loop: Promise<void> | null = null;
   /**
-   * In-flight fetch iterator. `consumer.fetch({ expires })` blocks for the
-   * full expires window even after `running = false`; closing the iterator
-   * breaks that immediately so `stop(signal)` can return promptly on
-   * shutdown abort instead of stalling up to `expiresMs`.
+   * `consumer.fetch({ expires })` blocks the full expires window even after
+   * `running = false` — closing the iterator is the only way to break out
+   * promptly.
    */
   private currentBatch: ConsumerMessages | null = null;
   private readonly name: string;
@@ -273,24 +272,18 @@ export class SignalConsumer {
   }
 
   /**
-   * Stop the loop. Sets `running = false` AND closes any in-flight fetch
-   * iterator so the runLoop returns promptly when a batch is currently
-   * being yielded.
+   * Best-effort fast stop: closes any in-flight fetch iterator so the
+   * for-await breaks immediately. `signal`, if supplied, closes the
+   * iterator on abort as well.
    *
-   * **Caveat — between-batches race.** `currentBatch` is null between
-   * iterations of the runLoop (just-completed batch, or first iteration).
-   * If `stop()` arrives in this window while `consumer.fetch()` is in
-   * flight, the close is a no-op and the pending fetch must wait up to
-   * `expiresMs` (default 10s) to resolve naturally. The firm bound on
-   * shutdown is therefore `nc.close()` in `NatsManager.stop()`, not this
-   * method — `stop()` is a fast-path optimization, not a guarantee.
-   *
-   * If `signal` is supplied, an abort during `await this.loop` triggers
-   * the same close (used by shutdown-step timeouts to bound stop()).
+   * Between-batches race: `currentBatch` is null between iterations, so a
+   * `stop()` arriving while `consumer.fetch()` is mid-flight is a no-op
+   * and the pending fetch resolves naturally up to `expiresMs`. The firm
+   * shutdown bound is `nc.close()` in `NatsManager.stop()` — this method
+   * is an optimization, not a guarantee.
    */
   async stop(signal?: AbortSignal): Promise<void> {
     this.running = false;
-    // Close any iterator already in flight so the for-await breaks now.
     void this.currentBatch?.close();
     if (signal && !signal.aborted) {
       signal.addEventListener("abort", () => void this.currentBatch?.close(), { once: true });

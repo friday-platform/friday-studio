@@ -108,13 +108,11 @@ export class NatsManager {
   /**
    * Drain the NATS connection, then stop the spawned child if owned.
    *
-   * `signal` (optional) ties the drain to a shutdown-step timeout. NATS.js
-   * 2.29.x does not accept AbortSignal on `drain()` / `close()`, so when
-   * the signal fires before drain resolves we fall back to `nc.close()` —
-   * an immediate non-graceful close that releases the event-loop handle.
-   * Without this, a JetStream pull-consumer mid-fetch can keep the
-   * connection alive past the per-step ceiling and prevent process exit
-   * (the 2026-05-07 incident).
+   * The NATS client doesn't accept AbortSignal on drain/close, so when
+   * `signal` fires before drain resolves we fall back to `nc.close()` to
+   * release the event-loop handle. Without this, a JetStream pull-consumer
+   * mid-fetch can keep the connection alive past the per-step ceiling and
+   * block process exit.
    */
   async stop(signal?: AbortSignal): Promise<void> {
     if (this.nc) {

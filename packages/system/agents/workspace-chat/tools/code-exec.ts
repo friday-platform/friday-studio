@@ -138,9 +138,8 @@ export interface RunCodeError {
  * session via its `sessionId` — scripts can read files they wrote earlier
  * in the same session, but never from other sessions.
  *
- * `parentSignal` (optional) ties any in-flight subprocess to the chat-turn
- * AbortController. When the chat turn aborts (drain shutdown, supersede,
- * etc.), Node's exec layer SIGKILLs the child within a few ms.
+ * `parentSignal` is wired to Node exec's `signal` option so a parent abort
+ * SIGKILLs the child subprocess.
  */
 export function createRunCodeTool(
   sessionId: string,
@@ -222,12 +221,8 @@ export function createRunCodeTool(
           );
         } catch (err) {
           const duration = Date.now() - started;
-          // Parent chat-turn aborted (drain shutdown, supersede). exec
-          // SIGKILLs the child and rejects with name `AbortError` /
-          // code `ABORT_ERR`. Surface a clean error rather than leaking
-          // the AbortError shape — the LLM never sees this anyway since
-          // the chat turn is being torn down, but downstream telemetry
-          // still ingests it.
+          // Node exec signals abort as either `name: "AbortError"` or
+          // `code: "ABORT_ERR"` depending on version — check both.
           if (
             typeof err === "object" &&
             err !== null &&

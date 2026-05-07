@@ -167,15 +167,14 @@ function workspaceHasBroadcastDestination(workspace: {
 }
 
 /**
- * Race a shutdown step against a per-step deadline. A slow step (NATS drain,
- * MCP subprocess refusing SIGTERM, runtime hang) gets force-skipped on its
- * own ceiling instead of eating the global shutdown budget. Errors and
- * timeouts are logged and swallowed — the rest of shutdown continues.
+ * Race a shutdown step against a per-step deadline. A slow step gets
+ * force-skipped on its own ceiling instead of eating the global shutdown
+ * budget. Errors and timeouts are logged and swallowed — the rest of
+ * shutdown continues.
  *
- * Accepts either a bare promise (back-compat) or a signal-aware thunk. With
- * a thunk, a step-local AbortController is aborted on timeout BEFORE the
- * warn fires, so the underlying work (NATS drain, fetch loop, subprocess
- * wait) stops leaking event-loop handles and the process can actually exit.
+ * Pass a thunk (not a bare promise) when the work owns event-loop handles:
+ * the step-local signal aborts on timeout so the underlying work can
+ * actually cancel, instead of leaking handles and blocking process exit.
  */
 export async function withShutdownTimeout<T>(
   label: string,
@@ -210,11 +209,7 @@ export async function withShutdownTimeout<T>(
   }
 }
 
-/**
- * Coarse shutdown-phase marker surfaced to the HTTP watchdog log so a
- * postmortem can see *which* phase wedged when the watchdog fired. Mirrors
- * the structure of `_doShutdown` — three phases plus idle/complete bookends.
- */
+/** Surfaced to the watchdog log so a postmortem shows which phase wedged. */
 export type ShutdownPhase = "idle" | "phase-1-drain" | "phase-2" | "phase-3-nats" | "complete";
 
 /**
@@ -242,14 +237,11 @@ export class AtlasDaemon {
   // Private properties
   private idleTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private shutdownPromise: Promise<void> | null = null;
-  // Surfaced by the HTTP watchdog log so postmortems show *which* phase
-  // wedged when the 15s watchdog fires. Updated at phase boundaries in
-  // `_doShutdown`. See `apps/atlasd/routes/daemon.ts` for the consumer.
   public currentShutdownPhase: ShutdownPhase = "idle";
   private server: Deno.HttpServer | null = null;
-  // Aborted on shutdown-step timeout to force-close the Deno.serve listener
-  // immediately, instead of letting it linger after server.shutdown() exceeds
-  // its per-step ceiling. Wired into both Deno.serve sites at start time.
+  // Force-closes the Deno.serve listener when server.shutdown() exceeds its
+  // step ceiling. Wired into both Deno.serve sites; aborted from the http
+  // drain step below.
   private serverAbortController = new AbortController();
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
@@ -2498,9 +2490,6 @@ export class AtlasDaemon {
       withShutdownTimeout(
         "http server drain",
         (signal) => {
-          // Forward step-timeout cancellation to the Deno.serve listener so a
-          // hung drain (refusing SSE client, long-poll request) doesn't leak
-          // the listener after the per-step ceiling fires.
           signal.addEventListener(
             "abort",
             () => {
