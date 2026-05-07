@@ -19,13 +19,17 @@ describe("NatsManager.stop(signal)", () => {
     if (mgr) {
       try {
         await mgr.stop();
-      } catch {}
+      } catch {
+        // best-effort
+      }
       mgr = undefined;
     }
     if (server) {
       try {
         await server.stop();
-      } catch {}
+      } catch {
+        // best-effort
+      }
       server = undefined;
     }
     if (originalNatsUrl === undefined) {
