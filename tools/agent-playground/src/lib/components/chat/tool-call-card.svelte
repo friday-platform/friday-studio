@@ -6,6 +6,7 @@
   import ConnectService from "./connect-service.svelte";
   import DelegateToolCard from "./delegate-tool-card.svelte";
   import { jsonHighlighter } from "./json-highlighter";
+  import { extractLiftedArtifactIds } from "./lifted-markers";
   import {
     argPreview,
     formatDuration,
@@ -257,6 +258,16 @@
     if (typeof i.artifactId !== "string") return null;
     return { artifactId: i.artifactId };
   });
+
+  /* ─── Lifted-attachment markers ──────────────────────────────────── */
+
+  // The artifact scrubber replaces oversized MCP results with a marker
+  // referencing the lifted artifact. Surface those as inline previews so the
+  // user sees the actual content (image / PDF / JSON / text) instead of the
+  // opaque marker text. ArtifactCard owns fetch-error fallback (it renders an
+  // error chip if /api/artifacts/:id 404s) — no content is lost: the raw
+  // marker still appears in the output drawer underneath.
+  const liftedArtifacts = $derived(extractLiftedArtifactIds(call.output));
 </script>
 
 {#snippet jsonCopyBlock(label: string, data: unknown)}
@@ -393,6 +404,13 @@
     class:error={isError(call.state)}
   >
     {@render cardBody(call, meta)}
+    {#if liftedArtifacts.length > 0}
+      <div class="lifted-artifacts">
+        {#each liftedArtifacts as ref (ref.artifactId)}
+          <ArtifactCard artifactId={ref.artifactId} />
+        {/each}
+      </div>
+    {/if}
     {@render outputDrawer(call)}
   </div>
 {/if}
@@ -662,5 +680,14 @@
     background: transparent;
     border: none;
     padding: 0;
+  }
+
+  /* ─── Lifted-artifact previews ─────────────────────────────────────── */
+
+  .lifted-artifacts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1-5);
+    padding: 0 var(--size-2-5) var(--size-1-5);
   }
 </style>
