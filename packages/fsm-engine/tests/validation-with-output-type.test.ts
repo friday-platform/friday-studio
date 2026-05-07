@@ -7,8 +7,11 @@
  * and emit free-form prose instead. E1 skips `record_validation`
  * injection when the action declares an `outputType:` resolving to a
  * defined schema. The structured schema IS the validation contract;
- * verdict is implicit pass on successful complete-tool emission. Skill
- * body still composes (see `validating-llm-outputs` skill).
+ * verdict is implicit pass on successful complete-tool emission. E1.1
+ * (melodic-strolling-seal-pt3): the skill body is also skipped on this
+ * path — leaving "you MUST call record_validation" in the prompt while
+ * suppressing the tool gave the LLM contradictory instructions and
+ * made it bail into prose instead of calling `complete`.
  */
 import type { AgentResult, ToolCall } from "@atlas/agent-sdk";
 import { _setSkillStorageForTest, type SkillStorageAdapter } from "@atlas/skills";
@@ -208,7 +211,15 @@ describe("E1: structured-output + self validation interaction", () => {
     expect(validation?.verdict).toBeUndefined();
   });
 
-  it("structured + self → skill body still composed into the prompt", async () => {
+  it("structured + self → skill body NOT composed into the prompt (E1.1)", async () => {
+    // E1.1 (melodic-strolling-seal-pt3): the skill body must also skip on
+    // the structured + self path. E1 left it in the prompt while
+    // suppressing the `record_validation` tool, which gave the LLM
+    // contradictory instructions ("you MUST call record_validation" in
+    // the body, no such tool in the catalog) and made it bail into prose
+    // instead of calling `complete`. Verdict on this path is implicit
+    // pass on successful structured emission; the skill body adds
+    // nothing actionable.
     _setSkillStorageForTest(stubSkillAdapter());
     const { captured } = await runStructuredAction({
       validate: "self",
@@ -218,7 +229,7 @@ describe("E1: structured-output + self validation interaction", () => {
 
     const call = captured[0];
     if (!call) throw new Error("expected captured call");
-    expect(call.prompt).toContain(SENTINEL_BODY);
+    expect(call.prompt).not.toContain(SENTINEL_BODY);
   });
 
   it("free-form + self → record_validation IS injected (B6 regression guard)", async () => {

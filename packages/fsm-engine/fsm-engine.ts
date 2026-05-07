@@ -1868,14 +1868,28 @@ export class FSMEngine {
                 { job: this.options.jobValidation, workspace: this.options.workspaceValidation },
               );
               const preCallDecision = preCallResolution.decision;
-              const validationBlock = await composeValidationBlock({
-                decision: preCallDecision,
-                // B5: prefer merged skill (factors action object form +
-                // job + workspace overrides) over the older direct read
-                // of action.validate.skill.
-                skillName: preCallResolution.skill,
-                logger,
-              });
+              // E1.1 (melodic-strolling-seal-pt3): on the structured + self
+              // path, skip the validation skill body too — not just the
+              // `record_validation` tool injection (E1, below). E1 left the
+              // skill body composing into the prompt while the tool was
+              // suppressed; the skill body emphatically instructs the LLM
+              // to call `record_validation` exactly once, but the tool
+              // isn't in the catalog. The contradictory instructions made
+              // the LLM bail into prose ("the artifact chain keeps
+              // wrapping...") instead of calling `complete`. Use the same
+              // `completeToolInjected` predicate as the tool-skip site
+              // below so both gates share one source of truth.
+              const skipValidationSkillBody = preCallDecision === "self" && completeToolInjected;
+              const validationBlock = skipValidationSkillBody
+                ? ""
+                : await composeValidationBlock({
+                    decision: preCallDecision,
+                    // B5: prefer merged skill (factors action object form +
+                    // job + workspace overrides) over the older direct read
+                    // of action.validate.skill.
+                    skillName: preCallResolution.skill,
+                    logger,
+                  });
               const validationSkillLoaded = validationBlock.length > 0;
               if (validationBlock) {
                 contextPrompt = `${contextPrompt}\n\n${validationBlock}`;
@@ -1912,10 +1926,10 @@ export class FSMEngine {
               // emit free-form prose instead of calling `complete`. Authors
               // who want explicit self-verdict on structured output should
               // split into two FSM steps (free-form analyze → structured
-              // emit). The skill body is still composed into the prompt
-              // above — reasoning guidance is useful even without a verdict
-              // tool; verdict on the structured + self path is implicit pass
-              // on successful complete-tool emission.
+              // emit). E1.1 (pt3): the skill body is also skipped on this
+              // path — see the `skipValidationSkillBody` block above for
+              // why. Verdict on the structured + self path is implicit
+              // pass on successful complete-tool emission.
               const recordValidationInjected = preCallDecision === "self" && !completeToolInjected;
               if (recordValidationInjected) {
                 tools[RECORD_VALIDATION_TOOL_NAME] = createRecordValidationTool();

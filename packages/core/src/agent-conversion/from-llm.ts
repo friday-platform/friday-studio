@@ -80,11 +80,22 @@ export function convertLLMToAgent(
         // `composeValidationBlock` swallow + log; they never block the
         // agent.
         const validateCtx: ValidateDecisionContext = readValidateDecisionFromConfig(ctxConfig);
-        const validationBlock = await composeValidationBlock({
-          decision: validateCtx.decision,
-          skillName: validateCtx.skill,
-          logger,
-        });
+        // E1.1 (melodic-strolling-seal-pt3): on the structured + self path,
+        // skip the validation skill body — mirrors the `injectRecordValidation`
+        // predicate below. The skill body says "you MUST call
+        // record_validation"; if we've also suppressed the tool injection
+        // (E1, below), the LLM sees contradictory instructions and bails
+        // into prose. Skip both for the structured + self case so verdict
+        // is implicit pass on successful complete-tool emission.
+        const skipValidationSkillBody =
+          validateCtx.decision === "self" && validateCtx.hasOutputType === true;
+        const validationBlock = skipValidationSkillBody
+          ? ""
+          : await composeValidationBlock({
+              decision: validateCtx.decision,
+              skillName: validateCtx.skill,
+              logger,
+            });
         if (validationBlock) {
           systemPrompt = `${systemPrompt}\n\n${validationBlock}`;
           logger.debug("Injected validation skill block into LLM agent system prompt", {
@@ -119,8 +130,8 @@ export function convertLLMToAgent(
         // toolChoice off the forced-complete pin and lets the LLM emit
         // free-form prose instead of structured output. Verdict on the
         // structured + self path is implicit pass on successful structured
-        // emission. Skill body still composes (reasoning guidance is useful
-        // even without an explicit verdict tool).
+        // emission. E1.1 (pt3): the skill body is also skipped on this
+        // path — see `skipValidationSkillBody` above for why.
         const injectRecordValidation =
           validateCtx.decision === "self" && !validateCtx.hasOutputType;
         const toolsWithValidation = injectRecordValidation
