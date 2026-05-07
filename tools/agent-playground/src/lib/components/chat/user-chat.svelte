@@ -3,7 +3,6 @@
   import { Chat as ChatImpl } from "@ai-sdk/svelte";
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { workspaceQueries } from "$lib/queries";
   import { DefaultChatTransport } from "ai";
@@ -1029,11 +1028,6 @@
     return chatMsgs;
   });
 
-  /** Navigate to a fresh chat. The loader generates the new chatId. */
-  function startNewChat() {
-    goto(`/platform/${encodeURIComponent(wsId)}/chat`);
-  }
-
   async function handleSubmit(text: string, inputImages: ImageAttachment[] = []) {
     if (!chat) return;
     error = null;
@@ -1192,15 +1186,6 @@
     </div>
   {/if}
 
-  <header class="chat-header">
-    <h2>Chat</h2>
-    <span class="workspace-badge">{workspaceName}</span>
-    <span class="header-spacer"></span>
-    {#if chat && chat.messages.length > 0}
-      <button class="new-chat-button" onclick={startNewChat}>New Chat</button>
-    {/if}
-  </header>
-
   <div class="chat-body">
     <div class="chat-main">
       {#if rehydrating}
@@ -1276,57 +1261,6 @@
     flex-direction: column;
     min-block-size: 0;
     overflow: hidden;
-  }
-
-  .chat-header {
-    align-items: center;
-    background-color: var(--surface);
-    border-block-end: 1px solid var(--color-border-1);
-    display: flex;
-    flex-shrink: 0;
-    gap: var(--size-3);
-    padding: var(--size-4) var(--size-5);
-    position: sticky;
-    inset-block-start: 0;
-    z-index: var(--layer-1, 10);
-  }
-
-  .chat-header h2 {
-    font-size: var(--font-size-4);
-    font-weight: var(--font-weight-6);
-  }
-
-  .workspace-badge {
-    background-color: var(--color-surface-3);
-    border-radius: var(--radius-2);
-    color: color-mix(in srgb, var(--color-text), transparent 20%);
-    font-size: var(--font-size-1);
-    padding: var(--size-0-5) var(--size-2);
-  }
-
-  .header-spacer {
-    flex: 1;
-  }
-
-  .new-chat-button {
-    background-color: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-    padding: var(--size-1) var(--size-2-5);
-    transition: background-color 150ms ease;
-  }
-
-  .new-chat-button:hover:not(:disabled) {
-    background-color: var(--color-surface-2);
-  }
-
-  .new-chat-button:disabled {
-    cursor: default;
-    opacity: 0.5;
   }
 
   .rehydrating-indicator {
