@@ -821,20 +821,12 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
         const allTools = composeTools(primaryTools, foregroundToolSets);
         allToolsRef = allTools;
 
-        // Surface artifacts list so the LLM knows what files are available
-        // via artifacts_get. Resources subsystem (Ledger) was deleted; the
-        // artifact catalog is the only stored-output surface now.
-        const resourceSectionParts: string[] = [];
-        if (workspaceDetails.artifacts.length > 0) {
-          const artifactLines = workspaceDetails.artifacts.map(
-            (a) => `- ${a.id} (${a.type}): ${a.title} - ${a.summary}`,
-          );
-          resourceSectionParts.push(
-            `Files (access via artifacts_get):\n${artifactLines.join("\n")}`,
-          );
-        }
-        const resourceSection =
-          resourceSectionParts.length > 0 ? resourceSectionParts.join("\n\n") : undefined;
+        // Do not stuff the workspace's top-N artifact catalog into every chat
+        // prompt. Job tools now return explicit `{ artifactIds, summary }`, and
+        // same-chat artifacts are retrieval-gated below via `composeArtifactBlocks`.
+        // Ambient artifact lists made old sessions' files look current and pushed
+        // supervisors toward artifact/session fan-in instead of explicit refs.
+        const resourceSection = undefined;
 
         // Compose memory blocks from primary + foreground workspaces (always load primary)
         const memoryBlocks = await composeMemoryBlocks(workspaceId, foregroundIds, logger);

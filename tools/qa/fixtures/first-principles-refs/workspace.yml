@@ -7,6 +7,11 @@ workspace:
 permissions:
   dangerouslySkipAllowlist: false
 
+memory:
+  own:
+    - name: preferences
+      type: long_term
+
 tools:
   mcp:
     servers:
@@ -115,6 +120,17 @@ signals:
     description: "Trigger auto-triage report output contract scenario."
     config:
       path: "/auto-triage-report-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
+  review-choice-event:
+    provider: http
+    description: "Trigger review-choice memory learning scenario."
+    config:
+      path: "/review-choice-event"
     schema:
       type: object
       properties:
@@ -616,6 +632,54 @@ jobs:
 
                 Do not fetch message contents and do not include any message
                 bodies in the final output.
+          type: final
+
+  review-choice-memory-check:
+    description: "Interactive review choices mutate fake inbox and write preference memory."
+    triggers:
+      - signal: review-choice-event
+    config:
+      timeout: "5m"
+      max_steps: 10
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            review-choice-event: { target: apply-choices }
+        apply-choices:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Apply review choices and learn preferences."
+              outputTo: review-choice-result
+              validate: skip
+              tools:
+                - batch_modify_message_labels
+                - memory_save
+              prompt: |
+                Simulate the user entering review choices "1a 2a 3a 4k"
+                for the fake inbox:
+                - 1a, 2a, 3a mean archive fake-001, fake-002, fake-003.
+                - 4k means keep fake-004 unchanged.
+
+                First call batch_modify_message_labels exactly once with ids
+                ["fake-001", "fake-002", "fake-003"], addLabels
+                ["archived"], and removeLabels ["inbox", "unread"].
+
+                Then call memory_save exactly once with memoryName
+                "preferences" and this exact text:
+                "FIRST_PRINCIPLES_REVIEW_CHOICE learned: archive synthetic digest messages; keep action-required alerts for review"
+
+                Finish with ONLY a JSON object containing:
+                - marker: "REVIEW_CHOICE_MEMORY_LEARNED"
+                - archivedCount: 3
+                - keptCount: 1
+                - memorySaved: true
+                - learnedPreference: the exact memory text above
           type: final
 
   unknown-tool-check:

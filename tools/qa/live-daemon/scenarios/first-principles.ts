@@ -143,6 +143,48 @@ async function answerElicitation(
   return (await resp.json()) as Record<string, unknown>;
 }
 
+async function readMemoryEntries(
+  d: DaemonHandle,
+  workspaceId: string,
+  memoryName: string,
+): Promise<Array<Record<string, unknown>>> {
+  const resp = await fetch(
+    `${d.baseUrl}/api/memory/${encodeURIComponent(workspaceId)}/narrative/${encodeURIComponent(
+      memoryName,
+    )}`,
+  );
+  if (!resp.ok) return [];
+  const body = await resp.json();
+  return Array.isArray(body) ? (body as Array<Record<string, unknown>>) : [];
+}
+
+async function fetchWorkspaceConfig(
+  d: DaemonHandle,
+  workspaceId: string,
+): Promise<Record<string, unknown> | null> {
+  const resp = await fetch(`${d.baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/config`);
+  if (!resp.ok) return null;
+  const body = (await resp.json()) as { config?: Record<string, unknown> };
+  return body.config ?? null;
+}
+
+async function fetchChatSystemPrompt(
+  d: DaemonHandle,
+  workspaceId: string,
+  chatId: string,
+): Promise<string> {
+  const resp = await fetch(
+    `${d.baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/chat/${encodeURIComponent(
+      chatId,
+    )}`,
+  );
+  if (!resp.ok) return "";
+  const body = (await resp.json()) as {
+    systemPromptContext?: { systemMessages?: string[] } | null;
+  };
+  return (body.systemPromptContext?.systemMessages ?? []).join("\n\n");
+}
+
 interface ChatToolCall {
   toolCallId: string;
   toolName: string;
@@ -1334,6 +1376,286 @@ async function runChatFollowupCompactnessScenario(d: DaemonHandle): Promise<Eval
   ];
 }
 
+async function runAmbientArtifactInjectionPruningScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Ambient Artifacts" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const seed = await triggerSignalSSE(d, ws.id, "refs-event", {
+    payload: { query: "ambient-artifact-pruning-seed" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  if (!seed.sessionId) {
+    return [
+      {
+        id: "ambient-artifact-injection-pruning",
+        pass: false,
+        notes: [...notes, "seed job returned no session id"],
+        metrics,
+      },
+    ];
+  }
+
+  const artifacts = await listArtifactsForSession(d, ws.id, seed.sessionId);
+  const staleArtifactIds = artifacts.map((a) => a.id).filter((id): id is string => !!id);
+  const chatId = crypto.randomUUID();
+  const chat = await postChatMessage(
+    d,
+    ws.id,
+    chatId,
+    "Reply exactly: AMBIENT_ARTIFACT_PRUNING_OK. Do not call tools.",
+    { timeoutMs: 8 * 60 * 1000 },
+  );
+  const systemPrompt = await fetchChatSystemPrompt(d, ws.id, chatId);
+  const promptHasFilesList = systemPrompt.includes("Files (access via artifacts_get)");
+  const promptHasStaleArtifactId = staleArtifactIds.some((id) => systemPrompt.includes(id));
+  const toolNames = chat.toolCalls.map((tc) => tc.toolName);
+  const fanInTools = toolNames.filter((name) =>
+    ["artifacts_get", "display_artifact", "parse_artifact", "delegate"].includes(name),
+  );
+
+  metrics.seedSessionId = seed.sessionId;
+  metrics.staleArtifactIds = staleArtifactIds;
+  metrics.chatSessionId = chat.chatSessionId;
+  metrics.systemPromptBytes = new TextEncoder().encode(systemPrompt).length;
+  metrics.promptHasFilesList = promptHasFilesList;
+  metrics.promptHasStaleArtifactId = promptHasStaleArtifactId;
+  metrics.toolNames = toolNames;
+  metrics.fanInTools = fanInTools;
+
+  const pass =
+    staleArtifactIds.length > 0 &&
+    !promptHasFilesList &&
+    !promptHasStaleArtifactId &&
+    fanInTools.length === 0;
+
+  return [
+    {
+      id: "ambient-artifact-injection-pruning",
+      pass,
+      notes: [
+        ...notes,
+        `seed artifacts: ${staleArtifactIds.length}`,
+        `prompt has ambient Files list: ${promptHasFilesList}`,
+        `prompt has stale artifact id: ${promptHasStaleArtifactId}`,
+        `chat tool calls: ${toolNames.join(",") || "(none)"}`,
+        `fan-in tools: ${fanInTools.join(",") || "(none)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
+async function runReviewChoiceMemoryLearningScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Review Memory" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "review-choice-event", {
+    payload: { query: "review-choice-memory" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "review-choice-memory-learning",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/review-choice-memory-check/review-choice-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const entries = await readMemoryEntries(d, ws.id, "preferences");
+  const memoryTexts = entries.map((entry) => String(entry.text ?? ""));
+  const learnedText = String(payload?.learnedPreference ?? "");
+  const memoryContainsLearned = memoryTexts.some((text) => text.includes(learnedText));
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+  const mutationCallCount = toolNames.filter(
+    (name) => name === "batch_modify_message_labels",
+  ).length;
+  const memorySaveCallCount = toolNames.filter((name) => name === "memory_save").length;
+
+  metrics.bucket = bucket;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.payload = payload ?? null;
+  metrics.memoryTexts = memoryTexts;
+  metrics.toolNames = toolNames;
+  metrics.mutationCallCount = mutationCallCount;
+  metrics.memorySaveCallCount = memorySaveCallCount;
+
+  const pass =
+    payload?.marker === "REVIEW_CHOICE_MEMORY_LEARNED" &&
+    numberValue(payload?.archivedCount) === 3 &&
+    numberValue(payload?.keptCount) === 1 &&
+    isTrue(payload?.memorySaved) &&
+    learnedText.includes("FIRST_PRINCIPLES_REVIEW_CHOICE") &&
+    memoryContainsLearned &&
+    mutationCallCount === 1 &&
+    memorySaveCallCount === 1;
+
+  return [
+    {
+      id: "review-choice-memory-learning",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `archivedCount: ${String(payload?.archivedCount ?? "(missing)")}`,
+        `keptCount: ${String(payload?.keptCount ?? "(missing)")}`,
+        `memorySaved: ${String(payload?.memorySaved ?? "(missing)")}`,
+        `memory contains learned preference: ${memoryContainsLearned}`,
+        `mutation calls: ${mutationCallCount}`,
+        `memory_save calls: ${memorySaveCallCount}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
+async function runSessionInflightCleanupScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Inflight Cleanup" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "refs-event", {
+    payload: { query: "session-inflight-cleanup" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "session-inflight-cleanup",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const metadata = await natsKvGetJson(d.natsUrl, "SESSION_METADATA", trigger.sessionId);
+  const inflight = await natsKvGetJson(d.natsUrl, "SESSION_INFLIGHT", trigger.sessionId);
+  metrics.metadata = metadata ?? null;
+  metrics.inflight = inflight ?? null;
+
+  const pass = metadata?.status === "completed" && inflight === null;
+  return [
+    {
+      id: "session-inflight-cleanup",
+      pass,
+      notes: [
+        ...notes,
+        `metadata status: ${String(metadata?.status ?? "(missing)")}`,
+        `inflight marker present: ${inflight !== null}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
+async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Workspace Fix" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const targetDescription = "Skill-guided workspace repair applied.";
+  const chatId = crypto.randomUUID();
+  const chat = await postChatMessage(
+    d,
+    ws.id,
+    chatId,
+    [
+      "Make this workspace repair now.",
+      "Load @friday/workspace-api and @friday/writing-workspace-jobs first.",
+      "Read the current workspace config once, then use upsert_job to update only the refs-check job description.",
+      `Set the refs-check description exactly to: ${targetDescription}`,
+      "Preserve refs-check triggers, config, validation, and fsm exactly as they are.",
+      "Do not run refs-check, do not call fake inbox tools, and do not delegate.",
+    ].join("\n"),
+    { timeoutMs: 12 * 60 * 1000 },
+  );
+  const config = await fetchWorkspaceConfig(d, ws.id);
+  const jobs = (config?.jobs as Record<string, unknown> | undefined) ?? {};
+  const refsCheck = jobs["refs-check"] as Record<string, unknown> | undefined;
+  const toolNames = chat.toolCalls.map((tc) => tc.toolName);
+  const serializedToolCalls = JSON.stringify(chat.toolCalls);
+  const loadedWorkspaceApi = serializedToolCalls.includes("workspace-api");
+  const loadedJobsSkill = serializedToolCalls.includes("writing-workspace-jobs");
+  const bypassTools = toolNames.filter((name) =>
+    ["delegate", "refs-check", "search_messages", "get_messages_content_batch"].includes(name),
+  );
+  const upsertJobCalled = toolNames.includes("upsert_job");
+
+  metrics.chatId = chatId;
+  metrics.chatSessionId = chat.chatSessionId;
+  metrics.toolNames = toolNames;
+  metrics.loadedWorkspaceApi = loadedWorkspaceApi;
+  metrics.loadedJobsSkill = loadedJobsSkill;
+  metrics.upsertJobCalled = upsertJobCalled;
+  metrics.bypassTools = bypassTools;
+  metrics.refsCheckDescription = refsCheck?.description ?? null;
+
+  const pass =
+    loadedWorkspaceApi &&
+    loadedJobsSkill &&
+    upsertJobCalled &&
+    refsCheck?.description === targetDescription &&
+    bypassTools.length === 0;
+
+  return [
+    {
+      id: "workspace-fix-skill-guidance",
+      pass,
+      notes: [
+        ...notes,
+        `loaded workspace-api: ${loadedWorkspaceApi}`,
+        `loaded writing-workspace-jobs: ${loadedJobsSkill}`,
+        `upsert_job called: ${upsertJobCalled}`,
+        `refs-check description: ${String(refsCheck?.description ?? "(missing)")}`,
+        `bypass tools: ${bypassTools.join(",") || "(none)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function main() {
   await ensureCredentialsLoaded();
   if (!Deno.env.get("ANTHROPIC_API_KEY")) {
@@ -1372,6 +1694,14 @@ async function main() {
     results.push(...(await runFanoutDelegateScenario(daemon)));
     console.log("\n── chat follow-up compactness ──");
     results.push(...(await runChatFollowupCompactnessScenario(daemon)));
+    console.log("\n── ambient artifact injection pruning ──");
+    results.push(...(await runAmbientArtifactInjectionPruningScenario(daemon)));
+    console.log("\n── review-choice memory learning ──");
+    results.push(...(await runReviewChoiceMemoryLearningScenario(daemon)));
+    console.log("\n── session inflight cleanup ──");
+    results.push(...(await runSessionInflightCleanupScenario(daemon)));
+    console.log("\n── workspace fix skill guidance ──");
+    results.push(...(await runWorkspaceFixSkillGuidanceScenario(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });
