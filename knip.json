@@ -70,7 +70,7 @@
     "apps/atlasd": {
       "entry": ["**/*.test.ts", "src/migrations/m_*.ts!"],
       "project": ["**/*.{ts,tsx,js,jsx}!"],
-      "ignore": ["src/tool-worker-launcher.ts", "test-fixtures/daemon-test-entry.ts"]
+      "ignore": ["src/tool-worker-launcher.ts"]
     },
     "tools/evals": {
       "entry": ["run.ts!", "mod.ts!", "agents/**/*.eval.ts", "lib/*.test.ts"],
