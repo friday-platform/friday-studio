@@ -88,11 +88,12 @@ function drainReadable(
     stream.on("data", (chunk: string) => {
       collected += chunk;
       buffer += chunk;
-      let idx: number;
-      while ((idx = buffer.indexOf("\n")) >= 0) {
+      let idx = buffer.indexOf("\n");
+      while (idx >= 0) {
         const line = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 1);
         onLine(line);
+        idx = buffer.indexOf("\n");
       }
     });
     stream.on("end", () => {

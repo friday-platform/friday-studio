@@ -36,12 +36,12 @@ const daemonApp = daemonFactory
         logger.error("Shutdown watchdog fired", { memoryUsage: Deno.memoryUsage() });
         Deno.exit(0);
       }, 15_000);
-      Deno.unrefTimer(watchdog);
       try {
         await ctx.daemon.shutdown();
       } catch (err) {
         logger.error("shutdown failed", { err });
       }
+      clearTimeout(watchdog);
       logger.info("Shutdown complete, exiting", { exitCode: 0 });
       Deno.exit(0);
     }, 100);
