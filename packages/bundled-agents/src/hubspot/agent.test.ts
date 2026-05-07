@@ -572,7 +572,7 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(result.ok).toBe(true);
     expect.assert(result.ok);
     expect(result.data.success).toBe(false);
-    expect(result.data.response).toContain("1 error");
+    expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned 1 error");
     expect(result.data.data).toMatchObject({
       noteId: null,
       numErrors: 1,
@@ -580,7 +580,28 @@ describe("hubspotAgent deterministic create-note", () => {
     });
   });
 
-  it("reports success=false when the SDK returns an empty-string id", async () => {
+  it("pluralizes the error noun when numErrors > 1", async () => {
+    mockBatchCreate.mockResolvedValue({
+      status: "COMPLETE",
+      results: [],
+      numErrors: 2,
+      errors: [
+        { status: "error", message: "a" },
+        { status: "error", message: "b" },
+      ],
+    });
+
+    const result = await hubspotAgent.execute(
+      JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" }),
+      validContext(),
+    );
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned 2 errors");
+  });
+
+  it("distinguishes empty-id (no errors) from numErrors > 0 in the response message", async () => {
     mockBatchCreate.mockResolvedValue({
       status: "COMPLETE",
       results: [{ id: "", properties: {} }],
@@ -593,6 +614,7 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(result.ok).toBe(true);
     expect.assert(result.ok);
     expect(result.data.success).toBe(false);
+    expect(result.data.response).toBe("CRM Note creation on ticket 5501 returned no usable id");
   });
 
   it("falls through to LLM when ticketId or body is missing", async () => {
@@ -663,7 +685,12 @@ describe("hubspotAgent deterministic noop", () => {
     expect(result.ok).toBe(true);
     expect.assert(result.ok);
     expect(result.data.operation).toBe("noop");
-    expect(result.data.data).toMatchObject({ skipped: true });
+    expect(result.data.success).toBe(true);
+    expect(result.data.response).toBe("Noop — upstream signalled nothing to do.");
+    // `reason` must be omitted from data when not provided, not emitted as
+    // `reason: undefined` (which would round-trip through JSON as a literal).
+    expect(result.data.data).toEqual({ skipped: true });
+    expect(mockBatchCreate).not.toHaveBeenCalled();
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
 });

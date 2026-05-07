@@ -364,11 +364,20 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
           }
 
           const created = result.results[0];
-          const success = result.numErrors === 0 && Boolean(created?.id);
+          const hasErrors = result.numErrors > 0;
+          const hasId = Boolean(created?.id);
+          const success = !hasErrors && hasId;
+          let response: string;
+          if (success) {
+            response = `CRM Note ${created?.id} created on ticket ${config.ticketId}`;
+          } else if (hasErrors) {
+            const noun = result.numErrors === 1 ? "error" : "errors";
+            response = `CRM Note creation on ticket ${config.ticketId} returned ${result.numErrors} ${noun}`;
+          } else {
+            response = `CRM Note creation on ticket ${config.ticketId} returned no usable id`;
+          }
           return ok({
-            response: success
-              ? `CRM Note ${created?.id} created on ticket ${config.ticketId}`
-              : `CRM Note creation on ticket ${config.ticketId} completed with ${result.numErrors} error(s)`,
+            response,
             operation: "create-note",
             success,
             data: {
