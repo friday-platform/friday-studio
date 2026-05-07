@@ -49,10 +49,7 @@ describe("POST /shutdown", () => {
     exitMock = vi.fn();
     vi.stubGlobal("Deno", {
       exit: exitMock,
-      env: {
-        get: (key: string) =>
-          key === "ATLAS_SHUTDOWN_WATCHDOG_MS" ? "1500" : undefined,
-      },
+      env: { get: (key: string) => (key === "ATLAS_SHUTDOWN_WATCHDOG_MS" ? "1500" : undefined) },
       memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0 }),
     });
     infoSpy = vi.spyOn(logger, "info").mockImplementation(() => {});
@@ -87,10 +84,7 @@ describe("POST /shutdown", () => {
     expect(exitMock).toHaveBeenCalledWith(0);
     expect(infoSpy).toHaveBeenCalledWith("Shutdown complete, exiting", { exitCode: 0 });
     // Watchdog log must be absent on the clean path.
-    expect(errorSpy).not.toHaveBeenCalledWith(
-      "Shutdown watchdog fired",
-      expect.anything(),
-    );
+    expect(errorSpy).not.toHaveBeenCalledWith("Shutdown watchdog fired", expect.anything());
   });
 
   it("fires the watchdog and exits 1 when daemon.shutdown() deadlocks", async () => {
@@ -114,10 +108,7 @@ describe("POST /shutdown", () => {
 
     expect(errorSpy).toHaveBeenCalledWith(
       "Shutdown watchdog fired",
-      expect.objectContaining({
-        phase: "phase-2",
-        memoryUsage: expect.any(Object),
-      }),
+      expect.objectContaining({ phase: "phase-2", memoryUsage: expect.any(Object) }),
     );
     expect(exitMock).toHaveBeenCalledWith(1);
     expect(infoSpy).not.toHaveBeenCalledWith("Shutdown complete, exiting", expect.anything());
