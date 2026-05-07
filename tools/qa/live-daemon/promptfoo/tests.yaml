@@ -1,0 +1,71 @@
+- description: refs-over-data action output
+  vars:
+    scenarioId: refs-over-data-action-output
+
+- description: inputFrom ref resolution single
+  vars:
+    scenarioId: inputFrom-ref-resolution-single
+
+- description: compact job tool return
+  vars:
+    scenarioId: compact-job-tool-return
+
+- description: session artifacts created
+  vars:
+    scenarioId: session-artifacts-created
+
+- description: inputFrom ref resolution array
+  vars:
+    scenarioId: inputFrom-ref-resolution-array
+
+- description: validation output contract
+  vars:
+    scenarioId: validation-output-contract
+
+- description: LLM agent output contract
+  vars:
+    scenarioId: agent-output-contract
+
+- description: LLM agent inputFrom ref hydration
+  vars:
+    scenarioId: llm-agent-inputfrom-ref-hydration
+
+- description: auto-triage report output contract
+  vars:
+    scenarioId: auto-triage-report-output-contract
+
+- description: ack-only fake inbox mutation
+  vars:
+    scenarioId: ack-only-mutation
+
+- description: unknown tool request guard
+  vars:
+    scenarioId: unknown-tool-request
+
+- description: blocking elicitation resume
+  vars:
+    scenarioId: blocking-elicitation
+
+- description: fan-out delegate compactness
+  vars:
+    scenarioId: fanout-no-fanin-delegate
+
+- description: chat follow-up compactness
+  vars:
+    scenarioId: chat-followup-compactness
+
+- description: ambient artifact injection pruning
+  vars:
+    scenarioId: ambient-artifact-injection-pruning
+
+- description: review-choice memory learning
+  vars:
+    scenarioId: review-choice-memory-learning
+
+- description: session inflight cleanup
+  vars:
+    scenarioId: session-inflight-cleanup
+
+- description: workspace fix skill guidance
+  vars:
+    scenarioId: workspace-fix-skill-guidance

@@ -11,7 +11,7 @@
  */
 
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";
-import { join } from "jsr:@std/path@1";
+import { dirname, join } from "jsr:@std/path@1";
 import {
   currentGitSha,
   type DaemonHandle,
@@ -1607,7 +1607,7 @@ async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<Ev
       "Read the current workspace config once, then use upsert_job to update only the refs-check job description.",
       `Set the refs-check description exactly to: ${targetDescription}`,
       "Preserve refs-check triggers, config, validation, and fsm exactly as they are.",
-      "Do not run refs-check, do not call fake inbox tools, and do not delegate.",
+      "Do not call fake inbox tools directly and do not delegate.",
     ].join("\n"),
     { timeoutMs: 12 * 60 * 1000 },
   );
@@ -1619,7 +1619,7 @@ async function runWorkspaceFixSkillGuidanceScenario(d: DaemonHandle): Promise<Ev
   const loadedWorkspaceApi = serializedToolCalls.includes("workspace-api");
   const loadedJobsSkill = serializedToolCalls.includes("writing-workspace-jobs");
   const bypassTools = toolNames.filter((name) =>
-    ["delegate", "refs-check", "search_messages", "get_messages_content_batch"].includes(name),
+    ["delegate", "search_messages", "get_messages_content_batch"].includes(name),
   );
   const upsertJobCalled = toolNames.includes("upsert_job");
 
@@ -1666,6 +1666,12 @@ async function main() {
   const sha = await currentGitSha();
   const startedAt = new Date().toISOString();
   const writeResult = Deno.args.includes("--write-result");
+  const jsonOutputArgIndex = Deno.args.indexOf("--json-output");
+  const jsonOutputPath = jsonOutputArgIndex >= 0 ? Deno.args[jsonOutputArgIndex + 1] : undefined;
+  if (jsonOutputArgIndex >= 0 && !jsonOutputPath) {
+    console.error("--json-output requires a path");
+    Deno.exit(2);
+  }
   console.log(`▶ first-principles eval @ ${sha}`);
 
   const daemon = await startDaemon({ healthTimeoutMs: 90_000 });
@@ -1716,13 +1722,11 @@ async function main() {
     for (const note of r.notes) console.log(`    ${note}`);
   }
 
-  if (writeResult) {
-    await ensureDir(HARNESS_PATHS.resultsDir);
-    const path = join(HARNESS_PATHS.resultsDir, `${sha}-first-principles.json`);
-    await Deno.writeTextFile(
-      path,
-      JSON.stringify({ gitSha: sha, startedAt, passed, failed, results }, null, 2),
-    );
+  const report = { gitSha: sha, startedAt, passed, failed, results };
+  if (writeResult || jsonOutputPath) {
+    const path = jsonOutputPath ?? join(HARNESS_PATHS.resultsDir, `${sha}-first-principles.json`);
+    await ensureDir(dirname(path));
+    await Deno.writeTextFile(path, JSON.stringify(report, null, 2));
     console.log(`\n→ ${path}`);
   }
 
