@@ -9,6 +9,7 @@ import MarkdownIt from "markdown-it";
 import { z } from "zod";
 import { parseOperationConfig } from "../shared/operation-parser.ts";
 import {
+  batchCreateCrmObjects,
   createCreateCrmObjectsTool,
   createGetConversationThreadsTool,
   createGetCrmObjectsTool,
@@ -332,51 +333,40 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
         }
 
         case "create-note": {
-          // Reuse the LLM path's create_crm_objects tool — same SDK call,
-          // same association-id lookup (DEFAULT_ASSOCIATION_TYPES), same
-          // response normalization. No raw fetch, no duplicated schema.
+          // Reuse the same SDK call + association-id lookup + response
+          // normalization as the LLM path. `batchCreateCrmObjects` is the
+          // plain helper that the LLM-facing tool also delegates to.
           const client = new Client({
             accessToken,
             numberOfApiCallRetries: 3,
             limiterOptions: DEFAULT_LIMITER_OPTIONS,
           });
-          const toolDef = createCreateCrmObjectsTool(client);
-          if (!toolDef.execute) {
-            return err("create-note tool has no execute function");
-          }
 
-          const result = await toolDef.execute(
-            {
-              objectType: "notes",
-              records: [
-                {
-                  properties: {
-                    hs_note_body: config.body,
-                    hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
-                  },
-                  associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
+          const result = await batchCreateCrmObjects(client, {
+            objectType: "notes",
+            records: [
+              {
+                properties: {
+                  hs_note_body: config.body,
+                  hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
                 },
-              ],
-            },
-            { toolCallId: "deterministic", messages: [], abortSignal },
-          );
+                associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
+              },
+            ],
+          });
 
-          // The tool's typed return is `T | AsyncIterable<T>` (AI SDK
-          // streaming-tool support); these tools never stream, so narrow it.
-          if (Symbol.asyncIterator in result) {
-            return err("create-note failed: unexpected streaming tool response");
-          }
           if ("error" in result) {
-            return err(`create-note failed: ${result.error}`);
+            return err(`create-note failed (ticket ${config.ticketId}): ${result.error}`);
           }
 
           const created = result.results[0];
+          const success = result.numErrors === 0 && created?.id !== undefined;
           return ok({
-            response: created?.id
-              ? `CRM Note ${created.id} created on ticket ${config.ticketId}`
-              : `CRM Note creation completed for ticket ${config.ticketId} (no id returned)`,
+            response: success
+              ? `CRM Note ${created?.id} created on ticket ${config.ticketId}`
+              : `CRM Note creation on ticket ${config.ticketId} completed with ${result.numErrors} error(s)`,
             operation: "create-note",
-            success: true,
+            success,
             data: {
               noteId: created?.id ?? null,
               ticketId: config.ticketId,
@@ -391,12 +381,14 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
           // Skip sentinel — upstream agent decided there's nothing to do
           // (e.g. empty-cron-tick path). Return success without calling
           // HubSpot so the FSM drains cleanly.
-          logger.info("Deterministic noop", { reason: config.reason ?? "(no reason given)" });
+          logger.info("Deterministic noop", { reason: config.reason });
+          const data: { skipped: boolean; reason?: string } = { skipped: config.skipped ?? true };
+          if (config.reason !== undefined) data.reason = config.reason;
           return ok({
             response: config.reason ?? "Noop — upstream signalled nothing to do.",
             operation: "noop",
             success: true,
-            data: { skipped: config.skipped ?? true, reason: config.reason },
+            data,
           });
         }
 

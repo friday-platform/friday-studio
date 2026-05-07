@@ -630,6 +630,71 @@ export function createGetPipelinesTool(client: Client) {
 }
 
 /**
+ * Plain SDK helper used by both the LLM tool wrapper and the deterministic
+ * create-note dispatch in agent.ts. Resolves inline `{toObjectType, toObjectId}`
+ * associations through DEFAULT_ASSOCIATION_TYPES, calls the SDK batch-create
+ * endpoint, and normalizes the response.
+ */
+export async function batchCreateCrmObjects(
+  client: Client,
+  input: z.infer<typeof CreateCrmObjectsInput>,
+): Promise<
+  | {
+      results: Array<{ id: string; properties: Record<string, string | null> }>;
+      numErrors: number;
+      errors: Array<{ status: string; message: string }>;
+      skippedAssociations: string | undefined;
+    }
+  | { error: string }
+> {
+  try {
+    const skippedAssociations: string[] = [];
+
+    const inputs = input.records.map((r) => {
+      const associations: Array<{
+        to: { id: string };
+        types: Array<{
+          associationCategory: AssociationSpecAssociationCategoryEnum;
+          associationTypeId: number;
+        }>;
+      }> = [];
+      for (const a of r.associations ?? []) {
+        const typeId = DEFAULT_ASSOCIATION_TYPES[input.objectType]?.[a.toObjectType];
+        if (typeId !== undefined) {
+          associations.push({
+            to: { id: a.toObjectId },
+            types: [
+              {
+                associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined,
+                associationTypeId: typeId,
+              },
+            ],
+          });
+        } else {
+          skippedAssociations.push(`${input.objectType} → ${a.toObjectType}`);
+        }
+      }
+      return { properties: r.properties, associations };
+    });
+
+    const response = await client.crm.objects.batchApi.create(input.objectType, { inputs });
+    const batch = normalizeBatchResponse(response);
+
+    return {
+      results: batch.results.map((r) => ({ id: r.id, properties: r.properties })),
+      numErrors: batch.numErrors,
+      errors: batch.errors,
+      skippedAssociations:
+        skippedAssociations.length > 0
+          ? `No default association type for: ${skippedAssociations.join(", ")}. Use manage_associations instead.`
+          : undefined,
+    };
+  } catch (error) {
+    return { error: stringifyError(error) };
+  }
+}
+
+/**
  * Creates the create_crm_objects tool that batch-creates HubSpot CRM objects.
  * Only writable object types are accepted (contacts, companies, deals, tickets,
  * products, line_items, notes, calls, meetings, tasks, emails).
@@ -642,53 +707,7 @@ export function createCreateCrmObjectsTool(client: Client) {
       "Returns created record IDs and properties. " +
       "Supports inline associations to link records at creation time.",
     inputSchema: CreateCrmObjectsInput,
-    execute: async (input) => {
-      try {
-        const skippedAssociations: string[] = [];
-
-        const inputs = input.records.map((r) => {
-          const associations: Array<{
-            to: { id: string };
-            types: Array<{
-              associationCategory: AssociationSpecAssociationCategoryEnum;
-              associationTypeId: number;
-            }>;
-          }> = [];
-          for (const a of r.associations ?? []) {
-            const typeId = DEFAULT_ASSOCIATION_TYPES[input.objectType]?.[a.toObjectType];
-            if (typeId !== undefined) {
-              associations.push({
-                to: { id: a.toObjectId },
-                types: [
-                  {
-                    associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined,
-                    associationTypeId: typeId,
-                  },
-                ],
-              });
-            } else {
-              skippedAssociations.push(`${input.objectType} → ${a.toObjectType}`);
-            }
-          }
-          return { properties: r.properties, associations };
-        });
-
-        const response = await client.crm.objects.batchApi.create(input.objectType, { inputs });
-        const batch = normalizeBatchResponse(response);
-
-        return {
-          results: batch.results.map((r) => ({ id: r.id, properties: r.properties })),
-          numErrors: batch.numErrors,
-          errors: batch.errors,
-          skippedAssociations:
-            skippedAssociations.length > 0
-              ? `No default association type for: ${skippedAssociations.join(", ")}. Use manage_associations instead.`
-              : undefined,
-        };
-      } catch (error) {
-        return { error: stringifyError(error) };
-      }
-    },
+    execute: (input) => batchCreateCrmObjects(client, input),
   });
 }
 

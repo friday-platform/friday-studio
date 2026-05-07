@@ -534,8 +534,32 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(result.ok).toBe(false);
     expect.assert(!result.ok);
     expect(result.error.reason).toContain("create-note failed");
+    expect(result.error.reason).toContain("not-a-real-id");
     expect(result.error.reason).toContain("Invalid ticketId");
     expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("reports success=false when the batch response carries numErrors > 0", async () => {
+    mockBatchCreate.mockResolvedValue({
+      status: "COMPLETE",
+      results: [],
+      numErrors: 1,
+      errors: [{ status: "error", message: "Property hs_timestamp is required" }],
+    });
+
+    const prompt = JSON.stringify({ operation: "create-note", ticketId: "5501", body: "<p>x</p>" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.success).toBe(false);
+    expect(result.data.response).toContain("1 error");
+    expect(result.data.data).toMatchObject({
+      noteId: null,
+      numErrors: 1,
+      errors: [{ status: "error", message: "Property hs_timestamp is required" }],
+    });
   });
 
   it("falls through to LLM when ticketId or body is missing", async () => {
