@@ -420,3 +420,193 @@ describe("hubspotAgent deterministic path", () => {
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Deterministic create-note + noop ops
+// ---------------------------------------------------------------------------
+
+/** Fixture matching the SDK Client's `crm.objects.batchApi.create` response. */
+const createNoteFixture = {
+  status: "COMPLETE",
+  results: [
+    {
+      id: "601",
+      properties: {
+        hs_note_body: "<h3>Briefing</h3><p>body</p>",
+        hs_timestamp: "2026-05-07T12:00:00.000Z",
+      },
+      createdAt: "2026-05-07T12:00:00.000Z",
+      updatedAt: "2026-05-07T12:00:00.000Z",
+      archived: false,
+    },
+  ],
+  startedAt: "2026-05-07T12:00:00.000Z",
+  completedAt: "2026-05-07T12:00:00.000Z",
+};
+
+describe("hubspotAgent deterministic create-note", () => {
+  let originalAnthropicKey: string | undefined;
+
+  beforeEach(() => {
+    originalAnthropicKey = env.ANTHROPIC_API_KEY;
+    env.ANTHROPIC_API_KEY = "sk-test";
+    mockGenerateText.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalAnthropicKey !== undefined) {
+      env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    } else {
+      delete env.ANTHROPIC_API_KEY;
+    }
+  });
+
+  it("creates a CRM Note on the ticket and returns the note id", async () => {
+    const mockFetch = createMockFetch(createNoteFixture);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      ticketId: "5501",
+      body: "<h3>Briefing</h3><p>body</p>",
+      kind: "internal-briefing",
+      format: "html",
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.operation).toBe("create-note");
+    expect(result.data.success).toBe(true);
+    expect(result.data.data).toMatchObject({ noteId: "601", ticketId: "5501" });
+    expect(result.data.response).toContain("601");
+    expect(result.data.response).toContain("5501");
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("posts the body verbatim — no markdown conversion", async () => {
+    const mockFetch = createMockFetch(createNoteFixture);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const verbatim =
+      "<h3>Company Context</h3><table><tr><td>SSO</td><td>Google</td></tr></table>" +
+      '<p><a href="https://app-na2.hubspot.com/...">Open in HubSpot</a></p>';
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      ticketId: "5501",
+      body: verbatim,
+      hsTimestamp: "2026-05-07T12:00:00.000Z",
+    });
+
+    await hubspotAgent.execute(prompt, validContext());
+
+    expect(mockFetch).toHaveBeenCalled();
+    const calls = mockFetch.mock.calls.filter((c) => c[1]?.method === "POST");
+    expect(calls.length).toBeGreaterThan(0);
+    const body = JSON.parse(calls[0]?.[1]?.body as string) as {
+      inputs: Array<{ properties: Record<string, string> }>;
+    };
+    expect(body.inputs[0]?.properties.hs_note_body).toBe(verbatim);
+    expect(body.inputs[0]?.properties.hs_timestamp).toBe("2026-05-07T12:00:00.000Z");
+  });
+
+  it("returns err when HubSpot batch-create returns an error", async () => {
+    const mockFetch = createMockFetch(
+      { status: "error", message: "Invalid ticketId", category: "VALIDATION_ERROR" },
+      400,
+    );
+    vi.stubGlobal("fetch", mockFetch);
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      ticketId: "not-a-real-id",
+      body: "<p>x</p>",
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(false);
+    expect.assert(!result.ok);
+    expect(result.error.reason).toContain("create-note failed");
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("falls through to LLM when ticketId or body is missing", async () => {
+    mockGenerateText.mockResolvedValue({
+      text: "LLM response",
+      finishReason: "stop",
+      usage: { promptTokens: 10, completionTokens: 5 },
+      steps: [{}],
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    const prompt = JSON.stringify({
+      operation: "create-note",
+      // missing ticketId AND body — schema rejects, falls through
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect(mockGenerateText).toHaveBeenCalledOnce();
+  });
+});
+
+describe("hubspotAgent deterministic noop", () => {
+  let originalAnthropicKey: string | undefined;
+
+  beforeEach(() => {
+    originalAnthropicKey = env.ANTHROPIC_API_KEY;
+    env.ANTHROPIC_API_KEY = "sk-test";
+    mockGenerateText.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalAnthropicKey !== undefined) {
+      env.ANTHROPIC_API_KEY = originalAnthropicKey;
+    } else {
+      delete env.ANTHROPIC_API_KEY;
+    }
+  });
+
+  it("returns success without touching HubSpot", async () => {
+    const mockFetch = vi
+      .fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
+      .mockRejectedValue(new Error("fetch should not have been called on noop"));
+    vi.stubGlobal("fetch", mockFetch);
+
+    const prompt = JSON.stringify({
+      operation: "noop",
+      skipped: true,
+      reason: "no ticket to brief",
+    });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.operation).toBe("noop");
+    expect(result.data.success).toBe(true);
+    expect(result.data.data).toMatchObject({ skipped: true, reason: "no ticket to brief" });
+    expect(result.data.response).toContain("no ticket to brief");
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+
+  it("works without optional reason / skipped fields", async () => {
+    const prompt = JSON.stringify({ operation: "noop" });
+
+    const result = await hubspotAgent.execute(prompt, validContext());
+
+    expect(result.ok).toBe(true);
+    expect.assert(result.ok);
+    expect(result.data.operation).toBe("noop");
+    expect(result.data.data).toMatchObject({ skipped: true });
+    expect(mockGenerateText).not.toHaveBeenCalled();
+  });
+});

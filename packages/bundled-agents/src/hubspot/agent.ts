@@ -24,6 +24,19 @@ import {
   createUpsertCrmObjectsTool,
 } from "./tools.ts";
 
+/** notes ↔ tickets default association type (matches DEFAULT_ASSOCIATION_TYPES in tools.ts). */
+const NOTES_TO_TICKETS_ASSOCIATION_TYPE_ID = 228;
+
+/** Minimal HubSpot batch-create response shape we need to read. */
+const BatchCreateNotesResponseSchema = z.object({
+  status: z.string().optional(),
+  results: z
+    .array(z.object({ id: z.string(), properties: z.record(z.string(), z.unknown()).optional() }))
+    .optional(),
+  numErrors: z.number().optional(),
+  errors: z.array(z.object({ status: z.string(), message: z.string() })).optional(),
+});
+
 /**
  * Schema for the deterministic send-thread-comment operation.
  * Maps directly to the existing send_thread_comment tool input.
@@ -37,10 +50,53 @@ const SendThreadCommentOpSchema = z.object({
 });
 
 /**
+ * Schema for the deterministic create-note operation.
+ *
+ * Creates a HubSpot CRM Note attached to a ticket — body is passed through
+ * verbatim as `hs_note_body` (HubSpot renders it as HTML in the
+ * Activities/Notes tab). This is the deterministic equivalent of asking
+ * the LLM to call `create_crm_objects` with `objectType: "notes"`,
+ * `records: [{...}]`, and the standard notes↔tickets association
+ * (associationTypeId 228).
+ *
+ * The optional `kind` and `format` fields are passthrough metadata that
+ * upstream agents (e.g. briefing-builder, reply-builder) include for their
+ * own bookkeeping; the dispatcher accepts them but doesn't use them.
+ */
+const CreateNoteOpSchema = z.object({
+  operation: z.literal("create-note"),
+  ticketId: z.string(),
+  body: z.string(),
+  kind: z.string().optional(),
+  format: z.string().optional(),
+  /** ISO timestamp override; defaults to `new Date().toISOString()`. */
+  hsTimestamp: z.string().optional(),
+});
+
+/**
+ * Schema for the deterministic noop operation.
+ *
+ * Lets upstream agents emit a "do-nothing" envelope when they detect a
+ * skip sentinel (e.g. the empty-cron-tick path where ticket-picker
+ * returns `{done: true}`). The dispatcher returns success without
+ * touching HubSpot — replaces the prior pattern of relying on the LLM
+ * to recognize a noop instruction in its prompt.
+ */
+const NoopOpSchema = z.object({
+  operation: z.literal("noop"),
+  reason: z.string().optional(),
+  skipped: z.boolean().optional(),
+});
+
+/**
  * Discriminated union of all deterministic HubSpot operations.
  * New operations are added as additional variants.
  */
-const HubSpotOperationSchema = z.discriminatedUnion("operation", [SendThreadCommentOpSchema]);
+const HubSpotOperationSchema = z.discriminatedUnion("operation", [
+  SendThreadCommentOpSchema,
+  CreateNoteOpSchema,
+  NoopOpSchema,
+]);
 
 /**
  * Output schema for the HubSpot agent.
@@ -298,8 +354,98 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
             data: result,
           });
         }
+
+        case "create-note": {
+          // Hit HubSpot's batch-create endpoint directly via raw fetch
+          // (matches the send-thread-comment pattern). Avoids pulling in the
+          // SDK Client for a one-shot deterministic call, and lets the
+          // standard fetch-stub test pattern work without per-test SDK
+          // mocks.
+          const body = JSON.stringify({
+            inputs: [
+              {
+                properties: {
+                  hs_note_body: config.body,
+                  hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
+                },
+                associations: [
+                  {
+                    to: { id: config.ticketId },
+                    types: [
+                      {
+                        associationCategory: "HUBSPOT_DEFINED",
+                        associationTypeId: NOTES_TO_TICKETS_ASSOCIATION_TYPE_ID,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          });
+
+          let resp: Response;
+          try {
+            resp = await fetch("https://api.hubapi.com/crm/v3/objects/notes/batch/create", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body,
+              signal: abortSignal,
+            });
+          } catch (e) {
+            return err(`create-note failed: ${stringifyError(e)}`);
+          }
+          if (!resp.ok) {
+            const errBody = await resp.text().catch(() => "");
+            return err(
+              `create-note failed: ${resp.status} ${resp.statusText}${errBody ? ` — ${errBody.slice(0, 300)}` : ""}`,
+            );
+          }
+          let parsed: unknown;
+          try {
+            parsed = await resp.json();
+          } catch (e) {
+            return err(`create-note failed: response was not JSON: ${stringifyError(e)}`);
+          }
+          const validated = BatchCreateNotesResponseSchema.safeParse(parsed);
+          if (!validated.success) {
+            return err(`create-note failed: unexpected response shape: ${validated.error.message}`);
+          }
+
+          const created = validated.data.results?.[0];
+          return ok({
+            response: created?.id
+              ? `CRM Note ${created.id} created on ticket ${config.ticketId}`
+              : `CRM Note creation completed for ticket ${config.ticketId} (no id returned)`,
+            operation: "create-note",
+            success: true,
+            data: {
+              noteId: created?.id ?? null,
+              ticketId: config.ticketId,
+              properties: created?.properties,
+              numErrors: validated.data.numErrors,
+              errors: validated.data.errors,
+            },
+          });
+        }
+
+        case "noop": {
+          // Skip sentinel — upstream agent decided there's nothing to do
+          // (e.g. empty-cron-tick path). Return success without calling
+          // HubSpot so the FSM drains cleanly.
+          logger.info("Deterministic noop", { reason: config.reason ?? "(no reason given)" });
+          return ok({
+            response: config.reason ?? "Noop — upstream signalled nothing to do.",
+            operation: "noop",
+            success: true,
+            data: { skipped: config.skipped ?? true, reason: config.reason },
+          });
+        }
+
         default:
-          return err(`Unknown operation: ${config.operation}`);
+          return err(`Unknown operation: ${(config as { operation: string }).operation}`);
       }
     }
 
