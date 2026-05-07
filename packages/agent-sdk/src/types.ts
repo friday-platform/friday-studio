@@ -536,6 +536,8 @@ export const AgentExecutionErrorSchema = z.object({
   input: z.unknown().describe("Input provided to the agent"),
   ok: z.literal(false).describe("Failure discriminant"),
   error: z.object({ reason: z.string() }).describe("Error information"),
+  toolCalls: z.array(z.any()).optional().describe("Tool calls made before failure"),
+  toolResults: z.array(z.any()).optional().describe("Tool results observed before failure"),
   durationMs: z.number().describe("Execution duration in milliseconds"),
 });
 
@@ -556,8 +558,8 @@ export type AgentExecutionSuccess<TInput = unknown, TOutput = unknown> = Omit<
 
 export type AgentExecutionError<TInput = unknown> = Omit<
   z.infer<typeof AgentExecutionErrorSchema>,
-  "input"
-> & { input: TInput };
+  "input" | "toolCalls" | "toolResults"
+> & { input: TInput; toolCalls?: ToolCall[]; toolResults?: ToolResult[] };
 
 /** Discriminated union on `ok` - typed version of AgentResultSchema */
 export type AgentResult<TInput = unknown, TOutput = unknown> =

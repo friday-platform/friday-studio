@@ -20,6 +20,8 @@ import {
   type ResolvedWorkspaceMemory,
   repairToolCall,
   type StoreMountBinding,
+  type ToolCall,
+  type ToolResult,
 } from "@atlas/agent-sdk";
 import {
   type DelegationBudget,
@@ -2980,8 +2982,12 @@ export class WorkspaceRuntime {
     if (!executor) {
       throw new Error("No agentExecutor configured — ProcessAgentExecutor required");
     }
+
+    const observedToolCalls: ToolCall[] = [];
+    const observedToolResults: ToolResult[] = [];
+
     try {
-      return await executor.execute(sourceLocation, prompt, {
+      const result = await executor.execute(sourceLocation, prompt, {
         env: opts.agentEnv
           ? await resolveEnvValues(opts.agentEnv, logger)
           : Object.fromEntries(
@@ -2997,9 +3003,44 @@ export class WorkspaceRuntime {
             }
           : undefined,
         mcpToolCall: async (name, args) => {
+          const toolCallId = crypto.randomUUID();
+          observedToolCalls.push({
+            type: "tool-call",
+            toolCallId,
+            toolName: name,
+            input: args,
+          } as ToolCall);
+
           const tool = mcpTools[name];
-          if (!tool?.execute) throw new Error(`Unknown tool: ${name}`);
-          return await tool.execute(args, { toolCallId: crypto.randomUUID(), messages: [] });
+          if (!tool?.execute) {
+            const error = `Unknown tool: ${name}`;
+            observedToolResults.push({
+              type: "tool-result",
+              toolCallId,
+              toolName: name,
+              output: { error },
+            } as ToolResult);
+            throw new Error(error);
+          }
+
+          try {
+            const output = await tool.execute(args, { toolCallId, messages: [] });
+            observedToolResults.push({
+              type: "tool-result",
+              toolCallId,
+              toolName: name,
+              output,
+            } as ToolResult);
+            return output;
+          } catch (error) {
+            observedToolResults.push({
+              type: "tool-result",
+              toolCallId,
+              toolName: name,
+              output: { error: stringifyError(error) },
+            } as ToolResult);
+            throw error;
+          }
         },
         mcpListTools: () =>
           Promise.resolve(
@@ -3024,6 +3065,16 @@ export class WorkspaceRuntime {
         })),
         abortSignal: opts.abortSignal,
       });
+
+      if (observedToolCalls.length === 0 && observedToolResults.length === 0) {
+        return result;
+      }
+
+      return {
+        ...result,
+        toolCalls: [...(result.toolCalls ?? []), ...observedToolCalls],
+        toolResults: [...(result.toolResults ?? []), ...observedToolResults],
+      };
     } finally {
       await dispose();
       if (skillsTempDir) {

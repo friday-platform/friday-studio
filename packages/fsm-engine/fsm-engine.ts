@@ -2648,8 +2648,31 @@ export class FSMEngine {
               resolvedAgentType: resolvedAgentType ?? "unknown",
             });
 
-            // Check envelope's ok discriminant for error
+            // Check envelope's ok discriminant for error. Preserve tool-call
+            // observability for failed user agents before throwing so the
+            // session history can explain what capability call failed.
             if (!result.ok) {
+              const agentResultsByCallId = new Map(
+                result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
+              );
+              const rawAgentToolCalls = (result.toolCalls ?? []).map((tc) => ({
+                toolName: tc.toolName,
+                args: tc.input,
+                ...(agentResultsByCallId.has(tc.toolCallId) && {
+                  result: agentResultsByCallId.get(tc.toolCallId),
+                }),
+              }));
+              const liftWorkspaceId = sig._context?.workspaceId;
+              const liftSessionId = sig._context?.sessionId;
+              const agentToolCalls =
+                liftWorkspaceId && liftSessionId
+                  ? await liftToolResultsForPersist(rawAgentToolCalls, {
+                      workspaceId: liftWorkspaceId,
+                      chatId: liftSessionId,
+                      logger,
+                    })
+                  : rawAgentToolCalls;
+              llmResultData = { toolCalls: agentToolCalls, output: { error: result.error.reason } };
               throw new Error(result.error.reason);
             }
 

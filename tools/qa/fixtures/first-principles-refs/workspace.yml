@@ -148,6 +148,17 @@ signals:
         query:
           type: string
       required: []
+  python-user-agent-event:
+    provider: http
+    description: "Trigger Python user-agent ctx.tools scenario."
+    config:
+      path: "/python-user-agent-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 agents:
   contract-writer:
@@ -176,6 +187,11 @@ agents:
         input supplied by the FSM action. Do not fetch artifacts, parse
         artifacts, display artifacts, delegate, or rerun any job. Return only
         the requested final payload.
+
+  python-inbox-fetcher:
+    type: user
+    agent: fake-inbox-python-agent
+    description: "Python user-agent fixture that must call fake inbox MCP tools through ctx.tools."
 
 jobs:
   refs-check:
@@ -754,6 +770,49 @@ jobs:
                 - granted: the granted value returned by request_tool_access
                 - reason: the reason returned by request_tool_access
                 - answer: the answer returned by request_tool_access
+          type: final
+
+  python-user-agent-tool-check:
+    description: "Python user-agent uses ctx.tools for fake inbox access and records tool calls."
+    triggers:
+      - signal: python-user-agent-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        PythonUserAgentResult:
+          type: object
+          properties:
+            marker: { type: string }
+            listedTools:
+              type: array
+              items: { type: string }
+            count: { type: number }
+            firstId: { type: string }
+            sawBodySentinel: { type: boolean }
+          required: ["marker", "listedTools", "count", "firstId", "sawBodySentinel"]
+      states:
+        idle:
+          on:
+            python-user-agent-event: { target: fetch }
+        fetch:
+          entry:
+            - type: agent
+              agentId: python-inbox-fetcher
+              summary: "Fetch fake inbox messages from a Python user agent."
+              outputTo: python-user-agent-result
+              outputType: PythonUserAgentResult
+              validate: skip
+              prompt: |
+                Use ctx.tools only. List tools, call search_messages with
+                limit 4, then call get_messages_content_batch for those ids.
+                Return the marker PY_USER_AGENT_TOOL_OK, listed tool names,
+                count, firstId, and whether any body contained
+                FIRST_PRINCIPLES_EMAIL_BODY.
           type: final
 
   fanout-delegate-check:

@@ -30,6 +30,10 @@
   vars:
     scenarioId: llm-agent-inputfrom-ref-hydration
 
+- description: Python user-agent ctx.tools observability
+  vars:
+    scenarioId: python-user-agent-ctx-tools-observability
+
 - description: auto-triage report output contract
   vars:
     scenarioId: auto-triage-report-output-contract

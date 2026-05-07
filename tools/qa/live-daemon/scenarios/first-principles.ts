@@ -35,6 +35,10 @@ interface EvalResult {
 
 const FAKE_INBOX_MCP = join(HARNESS_PATHS.fixturesDir, "stub-mcp/fake-inbox-server.ts");
 const REFS_FIXTURE = join(HARNESS_PATHS.fixturesDir, "first-principles-refs");
+const PYTHON_USER_AGENT_FIXTURE = join(
+  HARNESS_PATHS.fixturesDir,
+  "user-agents/fake-inbox-python-agent",
+);
 
 async function materializeFixture(srcDir: string, replacements: Record<string, string>) {
   const tmpDir = await Deno.makeTempDir({ prefix: "friday-first-principles-" });
@@ -45,6 +49,51 @@ async function materializeFixture(srcDir: string, replacements: Record<string, s
   }
   await Deno.writeTextFile(join(tmpDir, "workspace.yml"), rendered);
   return tmpDir;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function materializeFridayHomeWithUserAgents(): Promise<{
+  fridayHome: string;
+  env: Record<string, string>;
+}> {
+  const fridayHome = await Deno.makeTempDir({ prefix: "friday-qa-" });
+  const agentDir = join(fridayHome, "agents", "fake-inbox-python-agent@0.1.0");
+  await ensureDir(agentDir);
+  await Deno.copyFile(join(PYTHON_USER_AGENT_FIXTURE, "agent.py"), join(agentDir, "agent.py"));
+  await Deno.copyFile(
+    join(PYTHON_USER_AGENT_FIXTURE, "metadata.json"),
+    join(agentDir, "metadata.json"),
+  );
+
+  const env: Record<string, string> = {
+    FRIDAY_UV_PATH: "",
+    FRIDAY_AGENT_SDK_VERSION: "",
+    FRIDAY_AGENT_PYTHON: Deno.env.get("FRIDAY_AGENT_PYTHON") ?? "python3",
+  };
+  const pythonPathCandidates = [
+    Deno.env.get("FRIDAY_AGENT_SDK_PYTHONPATH"),
+    Deno.env.get("HOME")
+      ? join(Deno.env.get("HOME")!, "friday/agent-sdk/packages/python")
+      : undefined,
+  ].filter((value): value is string => !!value);
+  const sdkPath = await (async () => {
+    for (const candidate of pythonPathCandidates) {
+      if (await pathExists(join(candidate, "friday_agent_sdk"))) return candidate;
+    }
+    return undefined;
+  })();
+  if (sdkPath) {
+    env.PYTHONPATH = [sdkPath, Deno.env.get("PYTHONPATH")].filter(Boolean).join(":");
+  }
+  return { fridayHome, env };
 }
 
 async function natsKvGetJson(
@@ -828,6 +877,88 @@ async function runLlmAgentInputFromHydrationScenario(d: DaemonHandle): Promise<E
         `saw body sentinel: ${String(payload?.sawBodySentinel ?? "(missing)")}`,
         `tool calls: ${toolNames.join(",") || "(missing)"}`,
         `artifact fan-in tools: ${artifactFanInTools.join(",") || "(none)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
+async function runPythonUserAgentToolsScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Python User Agent" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "python-user-agent-event", {
+    payload: { query: "python-user-agent" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "python-user-agent-ctx-tools-observability",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/python-user-agent-tool-check/python-user-agent-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+
+  const stepToolCalls = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) => (ev as { toolCalls?: Array<Record<string, unknown>> }).toolCalls ?? []);
+  const toolNames = stepToolCalls.map((tc) => String(tc.toolName ?? ""));
+  const listedTools = Array.isArray(payload?.listedTools) ? payload.listedTools.map(String) : [];
+  const sawExpectedTools =
+    listedTools.includes("search_messages") && listedTools.includes("get_messages_content_batch");
+  const recordedExpectedCalls =
+    toolNames.includes("search_messages") && toolNames.includes("get_messages_content_batch");
+
+  metrics.bucket = bucket;
+  metrics.docBytes = doc ? byteLen(doc) : 0;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.payload = payload ?? null;
+  metrics.toolNames = toolNames;
+  metrics.listedTools = listedTools;
+  metrics.stepToolCalls = stepToolCalls;
+
+  const pass =
+    payload?.marker === "PY_USER_AGENT_TOOL_OK" &&
+    numberValue(payload?.count) === 4 &&
+    payload?.firstId === "fake-001" &&
+    isTrue(payload?.sawBodySentinel) &&
+    sawExpectedTools &&
+    recordedExpectedCalls;
+
+  return [
+    {
+      id: "python-user-agent-ctx-tools-observability",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `count: ${String(payload?.count ?? "(missing)")}`,
+        `firstId: ${String(payload?.firstId ?? "(missing)")}`,
+        `listed expected tools: ${sawExpectedTools}`,
+        `recorded expected calls: ${recordedExpectedCalls}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
       ],
       metrics,
     },
@@ -1674,7 +1805,8 @@ async function main() {
   }
   console.log(`▶ first-principles eval @ ${sha}`);
 
-  const daemon = await startDaemon({ healthTimeoutMs: 90_000 });
+  const { fridayHome, env } = await materializeFridayHomeWithUserAgents();
+  const daemon = await startDaemon({ fridayHome, env, healthTimeoutMs: 90_000 });
   const results: EvalResult[] = [];
   try {
     console.log(`✓ daemon up: ${daemon.baseUrl}`);
@@ -1688,6 +1820,8 @@ async function main() {
     results.push(...(await runAgentOutputContractScenario(daemon)));
     console.log("\n── LLM agent inputFrom ref hydration ──");
     results.push(...(await runLlmAgentInputFromHydrationScenario(daemon)));
+    console.log("\n── Python user-agent ctx.tools observability ──");
+    results.push(...(await runPythonUserAgentToolsScenario(daemon)));
     console.log("\n── auto-triage report output contract ──");
     results.push(...(await runAutoTriageReportOutputContractScenario(daemon)));
     console.log("\n── ack-only fake inbox mutation ──");

@@ -93,7 +93,7 @@ export class ProcessAgentExecutor {
       env: {
         ...process.env,
         ...options.env,
-        NATS_URL: "nats://localhost:4222",
+        NATS_URL: process.env.FRIDAY_NATS_URL ?? "nats://localhost:4222",
         FRIDAY_SESSION_ID: sessionId,
       },
       stdio: "pipe",

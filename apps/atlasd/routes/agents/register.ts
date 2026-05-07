@@ -86,7 +86,11 @@ registerAgentRoute.post("/register", async (c) => {
 
   const [cmd, args] = buildAgentSpawnArgs(entrypointPath);
   const proc = spawn(cmd, args, {
-    env: { ...process.env, FRIDAY_VALIDATE_ID: registerId, NATS_URL: "nats://localhost:4222" },
+    env: {
+      ...process.env,
+      FRIDAY_VALIDATE_ID: registerId,
+      NATS_URL: process.env.FRIDAY_NATS_URL ?? "nats://localhost:4222",
+    },
     stdio: "pipe",
   });
 
