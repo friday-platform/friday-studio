@@ -189,7 +189,7 @@ Caller sees (SSE `job-complete` event, modern shape):
 }
 ```
 
-`artifactIds` are JetStream-persisted refs to each non-plumbing FSM document the job produced. `summary` is a short human-readable digest synthesized from `aiSummary` (preferred) → terminal-state action's `summary` field → truncated `outputTo` data (fallback).
+`artifactIds` are JetStream-persisted refs to each non-plumbing FSM document the job produced. `summary` is a short human-readable digest synthesized from `aiSummary` (preferred) → terminal-state action's `summary` field → structural digest of `outputTo` data (fallback). See "Writing artifact summaries the supervisor can answer from" below for guidance on making the summary self-sufficient.
 
 **The supervisor (workspace-chat) prefers `artifactIds` + `summary` over `output` when both are present** — the LLM-visible tool result drops `output` entirely so the supervisor's next-turn input doesn't ingest the full Document[]. If the LLM needs an artifact's contents, it calls `parse_artifact(<id>)`.
 
@@ -940,6 +940,107 @@ automatically because they call `batch_modify_*` / `send_*` tools.
 - **Forgetting `outputType:` on the aggregate.** Without a
   structured contract, the parent emits free-form prose and the
   caller can't programmatically consume "what got triaged."
+
+## Writing artifact summaries the supervisor can answer from
+
+The supervisor (workspace-chat) sees `{ artifactIds, summary }` for
+every job result and decides per turn whether to call `artifacts_get`
+to load the full body. **A thin `summary:` forces the supervisor to
+re-fetch on every follow-up question** — wasted tokens and a slower
+turn. A summary that carries the structural facts up front lets the
+supervisor answer common queries (counts, top items, status flags,
+key URLs) without re-fetching.
+
+### What "self-sufficient" means
+
+Aim for the summary to answer the questions a user is most likely
+to ask after the job completes. For a triage job that's "how many
+urgent? what got drafted? what needs my review?" For a search job
+it's "how many hits? top result?" The summary should be the cheapest
+data-store the supervisor consults — anything that takes a fetch
+should be the exception, not the default.
+
+Include, in this priority order:
+
+1. **Counts of the things that matter.** "8 urgent, 12 normal, 3
+   drafts created" beats "Triaged the inbox and acted on the
+   urgent items." Counts are how supervisors answer "did anything
+   change?" and "is this done?".
+2. **Top items by name/title/id.** A handful of identifying labels
+   so the supervisor can answer "which ones?" without a fetch.
+   Cap at ~5 — the summary isn't the artifact.
+3. **Key URLs.** If the job published to Notion, opened a PR, or
+   sent a calendar invite, the URL belongs in the summary. The
+   supervisor may need it next turn to deep-link.
+4. **Status flags.** A boolean `status: "ok"` / `error_count: 0`
+   / `requires_attention: true` lets the supervisor answer
+   "anything to flag?" without scanning a long body.
+5. **One-line digest of what was done.** The classic prose summary
+   is still useful — but as the *header*, not the *whole thing*.
+
+### Worked example: triage job
+
+Bad — supervisor must `artifacts_get` to answer anything:
+
+```yaml
+- type: agent
+  agentId: triage-agent
+  outputTo: triage-summary
+  summary: "Triaged the inbox and took action on urgent items."
+```
+
+Good — supervisor answers "how many urgent?" and "what did you
+draft?" from the summary alone:
+
+```yaml
+- type: agent
+  agentId: triage-agent
+  outputTo: triage-summary
+  outputType: triage-summary
+  summary: |
+    Triaged 50 emails: 3 urgent (drafted replies), 12 normal (filed),
+    35 noise (archived). Drafts await user review in Gmail.
+    See artifact for per-email outcomes.
+```
+
+The structured `outputTo` document carries the per-email detail; the
+`summary:` carries the answers to the supervisor's likely
+follow-ups. Both ship to the supervisor on `job-complete`; only the
+artifact body costs a `parse_artifact` round-trip.
+
+### Auto-derived structural fingerprint
+
+When you don't declare `summary:`, the runtime synthesizes one from
+the terminal-state document's top-level fields. As of I3 the auto-
+synthesis emits a structural digest rather than truncated JSON:
+
+- Top-level array fields surface as `<key>: N items`.
+- Top-level scalar fields (string/number/boolean) surface as
+  `<key>: <value>`.
+- Nested objects are skipped (too noisy at-a-glance).
+
+So a doc like `{ status: "ok", actions: [...8...], flagged: [...3...] }`
+auto-summarizes as `status: ok; actions: 8 items; flagged: 3 items`
+— good enough for "how many?" without an author-provided string.
+
+That said, the auto-derived digest is a *fallback*. When the answers
+to likely supervisor questions need top item names or a URL, declare
+`summary:` explicitly — the runtime can count arrays but doesn't
+know which item names matter.
+
+### Verify after authoring
+
+After publishing the workspace, fire the signal once and inspect
+the `summary` field on the SSE `job-complete` event:
+
+- Does it answer "how many?" without a `parse_artifact`?
+- Does it name the top items / surface a URL when relevant?
+- Is it < 500 characters? (Hard cap is 5000; a summary much over
+  500 chars usually means the artifact body leaked into it.)
+
+If "no" to any of these, set `summary:` on the terminal action
+explicitly. The `summary:` field is the contract you control to
+keep the supervisor cheap.
 
 ## Requesting access to a tool not in your allowlist
 

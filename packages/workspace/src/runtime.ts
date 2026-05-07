@@ -614,20 +614,54 @@ export function buildDocumentTerminalIndex(definition: FSMDefinition): Set<strin
 }
 
 /**
- * Truncate a document's `data` to a synthesized summary (~300 chars).
- * Falls back to the document type name if `JSON.stringify` throws on
- * a circular structure — preserves a non-empty summary so artifact
+ * Synthesize a structural summary of a document's `data` (~300 chars).
+ *
+ * I3: prefer a structural fingerprint over raw JSON — supervisors answer
+ * common queries (how many? what status?) from the summary alone, so
+ * counts and scalar status fields up front beat truncated JSON. We
+ * build a `key: value` digest of top-level fields:
+ *
+ *   - Arrays surface as `<key>: N items`.
+ *   - Scalar leaves (string/number/boolean) surface verbatim, with
+ *     long strings truncated to keep one field from hogging the budget.
+ *   - Nested objects/null/undefined are skipped (too noisy at-a-glance).
+ *
+ * Falls back to the document type name if the data is empty or a
+ * circular structure throws — preserves a non-empty summary so artifact
  * creation doesn't fail Zod validation (`summary.min(1)`).
  */
 export function synthesizeArtifactSummary(doc: FSMDocument): string {
   const MAX = 300;
+  const parts: string[] = [];
+  try {
+    for (const [key, value] of Object.entries(doc.data ?? {})) {
+      if (value === null || value === undefined) continue;
+      if (Array.isArray(value)) {
+        parts.push(`${key}: ${value.length} item${value.length === 1 ? "" : "s"}`);
+      } else if (typeof value === "string") {
+        const trimmed = value.length > 80 ? `${value.slice(0, 79)}…` : value;
+        parts.push(`${key}: ${trimmed}`);
+      } else if (typeof value === "number" || typeof value === "boolean") {
+        parts.push(`${key}: ${String(value)}`);
+      }
+      // Nested objects intentionally skipped — see comment above.
+    }
+  } catch {
+    return `[${doc.type}]`;
+  }
+  if (parts.length > 0) {
+    const joined = parts.join("; ");
+    return joined.length > MAX ? `${joined.slice(0, MAX - 1)}…` : joined;
+  }
+  // No top-level scalar/array fields — fall back to truncated JSON for
+  // at least *some* structural hint of the doc shape.
   let body: string;
   try {
     body = JSON.stringify(doc.data);
   } catch {
     return `[${doc.type}]`;
   }
-  if (!body) return `[${doc.type}]`;
+  if (!body || body === "{}") return `[${doc.type}]`;
   return body.length > MAX ? `${body.slice(0, MAX - 1)}…` : body;
 }
 
@@ -707,11 +741,18 @@ export function findTerminalAction(definition: FSMDefinition): LLMAction | Agent
 
 /**
  * C1 helper — derive `keyDetails` for {@link SessionAISummary} from the
- * terminal action's structured output document. Walks only the document's
- * top-level `data` fields; nested objects/arrays are skipped (too noisy
- * for an at-a-glance summary). String/number leaves become entries; URL-
- * shaped strings populate the `url` field. Capped at 5 to match the
- * existing aiSummary norm.
+ * terminal action's structured output document. Walks the document's
+ * top-level `data` fields:
+ *
+ *   - String / number / boolean leaves become entries; URL-shaped
+ *     strings also populate the `url` field.
+ *   - Arrays surface as a count entry (`"N items"`) — I3: lets the
+ *     supervisor answer "how many?" from `keyDetails` without
+ *     `artifacts_get`. Empty arrays included (`"0 items"`) so consumers
+ *     can distinguish "no urgent" from "field missing".
+ *   - Nested objects are skipped (too noisy for an at-a-glance summary).
+ *
+ * Capped at 5 to match the existing aiSummary norm.
  */
 export function deriveKeyDetailsFromOutputDoc(
   doc: { data: Record<string, unknown> } | undefined,
@@ -721,15 +762,23 @@ export function deriveKeyDetailsFromOutputDoc(
   for (const [key, value] of Object.entries(doc.data)) {
     if (entries.length >= 5) break;
     if (value === null || value === undefined) continue;
-    if (typeof value !== "string" && typeof value !== "number") continue;
-    const stringValue = String(value);
+    let stringValue: string;
+    let urlValue: string | undefined;
+    if (typeof value === "string") {
+      stringValue = value;
+      if (isUrlShaped(value)) urlValue = value;
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      stringValue = String(value);
+    } else if (Array.isArray(value)) {
+      stringValue = `${value.length} item${value.length === 1 ? "" : "s"}`;
+    } else {
+      continue; // skip nested objects
+    }
     const entry: { label: string; value: string; url?: string } = {
       label: humanizeFieldKey(key),
       value: stringValue,
     };
-    if (typeof value === "string" && isUrlShaped(value)) {
-      entry.url = value;
-    }
+    if (urlValue) entry.url = urlValue;
     entries.push(entry);
   }
   return entries;

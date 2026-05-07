@@ -62,7 +62,9 @@ describe("persistFsmSessionArtifacts", () => {
     expect(artifact).not.toBeNull();
     if (!artifact) return;
     expect(artifact.title).toBe("analysis-result: analysis");
-    expect(artifact.summary).toContain('"score":7');
+    // I3 structural digest replaces the JSON-truncation fallback.
+    expect(artifact.summary).toContain("score: 7");
+    expect(artifact.summary).toContain("finding: all clear");
     expect(artifact.source).toBe("fsm-engine:scan-inbox:analysis");
     expect(artifact.workspaceId).toBe(workspaceId);
     expect(artifact.data.mimeType).toBe("application/json");
@@ -215,20 +217,22 @@ describe("buildDocumentActionIndex", () => {
 });
 
 describe("synthesizeArtifactSummary", () => {
-  it("returns the JSON-stringified data when short", () => {
-    expect(synthesizeArtifactSummary({ id: "x", type: "t", data: { a: 1 } })).toBe('{"a":1}');
+  it("emits a structural digest of top-level scalar fields (I3)", () => {
+    expect(synthesizeArtifactSummary({ id: "x", type: "t", data: { a: 1 } })).toBe("a: 1");
   });
 
-  it("truncates long payloads to ~300 chars and ends in an ellipsis", () => {
+  it("truncates long single-field payloads (per-field 80-char cap)", () => {
     const big = { body: "x".repeat(1000) };
     const out = synthesizeArtifactSummary({ id: "x", type: "t", data: big });
     expect(out.length).toBeLessThanOrEqual(300);
     expect(out.endsWith("…")).toBe(true);
   });
 
-  it("falls back to the type tag on a circular structure", () => {
+  it("falls back to the type tag when scalar/array digest is empty and JSON throws", () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
+    // No scalar/array fields → fall through to JSON.stringify, which
+    // throws on the cycle → final fallback returns the type tag.
     expect(synthesizeArtifactSummary({ id: "x", type: "report", data: circular })).toBe("[report]");
   });
 });

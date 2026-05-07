@@ -18,12 +18,12 @@ import {
 } from "../runtime.ts";
 
 describe("synthesizeFallbackSummary", () => {
-  it("returns the JSON-stringified data of the last non-plumbing document", () => {
+  it("returns the structural digest of the last non-plumbing document (I3)", () => {
     const docs = [
       { id: "transition-1", type: "state-transition", data: { from: "a", to: "b" } },
       { id: "report", type: "report", data: { ok: true, items: 3 } },
     ];
-    expect(synthesizeFallbackSummary(docs)).toBe('{"ok":true,"items":3}');
+    expect(synthesizeFallbackSummary(docs)).toBe("ok: true; items: 3");
   });
 
   it("skips plumbing documents and picks the last non-plumbing one", () => {
@@ -33,7 +33,7 @@ describe("synthesizeFallbackSummary", () => {
       { id: "transition", type: "state-transition", data: { from: "a", to: "b" } },
     ];
     // `later-result` is the last non-plumbing doc; transition is filtered out.
-    expect(synthesizeFallbackSummary(docs)).toBe('{"phase":2}');
+    expect(synthesizeFallbackSummary(docs)).toBe("phase: 2");
   });
 
   it("returns an empty string when only plumbing documents are present", () => {

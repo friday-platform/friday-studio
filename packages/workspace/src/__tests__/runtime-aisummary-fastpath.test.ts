@@ -14,6 +14,7 @@ import {
   deriveKeyDetailsFromOutputDoc,
   findTerminalAction,
   humanizeFieldKey,
+  synthesizeArtifactSummary,
 } from "../runtime.ts";
 
 describe("findTerminalAction", () => {
@@ -149,13 +150,40 @@ describe("deriveKeyDetailsFromOutputDoc", () => {
     ]);
   });
 
-  it("skips nested objects and arrays of objects", () => {
+  it("skips nested objects but surfaces arrays as count entries (I3)", () => {
     const out = deriveKeyDetailsFromOutputDoc({
       data: { title: "Report", nested: { inner: 1 }, items: [{ a: 1 }, { a: 2 }], count: 3 },
     });
     expect(out).toEqual([
       { label: "Title", value: "Report" },
+      { label: "Items", value: "2 items" },
       { label: "Count", value: "3" },
+    ]);
+  });
+
+  it("surfaces array counts so supervisors can answer 'how many?' (I3)", () => {
+    // Mirrors pt1 §8.C: the chat_*** triage report had `actions` and
+    // `flagged` arrays; supervisor asked "did anything urgent come in?"
+    // Counts in keyDetails answer that without `artifacts_get`.
+    const out = deriveKeyDetailsFromOutputDoc({
+      data: {
+        actions: ["a", "b", "c", "d", "e", "f", "g", "h"],
+        flagged: ["x", "y", "z"],
+        empty: [],
+      },
+    });
+    expect(out).toEqual([
+      { label: "Actions", value: "8 items" },
+      { label: "Flagged", value: "3 items" },
+      { label: "Empty", value: "0 items" },
+    ]);
+  });
+
+  it("includes booleans alongside strings/numbers", () => {
+    const out = deriveKeyDetailsFromOutputDoc({ data: { ok: true, processedCount: 7 } });
+    expect(out).toEqual([
+      { label: "Ok", value: "true" },
+      { label: "Processed Count", value: "7" },
     ]);
   });
 
@@ -282,11 +310,15 @@ describe("buildSynchronousFallbackAiSummary (C2)", () => {
     };
     const docs: FSMDocument[] = [{ id: "result", type: "Result", data: { ok: true, count: 4 } }];
     const out = buildSynchronousFallbackAiSummary(definition, docs);
-    // Truncated JSON of the doc data (~300 chars cap).
-    expect(out.summary).toContain('"ok":true');
-    expect(out.summary).toContain('"count":4');
-    // keyDetails still derived from the outputTo doc.
-    expect(out.keyDetails).toEqual([{ label: "Count", value: "4" }]);
+    // I3: structural digest of the doc data (`key: value; …`).
+    expect(out.summary).toContain("ok: true");
+    expect(out.summary).toContain("count: 4");
+    // keyDetails derived from the outputTo doc — booleans included
+    // alongside scalars (I3).
+    expect(out.keyDetails).toEqual([
+      { label: "Ok", value: "true" },
+      { label: "Count", value: "4" },
+    ]);
   });
 
   it("returns an empty SessionAISummary when there's no terminal action and no docs", () => {
@@ -360,5 +392,77 @@ describe("fast path skips generateSessionSummary", () => {
 
     expect(aiSummary?.summary).toBe("llm summary");
     expect(generateSessionSummary).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("synthesizeArtifactSummary (I3 structural digest)", () => {
+  // Replaces the pre-I3 `JSON.stringify`-truncated fallback. Used by
+  // `persistFsmSessionArtifacts` when an action has no author-provided
+  // `summary:`. Should surface counts + scalar status fields up front
+  // so the supervisor can answer "how many?" / "what status?" without
+  // pulling the full artifact (pt1 results §8.C).
+
+  it("surfaces array counts and scalar fields as a structured digest", () => {
+    // Mirrors a triage report — actions/flagged are the array fields a
+    // supervisor needs counts for; status is the scalar.
+    const out = synthesizeArtifactSummary({
+      id: "triage-report",
+      type: "TriageReport",
+      data: {
+        status: "ok",
+        actions: ["a", "b", "c", "d", "e", "f", "g", "h"],
+        flagged: ["x", "y", "z"],
+      },
+    });
+    expect(out).toBe("status: ok; actions: 8 items; flagged: 3 items");
+  });
+
+  it("singularizes the count for arrays of one", () => {
+    const out = synthesizeArtifactSummary({ id: "d", type: "T", data: { items: ["only-one"] } });
+    expect(out).toBe("items: 1 item");
+  });
+
+  it("includes booleans and numbers as scalars", () => {
+    const out = synthesizeArtifactSummary({ id: "d", type: "T", data: { ok: true, count: 12 } });
+    expect(out).toBe("ok: true; count: 12");
+  });
+
+  it("skips null/undefined and nested objects", () => {
+    const out = synthesizeArtifactSummary({
+      id: "d",
+      type: "T",
+      data: { keep: "yes", drop: null, also: undefined, nested: { inner: 1 } },
+    });
+    expect(out).toBe("keep: yes");
+  });
+
+  it("truncates very long string values to keep one field from hogging the budget", () => {
+    const long = "x".repeat(200);
+    const out = synthesizeArtifactSummary({ id: "d", type: "T", data: { note: long } });
+    expect(out.startsWith("note: ")).toBe(true);
+    // 80-char truncation cap applied per-field.
+    expect(out.length).toBeLessThanOrEqual(6 + 80 + 1); // "note: " + 80 chars + ellipsis
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("caps the joined output at ~300 chars", () => {
+    const data: Record<string, string> = {};
+    // 30 short fields -> joined > 300 chars.
+    for (let i = 0; i < 30; i++) data[`f${i}`] = "value-with-some-length";
+    const out = synthesizeArtifactSummary({ id: "d", type: "T", data });
+    expect(out.length).toBeLessThanOrEqual(300);
+    expect(out.endsWith("…")).toBe(true);
+  });
+
+  it("falls back to truncated JSON for nested-only docs (no scalar/array leaves)", () => {
+    const out = synthesizeArtifactSummary({ id: "d", type: "T", data: { nested: { inner: 1 } } });
+    // No scalar/array leaf — fall back to JSON for some structural hint.
+    expect(out).toContain("nested");
+    expect(out).toContain("inner");
+  });
+
+  it("falls back to [type] tag when data is empty", () => {
+    const out = synthesizeArtifactSummary({ id: "d", type: "EmptyDoc", data: {} });
+    expect(out).toBe("[EmptyDoc]");
   });
 });
