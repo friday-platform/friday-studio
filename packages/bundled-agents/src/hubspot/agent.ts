@@ -24,19 +24,6 @@ import {
   createUpsertCrmObjectsTool,
 } from "./tools.ts";
 
-/** notes ↔ tickets default association type (matches DEFAULT_ASSOCIATION_TYPES in tools.ts). */
-const NOTES_TO_TICKETS_ASSOCIATION_TYPE_ID = 228;
-
-/** Minimal HubSpot batch-create response shape we need to read. */
-const BatchCreateNotesResponseSchema = z.object({
-  status: z.string().optional(),
-  results: z
-    .array(z.object({ id: z.string(), properties: z.record(z.string(), z.unknown()).optional() }))
-    .optional(),
-  numErrors: z.number().optional(),
-  errors: z.array(z.object({ status: z.string(), message: z.string() })).optional(),
-});
-
 /**
  * Schema for the deterministic send-thread-comment operation.
  * Maps directly to the existing send_thread_comment tool input.
@@ -52,24 +39,13 @@ const SendThreadCommentOpSchema = z.object({
 /**
  * Schema for the deterministic create-note operation.
  *
- * Creates a HubSpot CRM Note attached to a ticket — body is passed through
- * verbatim as `hs_note_body` (HubSpot renders it as HTML in the
- * Activities/Notes tab). This is the deterministic equivalent of asking
- * the LLM to call `create_crm_objects` with `objectType: "notes"`,
- * `records: [{...}]`, and the standard notes↔tickets association
- * (associationTypeId 228).
- *
- * The optional `kind` and `format` fields are passthrough metadata that
- * upstream agents (e.g. briefing-builder, reply-builder) include for their
- * own bookkeeping; the dispatcher accepts them but doesn't use them.
+ * Deterministic equivalent of asking the LLM to call `create_crm_objects`
+ * with `objectType: "notes"` and a notes↔tickets association.
  */
 const CreateNoteOpSchema = z.object({
   operation: z.literal("create-note"),
   ticketId: z.string(),
   body: z.string(),
-  kind: z.string().optional(),
-  format: z.string().optional(),
-  /** ISO timestamp override; defaults to `new Date().toISOString()`. */
   hsTimestamp: z.string().optional(),
 });
 
@@ -356,65 +332,45 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
         }
 
         case "create-note": {
-          // Hit HubSpot's batch-create endpoint directly via raw fetch
-          // (matches the send-thread-comment pattern). Avoids pulling in the
-          // SDK Client for a one-shot deterministic call, and lets the
-          // standard fetch-stub test pattern work without per-test SDK
-          // mocks.
-          const body = JSON.stringify({
-            inputs: [
-              {
-                properties: {
-                  hs_note_body: config.body,
-                  hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
-                },
-                associations: [
-                  {
-                    to: { id: config.ticketId },
-                    types: [
-                      {
-                        associationCategory: "HUBSPOT_DEFINED",
-                        associationTypeId: NOTES_TO_TICKETS_ASSOCIATION_TYPE_ID,
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
+          // Reuse the LLM path's create_crm_objects tool — same SDK call,
+          // same association-id lookup (DEFAULT_ASSOCIATION_TYPES), same
+          // response normalization. No raw fetch, no duplicated schema.
+          const client = new Client({
+            accessToken,
+            numberOfApiCallRetries: 3,
+            limiterOptions: DEFAULT_LIMITER_OPTIONS,
           });
-
-          let resp: Response;
-          try {
-            resp = await fetch("https://api.hubapi.com/crm/v3/objects/notes/batch/create", {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": "application/json",
-              },
-              body,
-              signal: abortSignal,
-            });
-          } catch (e) {
-            return err(`create-note failed: ${stringifyError(e)}`);
-          }
-          if (!resp.ok) {
-            const errBody = await resp.text().catch(() => "");
-            return err(
-              `create-note failed: ${resp.status} ${resp.statusText}${errBody ? ` — ${errBody.slice(0, 300)}` : ""}`,
-            );
-          }
-          let parsed: unknown;
-          try {
-            parsed = await resp.json();
-          } catch (e) {
-            return err(`create-note failed: response was not JSON: ${stringifyError(e)}`);
-          }
-          const validated = BatchCreateNotesResponseSchema.safeParse(parsed);
-          if (!validated.success) {
-            return err(`create-note failed: unexpected response shape: ${validated.error.message}`);
+          const toolDef = createCreateCrmObjectsTool(client);
+          if (!toolDef.execute) {
+            return err("create-note tool has no execute function");
           }
 
-          const created = validated.data.results?.[0];
+          const result = await toolDef.execute(
+            {
+              objectType: "notes",
+              records: [
+                {
+                  properties: {
+                    hs_note_body: config.body,
+                    hs_timestamp: config.hsTimestamp ?? new Date().toISOString(),
+                  },
+                  associations: [{ toObjectType: "tickets", toObjectId: config.ticketId }],
+                },
+              ],
+            },
+            { toolCallId: "deterministic", messages: [], abortSignal },
+          );
+
+          // The tool's typed return is `T | AsyncIterable<T>` (AI SDK
+          // streaming-tool support); these tools never stream, so narrow it.
+          if (Symbol.asyncIterator in result) {
+            return err("create-note failed: unexpected streaming tool response");
+          }
+          if ("error" in result) {
+            return err(`create-note failed: ${result.error}`);
+          }
+
+          const created = result.results[0];
           return ok({
             response: created?.id
               ? `CRM Note ${created.id} created on ticket ${config.ticketId}`
@@ -425,8 +381,8 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
               noteId: created?.id ?? null,
               ticketId: config.ticketId,
               properties: created?.properties,
-              numErrors: validated.data.numErrors,
-              errors: validated.data.errors,
+              numErrors: result.numErrors,
+              errors: result.errors,
             },
           });
         }

@@ -5,12 +5,22 @@ import type { LogContext, Logger } from "@atlas/logger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createCommentFixture from "./fixtures/create-comment.json" with { type: "json" };
 
-const { mockGenerateText } = vi.hoisted(() => ({ mockGenerateText: vi.fn() }));
+const { mockGenerateText, mockBatchCreate } = vi.hoisted(() => ({
+  mockGenerateText: vi.fn(),
+  mockBatchCreate: vi.fn(),
+}));
 
 vi.mock("ai", () => ({
   generateText: mockGenerateText,
   stepCountIs: vi.fn(() => vi.fn()),
   tool: vi.fn((opts: Record<string, unknown>) => opts),
+}));
+
+vi.mock("@hubspot/api-client", () => ({
+  Client: class {
+    crm = { objects: { batchApi: { create: mockBatchCreate } } };
+  },
+  DEFAULT_LIMITER_OPTIONS: {},
 }));
 
 vi.mock("@atlas/llm", async (importOriginal) => {
@@ -425,8 +435,8 @@ describe("hubspotAgent deterministic path", () => {
 // Deterministic create-note + noop ops
 // ---------------------------------------------------------------------------
 
-/** Fixture matching the SDK Client's `crm.objects.batchApi.create` response. */
-const createNoteFixture = {
+/** SDK batch-create response shape returned by `client.crm.objects.batchApi.create`. */
+const createNoteSdkResponse = {
   status: "COMPLETE",
   results: [
     {
@@ -435,13 +445,8 @@ const createNoteFixture = {
         hs_note_body: "<h3>Briefing</h3><p>body</p>",
         hs_timestamp: "2026-05-07T12:00:00.000Z",
       },
-      createdAt: "2026-05-07T12:00:00.000Z",
-      updatedAt: "2026-05-07T12:00:00.000Z",
-      archived: false,
     },
   ],
-  startedAt: "2026-05-07T12:00:00.000Z",
-  completedAt: "2026-05-07T12:00:00.000Z",
 };
 
 describe("hubspotAgent deterministic create-note", () => {
@@ -451,10 +456,10 @@ describe("hubspotAgent deterministic create-note", () => {
     originalAnthropicKey = env.ANTHROPIC_API_KEY;
     env.ANTHROPIC_API_KEY = "sk-test";
     mockGenerateText.mockReset();
+    mockBatchCreate.mockReset();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     if (originalAnthropicKey !== undefined) {
       env.ANTHROPIC_API_KEY = originalAnthropicKey;
     } else {
@@ -463,15 +468,12 @@ describe("hubspotAgent deterministic create-note", () => {
   });
 
   it("creates a CRM Note on the ticket and returns the note id", async () => {
-    const mockFetch = createMockFetch(createNoteFixture);
-    vi.stubGlobal("fetch", mockFetch);
+    mockBatchCreate.mockResolvedValue(createNoteSdkResponse);
 
     const prompt = JSON.stringify({
       operation: "create-note",
       ticketId: "5501",
       body: "<h3>Briefing</h3><p>body</p>",
-      kind: "internal-briefing",
-      format: "html",
     });
 
     const result = await hubspotAgent.execute(prompt, validContext());
@@ -486,9 +488,8 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
 
-  it("posts the body verbatim — no markdown conversion", async () => {
-    const mockFetch = createMockFetch(createNoteFixture);
-    vi.stubGlobal("fetch", mockFetch);
+  it("posts the body verbatim and resolves the notes↔tickets association via SDK", async () => {
+    mockBatchCreate.mockResolvedValue(createNoteSdkResponse);
 
     const verbatim =
       "<h3>Company Context</h3><table><tr><td>SSO</td><td>Google</td></tr></table>" +
@@ -503,22 +504,24 @@ describe("hubspotAgent deterministic create-note", () => {
 
     await hubspotAgent.execute(prompt, validContext());
 
-    expect(mockFetch).toHaveBeenCalled();
-    const calls = mockFetch.mock.calls.filter((c) => c[1]?.method === "POST");
-    expect(calls.length).toBeGreaterThan(0);
-    const body = JSON.parse(calls[0]?.[1]?.body as string) as {
-      inputs: Array<{ properties: Record<string, string> }>;
-    };
-    expect(body.inputs[0]?.properties.hs_note_body).toBe(verbatim);
-    expect(body.inputs[0]?.properties.hs_timestamp).toBe("2026-05-07T12:00:00.000Z");
+    expect(mockBatchCreate).toHaveBeenCalledOnce();
+    expect(mockBatchCreate).toHaveBeenCalledWith("notes", {
+      inputs: [
+        {
+          properties: { hs_note_body: verbatim, hs_timestamp: "2026-05-07T12:00:00.000Z" },
+          associations: [
+            {
+              to: { id: "5501" },
+              types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 228 }],
+            },
+          ],
+        },
+      ],
+    });
   });
 
-  it("returns err when HubSpot batch-create returns an error", async () => {
-    const mockFetch = createMockFetch(
-      { status: "error", message: "Invalid ticketId", category: "VALIDATION_ERROR" },
-      400,
-    );
-    vi.stubGlobal("fetch", mockFetch);
+  it("returns err when the SDK batch-create rejects", async () => {
+    mockBatchCreate.mockRejectedValue(new Error("Invalid ticketId"));
 
     const prompt = JSON.stringify({
       operation: "create-note",
@@ -531,6 +534,7 @@ describe("hubspotAgent deterministic create-note", () => {
     expect(result.ok).toBe(false);
     expect.assert(!result.ok);
     expect(result.error.reason).toContain("create-note failed");
+    expect(result.error.reason).toContain("Invalid ticketId");
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
 
@@ -552,6 +556,7 @@ describe("hubspotAgent deterministic create-note", () => {
     const result = await hubspotAgent.execute(prompt, validContext());
 
     expect(result.ok).toBe(true);
+    expect(mockBatchCreate).not.toHaveBeenCalled();
     expect(mockGenerateText).toHaveBeenCalledOnce();
   });
 });
@@ -563,10 +568,10 @@ describe("hubspotAgent deterministic noop", () => {
     originalAnthropicKey = env.ANTHROPIC_API_KEY;
     env.ANTHROPIC_API_KEY = "sk-test";
     mockGenerateText.mockReset();
+    mockBatchCreate.mockReset();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     if (originalAnthropicKey !== undefined) {
       env.ANTHROPIC_API_KEY = originalAnthropicKey;
     } else {
@@ -575,11 +580,6 @@ describe("hubspotAgent deterministic noop", () => {
   });
 
   it("returns success without touching HubSpot", async () => {
-    const mockFetch = vi
-      .fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>()
-      .mockRejectedValue(new Error("fetch should not have been called on noop"));
-    vi.stubGlobal("fetch", mockFetch);
-
     const prompt = JSON.stringify({
       operation: "noop",
       skipped: true,
@@ -594,7 +594,7 @@ describe("hubspotAgent deterministic noop", () => {
     expect(result.data.success).toBe(true);
     expect(result.data.data).toMatchObject({ skipped: true, reason: "no ticket to brief" });
     expect(result.data.response).toContain("no ticket to brief");
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockBatchCreate).not.toHaveBeenCalled();
     expect(mockGenerateText).not.toHaveBeenCalled();
   });
 
