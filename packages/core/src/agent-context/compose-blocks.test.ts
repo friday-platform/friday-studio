@@ -422,4 +422,51 @@ describe("composeValidationBlock", () => {
     expect(logger.warn).toHaveBeenCalled();
     _setSkillStorageForTest(null);
   });
+
+  it("warns and returns empty string when skill storage throws", async () => {
+    // Distinct from the `ok: false` path: this exercises the helper's
+    // try/catch (lines 289-297 of compose-blocks.ts), which mirrors
+    // composeArtifactBlocks's swallow-and-log behavior so an uninitialized
+    // skill catalog (common in unit-test environments) cannot block an
+    // action's prompt assembly.
+    const boom = new Error("skill storage not initialized");
+    const adapter = mkAdapter({
+      get: () => {
+        throw boom;
+      },
+    });
+    _setSkillStorageForTest(adapter);
+    const logger = mkLogger();
+
+    const out = await composeValidationBlock({
+      decision: "self",
+      logger: logger as unknown as Parameters<typeof composeValidationBlock>[0]["logger"],
+    });
+    expect(out).toEqual("");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "composeValidationBlock: skill storage unavailable",
+      expect.objectContaining({ skillName: "validating-llm-outputs" }),
+    );
+    _setSkillStorageForTest(null);
+  });
+
+  it("swallows a rejected promise from skill storage", async () => {
+    // The async equivalent of the throw case — a get() that returns a
+    // rejected promise must hit the same catch arm and degrade quietly.
+    const adapter = mkAdapter({ get: () => Promise.reject(new Error("transient kv outage")) });
+    _setSkillStorageForTest(adapter);
+    const logger = mkLogger();
+
+    const out = await composeValidationBlock({
+      decision: "self",
+      skillName: "custom-validator",
+      logger: logger as unknown as Parameters<typeof composeValidationBlock>[0]["logger"],
+    });
+    expect(out).toEqual("");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "composeValidationBlock: skill storage unavailable",
+      expect.objectContaining({ skillName: "custom-validator" }),
+    );
+    _setSkillStorageForTest(null);
+  });
 });
