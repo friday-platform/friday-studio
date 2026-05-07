@@ -401,10 +401,80 @@ export function createScrubber(opts: ScrubberOptions): ScrubToolResult {
 }
 
 /**
+ * N4 (melodic-strolling-seal-pt3) — post-streamText lift for runtime
+ * side-channel persistence.
+ *
+ * The pre-N4 architecture installed the scrubber at the MCP-tool-result
+ * boundary so the producer LLM saw a marker instead of bytes. For
+ * actions that consume tool results inline (inbox-fetcher: gmail batch
+ * → emit JSON), the marker forced a round-trip through `artifacts_get`
+ * and the LLM frequently bailed into prose instead. The lift's actual
+ * value was never producer-LLM-side context shrinkage (the LLM has to
+ * fetch the bytes anyway); it was persistence and cross-consumer
+ * handoff compactness.
+ *
+ * This function moves the lift to the persistence boundary: invoked on
+ * the runtime's side-channel `toolCalls` array post-streamText, before
+ * the side-channel data is mapped to a `step:complete` session event.
+ * The producer LLM has already finished (full bytes in its live
+ * context); we lift here so the *persisted form* (session events,
+ * agentBlocks, cross-consumer refs) stays compact.
+ *
+ * Returns a new array with each entry's `result` field walked through
+ * `scrubValue` — large strings replaced with marker text + artifact
+ * upload, identical to the pre-N4 MCP-boundary output. Marker shape is
+ * stable across the move so existing consumers (G2 marker rendering,
+ * legacy session replays) keep working.
+ */
+export interface ToolCallForLift {
+  toolName: string;
+  args: unknown;
+  result?: unknown;
+}
+
+export async function liftToolResultsForPersist(
+  toolCalls: ReadonlyArray<ToolCallForLift>,
+  opts: ScrubberOptions,
+): Promise<ToolCallForLift[]> {
+  const ctx: ScrubContext = {
+    workspaceId: opts.workspaceId,
+    chatId: opts.chatId,
+    logger: opts.logger,
+    uploads: new Map(),
+  };
+  const out: ToolCallForLift[] = [];
+  for (const call of toolCalls) {
+    if (call.result === undefined) {
+      out.push(call);
+      continue;
+    }
+    try {
+      const lifted = await scrubValue(
+        call.result,
+        ctx,
+        { serverId: "post-stream", toolName: call.toolName },
+        0,
+      );
+      out.push(lifted === call.result ? call : { ...call, result: lifted });
+    } catch (err) {
+      // Lift failures are non-fatal — keep the original result. The
+      // pre-persist scrubber's wider net catches anything left over.
+      opts.logger.warn("liftToolResultsForPersist threw — keeping inline result", {
+        toolName: call.toolName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      out.push(call);
+    }
+  }
+  return out;
+}
+
+/**
  * Pre-persist scrubber — defense-in-depth for anything that slipped past
- * the MCP-boundary scrubber. Walks an assistant message's `tool-*` part
- * outputs (and `data-delegate-chunk` chunks, which can carry tool-result
- * envelopes from sub-agents) and lifts oversized binary into artifacts.
+ * `liftToolResultsForPersist`. Walks an assistant message's `tool-*`
+ * part outputs (and `data-delegate-chunk` chunks, which can carry
+ * tool-result envelopes from sub-agents) and lifts oversized binary
+ * into artifacts.
  *
  * Mutates the passed message; returns the count of fields rewritten so
  * the caller can decide whether to log.

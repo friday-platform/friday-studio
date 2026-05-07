@@ -1,24 +1,28 @@
 /**
- * Phase 3 — scrubber wired into FSM `type: llm` action tool calls.
+ * Phase 3 (pt1) wired the scrubber into FSM `type: llm` action tool calls
+ * at the MCP-tool-result boundary, lifting oversized MCP tool results to
+ * artifacts BEFORE they hit the AI SDK message buffer.
  *
- * The chat path has long lifted oversized MCP tool results to artifacts before
- * they hit the AI SDK message buffer (see `@atlas/core/artifacts/scrubber`).
- * FSM-side tool calls did not — so any agent that pulled bulky data (gmail
- * batch fetch, run_code stdout) bloated its own context every step.
+ * **N4 (melodic-strolling-seal-pt3) reversed that wiring.** For
+ * consume-immediately actions (inbox-fetcher: gmail batch → emit JSON),
+ * the producer LLM had to round-trip through `artifacts_get` to recover
+ * bytes it just produced, and frequently bailed into prose. The lift's
+ * value is persistence + cross-consumer compactness, not producer-LLM
+ * context shrinkage; it now lives at the side-channel population point
+ * via `liftToolResultsForPersist` (after streamText returns, before
+ * session events emit).
  *
- * This test asserts the wiring: when an LLM action declares `tools:`, the
- * call to `createMCPTools` carries a `scrubResult` post-processor, and that
- * post-processor lifts oversized base64 to an artifact ref before returning
- * the result the LLM sees.
+ * This test inverts the original contract assertion: when an LLM action
+ * declares `tools:`, the call to `createMCPTools` carries NO
+ * `scrubResult` post-processor. The producer LLM sees full bytes; the
+ * persistence-side lift is exercised end-to-end via the live-daemon
+ * harness rather than mocked here.
  *
- * The test mocks at three boundaries:
- *   - `@atlas/mcp.createMCPTools` — captures the options to assert wiring,
- *     and returns a tool that produces an oversized payload so we can
- *     observe the scrubber actually running on the result.
+ * The test mocks two boundaries (down from three pre-N4):
+ *   - `@atlas/mcp.createMCPTools` — captures the options to assert the
+ *     `scrubResult` field is absent.
  *   - `@atlas/oapi-client` — avoid pulling in the platform server config
  *     (it tries to read env vars / build a daemon URL otherwise).
- *   - `fetch` — the scrubber posts to /artifacts/storage; we stub the
- *     successful response shape so the lift completes.
  */
 
 import type { AgentResult } from "@atlas/agent-sdk";
@@ -89,8 +93,8 @@ const SIZE_THRESHOLD_CHARS = 4 * 1024;
 // against the test's own wrapper. A future pass that swaps in the real
 // createMCPTools against a stub MCP server fixture would make the
 // payload-shape assertions meaningful.
-describe("FSM LLM action — scrubber wiring (Phase 3)", () => {
-  it("passes scrubResult into createMCPTools and lifts oversized base64", async () => {
+describe("FSM LLM action — scrubber wiring (N4: lift moved off MCP boundary)", () => {
+  it("does NOT pass scrubResult into createMCPTools (N4 — lift moved to post-streamText)", async () => {
     // Capture what the LLM provider receives so we can assert the scrubber
     // ran on the tool output before it landed in the message buffer.
     const llmReceivedToolResults: unknown[] = [];
@@ -228,26 +232,24 @@ describe("FSM LLM action — scrubber wiring (Phase 3)", () => {
       { sessionId: "sess-active", workspaceId: "ws-active" },
     );
 
-    // 1) createMCPTools was called with a scrubResult function.
+    // N4 — createMCPTools is called WITHOUT a scrubResult function.
+    // The lift moved off the MCP boundary; the producer LLM sees full
+    // bytes during the streamText loop. End-to-end lift behavior is
+    // covered by the live-daemon harness scenarios.
     expect(mockCreateMCPTools).toHaveBeenCalled();
     const lastCall = mockCreateMCPTools.mock.calls.at(-1);
     expect(lastCall).toBeDefined();
     const opts = lastCall?.[2];
-    expect(opts?.scrubResult).toBeDefined();
-    expect(typeof opts?.scrubResult).toBe("function");
+    expect(opts?.scrubResult).toBeUndefined();
 
-    // 2) The artifact upload happened — proof the scrubber actually ran on
-    //    the oversized blob (vs being passed but never invoked).
-    expect(mockFetch).toHaveBeenCalled();
-
-    // 3) The result that reached the LLM has the lift marker, not the
-    //    original base64. This is the user-visible win: the model never
-    //    sees the bytes, just a short ref.
+    // The LLM observed full bytes (no lift marker, no artifact upload
+    // mid-call). Proves the producer LLM is no longer round-tripped
+    // through artifacts_get for its own tool results.
     expect(llmReceivedToolResults).toHaveLength(1);
     const observed = llmReceivedToolResults[0] as {
       content: Array<{ type: string; text: string }>;
     };
-    expect(observed.content[0]?.text).toMatch(/artifact art_fsm_lift/);
-    expect(observed.content[0]?.text).not.toContain("A".repeat(SIZE_THRESHOLD_CHARS));
+    expect(observed.content[0]?.text).not.toMatch(/artifact art_fsm_lift/);
+    expect(observed.content[0]?.text).toContain("A".repeat(SIZE_THRESHOLD_CHARS));
   });
 });

@@ -25,7 +25,11 @@ import { truncateForLedger } from "@atlas/utils";
 import type { ToolCallRepairFunction, UIMessageStreamWriter } from "ai";
 import { stepCountIs, streamText, tool } from "ai";
 import { z } from "zod";
-import { createScrubber } from "../artifacts/scrubber.ts";
+// N4 (melodic-strolling-seal-pt3): MCP-boundary scrubber wiring removed.
+// The lift now happens at the persistence boundary via
+// `liftToolResultsForPersist` invoked from the workspace runtime + FSM
+// engine side-channel population. See `packages/core/src/artifacts/scrubber.ts`
+// for the post-streamText helper.
 import { discoverMCPServers, type LinkSummary } from "../mcp-registry/discovery.ts";
 import { FINISH_TOOL_NAME, type FinishInput, finishTool, parseFinishInput } from "./finish-tool.ts";
 import { createDelegateProxyWriter } from "./proxy-writer.ts";
@@ -278,19 +282,15 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
             if (c) selectedConfigs[id] = c.mergedConfig;
           }
 
-          // Scrub binary out of MCP tool results before they enter the AI
-          // SDK message buffer. Bytes get lifted to artifacts; the model
-          // sees a short ref string. Avoids the prompt-token tax + chat
-          // persistence MAX_PAYLOAD_EXCEEDED on attachment-bearing tools
-          // (Gmail's `get_gmail_attachment_content` with return_base64=true,
-          // image responses, etc.). Pre-persist scrubbing in the parent
-          // agent acts as a backstop for anything that slips past.
-          const scrubResult = createScrubber({
-            workspaceId: session.workspaceId,
-            chatId: session.streamId,
-            logger,
-          });
-
+          // N4 (melodic-strolling-seal-pt3) — MCP-boundary scrubber
+          // removed. The pre-N4 lift transformed the child LLM's view of
+          // tool results, which forced consume-immediately children to
+          // round-trip through `artifacts_get` and frequently bail into
+          // prose. The lift's value is persistence + parent-handoff
+          // compactness, not child-LLM context shrinkage; it now lives
+          // in the post-streamText path that emits the delegate's final
+          // answer + tool ledger to the parent. Pre-persist scrubber
+          // remains as defense-in-depth.
           const serverEntries = Object.entries(selectedConfigs);
           const serverResults = await Promise.allSettled(
             serverEntries.map(([serverId, config]) => {
@@ -302,7 +302,6 @@ export function createDelegateTool(deps: DelegateDeps, toolSetThunk: () => Atlas
                 // as a `serverFailures` entry on their own.
                 signal: abortSignal,
                 toolPrefix: prefix,
-                scrubResult,
               });
             }),
           );

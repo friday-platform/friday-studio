@@ -59,6 +59,7 @@ import {
 import { buildValidateDecisionConfig } from "@atlas/core/agent-context/validate-decision";
 import { getSystemAgentType, UserAdapter } from "@atlas/core/agent-loader";
 import type { ArtifactLifecycle } from "@atlas/core/artifacts";
+import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
 import { ArtifactStorage } from "@atlas/core/artifacts/storage";
 import { resolveEnvValues } from "@atlas/core/mcp-registry/credential-resolver";
 import { applyPlatformEnv } from "@atlas/core/mcp-registry/discovery";
@@ -2778,7 +2779,7 @@ export class WorkspaceRuntime {
           (result.ok ? result.toolResults : undefined)?.map((tr) => [tr.toolCallId, tr.output]) ??
             [],
         );
-        const toolCalls =
+        const rawToolCalls =
           (result.ok ? result.toolCalls : undefined)?.map((tc) => ({
             toolName: tc.toolName,
             args: tc.input,
@@ -2786,6 +2787,16 @@ export class WorkspaceRuntime {
               result: resultsByCallId.get(tc.toolCallId),
             }),
           })) ?? [];
+        // N4 (melodic-strolling-seal-pt3) — lift oversized tool results
+        // post-streamText so persisted session events + cross-action
+        // handoffs stay compact while the producer LLM (which has
+        // already finished) saw full bytes during its streamText loop.
+        // See `liftToolResultsForPersist` for the rationale.
+        const toolCalls = await liftToolResultsForPersist(rawToolCalls, {
+          workspaceId,
+          chatId: streamId ?? sideChannelSessionId,
+          logger,
+        });
         // Structured output = args from the "complete" tool call (the actual result
         // stored in context.results). Falls back to result.data (LLM text) when no
         // complete tool call exists.

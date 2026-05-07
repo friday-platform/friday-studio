@@ -38,7 +38,7 @@ import {
 } from "@atlas/core/agent-context/record-validation-tool";
 import type { ArtifactStorageAdapter } from "@atlas/core/artifacts";
 import { resolveImageParts } from "@atlas/core/artifacts/images";
-import { createScrubber } from "@atlas/core/artifacts/scrubber";
+import { liftToolResultsForPersist } from "@atlas/core/artifacts/scrubber";
 import { createDelegateTool, DEFAULT_MAX_DEPTH } from "@atlas/core/delegate";
 import type { LinkSummary } from "@atlas/core/mcp-registry/discovery";
 import { ValidationFailedError, type ValidationVerdict } from "@atlas/hallucination/verdict";
@@ -2364,13 +2364,31 @@ export class FSMEngine {
                 const resultsByCallId = new Map(
                   result.toolResults?.map((tr) => [tr.toolCallId, tr.output]) ?? [],
                 );
-                const toolCalls = (result.toolCalls ?? []).map((tc) => ({
+                const rawToolCalls = (result.toolCalls ?? []).map((tc) => ({
                   toolName: tc.toolName,
                   args: tc.input,
                   ...(resultsByCallId.has(tc.toolCallId) && {
                     result: resultsByCallId.get(tc.toolCallId),
                   }),
                 }));
+                // N4 (melodic-strolling-seal-pt3) — lift oversized tool
+                // results post-streamText so the persisted side-channel +
+                // session events stay compact while the producer LLM saw
+                // full bytes during the streamText loop. See
+                // `liftToolResultsForPersist` for the rationale. Skipped
+                // when context lacks workspaceId/sessionId (older test
+                // callers, internal invocations) — the artifact upload
+                // needs both for tagging.
+                const liftWorkspaceId = sig._context?.workspaceId;
+                const liftSessionId = sig._context?.sessionId;
+                const toolCalls =
+                  liftWorkspaceId && liftSessionId
+                    ? await liftToolResultsForPersist(rawToolCalls, {
+                        workspaceId: liftWorkspaceId,
+                        chatId: liftSessionId,
+                        logger,
+                      })
+                    : rawToolCalls;
                 // Structured output = args from the "complete" tool call (the actual
                 // result the agent declared). Falls back to result.data (LLM text)
                 // when no complete tool call exists. Mirrors workspace-runtime logic.
@@ -3058,26 +3076,21 @@ export class FSMEngine {
       }
     }
 
-    // Build a scrubber bound to this call's workspace + session. Without a
-    // signalContext (older test callers, internal invocations) we skip the
-    // wiring; createMCPTools treats `scrubResult: undefined` as a no-op.
-    // chatId falls back to sessionId — FSM signals don't carry a streamId
-    // today, and the artifact record only needs *some* stable correlation
-    // key for the lifted blob. Using sessionId keeps the lifted artifact
-    // bound to the same execution that produced it.
-    const scrubResult = signalContext?.workspaceId
-      ? createScrubber({
-          workspaceId: signalContext.workspaceId,
-          chatId: signalContext.sessionId,
-          logger,
-        })
-      : undefined;
-
+    // N4 (melodic-strolling-seal-pt3) — MCP-boundary scrubber removed.
+    // Pre-N4, the scrubber lifted large tool results into artifacts at
+    // this boundary and replaced them with marker text in the LLM's
+    // view. For consume-immediately actions (inbox-fetcher: gmail batch
+    // → emit JSON) the marker forced a round-trip through
+    // `artifacts_get` and the LLM frequently bailed into prose. The
+    // lift's value is persistence + cross-consumer compactness, not
+    // producer-LLM context shrinkage; it now lives at the side-channel
+    // population point below (post-streamText), via
+    // `liftToolResultsForPersist`. The pre-persist scrubber retains its
+    // defense-in-depth role.
     let mcpResult: MCPToolsResult;
     try {
       mcpResult = await createMCPTools(effectiveConfigs, logger, {
         signal: signalContext?.abortSignal,
-        scrubResult,
       });
     } catch (error) {
       if (hasUnusableCredentialCause(error)) {

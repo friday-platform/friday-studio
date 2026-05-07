@@ -963,11 +963,11 @@ describe("createDelegateTool", () => {
     expect(mockCreateMCPTools).toHaveBeenCalledWith(
       { "server-a": { transport: { type: "stdio", command: "a" } } },
       expect.any(Object),
-      // The delegate now plumbs a `scrubResult` post-processor so MCP tool
-      // outputs get oversized binary lifted to artifacts at the boundary
-      // (see @atlas/core/artifacts/scrubber). Asserted as a function here;
-      // behavior is covered in packages/core/src/artifacts/scrubber.test.ts.
-      { signal: undefined, toolPrefix: undefined, scrubResult: expect.any(Function) },
+      // N4 (melodic-strolling-seal-pt3): the MCP-boundary scrubber wiring
+      // was removed. Lift now happens at the persistence boundary via
+      // `liftToolResultsForPersist`. Asserting the absence of
+      // `scrubResult` is the complementary "wiring contract" check.
+      { signal: undefined, toolPrefix: undefined },
     );
     const tools = captured.args?.tools as Record<string, unknown> | undefined;
     expect(tools?.tool_a).toBeDefined();
@@ -1023,13 +1023,13 @@ describe("createDelegateTool", () => {
       1,
       { s1: { transport: { type: "stdio", command: "s1" } } },
       expect.any(Object),
-      { signal: undefined, toolPrefix: "s1", scrubResult: expect.any(Function) },
+      { signal: undefined, toolPrefix: "s1" },
     );
     expect(mockCreateMCPTools).toHaveBeenNthCalledWith(
       2,
       { s2: { transport: { type: "stdio", command: "s2" } } },
       expect.any(Object),
-      { signal: undefined, toolPrefix: "s2", scrubResult: expect.any(Function) },
+      { signal: undefined, toolPrefix: "s2" },
     );
 
     const tools = captured.args?.tools as Record<string, unknown> | undefined;
