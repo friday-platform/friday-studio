@@ -23,8 +23,8 @@ import type {
   Action,
   FSMDefinition,
   FSMLLMOutput,
+  JudgeAgentRunner,
   LLMProvider,
-  OutputValidator,
   ValidateStrategy,
 } from "../types.ts";
 
@@ -101,17 +101,21 @@ async function runSingleLLMAction(opts: {
     },
   };
 
+  // O2 (review-2): test-side scaffold ports to `runJudge` directly. The
+  // legacyValidatorShim adapter is gone; the runtime wires runJudge
+  // exclusively. Same observable contract: `external` → judge runs;
+  // anything else → judge skipped.
   let validatorCalls = 0;
-  const validator: OutputValidator = () => {
+  const runJudge: JudgeAgentRunner = () => {
     validatorCalls++;
-    return Promise.resolve({ verdict: passVerdict() });
+    return Promise.resolve({ ok: true, verdict: passVerdict() });
   };
 
   const engine = new FSMEngine(fsm, {
     documentStore: store,
     scope,
     llmProvider: provider,
-    validateOutput: validator,
+    runJudge,
   });
   await engine.initialize();
   await engine.signal({ type: "RUN" });

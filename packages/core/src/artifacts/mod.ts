@@ -43,8 +43,10 @@ export {
 } from "./primitives.ts";
 // NOTE: hasPromotionSignal lives in `./server.ts` — the Phase 6.B sweeper
 // (atlasd-internal) is the only consumer and uses the server-only path.
-// Tool-result scrubber (lifts oversized binary out of MCP results into artifacts).
-export type { ScrubberOptions, ScrubToolResult } from "./scrubber.ts";
-export { createScrubber, scrubAssistantMessage } from "./scrubber.ts";
+// Tool-result scrubber: lifts oversized inline binary / large text out of
+// tool results into artifacts. Two entry points — `liftToolResultsForPersist`
+// at the persistence boundary, `scrubAssistantMessage` at chat pre-persist.
+export type { ScrubberOptions } from "./scrubber.ts";
+export { liftToolResultsForPersist, scrubAssistantMessage } from "./scrubber.ts";
 // Storage adapter types
 export type { ArtifactStorageAdapter } from "./types.ts";

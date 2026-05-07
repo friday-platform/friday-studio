@@ -24,8 +24,8 @@ import type {
   Action,
   FSMDefinition,
   FSMLLMOutput,
+  JudgeAgentRunner,
   LLMProvider,
-  OutputValidator,
   ValidateStrategy,
 } from "../types.ts";
 
@@ -144,17 +144,18 @@ async function runWithDefaults(opts: {
     },
   };
 
+  // O2 (review-2): test-side scaffold ports to `runJudge` directly.
   let validatorCalls = 0;
-  const validator: OutputValidator = () => {
+  const runJudge: JudgeAgentRunner = () => {
     validatorCalls++;
-    return Promise.resolve({ verdict: passVerdict() });
+    return Promise.resolve({ ok: true, verdict: passVerdict() });
   };
 
   const engine = new FSMEngine(fsm, {
     documentStore: store,
     scope,
     llmProvider: provider,
-    validateOutput: validator,
+    runJudge,
     ...(opts.workspaceValidation && { workspaceValidation: opts.workspaceValidation }),
     ...(opts.jobValidation && { jobValidation: opts.jobValidation }),
   });

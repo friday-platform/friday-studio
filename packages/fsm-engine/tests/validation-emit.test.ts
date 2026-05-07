@@ -27,7 +27,7 @@ import type {
   FSMEvent,
   FSMLLMOutput,
   LLMProvider,
-  OutputValidator,
+  // O2 (review-2): OutputValidator removed; tests use runJudge directly.
   ValidateStrategy,
 } from "../types.ts";
 
@@ -90,7 +90,7 @@ async function runLLMActionAndCaptureEvents(opts: {
   tools?: string[];
   outputType?: string;
   llmResponse: MockLLMResponse;
-  validator?: OutputValidator;
+  validator?: () => Promise<{ verdict: { verdict: "pass" | "advisory" | "blocking" } }>;
   expectThrow?: boolean;
 }): Promise<{ events: FSMEvent[]; completionEvent?: FSMActionExecutionEvent }> {
   const store = getDocumentStore();
@@ -124,11 +124,21 @@ async function runLLMActionAndCaptureEvents(opts: {
     call: (params) => Promise.resolve(envelope(opts.llmResponse, params.agentId, params.prompt)),
   };
 
+  // O2 (review-2): wrap the test-side `validator` (a function resolving
+  // to a {verdict} envelope, the legacy OutputValidator shape) into a
+  // `runJudge` callback. Lets test fixtures keep their succinct shape
+  // without each one constructing the full runJudge envelope.
+  const runJudge = opts.validator
+    ? async () => {
+        const { verdict } = await opts.validator!();
+        return { ok: true as const, verdict };
+      }
+    : undefined;
   const engine = new FSMEngine(fsm, {
     documentStore: store,
     scope,
     llmProvider: provider,
-    ...(opts.validator && { validateOutput: opts.validator }),
+    ...(runJudge && { runJudge }),
   });
   await engine.initialize();
 
@@ -333,7 +343,7 @@ describe("Agent action validation emit (B6, case 'agent')", () => {
     validate?: ValidateStrategy;
     resolvedAgentType?: "llm" | "user" | "atlas";
     toolCalls?: ToolCall[];
-    validator?: OutputValidator;
+    validator?: () => Promise<{ verdict: { verdict: "pass" | "advisory" | "blocking" } }>;
   }): Promise<{
     events: FSMEvent[];
     completionEvent?: FSMActionExecutionEvent;
@@ -375,7 +385,13 @@ describe("Agent action validation emit (B6, case 'agent')", () => {
       ...(opts.resolvedAgentType !== undefined && {
         resolveAgentType: () => opts.resolvedAgentType,
       }),
-      ...(opts.validator && { validateOutput: opts.validator }),
+      ...(opts.validator && {
+        // O2 (review-2): wrap legacy {verdict} validator into runJudge.
+        runJudge: async () => {
+          const { verdict } = await opts.validator!();
+          return { ok: true as const, verdict };
+        },
+      }),
     });
     await engine.initialize();
     const events: FSMEvent[] = [];

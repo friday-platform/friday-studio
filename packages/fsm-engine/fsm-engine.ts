@@ -87,7 +87,6 @@ import type {
   LLMAction,
   LLMActionTrace,
   LLMProvider,
-  OutputValidator,
   Signal,
   SignalWithContext,
   TransitionDefinition,
@@ -306,6 +305,21 @@ export function parsePrepareResult(raw: unknown): PrepareResult | undefined {
  * 2. `prepareResult` from a prior action — falls through when no
  *    inputFrom is set on the action.
  * 3. Legacy `foo_result` ↔ `foo-request` document convention.
+ *
+ * F6 (review-2): array-form `inputFrom` joins each doc's data as
+ * `<id>: <data>\n\n<id2>: <data2>` — the LLM sees a concatenated
+ * `## Input` block. Note: artifact-ref expansion via
+ * `expandArtifactRefsInInput` runs against `prepareResult.artifactRefs`
+ * (collected post-action from `results`), NOT against doc data
+ * inside this `task` join. If a chained doc carries lifted-marker text
+ * (e.g. from N4's `liftToolResultsForPersist`), the marker arrives as
+ * literal text in the next action's prompt; the next action calls
+ * `artifacts_get` to recover the bytes. The single-doc path benefits
+ * from `expandArtifactRefsInInput` indirectly when prior actions emit
+ * `artifactRefs` on their result; the array-form path inherits the
+ * same `prepareResult.artifactRefs` carry but does not expand refs
+ * from inside the joined doc data. Asymmetric but matches the lift
+ * intent — consumers fetch on demand.
  */
 export function getInputSnapshot(
   prepareResult: PrepareResult | undefined,
@@ -583,36 +597,6 @@ function truncateForJudge(text: string): string {
 }
 
 /**
- * Adapt a pre-B7 `OutputValidator` into a `JudgeAgentRunner`. The legacy
- * verdict carries `status: "pass" | "uncertain" | "fail"`; this maps onto
- * the B7 enum (`pass` / `advisory` / `blocking`). Used for back-compat
- * with test scaffolds and lingering callers; production wires `runJudge`
- * directly to the system judge agent.
- */
-function legacyValidatorShim(validator: OutputValidator, trace: LLMActionTrace): JudgeAgentRunner {
-  return async ({ abortSignal }) => {
-    try {
-      const { verdict } = await validator(trace, abortSignal);
-      // Pre-B7 verdicts may carry only `status`; new code may already use
-      // `verdict`. Normalize either onto the B7 enum.
-      const status = (verdict as { status?: "pass" | "uncertain" | "fail" }).status;
-      const v: "pass" | "advisory" | "blocking" =
-        verdict.verdict ??
-        (status === "fail" ? "blocking" : status === "uncertain" ? "advisory" : "pass");
-      return {
-        ok: true,
-        verdict: {
-          verdict: v,
-          ...(verdict.issues && verdict.issues.length > 0 ? { issues: verdict.issues } : {}),
-        },
-      };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  };
-}
-
-/**
  * Build the judge handoff for an action's external-validation pass. Walks
  * the trace's tool calls and projects each one as either an artifact
  * reference (scrubber-lifted) or an inline preview. The judge agent
@@ -733,22 +717,13 @@ export interface FSMEngineOptions {
    */
   mcpServerConfigs?: Record<string, MCPServerConfig | WorkspaceMCPServerConfig>;
   /**
-   * Phase B7 of melodic-strolling-seal-pt2. Replaces the pre-B7
-   * `validateOutput` hook with a delegate spawn to a system-level judge
-   * agent. Workspace runtime wires this to invoke `@friday/judge-agent`
-   * (or the per-action override from `validate.agent`) through the agent
-   * orchestrator. When unset, external-validation actions log + fall
-   * through to an advisory verdict so the action still emits.
+   * External-validation runner. Workspace runtime wires this to invoke
+   * `@friday/judge-agent` (or the per-action override from
+   * `validate.agent`) through the agent orchestrator. When unset,
+   * external-validation actions log + fall through to an advisory
+   * verdict so the action still emits.
    */
   runJudge?: JudgeAgentRunner;
-  /**
-   * @deprecated B7 — pre-B7 hook. The engine adapts a supplied
-   * `validateOutput` into a `runJudge` shim so older callers (test
-   * scaffolds, in-flight migration paths) keep working. New code wires
-   * `runJudge` directly. Remove this field once the lingering tests are
-   * updated.
-   */
-  validateOutput?: OutputValidator;
   /** Storage adapter for resolving image artifact binary data */
   artifactStorage?: ArtifactStorageAdapter;
   /**
@@ -2120,11 +2095,11 @@ export class FSMEngine {
               }
 
               // Phase B2 (melodic-strolling-seal-pt2): resolve the per-action
-              // validation strategy and gate the existing external-judge call
-              // by it. `external` preserves today's `validateOutput` path;
-              // `self` is a no-op until B3 lands prompt injection; `skip`
-              // bypasses validation entirely. The classifier (used when the
-              // author hasn't set `validate:`) never returns `external`.
+              // validation strategy and gate the external-judge call by it.
+              // `external` runs the runJudge callback; `self` injects the
+              // inline self-check skill body; `skip` bypasses validation
+              // entirely. The classifier (used when the author hasn't set
+              // `validate:`) never returns `external`.
               const observedTrace = buildLLMActionTrace(result, action.model, contextPrompt);
               const declaredTools = action.tools ?? [];
               const classifierInput: ClassifierInput = {
@@ -2157,9 +2132,7 @@ export class FSMEngine {
                 decision: validateDecision,
                 source: validateSource,
                 reason: validateReason,
-                ranExternalJudge:
-                  validateDecision === "external" &&
-                  (!!this.options.runJudge || !!this.options.validateOutput),
+                ranExternalJudge: validateDecision === "external" && !!this.options.runJudge,
                 // B3: whether the inline self-check skill was injected at
                 // prompt-build time. Useful to verify in `global.log` that
                 // self-decisions actually got the skill body — and to spot
@@ -2176,20 +2149,15 @@ export class FSMEngine {
               // unwinds before we read this back.
               let externalSurvivingVerdict: ValidationVerdict | undefined;
 
-              // B7 (melodic-strolling-seal-pt2): external validation is now a
+              // B7 (melodic-strolling-seal-pt2): external validation is a
               // delegate spawn to a system-level judge agent. The runtime
               // hands the judge an action-output + tool-call manifest
               // (refs-not-bytes for scrubber-lifted results); the judge
-              // returns a structured verdict. The pre-B7 retry policy is
-              // dropped — authors who want retry can wrap the action in an
-              // FSM-level retry pattern. Phase 8 budgets gate the spawn;
-              // delegate failure (budget exhausted, judge agent missing,
-              // exception) synthesizes an advisory verdict so the action
-              // still emits.
-              if (
-                validateDecision === "external" &&
-                (this.options.runJudge || this.options.validateOutput)
-              ) {
+              // returns a structured verdict. Phase 8 budgets gate the
+              // spawn; delegate failure (budget exhausted, judge agent
+              // missing, exception) synthesizes an advisory verdict so
+              // the action still emits.
+              if (validateDecision === "external" && this.options.runJudge) {
                 const trace = buildLLMActionTrace(result, action.model, contextPrompt);
                 const validationActionId = this.getActionId(action);
                 const judgeAgentId =
@@ -2204,9 +2172,7 @@ export class FSMEngine {
                   status: "running",
                 });
 
-                const runJudgeOrShim =
-                  this.options.runJudge ?? legacyValidatorShim(this.options.validateOutput!, trace);
-                const judgeResult = await runJudgeOrShim({
+                const judgeResult = await this.options.runJudge({
                   agentId: judgeAgentId,
                   handoff: buildJudgeHandoff(trace),
                   abortSignal: sig._context?.abortSignal,
@@ -2537,9 +2503,7 @@ export class FSMEngine {
               decision: agentValidateDecision,
               source: agentValidateSource,
               reason: agentValidateReason,
-              ranExternalJudge:
-                agentValidateDecision === "external" &&
-                (!!this.options.runJudge || !!this.options.validateOutput),
+              ranExternalJudge: agentValidateDecision === "external" && !!this.options.runJudge,
               validationSkillLoaded: agentValidateDecision === "self",
               resolvedAgentType: resolvedAgentType ?? "unknown",
             });
@@ -2562,10 +2526,7 @@ export class FSMEngine {
             // tool-call manifest (refs-not-bytes for scrubber-lifted
             // results) and returns a structured verdict. Delegate failure
             // synthesizes an advisory verdict so the action still emits.
-            if (
-              agentValidateDecision === "external" &&
-              (this.options.runJudge || this.options.validateOutput)
-            ) {
+            if (agentValidateDecision === "external" && this.options.runJudge) {
               const validationActionId = this.getActionId(action);
               const judgeAgentId =
                 typeof action.validate === "object" &&
@@ -2591,9 +2552,7 @@ export class FSMEngine {
                 model: `agent:${action.agentId}`,
                 prompt: action.prompt ?? "",
               };
-              const runJudgeOrShim =
-                this.options.runJudge ?? legacyValidatorShim(this.options.validateOutput!, trace);
-              const judgeResult = await runJudgeOrShim({
+              const judgeResult = await this.options.runJudge({
                 agentId: judgeAgentId,
                 handoff: buildJudgeHandoff(trace),
                 abortSignal: sig._context?.abortSignal,

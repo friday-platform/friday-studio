@@ -136,6 +136,14 @@ function reduceStepStart(
   // and complete simultaneously, surfacing as `status: "active"` post-
   // completion. The dedup_window bump fixes the broker side; this guard
   // protects the reducer regardless.
+  //
+  // F4 (review-2): the reducer is a pure function shared with browser
+  // clients, so we don't log from here. Operators investigating "is this
+  // guard firing in production?" should check the NATS dedup-rejection
+  // counter (`nats stream info SESSION_EVENTS` reports duplicates) and
+  // grep daemon logs for "step:start" with the same (stepNumber,
+  // agentName). A non-zero dedup rate paired with this guard firing
+  // means the dedup_window is still too short and should be raised.
   if (event.stepNumber !== undefined) {
     const dupIdx = view.agentBlocks.findIndex(
       (b) => b.stepNumber === event.stepNumber && b.agentName === event.agentName,

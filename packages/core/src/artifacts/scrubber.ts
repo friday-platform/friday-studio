@@ -1,46 +1,31 @@
 /**
- * Lift oversized binary out of MCP tool results into the artifact Object
- * Store. Returns a scrub function suitable for `CreateMCPToolsOptions.scrubResult`.
+ * Lift oversized inline binary / large text out of tool results into the
+ * artifact Object Store. Two entry points:
  *
- * Why scrub at the MCP boundary: bytes that an MCP returns inline (Gmail's
- * `get_gmail_attachment_content` with `return_base64=True`, image responses,
- * etc.) flow into the AI SDK message buffer, then to the LLM as prompt
- * tokens, then to chat persistence. Each hop has a cost. Catching them as
- * the tool returns means the LLM sees a reference, the message buffer stays
- * small, and persistence never hits `MAX_PAYLOAD_EXCEEDED`.
+ *   - `liftToolResultsForPersist` runs at the persistence boundary
+ *     (post-streamText, before the runtime side-channel commits to
+ *     session events). The producer LLM operates on inline bytes during
+ *     its streamText loop; the persisted form carries refs.
  *
- * The scrubber walks the result recursively. For each string field that
- * looks like binary content above the size threshold:
+ *   - `scrubAssistantMessage` runs as defense-in-depth at the chat
+ *     pre-persist boundary; catches anything that slipped past
+ *     `liftToolResultsForPersist`.
+ *
+ * The walker handles each string field above the threshold:
  *   - data URLs: `data:<mime>;base64,<bytes>` → upload bytes, replace with marker
  *   - standalone base64 blobs (long, base64-character-class only) → upload, replace
  *
  * The replacement marker is short text describing what was lifted, the
- * resulting `artifactId`, byte size, and mime type. The model can call
- * `display_artifact` or `artifacts_get` to recover the bytes if it needs
- * them in a follow-up turn.
+ * resulting `artifactId`, byte size, and mime type. Downstream consumers
+ * (chat-supervisor, cross-action `inputFrom`) call `display_artifact` or
+ * `artifacts_get` to recover the bytes when needed.
  *
- * Failures (network, storage) are swallowed by the caller (`create-mcp-tools.ts`
- * wraps with try/catch) so a scrub failure never breaks tool execution. The
- * pre-persist scrubber serves as a second line of defense.
- *
- * Lives in @atlas/core (not @atlas/mcp) to avoid a circular dependency:
- * @atlas/mcp already imports from @atlas/core. The MCP package defines its
- * own structurally-compatible `ScrubToolResult` type; the function returned
- * here matches that shape by construction.
+ * Failures (network, storage) are swallowed and logged so a lift failure
+ * never breaks tool execution.
  */
 
 import { client, parseResult } from "@atlas/client/v2";
 import type { Logger } from "@atlas/logger";
-
-/**
- * Structural type matching @atlas/mcp's `ScrubToolResult`. Defined locally
- * to keep the dependency edge mcp → core (not the other way), so this
- * module can be consumed by both chat and FSM tool-construction paths.
- */
-export type ScrubToolResult = (
-  result: unknown,
-  ctx: { serverId: string; toolName: string },
-) => Promise<unknown>;
 
 /**
  * Below this size in chars, base64 stays inline. ~4 KB chars of base64 ≈
@@ -384,22 +369,6 @@ export interface ScrubberOptions {
   logger: Logger;
 }
 
-/** Build a scrub function bound to a workspace + chat for artifact-tagging. */
-export function createScrubber(opts: ScrubberOptions): ScrubToolResult {
-  return (result, toolCtx) => {
-    // Fresh upload cache per tool-call so dedup is scoped to one result
-    // tree (FastMCP and similar wrappers duplicate payloads inside a
-    // single response — no cross-call sharing needed).
-    const ctx: ScrubContext = {
-      workspaceId: opts.workspaceId,
-      chatId: opts.chatId,
-      logger: opts.logger,
-      uploads: new Map(),
-    };
-    return scrubValue(result, ctx, toolCtx, 0);
-  };
-}
-
 /**
  * N4 (melodic-strolling-seal-pt3) — post-streamText lift for runtime
  * side-channel persistence.
@@ -444,7 +413,10 @@ export async function liftToolResultsForPersist(
   };
   const out: ToolCallForLift[] = [];
   for (const call of toolCalls) {
-    if (call.result === undefined) {
+    // F3 (review-2): `== null` covers both `undefined` (not set) and
+    // `null` (explicit "no result"). Either way there's nothing to
+    // scrub. Matches the rest of the codebase's nullish-check style.
+    if (call.result == null) {
       out.push(call);
       continue;
     }

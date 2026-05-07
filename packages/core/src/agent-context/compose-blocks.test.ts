@@ -407,6 +407,25 @@ describe("composeValidationBlock", () => {
     _setSkillStorageForTest(null);
   });
 
+  it("F5 (review-2): returns empty string when the skill exists but has empty body", async () => {
+    // Edge case: a future skill author publishes a skill with an empty
+    // `body` (malformed publish, partial template). The helper currently
+    // grace-handles it by returning empty — same shape as the
+    // missing-skill case. Test pins that contract so a refactor doesn't
+    // accidentally start emitting something or throwing.
+    const adapter = mkAdapter({
+      get: () => Promise.resolve({ ok: true, data: fakeSkill("validating-llm-outputs", "") }),
+    });
+    _setSkillStorageForTest(adapter);
+
+    const out = await composeValidationBlock({
+      decision: "self",
+      logger: mkLogger() as unknown as Parameters<typeof composeValidationBlock>[0]["logger"],
+    });
+    expect(out).toEqual("");
+    _setSkillStorageForTest(null);
+  });
+
   it("warns and returns empty string when skill storage returns an error", async () => {
     const adapter = mkAdapter({
       get: () => Promise.resolve({ ok: false, error: "kv unavailable" }),

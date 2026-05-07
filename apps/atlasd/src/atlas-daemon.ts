@@ -71,7 +71,11 @@ import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
 import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
-import { scratchpadApp } from "../routes/scratchpad/index.ts";
+// O5 (review-2): scratchpad route deleted alongside the rest of the
+// scratchpad surface (K1 removed the agent-sdk adapter + tools; this
+// pass removes the daemon-side route + storage init + KV bucket).
+// See L9 migration `m_20260507_120000_drop_scratchpad_kv` for the
+// bucket cleanup on existing daemons.
 import { sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
@@ -114,7 +118,7 @@ import {
   SignalConsumer,
   type SignalEnvelope,
 } from "./signal-stream.ts";
-import { initScratchpadStorage } from "./storage/scratchpad.ts";
+// O5 (review-2): scratchpad storage deleted; see comment near `scratchpadApp` removal above.
 import { StreamRegistry } from "./stream-registry.ts";
 import { sweepOrphanedAgentBrowserSessions } from "./sweep-agent-browser-sessions.ts";
 import {
@@ -565,14 +569,10 @@ export class AtlasDaemon {
       publishWorkspaceEvent(nc, { type: "schedule.missed", ...event }, logger),
     );
 
-    // Wire scratchpad to its own JetStream KV bucket. Same per-key
-    // pattern; migration republishes legacy ~/.atlas/storage.db
-    // scratchpad entries into SCRATCHPAD bucket.
-    const scratchpadStorage = await createJetStreamKVStorage(nc, {
-      bucket: "SCRATCHPAD",
-      history: 1, // notes are append-only; one revision is enough
-    });
-    initScratchpadStorage(scratchpadStorage);
+    // O5 (review-2): SCRATCHPAD KV init removed alongside the route.
+    // Migration `m_20260507_120000_drop_scratchpad_kv` deletes the
+    // bucket on existing daemons. K1 removed the agent-sdk adapter +
+    // chat-side tools; nothing reads from this bucket anymore.
 
     // Wire artifact storage to JetStream KV (ARTIFACTS bucket) + Object
     // Store (OBJ_artifacts). Migration entry republishes legacy
@@ -1178,7 +1178,8 @@ export class AtlasDaemon {
     this.app.route("/api/chat-storage", chatStorageRoutes);
     this.app.route("/api/config", configRoutes);
     this.app.route("/api/user", userRoutes);
-    this.app.route("/api/scratchpad", scratchpadApp);
+    // O5 (review-2): /api/scratchpad route removed; the surface had zero
+    // in-repo callers post-K1.
     this.app.route("/api/elicitations", elicitationApp);
     this.app.route("/api/sessions", sessionsRoutes);
     this.app.route("/api/agents", agentsRoutes);

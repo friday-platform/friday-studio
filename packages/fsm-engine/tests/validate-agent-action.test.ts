@@ -27,7 +27,15 @@ import type { ValidationVerdict } from "@atlas/hallucination";
 import { describe, expect, it } from "vitest";
 import { getDocumentStore } from "../../document-store/mod.ts";
 import { FSMEngine } from "../fsm-engine.ts";
-import type { Action, FSMDefinition, OutputValidator, ValidateStrategy } from "../types.ts";
+import type { Action, FSMDefinition, ValidateStrategy } from "../types.ts";
+
+// O2 (review-2): legacy OutputValidator shape preserved in tests as a
+// local typedef. The runtime no longer accepts it (validateOutput option
+// removed); the test scaffold wraps it into a runJudge envelope below.
+type LegacyValidator = (
+  trace: import("../types.ts").LLMActionTrace,
+  signal?: AbortSignal,
+) => Promise<{ verdict: import("@atlas/hallucination/verdict").ValidationVerdict }>;
 
 interface CapturedExecutorCall {
   agentId: string;
@@ -58,7 +66,7 @@ async function runAgentAction(opts: {
   validate?: ValidateStrategy;
   resolvedAgentType?: "llm" | "user" | "atlas";
   outputType?: string;
-  validator?: OutputValidator;
+  validator?: LegacyValidator;
 }): Promise<{
   capturedCall?: CapturedExecutorCall;
   validatorCalls: number;
@@ -92,11 +100,16 @@ async function runAgentAction(opts: {
   let capturedCall: CapturedExecutorCall | undefined;
   let validatorCalls = 0;
 
-  const validateOutput: OutputValidator | undefined = opts.validator;
-  const wrappedValidator: OutputValidator | undefined = validateOutput
-    ? (trace, signal) => {
+  // O2 (review-2): wrap the legacy {verdict}-shape validator into the
+  // runJudge envelope. trace/signal are dropped — the existing tests
+  // assert the validator FIRES (count) but never inspect its trace
+  // input, so the wrap is safe.
+  const validator: LegacyValidator | undefined = opts.validator;
+  const runJudge = validator
+    ? async () => {
         validatorCalls++;
-        return validateOutput(trace, signal);
+        const { verdict } = await validator({} as never);
+        return { ok: true as const, verdict };
       }
     : undefined;
 
@@ -112,7 +125,7 @@ async function runAgentAction(opts: {
       return Promise.resolve(buildEnvelope(action.agentId));
     },
     ...(opts.resolvedAgentType !== undefined && { resolveAgentType: () => opts.resolvedAgentType }),
-    ...(wrappedValidator ? { validateOutput: wrappedValidator } : {}),
+    ...(runJudge ? { runJudge } : {}),
   });
 
   await engine.initialize();

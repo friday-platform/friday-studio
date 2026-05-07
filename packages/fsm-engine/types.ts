@@ -450,22 +450,6 @@ export type JudgeAgentRunner = (input: {
   abortSignal?: AbortSignal;
 }) => Promise<{ ok: true; verdict: ValidationVerdict } | { ok: false; error: string }>;
 
-/**
- * @deprecated B7 — pre-B7 callback signature retained for tests still
- * exercising the legacy `validate: external` retry semantics. The runtime
- * uses `JudgeAgentRunner` exclusively; tests that pass `validateOutput`
- * are adapted into a `runJudge` shim by the test scaffolds.
- */
-export interface LLMOutputValidationResult {
-  verdict: ValidationVerdict;
-}
-
-/** @deprecated B7 — see {@link JudgeAgentRunner}. */
-export type OutputValidator = (
-  trace: LLMActionTrace,
-  abortSignal?: AbortSignal,
-) => Promise<LLMOutputValidationResult>;
-
 export interface LLMProvider {
   call(params: {
     /** Synthetic agent ID for the LLM action (e.g., "fsm:job-name:output-doc") */

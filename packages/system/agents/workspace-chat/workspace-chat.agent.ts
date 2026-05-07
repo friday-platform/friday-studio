@@ -499,10 +499,16 @@ export const workspaceChatAgent = createAgent<string, WorkspaceChatResult>({
             });
           }
 
-          // Defense-in-depth: lift any binary that escaped the MCP-boundary
-          // scrubber (LLM-fabricated base64, future tool surfaces) into
-          // artifacts before append. Same scrub logic as the boundary
-          // wrapper; just runs against the assembled assistant message.
+          // F8 (review-2): defense-in-depth pre-persist scrub on the
+          // assistant message. The producer-LLM-side
+          // `liftToolResultsForPersist` (runtime.ts side-channel) already
+          // walks `toolCalls[].result` and replaces oversized strings
+          // with markers; this pass operates on a different view (the
+          // AI SDK's `message.parts` array, persisted to chat history)
+          // and catches anything LLM-fabricated outside the tool-result
+          // path. Cost is bounded — already-lifted strings hit the
+          // marker-prefix early-exit (`scrubber.ts:scrubString` first
+          // check) and short-circuit without re-uploading.
           try {
             const { rewritten } = await scrubAssistantMessage(
               lastMessage.parts as Array<Record<string, unknown>>,
