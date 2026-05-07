@@ -6112,13 +6112,6 @@
           ]
         }
       },
-      "packages/adapters-memory": {
-        "packageJson": {
-          "dependencies": [
-            "npm:vitest@^4.1.0"
-          ]
-        }
-      },
       "packages/agent-sdk": {
         "dependencies": [
           "jsr:@db/sqlite@0.13"
