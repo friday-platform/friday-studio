@@ -78,6 +78,18 @@ async function fetchTextArtifactJson(
   return JSON.parse(body.contents) as Record<string, unknown>;
 }
 
+async function listElicitations(
+  d: DaemonHandle,
+  workspaceId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const resp = await fetch(
+    `${d.baseUrl}/api/elicitations?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
+  if (!resp.ok) return [];
+  const body = (await resp.json()) as { elicitations?: Array<Record<string, unknown>> };
+  return body.elicitations ?? [];
+}
+
 function artifactPayload(doc: Record<string, unknown> | null): Record<string, unknown> | undefined {
   const nested = (doc?.data as Record<string, unknown> | undefined)?.data as
     | Record<string, unknown>
@@ -217,6 +229,20 @@ async function runRefsOverDataScenario(d: DaemonHandle): Promise<EvalResult[]> {
       metrics,
     },
   ];
+}
+
+function parseJsonResponsePayload(
+  rawPayload: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const responseText =
+    rawPayload && typeof rawPayload.response === "string" ? rawPayload.response.trim() : "";
+  if (!responseText) return rawPayload;
+  const jsonText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  try {
+    return JSON.parse(jsonText) as Record<string, unknown>;
+  } catch {
+    return rawPayload;
+  }
 }
 
 function validationSummary(events: Awaited<ReturnType<typeof fetchSessionEvents>>): string {
@@ -409,18 +435,7 @@ async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]
     | undefined;
   const artifactData = await fetchFirstArtifactPayload(d, data);
   const rawPayload = artifactData ?? data;
-  const responseText =
-    rawPayload && typeof rawPayload.response === "string" ? rawPayload.response.trim() : "";
-  let parsedResponse: Record<string, unknown> | undefined;
-  if (responseText) {
-    const jsonText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-    try {
-      parsedResponse = JSON.parse(jsonText) as Record<string, unknown>;
-    } catch {
-      parsedResponse = undefined;
-    }
-  }
-  const payload = parsedResponse ?? rawPayload;
+  const payload = parseJsonResponsePayload(rawPayload);
   const events = await fetchSessionEvents(d, trigger.sessionId);
   const serializedJob = JSON.stringify(trigger.jobComplete ?? {});
   const serializedDoc = JSON.stringify(data ?? {});
@@ -474,6 +489,84 @@ async function runAckOnlyMutationScenario(d: DaemonHandle): Promise<EvalResult[]
   ];
 }
 
+async function runUnknownToolScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, { name: "First Principles Unknown Tool" });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "unknown-tool-event", {
+    payload: { query: "unknown-tool" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  metrics.wallTimeMs = trigger.durationMs;
+  metrics.sessionId = trigger.sessionId;
+  metrics.jobComplete = trigger.jobComplete;
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "unknown-tool-request",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const key = `doc/session/${trigger.sessionId}/unknown-tool-check/unknown-tool-result`;
+  const doc = await natsKvGetJson(d.natsUrl, bucket, key);
+  const data = (doc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const artifactData = await fetchFirstArtifactPayload(d, data);
+  const payload = parseJsonResponsePayload(artifactData ?? data);
+  const elicitations = await listElicitations(d, ws.id);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  const discoveryTools = Array.isArray(payload?.discoveryTools) ? payload.discoveryTools : [];
+  const toolNames = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) =>
+      ((ev as { toolCalls?: Array<{ toolName?: string }> }).toolCalls ?? []).map(
+        (tc) => tc.toolName,
+      ),
+    );
+
+  metrics.bucket = bucket;
+  metrics.data = data ?? null;
+  metrics.artifactData = artifactData ?? null;
+  metrics.elicitationCount = elicitations.length;
+  metrics.toolNames = toolNames;
+
+  const pass =
+    payload?.marker === "UNKNOWN_TOOL_REQUEST_DONE" &&
+    payload?.granted === false &&
+    payload?.reason === "unknown_tool" &&
+    discoveryTools.includes("list_mcp_tools") &&
+    toolNames.includes("request_tool_access") &&
+    elicitations.length === 0;
+
+  return [
+    {
+      id: "unknown-tool-request",
+      pass,
+      notes: [
+        ...notes,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `reason: ${String(payload?.reason ?? "(missing)")}`,
+        `discoveryTools: ${discoveryTools.join(",") || "(missing)"}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+        `elicitations created: ${elicitations.length}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function main() {
   await ensureCredentialsLoaded();
   if (!Deno.env.get("ANTHROPIC_API_KEY")) {
@@ -498,6 +591,8 @@ async function main() {
     results.push(...(await runValidationContractScenario(daemon)));
     console.log("\n── ack-only fake inbox mutation ──");
     results.push(...(await runAckOnlyMutationScenario(daemon)));
+    console.log("\n── unknown tool request guard ──");
+    results.push(...(await runUnknownToolScenario(daemon)));
   } finally {
     const keepHome = Deno.env.get("FRIDAY_QA_KEEP_HOME") === "1";
     await stopDaemon(daemon, { keepHome });

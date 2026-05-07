@@ -3306,6 +3306,7 @@ export class FSMEngine {
       // can derive expiresAt = now + jobTimeoutMs (Phase 12 user-resolved
       // policy). Optional — falls back to tool-local default when absent.
       ...(this.options.jobTimeoutMs !== undefined && { jobTimeoutMs: this.options.jobTimeoutMs }),
+      availableToolNames: Object.keys(filtered),
     });
     Object.assign(tools, wrapped);
 

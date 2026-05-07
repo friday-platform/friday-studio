@@ -1,4 +1,5 @@
 import process from "node:process";
+import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
 import { resolvePermissions } from "@atlas/config/permissions";
 import { ElicitationStorage } from "@atlas/core/elicitations";
 import { stringifyError } from "@atlas/utils";
@@ -15,6 +16,18 @@ import { createErrorResponse, createSuccessResponse } from "../utils.ts";
  * real lifecycle gate is the parent job's timeout.
  */
 const DEFAULT_ELICITATION_TTL_MS = 30 * 60 * 1000;
+const DISCOVERY_TOOLS = [
+  "list_capabilities",
+  "search_mcp_servers",
+  "install_mcp_server",
+  "enable_mcp_server",
+  "disable_mcp_server",
+  "create_mcp_server",
+  "get_mcp_dependencies",
+  "list_mcp_tools",
+  "connect_service",
+  "connect_communicator",
+];
 
 /**
  * Zod shape for a `PermissionsConfig` mirror. Kept narrow on purpose — the
@@ -94,6 +107,10 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           .positive()
           .optional()
           .describe("(runtime-injected) parent job timeout in ms"),
+        availableToolNames: z
+          .array(z.string())
+          .optional()
+          .describe("(runtime-injected) catalog of real tools known to this runtime"),
       },
     },
     async ({
@@ -106,6 +123,7 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
       jobPermissions,
       workspacePermissions,
       jobTimeoutMs,
+      availableToolNames,
     }): Promise<CallToolResult> => {
       // Review N2: prefer resolvedPermissions when present. Falls back to
       // resolving from raw fields at call time so callers without a
@@ -117,6 +135,24 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
           workspace: workspacePermissions,
           daemonDangerouslySkipAllowlist: process.env.FRIDAY_DANGEROUSLY_SKIP_PERMISSIONS === "1",
         });
+
+      const knownTools = new Set([...(availableToolNames ?? []), ...PLATFORM_TOOL_NAMES]);
+      if (!knownTools.has(toolName)) {
+        ctx.logger.warn("request_tool_access rejected unknown tool", {
+          toolName,
+          workspaceId,
+          sessionId,
+          actionId,
+        });
+        return createSuccessResponse({
+          ok: false,
+          granted: false,
+          reason: "unknown_tool",
+          toolName,
+          message: `Unknown tool '${toolName}'. Use capability discovery instead of requesting access to a guessed tool name.`,
+          discoveryTools: DISCOVERY_TOOLS,
+        });
+      }
 
       if (effective.dangerouslySkipAllowlist) {
         // Phase 1.C — bypass branch. Operators read this in

@@ -66,6 +66,17 @@ signals:
         query:
           type: string
       required: []
+  unknown-tool-event:
+    provider: http
+    description: "Trigger unknown request_tool_access scenario."
+    config:
+      path: "/unknown-tool-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
 
 jobs:
   refs-check:
@@ -354,4 +365,41 @@ jobs:
 
                 Do not fetch message contents and do not include any message
                 bodies in the final output.
+          type: final
+
+  unknown-tool-check:
+    description: "Unknown tool access requests must not create elicitations."
+    triggers:
+      - signal: unknown-tool-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      states:
+        idle:
+          on:
+            unknown-tool-event: { target: request }
+        request:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Request access to a deliberately unknown tool."
+              outputTo: unknown-tool-result
+              validate: skip
+              tools:
+                - request_tool_access
+              prompt: |
+                Call request_tool_access exactly once with:
+                - toolName: "gmail_magic_delete_everything"
+                - reason: "first-principles unknown tool guard"
+
+                Then respond with ONLY a JSON object containing:
+                - marker: "UNKNOWN_TOOL_REQUEST_DONE"
+                - granted: the granted value returned by request_tool_access
+                - reason: the reason returned by request_tool_access
+                - discoveryTools: the discoveryTools array returned by request_tool_access, or []
           type: final

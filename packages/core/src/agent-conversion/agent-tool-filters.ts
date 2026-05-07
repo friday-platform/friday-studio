@@ -93,6 +93,12 @@ export interface ToolScope {
    * back to a tool-local default. Review N3.
    */
   jobTimeoutMs?: number;
+  /**
+   * Tool catalog visible to the runtime before per-action allowlist narrowing.
+   * `request_tool_access` uses this to reject hallucinated tools without
+   * creating user-facing elicitations.
+   */
+  availableToolNames?: string[];
 }
 
 /**
@@ -135,6 +141,7 @@ export function wrapPlatformToolsWithScope(
             ...(scope.workspacePermissions && { workspacePermissions: scope.workspacePermissions }),
             ...(scope.resolvedPermissions && { resolvedPermissions: scope.resolvedPermissions }),
             ...(scope.jobTimeoutMs !== undefined && { jobTimeoutMs: scope.jobTimeoutMs }),
+            ...(scope.availableToolNames && { availableToolNames: scope.availableToolNames }),
           },
           opts,
         )) as AtlasTool["execute"],
