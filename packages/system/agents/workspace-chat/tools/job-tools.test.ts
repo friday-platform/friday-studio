@@ -366,7 +366,7 @@ describe("createJobTools execute", () => {
 
     expect(mockSignalPost).toHaveBeenCalledWith({
       param: { workspaceId: "ws-test", signalId: "deploy-signal" },
-      json: { payload: { target: "production", force: true } },
+      json: { payload: { target: "production", force: true }, bypassConcurrency: true },
     });
     expect(result).toEqual({ success: true, sessionId: "sess-4", status: "completed", output: [] });
   });
@@ -481,7 +481,7 @@ describe("createJobTools execute (SSE streaming)", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ payload: { prompt: "deploy" } }),
+        body: JSON.stringify({ payload: { prompt: "deploy" }, bypassConcurrency: true }),
       }),
     );
   });
@@ -680,7 +680,11 @@ describe("createJobTools execute (SSE streaming)", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        body: JSON.stringify({ payload: { prompt: "go" }, streamId: "parent-stream-123" }),
+        body: JSON.stringify({
+          payload: { prompt: "go" },
+          bypassConcurrency: true,
+          streamId: "parent-stream-123",
+        }),
       }),
     );
   });

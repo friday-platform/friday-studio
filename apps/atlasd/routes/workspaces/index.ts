@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
+import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import {
   exportAll,
   exportGlobalSkills,
@@ -219,6 +220,13 @@ const signalBodySchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
   streamId: z.string().optional(),
   skipStates: z.array(z.string()).optional(),
+  /**
+   * Internal: workspace-chat job tools set this so interactive chat-spawned
+   * jobs bypass the JetStream cascade concurrency gate. User-facing HTTP
+   * triggers still go through the per-signal skip/queue/concurrent/replace
+   * policy.
+   */
+  bypassConcurrency: z.boolean().optional(),
   /**
    * Parent session id, when this signal is being fired from inside another
    * session (chat-spawned-job, signal-trigger-from-FSM). Forwarded to the
@@ -1597,6 +1605,87 @@ const workspacesRoutes = daemonFactory
     }
 
     const encoder = new TextEncoder();
+
+    if (body.bypassConcurrency) {
+      const clientAbort = c.req.raw.signal;
+      const sseStream = new ReadableStream({
+        async start(controller) {
+          const safeEnqueue = (bytes: Uint8Array) => {
+            try {
+              controller.enqueue(bytes);
+              return true;
+            } catch (err) {
+              logger.debug("Client disconnected during direct signal SSE stream", {
+                workspaceId,
+                signalId,
+                error: err,
+              });
+              return false;
+            }
+          };
+
+          const forwardChunk = (chunk: AtlasUIMessageChunk) => {
+            safeEnqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          };
+
+          try {
+            const result = await ctx.daemon.triggerWorkspaceSignal(
+              workspaceId,
+              signalId,
+              body.payload,
+              body.streamId,
+              forwardChunk,
+              undefined,
+              clientAbort,
+              body.parentSessionId,
+            );
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "job-complete",
+                  data: {
+                    success: true,
+                    sessionId: result.sessionId,
+                    status: "completed",
+                    output: result.output,
+                    artifactIds: result.artifactIds ?? [],
+                    summary: result.summary ?? "",
+                  },
+                })}\n\n`,
+              ),
+            );
+          } catch (error) {
+            const errorMessage = stringifyError(error);
+            logger.error("Direct signal trigger SSE error", {
+              error: errorMessage,
+              workspaceId,
+              signalId,
+            });
+            safeEnqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "job-error", data: { error: errorMessage } })}\n\n`,
+              ),
+            );
+          } finally {
+            safeEnqueue(encoder.encode("data: [DONE]\n\n"));
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
+          }
+        },
+      });
+
+      return new Response(sseStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
     const correlationId = crypto.randomUUID();
     const nc = ctx.daemon.getNatsConnection();
 
@@ -1779,8 +1868,43 @@ const workspacesRoutes = daemonFactory
     zValidator("json", signalBodySchema),
     async (c) => {
       const { workspaceId, signalId } = c.req.valid("param");
-      const { payload, streamId, skipStates: _skipStates, parentSessionId } = c.req.valid("json");
+      const {
+        payload,
+        streamId,
+        skipStates: _skipStates,
+        parentSessionId,
+        bypassConcurrency,
+      } = c.req.valid("json");
       const ctx = c.get("app");
+
+      if (bypassConcurrency) {
+        try {
+          const result = await ctx.daemon.triggerWorkspaceSignal(
+            workspaceId,
+            signalId,
+            payload,
+            streamId,
+            undefined,
+            _skipStates,
+            c.req.raw.signal,
+            parentSessionId,
+          );
+          return c.json({
+            message: "Signal completed",
+            status: "completed" as const,
+            workspaceId,
+            signalId,
+            sessionId: result.sessionId,
+            output: result.output,
+            artifactIds: result.artifactIds ?? [],
+            summary: result.summary ?? "",
+          });
+        } catch (error) {
+          const errorMessage = stringifyError(error);
+          logger.error("Direct signal trigger failed", { error, workspaceId, signalId });
+          return c.json({ error: `Failed to process signal: ${errorMessage}` }, 500);
+        }
+      }
 
       const correlationId = crypto.randomUUID();
       const nc = ctx.daemon.getNatsConnection();

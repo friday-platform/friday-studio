@@ -184,9 +184,12 @@ async function executeJobViaJSON(
   // Phase 11: forward `parentSessionId` so the spawned job's
   // `SessionSummary.parentSessionId` records the parent chat session.
   // Schema field is optional on the route — undefined drops cleanly.
-  const json: { payload: Record<string, unknown>; streamId?: string; parentSessionId?: string } = {
-    payload: input,
-  };
+  const json: {
+    payload: Record<string, unknown>;
+    streamId?: string;
+    parentSessionId?: string;
+    bypassConcurrency: true;
+  } = { payload: input, bypassConcurrency: true };
   if (streamId !== undefined) json.streamId = streamId;
   if (parentSessionId !== undefined) json.parentSessionId = parentSessionId;
 
@@ -285,7 +288,7 @@ async function executeJobViaSSE(deps: ExecuteJobViaSSEDeps): Promise<{
   const url = `${getAtlasDaemonUrl()}/api/workspaces/${encodeURIComponent(
     workspaceId,
   )}/signals/${encodeURIComponent(signalId)}`;
-  const body: Record<string, unknown> = { payload: input };
+  const body: Record<string, unknown> = { payload: input, bypassConcurrency: true };
   if (streamId !== undefined) {
     body.streamId = streamId;
   }
