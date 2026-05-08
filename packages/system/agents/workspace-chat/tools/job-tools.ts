@@ -10,6 +10,7 @@
  * legacy JSON-blocking mode.
  */
 
+import process from "node:process";
 import type { AtlasTools, AtlasUIMessage, AtlasUIMessageChunk } from "@atlas/agent-sdk";
 import { client, DetailedError, parseResult } from "@atlas/client/v2";
 import type { JobSpecification, WorkspaceSignalConfig } from "@atlas/config";
@@ -27,6 +28,13 @@ import { z } from "zod";
  * LLM step failed: {...}`) instead of just the HTTP status.
  */
 const SignalErrorBodySchema = z.object({ error: z.string() });
+const INTERNAL_SIGNAL_BYPASS_HEADER = "x-friday-internal-signal-bypass";
+const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
+
+function internalSignalBypassHeaders(): Record<string, string> {
+  const token = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+  return token ? { [INTERNAL_SIGNAL_BYPASS_HEADER]: token } : {};
+}
 
 function describeJobFailure(err: unknown): { message: string; statusCode?: number } {
   if (err instanceof DetailedError) {
@@ -193,12 +201,13 @@ async function executeJobViaJSON(
   if (streamId !== undefined) json.streamId = streamId;
   if (parentSessionId !== undefined) json.parentSessionId = parentSessionId;
 
-  const result = await parseResult(
-    client.workspace[":workspaceId"].signals[":signalId"].$post({
-      param: { workspaceId, signalId },
-      json,
-    }),
-  );
+  const headers = internalSignalBypassHeaders();
+  const request = { param: { workspaceId, signalId }, json };
+  const response =
+    Object.keys(headers).length > 0
+      ? client.workspace[":workspaceId"].signals[":signalId"].$post(request, { headers })
+      : client.workspace[":workspaceId"].signals[":signalId"].$post(request);
+  const result = await parseResult(response);
 
   if (!result.ok) {
     const failure = describeJobFailure(result.error);
@@ -302,7 +311,11 @@ async function executeJobViaSSE(deps: ExecuteJobViaSSEDeps): Promise<{
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        ...internalSignalBypassHeaders(),
+      },
       body: JSON.stringify(body),
       signal: abortSignal,
     });

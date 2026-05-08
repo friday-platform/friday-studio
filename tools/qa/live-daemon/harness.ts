@@ -1,5 +1,5 @@
 /**
- * Daemon-as-fixture primitives for the melodic-strolling-seal QA harness.
+ * Daemon-as-fixture primitives for live daemon QA.
  *
  * Spawns a fresh atlasd against an isolated FRIDAY_HOME, registers a
  * workspace, fires a signal, parses the SSE stream, walks session events
@@ -91,9 +91,8 @@ export interface SignalTriggerResult {
 /**
  * One step:complete.validation field captured from a session's event stream.
  * Mirrors `StepValidationOutputSchema` from
- * `packages/core/src/session/session-events.ts` (B6 of
- * melodic-strolling-seal-pt2). Only the fields the harness asserts on are
- * narrowed; unknown extra fields pass through untouched.
+ * `packages/core/src/session/session-events.ts`. Only the fields the harness
+ * asserts on are narrowed; unknown extra fields pass through untouched.
  */
 export interface CapturedStepValidation {
   strategy: "skip" | "self" | "external";
@@ -115,7 +114,7 @@ export interface SessionEventsResult {
   toolCallCount: number;
   /**
    * Every `step:complete` event's `validation` field, in stream order.
-   * Phase 4 of the QA harness asserts the post-B6 contract on this array
+   * The QA harness asserts the validation-event contract on this array
    * (one entry per `type: llm` action's step:complete). Pure-agent steps
    * leave `validation` absent and are omitted here.
    */
@@ -485,7 +484,7 @@ export async function triggerSignalSSE(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Session events walk + usage aggregation (Phase 11)
+// Session events walk + usage aggregation
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface StepUsage {
@@ -506,8 +505,8 @@ interface MaybeStepCompleteEvent {
 
 /**
  * Walk raw session events for usage aggregation + validator behavior
- * counts. Post-J1 (melodic-strolling-seal-pt3) the SessionView reducer
- * also surfaces `usage` onto `AgentBlock`, but we keep consuming the raw
+ * counts. The SessionView reducer also surfaces `usage` onto `AgentBlock`,
+ * but we keep consuming the raw
  * event stream here to retain access to other fields the projection
  * collapses (e.g. per-step verdict shapes).
  *
@@ -622,16 +621,15 @@ export async function fetchSessionEvents(
         totalUsage.cacheWriteTokens += u.cacheWriteTokens ?? 0;
       }
       if (Array.isArray(ev.toolCalls)) toolCallCount += ev.toolCalls.length;
-      // B6 (melodic-strolling-seal-pt2): structured validation outcome
-      // rides on `step:complete` instead of the legacy `step:validation`
-      // event. Capture every populated emit so Phase 4 can assert the
-      // strategy/skipReason/verdict shape.
+      // Structured validation outcome rides on `step:complete` instead of
+      // the legacy `step:validation` event. Capture every populated emit so
+      // the harness can assert the strategy/skipReason/verdict shape.
       if (ev.validation && typeof ev.validation === "object") {
         stepValidations.push(ev.validation);
       }
     } else if (ev.type === "step:validation") {
-      // Phase 4: tool-passthrough actions skip the validator. The
-      // validator emits `step:validation` with `validationVerdict.skipped:
+      // Tool-passthrough actions skip the validator. The validator emits
+      // `step:validation` with `validationVerdict.skipped:
       // true` (or `verdict: "skipped"`) for skip cases; otherwise the
       // judge ran. Match both shapes for forward compatibility.
       const v = (ev as unknown as Record<string, unknown>).validationVerdict as
@@ -675,9 +673,9 @@ export async function currentGitSha(): Promise<string> {
 /**
  * Narrowed projection of `GET /api/sessions/:id` (the SessionView). Only
  * the fields the harness asserts on are typed; unknown extras pass
- * through. J1 of melodic-strolling-seal-pt3 added `usage` to AgentBlock
- * — the harness asserts the post-reducer projection populates it from
- * `step:complete.usage` end-to-end.
+ * through. Older AgentBlock entries may not have `usage`; the harness
+ * asserts that current projections populate it from `step:complete.usage`
+ * end-to-end.
  */
 export interface SessionViewAgentBlock {
   agentName?: string;
@@ -730,8 +728,8 @@ export async function listArtifactsForSession(
 
 /**
  * Tail the daemon's global.log under FRIDAY_HOME and count lines matching
- * `pattern` (substring or regex). Some signals — most notably Phase 4's
- * validator-skip — only surface in the debug log because the synthetic
+ * `pattern` (substring or regex). Some validator-skip paths only surface in
+ * the debug log because the synthetic
  * pass verdict carries no on-the-wire marker (`syntheticPassVerdict` in
  * `packages/hallucination/src/fsm-validator.ts:96`). The harness uses
  * this for assertions that can't be reconstructed from session events.

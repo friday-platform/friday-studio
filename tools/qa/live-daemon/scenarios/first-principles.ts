@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run --allow-all --unstable-worker-options --unstable-kv --unstable-raw-imports --env-file
 
 /**
- * First-principles daemon eval suite for the melodic branch.
+ * First-principles daemon eval suite.
  *
  * This is intentionally not another phase-smoke runner. It encodes the
  * original architecture principles as no-auth, daemon-backed assertions:

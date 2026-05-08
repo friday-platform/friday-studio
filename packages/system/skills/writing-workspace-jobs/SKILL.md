@@ -642,9 +642,8 @@ Semantics:
 - `skills: [...]` — whitelist within the job's resolved skill set.
 - `skills` absent — full job-level skill visibility.
 
-**Phase 1 made these load-bearing.** Pre-fix the runtime ignored both
-fields and exposed the full catalog. If a fetcher action lists no send
-tool but the prompt is ambiguous, the agent now genuinely cannot send.
+These fields are load-bearing. If a fetcher action lists no send tool but the
+prompt is ambiguous, the agent genuinely cannot send.
 
 ## Auto-injected built-ins for FSM `type: llm` actions
 
@@ -679,8 +678,8 @@ boilerplate.
 If you declare `tools: [...]`, the built-ins still work — the
 allowlist narrows the **MCP-server** catalog only. To genuinely lock
 an action down to "memory only," you can't (today) — the platform
-tool surface is fixed. Long-term: a `platform_tools: [...]` opt-in is
-on the roadmap (see pt3 N7-followup).
+tool surface is fixed. Long-term: a `platform_tools: [...]` opt-in would make
+this narrower.
 
 ### Output contract: `complete` is the only durable emission for `outputTo`
 
@@ -691,9 +690,12 @@ This is true even when `outputType` is omitted:
 - With `outputType: <DocumentType>`, call `complete` with fields that
   match the declared document schema.
 - Without `outputType`, call `complete({ response: "<full final text>" })`.
-- If the action also has MCP tools, the runtime uses `toolChoice: "required"`
+- If the action also declares tools, the runtime uses `toolChoice: "required"`
   until `complete` appears, so the model cannot stop with prose after a
-  search/write/memory call.
+  search/write/memory call. For `outputTo` actions that must call an ambient
+  built-in first, still list that built-in in `tools:`; built-ins remain
+  available either way, but the declaration tells the runtime not to force the
+  first tool call to be `complete`.
 
 Do **not** end an `outputTo` action on `record_validation`, `fs_write_file`,
 `memory_save`, or any other non-`complete` tool. Those calls may be useful
@@ -962,7 +964,7 @@ strategies" above). Each child's mutating Gmail call gets the same
 `self`-validation pass it would have gotten in the sequential
 shape; the runtime's auto-classifier picks per-action.
 
-### Phase 8 budgets cross-reference
+### Delegation budgets cross-reference
 
 Each child runs under the resolved `delegation:` budget — workspace
 default merged with per-job override (per-field, job wins). Knobs:
@@ -1192,21 +1194,18 @@ executing side effects. Optional per-item comments may appear in the returned
 `note` field. For complex comments or free-form data per item, ask one item at
 a time instead of flattening everything into one huge option list.
 
-**Per-job elicitation timeout.** Defaults to the parent job's `config.timeout`
-(elicitations expire when the job times out). Override per-job to constrain
-finer:
+**Elicitation timeout.** Prompts inherit the parent job's `config.timeout` and
+expire when the job times out:
 
 ```yaml
 jobs:
   triage:
     config:
       timeout: 30m
-    elicitations:
-      timeout: 5m   # individual prompts shouldn't sit unanswered
 ```
 
-Expired elicitations move to a read-only Activity log entry; acting on
-one does not reify the timed-out job.
+Expired elicitations move to a read-only Activity log entry; acting on one does
+not reify the timed-out job.
 
 ## Runtime invariants you don't author
 

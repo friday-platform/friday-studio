@@ -144,6 +144,21 @@ export interface AtlasDaemonOptions {
   sseConnectionTimeoutMs?: number;
 }
 
+const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
+
+function ensureInternalSignalBypassToken(): void {
+  let token = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+  if (!token) {
+    token = crypto.randomUUID();
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = token;
+  }
+  try {
+    Deno.env.set(INTERNAL_SIGNAL_BYPASS_TOKEN_ENV, token);
+  } catch {
+    // Some test/embedding environments may not grant env write access.
+  }
+}
+
 /**
  * Cheap pre-flight for the broadcast hook: returns `true` iff the workspace
  * declares any chat-platform config carrying a `default_destination`. Lets
@@ -321,6 +336,7 @@ export class AtlasDaemon {
   private elicitationsSweeper: ElicitationsSweeperHandle | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
+    ensureInternalSignalBypassToken();
     // Read CORS origins from environment or options
     // Environment variable takes precedence for production deployments
     const envCorsOrigins = env.CORS_ALLOWED_ORIGINS?.split(",").map((s) => s.trim());

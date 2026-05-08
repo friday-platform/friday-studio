@@ -59,9 +59,6 @@ export async function waitForTerminalElicitation(
   ctx: ToolContext,
   input: { id: string; workspaceId: string; sessionId: string; expiresAt: string },
 ): Promise<TerminalElicitationResult> {
-  const initial = await readTerminalElicitation(input.id);
-  if (initial) return initial;
-
   const deadlineMs = new Date(input.expiresAt).getTime();
   const nc = ctx.natsConnection;
   if (nc) {
@@ -75,6 +72,12 @@ export async function waitForTerminalElicitation(
     const iter = (sub as AsyncIterable<{ data: Uint8Array }>)[Symbol.asyncIterator]();
     try {
       await nc.flush();
+      // Close the read-before-subscribe race: an answer can land after the
+      // caller created/read the pending row but before the broker registers
+      // this subscriber. Once the subscription is flushed, re-read KV before
+      // waiting for future stream events.
+      const current = await readTerminalElicitation(input.id);
+      if (current) return current;
       while (Date.now() < deadlineMs) {
         const remainingMs = Math.max(1, deadlineMs - Date.now());
         const next = await Promise.race([iter.next(), sleep(remainingMs).then(() => null)]);
@@ -91,6 +94,9 @@ export async function waitForTerminalElicitation(
       }
     }
   }
+
+  const initial = await readTerminalElicitation(input.id);
+  if (initial) return initial;
 
   while (Date.now() < deadlineMs) {
     const current = await readTerminalElicitation(input.id);

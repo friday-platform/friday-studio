@@ -216,6 +216,20 @@ async function buildMcpToolRegistry(config: WorkspaceConfig): Promise<Registry> 
 
 /** Shared schemas for the signal endpoint (SSE + JSON handlers). */
 const signalParamSchema = z.object({ workspaceId: z.string(), signalId: z.string() });
+const INTERNAL_SIGNAL_BYPASS_HEADER = "x-friday-internal-signal-bypass";
+const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
+
+function isInternalSignalBypassAuthorized(c: {
+  req: { header: (name: string) => string | undefined };
+}): boolean {
+  const token = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+  return Boolean(token && c.req.header(INTERNAL_SIGNAL_BYPASS_HEADER) === token);
+}
+
+function rejectUnauthorizedSignalBypass() {
+  return { error: "bypassConcurrency is internal to workspace-chat job tools" };
+}
+
 const signalBodySchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
   streamId: z.string().optional(),
@@ -1607,6 +1621,9 @@ const workspacesRoutes = daemonFactory
     const encoder = new TextEncoder();
 
     if (body.bypassConcurrency) {
+      if (!isInternalSignalBypassAuthorized(c)) {
+        return c.json(rejectUnauthorizedSignalBypass(), 403);
+      }
       const clientAbort = c.req.raw.signal;
       const sseStream = new ReadableStream({
         async start(controller) {
@@ -1878,6 +1895,9 @@ const workspacesRoutes = daemonFactory
       const ctx = c.get("app");
 
       if (bypassConcurrency) {
+        if (!isInternalSignalBypassAuthorized(c)) {
+          return c.json(rejectUnauthorizedSignalBypass(), 403);
+        }
         try {
           const result = await ctx.daemon.triggerWorkspaceSignal(
             workspaceId,
