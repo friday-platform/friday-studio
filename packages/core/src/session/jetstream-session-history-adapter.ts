@@ -236,8 +236,27 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     // exists, prefer its terminal fields and sweep any non-terminal
     // per-block status to `skipped` (matches the reducer's pending→skipped
     // sweep on session:complete).
-    const metadata = await this.getMetadataKV();
-    const summary = await metadata.get<SessionSummary>([sessionId]);
+    //
+    // Caveats:
+    // 1. JetStream KV does NOT guarantee read-your-writes on clustered (R>1)
+    //    deployments — a `get()` immediately after `save()` may be served by
+    //    a follower that hasn't replicated yet, returning undefined. The
+    //    fallback then silently uses the event-derived view, which may still
+    //    show `status: active`. On single-node deployments (our default) the
+    //    leader serves all reads, so this isn't a concern.
+    // 2. We treat any KV read error as "no summary" rather than propagating
+    //    a 5xx — the caller still gets the event-derived view, which is at
+    //    least consistent with what the events show.
+    let summary: SessionSummary | undefined;
+    try {
+      const metadata = await this.getMetadataKV();
+      summary = await metadata.get<SessionSummary>([sessionId]);
+    } catch (err) {
+      logger.warn("Metadata KV lookup failed; using event-derived view", {
+        sessionId,
+        error: String(err),
+      });
+    }
     if (summary) {
       const reconciledBlocks = view.agentBlocks.map((b) =>
         b.status === "running" || b.status === "pending" ? { ...b, status: "skipped" as const } : b,
