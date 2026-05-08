@@ -6,19 +6,19 @@
  * execution. Surfaced in the UI as the **Activity** feature page; the
  * code primitive is named `elicitation` to match the MCP spelling.
  *
- * Trigger sources (Phase 12 of the Bucket-3 plan):
+ * Trigger kinds:
  *
- *  - **`tool-allowlist`** — agent in an FSM action calls a tool that
- *    isn't in the per-job/per-workspace allowlist (Phase 1). Runtime
- *    asks: allow once / allow always / deny.
+ *  - **`tool-allowlist`** — an agent requests access to a tool outside
+ *    the current allowlist. Runtime asks: allow once / allow always / deny.
  *  - **`auth-refresh`** — MCP server returned 401 / token-expired.
  *  - **`confirm-action`** — author-declared `confirm_before: true` on a
  *    destructive tool.
  *  - **`open-question`** — agents call the `request_human_input`
  *    platform tool when they need a judgment call.
  *
- * Storage layout lives in `jetstream-adapter.ts`. This file is just the
- * Zod schema + TS types. Schema only — no runtime suspend/resume yet.
+ * Storage layout lives in `jetstream-adapter.ts`. This file is the shared
+ * Zod schema + TypeScript type boundary used by daemon routes, MCP tools,
+ * and runtime wait/resume code.
  */
 
 import { z } from "zod";

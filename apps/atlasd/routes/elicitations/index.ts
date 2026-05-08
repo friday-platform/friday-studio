@@ -1,8 +1,7 @@
 /**
- * HTTP routes for the elicitation primitive (Phase 12.B of the
- * Bucket-3 plan). Backed by `ElicitationStorage` in `@atlas/core` —
- * a JetStream stream + KV bucket facade. Mounted at
- * `/api/elicitations` from `atlas-daemon.ts`.
+ * HTTP routes for durable human-in-the-loop elicitations. Backed by
+ * `ElicitationStorage` in `@atlas/core` — a JetStream stream + KV
+ * bucket facade. Mounted at `/api/elicitations` from `atlas-daemon.ts`.
  *
  * Surface:
  *   - GET /              list with workspaceId/sessionId/status/kind filters
@@ -13,10 +12,6 @@
  *   - POST /:id/answer   { value, note?, answeredBy? } — server fills
  *                        `answeredAt`; flips status to `answered`
  *   - POST /:id/decline  { note? } — flips status to `declined`
- *
- * Activity-page UI (web client) and FSM-engine wiring (allowlist
- * denial → emit) land in follow-on phases. This file is just the
- * client-facing API.
  */
 
 import {

@@ -1,14 +1,12 @@
 /**
- * Tests for the elicitation HTTP routes (Phase 12.B).
+ * Tests for the elicitation HTTP routes.
  *
  * The JetStream-backed storage facade (`ElicitationStorage` from
  * `@atlas/core`) is too heavy to spin up in unit tests, so we mock the
  * `@atlas/core/elicitations` module wholesale and assert the routes
  * shape requests/responses correctly + return the right HTTP statuses.
  *
- * Live JetStream coverage lives in the adapter's own `*.test.ts` (and a
- * future integration test once we have a NATS test fixture mounted at
- * the daemon level).
+ * Live JetStream coverage lives in the adapter's own `*.test.ts`.
  */
 
 import { fail, success } from "@atlas/utils";
@@ -416,9 +414,8 @@ describe("GET /stream — SSE", () => {
     // NATS subscribe (`nc.subscribe`), not a JetStream pull/push consumer
     // bound to the ELICITATIONS stream. Pre-subscribe envelopes on the wire
     // are dropped — only events published AFTER the handshake reach the
-    // client. Per the review (H2 / N3), accepting this means reconnects /
-    // late-attach flows lose history; the activity page must reconcile via
-    // the REST list endpoint, not assume SSE replay.
+    // client. Reconnects / late-attach flows must reconcile via the REST
+    // list endpoint instead of assuming SSE replay.
     const wsId = `ws-late-${crypto.randomUUID().slice(0, 8)}`;
     const app = createSseTestApp(nc);
 

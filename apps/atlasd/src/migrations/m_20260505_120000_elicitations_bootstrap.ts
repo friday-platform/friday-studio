@@ -1,15 +1,15 @@
 /**
- * Migration: bootstrap the JetStream surfaces for elicitations.
+ * Migration: bootstrap the JetStream surfaces for durable
+ * human-in-the-loop elicitations.
  *
- * Phase 12 (foundation) of the Bucket-3 plan. Provisions the
- * `ELICITATIONS` stream + `ELICITATION_STATUS` KV bucket so the
- * runtime adapter (`packages/core/src/elicitations/jetstream-adapter.ts`)
+ * Provisions the `ELICITATIONS` stream + `ELICITATION_STATUS` KV bucket
+ * so the runtime adapter (`packages/core/src/elicitations/jetstream-adapter.ts`)
  * can publish without per-call create overhead.
  *
  * Idempotent — both creates short-circuit when the surfaces already
- * exist. Harmless to run before any elicitation is emitted: the
- * bucket and stream sit empty until the runtime suspend/resume layer
- * (a follow-on phase) starts publishing.
+ * exist. Harmless to run before any elicitation is emitted: the bucket
+ * and stream sit empty until request_tool_access/request_human_input
+ * creates the first pending item.
  *
  * No legacy data to backfill (this is a new primitive).
  */
@@ -29,7 +29,7 @@ export const migration: Migration = {
     "(subjects elicitations.<workspaceId>.<sessionId>.<elicitationId>, " +
     "per-message TTL via Nats-TTL header) and the ELICITATION_STATUS " +
     "KV bucket keyed by elicitationId. No data backfill — elicitations " +
-    "are a new primitive introduced by Phase 12 of the Bucket-3 plan.",
+    "are a new durable HITL primitive.",
   async run({ nc, logger }) {
     // Single source of truth for stream config lives next to the
     // adapter so the adapter's validate-only `ensureStream` check stays

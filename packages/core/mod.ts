@@ -33,9 +33,7 @@ export { conversationStorage } from "./src/chat-storage.ts";
 export * from "./src/constants/supervisor-status.ts";
 // Credential Fetcher
 export * from "./src/credential-fetcher.ts";
-// Elicitations (HITL pause-and-ask events) — see Phase 12 of the
-// Bucket-3 plan. Schema + storage groundwork only; runtime suspend/
-// resume + HTTP routes + UI land in follow-on phases.
+// Elicitations (durable HITL pause-and-ask events).
 export type {
   CreateElicitationInput,
   Elicitation,
