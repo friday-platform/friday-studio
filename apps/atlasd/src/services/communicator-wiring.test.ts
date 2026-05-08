@@ -151,7 +151,7 @@ describe("deriveConnectionId", () => {
     expect(result).toBe("1234567890");
   });
 
-  it("github → returns stringified installation_id (numeric input)", async () => {
+  it("github → returns stringified installation_id", async () => {
     mockFetchLinkCredential.mockResolvedValueOnce({
       id: "cred-g",
       provider: "github-app",
@@ -161,23 +161,6 @@ describe("deriveConnectionId", () => {
         private_key: "-----BEGIN RSA PRIVATE KEY-----\n...",
         webhook_secret: "wh-secret",
         installation_id: 67890,
-      },
-    });
-
-    const result = await deriveConnectionId("github", "cred-g");
-    expect(result).toBe("67890");
-  });
-
-  it("github → returns installation_id as-is when stored as a string", async () => {
-    mockFetchLinkCredential.mockResolvedValueOnce({
-      id: "cred-g",
-      provider: "github-app",
-      type: "apikey",
-      secret: {
-        app_id: 12345,
-        private_key: "-----BEGIN RSA PRIVATE KEY-----\n...",
-        webhook_secret: "wh-secret",
-        installation_id: "67890",
       },
     });
 

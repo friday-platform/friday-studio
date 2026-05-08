@@ -52,15 +52,12 @@ const WhatsappCredentialSecretSchema = z.object({ phone_number_id: z.string().mi
 const SlackCredentialSecretSchema = z.object({ app_id: z.string().min(1) });
 
 /**
- * GitHub App credential secret. Link's source-of-truth schema stores
- * `installation_id` as a positive integer (see
- * `apps/link/src/providers/github-app.ts`), but storage round-trips can
- * stringify numerics, so accept either shape and let the deriver coerce via
- * `String(...)`.
+ * GitHub App credential secret. `installation_id` is stored and returned as
+ * a positive integer (see `apps/link/src/providers/github-app.ts`); the
+ * JSON round-trip through Cypher storage preserves number types. The deriver
+ * coerces to string via `String(...)` for the `connection_id` column.
  */
-const GitHubCredentialSecretSchema = z.object({
-  installation_id: z.union([z.number().int().positive(), z.string().min(1)]),
-});
+const GitHubCredentialSecretSchema = z.object({ installation_id: z.number().int().positive() });
 
 function getLinkServiceUrl(): string {
   return process.env.LINK_SERVICE_URL ?? "http://localhost:3100";

@@ -58,13 +58,12 @@ describe("CommunicatorConfigSchema", () => {
       expect(parsed).toEqual({ kind: "github" });
     });
 
-    it("parses a github communicator with all fields", () => {
+    it("parses a github communicator with default_destination", () => {
       const parsed = CommunicatorConfigSchema.parse({
         kind: "github",
-        app_id: "12345",
-        installation_id: "67890",
+        default_destination: "octo/repo",
       });
-      expect(parsed).toEqual({ kind: "github", app_id: "12345", installation_id: "67890" });
+      expect(parsed).toEqual({ kind: "github", default_destination: "octo/repo" });
     });
   });
 
@@ -129,11 +128,9 @@ describe("WorkspaceConfigSchema with communicators", () => {
     const parsed = WorkspaceConfigSchema.parse({
       version: "1.0",
       workspace: { id: "test", name: "Test" },
-      communicators: { ops_github: { kind: "github", app_id: "12345", installation_id: "67890" } },
+      communicators: { ops_github: { kind: "github" } },
     });
-    expect(parsed.communicators).toEqual({
-      ops_github: { kind: "github", app_id: "12345", installation_id: "67890" },
-    });
+    expect(parsed.communicators).toEqual({ ops_github: { kind: "github" } });
   });
 
   it("parses an existing workspace.yml with signals.provider and no communicators block", () => {
