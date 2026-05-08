@@ -49,7 +49,16 @@ describe("POST /shutdown", () => {
   });
 
   it("responds 200 immediately and then exits 0 on clean shutdown", async () => {
-    const shutdown = vi.fn().mockResolvedValue(undefined);
+    // Deferred promise pins the load-bearing contract: exit MUST NOT be called
+    // until shutdown resolves. A regression that moved Deno.exit before the
+    // `await ctx.daemon.shutdown()` would still pass with mockResolvedValue.
+    let resolveShutdown!: () => void;
+    const shutdown = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolveShutdown = r;
+        }),
+    );
     const app = buildApp({ shutdown, currentShutdownPhase: "idle" });
 
     const res = await app.request("/shutdown", { method: "POST" });
@@ -60,9 +69,12 @@ describe("POST /shutdown", () => {
     expect(exitMock).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(100);
+    expect(shutdown).toHaveBeenCalledOnce();
+    expect(exitMock).not.toHaveBeenCalled();
+
+    resolveShutdown();
     await vi.runAllTimersAsync();
 
-    expect(shutdown).toHaveBeenCalledOnce();
     expect(exitMock).toHaveBeenCalledWith(0);
     expect(infoSpy).toHaveBeenCalledWith("Shutdown complete, exiting", { exitCode: 0 });
     expect(errorSpy).not.toHaveBeenCalledWith("Shutdown watchdog fired", expect.anything());
