@@ -18,7 +18,7 @@ import {
 
 const logger = createLogger({ component: "platform-signal-route" });
 
-type PlatformProvider = "slack" | "discord" | "telegram" | "whatsapp" | "teams";
+type PlatformProvider = "slack" | "discord" | "telegram" | "whatsapp" | "teams" | "github";
 
 const PROVIDER_LABELS: Record<PlatformProvider, string> = {
   slack: "Slack",
@@ -26,6 +26,7 @@ const PROVIDER_LABELS: Record<PlatformProvider, string> = {
   telegram: "Telegram",
   whatsapp: "WhatsApp",
   teams: "Teams",
+  github: "GitHub",
 };
 
 /**
@@ -75,6 +76,16 @@ const SlackUrlVerificationSchema = z.object({
 
 /** Minimal shape of a Teams activity payload used for workspace routing. */
 const TeamsRoutingPayloadSchema = z.object({ recipient: z.object({ id: z.string() }) });
+
+/**
+ * Minimal shape of a GitHub webhook payload used for workspace routing. GitHub
+ * delivers `installation.id` on every App-scoped event (issue_comment,
+ * pull_request_review_comment, etc.) — that ID is the routing key matched
+ * against the wiring table's `connection_id`.
+ */
+const GitHubInstallationPayloadSchema = z.object({
+  installation: z.object({ id: z.number() }),
+});
 
 /** Minimal shape of a WhatsApp webhook POST payload used for workspace routing. */
 const WhatsAppWebhookPayloadSchema = z.object({
@@ -372,6 +383,62 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
     logger.info("teams_signal_received", { workspaceId, appId });
 
     return delegateToWebhook(c, daemon, "teams", workspaceId, teamsRequest, { appId });
+  });
+
+  // ─── GitHub ───────────────────────────────────────────────────────
+  // External tunnel URL (what you paste into the GitHub App's webhook
+  // settings): https://<tunnel>/platform/github → /signals/github.
+  // One App can serve many installations across many workspaces; routing
+  // happens on `installation.id` from the body, looked up in the
+  // `communicator_wiring` table. No GET handshake — GitHub doesn't do one.
+  app.post("/github", async (c) => {
+    // Clone before consuming — the chat-sdk adapter needs the raw body for
+    // HMAC-SHA256 signature verification against the stored webhook_secret.
+    const githubRequest = c.req.raw.clone();
+    const rawBody = await c.req.text();
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawBody);
+    } catch {
+      logger.warn("github_signal_invalid_json", { bodyPreview: rawBody.slice(0, 200) });
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    const routing = GitHubInstallationPayloadSchema.safeParse(parsed);
+    if (!routing.success) {
+      logger.warn("github_signal_missing_installation_id", {
+        bodyPreview: rawBody.slice(0, 200),
+      });
+      return c.json({ error: "Missing installation.id in payload" }, 400);
+    }
+
+    const installationId = String(routing.data.installation.id);
+
+    logger.info("github_signal_received", { installationId });
+
+    // Wiring table is the source of truth — workspace.yml carries
+    // `{ kind: github }` only, with no inline secrets, so there's no legacy
+    // yml-fallback path to consult. A 404 here means the App was installed
+    // but never wired; GitHub will retry with backoff.
+    const resolved = await resolveCommunicatorByConnection(installationId, "github").catch(
+      (error) => {
+        logger.warn("github_link_resolve_failed", {
+          installationId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      },
+    );
+
+    if (!resolved) {
+      logger.warn("github_no_workspace_for_installation_id", { installationId });
+      return c.json({ error: "No workspace configured for this installation" }, 404);
+    }
+
+    return delegateToWebhook(c, daemon, "github", resolved.workspaceId, githubRequest, {
+      installationId,
+    });
   });
 
   return app;
