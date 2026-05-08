@@ -1,6 +1,7 @@
 const { mkdtemp, readFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
+const process = require("node:process");
 const { spawn } = require("node:child_process");
 
 let reportPromise;
@@ -60,7 +61,7 @@ async function runFirstPrinciples() {
   let report;
   try {
     report = await readReport(reportPath);
-  } catch (error) {
+  } catch {
     throw new Error(
       `first-principles runner did not produce ${reportPath}; exit=${exitCode}; stderr=${stderr}`,
     );
