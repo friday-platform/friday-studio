@@ -93,6 +93,28 @@ export function signalStreamSubject(correlationId: string): string {
   return `signals.stream.${correlationId}`;
 }
 
+export function signalCancelSubject(correlationId: string): string {
+  return `signals.cancel.${correlationId}`;
+}
+
+export const SignalCancellationSchema = z.object({
+  reason: z.string().optional(),
+  requestedAt: z.string().datetime(),
+});
+export type SignalCancellation = z.infer<typeof SignalCancellationSchema>;
+
+export async function publishSignalCancellation(
+  nc: NatsConnection,
+  correlationId: string,
+  reason = "Client disconnected",
+): Promise<void> {
+  const cancellation: SignalCancellation = { reason, requestedAt: new Date().toISOString() };
+  nc.publish(signalCancelSubject(correlationId), enc.encode(JSON.stringify(cancellation)));
+  // Core NATS publish is buffered; flush so abort/cancel callers know the
+  // cancellation frame reached the server before they tear down local state.
+  await nc.flush();
+}
+
 export async function ensureSignalsStream(
   nc: NatsConnection,
   limits: SignalsStreamLimits = {},
@@ -358,8 +380,9 @@ export class SignalConsumer {
 /**
  * Subscribe to a correlationId's response subject and resolve with the
  * first reply (or reject on timeout). Caller must subscribe BEFORE
- * publishing the request envelope, otherwise a fast response could be
- * missed.
+ * publishing the request envelope. If publish follows immediately, call
+ * `nc.flush()` after constructing this promise so the broker has registered
+ * interest before a fast worker can reply.
  */
 export async function awaitSignalCompletion(
   nc: NatsConnection,

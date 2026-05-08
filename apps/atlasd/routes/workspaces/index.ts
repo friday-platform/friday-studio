@@ -62,7 +62,7 @@ import {
   setCommunicatorMutation,
   wireCommunicator,
 } from "../../src/services/communicator-wiring.ts";
-import { awaitSignalCompletion } from "../../src/signal-stream.ts";
+import { awaitSignalCompletion, publishSignalCancellation } from "../../src/signal-stream.ts";
 import { getCurrentUser } from "../me/adapter.ts";
 import {
   buildWorkspaceBundleBytes,
@@ -1727,6 +1727,19 @@ const workspacesRoutes = daemonFactory
       signalStreamAbort.abort();
       streamSub.unsubscribe();
     };
+    let cancellationPublished = false;
+    const cancelCorrelatedSignal = () => {
+      if (cancellationPublished) return;
+      cancellationPublished = true;
+      void publishSignalCancellation(nc, correlationId, "Client disconnected").catch((error) => {
+        logger.warn("Failed to publish signal cancellation", {
+          workspaceId,
+          signalId,
+          correlationId,
+          error: stringifyError(error),
+        });
+      });
+    };
 
     // Capture the spawned session's id from the live stream so we can cancel
     // it on client disconnect. Without this, an aborted chat-tool fetch only
@@ -1752,6 +1765,7 @@ const workspacesRoutes = daemonFactory
     // The Hono request's underlying AbortSignal fires when the client
     // disconnects (browser navigates away, fetch is aborted, etc.).
     const onClientAbort = () => {
+      cancelCorrelatedSignal();
       closeSignalSubscriptions();
       cancelSpawnedSession();
     };
@@ -1766,6 +1780,7 @@ const workspacesRoutes = daemonFactory
         let clientGone = false;
         const markClientGone = () => {
           clientGone = true;
+          cancelCorrelatedSignal();
           closeSignalSubscriptions();
           cancelSpawnedSession();
         };
@@ -1810,6 +1825,11 @@ const workspacesRoutes = daemonFactory
         })();
 
         try {
+          if (clientAbort.aborted || signalStreamAbort.signal.aborted) {
+            return;
+          }
+
+          await nc.flush();
           if (clientAbort.aborted || signalStreamAbort.signal.aborted) {
             return;
           }
@@ -1902,6 +1922,7 @@ const workspacesRoutes = daemonFactory
         }
       },
       cancel() {
+        cancelCorrelatedSignal();
         closeSignalSubscriptions();
         cancelSpawnedSession();
         clientAbort.removeEventListener("abort", onClientAbort);
@@ -1989,6 +2010,19 @@ const workspacesRoutes = daemonFactory
         signalResponseAbort.abort();
         discoverySub.unsubscribe();
       };
+      let cancellationPublished = false;
+      const cancelCorrelatedSignal = () => {
+        if (cancellationPublished) return;
+        cancellationPublished = true;
+        void publishSignalCancellation(nc, correlationId, "Client disconnected").catch((error) => {
+          logger.warn("Failed to publish signal cancellation", {
+            workspaceId,
+            signalId,
+            correlationId,
+            error: stringifyError(error),
+          });
+        });
+      };
       const discovery = (async () => {
         for await (const msg of discoverySub) {
           if (spawnedSessionId) break;
@@ -2024,6 +2058,7 @@ const workspacesRoutes = daemonFactory
         }
       };
       const onClientAbort = () => {
+        cancelCorrelatedSignal();
         closeSignalSubscriptions();
         cancelSpawnedSession();
       };
@@ -2047,6 +2082,10 @@ const workspacesRoutes = daemonFactory
           signalResponseAbort.signal,
         );
         void responsePromise.catch(() => undefined);
+        await nc.flush();
+        if (clientAbort.aborted || signalResponseAbort.signal.aborted) {
+          return c.json({ error: "Client disconnected" }, 408);
+        }
         await ctx.daemon.publishSignalToJetStream({
           workspaceId,
           signalId,
