@@ -95,12 +95,23 @@
   const inFlight = $derived(answerMutation.isPending || declineMutation.isPending);
   const canAnswer = $derived(Boolean(matched) && isPending && !inFlight && hasAnswerValue);
   const canDecline = $derived(Boolean(matched) && isPending && !inFlight);
+  const controlsDisabled = $derived(inFlight);
+  const formId = $derived(matched?.id ?? call.toolCallId);
 
-  const activityHref = $derived(
-    routeWorkspaceId
+  const activityHref = $derived.by(() => {
+    const base = routeWorkspaceId
       ? resolve("/platform/[workspaceId]/activity", { workspaceId: routeWorkspaceId })
-      : resolve("/activity", {}),
-  );
+      : resolve("/activity", {});
+    return matched?.id ? `${base}?elicitationId=${encodeURIComponent(matched.id)}` : base;
+  });
+
+  let lastRefetchedForCall = "";
+  $effect(() => {
+    if (!request || matched || listQuery.isFetching) return;
+    if (lastRefetchedForCall === call.toolCallId) return;
+    lastRefetchedForCall = call.toolCallId;
+    void listQuery.refetch();
+  });
 
   let actionsEl: HTMLDivElement | undefined = $state();
   let lastScrolledPendingId = "";
@@ -167,7 +178,7 @@
         <p>{matched.answer.note}</p>
       {/if}
     </div>
-  {:else if matched && isPending && request}
+  {:else if request && (!matched || isPending)}
     <div class="response-form">
       {#if groupedOptionPrompt}
         <div class="nested-choice-list" aria-label="Choose an action for each item">
@@ -185,10 +196,10 @@
                     <label class="choice-button" class:active={nestedChoices[String(item.index)] === action.value}>
                       <input
                         type="radio"
-                        name="human-input-{matched.id}-{item.index}"
+                        name="human-input-{formId}-{item.index}"
                         value={action.value}
                         checked={nestedChoices[String(item.index)] === action.value}
-                        disabled={inFlight}
+                        disabled={controlsDisabled}
                         onchange={(event) => {
                           if (!event.currentTarget.checked) return;
                           nestedChoices = {
@@ -205,7 +216,7 @@
                   class="choice-comment"
                   type="text"
                   value={choiceComments[String(item.index)] ?? ""}
-                  disabled={inFlight}
+                  disabled={controlsDisabled}
                   placeholder="Comment for this item…"
                   oninput={(event) => {
                     choiceComments = {
@@ -227,10 +238,10 @@
             <label class="option" class:active={selectedValue === opt.value}>
               <input
                 type="radio"
-                name="human-input-{matched.id}"
+                name="human-input-{formId}"
                 value={opt.value}
                 bind:group={selectedValue}
-                disabled={inFlight}
+                disabled={controlsDisabled}
               />
               <span>{opt.label}</span>
             </label>
@@ -248,7 +259,7 @@
               </div>
               <div class="nested-choice-controls">
                 <select
-                  disabled={inFlight}
+                  disabled={controlsDisabled}
                   value={nestedChoices[String(item.index)] ?? ""}
                   onchange={(event) => {
                     nestedChoices = {
@@ -266,7 +277,7 @@
                   class="choice-comment"
                   type="text"
                   value={choiceComments[String(item.index)] ?? ""}
-                  disabled={inFlight}
+                  disabled={controlsDisabled}
                   placeholder="Comment for this item…"
                   oninput={(event) => {
                     choiceComments = {
@@ -288,7 +299,7 @@
           <input
             type="text"
             bind:value={freeText}
-            disabled={inFlight}
+            disabled={controlsDisabled}
             placeholder="Type your response…"
           />
         </label>
@@ -296,12 +307,16 @@
 
       <label class="field">
         <span>Note <em>(optional)</em></span>
-        <textarea bind:value={note} disabled={inFlight} rows="2" placeholder="Add context…"></textarea>
+        <textarea bind:value={note} disabled={controlsDisabled} rows="2" placeholder="Add context…"></textarea>
       </label>
+
+      {#if !matched}
+        <p class="hint">Syncing with Activity…</p>
+      {/if}
 
       <div class="actions" bind:this={actionsEl}>
         <Button onclick={onAnswer} disabled={!canAnswer}>
-          {answerMutation.isPending ? "Answering…" : "Answer"}
+          {!matched ? "Syncing…" : answerMutation.isPending ? "Answering…" : "Answer"}
         </Button>
         <Button variant="destructive" onclick={onDecline} disabled={!canDecline}>
           {declineMutation.isPending ? "Declining…" : "Decline"}
@@ -319,10 +334,7 @@
   {:else if matched && effectiveStatus && effectiveStatus !== "pending"}
     <p class="hint">This request is {effectiveStatus}. The run will resume only for answered requests.</p>
   {:else}
-    <p class="hint">
-      The run is waiting for a matching Activity item. If it does not appear here, open Activity.
-    </p>
-    <Button href={activityHref} variant="none">Open Activity</Button>
+    <p class="hint">Preparing the inline question…</p>
   {/if}
 </div>
 

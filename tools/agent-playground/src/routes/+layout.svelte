@@ -1,6 +1,7 @@
 <script lang="ts">
   import { NotificationPortal } from "@atlas/ui";
   import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
+  import { onMount } from "svelte";
   import { browser } from "$app/environment";
   import "@atlas/ui/tokens.css";
   import "@atlas/ui/colors.css";
@@ -9,6 +10,7 @@
   import CascadeStatusBanner from "$lib/components/shared/cascade-status-banner.svelte";
   import Sidebar from "$lib/components/shared/sidebar.svelte";
   import CommandPalette from "$lib/components/shared/command-palette.svelte";
+  import ElicitationGlobalStream from "$lib/components/shared/elicitation-global-stream.svelte";
   import UpdateBanner from "$lib/components/shared/update-banner.svelte";
   import { startHealthPolling } from "$lib/daemon-health.svelte";
   import { loadUpdateStatus } from "$lib/update-status.svelte";
@@ -16,9 +18,10 @@
   const { children } = $props();
 
   if (browser) {
-    startHealthPolling();
     void loadUpdateStatus();
   }
+
+  onMount(() => startHealthPolling());
 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { enabled: browser, refetchOnReconnect: true } },
@@ -70,6 +73,7 @@
   <div class="app-root">
     <UpdateBanner />
     <CascadeStatusBanner />
+    <ElicitationGlobalStream {queryClient} />
     <div class="app-shell">
       <Sidebar />
       <main>

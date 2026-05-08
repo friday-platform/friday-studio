@@ -86,6 +86,9 @@
   /** Jobs page renders job index sidebar. */
   const isJobs = $derived(page.route.id === "/platform/[workspaceId]/jobs");
 
+  /** Activity page needs full width for elicitation forms. */
+  const isActivity = $derived(page.route.id === "/platform/[workspaceId]/activity");
+
   /** Skills page renders skill index sidebar. */
   const isSkills = $derived(page.route.id === "/platform/[workspaceId]/skills");
 
@@ -143,7 +146,7 @@
   <Page.Content scrollable={!isChat} padded={false}>
     {@render children?.()}
   </Page.Content>
-  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug}
+  {#if !isSessionDetail && !isSignalDetail && !isOverview && !isEdit && !isChat && !isChatDebug && !isActivity}
     <Page.Sidebar>
       {#if isAgents}
         <AgentIndexSidebar agents={workspaceAgents} {providerStatus} />

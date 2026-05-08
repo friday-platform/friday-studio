@@ -48,11 +48,15 @@ export async function* parseSSEStream(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let completed = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        completed = true;
+        break;
+      }
 
       buffer += normalizeLineEndings(decoder.decode(value, { stream: true }));
 
@@ -70,6 +74,13 @@ export async function* parseSSEStream(
       }
     }
   } finally {
+    if (!completed) {
+      try {
+        await reader.cancel();
+      } catch {
+        // The stream may already have been cancelled by the caller.
+      }
+    }
     reader.releaseLock();
   }
 }

@@ -9,6 +9,8 @@
  *   - GET /stream        Workspace-scoped SSE feed; subscribes to NATS
  *                        `elicitations.<wsid>.>` and forwards each envelope
  *                        as a `data:` frame
+ *   - GET /stream/global Sanitized global SSE feed; subscribes to NATS
+ *                        `elicitations.>` but strips sensitive fields
  *   - POST /:id/answer   { value, note?, answeredBy? } — server fills
  *                        `answeredAt`; flips status to `answered`
  *   - POST /:id/decline  { note? } — flips status to `declined`
@@ -19,6 +21,7 @@ import {
   ElicitationSchema,
   ElicitationStatusSchema,
   ElicitationStorage,
+  ElicitationSummarySchema,
   ToolAccessGrants,
 } from "@atlas/core";
 import { createLogger } from "@atlas/logger";
@@ -168,6 +171,102 @@ elicitationApp.get(
             // for-await exited early — controller cancel can land before
             // the abort listener fires. Fall through to the finally
             // teardown so we never leak the NATS subscription.
+          } finally {
+            try {
+              sub.unsubscribe();
+            } catch {
+              // already gone
+            }
+            try {
+              controller.close();
+            } catch {
+              // already closed
+            }
+          }
+        })();
+      },
+    });
+
+    return c.body(body, 200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /stream/global — sanitized global SSE feed
+// ---------------------------------------------------------------------------
+
+elicitationApp.get(
+  "/stream/global",
+  describeRoute({
+    tags: ["Elicitations"],
+    summary: "Subscribe to sanitized global elicitation updates (SSE)",
+    description:
+      "Server-sent events feed for global Activity/sidebar invalidation. " +
+      "Subscribes to all elicitation subjects but emits only metadata fields " +
+      "and never includes question text, pendingTool.args, options, or answers.",
+    responses: {
+      200: {
+        description:
+          "SSE stream (text/event-stream). Each frame is a JSON-encoded ElicitationSummary.",
+      },
+      503: {
+        description: "NATS connection not ready",
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
+      },
+    },
+  }),
+  async (c) => {
+    const ctx = c.get("app");
+    const nc = ctx.daemon.getNatsConnection();
+    if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
+
+    const sub = nc.subscribe("elicitations.>");
+    await nc.flush();
+
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        c.req.raw.signal.addEventListener("abort", () => {
+          try {
+            sub.unsubscribe();
+          } catch {
+            // already gone
+          }
+          try {
+            controller.close();
+          } catch {
+            // already closed
+          }
+        });
+
+        void (async () => {
+          try {
+            for await (const msg of sub) {
+              let raw: unknown;
+              try {
+                raw = JSON.parse(msg.string());
+              } catch (error) {
+                logger.warn("Dropping non-JSON elicitation event from global stream", {
+                  error: stringifyError(error),
+                });
+                continue;
+              }
+              const parsed = ElicitationSchema.safeParse(raw);
+              if (!parsed.success) {
+                logger.warn("Dropping invalid elicitation event from global stream", {
+                  error: parsed.error.message,
+                });
+                continue;
+              }
+              const safe = ElicitationSummarySchema.parse(parsed.data);
+              controller.enqueue(enc.encode(`data: ${JSON.stringify(safe)}\n\n`));
+            }
+          } catch {
+            // for-await exited early — controller cancel can land before
+            // the abort listener fires. Fall through to teardown.
           } finally {
             try {
               sub.unsubscribe();
