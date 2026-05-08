@@ -53,6 +53,7 @@ const STREAM_NAME = "ELICITATIONS";
 const SUBJECT_PREFIX = "elicitations";
 const KV_BUCKET = "ELICITATION_STATUS";
 const HISTORY = 5;
+const TERMINAL_ANSWER_GRACE_MS = 5_000;
 
 /** Subjects allow only `[A-Za-z0-9_-]`-ish tokens; sanitize ids defensively. */
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
@@ -254,9 +255,12 @@ export class JetStreamElicitationStorageAdapter implements ElicitationStorageAda
       }
 
       const current = ElicitationSchema.parse(JSON.parse(dec.decode(entry.value)));
-      const view = deriveExpired(current, new Date());
-      if (view.status !== "pending") {
-        return fail(`Elicitation ${id} already in terminal state: ${view.status}`);
+      if (current.status !== "pending") {
+        return fail(`Elicitation ${id} already in terminal state: ${current.status}`);
+      }
+      const expiresAtMs = new Date(current.expiresAt).getTime();
+      if (Date.now() > expiresAtMs + TERMINAL_ANSWER_GRACE_MS) {
+        return fail(`Elicitation ${id} already expired`);
       }
 
       const next = ElicitationSchema.parse(makeNext(current));

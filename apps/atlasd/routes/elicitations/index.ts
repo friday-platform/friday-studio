@@ -6,9 +6,9 @@
  * Surface:
  *   - GET /              list with workspaceId/sessionId/status/kind filters
  *   - GET /:id           get one (404 if unknown)
- *   - GET /stream        SSE feed; subscribes to NATS `elicitations.>`
- *                        (or `elicitations.<wsid>.>`) and forwards each
- *                        envelope as a `data:` frame
+ *   - GET /stream        Workspace-scoped SSE feed; subscribes to NATS
+ *                        `elicitations.<wsid>.>` and forwards each envelope
+ *                        as a `data:` frame
  *   - POST /:id/answer   { value, note?, answeredBy? } — server fills
  *                        `answeredAt`; flips status to `answered`
  *   - POST /:id/decline  { note? } — flips status to `declined`
@@ -102,7 +102,7 @@ elicitationApp.get(
 // GET /stream — SSE feed
 // ---------------------------------------------------------------------------
 
-const StreamQuerySchema = z.object({ workspaceId: z.string().optional() });
+const StreamQuerySchema = z.object({ workspaceId: z.string().min(1) });
 
 elicitationApp.get(
   "/stream",
@@ -111,13 +111,17 @@ elicitationApp.get(
     summary: "Subscribe to live elicitation events (SSE)",
     description:
       "Server-sent events feed of elicitation envelopes published to " +
-      "`elicitations.<workspaceId>.<sessionId>.<id>`. Optional `workspaceId` " +
-      "scopes the subscription; otherwise listens to all workspaces. " +
+      "`elicitations.<workspaceId>.<sessionId>.<id>`. `workspaceId` is " +
+      "required so clients cannot passively subscribe to all workspaces. " +
       "Each event arrives as a `data:` frame containing the full envelope JSON.",
     responses: {
       200: {
         description:
           "SSE stream (text/event-stream). Each frame is a JSON-encoded Elicitation envelope.",
+      },
+      400: {
+        description: "workspaceId query parameter is required",
+        content: { "application/json": { schema: resolver(errorResponseSchema) } },
       },
       503: {
         description: "NATS connection not ready",
@@ -132,8 +136,7 @@ elicitationApp.get(
     const nc = ctx.daemon.getNatsConnection();
     if (!nc) return c.json({ error: "NATS connection not ready" }, 503);
 
-    const subject =
-      workspaceId !== undefined ? `elicitations.${sanitizeToken(workspaceId)}.>` : "elicitations.>";
+    const subject = `elicitations.${sanitizeToken(workspaceId)}.>`;
     const sub = nc.subscribe(subject);
     // `subscribe()` returns before the broker registers the subscription;
     // flush forces a PING/PONG round-trip so the SSE handshake honestly

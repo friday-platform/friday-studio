@@ -4,7 +4,7 @@
 
   Two-column: filtered list on the left, detail panel on the right.
 
-  Live updates via SSE on `/api/elicitations/stream?workspaceId=...`.
+  Live updates via workspace-scoped SSE on `/api/elicitations/stream?workspaceId=...`.
   Replay-then-subscribe ordering, mirrors `/schedules/+page.svelte`:
   the EventSource doesn't open until the initial list query has
   succeeded so SSE pushes can't be clobbered by a late-arriving replay.
@@ -23,14 +23,13 @@
   } from "@atlas/core/elicitations/model";
   import { PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
-  import { countPendingElicitations, effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
   import { browser } from "$app/environment";
+  import { countPendingElicitations, effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
+  import { workspaceQueries } from "$lib/queries";
   import {
-    elicitationListKey,
     elicitationQueries,
     mergeElicitationIntoCache,
   } from "$lib/queries/elicitation-queries.ts";
-  import { workspaceQueries } from "$lib/queries";
   import ElicitationDetail from "./elicitation-detail.svelte";
   import ElicitationRow from "./elicitation-row.svelte";
 
@@ -53,11 +52,14 @@
   const elicitations = $derived<Elicitation[]>(listQuery.data ?? []);
 
   // Workspace list — drives the workspace filter dropdown on the
-  // global view. Scoped view doesn't render the dropdown so the query
-  // is just unused there; TanStack dedupes against the sidebar's copy
-  // so this is essentially free.
+  // global view and the per-workspace SSE subscriptions. Scoped view
+  // doesn't render the dropdown so the query is just unused there;
+  // TanStack dedupes against the sidebar's copy so this is essentially free.
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const workspaceOptions = $derived(workspacesQuery.data ?? []);
+  const streamWorkspaceIds = $derived(
+    workspaceId ? [workspaceId] : workspaceOptions.map((workspace) => workspace.id),
+  );
 
   // ---------------------------------------------------------------------------
   // Live tick — drives the countdown + lazy-expired status
@@ -78,29 +80,35 @@
     if (!browser) return;
     if (!listQuery.isSuccess) return;
 
-    const url = new URL(
-      "/api/daemon/api/elicitations/stream",
-      globalThis.location.origin,
-    );
-    if (workspaceId) url.searchParams.set("workspaceId", workspaceId);
+    const workspaceIds = streamWorkspaceIds;
+    if (workspaceIds.length === 0) return;
 
-    const es = new EventSource(url.toString());
-    es.addEventListener("error", () => {
-      // EventSource auto-reconnects; surfacing for devtools when the
-      // daemon's NATS isn't ready (503) or the tab gets a transient drop.
-      console.error("Elicitations SSE feed errored (EventSource will retry)");
+    const sources = workspaceIds.map((id) => {
+      const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
+      url.searchParams.set("workspaceId", id);
+
+      const es = new EventSource(url.toString());
+      es.addEventListener("error", () => {
+        // EventSource auto-reconnects; surfacing for devtools when the
+        // daemon's NATS isn't ready (503) or the tab gets a transient drop.
+        console.error("Elicitations SSE feed errored (EventSource will retry)");
+      });
+      es.addEventListener("message", (e) => {
+        let parsed: Elicitation;
+        try {
+          parsed = ElicitationSchema.parse(JSON.parse(e.data));
+        } catch (err) {
+          console.error("Failed to parse elicitation SSE event", err);
+          return;
+        }
+        mergeElicitationIntoCache(queryClient, parsed);
+      });
+      return es;
     });
-    es.addEventListener("message", (e) => {
-      let parsed: Elicitation;
-      try {
-        parsed = ElicitationSchema.parse(JSON.parse(e.data));
-      } catch (err) {
-        console.error("Failed to parse elicitation SSE event", err);
-        return;
-      }
-      mergeElicitationIntoCache(queryClient, parsed);
-    });
-    return () => es.close();
+
+    return () => {
+      for (const es of sources) es.close();
+    };
   });
 
   // ---------------------------------------------------------------------------
@@ -123,18 +131,20 @@
   }
 
   const filtered = $derived.by(() => {
-    return elicitations
-      .filter((e) => statusFilter === "all" || effectiveStatus(e) === statusFilter)
-      .filter((e) => kindFilter === "all" || e.kind === kindFilter)
-      .filter((e) => workspaceFilter === "all" || e.workspaceId === workspaceFilter)
-      // Most recent first, but pending floats to the top so the operator
-      // sees actionable rows without scrolling.
-      .sort((a, b) => {
-        const ap = effectiveStatus(a) === "pending" ? 0 : 1;
-        const bp = effectiveStatus(b) === "pending" ? 0 : 1;
-        if (ap !== bp) return ap - bp;
-        return b.createdAt.localeCompare(a.createdAt);
-      });
+    return (
+      elicitations
+        .filter((e) => statusFilter === "all" || effectiveStatus(e) === statusFilter)
+        .filter((e) => kindFilter === "all" || e.kind === kindFilter)
+        .filter((e) => workspaceFilter === "all" || e.workspaceId === workspaceFilter)
+        // Most recent first, but pending floats to the top so the operator
+        // sees actionable rows without scrolling.
+        .sort((a, b) => {
+          const ap = effectiveStatus(a) === "pending" ? 0 : 1;
+          const bp = effectiveStatus(b) === "pending" ? 0 : 1;
+          if (ap !== bp) return ap - bp;
+          return b.createdAt.localeCompare(a.createdAt);
+        })
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -235,9 +245,9 @@
             <p>No elicitations match the current filters.</p>
             {#if elicitations.length === 0}
               <span class="empty-hint">
-                Elicitations are raised by FSM jobs (tool-allowlist denials,
-                auth-refresh prompts, destructive-action confirmations) and
-                by the <code>request_human_input</code> platform tool.
+                Elicitations are raised by FSM jobs (tool-allowlist denials, auth-refresh prompts,
+                destructive-action confirmations) and by the <code>request_human_input</code>
+                platform tool.
               </span>
             {/if}
           </div>
@@ -275,8 +285,8 @@
         <p class="subtitle">Pause-and-ask events for this workspace.</p>
       {/if}
       <p class="subtitle subtle">
-        Pending entries block FSM jobs until you answer or decline.
-        Expired entries become read-only.
+        Pending entries block FSM jobs until you answer or decline. Expired entries become
+        read-only.
       </p>
     </PageLayout.Sidebar>
   </PageLayout.Body>

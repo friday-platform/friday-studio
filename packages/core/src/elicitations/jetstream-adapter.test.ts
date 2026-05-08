@@ -217,6 +217,25 @@ describe("JetStreamElicitationStorageAdapter", () => {
     expect(got.data?.status).toBe("answered");
   });
 
+  it("accepts an answer during the deadline grace window", async () => {
+    const adapter = new JetStreamElicitationStorageAdapter(nc);
+    const created = await adapter.create(
+      baseInput({
+        workspaceId: `ws-answer-grace-${crypto.randomUUID()}`,
+        expiresAt: expiresIn(-1_000),
+      }),
+    );
+    expect.assert(created.ok === true);
+
+    const result = await adapter.answer({
+      id: created.data.id,
+      answer: { value: "allow_once", answeredAt: new Date().toISOString() },
+    });
+
+    expect.assert(result.ok === true);
+    expect(result.data.status).toBe("answered");
+  });
+
   it("decline transitions pending → declined and records an answer block with note", async () => {
     const adapter = new JetStreamElicitationStorageAdapter(nc);
     const created = await adapter.create(baseInput({ workspaceId: "ws-decline" }));

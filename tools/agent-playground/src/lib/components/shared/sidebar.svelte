@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
   import { Collapsible, Dialog, IconLarge, IconSmall } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
@@ -12,7 +13,6 @@
     elicitationQueries,
     mergeElicitationIntoCache,
   } from "$lib/queries/elicitation-queries.ts";
-  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
   import type { Component } from "svelte";
   import { writable } from "svelte/store";
 
@@ -28,6 +28,7 @@
   const workspacesQuery = createQuery(() => workspaceQueries.enriched());
   const elicitationsQuery = createQuery(() => elicitationQueries.list(null));
   const elicitations = $derived<Elicitation[]>(elicitationsQuery.data ?? []);
+  const elicitationStreamWorkspaceIds = $derived((workspacesQuery.data ?? []).map((ws) => ws.id));
 
   let nowMs = $state<number>(Date.now());
   $effect(() => {
@@ -41,31 +42,37 @@
   $effect(() => {
     if (!browser) return;
     if (!elicitationsQuery.isSuccess) return;
+    const workspaceIds = elicitationStreamWorkspaceIds;
+    if (workspaceIds.length === 0) return;
 
-    const es = new EventSource(
-      new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin).toString(),
-    );
-    es.addEventListener("message", (event) => {
-      let parsed: Elicitation;
-      try {
-        parsed = ElicitationSchema.parse(JSON.parse(event.data));
-      } catch (err) {
-        console.error("Failed to parse sidebar elicitation SSE event", err);
-        return;
-      }
-      mergeElicitationIntoCache(queryClient, parsed);
+    const sources = workspaceIds.map((workspaceId) => {
+      const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
+      url.searchParams.set("workspaceId", workspaceId);
+      const es = new EventSource(url.toString());
+      es.addEventListener("message", (event) => {
+        let parsed: Elicitation;
+        try {
+          parsed = ElicitationSchema.parse(JSON.parse(event.data));
+        } catch (err) {
+          console.error("Failed to parse sidebar elicitation SSE event", err);
+          return;
+        }
+        mergeElicitationIntoCache(queryClient, parsed);
+      });
+      es.addEventListener("error", () => {
+        console.error("Sidebar elicitations SSE feed errored (EventSource will retry)");
+      });
+      return es;
     });
-    es.addEventListener("error", () => {
-      console.error("Sidebar elicitations SSE feed errored (EventSource will retry)");
-    });
-    return () => es.close();
+
+    return () => {
+      for (const es of sources) es.close();
+    };
   });
 
   const globalPendingElicitations = $derived(countPendingElicitations(elicitations, nowMs));
   const activeWorkspacePendingElicitations = $derived(
-    activeWorkspaceId
-      ? countPendingElicitations(elicitations, nowMs, activeWorkspaceId)
-      : 0,
+    activeWorkspaceId ? countPendingElicitations(elicitations, nowMs, activeWorkspaceId) : 0,
   );
 
   // Personal workspace is always pinned at the top; every other workspace

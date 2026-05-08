@@ -388,6 +388,11 @@ describe("GET /stream — SSE", () => {
     nc = getTestNc();
   });
 
+  test("400 when workspaceId is missing", async () => {
+    const res = await createTestApp().request("/stream");
+    expect(res.status).toBe(400);
+  });
+
   test("503 when NATS is not ready", async () => {
     // Mirror createTestApp's null-NATS context to exercise the early-return path.
     const app = new Hono<{ Variables: { app: { daemon: { getNatsConnection: () => null } } } }>();
@@ -397,7 +402,7 @@ describe("GET /stream — SSE", () => {
     });
     app.route("/", rawElicitationApp);
 
-    const res = await app.request("/stream");
+    const res = await app.request("/stream?workspaceId=ws_1");
     expect(res.status).toBe(503);
   });
 

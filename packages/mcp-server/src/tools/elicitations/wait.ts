@@ -51,7 +51,7 @@ export function terminalFromEnvelope(envelope: unknown): TerminalElicitationResu
 async function readTerminalElicitation(id: string): Promise<TerminalElicitationResult | null> {
   const got = await ElicitationStorage.get({ id });
   if (!got.ok) throw new Error(got.error);
-  if (!got.data) return { status: "pending" };
+  if (!got.data) return null;
   return terminalFromEnvelope(got.data) ?? null;
 }
 

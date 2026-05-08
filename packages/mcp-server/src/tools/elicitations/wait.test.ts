@@ -7,11 +7,13 @@ const mockState = vi.hoisted(() => ({
   expireCalls: 0,
   getCalls: 0,
   answerOnGetCall: undefined as number | undefined,
+  missingUntilGetCall: 0,
   reset() {
     this.status = "pending";
     this.expireCalls = 0;
     this.getCalls = 0;
     this.answerOnGetCall = undefined;
+    this.missingUntilGetCall = 0;
   },
 }));
 
@@ -19,6 +21,9 @@ vi.mock("@atlas/core/elicitations", () => ({
   ElicitationStorage: {
     get: () => {
       mockState.getCalls++;
+      if (mockState.getCalls <= mockState.missingUntilGetCall) {
+        return Promise.resolve({ ok: true, data: null });
+      }
       if (
         mockState.answerOnGetCall !== undefined &&
         mockState.getCalls >= mockState.answerOnGetCall
@@ -100,6 +105,21 @@ describe("waitForTerminalElicitation", () => {
 
   it("polls KV while subscribed so a missed stream publish does not wedge the waiter", async () => {
     mockState.answerOnGetCall = 2;
+    const terminal = await waitForTerminalElicitation(makeCtxWithNats({ answerOnFlush: false }), {
+      id: "elc-1",
+      workspaceId: "ws-1",
+      sessionId: "sess-1",
+      expiresAt: new Date(Date.now() + 2_000).toISOString(),
+    });
+
+    expect(terminal).toEqual({ status: "answered", value: "yes" });
+    expect(mockState.expireCalls).toBe(0);
+  });
+
+  it("keeps waiting when an initial KV read misses the elicitation", async () => {
+    mockState.missingUntilGetCall = 1;
+    mockState.answerOnGetCall = 3;
+
     const terminal = await waitForTerminalElicitation(makeCtxWithNats({ answerOnFlush: false }), {
       id: "elc-1",
       workspaceId: "ws-1",
