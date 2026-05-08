@@ -779,4 +779,41 @@ describe("buildSessionView", () => {
     const view = buildSessionView([]);
     expect(view).toEqual(initialSessionView());
   });
+
+  test("idempotent on duplicate session:start + step:start (long-running session bug)", () => {
+    // Repro for the production bug: a 9-min reindex session has 7 events
+    // in JetStream — the full lifecycle (start, step:start, step:complete,
+    // session:complete, session:summary) PLUS duplicates of the start and
+    // step:start. The duplicates are emitted by `save()`'s republish (with
+    // Nats-Msg-Id dedup) when the original publish lands outside JetStream's
+    // dedup_window (default 2m, our reindex took 9m).
+    //
+    // Pre-fix: the duplicate session:start RESET the view to status="active"
+    // and wiped agentBlocks; the duplicate step:start APPENDED a fresh
+    // running block on top of the already-completed one. Final view:
+    // status=active, two knowledge blocks, the second one stuck running.
+    //
+    // Post-fix: the reducer detects same-sessionId / same-stepNumber+agent
+    // and treats the duplicates as no-ops. View is identical to the
+    // duplicate-free reduction.
+    const events = [
+      sessionStart(),
+      stepStart(),
+      stepComplete(),
+      sessionComplete(),
+      // Duplicates that arrive at end-of-stream after dedup window expired:
+      sessionStart(),
+      stepStart(),
+    ];
+
+    const view = buildSessionView(events);
+
+    expect(view.status).toBe("completed");
+    expect(view.agentBlocks).toHaveLength(1);
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.status).toBe("completed");
+    expect(view.completedAt).toBe(LATER);
+    expect(view.durationMs).toBe(5000);
+  });
 });

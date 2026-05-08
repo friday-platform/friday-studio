@@ -52,6 +52,18 @@ const INFLIGHT_BUCKET = "SESSION_INFLIGHT";
 
 const NINETY_DAYS_NS = 90 * 24 * 60 * 60 * 1_000_000_000;
 
+// Defense-in-depth dedup window for `save()` republishes. Default JetStream
+// dedup is 2 minutes, which is shorter than many real sessions — a 9-min
+// reindex's start events fall outside it, so `save()`'s republish (intended
+// to be a no-op via Nats-Msg-Id dedup) becomes a duplicate publish, which
+// the reducer used to fold in as a state reset. The reducer is now
+// idempotent (see session-reducer.ts), but a 24-hour dedup window also
+// closes the gap at the broker layer for any plausible session lifetime
+// (cron jobs, slow LLM runs, batch reindex of large corpora). Cost: in-memory
+// dedup table grows linearly with traffic; 24h × ~10k events/day × ~64B
+// per entry ≈ ~6 MB even at high-volume single-instance deployments.
+const DEDUP_WINDOW_NS = 24 * 60 * 60 * 1_000_000_000;
+
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
 function sanitize(s: string): string {
   return s.replace(SAFE_TOKEN_RE, "_");
@@ -69,7 +81,16 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     if (this.streamReady) return;
     const jsm = await this.nc.jetstreamManager();
     try {
-      await jsm.streams.info(STREAM_NAME);
+      const info = await jsm.streams.info(STREAM_NAME);
+      // Bump dedup_window on existing streams that were created before
+      // DEDUP_WINDOW_NS landed (default 2m too short for long sessions).
+      // Update is idempotent — broker accepts the same value as a no-op.
+      if (Number(info.config.duplicate_window) !== DEDUP_WINDOW_NS) {
+        await jsm.streams.update(STREAM_NAME, {
+          ...info.config,
+          duplicate_window: DEDUP_WINDOW_NS,
+        });
+      }
     } catch {
       await jsm.streams.add({
         name: STREAM_NAME,
@@ -77,6 +98,7 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
         retention: RetentionPolicy.Limits,
         storage: StorageType.File,
         max_age: NINETY_DAYS_NS,
+        duplicate_window: DEDUP_WINDOW_NS,
       });
     }
     this.streamReady = true;

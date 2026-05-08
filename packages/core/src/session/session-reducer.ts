@@ -47,6 +47,16 @@ export function reduceSessionEvent(
 
   switch (event.type) {
     case "session:start":
+      // Idempotent: if a session:start has already been folded in for this
+      // sessionId, treat duplicates as no-ops. Without this guard a
+      // republished session:start (e.g. when `save()` re-publishes events
+      // that fell outside JetStream's `duplicate_window`) RESETS the view
+      // back to status="active" and wipes `agentBlocks`, even after
+      // session:complete has already been processed. That's the read-path
+      // bug that surfaces as "stuck on running" in the detail endpoint.
+      if (view.sessionId === event.sessionId) {
+        return view;
+      }
       return {
         ...view,
         sessionId: event.sessionId,
@@ -126,6 +136,21 @@ function reduceStepStart(
   view: SessionView,
   event: SessionStreamEvent & { type: "step:start" },
 ): SessionView {
+  // Idempotent: if a block already exists at this stepNumber+agentName, the
+  // event is a duplicate (e.g. republished by `save()` outside JetStream's
+  // `duplicate_window`). Without this guard, a duplicate step:start falls
+  // through to the "no matching pending block" branch below and APPENDS a
+  // fresh `running` block on top of the already-completed one — the
+  // resulting view shows the same agent twice, the second one stuck
+  // running. Pair with the session:start idempotency above.
+  if (
+    view.agentBlocks.some(
+      (b) => b.stepNumber === event.stepNumber && b.agentName === event.agentName,
+    )
+  ) {
+    return view;
+  }
+
   // Find first pending block with matching agentName
   const pendingIdx = view.agentBlocks.findIndex(
     (b) => b.status === "pending" && b.agentName === event.agentName,
