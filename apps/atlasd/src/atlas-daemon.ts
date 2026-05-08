@@ -997,6 +997,13 @@ export class AtlasDaemon {
     return { server, transport };
   }
 
+  private releaseAgentMcpRequest(sessionId: string): void {
+    const current = this.agentSessions.get(sessionId);
+    if (!current) return;
+    current.activeRequests = Math.max(0, current.activeRequests - 1);
+    current.lastUsed = Date.now();
+  }
+
   private async handleAgentMcpRequest(
     sessionId: string,
     transport: StreamableHTTPTransport,
@@ -1008,13 +1015,11 @@ export class AtlasDaemon {
       session.lastUsed = Date.now();
     }
     try {
-      return await transport.handleRequest(c);
-    } finally {
-      const current = this.agentSessions.get(sessionId);
-      if (current) {
-        current.activeRequests = Math.max(0, current.activeRequests - 1);
-        current.lastUsed = Date.now();
-      }
+      const response = await transport.handleRequest(c);
+      return this.trackMcpResponseLifetime(response, () => this.releaseAgentMcpRequest(sessionId));
+    } catch (error) {
+      this.releaseAgentMcpRequest(sessionId);
+      throw error;
     }
   }
 
@@ -1120,6 +1125,13 @@ export class AtlasDaemon {
     return { server, transport };
   }
 
+  private releasePlatformMcpRequest(sessionId: string): void {
+    const current = this.platformMcpSessions.get(sessionId);
+    if (!current) return;
+    current.activeRequests = Math.max(0, current.activeRequests - 1);
+    current.lastUsed = Date.now();
+  }
+
   private async handlePlatformMcpRequest(
     sessionId: string,
     transport: StreamableHTTPTransport,
@@ -1131,14 +1143,75 @@ export class AtlasDaemon {
       session.lastUsed = Date.now();
     }
     try {
-      return await transport.handleRequest(c);
-    } finally {
-      const current = this.platformMcpSessions.get(sessionId);
-      if (current) {
-        current.activeRequests = Math.max(0, current.activeRequests - 1);
-        current.lastUsed = Date.now();
-      }
+      const response = await transport.handleRequest(c);
+      return this.trackMcpResponseLifetime(response, () =>
+        this.releasePlatformMcpRequest(sessionId),
+      );
+    } catch (error) {
+      this.releasePlatformMcpRequest(sessionId);
+      throw error;
     }
+  }
+
+  private trackMcpResponseLifetime(
+    response: Response | undefined,
+    releaseRequest: () => void,
+  ): Response | undefined {
+    let released = false;
+    const releaseOnce = () => {
+      if (released) return;
+      released = true;
+      releaseRequest();
+    };
+
+    if (!response?.body) {
+      releaseOnce();
+      return response;
+    }
+
+    const reader = response.body.getReader();
+    const releaseReaderLock = () => {
+      try {
+        reader.releaseLock();
+      } catch {
+        // The reader may already be released after cancellation.
+      }
+    };
+
+    const trackedBody = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            releaseOnce();
+            releaseReaderLock();
+            return;
+          }
+          controller.enqueue(value);
+        } catch (error) {
+          releaseOnce();
+          releaseReaderLock();
+          controller.error(error);
+        }
+      },
+      async cancel(reason) {
+        try {
+          await reader.cancel(reason);
+        } catch {
+          // The upstream body may already be closed/cancelled.
+        } finally {
+          releaseOnce();
+          releaseReaderLock();
+        }
+      },
+    });
+
+    return new Response(trackedBody, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
   }
 
   /**

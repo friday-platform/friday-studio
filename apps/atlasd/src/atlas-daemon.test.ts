@@ -278,6 +278,163 @@ describe("AtlasDaemon idle/session cleanup", () => {
     expect(idleStop).toHaveBeenCalledOnce();
   });
 
+  it("keeps agent MCP requests active until streaming response bodies close", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    sessions.set("streaming-agent", {
+      server: { stop: vi.fn().mockResolvedValue(undefined) },
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    };
+
+    const response = await (
+      daemon as unknown as {
+        handleAgentMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handleAgentMcpRequest("streaming-agent", transport, {});
+
+    expect(sessions.get("streaming-agent")?.activeRequests).toBe(1);
+
+    await response?.body?.cancel();
+
+    expect(sessions.get("streaming-agent")?.activeRequests).toBe(0);
+  });
+
+  it("keeps platform MCP requests active until streaming response bodies close", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+    sessions.set("streaming-platform", {
+      server: {},
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    };
+
+    const response = await (
+      daemon as unknown as {
+        handlePlatformMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handlePlatformMcpRequest("streaming-platform", transport, {});
+
+    expect(sessions.get("streaming-platform")?.activeRequests).toBe(1);
+
+    await response?.body?.cancel();
+
+    expect(sessions.get("streaming-platform")?.activeRequests).toBe(0);
+  });
+
+  it("releases MCP request tracking when streaming response bodies finish", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    sessions.set("closing-agent", {
+      server: { stop: vi.fn().mockResolvedValue(undefined) },
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1]));
+              controller.close();
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    };
+
+    const response = await (
+      daemon as unknown as {
+        handleAgentMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handleAgentMcpRequest("closing-agent", transport, {});
+
+    expect(sessions.get("closing-agent")?.activeRequests).toBe(1);
+
+    await response?.arrayBuffer();
+
+    expect(sessions.get("closing-agent")?.activeRequests).toBe(0);
+  });
+
+  it("releases MCP request tracking immediately for no-body responses", async () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const sessions = (daemon as unknown as { agentSessions: Map<string, Record<string, unknown>> })
+      .agentSessions;
+    sessions.set("empty-response-agent", {
+      server: { stop: vi.fn().mockResolvedValue(undefined) },
+      transport: {},
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+      activeRequests: 0,
+    });
+
+    const transport = {
+      handleRequest: vi.fn().mockResolvedValue(new Response(null, { status: 202 })),
+    };
+
+    await (
+      daemon as unknown as {
+        handleAgentMcpRequest: (
+          sessionId: string,
+          transportArg: { handleRequest: () => Promise<Response> },
+          context: unknown,
+        ) => Promise<Response | undefined>;
+      }
+    ).handleAgentMcpRequest("empty-response-agent", transport, {});
+
+    expect(sessions.get("empty-response-agent")?.activeRequests).toBe(0);
+  });
+
   it("closes agent and platform MCP transports during explicit cleanup", async () => {
     const daemon = new AtlasDaemon({ port: 0 });
     const agentClose = vi.fn().mockResolvedValue(undefined);
