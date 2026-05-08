@@ -59,7 +59,7 @@
   let connected = $state(false);
   let apiKeyExpanded = $state(false);
 
-  const connect = useCredentialConnect(provider);
+  const connect = useCredentialConnect(() => provider);
 
   // ─── Fetch provider details ──────────────────────────────────────────────────
 
@@ -350,60 +350,5 @@
     block-size: 20px;
     justify-content: center;
     line-height: 20px;
-  }
-
-  /* ─── API key form ─────────────────────────────────────────────────────── */
-
-  .apikey-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-3);
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .field label {
-    color: color-mix(in srgb, var(--color-text), transparent 30%);
-    font-size: var(--font-size-1);
-    font-weight: var(--font-weight-5);
-  }
-
-  .field input {
-    background: var(--color-surface-3);
-    border: 1px solid var(--color-border-1);
-    border-radius: var(--radius-2);
-    color: var(--color-text);
-    font-family: var(--font-family-monospace);
-    font-size: var(--font-size-2);
-    padding: var(--size-1-5) var(--size-2);
-  }
-
-  .field input:focus {
-    border-color: var(--color-accent);
-    outline: none;
-  }
-
-  .field input::placeholder {
-    color: color-mix(in srgb, var(--color-text), transparent 55%);
-  }
-
-  .form-error {
-    background: color-mix(in srgb, var(--color-error), transparent 90%);
-    border: 1px solid color-mix(in srgb, var(--color-error), transparent 50%);
-    border-radius: var(--radius-2);
-    color: var(--color-error);
-    font-size: var(--font-size-1);
-    padding: var(--size-1) var(--size-2);
-  }
-
-  .form-actions {
-    align-items: center;
-    display: flex;
-    gap: var(--size-2);
-    justify-content: flex-end;
   }
 </style>

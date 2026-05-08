@@ -426,11 +426,6 @@
     overflow: hidden;
   }
 
-  .tool-card.with-children {
-    background-color: transparent;
-    border-radius: 0;
-  }
-
   .tool-card-inner {
     display: flex;
     overflow: hidden;
