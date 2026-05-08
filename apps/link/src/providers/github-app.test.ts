@@ -139,13 +139,6 @@ describe("githubAppProvider.health", () => {
     // App-JWT bearer auth on first call
     const auth = appInit?.headers?.Authorization;
     expect(auth).toMatch(/^Bearer eyJ/);
-
-    // autoFields() returns the captured values for merge into stored secret
-    if (!githubAppProvider.autoFields) throw new Error("autoFields should be defined");
-    expect(githubAppProvider.autoFields()).toEqual({
-      bot_user_slug: "friday-bot[bot]",
-      bot_user_id: 12345678,
-    });
   });
 
   it("returns healthy:false on bad keypair (401 from /app)", async () => {
@@ -163,10 +156,6 @@ describe("githubAppProvider.health", () => {
     if (result.healthy) throw new Error("expected unhealthy");
     expect(result.error).toMatch(/GitHub \/app returned 401/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    // autoFields() returns empty after a failed health
-    if (!githubAppProvider.autoFields) throw new Error("autoFields should be defined");
-    expect(githubAppProvider.autoFields()).toEqual({});
   });
 
   it("returns healthy:false on wrong installation (404 from /app/installations/{id})", async () => {

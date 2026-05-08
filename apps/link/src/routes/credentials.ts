@@ -88,10 +88,11 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
             );
           }
 
-          // Run health check first so providers can capture server-derived
-          // identity (e.g. github-app's bot_user_slug / bot_user_id) and
-          // surface them via autoFields() below. Reject early if unhealthy
-          // so we never call autoFields() against bad credentials.
+          // Run health check first; reject early if unhealthy. `health()` may
+          // return `metadata` with server-derived identity (e.g. github-app's
+          // bot_user_slug / bot_user_id captured from the GitHub REST API)
+          // that the route merges into the stored secret below.
+          let healthMetadata: Record<string, unknown> | undefined;
           if (providerDef.health) {
             const healthResult = await providerDef.health(secretResult.data);
             if (!healthResult.healthy) {
@@ -100,14 +101,21 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
                 400,
               );
             }
+            healthMetadata = healthResult.metadata;
           }
 
-          // Merge auto-generated fields. Auto fields override user input as a
-          // defense-in-depth measure: a buggy or malicious client can't supply
-          // values for fields that are server-chosen (e.g. webhook secrets).
-          const storedSecret: Record<string, unknown> = providerDef.autoFields
-            ? { ...secretResult.data, ...providerDef.autoFields() }
-            : secretResult.data;
+          // Merge server-side fields over user input. Two sources, both override
+          // as defense-in-depth (a buggy or malicious client can't supply
+          // values that are server-chosen):
+          //   1. autoFields() — stateless server-generated values, e.g.
+          //      random `webhook_secret` for telegram/whatsapp.
+          //   2. health() metadata — values derived from external APIs during
+          //      validation, e.g. github-app's bot_user_slug / bot_user_id.
+          const storedSecret: Record<string, unknown> = {
+            ...secretResult.data,
+            ...(providerDef.autoFields ? providerDef.autoFields() : {}),
+            ...(healthMetadata ?? {}),
+          };
 
           try {
             // Storage generates ID and returns it with metadata

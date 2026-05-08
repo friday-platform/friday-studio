@@ -10,15 +10,16 @@ import { defineApiKeyProvider, type HealthResult } from "./types.ts";
  * The user pastes `app_id`, `private_key` (PEM), `webhook_secret`, and
  * `installation_id` from the GitHub App settings page. `bot_user_slug` and
  * `bot_user_id` are populated server-side at credential-save time by
- * `health()` — they are captured into module-scoped state and surfaced to the
- * route via `autoFields()`. Field names use snake_case to match the rest of
- * the Link provider secrets (`bot_token`, `app_id`, etc.).
+ * `health()` and surfaced via `HealthResult.metadata`; the credentials route
+ * merges them into the stored secret. Field names use snake_case to match
+ * the rest of the Link provider secrets (`bot_token`, `app_id`, etc.).
  *
  * **Trust contract:** if `health()` resolves with `{ healthy: true }`, the
- * four user-supplied fields produce a working installation client and
- * `bot_user_slug` / `bot_user_id` are valid identifiers for the App's bot
- * user. `webhook_secret` is **not** validated — there is no GitHub API
- * surface to probe it; the first real webhook is the de-facto check.
+ * four user-supplied fields produce a working installation client and the
+ * returned `metadata.bot_user_slug` / `metadata.bot_user_id` are valid
+ * identifiers for the App's bot user. `webhook_secret` is **not** validated —
+ * there is no GitHub API surface to probe it; the first real webhook is the
+ * de-facto check.
  *
  * **Webhook URL:** the daemon serves a single `/platform/github` route and
  * dispatches to a workspace using `installation.id` from the event body
@@ -33,11 +34,6 @@ import { defineApiKeyProvider, type HealthResult } from "./types.ts";
  * is the numeric user ID and is rename-immune — if the App is renamed on
  * github.com, the slug goes stale (re-save in Link to refresh) but the ID
  * remains the durable identifier.
- *
- * **Closure contract:** `health()` and `autoFields()` share module-scoped
- * captured state. `health()` MUST run before `autoFields()` for `autoFields`
- * to return populated values — `apps/link/src/routes/credentials.ts` enforces
- * this ordering (health → autoFields → merge).
  */
 export const GithubAppSecretSchema = z.object({
   app_id: z.number().int().positive(),
@@ -67,14 +63,6 @@ const GithubBotUserResponseSchema = z.object({
   id: z.number().int().positive(),
   login: z.string().min(1),
 });
-
-/**
- * Captured bot-user identity from the most recent successful `health()` call.
- * Read by `autoFields()` and merged into the stored secret by the credentials
- * route. Cleared on health failure to avoid leaking stale captures into a
- * subsequent unrelated save.
- */
-let captured: { bot_user_slug: string; bot_user_id: number } | undefined;
 
 /**
  * Sign a GitHub App JWT (RS256) using the App's PEM private key.
@@ -132,20 +120,7 @@ export const githubAppProvider = defineApiKeyProvider({
 8. Paste \`app_id\`, the contents of the \`.pem\` file as \`private_key\`, the \`webhook_secret\` you chose, and the \`installation_id\` below — Friday will validate the credentials and capture the App's bot user identity automatically
 9. After saving, return to the GitHub App settings and confirm the webhook URL is still \`<callbackBaseUrl>/platform/github\`. Friday cannot register the URL upstream — GitHub does not expose an API to set an App's webhook URL post-creation.
 `,
-  autoFields: () => {
-    if (!captured) {
-      // Fallback: route called autoFields without a preceding successful
-      // health(). Returning empty preserves the pre-merge user-typed secret
-      // and surfaces the validation gap downstream rather than silently
-      // storing a stale capture from an unrelated save.
-      return {};
-    }
-    const fields = captured;
-    captured = undefined;
-    return fields;
-  },
   health: async (secret): Promise<HealthResult> => {
-    captured = undefined;
     try {
       const jwt = await signAppJwt(secret.app_id, secret.private_key);
       const headers = githubHeaders(jwt);
@@ -184,7 +159,6 @@ export const githubAppProvider = defineApiKeyProvider({
       }
       const botBody = GithubBotUserResponseSchema.parse(await botRes.json());
 
-      captured = { bot_user_slug: botSlug, bot_user_id: botBody.id };
       return { healthy: true, metadata: { bot_user_slug: botSlug, bot_user_id: botBody.id } };
     } catch (e) {
       return { healthy: false, error: stringifyError(e) };
