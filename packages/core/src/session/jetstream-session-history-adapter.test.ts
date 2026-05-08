@@ -143,6 +143,51 @@ describe("JetStreamSessionHistoryAdapter", () => {
     expect(view?.task).toBe("do the thing");
   });
 
+  it("get() prefers metadata KV summary when events stream is missing terminal events", async () => {
+    // Repro for the long-running-session bug: a session whose
+    // `step:complete` and `session:complete` events failed to publish
+    // (or were dropped) would leave `adapter.get()`'s event-derived view
+    // stuck at `status: active` with `running` blocks even after the
+    // metadata summary was correctly written by `save()`. Cross-referencing
+    // the metadata KV in `get()` lets the consumer reach the right
+    // terminal state without depending on the event stream being complete.
+    const adapter = new JetStreamSessionHistoryAdapter(nc);
+    const sid = `s-${crypto.randomUUID()}`;
+    const start = startEvent(sid, "ws-stale");
+    const stepStart: SessionStreamEvent = {
+      type: "step:start",
+      sessionId: sid,
+      stepNumber: 1,
+      agentName: "knowledge",
+      stateId: "build",
+      actionType: "agent",
+      task: "Build the corpus.",
+      timestamp: new Date().toISOString(),
+    };
+    // Append start + step:start, but DELIBERATELY skip step:complete and
+    // session:complete to simulate the stuck-event-stream condition.
+    await adapter.appendEvent(sid, start);
+    await adapter.appendEvent(sid, stepStart);
+
+    // Without the summary fallback, get() would return status=active.
+    // We finalize via save() with a summary that says completed.
+    await adapter.save(
+      sid,
+      [start, stepStart], // events array intentionally missing terminal events
+      summaryFor(sid, "ws-stale", "completed"),
+    );
+
+    const view = await adapter.get(sid);
+    expect(view).not.toBeNull();
+    // Summary's terminal fields must override the event-derived view.
+    expect(view?.status).toBe("completed");
+    expect(view?.completedAt).toBeDefined();
+    // Per-block sweep: running/pending blocks become `skipped` (matches
+    // the reducer's pending→skipped behavior on session:complete).
+    const knowledgeBlock = view?.agentBlocks.find((b) => b.agentName === "knowledge");
+    expect(knowledgeBlock?.status).toBe("skipped");
+  });
+
   it("save() then markInterruptedSessions() does not double-finalize", async () => {
     const adapter = new JetStreamSessionHistoryAdapter(nc);
     const sid = `s-${crypto.randomUUID()}`;

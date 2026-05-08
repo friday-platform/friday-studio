@@ -202,7 +202,34 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     }
 
     if (events.length === 0) return null;
-    return buildSessionView(events);
+    const view = buildSessionView(events);
+
+    // Cross-reference the SESSION_METADATA KV. The metadata summary is
+    // written by `save()` and is the source of truth for finalization
+    // (status, completedAt, durationMs). The events stream is best-effort:
+    // long-running sessions or transient publish failures can drop terminal
+    // events (`step:complete`, `session:complete`), leaving the
+    // event-derived view stuck at `status: active` with running/pending
+    // blocks even though the session was correctly finalized. If a summary
+    // exists, prefer its terminal fields and sweep any non-terminal
+    // per-block status to `skipped` (matches the reducer's pending→skipped
+    // sweep on session:complete).
+    const metadata = await this.getMetadataKV();
+    const summary = await metadata.get<SessionSummary>([sessionId]);
+    if (summary) {
+      const reconciledBlocks = view.agentBlocks.map((b) =>
+        b.status === "running" || b.status === "pending" ? { ...b, status: "skipped" as const } : b,
+      );
+      return {
+        ...view,
+        agentBlocks: reconciledBlocks,
+        status: summary.status,
+        completedAt: summary.completedAt,
+        durationMs: summary.durationMs ?? view.durationMs,
+        error: summary.error ?? view.error,
+      };
+    }
+    return view;
   }
 
   async listByWorkspace(workspaceId?: string): Promise<SessionSummary[]> {
