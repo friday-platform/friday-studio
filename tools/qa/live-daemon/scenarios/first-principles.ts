@@ -1035,6 +1035,104 @@ async function runPythonUserAgentToolsScenario(d: DaemonHandle): Promise<EvalRes
   ];
 }
 
+async function runPythonUserAgentInputFromScenario(d: DaemonHandle): Promise<EvalResult[]> {
+  const notes: string[] = [];
+  const metrics: Record<string, unknown> = {};
+  const wsPath = await materializeFixture(REFS_FIXTURE, {
+    __FAKE_INBOX_MCP_PATH__: FAKE_INBOX_MCP,
+  });
+  const ws = await registerWorkspace(d, wsPath, {
+    name: "First Principles Python User Agent InputFrom",
+  });
+  notes.push(`workspace ${ws.id} registered`);
+
+  const trigger = await triggerSignalSSE(d, ws.id, "python-user-agent-inputfrom-event", {
+    payload: { query: "python-user-agent-inputfrom" },
+    timeoutMs: 8 * 60 * 1000,
+  });
+  recordJobMetrics(metrics, trigger);
+
+  if (!trigger.sessionId) {
+    return [
+      {
+        id: "python-user-agent-inputfrom-ref-hydration",
+        pass: false,
+        notes: [...notes, "no session id returned"],
+        metrics,
+      },
+    ];
+  }
+
+  const bucket = `WS_DOCS_${ws.id}`;
+  const seedKey = `doc/session/${trigger.sessionId}/python-user-agent-inputfrom-check/python-emails-result`;
+  const resultKey = `doc/session/${trigger.sessionId}/python-user-agent-inputfrom-check/python-inputfrom-result`;
+  const seedDoc = await natsKvGetJson(d.natsUrl, bucket, seedKey);
+  const resultDoc = await natsKvGetJson(d.natsUrl, bucket, resultKey);
+  const seedData = (seedDoc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const resultData = (resultDoc?.data as Record<string, unknown> | undefined)?.data as
+    | Record<string, unknown>
+    | undefined;
+  const seedArtifactData = await fetchFirstArtifactPayload(d, seedData);
+  const resultArtifactData = await fetchFirstArtifactPayload(d, resultData);
+  const payload = parseJsonResponsePayload(resultArtifactData ?? resultData);
+  const events = await fetchSessionEvents(d, trigger.sessionId);
+  recordEventMetrics(metrics, events);
+
+  const stepToolCalls = events.events
+    .filter((ev) => ev.type === "step:complete" && Array.isArray(ev.toolCalls))
+    .flatMap((ev) => (ev as { toolCalls?: Array<Record<string, unknown>> }).toolCalls ?? []);
+  const toolNames = stepToolCalls.map((tc) => String(tc.toolName ?? ""));
+  const usedArtifactsGet = toolNames.includes("artifacts_get");
+  const avoidedFakeInboxFanIn =
+    !toolNames.includes("search_messages") && !toolNames.includes("get_messages_content_batch");
+  const seedCompact =
+    !!seedData &&
+    hasArtifactRef(seedData) &&
+    !Array.isArray(seedData.messages) &&
+    !JSON.stringify(seedData).includes("FIRST_PRINCIPLES_EMAIL_BODY");
+
+  metrics.bucket = bucket;
+  metrics.seedData = seedData ?? null;
+  metrics.seedArtifactData = seedArtifactData ?? null;
+  metrics.resultData = resultData ?? null;
+  metrics.resultArtifactData = resultArtifactData ?? null;
+  metrics.payload = payload ?? null;
+  metrics.toolNames = toolNames;
+  metrics.stepToolCalls = stepToolCalls;
+
+  const pass =
+    seedCompact &&
+    payload?.marker === "PY_USER_AGENT_INPUTFROM_HYDRATED" &&
+    numberValue(payload?.count) === 12 &&
+    payload?.firstId === "fake-001" &&
+    isTrue(payload?.sawBodySentinel) &&
+    Array.isArray(payload?.artifactRefs) &&
+    payload.artifactRefs.length === 1 &&
+    usedArtifactsGet &&
+    avoidedFakeInboxFanIn;
+
+  return [
+    {
+      id: "python-user-agent-inputfrom-ref-hydration",
+      pass,
+      notes: [
+        ...notes,
+        `seed compact: ${seedCompact}`,
+        `marker: ${String(payload?.marker ?? "(missing)")}`,
+        `count: ${String(payload?.count ?? "(missing)")}`,
+        `firstId: ${String(payload?.firstId ?? "(missing)")}`,
+        `saw body sentinel: ${String(payload?.sawBodySentinel ?? "(missing)")}`,
+        `used artifacts_get: ${usedArtifactsGet}`,
+        `avoided fake inbox fan-in: ${avoidedFakeInboxFanIn}`,
+        `tool calls: ${toolNames.join(",") || "(missing)"}`,
+      ],
+      metrics,
+    },
+  ];
+}
+
 async function runAtlasAgentScenario(d: DaemonHandle): Promise<EvalResult[]> {
   const notes: string[] = [];
   const metrics: Record<string, unknown> = {};
@@ -2234,6 +2332,8 @@ async function main() {
     results.push(...(await runLlmAgentInputFromHydrationScenario(daemon)));
     console.log("\n── Python user-agent ctx.tools observability ──");
     results.push(...(await runPythonUserAgentToolsScenario(daemon)));
+    console.log("\n── Python user-agent inputFrom ref hydration ──");
+    results.push(...(await runPythonUserAgentInputFromScenario(daemon)));
     console.log("\n── bundled/type:atlas agent artifact output ──");
     results.push(...(await runAtlasAgentScenario(daemon)));
     console.log("\n── auto-triage report output contract ──");

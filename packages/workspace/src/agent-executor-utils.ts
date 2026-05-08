@@ -26,6 +26,8 @@ export interface CodeAgentExecutorOptions {
   agentLlmConfig?: AgentLLMConfig;
   env?: Record<string, string>;
   outputSchema?: Record<string, unknown>;
+  /** Structured action input (FSM inputFrom/config) for SDKs that expose ctx.input. */
+  input?: Record<string, unknown>;
   timeoutMs?: number;
   /** Skills to inject into the execute payload. Body-only, frontmatter stripped. */
   skills?: AgentSkillPayload[];
@@ -453,6 +455,7 @@ export function serializeAgentContext(options: CodeAgentExecutorOptions): string
     },
     llm_config: options.agentLlmConfig,
     output_schema: options.outputSchema,
+    input: options.input ?? {},
     ...(options.skills && options.skills.length > 0 && { skills: options.skills }),
   });
 }

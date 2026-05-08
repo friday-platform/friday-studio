@@ -2725,6 +2725,7 @@ export class WorkspaceRuntime {
                 jobTimeoutMs: job.timeoutMs,
                 config: mergedConfig,
                 outputSchema: options?.outputSchema,
+                input: fsmContext.input,
                 datetime,
                 agentEnv: agentConfig.env,
                 foregroundWorkspaceIds,
@@ -2790,6 +2791,7 @@ export class WorkspaceRuntime {
       jobTimeoutMs?: number;
       config?: Record<string, unknown>;
       outputSchema?: Record<string, unknown>;
+      input?: Record<string, unknown>;
       datetime?: unknown;
       agentEnv?: Record<string, string | LinkCredentialRef>;
       foregroundWorkspaceIds?: string[];
@@ -3067,6 +3069,7 @@ export class WorkspaceRuntime {
         agentConfig,
         agentLlmConfig: agentSource.metadata.llm,
         outputSchema: opts.outputSchema,
+        input: opts.input,
         skills: resolvedSkills?.map((s) => ({
           name: s.name,
           description: s.description,

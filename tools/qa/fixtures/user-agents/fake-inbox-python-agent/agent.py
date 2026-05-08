@@ -43,13 +43,29 @@ def execute(prompt: str, ctx: AgentContext):
                 "elicitationId": parsed.get("elicitationId"),
             })
 
+        if "Consume Python inputFrom artifact" in prompt:
+            ctx.stream.progress("Reading compact inputFrom artifact", tool_name="artifacts_get")
+            payload = ctx.input.artifact_json("python-emails-result")
+            messages = payload.get("messages", []) if isinstance(payload, dict) else []
+            return ok({
+                "marker": "PY_USER_AGENT_INPUTFROM_HYDRATED",
+                "count": len(messages),
+                "firstId": messages[0].get("id") if messages else None,
+                "sawBodySentinel": any(
+                    "FIRST_PRINCIPLES_EMAIL_BODY" in str(message.get("body", ""))
+                    for message in messages
+                    if isinstance(message, dict)
+                ),
+                "artifactRefs": [ref.id for ref in ctx.input.artifact_refs("python-emails-result")],
+            })
+
         ctx.stream.progress("Searching fake inbox", tool_name="search_messages")
         search_result = ctx.tools.call("search_messages", {"query": "from:newsletter@example.test", "limit": 4})
         ids = json.loads(_mcp_text(search_result)).get("ids", [])
         ctx.stream.progress(f"Fetching {len(ids)} fake inbox messages", tool_name="get_messages_content_batch")
         batch_result = ctx.tools.call("get_messages_content_batch", {"ids": ids})
         messages = json.loads(_mcp_text(batch_result)).get("messages", [])
-    except (ToolCallError, json.JSONDecodeError, TypeError) as exc:
+    except (ToolCallError, json.JSONDecodeError, TypeError, ValueError) as exc:
         return err(f"fake inbox Python agent failed: {exc}")
 
     return ok(

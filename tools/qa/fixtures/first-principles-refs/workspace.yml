@@ -201,6 +201,17 @@ signals:
         query:
           type: string
       required: []
+  python-user-agent-inputfrom-event:
+    provider: http
+    description: "Trigger Python user-agent inputFrom ref hydration scenario."
+    config:
+      path: "/python-user-agent-inputfrom-event"
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+      required: []
   atlas-agent-event:
     provider: http
     description: "Trigger bundled/type:atlas agent scenario."
@@ -1025,6 +1036,89 @@ jobs:
                 Return the marker PY_USER_AGENT_TOOL_OK, listed tool names,
                 count, firstId, and whether any body contained
                 FIRST_PRINCIPLES_EMAIL_BODY.
+          type: final
+
+  python-user-agent-inputfrom-check:
+    description: "Python user-agent consumes a compact inputFrom artifact ref through ctx.input."
+    triggers:
+      - signal: python-user-agent-inputfrom-event
+    config:
+      timeout: "5m"
+      max_steps: 8
+    validation:
+      default: "skip"
+    fsm:
+      initial: idle
+      documentTypes:
+        PythonInputFromSeed:
+          type: object
+          properties:
+            marker: { type: string }
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  subject: { type: string }
+                  body: { type: string }
+                required: ["id", "subject", "body"]
+          required: ["marker", "messages"]
+        PythonInputFromResult:
+          type: object
+          properties:
+            marker: { type: string }
+            count: { type: number }
+            firstId: { type: string }
+            sawBodySentinel: { type: boolean }
+            artifactRefs:
+              type: array
+              items: { type: string }
+          required: ["marker", "count", "firstId", "sawBodySentinel", "artifactRefs"]
+      states:
+        idle:
+          on:
+            python-user-agent-inputfrom-event: { target: seed }
+        seed:
+          entry:
+            - type: llm
+              provider: anthropic
+              model: claude-sonnet-4-6
+              summary: "Produce bulky EmailBatch for Python user-agent inputFrom."
+              outputTo: python-emails-result
+              outputType: PythonInputFromSeed
+              validate: skip
+              tools: []
+              prompt: |
+                Emit a PythonInputFromSeed object directly. Do not call tools.
+
+                The object MUST contain:
+                - marker: "PYTHON_USER_AGENT_INPUTFROM_EMAIL_BATCH"
+                - messages: exactly 12 synthetic messages.
+
+                Message ids must be fake-001 through fake-012. The first
+                message subject must be "Synthetic digest 1". Every message
+                body must include the sentinel text
+                "FIRST_PRINCIPLES_EMAIL_BODY" plus the message id.
+            - type: emit
+              event: NEXT
+          on:
+            NEXT: { target: consume }
+        consume:
+          entry:
+            - type: agent
+              agentId: python-inbox-fetcher
+              summary: "Consume compact inputFrom artifact from Python user agent."
+              inputFrom: python-emails-result
+              outputTo: python-inputfrom-result
+              outputType: PythonInputFromResult
+              validate: skip
+              prompt: |
+                Consume Python inputFrom artifact through ctx.input. Do not
+                call fake inbox search/fetch tools. Use ctx.input.artifact_json
+                for python-emails-result, then return marker
+                PY_USER_AGENT_INPUTFROM_HYDRATED, count, firstId,
+                sawBodySentinel, and artifactRefs.
           type: final
 
   atlas-agent-check:

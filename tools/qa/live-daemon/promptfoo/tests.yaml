@@ -34,6 +34,10 @@
   vars:
     scenarioId: python-user-agent-ctx-tools-observability
 
+- description: Python user-agent inputFrom ref hydration
+  vars:
+    scenarioId: python-user-agent-inputfrom-ref-hydration
+
 - description: bundled type:atlas agent artifact output
   vars:
     scenarioId: atlas-agent-artifact-output

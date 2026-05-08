@@ -153,6 +153,26 @@ Key fields:
 - `inputFrom: <doc-id>` — feeds prior step output into next agent task
 - `emit` with `event: DONE` — signals engine to transition
 
+### Python user-agent `inputFrom` consumption
+
+When an upstream `outputTo` is bulky, the runtime may persist it as an artifact
+and pass downstream actions only a compact summary + `artifactRefs` shape. Do not
+fix this by asking the producer to inline the full data; that breaks refs-over-
+data and pollutes supervisor context.
+
+For Python user agents, consume compact refs through `ctx.input`:
+
+```python
+payload = ctx.input.artifact_json("emails-result")
+emails = payload.get("emails", [])
+return ok({"count": len(emails)})
+```
+
+Use `ctx.input.get("emails-result")` for the compact summary, and
+`ctx.input.artifact_refs("emails-result")` when you need to inspect the refs.
+Treat `parse_input(prompt)` as a fallback for simple one-shot prompt JSON, not as
+the handoff mechanism for multi-step `outputTo`/`inputFrom` pipelines.
+
 ## Returning data to the caller
 
 `outputTo` does double duty. Inside a multi-step FSM it chains a step's output into the next step's `inputFrom` (above). It is **also the only mechanism for surfacing data back to whoever fired the signal** — the synchronous signal response (`POST /api/workspaces/:id/signals/:id`) returns docs collected from `engine.documents` as `output: [{ id, type, data }]`. No `outputTo` → no doc → caller sees `output: []` even on `status: completed`.
