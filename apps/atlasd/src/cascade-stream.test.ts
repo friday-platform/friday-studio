@@ -495,7 +495,12 @@ describe("CascadeConsumer.stop(signal) iterator close", () => {
       nc,
       (env) => {
         handlerResolve?.();
-        return Promise.resolve({ sessionId: `s-${env.signalId}`, output: [] });
+        return Promise.resolve({
+          sessionId: `s-${env.signalId}`,
+          output: [],
+          artifactIds: [],
+          summary: "",
+        });
       },
       () => Promise.resolve("skip" as ConcurrencyPolicy),
       { name: consumerName, expiresMs: 1000, batchSize: 16 },
