@@ -24,6 +24,7 @@
   import { PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
+  import { page } from "$app/state";
   import { countPendingElicitations, effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
   import {
@@ -141,6 +142,16 @@
   // Selection — id is component-local state
   // ---------------------------------------------------------------------------
   let selectedId = $state<string | null>(null);
+  const requestedElicitationId = $derived(page.url.searchParams.get("elicitationId"));
+  let appliedRequestedId = "";
+
+  $effect(() => {
+    const id = requestedElicitationId;
+    if (!id || id === appliedRequestedId) return;
+    if (!elicitations.some((e) => e.id === id)) return;
+    selectedId = id;
+    appliedRequestedId = id;
+  });
 
   // Auto-select first row if nothing's selected (or selection was filtered out).
   $effect(() => {
@@ -268,31 +279,10 @@
         {/if}
       {/if}
     </PageLayout.Content>
-    <PageLayout.Sidebar>
-      {#if workspaceId === null}
-        <p class="subtitle">Pause-and-ask events from every workspace.</p>
-      {:else}
-        <p class="subtitle">Pause-and-ask events for this workspace.</p>
-      {/if}
-      <p class="subtitle subtle">
-        Pending entries block FSM jobs until you answer or decline. Expired entries become
-        read-only.
-      </p>
-    </PageLayout.Sidebar>
   </PageLayout.Body>
 </PageLayout.Root>
 
 <style>
-  .subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-2);
-  }
-
-  .subtle {
-    font-size: var(--font-size-1);
-    margin-top: var(--size-3);
-  }
-
   .filters {
     align-items: end;
     border-block-end: 1px solid var(--color-border-1);

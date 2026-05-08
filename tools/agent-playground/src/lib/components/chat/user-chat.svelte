@@ -4,7 +4,10 @@
   import type { AtlasUIMessage } from "@atlas/agent-sdk";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { page } from "$app/state";
+  import { browser } from "$app/environment";
+  import { ElicitationSchema, type Elicitation } from "@atlas/core/elicitations/model";
   import { workspaceQueries } from "$lib/queries";
+  import { mergeElicitationIntoCache } from "$lib/queries/elicitation-queries.ts";
   import { DefaultChatTransport } from "ai";
   import ChatInput, { type ImageAttachment } from "./chat-input.svelte";
   import ChatInspector from "./chat-inspector.svelte";
@@ -144,6 +147,36 @@
     onUnrecoverable: () => {
       unrecoverableStream = true;
     },
+  });
+
+  /**
+   * Keep the inline HITL cards in sync with Activity.  The card itself
+   * queries the replay list, but newly-created elicitations are delivered via
+   * NATS/SSE; without this subscription a fresh cached list can briefly render
+   * the "open Activity" fallback instead of the inline answer form.
+   */
+  $effect(() => {
+    if (!browser || !wsId) return;
+
+    const url = new URL("/api/daemon/api/elicitations/stream", globalThis.location.origin);
+    url.searchParams.set("workspaceId", wsId);
+
+    const es = new EventSource(url.toString());
+    es.addEventListener("message", (e) => {
+      let parsed: Elicitation;
+      try {
+        parsed = ElicitationSchema.parse(JSON.parse(e.data));
+      } catch (err) {
+        console.error("Failed to parse elicitation SSE event", err);
+        return;
+      }
+      mergeElicitationIntoCache(queryClient, parsed);
+    });
+    es.addEventListener("error", () => {
+      console.warn("Elicitations SSE feed errored (EventSource will retry)");
+    });
+
+    return () => es.close();
   });
 
   /**
