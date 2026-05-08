@@ -148,9 +148,17 @@
   $effect(() => {
     const id = requestedElicitationId;
     if (!id || id === appliedRequestedId) return;
-    if (!elicitations.some((e) => e.id === id)) return;
+    const target = elicitations.find((e) => e.id === id);
+    if (!target) return;
     selectedId = id;
     appliedRequestedId = id;
+
+    const targetStatus = effectiveStatus(target);
+    if (statusFilter !== "all" && statusFilter !== targetStatus) statusFilter = targetStatus;
+    if (kindFilter !== "all" && kindFilter !== target.kind) kindFilter = target.kind;
+    if (!workspaceId && workspaceFilter !== "all" && workspaceFilter !== target.workspaceId) {
+      workspaceFilter = target.workspaceId;
+    }
   });
 
   // Auto-select first row if nothing's selected (or selection was filtered out).
