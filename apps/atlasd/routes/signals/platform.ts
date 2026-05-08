@@ -83,9 +83,7 @@ const TeamsRoutingPayloadSchema = z.object({ recipient: z.object({ id: z.string(
  * pull_request_review_comment, etc.) — that ID is the routing key matched
  * against the wiring table's `connection_id`.
  */
-const GitHubInstallationPayloadSchema = z.object({
-  installation: z.object({ id: z.number() }),
-});
+const GitHubInstallationPayloadSchema = z.object({ installation: z.object({ id: z.number() }) });
 
 /** Minimal shape of a WhatsApp webhook POST payload used for workspace routing. */
 const WhatsAppWebhookPayloadSchema = z.object({
@@ -407,9 +405,7 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
 
     const routing = GitHubInstallationPayloadSchema.safeParse(parsed);
     if (!routing.success) {
-      logger.warn("github_signal_missing_installation_id", {
-        bodyPreview: rawBody.slice(0, 200),
-      });
+      logger.warn("github_signal_missing_installation_id", { bodyPreview: rawBody.slice(0, 200) });
       return c.json({ error: "Missing installation.id in payload" }, 400);
     }
 
