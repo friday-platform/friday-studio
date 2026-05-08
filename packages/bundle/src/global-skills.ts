@@ -13,13 +13,10 @@
 //
 // Latest-version semantics: the export pulls one row per skill — whatever
 // `adapter.list()` returns (latest-version-per-skillId today).
-//
-// The matching import path lands in a follow-up task; this commit covers
-// export only.
 
 import type { SkillStorageAdapter } from "@atlas/skills";
 import { SYSTEM_USER_ID } from "@atlas/skills";
-import { stringify as stringifyYaml } from "@std/yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import JSZip from "jszip";
 import { z } from "zod";
 
@@ -159,4 +156,167 @@ function buildManifestYaml(manifest: GlobalSkillsManifest): string {
     unknown
   >;
   return stringifyYaml(safe, { lineWidth: 100 });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Import
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Thrown when an archive's manifest declares `source.filename === "skills.db"`.
+ * Pre-May-3 daemons exported the SQLite blob directly; that path is gone after
+ * the JetStream migration. The user must re-export from a current daemon to
+ * produce a JSONL-shaped archive.
+ */
+export class LegacyArchiveError extends Error {
+  constructor() {
+    super(
+      "global-skills archive is from a pre-migration export (contains skills.db). " +
+        "Re-export from a current daemon to produce a JSONL-shaped archive.",
+    );
+    this.name = "LegacyArchiveError";
+  }
+}
+
+export type ImportStatus =
+  | { kind: "imported"; skillsPublished: number; skillsSkipped: number }
+  | { kind: "integrity-failed"; expected: string; actual: string; row?: string };
+
+export interface ImportGlobalSkillsOptions {
+  zipBytes: Uint8Array;
+  adapter: SkillStorageAdapter;
+}
+
+export interface ImportGlobalSkillsResult {
+  manifest: GlobalSkillsManifest;
+  status: ImportStatus;
+}
+
+/**
+ * Apply a global-skills bundle to the target adapter.
+ *
+ * Idempotency mirrors the May 3 migration (m_20260503_110100): if the target
+ * already has a skill at the same `skillId` with `version >= row.version` and
+ * the same namespace, the row is skipped without reading archive bytes. This
+ * keeps re-imports cheap and prevents version inflation.
+ *
+ * Integrity is verified twice: outer sha256 over `skills.jsonl` bytes, and a
+ * per-archive sha256 for each row that carries archive bytes. Either mismatch
+ * surfaces as `{ kind: "integrity-failed" }` and aborts further publishing.
+ */
+export async function importGlobalSkills(
+  opts: ImportGlobalSkillsOptions,
+): Promise<ImportGlobalSkillsResult> {
+  const { zipBytes, adapter } = opts;
+  const zip = await JSZip.loadAsync(zipBytes);
+
+  const manifestEntry = zip.file("manifest.yml");
+  if (!manifestEntry) {
+    throw new Error("importGlobalSkills: manifest.yml missing from archive");
+  }
+  const manifestYaml = await manifestEntry.async("string");
+  const manifest = GlobalSkillsManifestSchema.parse(parseYaml(manifestYaml));
+
+  if (manifest.source.filename === "skills.db") {
+    throw new LegacyArchiveError();
+  }
+
+  const jsonlEntry = zip.file("skills.jsonl");
+  if (!jsonlEntry) {
+    throw new Error("importGlobalSkills: skills.jsonl missing from archive");
+  }
+  const jsonlBytes = await jsonlEntry.async("uint8array");
+  const actualJsonlSha = `sha256:${await sha256Hex(jsonlBytes)}`;
+  if (actualJsonlSha !== manifest.source.sha256) {
+    return {
+      manifest,
+      status: {
+        kind: "integrity-failed",
+        expected: manifest.source.sha256,
+        actual: actualJsonlSha,
+      },
+    };
+  }
+
+  const jsonlText = new TextDecoder().decode(jsonlBytes);
+  const rows: SkillRow[] = jsonlText
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => SkillRowSchema.parse(JSON.parse(line)));
+
+  let skillsPublished = 0;
+  let skillsSkipped = 0;
+
+  for (const row of rows) {
+    // Idempotency: mirrors apps/atlasd/src/migrations/m_20260503_110100_skills_to_jetstream.ts:96-104
+    const existing = await adapter.getBySkillId(row.skillId);
+    if (
+      existing.ok &&
+      existing.data &&
+      existing.data.version >= row.version &&
+      existing.data.namespace === row.namespace
+    ) {
+      skillsSkipped++;
+      continue;
+    }
+
+    let archiveBytes: Uint8Array<ArrayBuffer> | undefined;
+    if (row.archive) {
+      const archiveEntry = zip.file(row.archive.path);
+      if (!archiveEntry) {
+        throw new Error(
+          `importGlobalSkills: archive entry missing at ${row.archive.path} for skill ${row.skillId}`,
+        );
+      }
+      const bytes = await archiveEntry.async("uint8array");
+      const actualArchiveSha = `sha256:${await sha256Hex(bytes)}`;
+      if (actualArchiveSha !== row.archive.sha256) {
+        return {
+          manifest,
+          status: {
+            kind: "integrity-failed",
+            expected: row.archive.sha256,
+            actual: actualArchiveSha,
+            row: row.skillId,
+          },
+        };
+      }
+      // Repack into ArrayBuffer-backed Uint8Array — JSZip returns
+      // `Uint8Array<ArrayBufferLike>` but `PublishSkillInput.archive` is
+      // typed `Uint8Array<ArrayBuffer>`.
+      const buf = new ArrayBuffer(bytes.byteLength);
+      archiveBytes = new Uint8Array(buf);
+      archiveBytes.set(bytes);
+    }
+
+    const publishResult = await adapter.publish(row.namespace, row.name, row.createdBy, {
+      skillId: row.skillId,
+      description: row.description,
+      descriptionManual: row.descriptionManual,
+      frontmatter: row.frontmatter,
+      instructions: row.instructions,
+      ...(archiveBytes ? { archive: archiveBytes } : {}),
+    });
+    if (!publishResult.ok) {
+      throw new Error(
+        `importGlobalSkills: publish failed for ${row.skillId}: ${publishResult.error}`,
+      );
+    }
+
+    if (row.disabled === true) {
+      const disableResult = await adapter.setDisabled(row.skillId, true);
+      if (!disableResult.ok) {
+        throw new Error(
+          `importGlobalSkills: setDisabled failed for ${row.skillId}: ${disableResult.error}`,
+        );
+      }
+    }
+
+    skillsPublished++;
+  }
+
+  return {
+    manifest,
+    status: { kind: "imported", skillsPublished, skillsSkipped },
+  };
 }

@@ -2,7 +2,14 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import { exportAll, exportGlobalSkills, importAll, importBundle } from "@atlas/bundle";
+import {
+  exportAll,
+  exportGlobalSkills,
+  importAll,
+  importBundle,
+  importGlobalSkills,
+  LegacyArchiveError,
+} from "@atlas/bundle";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { Registry, WorkspaceConfig } from "@atlas/config";
 import { WorkspaceConfigSchema } from "@atlas/config";
@@ -905,13 +912,24 @@ const workspacesRoutes = daemonFactory
       }
 
       let globalSkills:
-        | { kind: string; targetPath?: string; sideloadedAs?: string; bytesWritten?: number }
+        | { kind: "imported"; skillsPublished: number; skillsSkipped: number }
+        | { kind: "integrity-failed"; expected: string; actual: string; row?: string }
+        | { kind: "legacy-archive-rejected" }
         | undefined;
       if (result.globalSkillsBytes) {
-        // Import path is rewired in a follow-up task. Surface a placeholder
-        // so the response shape stays stable; the bytes are not lost — the
-        // caller can re-run import once the follow-up lands.
-        globalSkills = { kind: "skipped-existing" };
+        try {
+          const gs = await importGlobalSkills({
+            zipBytes: result.globalSkillsBytes,
+            adapter: SkillStorage,
+          });
+          globalSkills = gs.status;
+        } catch (err) {
+          if (err instanceof LegacyArchiveError) {
+            globalSkills = { kind: "legacy-archive-rejected" };
+          } else {
+            errors.push({ name: "global.skills", error: stringifyError(err) });
+          }
+        }
       }
 
       return c.json({ manifest: result.manifest, imported, errors, globalSkills });

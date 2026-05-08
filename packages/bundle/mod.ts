@@ -23,6 +23,11 @@ export {
   exportGlobalSkills,
   type GlobalSkillsManifest,
   GlobalSkillsManifestSchema,
+  type ImportGlobalSkillsOptions,
+  type ImportGlobalSkillsResult,
+  importGlobalSkills,
+  type ImportStatus,
+  LegacyArchiveError,
   type SkillRow,
   SkillRowSchema,
 } from "./src/global-skills.ts";

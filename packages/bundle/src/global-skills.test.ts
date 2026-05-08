@@ -7,10 +7,17 @@ import type {
 } from "@atlas/skills";
 import type { SkillSort } from "@atlas/skills/schemas";
 import type { Result } from "@atlas/utils";
-import { parse as parseYaml } from "@std/yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "@std/yaml";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
-import { exportGlobalSkills, GlobalSkillsManifestSchema, SkillRowSchema } from "./global-skills.ts";
+import {
+  exportGlobalSkills,
+  type GlobalSkillsManifest,
+  GlobalSkillsManifestSchema,
+  importGlobalSkills,
+  LegacyArchiveError,
+  SkillRowSchema,
+} from "./global-skills.ts";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Test shim
@@ -99,16 +106,50 @@ class InMemorySkillAdapter implements SkillStorageAdapter {
   }
 
   publish(
-    _namespace: string,
-    _name: string,
-    _createdBy: string,
-    _input: PublishSkillInput,
+    namespace: string,
+    name: string,
+    createdBy: string,
+    input: PublishSkillInput,
   ): Promise<Result<{ id: string; version: number; name: string; skillId: string }, string>> {
-    return notImplemented("publish");
+    const skillId = input.skillId ?? `skill-${this.skills.size + 1}`;
+    let maxVersion = 0;
+    for (const s of this.skills.values()) {
+      if (s.skillId === skillId && s.version > maxVersion) maxVersion = s.version;
+    }
+    const version = maxVersion + 1;
+
+    let archive: Uint8Array<ArrayBuffer> | null = null;
+    if (input.archive) {
+      const buf = new ArrayBuffer(input.archive.byteLength);
+      archive = new Uint8Array(buf);
+      archive.set(input.archive);
+    }
+
+    const id = `id-${this.skills.size + 1}`;
+    const skill: Skill = {
+      id,
+      skillId,
+      namespace,
+      name,
+      version,
+      description: input.description ?? "",
+      descriptionManual: input.descriptionManual ?? false,
+      disabled: false,
+      frontmatter: input.frontmatter ?? {},
+      instructions: input.instructions,
+      archive,
+      createdBy,
+      createdAt: new Date(),
+    };
+    this.skills.set(id, skill);
+    return Promise.resolve({ ok: true, data: { id, version, name, skillId } });
   }
 
-  setDisabled(_skillId: string, _disabled: boolean): Promise<Result<void, string>> {
-    return notImplemented("setDisabled");
+  setDisabled(skillId: string, disabled: boolean): Promise<Result<void, string>> {
+    for (const s of this.skills.values()) {
+      if (s.skillId === skillId) s.disabled = disabled;
+    }
+    return Promise.resolve({ ok: true, data: undefined });
   }
 
   // Unused — throw to surface accidental coupling.
@@ -290,5 +331,133 @@ describe("exportGlobalSkills", () => {
     expect(skillIds).toContain("user-1");
     expect(skillIds).toContain("user-2");
     expect(skillIds).not.toContain("sys-1");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Import tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function buildArchive(
+  adapter: InMemorySkillAdapter,
+): Promise<{ zipBytes: Uint8Array; manifest: GlobalSkillsManifest }> {
+  const result = await exportGlobalSkills({ adapter });
+  if (!result.bytes || !result.manifest) {
+    throw new Error("buildArchive: expected non-empty export");
+  }
+  return { zipBytes: result.bytes, manifest: result.manifest };
+}
+
+describe("importGlobalSkills", () => {
+  it("skips rows already present at >= version (idempotent re-import)", async () => {
+    const source = new InMemorySkillAdapter();
+    source.seed({
+      skillId: "abc",
+      namespace: "user",
+      name: "alpha",
+      version: 2,
+      instructions: "do alpha",
+      createdBy: "user-1",
+    });
+    const { zipBytes } = await buildArchive(source);
+
+    const target = new InMemorySkillAdapter();
+    target.seed({
+      skillId: "abc",
+      namespace: "user",
+      name: "alpha",
+      version: 2,
+      instructions: "do alpha",
+      createdBy: "user-1",
+    });
+
+    const originalPublish = target.publish.bind(target);
+    let publishCalls = 0;
+    target.publish = ((...args: Parameters<typeof originalPublish>) => {
+      publishCalls++;
+      return originalPublish(...args);
+    }) as typeof target.publish;
+
+    const result = await importGlobalSkills({ zipBytes, adapter: target });
+    expect(result.status.kind).toBe("imported");
+    if (result.status.kind !== "imported") throw new Error("unreachable");
+    expect(result.status.skillsPublished).toBe(0);
+    expect(result.status.skillsSkipped).toBe(1);
+    expect(publishCalls).toBe(0);
+  });
+
+  it("returns integrity-failed when manifest sha doesn't match jsonl bytes", async () => {
+    const source = new InMemorySkillAdapter();
+    source.seed({
+      skillId: "abc",
+      namespace: "user",
+      name: "alpha",
+      instructions: "do alpha",
+      createdBy: "user-1",
+    });
+    const { zipBytes } = await buildArchive(source);
+
+    // Tamper: append a newline to skills.jsonl, leave manifest untouched.
+    const zip = await JSZip.loadAsync(zipBytes);
+    const original = await zip.file("skills.jsonl")!.async("uint8array");
+    const tampered = new Uint8Array(original.byteLength + 1);
+    tampered.set(original);
+    tampered[original.byteLength] = 0x0a; // "\n"
+    zip.file("skills.jsonl", tampered);
+    const tamperedZipBytes = await zip.generateAsync({ type: "uint8array" });
+
+    const target = new InMemorySkillAdapter();
+    const result = await importGlobalSkills({ zipBytes: tamperedZipBytes, adapter: target });
+    expect(result.status.kind).toBe("integrity-failed");
+    if (result.status.kind !== "integrity-failed") throw new Error("unreachable");
+    expect(result.status.expected).not.toBe(result.status.actual);
+    expect(result.status.row).toBeUndefined();
+  });
+
+  it("returns integrity-failed with row id when archive sha doesn't match", async () => {
+    const source = new InMemorySkillAdapter();
+    source.seed({
+      skillId: "abc",
+      namespace: "user",
+      name: "alpha",
+      instructions: "do alpha",
+      archive: new TextEncoder().encode("good archive bytes"),
+      createdBy: "user-1",
+    });
+    const { zipBytes } = await buildArchive(source);
+
+    // Tamper one archive entry; leave skills.jsonl untouched so the outer
+    // sha still matches and the per-archive sha is what fails.
+    const zip = await JSZip.loadAsync(zipBytes);
+    const archivePath = "archives/abc__1.tar.gz";
+    expect(zip.file(archivePath)).not.toBeNull();
+    zip.file(archivePath, new TextEncoder().encode("garbage"));
+    const tamperedZipBytes = await zip.generateAsync({ type: "uint8array" });
+
+    const target = new InMemorySkillAdapter();
+    const result = await importGlobalSkills({ zipBytes: tamperedZipBytes, adapter: target });
+    expect(result.status.kind).toBe("integrity-failed");
+    if (result.status.kind !== "integrity-failed") throw new Error("unreachable");
+    expect(result.status.row).toBe("abc");
+    expect(result.status.expected).not.toBe(result.status.actual);
+  });
+
+  it("throws LegacyArchiveError when manifest source.filename is skills.db", async () => {
+    const legacyManifest = {
+      schemaVersion: 1,
+      kind: "global-skills",
+      source: {
+        filename: "skills.db",
+        sha256: `sha256:${"0".repeat(64)}`,
+      },
+    };
+    const zip = new JSZip();
+    zip.file("manifest.yml", stringifyYaml(legacyManifest));
+    const zipBytes = await zip.generateAsync({ type: "uint8array" });
+
+    const target = new InMemorySkillAdapter();
+    await expect(importGlobalSkills({ zipBytes, adapter: target })).rejects.toBeInstanceOf(
+      LegacyArchiveError,
+    );
   });
 });
