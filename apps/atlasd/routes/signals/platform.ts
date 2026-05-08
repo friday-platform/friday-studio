@@ -432,6 +432,8 @@ export function createPlatformSignalRoutes(daemon: AtlasDaemon) {
       return c.json({ error: "No workspace configured for this installation" }, 404);
     }
 
+    logger.info("github_signal_routed", { installationId, workspaceId: resolved.workspaceId });
+
     return delegateToWebhook(c, daemon, "github", resolved.workspaceId, githubRequest, {
       installationId,
     });

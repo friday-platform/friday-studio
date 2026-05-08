@@ -118,7 +118,7 @@ export const githubAppProvider = defineApiKeyProvider({
 6. Under **Install App**, install it on the org/user account that owns the repos you want Friday to act on. After installing, the URL will look like \`https://github.com/settings/installations/<INSTALLATION_ID>\` — copy that numeric ID
 7. From the App's **General** page, copy the **App ID** (numeric)
 8. Paste \`app_id\`, the contents of the \`.pem\` file as \`private_key\`, the \`webhook_secret\` you chose, and the \`installation_id\` below — Friday will validate the credentials and capture the App's bot user identity automatically
-9. After saving, return to the GitHub App settings and confirm the webhook URL is still \`<callbackBaseUrl>/platform/github\`. Friday cannot register the URL upstream — GitHub does not expose an API to set an App's webhook URL post-creation.
+9. After saving, return to the GitHub App settings and confirm the webhook URL is still \`<callbackBaseUrl>/platform/github\`. Friday does not register the URL upstream — pasting it once during App creation is the simplest contract.
 `,
   health: async (secret): Promise<HealthResult> => {
     try {
