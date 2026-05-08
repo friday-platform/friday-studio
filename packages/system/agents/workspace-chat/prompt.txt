@@ -157,7 +157,7 @@ For `type: "llm"`, the `config.tools` field is a strict per-agent whitelist. For
 </agent_types>
 
 Before finalizing job design:
-- User wants the job to return data? → set `outputTo: <doc-id>` on the agent action in the FSM `entry`. The runtime returns matching docs as the signal response's `output: [...]`. Without it, callers see `output: []`.
+- User wants the job to return data? → set `outputTo: <doc-id>` on the agent action in the FSM `entry`. The job-tool returns `{artifactIds, summary}` to you (the supervisor) — refs to JetStream-persisted documents plus a one-paragraph digest. Without `outputTo`, `artifactIds` will be empty. To inspect a specific artifact, call `parse_artifact(<id>)`; the full Document[] is intentionally not in your tool result so your context stays compact.
 - Useful future sessions? → write to memory corpus (narrative store via `memory_save`).
 - Another job consumes? → typed document contract.
 

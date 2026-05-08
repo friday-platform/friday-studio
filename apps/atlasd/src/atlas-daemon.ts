@@ -17,6 +17,7 @@ import {
 } from "@atlas/core";
 import { initArtifactStorage } from "@atlas/core/artifacts/server";
 import { ensureChatsKVBucket, initChatStorage } from "@atlas/core/chat/storage";
+import { bootstrapElicitationsStream, initElicitationStorage } from "@atlas/core/elicitations";
 import { initMCPRegistryAdapter } from "@atlas/core/mcp-registry/storage";
 import { CronManager } from "@atlas/cron";
 import { initDocumentStore } from "@atlas/document-store";
@@ -61,6 +62,7 @@ import {
 import { configRoutes } from "../routes/config.ts";
 import { cronRoutes } from "../routes/cron.ts";
 import { daemonApp } from "../routes/daemon.ts";
+import { elicitationApp } from "../routes/elicitations/index.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { instanceEventsRoutes } from "../routes/instance-events.ts";
 import { jobsRoutes } from "../routes/jobs.ts";
@@ -69,7 +71,11 @@ import { mcpRegistryRouter } from "../routes/mcp-registry.ts";
 import { meRoutes } from "../routes/me/index.ts";
 import { memoryNarrativeRoutes } from "../routes/memory/index.ts";
 import reportRoutes from "../routes/report.ts";
-import { scratchpadApp } from "../routes/scratchpad/index.ts";
+// O5 (review-2): scratchpad route deleted alongside the rest of the
+// scratchpad surface (K1 removed the agent-sdk adapter + tools; this
+// pass removes the daemon-side route + storage init + KV bucket).
+// See L9 migration `m_20260507_120000_drop_scratchpad_kv` for the
+// bucket cleanup on existing daemons.
 import { sessionsRoutes } from "../routes/sessions/index.ts";
 import { shareRoutes } from "../routes/share.ts";
 import { createPlatformSignalRoutes } from "../routes/signals/platform.ts";
@@ -98,6 +104,7 @@ import { ChatTurnRegistry } from "./chat-turn-registry.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
 import { createApp } from "./factory.ts";
 import { ensureInstanceEventsStream } from "./instance-events.ts";
+import { createJudgeRunner } from "./judge-runner.ts";
 import { getAllMigrations } from "./migrations/index.ts";
 import { NatsManager } from "./nats-manager.ts";
 import { ProcessAgentExecutor } from "./process-agent-executor.ts";
@@ -111,9 +118,17 @@ import {
   SignalConsumer,
   type SignalEnvelope,
 } from "./signal-stream.ts";
-import { initScratchpadStorage } from "./storage/scratchpad.ts";
+// O5 (review-2): scratchpad storage deleted; see comment near `scratchpadApp` removal above.
 import { StreamRegistry } from "./stream-registry.ts";
 import { sweepOrphanedAgentBrowserSessions } from "./sweep-agent-browser-sessions.ts";
+import {
+  type ArtifactsSweeperHandle,
+  startArtifactsSweeper,
+} from "./sweepers/artifacts-sweeper.ts";
+import {
+  type ElicitationsSweeperHandle,
+  startElicitationsSweeper,
+} from "./sweepers/elicitations-sweeper.ts";
 import { callTool, registerToolWorker, type ToolWorker } from "./tool-dispatch.ts";
 import { AtlasMetrics } from "./utils/metrics.ts";
 import { getAtlasDaemonUrl } from "./utils.ts";
@@ -127,6 +142,21 @@ export interface AtlasDaemonOptions {
   idleTimeoutMs?: number;
   sseHeartbeatIntervalMs?: number;
   sseConnectionTimeoutMs?: number;
+}
+
+const INTERNAL_SIGNAL_BYPASS_TOKEN_ENV = "FRIDAY_INTERNAL_SIGNAL_BYPASS_TOKEN";
+
+function ensureInternalSignalBypassToken(): void {
+  let token = process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV];
+  if (!token) {
+    token = crypto.randomUUID();
+    process.env[INTERNAL_SIGNAL_BYPASS_TOKEN_ENV] = token;
+  }
+  try {
+    Deno.env.set(INTERNAL_SIGNAL_BYPASS_TOKEN_ENV, token);
+  } catch {
+    // Some test/embedding environments may not grant env write access.
+  }
 }
 
 /**
@@ -278,6 +308,7 @@ export class AtlasDaemon {
       transport: StreamableHTTPTransport;
       createdAt: number;
       lastUsed: number;
+      activeRequests: number;
     }
   >();
   private platformSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -287,8 +318,25 @@ export class AtlasDaemon {
   // Store the actual port after server starts
   #port: number | undefined;
   private discordGatewayService: DiscordGatewayService | null = null;
+  /**
+   * Phase 6.B — hourly sweep of ephemeral artifacts past their grace
+   * window. Promotes via inbound-reference scan or deletes. Started
+   * after JetStream init in {@link initialize}; stopped during the
+   * domain-layer teardown phase of {@link shutdown}.
+   */
+  private artifactsSweeper: ArtifactsSweeperHandle | null = null;
+
+  /**
+   * G4 — pending→expired elicitation sweeper. Walks
+   * `ELICITATION_STATUS` KV on a 60s tick, CAS-flips past-deadline
+   * pending entries to expired. Started after JetStream init in
+   * {@link initialize}; stopped during the domain-layer teardown
+   * phase of {@link shutdown}.
+   */
+  private elicitationsSweeper: ElicitationsSweeperHandle | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
+    ensureInternalSignalBypassToken();
     // Read CORS origins from environment or options
     // Environment variable takes precedence for production deployments
     const envCorsOrigins = env.CORS_ALLOWED_ORIGINS?.split(",").map((s) => s.trim());
@@ -538,20 +586,32 @@ export class AtlasDaemon {
       publishWorkspaceEvent(nc, { type: "schedule.missed", ...event }, logger),
     );
 
-    // Wire scratchpad to its own JetStream KV bucket. Same per-key
-    // pattern; migration republishes legacy ~/.atlas/storage.db
-    // scratchpad entries into SCRATCHPAD bucket.
-    const scratchpadStorage = await createJetStreamKVStorage(nc, {
-      bucket: "SCRATCHPAD",
-      history: 1, // notes are append-only; one revision is enough
-    });
-    initScratchpadStorage(scratchpadStorage);
+    // O5 (review-2): SCRATCHPAD KV init removed alongside the route.
+    // Migration `m_20260507_120000_drop_scratchpad_kv` deletes the
+    // bucket on existing daemons. K1 removed the agent-sdk adapter +
+    // chat-side tools; nothing reads from this bucket anymore.
 
     // Wire artifact storage to JetStream KV (ARTIFACTS bucket) + Object
     // Store (OBJ_artifacts). Migration entry republishes legacy
     // ~/.atlas/storage.db artifact rows + reads file contents from
     // disk into the Object Store, content-addressed by SHA-256.
     initArtifactStorage(nc);
+
+    // Wire elicitation storage to JetStream — `ELICITATIONS` stream for
+    // the durable audit trail of envelopes, `ELICITATION_STATUS` KV
+    // bucket for O(1) status lookups. Phase 12 HITL primitive; HTTP
+    // routes mounted at `/api/elicitations` below.
+    initElicitationStorage(nc);
+
+    // F7 (review-2): boot-time pre-flight — ensure the ELICITATIONS
+    // stream exists with `allow_msg_ttl: true` BEFORE the first user
+    // request can hit `/api/elicitations` or `request_tool_access`. The
+    // adapter's lazy `ensureStream()` throws a "re-run migration"
+    // error on legacy streams whose config drifted; fail-loud at boot
+    // is far better UX than failing on the first elicitation publish
+    // an hour into a daemon's life. Idempotent — `streams.update`
+    // when present, `streams.add` when absent.
+    await bootstrapElicitationsStream(nc);
 
     // Wire workspace-state storage (state_append/lookup/filter MCP tools)
     // to JetStream — one KV bucket per workspace (WS_STATE_<wsid>).
@@ -669,6 +729,11 @@ export class AtlasDaemon {
             ctx.onStreamEvent,
             undefined,
             ctx.abortSignal,
+            // Reuse the existing `sourceSessionId` envelope field as the
+            // parent linkage. It was wired through on publish but never
+            // consumed — Phase 11 makes it carry across into
+            // `SessionSummary.parentSessionId`.
+            envelope.sourceSessionId,
           );
         } catch (err) {
           if (err instanceof SessionFailedError) {
@@ -818,6 +883,36 @@ export class AtlasDaemon {
     // Start chunked upload cleanup lifecycle
     initChunkedUpload();
 
+    // Phase 6.B — start the artifacts sweeper. Walks ephemeral artifacts
+    // whose `expiresAt` is past on a timer; promotes them to durable if
+    // an inbound reference signal is found, deletes otherwise. Wired
+    // here (post-JetStream init, post-runtime registry creation) so
+    // the sweeper can resolve a per-workspace scan context against
+    // `this.runtimes`.
+    this.artifactsSweeper = startArtifactsSweeper({
+      getScanContext: (workspaceId) => {
+        const runtime = this.runtimes.get(workspaceId);
+        if (!runtime) return Promise.resolve(undefined);
+        return Promise.resolve(runtime.getPromotionScanContext());
+      },
+      aiSummaryFallback: async (workspaceId) => {
+        const summaries = await this.sessionHistoryAdapter.listByWorkspace(workspaceId);
+        return summaries.flatMap((summary) =>
+          (summary.aiSummary?.keyDetails ?? [])
+            .filter((detail) => detail.url)
+            .map((detail) => ({ url: detail.url })),
+        );
+      },
+    });
+
+    // G4 — start the elicitations sweeper. Walks past-deadline
+    // pending elicitations on a 60s tick (override via
+    // FRIDAY_ELICITATION_SWEEP_INTERVAL_MS) and durably flips them to
+    // expired with a CAS-guarded write. Pairs with read-time
+    // derivation in ElicitationStorage.get/list so subscribers never
+    // observe stale `pending` between sweeper ticks.
+    this.elicitationsSweeper = startElicitationsSweeper();
+
     this.isInitialized = true;
 
     // Start the SIGNALS + CASCADES consumers LAST so no message can be
@@ -949,6 +1044,7 @@ export class AtlasDaemon {
       workspaceConfigProvider: {
         getWorkspaceConfig: (id: string) => this.getWorkspaceManager().getWorkspaceConfig(id),
       },
+      natsConnection: nc,
       toolDispatcher: nc
         ? {
             callTool: async <Args, Result>(toolId: string, args: Args): Promise<Result> => {
@@ -976,6 +1072,7 @@ export class AtlasDaemon {
       transport,
       createdAt: Date.now(),
       lastUsed: Date.now(),
+      activeRequests: 0,
     });
 
     // Set up cleanup
@@ -985,6 +1082,27 @@ export class AtlasDaemon {
     };
 
     return { server, transport };
+  }
+
+  private async handlePlatformMcpRequest(
+    sessionId: string,
+    transport: StreamableHTTPTransport,
+    c: Context,
+  ): Promise<Response | undefined> {
+    const session = this.platformMcpSessions.get(sessionId);
+    if (session) {
+      session.activeRequests++;
+      session.lastUsed = Date.now();
+    }
+    try {
+      return await transport.handleRequest(c);
+    } finally {
+      const current = this.platformMcpSessions.get(sessionId);
+      if (current) {
+        current.activeRequests = Math.max(0, current.activeRequests - 1);
+        current.lastUsed = Date.now();
+      }
+    }
   }
 
   /**
@@ -1108,7 +1226,9 @@ export class AtlasDaemon {
     this.app.route("/api/chat-storage", chatStorageRoutes);
     this.app.route("/api/config", configRoutes);
     this.app.route("/api/user", userRoutes);
-    this.app.route("/api/scratchpad", scratchpadApp);
+    // O5 (review-2): /api/scratchpad route removed; the surface had zero
+    // in-repo callers post-K1.
+    this.app.route("/api/elicitations", elicitationApp);
     this.app.route("/api/sessions", sessionsRoutes);
     this.app.route("/api/agents", agentsRoutes);
     this.app.route("/api/daemon", daemonApp);
@@ -1153,7 +1273,7 @@ export class AtlasDaemon {
             const { transport } = await this.getOrCreatePlatformSession(newSessionId);
 
             // Handle the request - this will set the Mcp-Session-Id header
-            const response = await transport.handleRequest(c);
+            const response = await this.handlePlatformMcpRequest(newSessionId, transport, c);
 
             // The transport now has the session ID set
             if (transport.sessionId) {
@@ -1171,13 +1291,13 @@ export class AtlasDaemon {
             // Handle DELETE specially - clean up after processing
             if (c.req.method === "DELETE") {
               logger.info("Terminating Platform MCP session", { sessionId });
-              const response = await transport.handleRequest(c);
+              const response = await this.handlePlatformMcpRequest(sessionId, transport, c);
               this.cleanupPlatformSession(sessionId);
               return response;
             }
 
             // Handle the request
-            return transport.handleRequest(c);
+            return this.handlePlatformMcpRequest(sessionId, transport, c);
           } else {
             // No session ID and not a POST request - this is an error
             logger.error("[Daemon] Invalid request - no session ID for non-POST", {
@@ -1526,6 +1646,7 @@ export class AtlasDaemon {
             workspaceId: workspace.id,
             getInstance: (id) => this.getOrCreateChatSdkInstance(id),
           }),
+          runJudge: createJudgeRunner(this.getPlatformModels()),
           createSessionStream: (sessionId) =>
             this.sessionStreamRegistry.create(sessionId, this.sessionHistoryAdapter),
           onSessionComplete: async ({
@@ -1550,7 +1671,9 @@ export class AtlasDaemon {
             // Web/API), runs through that job. Skipping by jobName catches
             // them all, including API-triggered tests where no chat record
             // exists yet.
-            if (status !== WorkspaceSessionStatus.COMPLETED || !finalOutput) return;
+            if (status !== WorkspaceSessionStatus.COMPLETED || !finalOutput) {
+              return;
+            }
             if (jobName === "handle-chat") {
               logger.debug("broadcast_skipped_chat_job", { workspaceId, sessionId, jobName });
               return;
@@ -1907,20 +2030,43 @@ export class AtlasDaemon {
     onStreamEvent?: (chunk: AtlasUIMessageChunk) => void,
     skipStates?: string[],
     abortSignal?: AbortSignal,
+    /**
+     * Parent session id when this signal is being fired from inside
+     * another session (chat-spawned-job, FSM-emit-and-await, etc.).
+     * Threads through to `SessionSummary.parentSessionId` so the
+     * spawned session records its parent. Phase 11 provenance.
+     */
+    parentSessionId?: string,
   ): Promise<{
     sessionId: string;
     output: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+    /**
+     * Phase 2.C — persisted artifact ids for this session's eligible
+     * outputs (Phase 2.B persisted them; this surfaces the ids so SSE
+     * `job-complete` consumers can prefer refs over the full
+     * `Document[]`). Empty when no eligible documents were emitted.
+     */
+    artifactIds: string[];
+    /**
+     * Phase 2.C — short session summary. Prefers the AI-generated
+     * `aiSummary.summary` and falls back to the terminal-state action's
+     * declared `summary` (Phase 2.A schema) or a truncated stringify of
+     * the terminal output's `data`. Empty when nothing's summarizable.
+     */
+    summary: string;
   }> {
     const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
-    const session = await runtime.triggerSignalWithSession(
+    const result = await runtime.triggerSignalWithResult(
       signalId,
       payload || {},
       streamId,
       onStreamEvent,
       skipStates,
       abortSignal,
+      parentSessionId,
     );
+    const session = result.session;
 
     // Record signal trigger metric by provider type (http, schedule, slack, etc.)
     const signalProvider = runtime.getSignalProvider(signalId) ?? "unknown";
@@ -1949,13 +2095,12 @@ export class AtlasDaemon {
       throw new SessionFailedError(signalId, session.status, session.error);
     }
 
-    // Surface the FSM's final output documents so synchronous callers
-    // (workspace-chat job tool) can return the agent's actual answer to
-    // whatever invoked the job. Without this, calls like "search the KB"
-    // complete but workspace-chat has no content to render.
-    const output = runtime.getSessionFsmDocuments(session.id);
-
-    return { sessionId: session.id, output };
+    return {
+      sessionId: session.id,
+      output: result.output,
+      artifactIds: result.artifactIds,
+      summary: result.summary,
+    };
   }
 
   /**
@@ -2081,6 +2226,8 @@ export class AtlasDaemon {
     const hasActiveSessions = sessions.some(
       (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
     );
+    const hasInFlightSessions = runtime.hasInFlightSessions();
+    const inFlightSessionIds = runtime.listInFlightSessionIds();
 
     // Check for active agent executions in the orchestrator
     let hasActiveExecutions = false;
@@ -2101,6 +2248,8 @@ export class AtlasDaemon {
       sessionsCount: sessions.length,
       sessionStatuses: sessions.map((s) => s.session.status),
       hasActiveSessions,
+      hasInFlightSessions,
+      inFlightSessionIds,
       hasActiveExecutions,
       activeExecutionsCount: activeExecutions.length,
       activeExecutions: activeExecutions.map((e) => ({
@@ -2110,14 +2259,15 @@ export class AtlasDaemon {
       })),
     });
 
-    if (!hasActiveSessions && !hasActiveExecutions) {
+    if (!hasActiveSessions && !hasInFlightSessions && !hasActiveExecutions) {
       logger.info("Destroying idle workspace runtime", { workspaceId });
       await this.destroyWorkspaceRuntime(workspaceId);
     } else {
       // Still has active sessions or executions, reset timeout
-      if (hasActiveExecutions) {
-        logger.debug("Workspace has active agent executions, resetting idle timeout", {
+      if (hasInFlightSessions || hasActiveExecutions) {
+        logger.debug("Workspace has active work, resetting idle timeout", {
           workspaceId,
+          inFlightSessionCount: inFlightSessionIds.length,
           activeExecutionsCount: activeExecutions.length,
         });
       }
@@ -2540,6 +2690,14 @@ export class AtlasDaemon {
       clearInterval(this.platformSessionCleanupInterval);
       this.platformSessionCleanupInterval = null;
     }
+    if (this.artifactsSweeper) {
+      this.artifactsSweeper.stop();
+      this.artifactsSweeper = null;
+    }
+    if (this.elicitationsSweeper) {
+      this.elicitationsSweeper.stop();
+      this.elicitationsSweeper = null;
+    }
 
     // SSE clients — the HTTP server already drained in Phase 1, but any
     // controller still held open by app code gets force-closed here.
@@ -2765,8 +2923,11 @@ export class AtlasDaemon {
     const now = Date.now();
     const sessionsToCleanup: string[] = [];
 
-    // Find stale sessions
+    // Find stale sessions. Long-running platform tools (notably
+    // request_human_input) can hold an MCP request open for the full HITL
+    // TTL, so never reap a session while a request is still in flight.
     for (const [sessionId, session] of this.platformMcpSessions) {
+      if (session.activeRequests > 0) continue;
       if (now - session.lastUsed > this.PLATFORM_SESSION_TIMEOUT_MS) {
         sessionsToCleanup.push(sessionId);
       }
@@ -2786,9 +2947,9 @@ export class AtlasDaemon {
 
     // Enforce session limit (LRU eviction)
     if (this.platformMcpSessions.size > this.MAX_PLATFORM_SESSIONS) {
-      const sortedSessions = Array.from(this.platformMcpSessions.entries()).sort(
-        (a, b) => a[1].lastUsed - b[1].lastUsed,
-      );
+      const sortedSessions = Array.from(this.platformMcpSessions.entries())
+        .filter(([, session]) => session.activeRequests === 0)
+        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
 
       const toEvict = sortedSessions.slice(
         0,

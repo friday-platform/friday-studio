@@ -22,20 +22,12 @@ vi.mock("@atlas/ui", async () => {
 const { default: ValidationPillRow } = await import("./validation-pill-row.svelte");
 
 function passVerdict(): ValidationVerdict {
-  return {
-    status: "pass",
-    confidence: 0.82,
-    threshold: 0.45,
-    issues: [],
-    retryGuidance: "",
-  };
+  return { verdict: "pass" };
 }
 
 function uncertainVerdict(): ValidationVerdict {
   return {
-    status: "uncertain",
-    confidence: 0.4,
-    threshold: 0.45,
+    verdict: "advisory",
     issues: [
       {
         category: "judge-uncertain",
@@ -45,15 +37,12 @@ function uncertainVerdict(): ValidationVerdict {
         citation: null,
       },
     ],
-    retryGuidance: "",
   };
 }
 
-function failVerdict(retryGuidance = "Re-run with explicit citations."): ValidationVerdict {
+function failVerdict(_retryGuidance = "Re-run with explicit citations."): ValidationVerdict {
   return {
-    status: "fail",
-    confidence: 0.18,
-    threshold: 0.45,
+    verdict: "blocking",
     issues: [
       {
         category: "sourcing",
@@ -70,7 +59,6 @@ function failVerdict(retryGuidance = "Re-run with explicit citations."): Validat
         citation: null,
       },
     ],
-    retryGuidance,
   };
 }
 

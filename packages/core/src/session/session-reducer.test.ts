@@ -331,6 +331,28 @@ describe("step:start", () => {
     expect(secondAfter.status).toBe("running");
     expect(secondAfter.stepNumber).toBe(2);
   });
+
+  // J2: defense-in-depth against a late `step:start` re-publish past the
+  // broker's dedup window. Pre-J2 the reducer would not find a *pending*
+  // match (the prior copy was already running), fall to the append path,
+  // and create a duplicate AgentBlock — status derivation then saw both
+  // pending and complete simultaneously, surfacing as `status: "active"`
+  // post-completion. Now the duplicate is a no-op.
+  test("duplicate step:start (same stepNumber + agentName) is a no-op (J2)", () => {
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "researcher" }));
+    view = reduceSessionEvent(view, stepComplete({ stepNumber: 1, status: "completed" }));
+
+    expect(view.agentBlocks).toHaveLength(1);
+    expect(view.agentBlocks[0]?.status).toBe("completed");
+
+    // Late re-publish of the original step:start lands AS NEW because
+    // the broker dedup window expired. Reducer should swallow it.
+    view = reduceSessionEvent(view, stepStart({ stepNumber: 1, agentName: "researcher" }));
+
+    expect(view.agentBlocks).toHaveLength(1);
+    expect(view.agentBlocks[0]?.status).toBe("completed");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -388,6 +410,58 @@ describe("step:complete", () => {
     const block = view.agentBlocks.find((b) => b.stepNumber === 99);
     expect(block).toBeDefined();
     expect(block?.status).toBe("completed");
+  });
+
+  // J1 of melodic-strolling-seal-pt3 — pre-fix the reducer dropped
+  // `step:complete.usage` on the floor; consumers rendering token counts
+  // saw 0 even when the underlying action returned real usage data.
+  test("propagates step:complete.usage onto the matching AgentBlock (J1)", () => {
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    view = reduceSessionEvent(view, stepStart());
+    view = reduceSessionEvent(
+      view,
+      stepComplete({
+        usage: {
+          inputTokens: 1234,
+          outputTokens: 567,
+          cacheReadTokens: 89,
+          cacheWriteTokens: 12,
+          model: "anthropic:claude-opus-4-7",
+        },
+      }),
+    );
+
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.usage).toBeDefined();
+    expect(block.usage?.inputTokens).toBe(1234);
+    expect(block.usage?.outputTokens).toBe(567);
+    expect(block.usage?.cacheReadTokens).toBe(89);
+    expect(block.usage?.cacheWriteTokens).toBe(12);
+    expect(block.usage?.model).toBe("anthropic:claude-opus-4-7");
+  });
+
+  test("placeholder block surfaces step:complete.usage when no step:start preceded (J1)", () => {
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    view = reduceSessionEvent(
+      view,
+      stepComplete({ stepNumber: 42, usage: { inputTokens: 100, outputTokens: 50 } }),
+    );
+
+    const block = view.agentBlocks.find((b) => b.stepNumber === 42);
+    expect(block).toBeDefined();
+    expect(block?.usage?.inputTokens).toBe(100);
+    expect(block?.usage?.outputTokens).toBe(50);
+  });
+
+  test("step:complete without usage leaves AgentBlock.usage absent", () => {
+    let view = reduceSessionEvent(initialSessionView(), sessionStart());
+    view = reduceSessionEvent(view, stepStart());
+    view = reduceSessionEvent(view, stepComplete());
+
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.usage).toBeUndefined();
   });
 });
 

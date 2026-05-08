@@ -14,6 +14,43 @@ export const DocumentSchema = z.object({
   data: z.record(z.string(), z.unknown()),
 });
 
+/**
+ * Author-facing validation strategy for `type: llm` and `type: agent` actions.
+ *
+ * String form:
+ *   - "skip"     — never validate; output is accepted as-is.
+ *   - "self"     — inline validation in the same LLM call via the
+ *                  `record_validation` tool and validating-llm-outputs skill.
+ *   - "external" — separate system-level judge agent invocation via the
+ *                  `runJudge` callback.
+ *   - "auto"     — delegate to the runtime classifier (read-only/structured →
+ *                  skip; mutating-tool/prose-emitting → self). Same as omitting
+ *                  the field. The classifier never returns "external" — that
+ *                  remains an explicit author opt-in.
+ *
+ * Object form (escape hatch for tuning a specific step without rewriting the
+ * action shape): pin the `strategy` to `self` or `external` and optionally
+ * override the validating skill or the judge agent. The object form
+ * intentionally omits `skip` and `auto` — pick those via the string form.
+ */
+export const ValidateStrategySchema = z.union([
+  z.literal("skip"),
+  z.literal("self"),
+  z.literal("external"),
+  z.literal("auto"),
+  z.strictObject({
+    strategy: z.enum(["self", "external"]),
+    skill: z.string().optional(),
+    /**
+     * Optional override for the `external` judge agent. `external` uses
+     * `@friday/judge-agent` by default; authors can swap in a domain-
+     * specific judge (e.g. `fin-judge` for finance pipelines) without
+     * changing the runtime contract. Ignored when strategy is `"self"`.
+     */
+    agent: z.string().optional(),
+  }),
+]);
+
 export const LLMActionSchema = z.object({
   type: z.literal("llm"),
   provider: z.string(),
@@ -21,17 +58,41 @@ export const LLMActionSchema = z.object({
   prompt: z.string(),
   tools: z.array(z.string()).optional(),
   /**
-   * @experimental — step-level skill filter. **Not enforced at runtime today.**
-   * The additive job-scoping model (job-level `skills:` in workspace.yml)
-   * covers the 95% case. This field is preserved for a future power-user
-   * escape hatch to further narrow what a single FSM step can load, but
-   * the engine currently ignores it.
+   * Step-level skill allowlist. Narrows which skills this LLM action can
+   * `load_skill`. Layered on top of the job/workspace skill scoping resolved
+   * at the engine level.
    *
-   * When reactivated, semantics would be: empty array ⇒ no workspace skills
-   * for this step; absent ⇒ inherit job/workspace visibility; populated ⇒
-   * whitelist within the job's resolved set.
+   * Semantics: empty array ⇒ no workspace skills for this step (load_skill
+   * tool not registered); absent ⇒ inherit the job/workspace visibility
+   * unchanged; populated ⇒ whitelist within the job's resolved set (skills
+   * not in this list are dropped, even if they would otherwise be visible).
    */
   skills: z.array(z.string()).optional(),
+  /**
+   * Short human-readable summary of what this action does. Used as the
+   * artifact title/summary when the action's `outputTo` document is
+   * persisted as an artifact for compact return to a parent supervisor.
+   * Absent → runtime synthesizes a short truncation from the output.
+   */
+  summary: z.string().optional(),
+  /**
+   * Per-action validation strategy. Absent or `"auto"` ⇒ runtime classifier
+   * picks `skip` or `self` based on the action shape. See
+   * `ValidateStrategySchema` for the full semantics. The classifier never
+   * returns `external` — that remains an explicit author opt-in.
+   */
+  validate: ValidateStrategySchema.optional(),
+  /**
+   * `run_code` opt-in for read-only classifier treatment. `run_code` is
+   * excluded from the default `READ_ONLY_ALLOWLIST` because it can mutate
+   * state (write files, POST over the network, etc.). When the author knows
+   * a particular invocation is genuinely read-only — e.g. a one-shot SQL
+   * `SELECT`, a deterministic HTTP `GET`, an arithmetic transform — setting
+   * `run_code: { readOnly: true }` makes the classifier treat `run_code` as
+   * a read-only tool for this action. Combined with structured
+   * `outputType:`, the action then resolves to `validate: skip`.
+   */
+  run_code: z.strictObject({ readOnly: z.boolean() }).optional(),
   outputTo: z.string().optional(),
   /** Explicit document type name for schema lookup. Takes precedence over outputTo document's type. */
   outputType: z.string().optional(),
@@ -59,8 +120,16 @@ export const AgentActionSchema = z.object({
   outputType: z.string().optional(),
   /** Per-step task instructions. Concatenated after the workspace agent's config prompt. */
   prompt: z.string().optional(),
-  /** @experimental — see LLMActionSchema.skills. Not enforced at runtime today. */
+  /** Step-level skill allowlist — see LLMActionSchema.skills for semantics. */
   skills: z.array(z.string()).optional(),
+  /** Short human-readable summary — see LLMActionSchema.summary. */
+  summary: z.string().optional(),
+  /**
+   * Per-action validation strategy — see `ValidateStrategySchema` for the
+   * full semantics. Mirrors the field on LLMActionSchema so authors can
+   * tune validation on agent invocations the same way.
+   */
+  validate: ValidateStrategySchema.optional(),
   /**
    * Document id(s) whose `data` becomes the agent's task input. String form
    * chains a single prior step's `outputTo`; array form concatenates
@@ -107,9 +176,24 @@ export const FSMDefinitionSchema = z.object({
   initial: z.string(),
   states: z.record(z.string(), StateDefinitionSchema),
   documentTypes: z.record(z.string(), JSONSchemaSchema).optional(),
+  /**
+   * Declarative-only — retained for back-compat with legacy YAML
+   * (e.g. `packages/system/workspaces/workspace.fsm.yaml`) that still
+   * declares a `functions:` block. Pt1 Phase 1 simplified the action
+   * model: there is no `type: code` action anymore, so these function
+   * bodies are never compiled or executed by `FSMEngine`. The validator
+   * still checks each entry has non-empty code; `mcp-tools/create-fsm.ts`
+   * counts them for telemetry. Treat as documentation, not behavior.
+   */
   functions: z
     .record(z.string(), z.object({ type: z.enum(["action", "guard"]), code: z.string() }))
     .optional(),
+  /**
+   * Declarative-only — see `functions` above. FSM-level inline tools are
+   * not registered with the LLM call site; the live tool surface is
+   * resolved from MCP servers + platform tools, narrowed by each
+   * `LLMAction.tools` allowlist. Retained for legacy YAML compatibility.
+   */
   tools: z.record(z.string(), z.object({ code: z.string() })).optional(),
 });
 
@@ -124,4 +208,5 @@ export type ValidatedStateDefinition = z.infer<typeof StateDefinitionSchema>;
 export type ValidatedDocument = z.infer<typeof DocumentSchema>;
 export type ValidatedAction = z.infer<typeof ActionSchema>;
 export type ValidatedSignal = z.infer<typeof SignalSchema>;
+export type ValidateStrategy = z.infer<typeof ValidateStrategySchema>;
 export type { ValidatedJSONSchema } from "@atlas/core/artifacts";

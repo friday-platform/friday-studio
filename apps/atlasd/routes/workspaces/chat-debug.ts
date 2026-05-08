@@ -40,6 +40,18 @@ type KvDebug = {
   error?: string;
 };
 
+type ActiveStreamDebug = {
+  exists: boolean;
+  active?: boolean;
+  replayDisabled?: boolean;
+  eventCount?: number;
+  subscriberCount?: number;
+  createdAt?: string;
+  lastEventAt?: string;
+  events?: unknown[];
+  error?: string;
+};
+
 /**
  * Stream/subject/bucket conventions mirror
  * `packages/core/src/chat/jetstream-backend.ts`. Kept in sync manually —
@@ -103,6 +115,29 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
       }
     }
 
+    let activeStream: ActiveStreamDebug = { exists: false };
+    try {
+      const buffer = ctx.streamRegistry.getStream(chatId);
+      if (buffer) {
+        activeStream = {
+          exists: true,
+          active: buffer.active,
+          replayDisabled: buffer.replayDisabled,
+          eventCount: buffer.events.length,
+          subscriberCount: buffer.subscribers.size,
+          createdAt: new Date(buffer.createdAt).toISOString(),
+          lastEventAt: new Date(buffer.lastEventAt).toISOString(),
+          // Debug-only bounded snapshot. While a HITL job is blocked, the
+          // assistant message has not persisted yet, so this is the only
+          // place the invoking chat can show the nested child session/tool
+          // request without waiting for the parent AI SDK tool to finish.
+          events: buffer.events.slice(-500),
+        };
+      }
+    } catch (err) {
+      activeStream = { exists: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
     let kv: KvDebug = { bucket: kvBucket, key: kvKey, exists: false };
     try {
       const js = nc.jetstream();
@@ -132,7 +167,7 @@ const workspaceChatDebugRoutes: Hono<AppVariables> = new Hono<AppVariables>().ge
       kv.error = err instanceof Error ? err.message : String(err);
     }
 
-    return c.json({ stream, kv });
+    return c.json({ stream, kv, activeStream });
   },
 );
 

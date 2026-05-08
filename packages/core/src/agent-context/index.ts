@@ -73,6 +73,11 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
         agent.mcpConfig,
         logger,
         overrides?.abortSignal,
+        {
+          sessionId: sessionData.sessionId,
+          actionId: sessionData.actionId,
+          jobTimeoutMs: sessionData.jobTimeoutMs,
+        },
       );
       allTools = fetched.tools;
       releaseMCPTools = fetched.release;
@@ -257,6 +262,7 @@ async function fetchAllTools(
   agentMCPConfig: Record<string, MCPServerConfig> | undefined,
   logger: Logger,
   signal?: AbortSignal,
+  scope?: { sessionId?: string; actionId?: string; jobTimeoutMs?: number },
 ): Promise<{
   tools: Record<string, AtlasTool>;
   release: () => Promise<void>;
@@ -319,6 +325,12 @@ async function fetchAllTools(
   const { tools, dispose, disconnected } = await createMCPTools(allServerConfigs, logger, {
     signal,
   });
-  const wrapped = wrapPlatformToolsWithScope(tools, { workspaceId, workspaceName });
+  const wrapped = wrapPlatformToolsWithScope(tools, {
+    workspaceId,
+    workspaceName,
+    ...(scope?.sessionId && { sessionId: scope.sessionId }),
+    ...(scope?.actionId && { actionId: scope.actionId }),
+    ...(scope?.jobTimeoutMs !== undefined && { jobTimeoutMs: scope.jobTimeoutMs }),
+  });
   return { tools: wrapped, release: dispose, disconnected };
 }

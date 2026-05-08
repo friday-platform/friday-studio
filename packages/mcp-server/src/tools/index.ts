@@ -28,7 +28,10 @@ import { registerJobsListTool } from "./jobs/list.ts";
 import { registerMemoryReadTool } from "./memory/read.ts";
 import { registerMemoryRemoveTool } from "./memory/remove.ts";
 import { registerMemorySaveTool } from "./memory/save.ts";
+// Import permissions tools
+import { registerRequestToolAccessTool } from "./permissions/request-tool-access.ts";
 // Import platform tools
+import { registerRequestHumanInputTool } from "./platform/request-human-input.ts";
 import { registerVersionTool } from "./platform/version.ts";
 // Import session tools
 import { registerSessionCancelTool } from "./session/cancel.ts";
@@ -106,6 +109,10 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // System tools
   registerBashTool(server, context);
+
+  // Permissions tools — Phase 12.C / Phase 1.C
+  registerRequestToolAccessTool(server, context);
+  registerRequestHumanInputTool(server, context);
 
   registerVersionTool(server);
 

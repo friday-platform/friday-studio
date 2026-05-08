@@ -1,5 +1,6 @@
 import type { AtlasTool, AtlasTools } from "@atlas/agent-sdk";
 import { PLATFORM_TOOL_NAMES } from "@atlas/agent-sdk";
+import type { PermissionsConfig, ResolvedPermissions } from "@atlas/config";
 import type { Logger } from "@atlas/logger";
 
 export { PLATFORM_TOOL_NAMES };
@@ -25,11 +26,71 @@ export const SCOPE_INJECTED_PLATFORM_TOOLS = new Set([
   "memory_save",
   "memory_read",
   "memory_remove",
+  // fs_write_file uses workspaceId to resolve relative paths against the
+  // workspace working directory (`<friday-home>/workspaces/<workspaceId>/`)
+  // instead of the daemon's launch directory.
+  "fs_write_file",
+  // HITL tools read sessionId/actionId from the wrapper so Activity can
+  // correlate the pending item and the blocked run can resume on answer.
+  "request_tool_access",
+  "request_human_input",
 ]);
 
 export interface ToolScope {
   workspaceId: string;
   workspaceName?: string;
+  /**
+   * Optional session id forwarded to scope-injected tools that need it
+   * (e.g. `request_tool_access` records it on the elicitation envelope so
+   * the Activity page can correlate). Undefined for tools that don't need
+   * session identity (most chat-side wraps).
+   */
+  sessionId?: string;
+  /**
+   * Optional FSM action id. Set when an LLM action constructs the tool set
+   * inside `fsm-engine`'s `case "llm":` dispatch — `request_tool_access`
+   * stamps it on the elicitation so the Activity page can link back to
+   * the originating action.
+   */
+  actionId?: string;
+  /**
+   * Per-job permissions config (raw, unresolved). Forwarded to
+   * `request_tool_access` so it can call `resolvePermissions` at call time
+   * with the daemon-env floor. Optional — missing means "no per-job
+   * override; fall through to workspace + daemon".
+   *
+   * Prefer setting `resolvedPermissions` (single source of truth resolved at
+   * scope-construction time). Raw job/workspace fields remain supported for
+   * back-compat / call-sites that don't have a resolution context handy.
+   */
+  jobPermissions?: PermissionsConfig;
+  /**
+   * Workspace-level permissions config. Same forwarding contract as
+   * `jobPermissions` but at the workspace tier.
+   */
+  workspacePermissions?: PermissionsConfig;
+  /**
+   * Pre-resolved effective permissions (job > workspace > daemon env).
+   * When set, scope-injected tools (e.g. `request_tool_access`) use this
+   * directly instead of re-resolving from the raw fields. Resolves the
+   * "two layers call resolvePermissions independently" duplication
+   * flagged in 2026-05-06 review N2 — single source of truth at
+   * scope-construction time.
+   */
+  resolvedPermissions?: ResolvedPermissions;
+  /**
+   * Parent job's effective timeout (ms). When set, scope-injected
+   * elicitation tools derive `expiresAt = now + jobTimeoutMs` so the
+   * elicitation TTL matches the job lifetime. When absent, callers fall back
+   * to a tool-local default.
+   */
+  jobTimeoutMs?: number;
+  /**
+   * Tool catalog visible to the runtime before per-action allowlist narrowing.
+   * `request_tool_access` uses this to reject hallucinated tools without
+   * creating user-facing elicitations.
+   */
+  availableToolNames?: string[];
 }
 
 /**
@@ -60,6 +121,19 @@ export function wrapPlatformToolsWithScope(
             ...(args as Record<string, unknown>),
             workspaceId: scope.workspaceId,
             ...(scope.workspaceName && { workspaceName: scope.workspaceName }),
+            // These flow into `request_tool_access` (and any future
+            // scope-injected tool that needs them). Other wrapped
+            // tools ignore unknown fields because their MCP-side schemas
+            // don't declare them; Zod parses out only what each tool asks
+            // for. Defense in depth still applies: caller-supplied values
+            // are overwritten.
+            ...(scope.sessionId && { sessionId: scope.sessionId }),
+            ...(scope.actionId && { actionId: scope.actionId }),
+            ...(scope.jobPermissions && { jobPermissions: scope.jobPermissions }),
+            ...(scope.workspacePermissions && { workspacePermissions: scope.workspacePermissions }),
+            ...(scope.resolvedPermissions && { resolvedPermissions: scope.resolvedPermissions }),
+            ...(scope.jobTimeoutMs !== undefined && { jobTimeoutMs: scope.jobTimeoutMs }),
+            ...(scope.availableToolNames && { availableToolNames: scope.availableToolNames }),
           },
           opts,
         )) as AtlasTool["execute"],
@@ -103,6 +177,9 @@ export const LLM_AGENT_ALLOWED_PLATFORM_TOOLS = new Set([
   // Workspace (limited)
   "convert_task_to_workspace",
   "workspace_signal_trigger",
+  // Human-in-the-loop / permissions.
+  "request_tool_access",
+  "request_human_input",
 ]);
 
 /**

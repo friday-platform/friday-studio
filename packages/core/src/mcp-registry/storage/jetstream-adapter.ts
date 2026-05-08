@@ -16,7 +16,7 @@
  *   at MCP-registry cardinality (dozens to low hundreds of servers).
  */
 
-import { createJetStreamFacade, dec, enc, isCASConflict } from "jetstream";
+import { createJetStreamFacade, dec, enc, isCASConflict, registerReconnectReset } from "jetstream";
 import type { KV, NatsConnection } from "nats";
 import type { MCPServerMetadata } from "../schemas.ts";
 import type { MCPRegistryStorageAdapter, UpdatableMCPServerMetadata } from "./adapter.ts";
@@ -26,7 +26,12 @@ export const MCP_REGISTRY_BUCKET = "MCP_REGISTRY";
 export class JetStreamMCPRegistryAdapter implements MCPRegistryStorageAdapter {
   private cachedKv: KV | null = null;
 
-  constructor(private readonly nc: NatsConnection) {}
+  constructor(private readonly nc: NatsConnection) {
+    // N6: invalidate cached KV handle on NATS reconnect.
+    registerReconnectReset(this.nc, () => {
+      this.cachedKv = null;
+    });
+  }
 
   private async kv(): Promise<KV> {
     if (this.cachedKv) return this.cachedKv;

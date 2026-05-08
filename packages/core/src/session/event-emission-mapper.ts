@@ -18,7 +18,9 @@ import type {
   StepCompleteEvent,
   StepSkippedEvent,
   StepStartEvent,
+  StepUsage,
   StepValidationEvent,
+  StepValidationOutput,
   ToolCallSummary,
 } from "./session-events.ts";
 import { SessionActionTypeSchema } from "./session-events.ts";
@@ -36,6 +38,14 @@ export interface AgentResultData {
   reasoning?: string;
   output: unknown;
   artifactRefs?: unknown[];
+  /** Optional LLM token usage. Set by LLM action paths; agent actions leave it absent. */
+  usage?: StepUsage;
+  /**
+   * Per-action validation outcome — set on `type: llm` and
+   * `case "agent" → type: llm` paths. Three shapes mirror the resolved
+   * strategy.
+   */
+  validation?: StepValidationOutput;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +122,13 @@ export function mapActionToStepComplete(
     output: agentResult?.output,
     artifactRefs: agentResult?.artifactRefs,
     error: event.data.error,
+    // Conditionally spread so absence is preserved on the wire.
+    ...(agentResult?.usage && { usage: agentResult.usage }),
+    // Structured validation outcome. Conditionally spread so legacy paths
+    // and pure-agent (`type: user` /
+    // `type: atlas`) actions that don't run validation leave the field
+    // absent on the wire.
+    ...(agentResult?.validation && { validation: agentResult.validation }),
     timestamp: new Date(event.data.timestamp).toISOString(),
   };
 }

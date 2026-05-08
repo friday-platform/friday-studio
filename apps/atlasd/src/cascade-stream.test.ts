@@ -73,7 +73,7 @@ describe("CascadeConsumer concurrency policies", () => {
         try {
           await new Promise((r) => setTimeout(r, 200));
           dispatched.push(env.signalId);
-          return { sessionId: `s-${env.signalId}`, output: [] };
+          return { sessionId: `s-${env.signalId}`, output: [], artifactIds: [], summary: "" };
         } finally {
           activeCount--;
         }
@@ -116,7 +116,7 @@ describe("CascadeConsumer concurrency policies", () => {
         registryPeak = Math.max(registryPeak, consumer.getStats().inFlight);
         try {
           await new Promise((r) => setTimeout(r, 150));
-          return { sessionId: `s-${env.signalId}`, output: [] };
+          return { sessionId: `s-${env.signalId}`, output: [], artifactIds: [], summary: "" };
         } finally {
           active--;
         }
@@ -151,7 +151,7 @@ describe("CascadeConsumer concurrency policies", () => {
         order.push(`start:${tag}`);
         await new Promise((r) => setTimeout(r, 100));
         order.push(`end:${tag}`);
-        return { sessionId: `s-${env.signalId}`, output: [] };
+        return { sessionId: `s-${env.signalId}`, output: [], artifactIds: [], summary: "" };
       },
       () => Promise.resolve("queue" as ConcurrencyPolicy),
       { expiresMs: 1000 },
@@ -189,7 +189,7 @@ describe("CascadeConsumer concurrency policies", () => {
           });
         });
         completions.push(tag);
-        return { sessionId: `s-${tag}`, output: [] };
+        return { sessionId: `s-${tag}`, output: [], artifactIds: [], summary: "" };
       },
       () => Promise.resolve("replace" as ConcurrencyPolicy),
       { expiresMs: 1000 },
@@ -218,7 +218,12 @@ describe("CascadeConsumer concurrency policies", () => {
       nc,
       (env) => {
         dispatched.push(env.signalId);
-        return Promise.resolve({ sessionId: `s-${env.signalId}`, output: [] });
+        return Promise.resolve({
+          sessionId: `s-${env.signalId}`,
+          output: [],
+          artifactIds: [],
+          summary: "",
+        });
       },
       () => Promise.resolve("skip" as ConcurrencyPolicy),
       { expiresMs: 1000, queueTimeoutMs: 50 },
@@ -240,7 +245,13 @@ describe("CascadeConsumer correlated callers", () => {
   it("publishes ok=true on signals.responses.<corrId> for a successful cascade", async () => {
     const consumer = new CascadeConsumer(
       nc,
-      (env) => Promise.resolve({ sessionId: `s-${env.signalId}`, output: [] }),
+      (env) =>
+        Promise.resolve({
+          sessionId: `s-${env.signalId}`,
+          output: [],
+          artifactIds: [],
+          summary: "",
+        }),
       () => Promise.resolve("concurrent" as ConcurrencyPolicy),
       { expiresMs: 1000 },
     );
@@ -259,7 +270,7 @@ describe("CascadeConsumer correlated callers", () => {
       nc,
       async (env) => {
         await new Promise((r) => setTimeout(r, 200));
-        return { sessionId: `s-${env.signalId}`, output: [] };
+        return { sessionId: `s-${env.signalId}`, output: [], artifactIds: [], summary: "" };
       },
       () => Promise.resolve("skip" as ConcurrencyPolicy),
       { expiresMs: 1000 },
@@ -301,7 +312,7 @@ describe("CascadeConsumer correlated callers", () => {
         ctx.onStreamEvent?.({ type: "delta", text: "a" } as never);
         ctx.onStreamEvent?.({ type: "delta", text: "b" } as never);
         ctx.onStreamEvent?.({ type: "delta", text: "c" } as never);
-        return Promise.resolve({ sessionId: "s-stream", output: [] });
+        return Promise.resolve({ sessionId: "s-stream", output: [], artifactIds: [], summary: "" });
       },
       () => Promise.resolve("concurrent" as ConcurrencyPolicy),
       { expiresMs: 1000 },
@@ -338,7 +349,7 @@ describe("CascadeConsumer concurrency cap", () => {
         peak = Math.max(peak, active);
         try {
           await new Promise((r) => setTimeout(r, 100));
-          return { sessionId: `s-${env.signalId}`, output: [] };
+          return { sessionId: `s-${env.signalId}`, output: [], artifactIds: [], summary: "" };
         } finally {
           active--;
         }
@@ -369,7 +380,13 @@ describe("CascadeConsumer concurrency cap", () => {
     // cap-actually-caps assertion is covered by the test above.
     const consumer = new CascadeConsumer(
       nc,
-      (env) => Promise.resolve({ sessionId: `s-${env.signalId}`, output: [] }),
+      (env) =>
+        Promise.resolve({
+          sessionId: `s-${env.signalId}`,
+          output: [],
+          artifactIds: [],
+          summary: "",
+        }),
       () => Promise.resolve("concurrent" as ConcurrencyPolicy),
       { expiresMs: 1000, maxAckPending: 5 },
     );
@@ -395,10 +412,14 @@ describe("CascadeConsumer policy-decision race", () => {
     const consumer = new CascadeConsumer(
       nc,
       (env) =>
-        new Promise<{ sessionId: string; output: never[] }>((resolve) => {
-          dispatched++;
-          release.push(() => resolve({ sessionId: `s-${env.signalId}`, output: [] }));
-        }),
+        new Promise<{ sessionId: string; output: never[]; artifactIds: string[]; summary: string }>(
+          (resolve) => {
+            dispatched++;
+            release.push(() =>
+              resolve({ sessionId: `s-${env.signalId}`, output: [], artifactIds: [], summary: "" }),
+            );
+          },
+        ),
       () => Promise.resolve("skip" as ConcurrencyPolicy),
       { expiresMs: 1000 },
     );
@@ -434,7 +455,7 @@ describe("CascadeConsumer head-of-line decoupling", () => {
         const slow = env.workspaceId === "slow";
         await new Promise((r) => setTimeout(r, slow ? 1500 : 5));
         finishedAt.set(key, Date.now());
-        return { sessionId: `s-${key}`, output: [] };
+        return { sessionId: `s-${key}`, output: [], artifactIds: [], summary: "" };
       },
       () => Promise.resolve("concurrent" as ConcurrencyPolicy),
       { expiresMs: 1000 },

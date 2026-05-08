@@ -45,14 +45,12 @@ function stepComplete(stepNumber = 1): SessionStreamEvent {
 }
 
 function passVerdict(): ValidationVerdict {
-  return { status: "pass", confidence: 0.8, threshold: 0.45, issues: [], retryGuidance: "" };
+  return { verdict: "pass" };
 }
 
 function failVerdict(): ValidationVerdict {
   return {
-    status: "fail",
-    confidence: 0.2,
-    threshold: 0.45,
+    verdict: "blocking",
     issues: [
       {
         category: "sourcing",
@@ -62,7 +60,6 @@ function failVerdict(): ValidationVerdict {
         citation: null,
       },
     ],
-    retryGuidance: "cite sources",
   };
 }
 
@@ -144,12 +141,12 @@ describe("accumulateValidationAttempts", () => {
     expect(attempts?.[0]?.attempt).toBe(1);
     expect(attempts?.[0]?.status).toBe("failed");
     expect(attempts?.[0]?.terminal).toBe(false);
-    expect(attempts?.[0]?.verdict?.status).toBe("fail");
+    expect(attempts?.[0]?.verdict?.verdict).toBe("blocking");
 
     expect(attempts?.[1]?.attempt).toBe(2);
     expect(attempts?.[1]?.status).toBe("passed");
     expect(attempts?.[1]?.terminal).toBeUndefined();
-    expect(attempts?.[1]?.verdict?.status).toBe("pass");
+    expect(attempts?.[1]?.verdict?.verdict).toBe("pass");
   });
 
   it("running event creates a non-terminal entry, then is updated to terminal", () => {
@@ -167,7 +164,7 @@ describe("accumulateValidationAttempts", () => {
     const finalAttempts = updated.get("act1");
     expect(finalAttempts).toHaveLength(1);
     expect(finalAttempts?.[0]?.status).toBe("passed");
-    expect(finalAttempts?.[0]?.verdict?.status).toBe("pass");
+    expect(finalAttempts?.[0]?.verdict?.verdict).toBe("pass");
   });
 
   it("preserves attempt order even when events arrive out of order", () => {

@@ -31,6 +31,7 @@ const MAX_RETRIES = 3;
  */
 export async function* sessionEventStream(
   sessionId: string,
+  options: { signal?: AbortSignal } = {},
 ): AsyncGenerator<SessionStreamEvent | EphemeralChunk> {
   const streamUrl = `/api/daemon/api/sessions/${encodeURIComponent(sessionId)}/stream`;
   const jsonUrl = `/api/daemon/api/sessions/${encodeURIComponent(sessionId)}`;
@@ -38,10 +39,15 @@ export async function* sessionEventStream(
   let retries = 0;
 
   while (retries <= MAX_RETRIES) {
+    if (options.signal?.aborted) return;
+
     let controller: AbortController | undefined;
+    let abortFromCaller: (() => void) | undefined;
 
     try {
       controller = new AbortController();
+      abortFromCaller = () => controller?.abort();
+      options.signal?.addEventListener("abort", abortFromCaller, { once: true });
       const response = await fetch(streamUrl, {
         headers: { Accept: "text/event-stream" },
         signal: controller.signal,
@@ -84,6 +90,9 @@ export async function* sessionEventStream(
 
       await sleep(BASE_DELAY_MS * Math.pow(2, retries - 1));
     } finally {
+      if (abortFromCaller) {
+        options.signal?.removeEventListener("abort", abortFromCaller);
+      }
       controller?.abort();
     }
   }

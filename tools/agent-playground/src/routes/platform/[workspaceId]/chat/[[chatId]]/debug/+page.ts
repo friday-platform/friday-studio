@@ -11,6 +11,23 @@ type ChatBody = {
   }>;
 };
 
+type ChatDebugBody = {
+  activeStream?: {
+    events?: unknown[];
+  };
+};
+
+function collectSessionIdsFromChunk(value: unknown, out: Set<string>): void {
+  if (typeof value !== "object" || value === null || !("type" in value)) return;
+  const chunk = value as Record<string, unknown>;
+  const data = chunk.data;
+  if (typeof data === "object" && data !== null) {
+    const d = data as Record<string, unknown>;
+    if (typeof d.sessionId === "string") out.add(d.sessionId);
+    if ("chunk" in d) collectSessionIdsFromChunk(d.chunk, out);
+  }
+}
+
 /**
  * Debug view for a chat. Server load fetches:
  *   - the chat from the daemon (JetStream-backed)
@@ -61,7 +78,10 @@ export const load: PageLoad = async ({ params, fetch }) => {
     nats = { error: e instanceof Error ? e.message : String(e) };
   }
 
-  // Collect sub-session IDs referenced from tool outputs.
+  // Collect sub-session IDs referenced from completed tool outputs and from
+  // the active stream snapshot. HITL-blocked chat tools have not produced a
+  // terminal `output.sessionId` yet, so the active stream is the only source
+  // for the nested job session while the question is pending.
   const sessionIds = new Set<string>();
   for (const m of messages) {
     for (const p of m.parts) {
@@ -70,6 +90,8 @@ export const load: PageLoad = async ({ params, fetch }) => {
       if (sid) sessionIds.add(sid);
     }
   }
+  const activeEvents = (nats as ChatDebugBody | null)?.activeStream?.events ?? [];
+  for (const event of activeEvents) collectSessionIdsFromChunk(event, sessionIds);
 
   // Fetch each session view in parallel. Failures don't abort the page.
   const sessionEntries = await Promise.all(

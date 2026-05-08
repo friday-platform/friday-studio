@@ -2,7 +2,7 @@
  * Builds a __meta result object from workspace runtime context.
  *
  * Called by WorkspaceRuntime before dispatching signals to the FSM engine,
- * so every code action sees `context.results['__meta']` with repo_root,
+ * so actions see `context.results['__meta']` with repo_root,
  * workspace_path, workspace_id, and platform_url.
  */
 

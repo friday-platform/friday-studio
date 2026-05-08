@@ -9,13 +9,7 @@
 
 import type { AgentResult, AtlasAgentConfig } from "@atlas/agent-sdk";
 import type { Context } from "@atlas/fsm-engine";
-import {
-  ValidationFailedError,
-  type ValidationVerdict,
-  type VerdictStatus,
-} from "@atlas/hallucination";
-import type { PlatformModels } from "@atlas/llm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildFinalAgentPrompt,
   composeAgentPrompt,
@@ -35,14 +29,6 @@ vi.mock("@atlas/fsm-engine", () => ({
   expandArtifactRefsInDocuments: vi.fn((docs: unknown[]) => Promise.resolve(docs)),
   interpolatePromptPlaceholders: (prompt: string): string => INTERPOLATED(prompt),
 }));
-
-const mockValidate = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<ValidationVerdict>>());
-
-vi.mock("@atlas/hallucination", async () => {
-  const actual =
-    await vi.importActual<typeof import("@atlas/hallucination")>("@atlas/hallucination");
-  return { ...actual, validate: mockValidate };
-});
 
 describe("extractAgentConfigPrompt", () => {
   it("returns empty string for undefined config", () => {
@@ -257,8 +243,7 @@ describe("buildFinalAgentPrompt", () => {
 
 describe("composeAgentPrompt", () => {
   // Pins the call-site composition in WorkspaceRuntime.executeAgent. If a
-  // future refactor drops the agent-config prompt from the pipeline (the
-  // exact regression that caused the select_noodle "neon green" bug), these
+  // future refactor drops the agent-config prompt from the pipeline, these
   // tests fail.
 
   const documentContext = "## Context Facts\n- Current Date: 2026-05-06";
@@ -350,7 +335,6 @@ describe("composeAgentPrompt", () => {
 
 describe("validateAgentOutput", () => {
   const fsmContext: Context = { documents: [], state: "idle", results: {} };
-  const platformModels = {} as PlatformModels;
 
   function buildSuccessResult(data: unknown = "agent output"): AgentResult {
     return {
@@ -363,88 +347,33 @@ describe("validateAgentOutput", () => {
     };
   }
 
-  function buildVerdict(
-    status: VerdictStatus,
-    overrides: Partial<ValidationVerdict> = {},
-  ): ValidationVerdict {
-    return {
-      status,
-      confidence: status === "pass" ? 0.8 : status === "uncertain" ? 0.4 : 0.2,
-      threshold: 0.45,
-      issues: [],
-      retryGuidance: "",
-      ...overrides,
-    };
-  }
-
-  beforeEach(() => {
-    mockValidate.mockReset();
-  });
-
-  it("does not throw when verdict status is pass", async () => {
-    mockValidate.mockResolvedValue(buildVerdict("pass"));
-
-    await expect(
-      validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels),
-    ).resolves.toBeUndefined();
-
-    expect(mockValidate).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not throw when verdict status is uncertain", async () => {
-    mockValidate.mockResolvedValue(buildVerdict("uncertain"));
-
-    await expect(
-      validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels),
-    ).resolves.toBeUndefined();
-
-    expect(mockValidate).toHaveBeenCalledTimes(1);
-  });
-
-  it("throws ValidationFailedError carrying the verdict when status is fail", async () => {
-    const verdict = buildVerdict("fail", {
-      retryGuidance: "agent fabricated data",
-      issues: [
-        {
-          category: "sourcing",
-          severity: "error",
-          claim: "company has 500 employees",
-          reasoning: "no tools called",
-          citation: null,
-        },
-      ],
-    });
-    mockValidate.mockResolvedValue(verdict);
-
-    let thrown: unknown;
-    try {
-      await validateAgentOutput(buildSuccessResult(), fsmContext, "llm", platformModels);
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(ValidationFailedError);
-    expect(thrown).toBeInstanceOf(Error);
-    if (thrown instanceof ValidationFailedError) {
-      expect(thrown.verdict).toBe(verdict);
-      expect(thrown.message).toContain("test-agent");
-      expect(thrown.message).toContain("agent fabricated data");
-    }
-  });
-
-  it("skips hallucination detection for non-LLM agents", async () => {
-    await expect(
-      validateAgentOutput(buildSuccessResult(), fsmContext, "system", platformModels),
-    ).resolves.toBeUndefined();
-
-    expect(mockValidate).not.toHaveBeenCalled();
-  });
-
-  it("skips hallucination detection when platformModels is missing", async () => {
+  it("does not throw on a normal successful result", async () => {
     await expect(
       validateAgentOutput(buildSuccessResult(), fsmContext, "llm"),
     ).resolves.toBeUndefined();
+  });
 
-    expect(mockValidate).not.toHaveBeenCalled();
+  it("throws when output is the empty string", async () => {
+    const empty = { ...buildSuccessResult(""), data: "" };
+    await expect(validateAgentOutput(empty, fsmContext, "llm")).rejects.toThrow(/empty output/i);
+  });
+
+  it("does not throw when the agent returned an error envelope", async () => {
+    const errResult: AgentResult = {
+      agentId: "test-agent",
+      timestamp: "2026-04-28T00:00:00Z",
+      input: "test input",
+      ok: false,
+      error: { reason: "boom" },
+      durationMs: 1,
+    };
+    await expect(validateAgentOutput(errResult, fsmContext, "llm")).resolves.toBeUndefined();
+  });
+
+  it("throws when output references a docId not present in fsmContext", async () => {
+    const result = buildSuccessResult({ docId: "missing-doc" });
+    await expect(validateAgentOutput(result, fsmContext, "llm")).rejects.toThrow(
+      /hallucinated document references/i,
+    );
   });
 });

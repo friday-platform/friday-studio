@@ -266,14 +266,12 @@ describe("mapStateSkippedToStepSkipped", () => {
 // ---------------------------------------------------------------------------
 
 function passVerdict(): ValidationVerdict {
-  return { status: "pass", confidence: 0.85, threshold: 0.45, issues: [], retryGuidance: "" };
+  return { verdict: "pass" };
 }
 
 function uncertainVerdict(): ValidationVerdict {
   return {
-    status: "uncertain",
-    confidence: 0.4,
-    threshold: 0.45,
+    verdict: "advisory",
     issues: [
       {
         category: "judge-uncertain",
@@ -283,15 +281,12 @@ function uncertainVerdict(): ValidationVerdict {
         citation: null,
       },
     ],
-    retryGuidance: "",
   };
 }
 
 function failVerdict(): ValidationVerdict {
   return {
-    status: "fail",
-    confidence: 0.2,
-    threshold: 0.45,
+    verdict: "blocking",
     issues: [
       {
         category: "sourcing",
@@ -301,7 +296,6 @@ function failVerdict(): ValidationVerdict {
         citation: null,
       },
     ],
-    retryGuidance: "call a search tool before stating employee counts",
   };
 }
 
@@ -358,7 +352,7 @@ describe("mapValidationAttemptToStepValidation", () => {
     const result = mapValidationAttemptToStepValidation(event);
 
     expect(result?.status).toBe("passed");
-    expect(result?.verdict?.status).toBe("uncertain");
+    expect(result?.verdict?.verdict).toBe("advisory");
   });
 
   test("maps failed-non-terminal attempt (retry follows)", () => {
