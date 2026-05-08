@@ -10,9 +10,9 @@ description: >
   authored or modified, or when upsert_agent was just called with
   type:user. Do NOT load to decide whether to author a user agent —
   that decision belongs in the workspace-chat agent_types rules.
-vendored-from: friday-platform/agent-sdk@de862fe2bcf26823149ab0e8963d01ebd1f2a583
+vendored-from: friday-platform/agent-sdk@b71664e11d4794edc035791fde133eb02dfe1ac3
 vendored-path: packages/python/skills/writing-friday-python-agents/
-vendored-version: 0.1.6
+vendored-version: 0.1.7
 ---
 
 <!--
