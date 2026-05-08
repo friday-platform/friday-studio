@@ -15,6 +15,8 @@
   },
   "exclude": [
     "!integration-tests/**/*.test.ts",
+    ".claude/worktrees",
+    ".claude/projects",
     "tools/agent-playground/.svelte-kit",
     "tools/agent-playground/src/routes/**",
     "tools/agent-playground/src/**/*.svelte.ts",

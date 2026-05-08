@@ -4,10 +4,10 @@
 
   Two-column: filtered list on the left, detail panel on the right.
 
-  Live updates via workspace-scoped SSE on `/api/elicitations/stream?workspaceId=...`.
-  Replay-then-subscribe ordering, mirrors `/schedules/+page.svelte`:
-  the EventSource doesn't open until the initial list query has
-  succeeded so SSE pushes can't be clobbered by a late-arriving replay.
+  Workspace pages receive full-envelope live updates via
+  `/api/elicitations/stream?workspaceId=...`. The global page is refreshed by
+  the sanitized app-root stream at `/api/elicitations/stream/global`, avoiding
+  both full-envelope global leakage and per-workspace EventSource fanout.
 
   @component
 -->
@@ -24,6 +24,7 @@
   import { PageLayout } from "@atlas/ui";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { browser } from "$app/environment";
+  import { page } from "$app/state";
   import { countPendingElicitations, effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
   import { workspaceQueries } from "$lib/queries";
   import {
@@ -141,6 +142,24 @@
   // Selection — id is component-local state
   // ---------------------------------------------------------------------------
   let selectedId = $state<string | null>(null);
+  const requestedElicitationId = $derived(page.url.searchParams.get("elicitationId"));
+  let appliedRequestedId = "";
+
+  $effect(() => {
+    const id = requestedElicitationId;
+    if (!id || id === appliedRequestedId) return;
+    const target = elicitations.find((e) => e.id === id);
+    if (!target) return;
+    selectedId = id;
+    appliedRequestedId = id;
+
+    const targetStatus = effectiveStatus(target);
+    if (statusFilter !== "all" && statusFilter !== targetStatus) statusFilter = targetStatus;
+    if (kindFilter !== "all" && kindFilter !== target.kind) kindFilter = target.kind;
+    if (!workspaceId && workspaceFilter !== "all" && workspaceFilter !== target.workspaceId) {
+      workspaceFilter = target.workspaceId;
+    }
+  });
 
   // Auto-select first row if nothing's selected (or selection was filtered out).
   $effect(() => {
@@ -268,31 +287,10 @@
         {/if}
       {/if}
     </PageLayout.Content>
-    <PageLayout.Sidebar>
-      {#if workspaceId === null}
-        <p class="subtitle">Pause-and-ask events from every workspace.</p>
-      {:else}
-        <p class="subtitle">Pause-and-ask events for this workspace.</p>
-      {/if}
-      <p class="subtitle subtle">
-        Pending entries block FSM jobs until you answer or decline. Expired entries become
-        read-only.
-      </p>
-    </PageLayout.Sidebar>
   </PageLayout.Body>
 </PageLayout.Root>
 
 <style>
-  .subtitle {
-    color: color-mix(in srgb, var(--color-text), transparent 40%);
-    font-size: var(--font-size-2);
-  }
-
-  .subtle {
-    font-size: var(--font-size-1);
-    margin-top: var(--size-3);
-  }
-
   .filters {
     align-items: end;
     border-block-end: 1px solid var(--color-border-1);

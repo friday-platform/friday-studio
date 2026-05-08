@@ -11,6 +11,7 @@ import {
 import { ensureInstanceEventsStream, listInstanceEvents } from "./instance-events.ts";
 import {
   awaitSignalCompletion,
+  publishSignalCancellation,
   type SignalEnvelope,
   signalStreamSubject,
 } from "./signal-stream.ts";
@@ -259,6 +260,7 @@ describe("CascadeConsumer correlated callers", () => {
 
     const correlationId = crypto.randomUUID();
     const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
+    await nc.flush();
     await publishCascade(nc, envelope("ws", "ping", { correlationId }));
     const reply = await responsePromise;
     await consumer.destroy();
@@ -282,6 +284,7 @@ describe("CascadeConsumer correlated callers", () => {
 
     const correlationId = crypto.randomUUID();
     const responsePromise = awaitSignalCompletion(nc, correlationId, 2000);
+    await nc.flush();
     await publishCascade(
       nc,
       envelope("ws", "ping", {
@@ -320,6 +323,7 @@ describe("CascadeConsumer correlated callers", () => {
     await consumer.start();
 
     const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
+    await nc.flush();
     await publishCascade(nc, envelope("ws", "stream-test", { correlationId }));
     const reply = await responsePromise;
     await reader;
@@ -328,6 +332,89 @@ describe("CascadeConsumer correlated callers", () => {
 
     expect(seenChunks).toHaveLength(3);
     expect(reply.ok).toBe(true);
+  });
+
+  it("honors correlation cancellation published before cascade dispatch starts", async () => {
+    let dispatched = false;
+    const consumer = new CascadeConsumer(
+      nc,
+      () => {
+        dispatched = true;
+        return Promise.resolve({
+          sessionId: "s-cancelled",
+          output: [],
+          artifactIds: [],
+          summary: "",
+        });
+      },
+      () => Promise.resolve("concurrent" as ConcurrencyPolicy),
+      { expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    const correlationId = crypto.randomUUID();
+    await publishSignalCancellation(nc, correlationId, "client stopped");
+    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
+    await nc.flush();
+    await publishCascade(nc, envelope("ws", "cancel-before-start", { correlationId }));
+
+    const reply = await responsePromise;
+    await consumer.destroy();
+
+    expect(dispatched).toBe(false);
+    expect(reply.ok).toBe(false);
+    if (!reply.ok) expect(reply.error).toContain("client stopped");
+  });
+
+  it("aborts in-flight cascades by correlation id", async () => {
+    let sawAbort = false;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+
+    const consumer = new CascadeConsumer(
+      nc,
+      (_env, ctx) => {
+        markStarted();
+        return new Promise<{
+          sessionId: string;
+          output: never[];
+          artifactIds: string[];
+          summary: string;
+        }>((_, reject) => {
+          if (ctx.abortSignal.aborted) {
+            sawAbort = true;
+            reject(new Error("aborted before listener"));
+            return;
+          }
+          ctx.abortSignal.addEventListener(
+            "abort",
+            () => {
+              sawAbort = true;
+              reject(new Error("aborted by correlation cancellation"));
+            },
+            { once: true },
+          );
+        });
+      },
+      () => Promise.resolve("concurrent" as ConcurrencyPolicy),
+      { expiresMs: 1000 },
+    );
+    await consumer.start();
+
+    const correlationId = crypto.randomUUID();
+    const responsePromise = awaitSignalCompletion(nc, correlationId, 5000);
+    await nc.flush();
+    await publishCascade(nc, envelope("ws", "cancel-running", { correlationId }));
+    await started;
+    await publishSignalCancellation(nc, correlationId, "client stopped");
+
+    const reply = await responsePromise;
+    await consumer.destroy();
+
+    expect(sawAbort).toBe(true);
+    expect(reply.ok).toBe(false);
   });
 });
 

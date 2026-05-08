@@ -6,6 +6,56 @@ import { DAEMON_BASE_URL } from "$lib/daemon-url";
  * Strips the `/api/daemon` prefix and forwards the rest of the path.
  * SSE responses (`text/event-stream`) are passed through without buffering.
  */
+function proxyAbortableBody(
+  body: ReadableStream<Uint8Array>,
+  requestSignal: AbortSignal,
+  abortUpstream: () => void,
+): ReadableStream<Uint8Array> {
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let cancelled = false;
+
+  const cancelUpstream = () => {
+    if (cancelled) return;
+    cancelled = true;
+    abortUpstream();
+    void reader?.cancel().catch(() => {
+      // The upstream may already be gone.
+    });
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      reader = body.getReader();
+      requestSignal.addEventListener("abort", cancelUpstream, { once: true });
+      if (requestSignal.aborted) cancelUpstream();
+
+      void (async () => {
+        try {
+          while (!cancelled) {
+            const { done, value } = await reader!.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          if (!cancelled) controller.close();
+        } catch (err) {
+          if (!cancelled) controller.error(err);
+        } finally {
+          requestSignal.removeEventListener("abort", cancelUpstream);
+          try {
+            reader?.releaseLock();
+          } catch {
+            // Reader may already be released after cancellation.
+          }
+          abortUpstream();
+        }
+      })();
+    },
+    cancel() {
+      cancelUpstream();
+    },
+  });
+}
+
 const handler: RequestHandler = async ({ params, request }) => {
   const path = params.path ?? "";
   const target = new URL(`/${path}`, DAEMON_BASE_URL);
@@ -14,6 +64,10 @@ const handler: RequestHandler = async ({ params, request }) => {
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("content-length");
+
+  const upstreamController = new AbortController();
+  const abortUpstream = () => upstreamController.abort();
+  request.signal.addEventListener("abort", abortUpstream, { once: true });
 
   // Buffer the request body for methods that carry one. Streaming with
   // `duplex: "half"` races the response: when the daemon short-circuits
@@ -28,8 +82,14 @@ const handler: RequestHandler = async ({ params, request }) => {
 
   let res: Response;
   try {
-    res = await fetch(target, { method: request.method, headers, body, signal: request.signal });
+    res = await fetch(target, {
+      method: request.method,
+      headers,
+      body,
+      signal: upstreamController.signal,
+    });
   } catch (err) {
+    request.signal.removeEventListener("abort", abortUpstream);
     const message = err instanceof Error ? err.message : String(err);
     return new Response(
       JSON.stringify({ error: `daemon proxy fetch failed: ${message}` }),
@@ -37,10 +97,20 @@ const handler: RequestHandler = async ({ params, request }) => {
     );
   }
 
-  // SSE: pass through the readable stream without buffering
+  // SSE: proxy with explicit cancellation. Returning `res.body` directly
+  // leaves the upstream daemon fetch alive when the browser closes the
+  // EventSource/fetch, which leaks daemon subscriptions and dev-server fds.
   if (res.headers.get("content-type")?.includes("text/event-stream")) {
-    return new Response(res.body, { status: res.status, headers: res.headers });
+    if (!res.body) {
+      request.signal.removeEventListener("abort", abortUpstream);
+      return new Response(null, { status: res.status, headers: res.headers });
+    }
+    request.signal.removeEventListener("abort", abortUpstream);
+    const stream = proxyAbortableBody(res.body, request.signal, abortUpstream);
+    return new Response(stream, { status: res.status, headers: res.headers });
   }
+
+  request.signal.removeEventListener("abort", abortUpstream);
 
   // Strip content-encoding — fetch() already decompresses the body,
   // so forwarding the header causes the browser to double-decompress.

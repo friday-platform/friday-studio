@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [svelte()],
   resolve: {
     alias: {
+      $lib: fileURLToPath(new URL("./tools/agent-playground/src/lib", import.meta.url)),
       // Vitest does not load the SvelteKit Vite plugin, so `$app/*`
       // virtual modules never get registered. Stub the ones component
       // tests reach for.

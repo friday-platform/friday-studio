@@ -53,6 +53,7 @@ import {
   type NatsConnection,
   RetentionPolicy,
   StorageType,
+  type Subscription,
 } from "nats";
 import {
   type CascadeQueueDrainedEvent,
@@ -62,6 +63,7 @@ import {
   publishInstanceEvent,
 } from "./instance-events.ts";
 import {
+  SignalCancellationSchema,
   type SignalEnvelope,
   SignalEnvelopeSchema,
   type SignalResponse,
@@ -81,6 +83,7 @@ const DEFAULT_MAX_AGE_NS = 60 * 60 * 1_000_000_000; // 1h
 const DEFAULT_DUPLICATE_WINDOW_NS = 5 * 60 * 1_000_000_000; // 5min
 const DEFAULT_QUEUE_TIMEOUT_MS = 5 * 60 * 1000; // 5min
 const DEFAULT_MAX_ACK_PENDING = 32;
+const CANCELLED_CORRELATION_MAX_AGE_MS = 60 * 60 * 1000; // matches CASCADES max_age
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -254,6 +257,10 @@ export class CascadeConsumer {
    */
   private readonly policyLocks = new Map<string, Promise<void>>();
   private saturated = false;
+  private cancelSub: Subscription | null = null;
+  private cancelLoop: Promise<void> | null = null;
+  private readonly cancelledCorrelations = new Map<string, { reason?: string; at: number }>();
+  private readonly correlatedInFlight = new Map<string, InFlightCascade>();
 
   /**
    * Cascade-execution semaphore. Distinct from JetStream's
@@ -292,6 +299,66 @@ export class CascadeConsumer {
     this.cascadeInFlight--;
     const next = this.cascadeWaiters.shift();
     if (next) next();
+  }
+
+  private pruneStaleCancellations(): void {
+    const cutoff = Date.now() - CANCELLED_CORRELATION_MAX_AGE_MS;
+    for (const [correlationId, cancellation] of this.cancelledCorrelations) {
+      if (cancellation.at < cutoff) this.cancelledCorrelations.delete(correlationId);
+    }
+  }
+
+  private recordCorrelationCancellation(correlationId: string, reason?: string): void {
+    this.pruneStaleCancellations();
+    this.cancelledCorrelations.set(correlationId, { reason, at: Date.now() });
+    const cascade = this.correlatedInFlight.get(correlationId);
+    if (cascade && !cascade.controller.signal.aborted) {
+      cascade.controller.abort(reason ?? "correlation cancelled");
+    }
+  }
+
+  private cancellationForCorrelation(
+    correlationId: string | undefined,
+  ): { reason?: string; at: number } | undefined {
+    if (!correlationId) return undefined;
+    this.pruneStaleCancellations();
+    return this.cancelledCorrelations.get(correlationId);
+  }
+
+  private startCancelSubscription(): void {
+    if (this.cancelSub) return;
+    const sub = this.nc.subscribe("signals.cancel.>");
+    this.cancelSub = sub;
+    this.cancelLoop = (async () => {
+      for await (const msg of sub) {
+        const correlationId = msg.subject.slice("signals.cancel.".length);
+        let reason: string | undefined;
+        try {
+          const parsed = SignalCancellationSchema.safeParse(JSON.parse(dec.decode(msg.data)));
+          if (parsed.success) reason = parsed.data.reason;
+        } catch {
+          // Malformed cancellation payloads still cancel by subject correlation id.
+        }
+        this.recordCorrelationCancellation(correlationId, reason);
+      }
+    })();
+    this.cancelLoop.catch((error) => {
+      logger.debug("Cascade cancellation subscription ended", { error: stringifyError(error) });
+    });
+  }
+
+  private stopCancelSubscription(): Promise<void> {
+    const sub = this.cancelSub;
+    const loop = this.cancelLoop;
+    this.cancelSub = null;
+    this.cancelLoop = null;
+    if (!sub) return Promise.resolve();
+    try {
+      sub.unsubscribe();
+    } catch {
+      // Already gone.
+    }
+    return loop?.catch(() => undefined) ?? Promise.resolve();
   }
 
   /**
@@ -368,6 +435,9 @@ export class CascadeConsumer {
       });
       logger.info("Created CASCADES consumer", { name: this.name });
     }
+    this.startCancelSubscription();
+    await this.nc.flush();
+
     this.running = true;
     this.loop = this.runLoop();
 
@@ -401,6 +471,7 @@ export class CascadeConsumer {
     if (signal && !signal.aborted) {
       signal.addEventListener("abort", () => void this.currentBatch?.close(), { once: true });
     }
+    await this.stopCancelSubscription();
     if (this.loop) {
       try {
         await this.loop;
@@ -416,6 +487,7 @@ export class CascadeConsumer {
         cascade.controller.abort("daemon shutdown");
       }
     }
+    this.correlatedInFlight.clear();
   }
 
   /** Test-only — drop the durable consumer entry from the broker. */
@@ -599,6 +671,13 @@ export class CascadeConsumer {
       this.inFlight.set(key, set);
     }
     set.add(cascade);
+    if (envelope.correlationId) {
+      this.correlatedInFlight.set(envelope.correlationId, cascade);
+      const cancellation = this.cancellationForCorrelation(envelope.correlationId);
+      if (cancellation) {
+        cascade.controller.abort(cancellation.reason ?? "correlation cancelled");
+      }
+    }
     this.maybeEmitSaturated();
 
     const onStreamEvent = envelope.correlationId
@@ -628,6 +707,10 @@ export class CascadeConsumer {
       try {
         await this.acquireSlot();
         slotHeld = true;
+        if (controller.signal.aborted) {
+          const reason = stringifyError(controller.signal.reason ?? "correlation cancelled");
+          throw new Error(`cascade cancelled before dispatch: ${reason}`);
+        }
         const result = await this.dispatch(envelope, {
           onStreamEvent,
           abortSignal: controller.signal,
@@ -673,6 +756,13 @@ export class CascadeConsumer {
         if (liveSet) {
           liveSet.delete(cascade);
           if (liveSet.size === 0) this.inFlight.delete(key);
+        }
+        if (
+          envelope.correlationId &&
+          this.correlatedInFlight.get(envelope.correlationId) === cascade
+        ) {
+          this.correlatedInFlight.delete(envelope.correlationId);
+          this.cancelledCorrelations.delete(envelope.correlationId);
         }
         this.maybeEmitDrained();
       }
