@@ -234,6 +234,8 @@ case "$(check_min_version deno "$DENO_MIN"; echo $?)" in
            deno upgrade
        fi ;;
     2) echo "→ deno not found — installing user-scoped from deno.land"
+       echo "  ℹ The Deno installer will ask which shells to configure (e.g. [ ] bash)."
+       echo "    Use ↑/↓ to navigate, Space to toggle, Enter to confirm."
        curl -fsSL https://deno.land/install.sh | sh
        export PATH="$HOME/.deno/bin:$PATH"
        if ! command -v deno >/dev/null 2>&1; then
