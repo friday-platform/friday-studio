@@ -4,7 +4,12 @@
   import { tick } from "svelte";
   import { createQuery } from "@tanstack/svelte-query";
   import { page } from "$app/state";
+  import { resolve } from "$app/paths";
   import { effectiveElicitationStatus } from "$lib/elicitation-counts.ts";
+  import {
+    buildNestedChoiceAnswer,
+    parseNestedChoicePrompt,
+  } from "$lib/human-input/nested-choice.ts";
   import {
     elicitationQueries,
     useAnswerElicitation,
@@ -44,6 +49,7 @@
   const isPending = $derived(effectiveStatus === "pending");
 
   let selectedValue = $state("");
+  let nestedChoices = $state<Record<string, string>>({});
   let freeText = $state("");
   let note = $state("");
 
@@ -51,12 +57,22 @@
     matched?.id;
     request?.question;
     selectedValue = request?.options?.[0]?.value ?? "";
+    nestedChoices = {};
     freeText = "";
     note = "";
   });
 
   const hasOptions = $derived((request?.options?.length ?? 0) > 0);
-  const answerValue = $derived(hasOptions ? selectedValue : freeText.trim());
+  const nestedChoicePrompt = $derived(
+    request && !hasOptions ? parseNestedChoicePrompt(request.question) : null,
+  );
+  const answerValue = $derived(
+    hasOptions
+      ? selectedValue
+      : nestedChoicePrompt
+        ? buildNestedChoiceAnswer(nestedChoices)
+        : freeText.trim(),
+  );
 
   const answerMutation = useAnswerElicitation();
   const declineMutation = useDeclineElicitation();
@@ -66,8 +82,8 @@
 
   const activityHref = $derived(
     routeWorkspaceId
-      ? `/platform/${encodeURIComponent(routeWorkspaceId)}/activity`
-      : "/activity",
+      ? resolve("/platform/[workspaceId]/activity", { workspaceId: routeWorkspaceId })
+      : resolve("/activity", {}),
   );
 
   let actionsEl: HTMLDivElement | undefined = $state();
@@ -114,7 +130,7 @@
   </div>
 
   <div class="question">
-    {request?.question ?? "Waiting for a decision from the user."}
+    {nestedChoicePrompt?.intro || request?.question || "Waiting for a decision from the user."}
   </div>
 
   {#if matched?.answer}
@@ -142,6 +158,37 @@
             </label>
           {/each}
         </div>
+      {:else if nestedChoicePrompt}
+        <div class="nested-choice-list" aria-label="Choose an action for each item">
+          {#each nestedChoicePrompt.items as item (item.index)}
+            <label class="nested-choice-item">
+              <span class="nested-choice-copy">
+                <strong>{item.index}. {item.title}</strong>
+                {#if item.detail}
+                  <span>{item.detail}</span>
+                {/if}
+              </span>
+              <select
+                disabled={inFlight}
+                value={nestedChoices[String(item.index)] ?? ""}
+                onchange={(event) => {
+                  nestedChoices = {
+                    ...nestedChoices,
+                    [String(item.index)]: event.currentTarget.value,
+                  };
+                }}
+              >
+                <option value="">Choose…</option>
+                {#each item.actions as action (action.value)}
+                  <option value={action.value}>{action.label}</option>
+                {/each}
+              </select>
+            </label>
+          {/each}
+          {#if nestedChoicePrompt.instructions}
+            <p class="hint">{nestedChoicePrompt.instructions}</p>
+          {/if}
+        </div>
       {:else}
         <label class="field">
           <span>Answer</span>
@@ -166,7 +213,7 @@
         <Button variant="destructive" onclick={onDecline} disabled={!canDecline}>
           {declineMutation.isPending ? "Declining…" : "Decline"}
         </Button>
-        <a href={activityHref}>Open Activity</a>
+        <Button href={activityHref} variant="none">Open Activity</Button>
       </div>
 
       {#if answerMutation.isError}
@@ -182,7 +229,7 @@
     <p class="hint">
       The run is waiting for a matching Activity item. If it does not appear here, open Activity.
     </p>
-    <a class="activity-link" href={activityHref}>Open Activity</a>
+    <Button href={activityHref} variant="none">Open Activity</Button>
   {/if}
 </div>
 
@@ -234,6 +281,7 @@
     font-size: var(--font-size-2);
     font-weight: var(--font-weight-6);
     line-height: 1.35;
+    white-space: pre-wrap;
   }
 
   .response-form,
@@ -243,7 +291,8 @@
     gap: var(--size-2);
   }
 
-  .options {
+  .options,
+  .nested-choice-list {
     display: flex;
     flex-direction: column;
     gap: var(--size-1-5);
@@ -266,6 +315,52 @@
 
   .option input {
     margin-block-start: 0.2em;
+  }
+
+  .nested-choice-item {
+    align-items: start;
+    background-color: var(--surface);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    display: grid;
+    gap: var(--size-2);
+    grid-template-columns: minmax(0, 1fr) minmax(9rem, max-content);
+    padding: var(--size-2);
+  }
+
+  .nested-choice-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    min-width: 0;
+  }
+
+  .nested-choice-copy strong {
+    color: var(--text-bright);
+    font-size: var(--font-size-1);
+    line-height: 1.3;
+  }
+
+  .nested-choice-copy span {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-size: var(--font-size-1);
+    line-height: 1.35;
+    white-space: pre-wrap;
+  }
+
+  .nested-choice-item select {
+    background-color: var(--surface);
+    border: 1px solid var(--color-border-1);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    font: inherit;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  @media (max-width: 720px) {
+    .nested-choice-item {
+      grid-template-columns: 1fr;
+    }
   }
 
   .field {
@@ -301,18 +396,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--size-2);
-  }
-
-  .actions a,
-  .activity-link {
-    color: var(--blue-primary);
-    font-size: var(--font-size-1);
-    text-decoration: none;
-  }
-
-  .actions a:hover,
-  .activity-link:hover {
-    text-decoration: underline;
   }
 
   .answer-block code {

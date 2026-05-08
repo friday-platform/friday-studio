@@ -293,6 +293,7 @@ export class AtlasDaemon {
       transport: StreamableHTTPTransport;
       createdAt: number;
       lastUsed: number;
+      activeRequests: number;
     }
   >();
   private platformSessionCleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -1055,6 +1056,7 @@ export class AtlasDaemon {
       transport,
       createdAt: Date.now(),
       lastUsed: Date.now(),
+      activeRequests: 0,
     });
 
     // Set up cleanup
@@ -1064,6 +1066,27 @@ export class AtlasDaemon {
     };
 
     return { server, transport };
+  }
+
+  private async handlePlatformMcpRequest(
+    sessionId: string,
+    transport: StreamableHTTPTransport,
+    c: Context,
+  ): Promise<Response | undefined> {
+    const session = this.platformMcpSessions.get(sessionId);
+    if (session) {
+      session.activeRequests++;
+      session.lastUsed = Date.now();
+    }
+    try {
+      return await transport.handleRequest(c);
+    } finally {
+      const current = this.platformMcpSessions.get(sessionId);
+      if (current) {
+        current.activeRequests = Math.max(0, current.activeRequests - 1);
+        current.lastUsed = Date.now();
+      }
+    }
   }
 
   /**
@@ -1234,7 +1257,7 @@ export class AtlasDaemon {
             const { transport } = await this.getOrCreatePlatformSession(newSessionId);
 
             // Handle the request - this will set the Mcp-Session-Id header
-            const response = await transport.handleRequest(c);
+            const response = await this.handlePlatformMcpRequest(newSessionId, transport, c);
 
             // The transport now has the session ID set
             if (transport.sessionId) {
@@ -1252,13 +1275,13 @@ export class AtlasDaemon {
             // Handle DELETE specially - clean up after processing
             if (c.req.method === "DELETE") {
               logger.info("Terminating Platform MCP session", { sessionId });
-              const response = await transport.handleRequest(c);
+              const response = await this.handlePlatformMcpRequest(sessionId, transport, c);
               this.cleanupPlatformSession(sessionId);
               return response;
             }
 
             // Handle the request
-            return transport.handleRequest(c);
+            return this.handlePlatformMcpRequest(sessionId, transport, c);
           } else {
             // No session ID and not a POST request - this is an error
             logger.error("[Daemon] Invalid request - no session ID for non-POST", {
@@ -2187,6 +2210,8 @@ export class AtlasDaemon {
     const hasActiveSessions = sessions.some(
       (s) => s.session.status === WorkspaceSessionStatus.ACTIVE,
     );
+    const hasInFlightSessions = runtime.hasInFlightSessions();
+    const inFlightSessionIds = runtime.listInFlightSessionIds();
 
     // Check for active agent executions in the orchestrator
     let hasActiveExecutions = false;
@@ -2207,6 +2232,8 @@ export class AtlasDaemon {
       sessionsCount: sessions.length,
       sessionStatuses: sessions.map((s) => s.session.status),
       hasActiveSessions,
+      hasInFlightSessions,
+      inFlightSessionIds,
       hasActiveExecutions,
       activeExecutionsCount: activeExecutions.length,
       activeExecutions: activeExecutions.map((e) => ({
@@ -2216,14 +2243,15 @@ export class AtlasDaemon {
       })),
     });
 
-    if (!hasActiveSessions && !hasActiveExecutions) {
+    if (!hasActiveSessions && !hasInFlightSessions && !hasActiveExecutions) {
       logger.info("Destroying idle workspace runtime", { workspaceId });
       await this.destroyWorkspaceRuntime(workspaceId);
     } else {
       // Still has active sessions or executions, reset timeout
-      if (hasActiveExecutions) {
-        logger.debug("Workspace has active agent executions, resetting idle timeout", {
+      if (hasInFlightSessions || hasActiveExecutions) {
+        logger.debug("Workspace has active work, resetting idle timeout", {
           workspaceId,
+          inFlightSessionCount: inFlightSessionIds.length,
           activeExecutionsCount: activeExecutions.length,
         });
       }
@@ -2879,8 +2907,11 @@ export class AtlasDaemon {
     const now = Date.now();
     const sessionsToCleanup: string[] = [];
 
-    // Find stale sessions
+    // Find stale sessions. Long-running platform tools (notably
+    // request_human_input) can hold an MCP request open for the full HITL
+    // TTL, so never reap a session while a request is still in flight.
     for (const [sessionId, session] of this.platformMcpSessions) {
+      if (session.activeRequests > 0) continue;
       if (now - session.lastUsed > this.PLATFORM_SESSION_TIMEOUT_MS) {
         sessionsToCleanup.push(sessionId);
       }
@@ -2900,9 +2931,9 @@ export class AtlasDaemon {
 
     // Enforce session limit (LRU eviction)
     if (this.platformMcpSessions.size > this.MAX_PLATFORM_SESSIONS) {
-      const sortedSessions = Array.from(this.platformMcpSessions.entries()).sort(
-        (a, b) => a[1].lastUsed - b[1].lastUsed,
-      );
+      const sortedSessions = Array.from(this.platformMcpSessions.entries())
+        .filter(([, session]) => session.activeRequests === 0)
+        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
 
       const toEvict = sortedSessions.slice(
         0,

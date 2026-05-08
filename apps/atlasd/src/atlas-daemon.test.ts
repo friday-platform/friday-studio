@@ -5,6 +5,7 @@
  */
 
 import process from "node:process";
+import type { WorkspaceRuntime } from "@atlas/workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AtlasDaemon } from "./atlas-daemon.ts";
 import { DiscordGatewayService } from "./discord-gateway-service.ts";
@@ -167,6 +168,72 @@ describe("AtlasDaemon.maybeStartDiscordGateway", () => {
     const deps = (service as unknown as { deps: { credentials: Record<string, string> } }).deps;
     // First workspace wins; operators see the warn log but the bot still starts.
     expect(deps.credentials.botToken).toBe("bot-a");
+  });
+});
+
+describe("AtlasDaemon idle/session cleanup", () => {
+  it("does not idle-destroy a runtime that still has in-flight sessions", async () => {
+    const daemon = new AtlasDaemon({ port: 0, idleTimeoutMs: 60_000 });
+    const shutdown = vi.fn().mockResolvedValue(undefined);
+    const resetIdleTimeout = vi.spyOn(daemon, "resetIdleTimeout").mockImplementation(() => {});
+
+    daemon.runtimes.set("ws-1", {
+      getSessions: () => [],
+      hasInFlightSessions: () => true,
+      listInFlightSessionIds: () => ["sess-1"],
+      getOrchestrator: () => ({ hasActiveExecutions: () => false, getActiveExecutions: () => [] }),
+      shutdown,
+    } as unknown as WorkspaceRuntime);
+    (
+      daemon as unknown as {
+        workspaceManager: {
+          unregisterRuntime: (id: string) => Promise<void>;
+          updateWorkspaceStatus: (id: string, status: string) => Promise<void>;
+        };
+      }
+    ).workspaceManager = {
+      unregisterRuntime: vi.fn().mockResolvedValue(undefined),
+      updateWorkspaceStatus: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await (
+      daemon as unknown as { checkAndDestroyIdleWorkspace: (id: string) => Promise<void> }
+    ).checkAndDestroyIdleWorkspace("ws-1");
+
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(daemon.runtimes.has("ws-1")).toBe(true);
+    expect(resetIdleTimeout).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("does not clean up stale platform MCP sessions while a request is in flight", () => {
+    const daemon = new AtlasDaemon({ port: 0 });
+    const now = Date.now();
+    const stale = now - 16 * 60 * 1000;
+    const sessions = (
+      daemon as unknown as { platformMcpSessions: Map<string, Record<string, unknown>> }
+    ).platformMcpSessions;
+
+    sessions.set("active-hitl", {
+      server: {},
+      transport: {},
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 1,
+    });
+    sessions.set("idle-old", {
+      server: {},
+      transport: {},
+      createdAt: stale,
+      lastUsed: stale,
+      activeRequests: 0,
+    });
+
+    (
+      daemon as unknown as { performPlatformSessionCleanup: () => void }
+    ).performPlatformSessionCleanup();
+
+    expect(sessions.has("active-hitl")).toBe(true);
+    expect(sessions.has("idle-old")).toBe(false);
   });
 });
 

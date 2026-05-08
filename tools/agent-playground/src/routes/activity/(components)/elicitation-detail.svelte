@@ -20,6 +20,10 @@
     useAnswerElicitation,
     useDeclineElicitation,
   } from "$lib/queries/elicitation-queries.ts";
+  import {
+    buildNestedChoiceAnswer,
+    parseNestedChoicePrompt,
+  } from "$lib/human-input/nested-choice.ts";
 
   type Props = {
     elicitation: Elicitation;
@@ -44,6 +48,7 @@
    * single click for the common allowlist denial flow.
    */
   let selectedValue = $state<string>("");
+  let nestedChoices = $state<Record<string, string>>({});
   let freeText = $state<string>("");
   let note = $state<string>("");
 
@@ -51,6 +56,7 @@
     // Reset on switch. Read `elicitation.id` so the effect re-runs.
     elicitation.id;
     selectedValue = elicitation.options?.[0]?.value ?? "";
+    nestedChoices = {};
     freeText = "";
     note = "";
   });
@@ -61,6 +67,9 @@
   const inFlight = $derived(answerMutation.isPending || declineMutation.isPending);
 
   const hasOptions = $derived((elicitation.options?.length ?? 0) > 0);
+  const nestedChoicePrompt = $derived(
+    !hasOptions ? parseNestedChoicePrompt(elicitation.question) : null,
+  );
 
   /**
    * Effective answer value:
@@ -70,7 +79,13 @@
    * The button stays disabled when the result would be empty so we
    * don't POST a meaningless `value: ""` to the daemon.
    */
-  const answerValue = $derived(hasOptions ? selectedValue : freeText.trim());
+  const answerValue = $derived(
+    hasOptions
+      ? selectedValue
+      : nestedChoicePrompt
+        ? buildNestedChoiceAnswer(nestedChoices)
+        : freeText.trim(),
+  );
   const canAnswer = $derived(!isReadOnly && !inFlight && answerValue.length > 0);
 
   function onAnswer() {
@@ -99,7 +114,7 @@
 <div class="detail">
   <header class="detail-header">
     <span class="kind">{elicitation.kind}</span>
-    <h2>{elicitation.question}</h2>
+    <h2>{nestedChoicePrompt?.intro || elicitation.question}</h2>
     <div class="meta">
       <span>workspace: <code>{elicitation.workspaceId}</code></span>
       <span class="sep">·</span>
@@ -152,6 +167,37 @@
               <span>{opt.label}</span>
             </label>
           {/each}
+        </div>
+      {:else if nestedChoicePrompt}
+        <div class="nested-choice-list" aria-label="Choose an action for each item">
+          {#each nestedChoicePrompt.items as item (item.index)}
+            <label class="nested-choice-item">
+              <span class="nested-choice-copy">
+                <strong>{item.index}. {item.title}</strong>
+                {#if item.detail}
+                  <span>{item.detail}</span>
+                {/if}
+              </span>
+              <select
+                disabled={inFlight}
+                value={nestedChoices[String(item.index)] ?? ""}
+                onchange={(event) => {
+                  nestedChoices = {
+                    ...nestedChoices,
+                    [String(item.index)]: event.currentTarget.value,
+                  };
+                }}
+              >
+                <option value="">Choose…</option>
+                {#each item.actions as action (action.value)}
+                  <option value={action.value}>{action.label}</option>
+                {/each}
+              </select>
+            </label>
+          {/each}
+          {#if nestedChoicePrompt.instructions}
+            <p class="muted nested-instructions">{nestedChoicePrompt.instructions}</p>
+          {/if}
         </div>
       {:else}
         <label class="field">
@@ -218,6 +264,7 @@
     font-size: var(--font-size-4);
     font-weight: var(--font-weight-6);
     margin: 0;
+    white-space: pre-wrap;
   }
 
   .kind {
@@ -295,7 +342,8 @@
     white-space: pre;
   }
 
-  .options {
+  .options,
+  .nested-choice-list {
     display: flex;
     flex-direction: column;
     gap: var(--size-1);
@@ -318,6 +366,58 @@
 
   .option.active {
     border-color: var(--color-accent, #1f6feb);
+  }
+
+  .nested-choice-item {
+    align-items: start;
+    background-color: var(--surface, white);
+    border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
+    border-radius: var(--radius-2);
+    display: grid;
+    gap: var(--size-2);
+    grid-template-columns: minmax(0, 1fr) minmax(9rem, max-content);
+    padding: var(--size-2) var(--size-3);
+  }
+
+  .nested-choice-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+    min-width: 0;
+  }
+
+  .nested-choice-copy strong {
+    color: var(--color-text);
+    font-size: var(--font-size-2);
+    line-height: 1.3;
+  }
+
+  .nested-choice-copy span {
+    color: color-mix(in srgb, var(--color-text), transparent 35%);
+    font-size: var(--font-size-1);
+    line-height: 1.35;
+    white-space: pre-wrap;
+  }
+
+  .nested-choice-item select {
+    background-color: var(--surface, white);
+    border: 1px solid color-mix(in srgb, var(--color-border-1), transparent 30%);
+    border-radius: var(--radius-2);
+    color: var(--color-text);
+    font: inherit;
+    padding: var(--size-1) var(--size-2);
+  }
+
+  .nested-instructions {
+    font-size: var(--font-size-1);
+    margin: 0;
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 720px) {
+    .nested-choice-item {
+      grid-template-columns: 1fr;
+    }
   }
 
   .field {

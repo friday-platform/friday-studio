@@ -12,6 +12,47 @@ const ElicitationOptionInputSchema = z.object({
   value: z.string().min(1).describe("Machine-readable answer value returned to the agent"),
 });
 
+type HumanInputOption = z.infer<typeof ElicitationOptionInputSchema>;
+
+function optionsEqual(
+  a: readonly HumanInputOption[] | undefined,
+  b: readonly HumanInputOption[] | undefined,
+): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  return left.every(
+    (option, index) => option.label === right[index]?.label && option.value === right[index]?.value,
+  );
+}
+
+async function findReusablePendingElicitation(input: {
+  workspaceId: string;
+  sessionId: string;
+  actionId?: string;
+  question: string;
+  options?: HumanInputOption[];
+}) {
+  const listed = await ElicitationStorage.list({
+    workspaceId: input.workspaceId,
+    sessionId: input.sessionId,
+    status: "pending",
+  });
+  if (!listed.ok) return null;
+
+  return (
+    listed.data
+      .filter(
+        (elicitation) =>
+          elicitation.kind === "open-question" &&
+          elicitation.question === input.question &&
+          (elicitation.actionId ?? "") === (input.actionId ?? "") &&
+          optionsEqual(elicitation.options, input.options),
+      )
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null
+  );
+}
+
 export function registerRequestHumanInputTool(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
     "request_human_input",
@@ -56,44 +97,64 @@ export function registerRequestHumanInputTool(server: McpServer, ctx: ToolContex
       }
 
       try {
-        const created = await ElicitationStorage.create({
+        const effectiveSessionId = sessionId ?? "unknown";
+        const existing = await findReusablePendingElicitation({
           workspaceId,
-          sessionId: sessionId ?? "unknown",
+          sessionId: effectiveSessionId,
           ...(actionId && { actionId }),
-          kind: "open-question",
           question,
           ...(options && options.length > 0 ? { options } : {}),
-          expiresAt,
         });
-        if (!created.ok) {
-          ctx.logger.error("request_human_input elicitation create failed", {
+
+        let elicitation = existing;
+        if (elicitation) {
+          ctx.logger.info("request_human_input reusing pending elicitation", {
             workspaceId,
             sessionId,
             actionId,
-            error: created.error,
+            elicitationId: elicitation.id,
           });
-          return createErrorResponse("Failed to create elicitation", created.error);
+        } else {
+          const created = await ElicitationStorage.create({
+            workspaceId,
+            sessionId: effectiveSessionId,
+            ...(actionId && { actionId }),
+            kind: "open-question",
+            question,
+            ...(options && options.length > 0 ? { options } : {}),
+            expiresAt,
+          });
+          if (!created.ok) {
+            ctx.logger.error("request_human_input elicitation create failed", {
+              workspaceId,
+              sessionId,
+              actionId,
+              error: created.error,
+            });
+            return createErrorResponse("Failed to create elicitation", created.error);
+          }
+          elicitation = created.data;
+
+          ctx.logger.info("request_human_input elicitation created", {
+            workspaceId,
+            sessionId,
+            actionId,
+            elicitationId: elicitation.id,
+          });
         }
 
-        ctx.logger.info("request_human_input elicitation created", {
-          workspaceId,
-          sessionId,
-          actionId,
-          elicitationId: created.data.id,
-        });
-
         const terminal = await waitForTerminalElicitation(ctx, {
-          id: created.data.id,
-          workspaceId: created.data.workspaceId,
-          sessionId: created.data.sessionId,
-          expiresAt: created.data.expiresAt,
+          id: elicitation.id,
+          workspaceId: elicitation.workspaceId,
+          sessionId: elicitation.sessionId,
+          expiresAt: elicitation.expiresAt,
         });
 
         if (terminal.status === "pending") {
           return createSuccessResponse({
             ok: false,
             status: "pending",
-            elicitationId: created.data.id,
+            elicitationId: elicitation.id,
             reason: "pending_user_input",
           });
         }
@@ -101,7 +162,7 @@ export function registerRequestHumanInputTool(server: McpServer, ctx: ToolContex
           return createSuccessResponse({
             ok: true,
             status: "answered",
-            elicitationId: created.data.id,
+            elicitationId: elicitation.id,
             answer: terminal.value ?? "",
             ...(terminal.note ? { note: terminal.note } : {}),
           });
@@ -109,7 +170,7 @@ export function registerRequestHumanInputTool(server: McpServer, ctx: ToolContex
         return createSuccessResponse({
           ok: false,
           status: terminal.status,
-          elicitationId: created.data.id,
+          elicitationId: elicitation.id,
           reason: terminal.status,
           ...(terminal.note ? { note: terminal.note } : {}),
         });

@@ -3563,6 +3563,14 @@ export class WorkspaceRuntime {
     return this.activeAbortControllers.has(sessionId);
   }
 
+  hasInFlightSessions(): boolean {
+    return this.activeAbortControllers.size > 0;
+  }
+
+  listInFlightSessionIds(): string[] {
+    return Array.from(this.activeAbortControllers.keys());
+  }
+
   listSignals(): Array<{ id: string; description?: string; provider: string }> {
     const signals = this.config.workspace.signals || {};
     return Object.entries(signals).map(([id, config]) => ({

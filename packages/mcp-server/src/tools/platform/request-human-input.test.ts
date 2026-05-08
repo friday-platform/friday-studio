@@ -5,6 +5,7 @@ import type { ZodRawShape } from "zod";
 const mockState = vi.hoisted(() => ({
   creates: [] as Record<string, unknown>[],
   expireCalls: [] as Record<string, unknown>[],
+  listCalls: [] as Record<string, unknown>[],
   stored: new Map<string, Record<string, unknown>>(),
   getMode: "missing" as "missing" | "stored",
   nextId: "elc_human_input",
@@ -12,6 +13,7 @@ const mockState = vi.hoisted(() => ({
   reset() {
     this.creates = [];
     this.expireCalls = [];
+    this.listCalls = [];
     this.stored = new Map();
     this.getMode = "missing";
     this.nextId = "elc_human_input";
@@ -38,6 +40,16 @@ vi.mock("@atlas/core/elicitations", () => ({
         ok: true,
         data: mockState.getMode === "stored" ? (mockState.stored.get(id) ?? null) : null,
       }),
+    list: (input: Record<string, unknown>) => {
+      mockState.listCalls.push(input);
+      const rows = Array.from(mockState.stored.values()).filter(
+        (row) =>
+          (input.workspaceId === undefined || row.workspaceId === input.workspaceId) &&
+          (input.sessionId === undefined || row.sessionId === input.sessionId) &&
+          (input.status === undefined || row.status === input.status),
+      );
+      return Promise.resolve({ ok: true, data: rows });
+    },
     expirePending: (input: Record<string, unknown>) => {
       mockState.expireCalls.push(input);
       return Promise.resolve({
@@ -150,6 +162,41 @@ describe("request_human_input platform tool", () => {
     });
     const env = mockState.creates[0] as Record<string, unknown>;
     expect("options" in env).toBe(false);
+  });
+
+  it("reuses an identical pending elicitation instead of creating a duplicate", async () => {
+    mockState.getMode = "stored";
+    mockState.stored.set("existing-elc", {
+      id: "existing-elc",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      actionId: "review-action",
+      kind: "open-question",
+      question: "Choose actions for each email",
+      options: [{ label: "Archive", value: "A" }],
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 1).toISOString(),
+    });
+
+    const { registered } = captureRegistration();
+    const result = await registered.handler({
+      question: "Choose actions for each email",
+      options: [{ label: "Archive", value: "A" }],
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      actionId: "review-action",
+      jobTimeoutMs: 1,
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(parseBody(result)).toMatchObject({ elicitationId: "existing-elc" });
+    expect(mockState.listCalls).toContainEqual({
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      status: "pending",
+    });
+    expect(mockState.creates).toHaveLength(0);
   });
 
   it("derives expiresAt from jobTimeoutMs", async () => {
