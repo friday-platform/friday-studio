@@ -52,29 +52,13 @@ const INFLIGHT_BUCKET = "SESSION_INFLIGHT";
 
 const NINETY_DAYS_NS = 90 * 24 * 60 * 60 * 1_000_000_000;
 
-// Dedup window for `save()` republishes. Default JetStream dedup is 2
-// minutes, which is shorter than many real sessions — a 9-min reindex's
-// start events fall outside it, so `save()`'s republish (intended to be a
-// no-op via Nats-Msg-Id dedup) becomes a duplicate publish, which the
-// reducer used to fold in as a state reset.
-//
-// **Correctness is now in the reducer, not the broker.** session:start
-// and step:start are idempotent (see session-reducer.ts) — duplicate
-// landings reduce to the same view. The dedup window is purely an
-// optimization to avoid broker churn (network, disk, dedup-table writes)
-// from re-publishing events the broker already stored.
-//
-// 30 minutes is a measured bump from the 2m default: 15× more headroom,
-// covers normal cron / LLM / mid-size reindex sessions cleanly, and stays
-// well below "huge global change" territory. Sessions longer than 30 min
-// will see save() re-publishes hit the broker as new messages — that's
-// fine, the reducer still produces a correct view.
-//
-// Memory cost (broker holds active dedup table in memory, ~64 bytes/entry):
-//   - 10k events/day with 30m window → ~13 KB
-//   - 100k events/day → ~130 KB
-// Trivial at every plausible deployment scale.
-const DEDUP_WINDOW_NS = 30 * 60 * 1_000_000_000;
+// We use JetStream's default `duplicate_window` (2 minutes). Long-running
+// sessions whose `save()` republishes land outside that window will see
+// the duplicates pass dedup and reach the reducer — that's fine, because
+// the reducer is fully idempotent for ALL session events (session:start,
+// step:start, step:complete, step:skipped, session:complete; see
+// session-reducer.ts). Correctness lives in the reducer; broker dedup is
+// just an optimization for the common in-window case.
 
 const SAFE_TOKEN_RE = /[^A-Za-z0-9_-]/g;
 function sanitize(s: string): string {
@@ -93,16 +77,7 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     if (this.streamReady) return;
     const jsm = await this.nc.jetstreamManager();
     try {
-      const info = await jsm.streams.info(STREAM_NAME);
-      // Bump dedup_window on existing streams that were created before
-      // DEDUP_WINDOW_NS landed (default 2m too short for long sessions).
-      // Use partial update — `streams.update` accepts `Partial<StreamUpdateConfig>`,
-      // so we send only the field we want to change. Spreading `info.config`
-      // would re-send server-managed fields (e.g. `created`) and risks
-      // breakage on future broker version bumps that tighten validation.
-      if (Number(info.config.duplicate_window) !== DEDUP_WINDOW_NS) {
-        await jsm.streams.update(STREAM_NAME, { duplicate_window: DEDUP_WINDOW_NS });
-      }
+      await jsm.streams.info(STREAM_NAME);
     } catch {
       await jsm.streams.add({
         name: STREAM_NAME,
@@ -110,7 +85,6 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
         retention: RetentionPolicy.Limits,
         storage: StorageType.File,
         max_age: NINETY_DAYS_NS,
-        duplicate_window: DEDUP_WINDOW_NS,
       });
     }
     this.streamReady = true;
@@ -161,14 +135,15 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
     await this.ensureStream();
     const js = this.nc.jetstream();
     // Idempotent backfill: republish each event with a stable
-    // `Nats-Msg-Id`. The broker silently rejects duplicates within its
-    // dedup window (default 2m, plenty for "appendEvent → save" in the
-    // same handler), so the common case where appendEvent already
-    // streamed every event becomes a no-op at the stream layer.
-    // Without this, the reducer would see two `step:start` events for
-    // every step on a save() that follows appendEvent (the reducer
-    // matches step:start by agentName+pending, so a re-publish appends
-    // a duplicate block instead of merging — verified in repro).
+    // `Nats-Msg-Id`. Two layers protect correctness:
+    //   1. Broker dedup (default 2m window) silently rejects duplicates
+    //      whose stable msgID is still in the in-memory dedup table —
+    //      the common case for "appendEvent → save" in the same handler.
+    //   2. Reducer idempotency (session-reducer.ts) guarantees that any
+    //      duplicates that DO slip past the broker (e.g. a session that
+    //      runs longer than the dedup window) reduce to the same view
+    //      as the originals. Correctness does not depend on dedup
+    //      window size.
     if (events.length > 0) {
       for (const e of events) {
         await js.publish(this.subject(sessionId), enc.encode(JSON.stringify(e)), {
@@ -240,21 +215,31 @@ export class JetStreamSessionHistoryAdapter implements SessionHistoryAdapter {
 
     // Cross-reference the SESSION_METADATA KV. The metadata summary is
     // written by `save()` and is the source of truth for finalization
-    // (status, completedAt, durationMs). The events stream is best-effort:
-    // long-running sessions or transient publish failures can drop terminal
-    // events (`step:complete`, `session:complete`), leaving the
-    // event-derived view stuck at `status: active` with running/pending
-    // blocks even though the session was correctly finalized. If a summary
-    // exists, prefer its terminal fields and sweep any non-terminal
-    // per-block status to `skipped` (matches the reducer's pending→skipped
-    // sweep on session:complete).
+    // (status, completedAt, durationMs). With the reducer's idempotency
+    // guards on session:start / step:start / step:complete /
+    // session:complete (see session-reducer.ts), the event-derived view
+    // is correct for any session whose events were all published — even
+    // when `save()`'s republish lands outside the broker's
+    // `duplicate_window`. The KV fallback is still required because:
+    //
+    // 1. `markInterruptedSessions()` writes a summary directly into the
+    //    KV (status `interrupted`) without publishing terminal events —
+    //    the event stream has session:start but no session:complete. The
+    //    summary is the only source of truth for these sessions.
+    // 2. Genuine event-loss scenarios (publish failure during a daemon
+    //    crash, broker storage corruption) leave the event-derived view
+    //    stuck at `status: active`. Preferring the summary recovers the
+    //    correct terminal state.
+    // 3. Defense-in-depth: if a future regression breaks reducer
+    //    idempotency, the fallback still serves a finalized view rather
+    //    than a corrupted one.
     //
     // Caveats:
     // 1. JetStream KV does NOT guarantee read-your-writes on clustered (R>1)
     //    deployments — a `get()` immediately after `save()` may be served by
-    //    a follower that hasn't replicated yet, returning undefined. The
-    //    fallback then silently uses the event-derived view, which may still
-    //    show `status: active`. On single-node deployments (our default) the
+    //    a follower that hasn't replicated yet, returning null. The fallback
+    //    then silently uses the event-derived view (now correct because of
+    //    reducer idempotency). On single-node deployments (our default) the
     //    leader serves all reads, so this isn't a concern.
     // 2. We treat any KV read error as "no summary" rather than propagating
     //    a 5xx — the caller still gets the event-derived view, which is at

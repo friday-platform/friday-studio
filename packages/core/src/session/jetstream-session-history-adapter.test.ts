@@ -222,44 +222,6 @@ describe("JetStreamSessionHistoryAdapter", () => {
     expect(view?.workspaceId).toBe("ws-kv-fail");
   });
 
-  it("ensureStream upgrades duplicate_window on existing streams (2m → 30m)", async () => {
-    // Stream config drift is the most likely deployed-environment
-    // regression: a daemon upgrade lands the new DEDUP_WINDOW_NS but
-    // the broker already has the SESSION_EVENTS stream with the 2m
-    // default. ensureStream must `streams.update` it on next access.
-    // This was not exercised by other tests because beforeAll always
-    // creates a fresh server — none had a pre-existing stream with the
-    // OLD config. We construct that condition explicitly here.
-    const TWO_MINUTES_NS = 2 * 60 * 1_000_000_000;
-    const THIRTY_MINUTES_NS = 30 * 60 * 1_000_000_000;
-
-    // Delete any existing SESSION_EVENTS so we can re-create with the
-    // old config (the per-suite adapters left one with the new
-    // duplicate_window during prior tests).
-    const jsm = await nc.jetstreamManager();
-    try {
-      await jsm.streams.delete("SESSION_EVENTS");
-    } catch {
-      // stream didn't exist — fine
-    }
-    await jsm.streams.add({
-      name: "SESSION_EVENTS",
-      subjects: ["sessions.>"],
-      duplicate_window: TWO_MINUTES_NS,
-    });
-
-    const before = await jsm.streams.info("SESSION_EVENTS");
-    expect(Number(before.config.duplicate_window)).toBe(TWO_MINUTES_NS);
-
-    // Trigger ensureStream via any adapter call.
-    const adapter = new JetStreamSessionHistoryAdapter(nc);
-    const sid = `s-${crypto.randomUUID()}`;
-    await adapter.appendEvent(sid, startEvent(sid, "ws-upgrade"));
-
-    const after = await jsm.streams.info("SESSION_EVENTS");
-    expect(Number(after.config.duplicate_window)).toBe(THIRTY_MINUTES_NS);
-  });
-
   it("save() then markInterruptedSessions() does not double-finalize", async () => {
     const adapter = new JetStreamSessionHistoryAdapter(nc);
     const sid = `s-${crypto.randomUUID()}`;

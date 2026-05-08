@@ -93,6 +93,19 @@ export function reduceSessionEvent(
       return view;
 
     case "session:complete": {
+      // Idempotent: a duplicate session:complete (republished by `save()`
+      // outside the broker's `duplicate_window`, or replayed by a stream
+      // consumer) must not re-stamp `completedAt`/`durationMs` to a
+      // diverging value. If the session is already terminal, no-op.
+      // First-wins is the safe semantic: the original terminal event
+      // captured the session's actual outcome; a re-publish of identical
+      // content is redundant, and a payload-divergent re-publish (which
+      // shouldn't happen with Nats-Msg-Id dedup but defends against
+      // upstream bugs) would otherwise corrupt the view.
+      if (view.status !== "active" && view.completedAt) {
+        return view;
+      }
+
       // Transition any remaining pending blocks to skipped
       const finalizedBlocks = view.agentBlocks.map((block) =>
         block.status === "pending" ? { ...block, status: "skipped" as const } : block,
@@ -136,16 +149,26 @@ function reduceStepStart(
   view: SessionView,
   event: SessionStreamEvent & { type: "step:start" },
 ): SessionView {
-  // Idempotent: if a block already exists at this stepNumber+agentName, the
-  // event is a duplicate (e.g. republished by `save()` outside JetStream's
-  // `duplicate_window`). Without this guard, a duplicate step:start falls
-  // through to the "no matching pending block" branch below and APPENDS a
-  // fresh `running` block on top of the already-completed one — the
-  // resulting view shows the same agent twice, the second one stuck
-  // running. Pair with the session:start idempotency above.
+  // Idempotent on (stepNumber, agentName, startedAt): if a block already
+  // exists with the same triple, this event is a duplicate publish (e.g.
+  // `save()` republishing events outside JetStream's `duplicate_window`).
+  // Without this guard, the duplicate falls through to the "no matching
+  // pending block" branch below and APPENDS a second running block on top
+  // of the already-completed one — the resulting view shows the same agent
+  // twice, the second stuck running.
+  //
+  // We include `startedAt` in the key (not just stepNumber+agentName) so
+  // a legitimate FSM re-entry — retry, loop, planned re-execution — that
+  // emits a NEW step:start with a NEW timestamp is correctly admitted as
+  // a new step rather than silently dropped. Republishes from `save()`
+  // carry the original event payload byte-for-byte, so they share the
+  // original timestamp and are filtered out here.
   if (
     view.agentBlocks.some(
-      (b) => b.stepNumber === event.stepNumber && b.agentName === event.agentName,
+      (b) =>
+        b.stepNumber === event.stepNumber &&
+        b.agentName === event.agentName &&
+        b.startedAt === event.timestamp,
     )
   ) {
     return view;
@@ -222,6 +245,22 @@ function reduceStepComplete(
 
   const existing = view.agentBlocks[idx];
   if (!existing) return view;
+
+  // Idempotent: if the block is already in a terminal status, this is a
+  // duplicate `step:complete` (e.g. `save()` republish landing outside
+  // JetStream's `duplicate_window`). Re-applying would re-stamp
+  // `durationMs`/`output`/`toolCalls`. Identical-payload duplicates would
+  // overwrite to the same values (no-op), but a payload-divergent
+  // re-publish (which shouldn't happen with Nats-Msg-Id dedup but defends
+  // against upstream bugs) would corrupt the block. First-wins.
+  if (
+    existing.status === "completed" ||
+    existing.status === "failed" ||
+    existing.status === "skipped" ||
+    existing.status === "cancelled"
+  ) {
+    return view;
+  }
 
   const updated: AgentBlock = {
     ...existing,

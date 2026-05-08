@@ -824,7 +824,100 @@ describe("buildSessionView", () => {
     // to catch the case where step:start partially overwrites a running
     // block instead of being a clean no-op.
     expect(block.startedAt).toBe(NOW);
+    // Pin the completed-block fields populated by stepComplete: a
+    // regression that lets the duplicate `step:start` clobber the merged
+    // block (e.g. drops output/toolCalls back to defaults) would still
+    // pass the length/status assertions but would corrupt the view that
+    // ships to the client.
+    expect(block.output).toEqual({ answer: 42 });
+    expect(block.toolCalls).toEqual([{ toolName: "search", args: { q: "test" } }]);
+    expect(block.durationMs).toBe(1234);
     expect(view.completedAt).toBe(LATER);
+    expect(view.durationMs).toBe(5000);
+  });
+
+  test("idempotent on duplicate step:start with planned-steps path", () => {
+    // Variant of the long-running-session bug for the realistic
+    // production path: sessions usually have plannedSteps, so the
+    // pending block is pre-seeded by session:start (stepNumber=undefined,
+    // status="pending") and the FIRST step:start transitions it
+    // pending→running. The duplicate step:start must hit the idempotency
+    // guard against the now-running (or completed) block, NOT fall
+    // through to the pending-finder (which would be a no-op anyway since
+    // the block is no longer pending) and NOT append a second block.
+    const events = [
+      sessionStart({
+        plannedSteps: [{ agentName: "researcher", task: "research", actionType: "agent" }],
+      }),
+      stepStart(), // transitions pending → running
+      stepComplete(),
+      sessionComplete(),
+      // Duplicate step:start arriving after dedup window expired:
+      stepStart(),
+    ];
+
+    const view = buildSessionView(events);
+
+    expect(view.status).toBe("completed");
+    expect(view.agentBlocks).toHaveLength(1);
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    expect(block.agentName).toBe("researcher");
+    expect(block.status).toBe("completed");
+    expect(block.startedAt).toBe(NOW);
+    expect(block.output).toEqual({ answer: 42 });
+  });
+
+  test("idempotent on duplicate step:complete (terminal-status guard)", () => {
+    // Repro for the pre-fix gap that round-2 review surfaced: a duplicate
+    // step:complete republished by `save()` outside the broker's
+    // duplicate_window would re-apply to the already-completed block,
+    // re-stamping durationMs/output/toolCalls. Identical-payload
+    // duplicates would no-op effectively, but a payload-divergent
+    // re-publish would corrupt the block. The reducer now short-circuits
+    // when the block is already in a terminal status.
+    const events = [
+      sessionStart(),
+      stepStart(),
+      stepComplete({ durationMs: 1234, output: { answer: 42 } }),
+      // Duplicate with payload-divergent values to prove first-wins:
+      stepComplete({ durationMs: 9999, output: { answer: "wrong" } }),
+    ];
+
+    const view = buildSessionView(events);
+
+    expect(view.agentBlocks).toHaveLength(1);
+    const block = view.agentBlocks[0];
+    expect.assert(block !== undefined);
+    // First-wins: the original durationMs/output stand, the duplicate is
+    // dropped.
+    expect(block.status).toBe("completed");
+    expect(block.durationMs).toBe(1234);
+    expect(block.output).toEqual({ answer: 42 });
+  });
+
+  test("idempotent on duplicate session:complete (terminal-status guard)", () => {
+    // Repro for the pre-fix gap that round-2 review surfaced: a duplicate
+    // session:complete republished outside the broker's duplicate_window
+    // would re-stamp completedAt/durationMs and re-run the
+    // pending→skipped sweep. The reducer now short-circuits when
+    // view.status is already terminal AND completedAt is set.
+    const FIRST_TS = "2026-02-13T10:00:05.000Z";
+    const SECOND_TS = "2026-02-13T10:30:00.000Z";
+    const events = [
+      sessionStart(),
+      stepStart(),
+      stepComplete(),
+      sessionComplete({ timestamp: FIRST_TS, durationMs: 5000, status: "completed" }),
+      // Payload-divergent duplicate to prove first-wins:
+      sessionComplete({ timestamp: SECOND_TS, durationMs: 9999, status: "failed" }),
+    ];
+
+    const view = buildSessionView(events);
+
+    // First-wins: original completedAt/durationMs/status stand.
+    expect(view.status).toBe("completed");
+    expect(view.completedAt).toBe(FIRST_TS);
     expect(view.durationMs).toBe(5000);
   });
 });
