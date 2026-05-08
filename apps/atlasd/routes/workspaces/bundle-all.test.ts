@@ -328,10 +328,7 @@ describe("bundle-all endpoints (end-to-end)", () => {
     // ── Re-import ──────────────────────────────────────────────────────────
     const form = new FormData();
     form.set("bundle", new File([outerBytes], "full.zip", { type: "application/zip" }));
-    const importRes = await app.request("/import-bundle-all", {
-      method: "POST",
-      body: form,
-    });
+    const importRes = await app.request("/import-bundle-all", { method: "POST", body: form });
     expect(importRes.status).toBe(200);
 
     // Parse via Zod — keeps the test free of `as` casts and validates the

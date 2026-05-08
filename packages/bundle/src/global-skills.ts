@@ -315,8 +315,5 @@ export async function importGlobalSkills(
     skillsPublished++;
   }
 
-  return {
-    manifest,
-    status: { kind: "imported", skillsPublished, skillsSkipped },
-  };
+  return { manifest, status: { kind: "imported", skillsPublished, skillsSkipped } };
 }

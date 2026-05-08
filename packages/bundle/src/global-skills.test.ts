@@ -446,10 +446,7 @@ describe("importGlobalSkills", () => {
     const legacyManifest = {
       schemaVersion: 1,
       kind: "global-skills",
-      source: {
-        filename: "skills.db",
-        sha256: `sha256:${"0".repeat(64)}`,
-      },
+      source: { filename: "skills.db", sha256: `sha256:${"0".repeat(64)}` },
     };
     const zip = new JSZip();
     zip.file("manifest.yml", stringifyYaml(legacyManifest));
