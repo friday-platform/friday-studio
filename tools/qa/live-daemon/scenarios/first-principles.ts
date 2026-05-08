@@ -3,11 +3,10 @@
 /**
  * First-principles daemon eval suite.
  *
- * This is intentionally not another phase-smoke runner. It encodes the
- * original architecture principles as no-auth, daemon-backed assertions:
- * refs over data, inputFrom ref resolution, compact job-tool returns, and
- * validation/output contract regressions. The fake inbox MCP models a
- * Gmail-shaped workload without OAuth/network.
+ * This encodes the original architecture principles as no-Gmail/user-auth,
+ * daemon-backed assertions: refs over data, inputFrom ref resolution, compact
+ * job-tool returns, and validation/output contract regressions. The fake inbox
+ * MCP models a Gmail-shaped workload without OAuth/network.
  */
 
 import { ensureDir } from "jsr:@std/fs@1.0.13/ensure-dir";

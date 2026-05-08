@@ -29,22 +29,22 @@ const DISCOVERY_TOOLS = [
  */
 const PermissionsShape = z.object({ dangerouslySkipAllowlist: z.boolean().optional() });
 
-/** Pre-resolved permissions shape (review N2 — single source of truth). */
+/** Pre-resolved permissions shape used as the single source of truth. */
 const ResolvedPermissionsShape = z.object({ dangerouslySkipAllowlist: z.boolean() });
 
 /**
  * Register the `request_tool_access` platform tool.
  *
- * **Phase 12.C + 1.C of the Bucket-3 plan.** The LLM calls this when it
- * wants to invoke a tool that isn't in its allowlist. The tool resolves
- * effective permissions (job > workspace > daemon env) and either:
+ * The LLM calls this when it wants to invoke a tool that isn't in its
+ * allowlist. The tool resolves effective permissions (job > workspace >
+ * daemon env) and either:
  *
- * 1. **Bypass branch (Phase 1.C)** — `dangerouslySkipAllowlist` resolves
- *    `true` → returns `{ ok: true, granted: true, reason: "bypass" }` and
- *    logs at info level so operators can see it in the global log.
- * 2. **Elicitation branch (Phase 12.C)** — emits a `tool-allowlist`
- *    elicitation via `ElicitationStorage.create`, blocks on the shared
- *    elicitation wait primitive, and returns the user's terminal decision.
+ * 1. **Bypass branch** — `dangerouslySkipAllowlist` resolves `true`, so the
+ *    tool returns `{ ok: true, granted: true, reason: "bypass" }` and logs at
+ *    info level so operators can see it in the global log.
+ * 2. **Elicitation branch** — emits a `tool-allowlist` elicitation via
+ *    `ElicitationStorage.create`, blocks on the shared elicitation wait
+ *    primitive, and returns the user's terminal decision.
  *
  * Scope injection: `workspaceId`, `sessionId`, `actionId`, `jobPermissions`,
  * and `workspacePermissions` are filled in by `wrapPlatformToolsWithScope`
@@ -72,10 +72,9 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
         workspaceId: z.string().describe("(runtime-injected) workspace identity"),
         sessionId: z.string().optional().describe("(runtime-injected) session identity"),
         actionId: z.string().optional().describe("(runtime-injected) FSM action id"),
-        // Review N2: prefer pre-resolved permissions when the runtime
-        // (fsm-engine.buildTools) has already merged job/workspace/daemon.
-        // The raw fields below remain a fall-through for callers that
-        // don't have a resolution context handy.
+        // Prefer pre-resolved permissions when the runtime has already merged
+        // job/workspace/daemon settings. The raw fields below remain a
+        // fall-through for callers that don't have a resolution context handy.
         resolvedPermissions: ResolvedPermissionsShape.optional().describe(
           "(runtime-injected) effective permissions, pre-resolved",
         ),
@@ -85,9 +84,9 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
         workspacePermissions: PermissionsShape.optional().describe(
           "(runtime-injected) workspace-level permissions config (fallback)",
         ),
-        // Review N3: when set, derives expiresAt = now + jobTimeoutMs so
-        // the elicitation TTL matches the job lifetime per the user-
-        // resolved Phase 12 policy. Falls back to DEFAULT_ELICITATION_TTL_MS.
+        // When set, derives expiresAt = now + jobTimeoutMs so the elicitation
+        // TTL matches the job lifetime. Falls back to
+        // DEFAULT_ELICITATION_TTL_MS.
         jobTimeoutMs: z
           .number()
           .int()
@@ -112,9 +111,9 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
       jobTimeoutMs,
       availableToolNames,
     }): Promise<CallToolResult> => {
-      // Review N2: prefer resolvedPermissions when present. Falls back to
-      // resolving from raw fields at call time so callers without a
-      // resolution context still work.
+      // Prefer resolvedPermissions when present. Falls back to resolving from
+      // raw fields at call time so callers without a resolution context still
+      // work.
       const effective =
         resolvedPermissions ??
         resolvePermissions({
@@ -143,8 +142,8 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
       }
 
       if (effective.dangerouslySkipAllowlist) {
-        // Phase 1.C — bypass branch. Operators read this in
-        // ~/.atlas/logs/global.log to spot which jobs run unsandboxed.
+        // Bypass branch. Operators read this in ~/.atlas/logs/global.log to
+        // spot which jobs run unsandboxed.
         ctx.logger.info("request_tool_access bypass", {
           toolName,
           reason,
@@ -155,18 +154,17 @@ export function registerRequestToolAccessTool(server: McpServer, ctx: ToolContex
         return createSuccessResponse({ ok: true, granted: true, reason: "bypass" });
       }
 
-      // Phase 12.C — elicitation branch. Emit a tool-allowlist elicitation
-      // and block on the shared NATS/KV wait path until the user answers,
-      // declines, or the request expires. Review N3: derive expiresAt from
-      // job timeout when available so the elicitation TTL matches the job
-      // lifetime; else default to 30 min.
+      // Elicitation branch. Emit a tool-allowlist elicitation and block on
+      // the shared NATS/KV wait path until the user answers, declines, or the
+      // request expires. Derive expiresAt from job timeout when available so
+      // the elicitation TTL matches the job lifetime; else default to 30 min.
       const expiresAt = deriveElicitationExpiresAt(jobTimeoutMs);
 
-      // Review N4: warn-log when sessionId fallback fires. The fallback is
-      // safe (Activity feed shows "unknown" rather than crashing the
-      // create), but it masks bugs where future call sites forget to
-      // thread sessionId through scope. Loud log gives operators a
-      // bread-crumb without erroring out.
+      // Warn-log when sessionId fallback fires. The fallback is safe
+      // (Activity feed shows "unknown" rather than crashing the create), but
+      // it masks bugs where future call sites forget to thread sessionId
+      // through scope. Loud log gives operators a breadcrumb without erroring
+      // out.
       if (!sessionId) {
         ctx.logger.warn("request_tool_access: missing sessionId in scope — using 'unknown'", {
           toolName,

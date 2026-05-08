@@ -7,7 +7,7 @@
  * runs.
  *
  * Read by:
- *   tools/qa/live-daemon/scenarios/*.ts — per-phase + baseline scenarios
+ *   tools/qa/live-daemon/scenarios/*.ts — live daemon QA scenarios
  *
  * No external deps beyond Deno + std.
  */
@@ -760,7 +760,5 @@ export async function countLogMatches(d: DaemonHandle, pattern: string | RegExp)
 export const HARNESS_PATHS = {
   worktreeRoot: WORKTREE_ROOT,
   fixturesDir: join(WORKTREE_ROOT, "tools/qa/fixtures"),
-  inboxCorpusDir: join(WORKTREE_ROOT, "tools/qa/fixtures/inbox-corpus"),
-  inboxCorpusWorkspaceDir: join(WORKTREE_ROOT, "tools/qa/fixtures/inbox-corpus-qa"),
   resultsDir: join(WORKTREE_ROOT, "tools/qa/results"),
 };

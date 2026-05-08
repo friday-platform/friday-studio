@@ -53,13 +53,12 @@ const INFLIGHT_BUCKET = "SESSION_INFLIGHT";
 const NINETY_DAYS_NS = 90 * 24 * 60 * 60 * 1_000_000_000;
 /**
  * Default broker-side dedup window for `SESSION_EVENTS`. The default
- * `duplicate_window` (2m) was insufficient for long-running FSM jobs
- * (auto-triage > 2 min, review-inbox 63s, chat-flip ~150s end-to-end):
- * past 2m a re-publish of the stable-msg-id event from `save()` lands
- * AS NEW instead of being deduped. The reducer's `step:start` matcher
- * (agentName + pending) then appends a duplicate AgentBlock, and status
- * derivation sees both pending and complete simultaneously — surfaces
- * to the user as `status: "active"` post-completion (J2 / pt1 §7 #2).
+ * `duplicate_window` (2m) was insufficient for long-running FSM jobs: past
+ * 2m a re-publish of the stable-msg-id event from `save()` lands AS NEW
+ * instead of being deduped. The reducer's `step:start` matcher (agentName +
+ * pending) then appends a duplicate AgentBlock, and status derivation sees
+ * both pending and complete simultaneously — surfacing to the user as
+ * `status: "active"` post-completion.
  *
  * 24h matches the default chosen by the JetStream config module
  * (`packages/jetstream/src/config.ts`), and by the chat backend and
