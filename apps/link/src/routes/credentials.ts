@@ -88,13 +88,10 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
             );
           }
 
-          // Merge auto-generated fields. Auto fields override user input as a
-          // defense-in-depth measure: a buggy or malicious client can't supply
-          // values for fields that are server-chosen (e.g. webhook secrets).
-          const storedSecret: Record<string, unknown> = providerDef.autoFields
-            ? { ...secretResult.data, ...providerDef.autoFields() }
-            : secretResult.data;
-
+          // Run health check first so providers can capture server-derived
+          // identity (e.g. github-app's bot_user_slug / bot_user_id) and
+          // surface them via autoFields() below. Reject early if unhealthy
+          // so we never call autoFields() against bad credentials.
           if (providerDef.health) {
             const healthResult = await providerDef.health(secretResult.data);
             if (!healthResult.healthy) {
@@ -104,6 +101,13 @@ export function createCredentialsRoutes(storage: StorageAdapter, _oauthService: 
               );
             }
           }
+
+          // Merge auto-generated fields. Auto fields override user input as a
+          // defense-in-depth measure: a buggy or malicious client can't supply
+          // values for fields that are server-chosen (e.g. webhook secrets).
+          const storedSecret: Record<string, unknown> = providerDef.autoFields
+            ? { ...secretResult.data, ...providerDef.autoFields() }
+            : secretResult.data;
 
           try {
             // Storage generates ID and returns it with metadata

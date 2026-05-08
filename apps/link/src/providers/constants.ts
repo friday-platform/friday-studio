@@ -22,3 +22,10 @@ export const TEAMS_PROVIDER = "teams";
 
 /** WhatsApp Business provider — apikey credential, mirrors the `kind: whatsapp` literal. */
 export const WHATSAPP_PROVIDER = "whatsapp";
+
+/**
+ * GitHub App provider — apikey credential, mirrors the `kind: github`
+ * communicator literal. Note the ID is `github-app` (not `github`) to avoid
+ * colliding with the existing PAT-based `githubProvider`.
+ */
+export const GITHUB_APP_PROVIDER = "github-app";
