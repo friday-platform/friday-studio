@@ -1,34 +1,63 @@
-// Global skills bundle — carries `~/.friday/local/skills.db` (local skill library
-// published via `skills.sh` or authored in-platform) between instances.
+// Global skills bundle — carries the user's published skill library between
+// instances. Sourced from the JetStream `SKILLS` KV bucket + `SKILL_ARCHIVES`
+// Object Store via a `SkillStorageAdapter`. The adapter is constructed by the
+// daemon and passed in, so this package stays free of the nats transitive cone.
 //
-// Design trade-off: we byte-copy the SQLite file verbatim. Import is
-// non-destructive — if a skills.db already exists at the target path, we
-// report `status: "skipped-existing"` and leave both files alone rather than
-// attempt an automatic row-level merge. A later phase can add a proper
-// row-by-row merger (the schema lives in packages/skills/src/local-adapter.ts)
-// if cross-instance merging becomes a common workflow.
+// Layout inside the zip:
+//   manifest.yml
+//   skills.jsonl                              — one JSON row per skill (sans archive bytes)
+//   archives/<skillId>__<version>.tar.gz      — skill archive bytes (when present)
+//
+// The manifest carries a sha256 over the assembled `skills.jsonl` bytes for
+// integrity. Each row that owns archive bytes carries a per-archive sha256.
+//
+// Latest-version semantics: the export pulls one row per skill — whatever
+// `adapter.list()` returns (latest-version-per-skillId today).
+//
+// The matching import path lands in a follow-up task; this commit covers
+// export only.
 
-import { access, readFile, stat, writeFile } from "node:fs/promises";
+import type { SkillStorageAdapter } from "@atlas/skills";
+import { SYSTEM_USER_ID } from "@atlas/skills";
+import { stringify as stringifyYaml } from "@std/yaml";
 import JSZip from "jszip";
 import { z } from "zod";
 
-const GlobalSkillsManifestSchema = z.object({
+export const GlobalSkillsManifestSchema = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal("global-skills"),
   source: z.object({
-    filename: z.string().min(1),
-    byteSize: z.number().int().nonnegative(),
+    filename: z.enum(["skills.db", "skills.jsonl"]),
+    skillCount: z.number().int().nonnegative().optional(),
     sha256: z.string().regex(/^sha256:[0-9a-f]{64}$/),
   }),
 });
 export type GlobalSkillsManifest = z.infer<typeof GlobalSkillsManifestSchema>;
 
+export const SkillRowSchema = z.object({
+  skillId: z.string(),
+  namespace: z.string(),
+  name: z.string(),
+  version: z.number().int().positive(),
+  description: z.string(),
+  descriptionManual: z.boolean(),
+  disabled: z.boolean(),
+  frontmatter: z.record(z.string(), z.unknown()),
+  instructions: z.string(),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  archive: z
+    .object({ path: z.string(), sha256: z.string(), byteSize: z.number().int().nonnegative() })
+    .nullable(),
+});
+export type SkillRow = z.infer<typeof SkillRowSchema>;
+
 export interface ExportGlobalSkillsOptions {
-  skillsDbPath: string;
+  adapter: SkillStorageAdapter;
 }
 
 export interface ExportGlobalSkillsResult {
-  /** Raw bytes of the global-skills zip. `null` when the source DB doesn't exist. */
+  /** Raw bytes of the global-skills zip. `null` when zero non-system skills. */
   bytes: Uint8Array | null;
   /** Present when bytes is non-null. */
   manifest?: GlobalSkillsManifest;
@@ -44,99 +73,90 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
     .join("");
 }
 
+function archivePath(skillId: string, version: number): string {
+  return `archives/${skillId}__${version}.tar.gz`;
+}
+
 export async function exportGlobalSkills(
   opts: ExportGlobalSkillsOptions,
 ): Promise<ExportGlobalSkillsResult> {
-  try {
-    await access(opts.skillsDbPath);
-  } catch {
+  const { adapter } = opts;
+  const summaries = await adapter.list(undefined, undefined, true);
+  if (!summaries.ok) {
+    throw new Error(`exportGlobalSkills: list failed: ${summaries.error}`);
+  }
+
+  const zip = new JSZip();
+  const rows: SkillRow[] = [];
+
+  for (const summary of summaries.data) {
+    const skillResult = await adapter.getById(summary.id);
+    if (!skillResult.ok) {
+      throw new Error(`exportGlobalSkills: getById(${summary.id}) failed: ${skillResult.error}`);
+    }
+    const skill = skillResult.data;
+    if (!skill) continue;
+    if (skill.createdBy === SYSTEM_USER_ID) continue;
+    if (skill.name === null) continue;
+
+    let archive: SkillRow["archive"] = null;
+    if (skill.archive) {
+      const path = archivePath(skill.skillId, skill.version);
+      zip.file(path, skill.archive);
+      archive = {
+        path,
+        sha256: `sha256:${await sha256Hex(skill.archive)}`,
+        byteSize: skill.archive.byteLength,
+      };
+    }
+
+    rows.push(
+      SkillRowSchema.parse({
+        skillId: skill.skillId,
+        namespace: skill.namespace,
+        name: skill.name,
+        version: skill.version,
+        description: skill.description,
+        descriptionManual: skill.descriptionManual,
+        disabled: skill.disabled,
+        frontmatter: skill.frontmatter,
+        instructions: skill.instructions,
+        createdBy: skill.createdBy,
+        createdAt: skill.createdAt.toISOString(),
+        archive,
+      }),
+    );
+  }
+
+  if (rows.length === 0) {
     return { bytes: null };
   }
-  const bytes = await readFile(opts.skillsDbPath);
-  const src = new Uint8Array(bytes);
+
+  const jsonl = rows.map((r) => JSON.stringify(r)).join("\n");
+  const jsonlBytes = new TextEncoder().encode(jsonl);
 
   const manifest: GlobalSkillsManifest = {
     schemaVersion: 1,
     kind: "global-skills",
     source: {
-      filename: "skills.db",
-      byteSize: src.byteLength,
-      sha256: `sha256:${await sha256Hex(src)}`,
+      filename: "skills.jsonl",
+      skillCount: rows.length,
+      sha256: `sha256:${await sha256Hex(jsonlBytes)}`,
     },
   };
 
-  const zip = new JSZip();
-  zip.file("manifest.yml", await buildManifestYaml(manifest));
-  zip.file("skills.db", src);
-  const out = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-  return { bytes: out, manifest };
+  zip.file("manifest.yml", buildManifestYaml(manifest));
+  zip.file("skills.jsonl", jsonlBytes);
+  const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+  return { bytes, manifest };
 }
 
-export interface ImportGlobalSkillsOptions {
-  zipBytes: Uint8Array;
-  skillsDbPath: string;
-}
-
-export type ImportGlobalSkillsStatus =
-  | { kind: "imported"; bytesWritten: number }
-  | { kind: "skipped-existing"; targetPath: string; sideloadedAs: string }
-  | { kind: "integrity-failed"; expected: string; actual: string };
-
-export interface ImportGlobalSkillsResult {
-  manifest: GlobalSkillsManifest;
-  status: ImportGlobalSkillsStatus;
-}
-
-export async function importGlobalSkills(
-  opts: ImportGlobalSkillsOptions,
-): Promise<ImportGlobalSkillsResult> {
-  const zip = await JSZip.loadAsync(opts.zipBytes);
-
-  const manifestFile = zip.file("manifest.yml");
-  if (!manifestFile) throw new Error("importGlobalSkills: missing manifest.yml");
-  const manifestYaml = await manifestFile.async("string");
-  const { parse } = await import("@std/yaml");
-  const manifest = GlobalSkillsManifestSchema.parse(parse(manifestYaml));
-
-  const dbFile = zip.file("skills.db");
-  if (!dbFile) throw new Error("importGlobalSkills: missing skills.db");
-  const dbBytes = await dbFile.async("uint8array");
-
-  const actual = `sha256:${await sha256Hex(dbBytes)}`;
-  if (actual !== manifest.source.sha256) {
-    return {
-      manifest,
-      status: { kind: "integrity-failed", expected: manifest.source.sha256, actual },
-    };
-  }
-
-  let targetExists = false;
-  try {
-    const s = await stat(opts.skillsDbPath);
-    targetExists = s.isFile();
-  } catch {
-    targetExists = false;
-  }
-
-  if (targetExists) {
-    // Non-destructive: write the imported DB alongside and let the user merge manually.
-    const sideloadedAs = `${opts.skillsDbPath}.imported-${Date.now()}`;
-    await writeFile(sideloadedAs, dbBytes);
-    return {
-      manifest,
-      status: { kind: "skipped-existing", targetPath: opts.skillsDbPath, sideloadedAs },
-    };
-  }
-
-  await writeFile(opts.skillsDbPath, dbBytes);
-  return { manifest, status: { kind: "imported", bytesWritten: dbBytes.byteLength } };
-}
-
-async function buildManifestYaml(manifest: GlobalSkillsManifest): Promise<string> {
-  const { stringify } = await import("@std/yaml");
+function buildManifestYaml(manifest: GlobalSkillsManifest): string {
+  // Round-trip through JSON to drop any stray `undefined` values that @std/yaml
+  // can't serialize.
   const safe = JSON.parse(JSON.stringify(GlobalSkillsManifestSchema.parse(manifest))) as Record<
     string,
     unknown
   >;
-  return stringify(safe, { lineWidth: 100 });
+  return stringifyYaml(safe, { lineWidth: 100 });
 }

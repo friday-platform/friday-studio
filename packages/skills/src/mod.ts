@@ -59,4 +59,9 @@ export {
 } from "./skills-sh-client.ts";
 export { toSlug } from "./slug.ts";
 export type { SkillStorageAdapter } from "./storage.ts";
-export { _setSkillStorageForTest, initSkillStorage, SkillStorage } from "./storage.ts";
+export {
+  _setSkillStorageForTest,
+  initSkillStorage,
+  SkillStorage,
+  SYSTEM_USER_ID,
+} from "./storage.ts";

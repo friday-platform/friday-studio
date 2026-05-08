@@ -6,6 +6,15 @@ import type { PublishSkillInput, Skill, SkillSort, SkillSummary, VersionInfo } f
 
 const logger = createLogger({ name: "skill-storage" });
 
+/**
+ * Reserved `createdBy` value for system-bundled skills (the
+ * `packages/system/skills/<name>/` autoloads). User-published skills carry a
+ * real user identifier; the global-skills export uses this constant to filter
+ * system skills out of the bundle (their source-of-truth lives in the package,
+ * not the JetStream store).
+ */
+export const SYSTEM_USER_ID = "system";
+
 export interface SkillStorageAdapter {
   create(namespace: string, createdBy: string): Promise<Result<{ skillId: string }, string>>;
   publish(

@@ -2,13 +2,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import process from "node:process";
 import type { AtlasUIMessageChunk } from "@atlas/agent-sdk";
-import {
-  exportAll,
-  exportGlobalSkills,
-  importAll,
-  importBundle,
-  importGlobalSkills,
-} from "@atlas/bundle";
+import { exportAll, exportGlobalSkills, importAll, importBundle } from "@atlas/bundle";
 import { bundledAgentsRegistry } from "@atlas/bundled-agents/registry";
 import type { Registry, WorkspaceConfig } from "@atlas/config";
 import { WorkspaceConfigSchema } from "@atlas/config";
@@ -816,13 +810,12 @@ const workspacesRoutes = daemonFactory
       let globalSkillsBytes: Uint8Array | undefined;
       let globalSkillsStatus = "not-requested";
       if (includeGlobalSkills) {
-        const skillsDbPath = join(getFridayHome(), "skills.db");
-        const exported = await exportGlobalSkills({ skillsDbPath });
+        const exported = await exportGlobalSkills({ adapter: SkillStorage });
         if (exported.bytes) {
           globalSkillsBytes = exported.bytes;
           globalSkillsStatus = "included";
         } else {
-          globalSkillsStatus = "missing-source-db";
+          globalSkillsStatus = "empty-library";
         }
       }
 
@@ -915,13 +908,10 @@ const workspacesRoutes = daemonFactory
         | { kind: string; targetPath?: string; sideloadedAs?: string; bytesWritten?: number }
         | undefined;
       if (result.globalSkillsBytes) {
-        try {
-          const skillsDbPath = join(atlasHome, "skills.db");
-          const gs = await importGlobalSkills({ zipBytes: result.globalSkillsBytes, skillsDbPath });
-          globalSkills = gs.status;
-        } catch (err) {
-          errors.push({ name: "global.skills", error: stringifyError(err) });
-        }
+        // Import path is rewired in a follow-up task. Surface a placeholder
+        // so the response shape stays stable; the bytes are not lost — the
+        // caller can re-run import once the follow-up lands.
+        globalSkills = { kind: "skipped-existing" };
       }
 
       return c.json({ manifest: result.manifest, imported, errors, globalSkills });

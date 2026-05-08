@@ -22,10 +22,9 @@ export {
   type ExportGlobalSkillsResult,
   exportGlobalSkills,
   type GlobalSkillsManifest,
-  type ImportGlobalSkillsOptions,
-  type ImportGlobalSkillsResult,
-  type ImportGlobalSkillsStatus,
-  importGlobalSkills,
+  GlobalSkillsManifestSchema,
+  type SkillRow,
+  SkillRowSchema,
 } from "./src/global-skills.ts";
 export { type HashResult, hashPrimitive } from "./src/hasher.ts";
 export { type Lockfile, LockfileSchema, readLockfile, writeLockfile } from "./src/lockfile.ts";
