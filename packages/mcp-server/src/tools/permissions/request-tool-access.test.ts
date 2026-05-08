@@ -57,6 +57,8 @@ vi.mock("@atlas/core/elicitations", () => ({
     },
     get: () => Promise.resolve({ ok: true, data: mockState.getData }),
     list: () => Promise.resolve({ ok: true, data: [] }),
+    expirePending: () =>
+      Promise.resolve({ ok: true, data: { scanned: 1, expired: [], skipped: [], errors: 0 } }),
     answer: () => Promise.resolve({ ok: false, error: "not implemented" }),
     decline: () => Promise.resolve({ ok: false, error: "not implemented" }),
   },
@@ -195,10 +197,11 @@ describe("request_tool_access — bypass branch (Phase 1.C)", () => {
       sessionId: "sess_1",
       jobPermissions: { dangerouslySkipAllowlist: false },
       workspacePermissions: { dangerouslySkipAllowlist: true },
+      jobTimeoutMs: 1,
     });
     const parsed = parseBody(result);
     expect(parsed.granted).toBe(false);
-    expect(parsed.reason).toBe("pending_user_approval");
+    expect(parsed.reason).toBe("expired");
     expect(mockState.creates).toHaveLength(1);
   });
 });
@@ -218,6 +221,7 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
       workspaceId: "ws_1",
       sessionId: "sess_1",
       actionId: "drafting_state",
+      jobTimeoutMs: 1,
     });
 
     expect(result.isError).toBeFalsy();
@@ -225,7 +229,7 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
       ok: false,
       granted: false,
       elicitationId: "elc_abc",
-      reason: "pending_user_approval",
+      reason: "expired",
     });
 
     // Envelope shape we passed to ElicitationStorage.create
@@ -297,7 +301,7 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
 
   it("falls back to sessionId='unknown' when scope didn't inject one", async () => {
     const { registered, ctx } = captureRegistration();
-    await registered.handler({ toolName: "x", reason: "y", workspaceId: "ws_1" });
+    await registered.handler({ toolName: "x", reason: "y", workspaceId: "ws_1", jobTimeoutMs: 1 });
     const env = mockState.creates[0] as Record<string, unknown>;
     expect(env.sessionId).toBe("unknown");
     // Review N4: fallback fires a warn-log so operators can spot bugs
@@ -312,6 +316,7 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
       reason: "y",
       workspaceId: "ws_1",
       sessionId: "sess_1",
+      jobTimeoutMs: 1,
     });
     const env = mockState.creates[0] as Record<string, unknown>;
     expect("actionId" in env).toBe(false);
@@ -351,6 +356,17 @@ describe("request_tool_access — elicitation branch (Phase 12.C)", () => {
   });
 
   it("derives expiresAt from jobTimeoutMs when injected (review N3)", async () => {
+    mockState.getData = {
+      id: "elc_timeout",
+      workspaceId: "ws_1",
+      sessionId: "sess_1",
+      kind: "tool-allowlist",
+      question: "Allow?",
+      status: "answered",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      answer: { value: "allow_once" },
+    };
     const { registered } = captureRegistration();
     const before = Date.now();
     await registered.handler({

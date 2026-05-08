@@ -7,7 +7,7 @@ const mockState = vi.hoisted(() => ({
   expireCalls: [] as Record<string, unknown>[],
   listCalls: [] as Record<string, unknown>[],
   stored: new Map<string, Record<string, unknown>>(),
-  getMode: "missing" as "missing" | "stored",
+  getMode: "missing" as "missing" | "stored" | "answered",
   nextId: "elc_human_input",
   nextOk: true,
   reset() {
@@ -35,11 +35,16 @@ vi.mock("@atlas/core/elicitations", () => ({
       mockState.stored.set(mockState.nextId, data);
       return Promise.resolve({ ok: true, data });
     },
-    get: ({ id }: { id: string }) =>
-      Promise.resolve({
-        ok: true,
-        data: mockState.getMode === "stored" ? (mockState.stored.get(id) ?? null) : null,
-      }),
+    get: ({ id }: { id: string }) => {
+      const stored = mockState.stored.get(id) ?? null;
+      if (mockState.getMode === "answered" && stored) {
+        return Promise.resolve({
+          ok: true,
+          data: { ...stored, status: "answered", answer: { value: "yes" } },
+        });
+      }
+      return Promise.resolve({ ok: true, data: mockState.getMode === "stored" ? stored : null });
+    },
     list: (input: Record<string, unknown>) => {
       mockState.listCalls.push(input);
       const rows = Array.from(mockState.stored.values()).filter(
@@ -117,7 +122,7 @@ function parseBody(result: CallToolResult): Record<string, unknown> {
 describe("request_human_input platform tool", () => {
   beforeEach(() => mockState.reset());
 
-  it("creates an open-question elicitation and returns pending when no live waiter is present", async () => {
+  it("creates an open-question elicitation and returns expired after its timeout", async () => {
     mockState.nextId = "elc_choice";
     const { registered } = captureRegistration();
     const result = await registered.handler({
@@ -129,14 +134,15 @@ describe("request_human_input platform tool", () => {
       workspaceId: "ws_1",
       sessionId: "sess_1",
       actionId: "review-action",
+      jobTimeoutMs: 1,
     });
 
     expect(result.isError).toBeFalsy();
     expect(parseBody(result)).toEqual({
       ok: false,
-      status: "pending",
+      status: "expired",
       elicitationId: "elc_choice",
-      reason: "pending_user_input",
+      reason: "expired",
     });
 
     expect(mockState.creates).toHaveLength(1);
@@ -154,6 +160,7 @@ describe("request_human_input platform tool", () => {
   });
 
   it("supports free-form open questions without options", async () => {
+    mockState.getMode = "answered";
     const { registered } = captureRegistration();
     await registered.handler({
       question: "What label should I apply?",
@@ -200,6 +207,7 @@ describe("request_human_input platform tool", () => {
   });
 
   it("derives expiresAt from jobTimeoutMs", async () => {
+    mockState.getMode = "answered";
     const { registered } = captureRegistration();
     const before = Date.now();
     await registered.handler({
@@ -236,6 +244,7 @@ describe("request_human_input platform tool", () => {
   });
 
   it("warns and falls back to sessionId='unknown' when scope is missing", async () => {
+    mockState.getMode = "answered";
     const { registered, ctx } = captureRegistration();
     await registered.handler({ question: "Proceed?", workspaceId: "ws_1" });
     const env = mockState.creates[0] as Record<string, unknown>;
