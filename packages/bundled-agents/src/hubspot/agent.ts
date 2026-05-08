@@ -53,6 +53,32 @@ const CreateNoteOpSchema = z.object({
 });
 
 /**
+ * Schema for the deterministic read-ticket operation.
+ *
+ * Replaces the LLM-driven `read_ticket` FSM step. Returns structured fields
+ * (ticketId, subject, body, companyId, ...) so downstream agents can read
+ * `data.companyId` directly instead of regex-scraping the LLM's markdown
+ * response — which was the dominant source of parser fragility in the
+ * bucketlist-cs auto-answer-tickets pipeline.
+ *
+ * `includeTranscript` defaults to false because most callers only need the
+ * structured ticket metadata + company association — fetching threads is a
+ * second HubSpot round-trip and the LLM-path didn't always do it either.
+ */
+const ReadTicketOpSchema = z.object({
+  operation: z.literal("read-ticket"),
+  // Empty `ticketId` is intentionally allowed: it represents the
+  // skip-sentinel case (ticket-picker returned `{done: true}` so there's
+  // nothing to read). Workspace.yml authors can wire this directly with
+  // `{"ticketId": "{{inputs.ticketId | default: ''}}"}` — Mustache
+  // substitution emits the empty string when the upstream picker has no
+  // ticket. The dispatcher branches on `ticketId === ""` to emit a skip
+  // envelope without hitting HubSpot.
+  ticketId: z.string(),
+  includeTranscript: z.boolean().optional(),
+});
+
+/**
  * Schema for the deterministic noop operation.
  *
  * Lets upstream agents emit a "do-nothing" envelope when they detect a
@@ -74,6 +100,7 @@ const NoopOpSchema = z.object({
 const HubSpotOperationSchema = z.discriminatedUnion("operation", [
   SendThreadCommentOpSchema,
   CreateNoteOpSchema,
+  ReadTicketOpSchema,
   NoopOpSchema,
 ]);
 
@@ -408,6 +435,141 @@ export const hubspotAgent = createAgent<string, HubSpotOutput>({
               properties: created?.properties ?? {},
               numErrors: result.numErrors,
               errors: result.errors,
+            },
+          });
+        }
+
+        case "read-ticket": {
+          // Deterministic read-ticket: structured fields out, no LLM
+          // editorialization. Replaces the LLM-driven FSM step that asks
+          // the model to call `get_crm_object` and emit prose — that path
+          // was the dominant source of regex-scraping fragility in
+          // downstream agents (bucketlist-config-loader, briefing-builder,
+          // reply-builder all used to scrape `Associated Companies: <id>`
+          // out of markdown). The structured `data.companyId` field
+          // returned here lets those agents skip the regex layer entirely.
+
+          // Skip-sentinel: empty ticketId represents the upstream
+          // `{done: true}` path. We emit the same response shape as the
+          // happy path (so downstream `data.skipped` checks work), with
+          // empty fields. Importantly, this matches the shape downstream
+          // agents already check for — `ticket.skipped === true`.
+          if (!config.ticketId) {
+            return ok({
+              response: "Noop — no ticket to read (upstream skip sentinel).",
+              operation: "read-ticket",
+              success: true,
+              data: {
+                ticketId: "",
+                subject: "",
+                body: "",
+                priority: "",
+                pipelineStage: "",
+                pipeline: "",
+                createdAt: "",
+                companyId: "",
+                companyName: "",
+                contactIds: [],
+                threadId: "",
+                transcript: "",
+                skipped: true,
+              },
+            });
+          }
+
+          const client = new Client({
+            accessToken,
+            numberOfApiCallRetries: 3,
+            limiterOptions: DEFAULT_LIMITER_OPTIONS,
+          });
+
+          let ticket: Awaited<ReturnType<typeof client.crm.objects.basicApi.getById>>;
+          try {
+            ticket = await client.crm.objects.basicApi.getById(
+              "tickets",
+              config.ticketId,
+              [
+                "subject",
+                "content",
+                "hs_pipeline_stage",
+                "hs_pipeline",
+                "hs_ticket_priority",
+                "createdate",
+                "hs_lastmodifieddate",
+              ],
+              undefined,
+              ["companies", "contacts"],
+            );
+          } catch (e) {
+            return err(
+              `read-ticket failed (ticket ${config.ticketId}): ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+
+          const props = ticket.properties ?? {};
+          const subject = (props.subject as string | undefined) ?? "";
+          const body = (props.content as string | undefined) ?? "";
+          const priority = (props.hs_ticket_priority as string | undefined) ?? "";
+          const stage = (props.hs_pipeline_stage as string | undefined) ?? "";
+          const pipeline = (props.hs_pipeline as string | undefined) ?? "";
+          const createdAt = (props.createdate as string | undefined) ?? "";
+
+          const companyAssoc = ticket.associations?.companies?.results ?? [];
+          const contactAssoc = ticket.associations?.contacts?.results ?? [];
+          const companyId = companyAssoc[0]?.id ?? "";
+          const contactIds = contactAssoc.map((a) => a.id);
+
+          // Lookup company name when associated. Mirrors the prior LLM-path
+          // behavior where the model would chain a second tool call to
+          // `get_crm_object` for the company. Failure here is non-fatal —
+          // surfaced in `companyName: ""` so downstream agents can still
+          // operate on `companyId` alone.
+          let companyName = "";
+          if (companyId) {
+            try {
+              const company = await client.crm.objects.basicApi.getById("companies", companyId, [
+                "name",
+                "domain",
+              ]);
+              companyName = (company.properties?.name as string | undefined) ?? "";
+            } catch {
+              // Non-fatal — caller has companyId; name lookup can be
+              // retried separately or skipped entirely.
+            }
+          }
+
+          // `response` is intentionally a one-line human-readable status —
+          // NOT structured data in markdown form. Downstream agents MUST
+          // read structured fields from `data.*` (subject, body, companyId,
+          // etc.). Putting fields in `response` would re-create the
+          // exact regex-scraping fragility this op was built to eliminate.
+          // The HubSpotOutputSchema requires `response` to be a string, so
+          // we satisfy that with a status line; nothing parseable here.
+          const responseSummary = companyName
+            ? `Read ticket ${config.ticketId} (${companyName}).`
+            : `Read ticket ${config.ticketId}.`;
+
+          return ok({
+            response: responseSummary,
+            operation: "read-ticket",
+            success: true,
+            data: {
+              ticketId: config.ticketId,
+              subject,
+              body,
+              priority,
+              pipelineStage: stage,
+              pipeline,
+              createdAt,
+              companyId,
+              companyName,
+              contactIds,
+              // Reserved for the optional transcript fetch — future work,
+              // gated by `includeTranscript`. Returning empty values now
+              // so downstream type assumptions don't shift later.
+              threadId: "",
+              transcript: "",
+              skipped: false,
             },
           });
         }

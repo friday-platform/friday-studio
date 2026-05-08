@@ -123,12 +123,15 @@ export function interpolatePromptPlaceholders(
   // three is one line per alias. `inputs.*` is the most common.
   const scopes: Record<string, unknown> = { inputs: config, config, signal: { payload: config } };
   // Pattern: `{{ path[ | default: 'literal' ] }}`
-  // - path: dotted identifier
+  // - path: dotted identifier; segments may contain hyphens. Hyphens are
+  //   needed because `inputFrom: pick-result` exposes a hyphenated key in
+  //   the config bag — without hyphen support, `{{config.pick-result.ticketId}}`
+  //   would silently fall through as a literal string.
   // - optional `| default: '...'` (single or double quoted) supplies a fallback
   //   when the path is missing — matches Liquid/Jinja convention used by most
   //   prompt-templating frameworks.
   const placeholderRe =
-    /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:\|\s*default\s*:\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g;
+    /\{\{\s*([a-zA-Z_][a-zA-Z0-9_.-]*)\s*(?:\|\s*default\s*:\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g;
   return prompt.replace(placeholderRe, (original, path, sq, dq) => {
     const fallback: string | undefined = sq ?? dq;
     const segments = String(path).split(".");
