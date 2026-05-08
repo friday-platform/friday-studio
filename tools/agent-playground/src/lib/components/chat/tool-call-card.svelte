@@ -232,13 +232,20 @@
 
   /* ─── Connect communicator extraction ─────────────────────────────── */
 
-  type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
+  type CommunicatorKind =
+    | "slack"
+    | "telegram"
+    | "discord"
+    | "teams"
+    | "whatsapp"
+    | "github";
   const KNOWN_KINDS: readonly CommunicatorKind[] = [
     "slack",
     "telegram",
     "discord",
     "teams",
     "whatsapp",
+    "github",
   ] as const;
 
   const communicatorKind = $derived.by<CommunicatorKind | null>(() => {

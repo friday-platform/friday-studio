@@ -1,6 +1,6 @@
 <!--
   Wrapper around `CredentialSecretForm` for connecting a workspace
-  communicator (slack/telegram/discord/teams/whatsapp) via apikey.
+  communicator (slack/telegram/discord/teams/whatsapp/github) via apikey.
 
   Encapsulates the kind→provider-details fetch, the chained
   `submitApiKey` → `useConnectCommunicator()` mutation, and the
@@ -22,7 +22,13 @@
   import { linkProviderQueries } from "$lib/queries/link-provider-queries.ts";
   import { useCredentialConnect } from "$lib/use-credential-connect.svelte.ts";
 
-  type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
+  type CommunicatorKind =
+    | "slack"
+    | "telegram"
+    | "discord"
+    | "teams"
+    | "whatsapp"
+    | "github";
 
   interface Props {
     workspaceId: string;

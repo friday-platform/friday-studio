@@ -1,6 +1,6 @@
 <!--
   Dashboard card listing chat communicators (slack, telegram, discord, teams,
-  whatsapp) with Connect/Disconnect controls.
+  whatsapp, github) with Connect/Disconnect controls.
 
   Connect uses the generic apikey path via `<CommunicatorApiKeyForm>`, which
   fetches the provider's secretSchema from Link and wires through
@@ -8,7 +8,7 @@
 
   Source priority:
     1. `config.communicators` — render its declared entries.
-    2. Fallback — render all 5 supported kinds.
+    2. Fallback — render all 6 supported kinds.
 
   @component
   @param {string} workspaceId - Current workspace ID
@@ -22,7 +22,13 @@
   import CommunicatorApiKeyForm from "$lib/components/shared/communicator-apikey-form.svelte";
   import { useDisconnectCommunicator, wiringQueries } from "$lib/queries";
 
-  type CommunicatorKind = "slack" | "telegram" | "discord" | "teams" | "whatsapp";
+  type CommunicatorKind =
+    | "slack"
+    | "telegram"
+    | "discord"
+    | "teams"
+    | "whatsapp"
+    | "github";
 
   const SUPPORTED_KINDS: CommunicatorKind[] = [
     "slack",
@@ -30,6 +36,7 @@
     "discord",
     "teams",
     "whatsapp",
+    "github",
   ];
 
   type Props = {
@@ -48,7 +55,8 @@
       s === "telegram" ||
       s === "discord" ||
       s === "teams" ||
-      s === "whatsapp"
+      s === "whatsapp" ||
+      s === "github"
     ) {
       return s;
     }
